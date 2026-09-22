@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_session
 from ..models import AgentTool, Tool, now_ms
-from ..schemas import ToolCreate, ToolRead, ToolTestRequest
+from ..schemas import ToolCreate, ToolRead, ToolTestRequest, ToolUpdate
 
 router = APIRouter(prefix="/api/tools", tags=["tools"])
 
@@ -78,16 +78,35 @@ async def get_tool(tool_id: str, session: AsyncSession = Depends(get_session)) -
 
 @router.put("/{tool_id}", response_model=ToolRead)
 async def update_tool(
-    tool_id: str, payload: ToolCreate, session: AsyncSession = Depends(get_session)
+    tool_id: str, payload: ToolUpdate, session: AsyncSession = Depends(get_session)
 ) -> ToolRead:
+    """局部更新：只覆盖显式传了的字段。
+
+    以前这里是全量替换（吃 ToolCreate），漏传 kind 会把内置工具降级成 http。
+    现在 kind 不再是可改字段，其余字段按需覆盖。
+    """
     row = await session.get(Tool, tool_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"工具不存在: {tool_id}")
-    row.name = payload.name
-    row.description = payload.description
-    row.input_schema = payload.input_schema
-    row.impl = payload.impl
-    row.flags = payload.flags
+
+    if payload.name is not None:
+        new_name = payload.name.strip()
+        if new_name and new_name != row.name:
+            dup = (
+                await session.execute(select(Tool).where(Tool.name == new_name))
+            ).scalar_one_or_none()
+            if dup is not None:
+                raise HTTPException(status.HTTP_409_CONFLICT, f"工具名已存在: {new_name}")
+            row.name = new_name
+    if payload.description is not None:
+        row.description = payload.description
+    if payload.input_schema is not None:
+        row.input_schema = payload.input_schema
+    if payload.impl is not None:
+        row.impl = payload.impl
+    if payload.flags is not None:
+        row.flags = payload.flags
+
     row.updated_at = now_ms()
     await session.commit()
     await session.refresh(row)

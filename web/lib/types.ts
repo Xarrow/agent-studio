@@ -18,6 +18,8 @@ export interface Credential {
   provider_display: string;
   base_url: string | null;
   masked_key: string;
+  /** 用户选定的默认模型（探测后挑选或手填），可为空 */
+  default_model: string | null;
   last_test_at: number | null;
   last_test_ok: boolean | null;
   last_test_error: string | null;
@@ -433,4 +435,16 @@ export interface DbTestResult {
   table_count?: number;
   server_version?: string | null;
   error: string | null;
+}
+
+/** GET /api/credentials/{id}/models 的返回：探测某凭据可用的模型 */
+export interface CredentialModelsResult {
+  ok: boolean;
+  models: string[];
+  current: string | null;
+  provider?: string;
+  /** provider 推荐清单（探测失败时也能给用户一个起点） */
+  suggested?: string[];
+  latency_ms?: number | null;
+  error?: string | null;
 }

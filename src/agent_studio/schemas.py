@@ -132,6 +132,21 @@ class ToolCreate(BaseModel):
     flags: dict[str, Any] = Field(default_factory=dict)
 
 
+class ToolUpdate(BaseModel):
+    """编辑工具：**只有显式传了的字段才会改**。
+
+    刻意不含 ``kind`` —— 工具的类别（内置/HTTP/代码）是它的身份，
+    改类别应该新建一个工具。而且 PUT 用全量替换的 ToolCreate 时，
+    漏传 kind 会默认成 "http"，把内置工具静默降级。
+    """
+
+    name: str | None = None
+    description: str | None = None
+    input_schema: dict[str, Any] | None = None
+    impl: dict[str, Any] | None = None
+    flags: dict[str, Any] | None = None
+
+
 class ToolRead(BaseModel):
     id: str
     kind: str
@@ -358,9 +373,14 @@ class CredentialCreate(BaseModel):
 
 
 class CredentialUpdate(BaseModel):
+    """编辑已有凭据。**只有显式传了的字段才会改**（None = 不动）。"""
+
     name: str | None = None
+    provider: str | None = None      # 允许改（选错了可以纠正）
     api_key: str | None = None       # 留空表示不修改
     base_url: str | None = None
+    #: 选定的默认模型：可来自探测清单，也可手填；空字符串 = 清空
+    default_model: str | None = None
 
 
 class CredentialRead(BaseModel):
@@ -372,6 +392,7 @@ class CredentialRead(BaseModel):
     provider_display: str
     base_url: str | None
     masked_key: str
+    default_model: str | None = None
     last_test_at: int | None = None
     last_test_ok: bool | None = None
     last_test_error: str | None = None

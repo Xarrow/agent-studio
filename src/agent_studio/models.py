@@ -257,6 +257,8 @@ class Secret(Base):
     name: Mapped[str] = mapped_column(String(64))
     provider: Mapped[str] = mapped_column(String(32), default="deepseek", index=True)
     base_url: Mapped[str | None] = mapped_column(String(256), default=None)
+    #: 用户在这里选定的默认模型（可从 provider 探测出的清单里挑，也可手填）
+    default_model: Mapped[str | None] = mapped_column(String(128), default=None)
     ciphertext: Mapped[bytes] = mapped_column()
     #: 最近一次连通性测试结果（缓存展示用）
     last_test_at: Mapped[int | None] = mapped_column(Integer, default=None)

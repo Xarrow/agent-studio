@@ -43,6 +43,7 @@ def to_read(row: Secret, plain: str | None = None) -> CredentialRead:
         provider_display=meta.display_name if meta else row.provider,
         base_url=row.base_url,
         masked_key=mask(plain) if plain else "••••••••",
+        default_model=row.default_model,
         last_test_at=row.last_test_at,
         last_test_ok=bool(row.last_test_ok) if row.last_test_ok is not None else None,
         last_test_error=row.last_test_error,
@@ -129,10 +130,35 @@ async def update_credential(
     session: AsyncSession = Depends(get_session),
 ) -> CredentialRead:
     row = await _get_or_404(session, credential_id)
+
     if payload.name is not None:
-        row.name = payload.name
+        new_name = payload.name.strip()
+        if new_name and new_name != row.name:
+            dup = (
+                await session.execute(select(Secret).where(Secret.name == new_name))
+            ).scalar_one_or_none()
+            if dup is not None:
+                raise HTTPException(status.HTTP_409_CONFLICT, f"凭据名已存在: {new_name}")
+            row.name = new_name
+
+    # provider 允许改（选错了可以纠正）；改了就把 base_url 归位到新 provider 默认值
+    if payload.provider is not None:
+        provider = normalize_provider(payload.provider)
+        meta = get_provider(provider)
+        if meta is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"不支持的 provider: {payload.provider}")
+        if provider != row.provider:
+            row.provider = provider
+            if payload.base_url is None:
+                row.base_url = meta.default_base_url
+
     if payload.base_url is not None:
         row.base_url = payload.base_url
+
+    # 默认模型：空字符串表示"清空"，None 表示"不动"
+    if payload.default_model is not None:
+        row.default_model = payload.default_model.strip() or None
+
     plain = None
     if payload.api_key:                       # 留空则不改 key
         plain = payload.api_key.strip()
@@ -261,6 +287,41 @@ async def test_credential(
         error=error,
         checked_at=row.last_test_at,
     )
+
+
+@router.get("/credentials/{credential_id}/models")
+async def list_credential_models(
+    credential_id: str,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """探测某个**已保存**凭据下可用的模型清单。
+
+    与 ``/test`` 的区别：这里只为"让用户挑模型"，所以不写入测试结果、
+    也不要求真实推理 —— 拿不到清单时把错误原文带回去，前端可以提示用户
+    改用手动填写。
+    """
+    row = await _get_or_404(session, credential_id)
+    try:
+        api_key = decrypt(row.ciphertext)
+    except Exception:  # noqa: BLE001
+        return {
+            "ok": False, "models": [], "current": row.default_model,
+            "error": "这个配置的密钥解不开（可能由另一个主密钥加密）。请重新填写 API Key。",
+        }
+
+    meta = get_provider(row.provider)
+    ok, models, error, latency = await _probe(
+        row.provider, api_key, row.base_url, meta.models[0] if meta and meta.models else None
+    )
+    return {
+        "ok": ok,
+        "models": models,
+        "current": row.default_model,
+        "provider": row.provider,
+        "suggested": list(meta.models) if meta else [],
+        "latency_ms": latency,
+        "error": error,
+    }
 
 
 @router.post("/credentials/probe", response_model=CredentialTestResult)

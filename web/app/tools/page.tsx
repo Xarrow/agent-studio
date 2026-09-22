@@ -10,6 +10,8 @@ export default function ToolsPage() {
   const [tools, setTools] = useState<Tool[]>([]);
   const [loading, setLoading] = useState(true);
   const [showNew, setShowNew] = useState(false);
+  /** 正在编辑的工具（null = 没在编辑） */
+  const [editing, setEditing] = useState<Tool | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [testOut, setTestOut] = useState<Record<string, string>>({});
   const [argsInput, setArgsInput] = useState<Record<string, string>>({});
@@ -150,6 +152,18 @@ export default function ToolsPage() {
         </div>
       </header>
 
+      {editing && (
+        <EditToolDialog
+          key={editing.id}
+          tool={editing}
+          onClose={() => setEditing(null)}
+          onSaved={async () => {
+            setEditing(null);
+            await load();
+          }}
+        />
+      )}
+
       {showNew && (
         <NewToolDialog
           onClose={() => setShowNew(false)}
@@ -244,6 +258,9 @@ export default function ToolsPage() {
                   )}
                 </div>
                 <div className="flex gap-2 shrink-0">
+                  <button className="btn" onClick={() => setEditing(t)}>
+                    编辑
+                  </button>
                   <button
                     className="btn"
                     disabled={t.flags?.platform_ok === false}
@@ -405,6 +422,238 @@ function NewToolDialog({
           </button>
           <button className="btn btn-primary" disabled={busy} onClick={submit}>
             {busy ? "创建中…" : "创建"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --------------------------------------------------------------------------- //
+/**
+ * 编辑已有工具。
+ *
+ * 按类别给出不同的可编辑范围（这是刻意的，不是偷懒）：
+ *   · builtin —— **只能改描述**。实现由运行时提供，"同步内置工具"会把它刷回
+ *     来；名字也是模型看到的函数名，改了会让已配好的助手对不上。
+ *   · http    —— 名称/描述/方法/URL/参数/只读，全都能改。
+ *   · code    —— 名称/描述 + impl 源码（JSON）。
+ * 另外给一个「高级」区，直接编辑 impl JSON —— 覆盖上面表单没暴露的字段
+ * （比如超时、字节上限），不用为了改一个值去找后端。
+ */
+function EditToolDialog({
+  tool,
+  onClose,
+  onSaved,
+}: {
+  tool: Tool | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  // tool 为 null 时整个弹窗不渲染，这里只是给 hooks 一个稳定的初始值
+  const t = tool;
+
+  const [name, setName] = useState(t?.name ?? "");
+  const [description, setDescription] = useState(t?.description ?? "");
+  const [method, setMethod] = useState(String(t?.impl?.method ?? "GET"));
+  const [url, setUrl] = useState(String(t?.impl?.url ?? ""));
+  const [params, setParams] = useState(
+    Object.keys((t?.input_schema?.properties as Record<string, unknown>) ?? {}).join(", "),
+  );
+  const [readOnly, setReadOnly] = useState(Boolean(t?.flags?.read_only));
+  const [implText, setImplText] = useState(JSON.stringify(t?.impl ?? {}, null, 2));
+  const [showImpl, setShowImpl] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  if (!t) return null;
+
+  const isBuiltin = t.kind === "builtin";
+  const isHttp = t.kind === "http";
+
+  const buildParams = () => {
+    const props: Record<string, unknown> = {};
+    for (const raw of params.split(",").map((x) => x.trim()).filter(Boolean)) {
+      const [k] = raw.split("=");
+      props[k] = { type: "string" };
+    }
+    return props;
+  };
+
+  const submit = async () => {
+    setErr(null);
+    if (!name.trim()) {
+      setErr("请填写工具名");
+      return;
+    }
+    if (isHttp && !url.trim()) {
+      setErr("HTTP 工具必须有 URL");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const body: Parameters<typeof api.updateTool>[1] = {};
+
+      // 内置工具：只提交描述
+      if (isBuiltin) {
+        body.description = description;
+      } else {
+        body.name = name.trim();
+        body.description = description;
+
+        if (showImpl) {
+          // 高级模式：以 impl JSON 为准
+          let parsed: Record<string, unknown>;
+          try {
+            parsed = JSON.parse(implText || "{}");
+          } catch (e) {
+            setErr(`impl JSON 格式错误：${e instanceof Error ? e.message : String(e)}`);
+            setBusy(false);
+            return;
+          }
+          body.impl = parsed;
+        } else if (isHttp) {
+          body.impl = {
+            ...(t.impl ?? {}),
+            method,
+            url: url.trim(),
+          };
+          body.input_schema = { type: "object", properties: buildParams() };
+          body.flags = { ...(t.flags ?? {}), read_only: readOnly };
+        }
+      }
+
+      await api.updateTool(t.id, body);
+      onSaved();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-[var(--color-overlay)] flex items-center justify-center p-4 z-50 overflow-y-auto">
+      <div className="card w-full max-w-lg p-5 my-8">
+        <div className="flex items-center gap-2 mb-1">
+          <h2 className="text-[16px] font-medium">编辑工具</h2>
+          <span className="tag mono">{t.kind}</span>
+        </div>
+        <p className="text-[12px] text-[var(--color-muted)] mb-4">
+          {isBuiltin
+            ? "内置工具只能修改描述 —— 它的实现由运行时提供，「同步内置工具」会把改动覆盖回去。"
+            : "改完保存即生效，引用它的助手下次运行就会用新定义。"}
+        </p>
+
+        <div className="space-y-3.5">
+          <div>
+            <label className="label">
+              工具名（模型看到的函数名）
+              {isBuiltin && "（内置，不可改）"}
+            </label>
+            <input
+              className="input mono"
+              value={name}
+              disabled={isBuiltin}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <label className="label">描述（模型据此判断何时调用）</label>
+            <textarea
+              className="input"
+              rows={3}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="这个工具是做什么的、什么时候该用"
+            />
+          </div>
+
+          {isHttp && !showImpl && (
+            <>
+              <div className="grid grid-cols-[100px_1fr] gap-3">
+                <div>
+                  <label className="label">方法</label>
+                  <select
+                    className="input"
+                    value={method}
+                    onChange={(e) => setMethod(e.target.value)}
+                  >
+                    {["GET", "POST", "PUT", "PATCH", "DELETE"].map((m) => (
+                      <option key={m}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="label">URL 模板</label>
+                  <input
+                    className="input mono"
+                    value={url}
+                    onChange={(e) => setUrl(e.target.value)}
+                    placeholder="https://api.example.com/x?q={{q}}"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="label">参数（逗号分隔，如 city, date）</label>
+                <input
+                  className="input mono"
+                  value={params}
+                  onChange={(e) => setParams(e.target.value)}
+                />
+              </div>
+
+              <label className="flex items-center gap-2 text-[12.5px]">
+                <input
+                  type="checkbox"
+                  checked={readOnly}
+                  onChange={(e) => setReadOnly(e.target.checked)}
+                  className="accent-[var(--color-accent)]"
+                />
+                只读工具（不产生副作用，可并发）
+              </label>
+            </>
+          )}
+
+          {/* 高级：直接改 impl */}
+          <div className="pt-1 border-t border-[var(--color-border)]">
+            <button
+              className="text-[12.5px] text-[var(--color-muted)] mt-3"
+              onClick={() => {
+                setShowImpl(!showImpl);
+                if (!showImpl) setImplText(JSON.stringify(t.impl ?? {}, null, 2));
+              }}
+            >
+              {showImpl ? "▾" : "▸"} 高级：直接编辑实现（impl JSON）
+            </button>
+            {showImpl && (
+              <>
+                <textarea
+                  className="input mono mt-2"
+                  rows={9}
+                  value={implText}
+                  onChange={(e) => setImplText(e.target.value)}
+                  spellCheck={false}
+                />
+                <p className="text-[11.5px] text-[var(--color-muted)] mt-1">
+                  这里改的是原始定义（含超时、字节上限等表单未暴露的字段）。格式必须是合法 JSON。
+                </p>
+              </>
+            )}
+          </div>
+
+          {err && <div className="text-[12.5px] text-[var(--color-err)]">{err}</div>}
+        </div>
+
+        <div className="flex justify-end gap-2 mt-5">
+          <button className="btn" onClick={onClose}>
+            取消
+          </button>
+          <button className="btn btn-primary" disabled={busy} onClick={submit}>
+            {busy ? "保存中…" : "保存"}
           </button>
         </div>
       </div>

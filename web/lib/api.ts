@@ -4,6 +4,7 @@ import type {
   Agent,
   AgentDefinition,
   Credential,
+  CredentialModelsResult,
   CredentialTestResult,
   DbDriverInfo,
   DbStatus,
@@ -136,11 +137,21 @@ export const api = {
   }) => post<Credential>("/api/credentials", body),
   updateCredential: (
     id: string,
-    body: { name?: string; api_key?: string; base_url?: string },
+    body: {
+      name?: string;
+      provider?: string;
+      api_key?: string;
+      base_url?: string | null;
+      /** 空串 = 清空该字段 */
+      default_model?: string;
+    },
   ) => put<Credential>(`/api/credentials/${id}`, body),
   deleteCredential: (id: string) => del(`/api/credentials/${id}`),
   testCredential: (id: string, model?: string) =>
     post<CredentialTestResult>(`/api/credentials/${id}/test`, { model }),
+  /** 探测某凭据下可用的模型清单（编辑配置时让用户挑模型） */
+  credentialModels: (id: string) =>
+    request<CredentialModelsResult>(`/api/credentials/${id}/models`),
   probeCredential: (body: {
     name: string;
     provider: string;
@@ -207,6 +218,16 @@ export const api = {
     impl?: Record<string, unknown>;
     flags?: Record<string, unknown>;
   }) => post<Tool>("/api/tools", body),
+  updateTool: (
+    id: string,
+    body: {
+      name?: string;
+      description?: string;
+      input_schema?: Record<string, unknown>;
+      impl?: Record<string, unknown>;
+      flags?: Record<string, unknown>;
+    },
+  ) => put<Tool>(`/api/tools/${id}`, body),
   deleteTool: (id: string) => del(`/api/tools/${id}`),
   syncBuiltins: (runtime = "agentscope") =>
     post<{

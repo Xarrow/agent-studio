@@ -13,6 +13,8 @@ export default function CredentialsPage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [showNew, setShowNew] = useState(false);
+  /** 正在编辑的凭据（null = 没在编辑） */
+  const [editing, setEditing] = useState<Credential | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<Record<string, CredentialTestResult>>({});
 
@@ -116,6 +118,19 @@ export default function CredentialsPage() {
         />
       )}
 
+      {editing && (
+        <EditCredentialDialog
+          key={editing.id}
+          providers={providers}
+          credential={editing}
+          onClose={() => setEditing(null)}
+          onSaved={async () => {
+            setEditing(null);
+            await load();
+          }}
+        />
+      )}
+
       {loading ? (
         <div className="card p-6 text-[13px] text-[var(--color-muted)]">加载中…</div>
       ) : creds.length === 0 ? (
@@ -149,6 +164,14 @@ export default function CredentialsPage() {
                     <div className="text-[12px] text-[var(--color-muted)] mono mt-1.5">
                       {c.masked_key} · {c.base_url || "默认端点"}
                     </div>
+                    <div className="text-[12px] text-[var(--color-muted)] mt-1">
+                      默认模型：{" "}
+                      {c.default_model ? (
+                        <span className="mono text-[var(--color-text)]">{c.default_model}</span>
+                      ) : (
+                        <span className="text-[var(--color-muted)]">未设置</span>
+                      )}
+                    </div>
                     {c.created_at > 0 && (
                       <div className="text-[11.5px] text-[var(--color-muted)] mt-1">
                         添加于 {fmt.relative(c.created_at)}
@@ -157,6 +180,9 @@ export default function CredentialsPage() {
                     )}
                   </div>
                   <div className="flex gap-2 shrink-0">
+                    <button className="btn" onClick={() => setEditing(c)}>
+                      编辑
+                    </button>
                     <button
                       className="btn"
                       disabled={testing === c.id}
@@ -379,6 +405,249 @@ function NewCredentialDialog({
           </button>
           <button className="btn btn-primary" disabled={busy} onClick={save}>
             {busy ? "处理中…" : "保存"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --------------------------------------------------------------------------- //
+/**
+ * 编辑已有 LLM 配置。
+ *
+ * 两个刻意的设计
+ * --------------
+ * 1. **Key 留空 = 不修改**。改名字/端点/模型时不必重新粘贴密钥，避免用户
+ *    为了改一个字段把密钥又贴一遍（也是泄露面）。
+ * 2. **模型既可选也可填**。「探测可用模型」会真调一次 provider 的 /models
+ *    接口拿清单，点一下就选中；探测不到（网络/权限/该家不支持）就直接手填
+ *    —— 不给用户死路。
+ */
+function EditCredentialDialog({
+  providers,
+  credential,
+  onClose,
+  onSaved,
+}: {
+  providers: Provider[];
+  credential: Credential;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [provider, setProvider] = useState(credential.provider);
+  const [name, setName] = useState(credential.name);
+  const [apiKey, setApiKey] = useState("");
+  const [baseUrl, setBaseUrl] = useState(credential.base_url ?? "");
+  const [model, setModel] = useState(credential.default_model ?? "");
+
+  const [found, setFound] = useState<string[]>([]);
+  const [probeNote, setProbeNote] = useState<string | null>(null);
+  const [probing, setProbing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const meta = providers.find((p) => p.name === provider);
+  const dirty =
+    provider !== credential.provider ||
+    name !== credential.name ||
+    baseUrl !== (credential.base_url ?? "") ||
+    model !== (credential.default_model ?? "") ||
+    apiKey.length > 0;
+
+  /** 探测该凭据可用的模型清单 */
+  const probeModels = async () => {
+    setProbing(true);
+    setProbeNote(null);
+    try {
+      const r = await api.credentialModels(credential.id);
+      setFound(r.models ?? []);
+      if (r.ok && (r.models?.length ?? 0) > 0) {
+        setProbeNote(`✓ 探测到 ${r.models.length} 个模型，点一下即可选用`);
+      } else if (r.suggested?.length) {
+        // 探测不到就退回 provider 的推荐清单，用户仍可一键选
+        setFound(r.suggested);
+        setProbeNote(
+          `未能从服务商取到清单${r.error ? `（${r.error}）` : ""}，下面是推荐的模型名，可直接选或手填。`,
+        );
+      } else {
+        setProbeNote("没能取到模型清单，请手动填写模型名称。");
+      }
+    } catch (e) {
+      setProbeNote(`探测失败：${e instanceof Error ? e.message : String(e)}，请手动填写。`);
+    } finally {
+      setProbing(false);
+    }
+  };
+
+  const doTest = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await api.testCredential(credential.id, model || undefined);
+      if (r.ok) {
+        const n = r.models?.length ?? 0;
+        setErr(null);
+        setProbeNote(`✓ 连接正常 · 延迟 ${fmt.ms(r.latency_ms)}${n ? ` · 发现 ${n} 个模型` : ""}`);
+        if (n) setFound(r.models);
+      } else {
+        setProbeNote(null);
+        setErr(r.error || "连接失败");
+      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const save = async () => {
+    if (!name.trim()) {
+      setErr("请填写配置名称");
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      await api.updateCredential(credential.id, {
+        name: name.trim(),
+        provider,
+        base_url: baseUrl.trim() || null,
+        // 留空 = 不改 key（后端的语义就是这样）
+        ...(apiKey ? { api_key: apiKey } : {}),
+        // 空串 = 清空该字段
+        default_model: model.trim(),
+      });
+      onSaved();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-[var(--color-overlay)] flex items-center justify-center p-4 z-50 overflow-y-auto">
+      <div className="card w-full max-w-lg p-5 my-8">
+        <h2 className="text-[16px] font-medium mb-1">编辑配置「{credential.name}」</h2>
+        <p className="text-[12px] text-[var(--color-muted)] mb-4">
+          API Key 留空表示不修改。其它字段改完保存即生效。
+        </p>
+
+        <div className="space-y-3.5">
+          <div>
+            <label className="label">Provider</label>
+            <select
+              className="input"
+              value={provider}
+              onChange={(e) => {
+                setProvider(e.target.value);
+                setFound([]);
+                setProbeNote(null);
+              }}
+            >
+              {providers.map((p) => (
+                <option key={p.name} value={p.name}>
+                  {p.display_name}
+                  {p.requires_key ? "" : "（无需 Key）"}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="label">名称</label>
+            <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+
+          <div>
+            <label className="label">API Key（留空 = 不修改）</label>
+            <input
+              className="input mono"
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder={`当前：${credential.masked_key}（不填即保持）`}
+            />
+          </div>
+
+          <div>
+            <label className="label">
+              Base URL{meta?.allows_base_url === false ? "（固定，不可改）" : ""}
+            </label>
+            <input
+              className="input mono"
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              placeholder={meta?.default_base_url || ""}
+              disabled={meta?.allows_base_url === false}
+            />
+          </div>
+
+          {/* ── 默认模型 ─────────────────────────────────────── */}
+          <div className="pt-1 border-t border-[var(--color-border)]">
+            <label className="label mt-3">默认模型</label>
+            <div className="flex gap-2">
+              <input
+                className="input mono flex-1"
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                placeholder="可直接填写，如 deepseek-v4-flash"
+              />
+              <button className="btn shrink-0" disabled={probing} onClick={probeModels}>
+                {probing ? "探测中…" : "探测可用模型"}
+              </button>
+            </div>
+
+            {probeNote && (
+              <p className="text-[11.5px] text-[var(--color-muted)] mt-1.5">{probeNote}</p>
+            )}
+
+            {found.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {found.map((m) => {
+                  const on = model.trim() === m;
+                  return (
+                    <button
+                      key={m}
+                      onClick={() => setModel(m)}
+                      className="tag mono"
+                      style={{
+                        cursor: "pointer",
+                        background: on
+                          ? "color-mix(in srgb, var(--color-accent) 16%, transparent)"
+                          : undefined,
+                        color: on ? "var(--color-accent)" : undefined,
+                        borderColor: on ? "var(--color-accent)" : undefined,
+                      }}
+                    >
+                      {on ? "● " : ""}
+                      {m}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {model.trim() === "" && (
+              <p className="text-[11.5px] text-[var(--color-muted)] mt-1.5">
+                留空则由使用它的位置决定模型（新建助手时再选）。
+              </p>
+            )}
+          </div>
+
+          {err && <div className="text-[12.5px] text-[var(--color-err)]">{err}</div>}
+        </div>
+
+        <div className="flex justify-end gap-2 mt-5">
+          <button className="btn" onClick={onClose}>
+            取消
+          </button>
+          <button className="btn" disabled={busy || !dirty} onClick={doTest}>
+            测试连接
+          </button>
+          <button className="btn btn-primary" disabled={busy || !dirty} onClick={save}>
+            {busy ? "保存中…" : "保存"}
           </button>
         </div>
       </div>

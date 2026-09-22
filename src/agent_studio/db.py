@@ -155,6 +155,8 @@ _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("run", "orchestration_id", "orchestration_id VARCHAR(32)"),
     ("run", "orch_role", "orch_role VARCHAR(16)"),
     ("run", "order_index", "order_index INTEGER"),
+    # 凭据的默认模型（LLM 配置页可探测后选择 / 手动填写）
+    ("secret", "default_model", "default_model VARCHAR(128)"),
 )
 
 
