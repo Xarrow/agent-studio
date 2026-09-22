@@ -26,6 +26,10 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://192.168.2.11:3000",   # 内网访问（前端跑在 HPC .11）
+        # 走 Cloudflare 隧道的外网访问：页面在 dev.zeit.ccwu.cc、API 在
+        # dev-api.zeit.ccwu.cc，两者不同源，必须显式放行。
+        # （同源代理方案不需要这条，但那样 SSE 要过一层代理，直连更稳。）
+        "https://dev.zeit.ccwu.cc",
     ]
 
     # 运行约束

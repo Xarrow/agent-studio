@@ -28,8 +28,47 @@ import type {
   Tool,
 } from "./types";
 
-export const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:8848";
+/** 内网/本机地址判定：这些主机名直连后端端口，不绕公网 */
+function isLanHost(host: string): boolean {
+  if (!host) return false;
+  if (host === "localhost" || host.endsWith(".local")) return true;
+  const m = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!m) return false;
+  const a = Number(m[1]);
+  const b = Number(m[2]);
+  if (a === 127 || a === 10) return true;              // 回环 / 10.x
+  if (a === 192 && b === 168) return true;             // 192.168.x
+  if (a === 172 && b >= 16 && b <= 31) return true;    // 172.16-31.x
+  return false;
+}
+
+/**
+ * 后端 API 地址 —— **运行时**决定，绝不能构建时写死。
+ *
+ * 同一份构建产物要同时服务两种访问方式，而它们的正确地址完全不同：
+ *
+ *   ・内网直连 http://192.168.2.11:3000 → 后端 http://192.168.2.11:8848
+ *     同网段直连最短，不用绕公网
+ *   ・公网域名 https://dev.zeit.ccwu.cc → 后端 https://dev-api.zeit.ccwu.cc
+ *     **必须是 HTTPS**：浏览器会以「混合内容」为由拦掉 HTTPS 页面发起的
+ *     HTTP 请求 —— 这是硬拦截，跟内网通不通无关。
+ *
+ * 早先写死了内网 IP，结果公网打开页面时界面能显示、数据全部加载失败
+ * （报错就是 `fetch 192.168.2.11:8848 失败`）。
+ *
+ * 注意：SSE（EventSource）也走这里，所以它必须能在浏览器里被调用，
+ * 不能依赖只在服务端可用的配置。
+ */
+export function apiBase(): string {
+  if (typeof window !== "undefined") {
+    const { protocol, hostname } = window.location;
+    if (isLanHost(hostname)) return `${protocol}//${hostname}:8848`;
+    // 通过域名访问：改用 API 子域名（同为 HTTPS，不触发混合内容）
+    return "https://dev-api.zeit.ccwu.cc";
+  }
+  // 服务端渲染兜底（同机回环）
+  return process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8848";
+}
 
 export class ApiError extends Error {
   constructor(
@@ -41,7 +80,7 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(`${apiBase()}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
@@ -293,10 +332,10 @@ export const api = {
     post<{ aborted: number; status: string }>(`/api/orchestrations/${id}/abort`),
   /** 编排的实时流（聚合所有子步骤的事件） */
   orchestrationStreamUrl: (id: string) =>
-    `${API_BASE}/api/orchestrations/stream/${id}`,
+    `${apiBase()}/api/orchestrations/stream/${id}`,
 
   // SSE 事件流地址（单次执行）
-  streamUrl: (runId: string) => `${API_BASE}/api/runs/stream/${runId}`,
+  streamUrl: (runId: string) => `${apiBase()}/api/runs/stream/${runId}`,
 
   /* ----------------------------- 会话（多轮） ----------------------------- */
   sessions: (agentId?: string) =>
