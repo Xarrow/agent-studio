@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, fmt, STATUS_STYLE } from "@/lib/api";
 import type { RunEvent, Session } from "@/lib/types";
 import { useFeedback } from "./ui/feedback";
+import { Hint, HINTS } from "@/components/ui/hint";
 
 /** 事件类型 → 展示样式（12 类统一事件） */
 const EVENT_KIND: Record<string, { label: string; color: string; icon: string }> = {
@@ -359,7 +360,11 @@ export function RunPanel({
             <span className={`tag ${busy ? "live-dot" : ""}`}>{busy ? "运行中" : status}</span>
           )}
           {events.length > 0 && (
-            <span className="text-[11px] text-[var(--color-muted)]">{events.length} 个事件</span>
+            <span className="text-[11px] text-[var(--color-muted)] flex items-center gap-1">
+              <Hint text="它这一步一步都干了什么。数字越大说明它想得越多。">
+                {events.length} 个事件
+              </Hint>
+            </span>
           )}
 
           {/* 三视图：给人看 / 给开发者看 / 原始数据 */}
@@ -373,6 +378,13 @@ export function RunPanel({
             ).map(([k, label]) => (
               <button
                 key={k}
+                title={
+                  k === "chat"
+                    ? "用人话看：它到底说了什么、调了什么工具"
+                    : k === "table"
+                      ? "逐步列表：每一步的类型、耗时、摘要（排查问题用）"
+                      : "协议层原始数据：每个事件的完整内容（对接调试用）"
+                }
                 onClick={() => setView(k)}
                 className={`px-2.5 py-1 rounded text-[11.5px] whitespace-nowrap transition-colors ${
                   view === k

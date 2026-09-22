@@ -134,8 +134,10 @@ export default function ToolsPage() {
         <div>
           <h1 className="text-[22px] font-semibold tracking-tight">工具</h1>
           <p className="text-[13px] text-[var(--color-muted)] mt-1">
+            给助手加「手」：能查网页、读文件、跑命令之类。不加的话它就只能聊天。
+          </p>
+          <p className="text-[11.5px] text-[var(--color-muted)] mt-1">
             内置 {counts.builtin} · HTTP {counts.http} · 代码 {counts.code}
-            （代码工具待实现，需沙箱）
           </p>
         </div>
         <div className="flex gap-2">

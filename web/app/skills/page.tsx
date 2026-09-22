@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, fmt } from "@/lib/api";
 import type { Skill } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
+import { Hint, HINTS } from "@/components/ui/hint";
 
 type Source = "git" | "url" | "local" | "inline";
 
@@ -49,10 +50,15 @@ export default function SkillsPage() {
     <div className="p-4 md:p-6 lg:p-7 max-w-5xl">
       <header className="flex items-start justify-between mb-6">
         <div>
-          <h1 className="text-[22px] font-semibold tracking-tight">Skills</h1>
+          <h1 className="text-[22px] font-semibold tracking-tight flex items-center gap-1.5">
+            <Hint text={HINTS.skill}>Skills</Hint>
+          </h1>
           <p className="text-[13px] text-[var(--color-muted)] mt-1">
-            {skills.length} 个 Skill · 标准 <span className="mono">SKILL.md</span> 格式（Markdown +
-            YAML frontmatter），与 Claude Code / Hermes / AgentScope 兼容
+            预先写好的「做事套路」。装上之后，助手遇到这类任务就知道该按什么步骤做。
+          </p>
+          <p className="text-[11.5px] text-[var(--color-muted)] mt-1">
+            {skills.length} 个 · 标准 <span className="mono">SKILL.md</span> 格式，与 Claude Code /
+            Hermes / AgentScope 通用
           </p>
         </div>
         <button className="btn btn-primary" onClick={() => setShowImport(true)}>
@@ -232,7 +238,7 @@ function ImportDialog({
                   placeholder="https://github.com/user/awesome-skills"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="label">分支 / Tag（可空）</label>
                   <input

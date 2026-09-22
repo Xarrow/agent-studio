@@ -358,7 +358,7 @@ export default function MemoriesPage() {
       </div>
 
       {/* 列表 */}
-      <div className="card overflow-hidden">
+      <div className="card overflow-x-auto">
         {loading ? (
           <div className="p-6 text-[13px] text-[var(--color-muted)]">加载中…</div>
         ) : items.length === 0 ? (
@@ -368,7 +368,7 @@ export default function MemoriesPage() {
             可以在上面手动新增，或在 Agent 详情页执行一次后点「沉淀为记忆」。
           </div>
         ) : (
-          <table className="w-full text-[12.5px]">
+          <table className="w-full min-w-[720px] text-[12.5px]">
             <thead className="bg-[var(--color-surface-2)] text-[var(--color-muted)]">
               <tr>
                 <th className="text-left px-3 py-2.5">内容</th>

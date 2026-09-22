@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, fmt, STATUS_STYLE } from "@/lib/api";
 import type { Agent, Run, RunDeleteResult } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
+import { Hint, HINTS } from "@/components/ui/hint";
 
 export default function RunsPage() {
   const fb = useFeedback();
@@ -162,9 +163,12 @@ export default function RunsPage() {
     <div className="p-4 md:p-6 lg:p-7 max-w-[1400px]">
       <header className="flex items-start justify-between mb-5 gap-4 flex-wrap">
         <div>
-          <h1 className="text-[22px] font-semibold tracking-tight">Runs</h1>
+          <h1 className="text-[22px] font-semibold tracking-tight flex items-center gap-1.5">
+            <Hint text={HINTS.run}>Runs</Hint>
+          </h1>
           <p className="text-[13px] text-[var(--color-muted)] mt-1">
-            {runs.length} 条执行记录 · 点击查看逐次调用的耗时与日志
+            每次执行的详细记录 —— 想弄清楚「它为什么这么回答」「哪一步慢了」就看这里。
+            <span className="text-[11.5px]"> 共 {runs.length} 条</span>
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -200,7 +204,7 @@ export default function RunsPage() {
         </div>
       </header>
 
-      <div className="card overflow-hidden">
+      <div className="card overflow-x-auto">
         {loading ? (
           <div className="p-6 text-[13px] text-[var(--color-muted)]">加载中…</div>
         ) : runs.length === 0 ? (
@@ -211,7 +215,7 @@ export default function RunsPage() {
             </Link>
           </div>
         ) : (
-          <table className="w-full text-[12.5px]">
+          <table className="w-full min-w-[760px] text-[12.5px]">
             <thead className="bg-[var(--color-surface-2)] text-[var(--color-muted)]">
               <tr>
                 <th className="w-10 px-3 py-2.5">
@@ -223,14 +227,14 @@ export default function RunsPage() {
                     title="全选（不含运行中的记录）"
                   />
                 </th>
-                <th className="text-left px-2 py-2.5 font-medium">Run</th>
+                <th className="text-left px-2 py-2.5 font-medium"><Hint text={HINTS.run}>Run</Hint></th>
                 <th className="text-left px-3 font-medium">Agent</th>
                 <th className="text-left px-3 font-medium">状态</th>
-                <th className="text-right px-3 font-medium">迭代</th>
-                <th className="text-right px-3 font-medium">LLM 耗时</th>
-                <th className="text-right px-3 font-medium">工具耗时</th>
-                <th className="text-right px-3 font-medium">TTFT</th>
-                <th className="text-right px-3 font-medium">tokens</th>
+                <th className="text-right px-3 font-medium"><Hint text={HINTS.maxIters}>迭代</Hint></th>
+                <th className="text-right px-3 font-medium"><Hint text="AI 思考花掉的时间（不包括它调用工具的时间）。">LLM 耗时</Hint></th>
+                <th className="text-right px-3 font-medium"><Hint text="它调用工具（查网页、跑命令等）花掉的时间。">工具耗时</Hint></th>
+                <th className="text-right px-3 font-medium"><Hint text={HINTS.ttft}>TTFT</Hint></th>
+                <th className="text-right px-3 font-medium"><Hint text={HINTS.token}>tokens</Hint></th>
                 <th className="text-left px-3 font-medium">时间</th>
                 <th className="w-16 px-3 font-medium"></th>
               </tr>

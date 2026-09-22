@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api, fmt, STATUS_STYLE } from "@/lib/api";
 import type { RunTrace } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
+import { Hint, HINTS } from "@/components/ui/hint";
 
 /** 记忆类型的中文名（提炼确认框里展示用） */
 const KIND_LABEL: Record<string, string> = {
@@ -161,14 +163,14 @@ export default function RunTracePage() {
           sub={`${metrics.tool_calls ?? 0} 次调用`}
         />
         <Metric
-          label="TTFT 均值"
+          label={<Hint text={HINTS.ttft}>TTFT 均值</Hint>}
           value={fmt.ms(metrics.ttft_ms_avg as number)}
           sub={`峰值 ${fmt.ms(metrics.ttft_ms_max as number)}`}
         />
         <Metric
-          label="tokens"
+          label={<Hint text={HINTS.token}>tokens</Hint>}
           value={`${metrics.tokens_in ?? 0}/${metrics.tokens_out ?? 0}`}
-          sub={`缓存 ${metrics.tokens_cache_read ?? 0}`}
+          sub={<><Hint text="重复的内容会被服务商记下来复用，这部分算「缓存」，通常更便宜。">缓存</Hint> {metrics.tokens_cache_read ?? 0}</>}
         />
       </div>
 
@@ -260,7 +262,7 @@ export default function RunTracePage() {
           {llm_calls.length > 0 && (
             <>
               <h3 className="text-[13.5px] font-medium mt-6 mb-2">LLM 调用明细</h3>
-              <table className="w-full text-[12px]">
+              <table className="w-full min-w-[560px] text-[12px]">
                 <thead className="text-[var(--color-muted)]">
                   <tr>
                     <th className="text-left py-1.5 font-medium">轮次</th>
@@ -381,9 +383,9 @@ function Metric({
   value,
   sub,
 }: {
-  label: string;
+  label: ReactNode;
   value: string;
-  sub?: string;
+  sub?: ReactNode;
 }) {
   return (
     <div className="card p-3.5">

@@ -52,7 +52,14 @@ export default function ChatPage() {
       try {
         const list = await api.agents();
         setAgents(list);
-        if (list.length > 0) setAgentId(list[0].id);
+        // 优先用 URL 带来的助手（从「我的助手」卡片点「聊天」进来时）：
+        // 这样用户点谁就聊谁，不用再选一次
+        const want =
+          typeof window !== "undefined"
+            ? new URLSearchParams(window.location.search).get("agent")
+            : null;
+        const pick = want && list.some((a) => a.id === want) ? want : list[0]?.id;
+        if (pick) setAgentId(pick);
       } catch (e) {
         fb.error("加载 Agents 失败", e instanceof Error ? e.message : String(e));
       } finally {
@@ -253,6 +260,31 @@ export default function ChatPage() {
   }
 
   const currentAgent = agents.find((a) => a.id === agentId);
+
+  /* 一个助手都没有 —— 别让人对着空下拉框发呆，直接给出路 */
+  if (!loading && agents.length === 0) {
+    return (
+      <div className="h-[calc(100dvh-3.5rem)] md:h-dvh flex items-center justify-center p-6">
+        <div className="card p-6 max-w-md text-center">
+          <div className="text-[28px] mb-2">✦</div>
+          <h2 className="text-[16px] font-medium mb-2">还没有可以聊的助手</h2>
+          <p className="text-[12.5px] text-[var(--color-muted)] leading-relaxed mb-4">
+            助手就是「会自己想办法帮你做事的 AI」。
+            <br />
+            创建一个，然后就能像发消息一样让它干活了。
+          </p>
+          <div className="flex flex-col sm:flex-row gap-2 justify-center">
+            <Link href="/agents" className="btn btn-primary text-[13px]">
+              创建一个助手
+            </Link>
+            <Link href="/credentials" className="btn text-[13px]">
+              先配模型密钥
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full flex flex-col lg:flex-row">

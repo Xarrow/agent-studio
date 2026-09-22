@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, fmt } from "@/lib/api";
 import type { Credential, CredentialTestResult, Provider } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
+import { Hint, HINTS } from "@/components/ui/hint";
 
 export default function CredentialsPage() {
   const fb = useFeedback();
@@ -82,9 +83,15 @@ export default function CredentialsPage() {
     <div className="p-4 md:p-6 lg:p-7 max-w-5xl">
       <header className="flex items-start justify-between mb-6">
         <div>
-          <h1 className="text-[22px] font-semibold tracking-tight">LLM 配置</h1>
+          <h1 className="text-[22px] font-semibold tracking-tight flex items-center gap-1.5">
+            <Hint text={HINTS.credential}>LLM 配置</Hint>
+          </h1>
           <p className="text-[13px] text-[var(--color-muted)] mt-1">
-            支持 {providers.length} 家 Provider · 同一家可配置多套 Key（主号 / 备用号）
+            让 AI 能工作的「钥匙」。在这里填一次，所有助手都能用；存进来会加密，不会再明文显示。
+          </p>
+          <p className="text-[11.5px] text-[var(--color-muted)] mt-1">
+            支持 {providers.length} 家 <Hint text={HINTS.provider}>服务商</Hint> · 同一家可配多套钥匙（主号
+            / 备用号）
           </p>
         </div>
         <button className="btn btn-primary" onClick={() => setShowNew(true)}>

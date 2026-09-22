@@ -227,7 +227,7 @@ export default function AgentEditorPage() {
                 onChange={(e) => patch({ system_prompt: e.target.value })}
               />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="label">最大迭代轮数（-1 = 不限制）</label>
                 <input
@@ -302,7 +302,7 @@ export default function AgentEditorPage() {
               )}
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="label">Provider</label>
                 <select

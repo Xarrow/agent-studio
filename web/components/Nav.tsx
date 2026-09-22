@@ -1,152 +1,230 @@
 "use client";
 
+/**
+ * 侧边导航 —— 三态 + 分组。
+ *
+ * 布局（响应式）
+ * -------------
+ *  | < 768px      | 顶部栏 + 抽屉（汉堡菜单）      |
+ *  | 768–1023px   | 图标条（w-14，hover 提示）     |
+ *  | ≥ 1024px     | 完整侧边栏（w-52）             |
+ *
+ * 分组（"小孩子也能学会"）
+ * ----------------------
+ * 8 个菜单平铺会让人先理解"系统有哪些模块"；分成两组后，用户只需回答
+ * 一个问题：**我是想用它，还是想改它？**
+ *
+ *   使用 → 对话 / Runs
+ *   配置 → Agents / 记忆 / 工具 / Skills / LLM 配置
+ *
+ * 术语保留（它们是准确的说法），但每个都挂 title 提示（鼠标悬停出白话）。
+ */
+
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ThemeToggle } from "./ThemeToggle";
 
-/**
- * 侧边导航 —— 三态响应式
- *
- *  | 视口          | 形态                    |
- *  |--------------|-------------------------|
- *  | < 768px      | 顶部栏 + 抽屉（汉堡）    |
- *  | 768–1023px   | 图标条（w-14，hover 提示）|
- *  | ≥ 1024px     | 完整侧边栏（w-52）       |
- *
- * 为什么用"三态"而不是"折叠成小图标 + 展开"：手机上横竖屏切换频繁，
- * 抽屉能覆盖整个内容区的视觉焦点，而图标条在手机上会吃掉本来就窄的宽度。
- */
-const LINKS = [
-  { href: "/", label: "概览", icon: "◆" },
-  { href: "/chat", label: "对话", icon: "✦" },
-  { href: "/agents", label: "Agents", icon: "▲" },
-  { href: "/runs", label: "Runs", icon: "▶" },
-  { href: "/memories", label: "记忆", icon: "❖" },
-  { href: "/tools", label: "工具", icon: "⚙" },
-  { href: "/skills", label: "Skills", icon: "◈" },
-  { href: "/credentials", label: "LLM 配置", icon: "⚿" },
+type Item = { href: string; label: string; icon: string; tip: string };
+
+/** 使用 —— 日常干活的入口 */
+const USE_ITEMS: Item[] = [
+  {
+    href: "/chat",
+    label: "对话",
+    icon: "✦",
+    tip: "像聊天一样让 AI 帮你做事。历史记录会一直留着。",
+  },
+  {
+    href: "/runs",
+    label: "Runs",
+    icon: "▶",
+    tip: "每次执行的详细记录（Runs）：它想了什么、调了什么工具、花了多久。想排查问题时看这里。",
+  },
+];
+
+/** 配置 —— 一次性设置的地方 */
+const SETUP_ITEMS: Item[] = [
+  {
+    href: "/agents",
+    label: "Agents",
+    icon: "▲",
+    tip: "「助手」：一个会自己想办法帮你做事的 AI。你可以给不同的助手不同的分工。",
+  },
+  {
+    href: "/memories",
+    label: "记忆",
+    icon: "❖",
+    tip: "跨对话的长期记性：值得记住的事存下来，以后聊天会自动想起来。",
+  },
+  {
+    href: "/tools",
+    label: "工具",
+    icon: "⚙",
+    tip: "给助手加「手」：能查网页、读文件、跑命令之类。不加就只能聊天。",
+  },
+  {
+    href: "/skills",
+    label: "Skills",
+    icon: "◈",
+    tip: "预先写好的「做事套路」。装上之后，助手遇到这类任务就知道该按什么步骤做。",
+  },
+  {
+    href: "/credentials",
+    label: "LLM 配置",
+    icon: "⚿",
+    tip: "让 AI 能工作的「钥匙」（模型服务商的密钥）。加密保存，不会明文显示。",
+  },
 ];
 
 export function Nav() {
   const pathname = usePathname();
-  const [open, setOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
-  // 路由变化时自动收起抽屉（否则点完链接抽屉还盖着）
-  useEffect(() => {
-    setOpen(false);
-  }, [pathname]);
+  // 路由变化就收起抽屉
+  useEffect(() => setDrawerOpen(false), [pathname]);
 
-  // 抽屉打开时锁住背景滚动
+  // 抽屉打开时锁背景滚动
   useEffect(() => {
-    if (!open) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    document.body.style.overflow = drawerOpen ? "hidden" : "";
     return () => {
-      document.body.style.overflow = prev;
+      document.body.style.overflow = "";
     };
-  }, [open]);
+  }, [drawerOpen]);
 
-  // Esc 关闭
+  // Esc 收起抽屉
   useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
+    if (!drawerOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setDrawerOpen(false);
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [drawerOpen]);
 
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
 
+  const rowCls = (active: boolean) =>
+    `flex items-center gap-2.5 px-3 py-2 rounded-md text-[13px] transition-colors ${
+      active
+        ? "bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)] text-[var(--color-accent)] font-medium"
+        : "text-[var(--color-text)] hover:bg-[var(--color-surface-2)]"
+    }`;
+
+  const groupLabel = (t: string) => (
+    <div className="px-3 pt-3 pb-1 text-[10.5px] font-semibold tracking-wider text-[var(--color-muted)] uppercase">
+      {t}
+    </div>
+  );
+
   return (
     <>
-      {/* ── 移动端顶栏（< 768px） ─────────────────────────────────── */}
-      <header className="md:hidden fixed top-0 inset-x-0 z-30 h-14 flex items-center gap-2 px-3 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
+      {/* ── 移动端顶栏 ─────────────────────────────────────── */}
+      <header className="md:hidden fixed top-0 inset-x-0 z-40 h-14 flex items-center gap-3 px-4 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
         <button
-          onClick={() => setOpen(true)}
+          onClick={() => setDrawerOpen(true)}
           aria-label="打开菜单"
-          aria-expanded={open}
-          className="p-2 -ml-1 rounded-md text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)]"
+          className="w-9 h-9 -ml-1.5 flex items-center justify-center rounded-md hover:bg-[var(--color-surface-2)]"
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <path d="M3 6h18M3 12h18M3 18h18" />
+          <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+            <path
+              d="M2 4.5h14M2 9h14M2 13.5h14"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              fill="none"
+            />
           </svg>
         </button>
-        <span className="text-[15px] font-semibold tracking-tight">Agent Studio</span>
+        <span className="font-semibold text-[15px] tracking-tight">Agent Studio</span>
         <div className="ml-auto">
           <ThemeToggle />
         </div>
       </header>
 
-      {/* ── 抽屉遮罩 ─────────────────────────────────────────────── */}
-      {open && (
-        <div
-          className="md:hidden fixed inset-0 z-40 bg-black/45"
-          onClick={() => setOpen(false)}
-          aria-hidden="true"
-        />
+      {/* ── 移动端抽屉 ─────────────────────────────────────── */}
+      {drawerOpen && (
+        <>
+          <div
+            className="md:hidden fixed inset-0 z-40 bg-black/45"
+            onClick={() => setDrawerOpen(false)}
+            aria-hidden="true"
+          />
+          <aside className="md:hidden fixed inset-y-0 left-0 z-50 w-[17rem] max-w-[82vw] bg-[var(--color-surface)] border-r border-[var(--color-border)] flex flex-col overflow-auto">
+            <div className="px-4 py-4 border-b border-[var(--color-border)] flex items-center">
+              <Link href="/" className="font-semibold text-[15px] tracking-tight">
+                Agent Studio
+              </Link>
+              <button
+                onClick={() => setDrawerOpen(false)}
+                aria-label="关闭菜单"
+                className="ml-auto w-8 h-8 flex items-center justify-center rounded-md hover:bg-[var(--color-surface-2)]"
+              >
+                ✕
+              </button>
+            </div>
+            <nav className="p-2 flex-1">
+              <Link href="/" className={rowCls(pathname === "/")} title="总览：接着上次继续，或建个新助手">
+                <span className="w-4 text-center text-[12px]">◆</span>
+                <span>概览</span>
+              </Link>
+              {groupLabel("使用")}
+              {USE_ITEMS.map((l) => (
+                <Link key={l.href} href={l.href} className={rowCls(isActive(l.href))} title={l.tip}>
+                  <span className="w-4 text-center text-[12px]">{l.icon}</span>
+                  <span>{l.label}</span>
+                </Link>
+              ))}
+              {groupLabel("配置")}
+              {SETUP_ITEMS.map((l) => (
+                <Link key={l.href} href={l.href} className={rowCls(isActive(l.href))} title={l.tip}>
+                  <span className="w-4 text-center text-[12px]">{l.icon}</span>
+                  <span>{l.label}</span>
+                </Link>
+              ))}
+            </nav>
+            <div className="p-3 border-t border-[var(--color-border)]">
+              <ThemeToggle />
+            </div>
+          </aside>
+        </>
       )}
 
-      {/* ── 抽屉本体（< 768px） ──────────────────────────────────── */}
-      <aside
-        className={`md:hidden fixed inset-y-0 left-0 z-50 w-64 max-w-[82vw] bg-[var(--color-surface)] border-r border-[var(--color-border)] flex flex-col transition-transform duration-200 ${
-          open ? "translate-x-0" : "-translate-x-full"
-        }`}
-        aria-hidden={!open}
-      >
-        <div className="px-4 py-4 border-b border-[var(--color-border)] flex items-center justify-between">
-          <div>
-            <div className="text-[15px] font-semibold tracking-tight">Agent Studio</div>
-            <div className="text-[11px] text-[var(--color-muted)] mt-0.5">runtime-agnostic</div>
-          </div>
-          <button
-            onClick={() => setOpen(false)}
-            aria-label="关闭菜单"
-            className="p-1.5 rounded-md text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)]"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <path d="M18 6 6 18M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-        <nav className="flex-1 p-2 space-y-0.5 overflow-auto">
-          {LINKS.map((l) => (
-            <Link
-              key={l.href}
-              href={l.href}
-              className={`flex items-center gap-3 px-3 py-3 rounded-md text-[14px] transition-colors ${
-                isActive(l.href)
-                  ? "bg-[var(--color-surface-2)] text-[var(--color-accent)] font-medium"
-                  : "text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)]"
-              }`}
-            >
-              <span className="text-[12px] opacity-70 w-4 text-center">{l.icon}</span>
-              {l.label}
-            </Link>
-          ))}
-        </nav>
-        <div className="px-3 py-3 border-t border-[var(--color-border)] text-[10.5px] text-[var(--color-muted)]">
-          AgentScope · pi 预留
-        </div>
-      </aside>
-
-      {/* ── 图标条（768–1023px） ─────────────────────────────────── */}
+      {/* ── 平板：图标条 ───────────────────────────────────── */}
       <aside className="hidden md:flex lg:hidden w-14 shrink-0 border-r border-[var(--color-border)] bg-[var(--color-surface)] flex-col items-center py-3 gap-1">
-        <div className="text-[13px] font-bold mb-2" title="Agent Studio">
-          AS
-        </div>
-        {LINKS.map((l) => (
+        <Link
+          href="/"
+          title="概览"
+          className={`w-9 h-9 flex items-center justify-center rounded-md text-[14px] ${
+            pathname === "/" ? "text-[var(--color-accent)] bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)]" : "hover:bg-[var(--color-surface-2)]"
+          }`}
+        >
+          ◆
+        </Link>
+        <div className="w-6 border-t border-[var(--color-border)] my-1" />
+        {USE_ITEMS.map((l) => (
           <Link
             key={l.href}
             href={l.href}
-            title={l.label}
-            aria-label={l.label}
-            className={`w-10 h-10 flex items-center justify-center rounded-md text-[14px] transition-colors ${
+            title={`${l.label} —— ${l.tip}`}
+            className={`w-9 h-9 flex items-center justify-center rounded-md text-[14px] ${
               isActive(l.href)
-                ? "bg-[var(--color-surface-2)] text-[var(--color-accent)]"
-                : "text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)]"
+                ? "text-[var(--color-accent)] bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)]"
+                : "hover:bg-[var(--color-surface-2)]"
+            }`}
+          >
+            {l.icon}
+          </Link>
+        ))}
+        <div className="w-6 border-t border-[var(--color-border)] my-1" />
+        {SETUP_ITEMS.map((l) => (
+          <Link
+            key={l.href}
+            href={l.href}
+            title={`${l.label} —— ${l.tip}`}
+            className={`w-9 h-9 flex items-center justify-center rounded-md text-[12.5px] ${
+              isActive(l.href)
+                ? "text-[var(--color-accent)] bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)]"
+                : "hover:bg-[var(--color-surface-2)]"
             }`}
           >
             {l.icon}
@@ -157,33 +235,46 @@ export function Nav() {
         </div>
       </aside>
 
-      {/* ── 完整侧边栏（≥ 1024px） ──────────────────────────────── */}
+      {/* ── 桌面：完整侧边栏 ───────────────────────────────── */}
       <aside className="hidden lg:flex w-52 shrink-0 border-r border-[var(--color-border)] bg-[var(--color-surface)] flex-col">
-        <div className="px-4 py-5 border-b border-[var(--color-border)]">
-          <div className="text-[15px] font-semibold tracking-tight">Agent Studio</div>
-          <div className="text-[11px] text-[var(--color-muted)] mt-0.5">runtime-agnostic</div>
+        <div className="px-4 py-4 border-b border-[var(--color-border)]">
+          <Link href="/" className="font-semibold text-[15px] tracking-tight block">
+            Agent Studio
+          </Link>
+          <div className="text-[10.5px] text-[var(--color-muted)] mt-0.5">
+            runtime-agnostic
+          </div>
         </div>
 
-        <nav className="flex-1 p-2 space-y-0.5">
-          {LINKS.map((l) => (
-            <Link
-              key={l.href}
-              href={l.href}
-              className={`flex items-center gap-2.5 px-3 py-2 rounded-md text-[13px] transition-colors ${
-                isActive(l.href)
-                  ? "bg-[var(--color-surface-2)] text-[var(--color-accent)] font-medium"
-                  : "text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)]"
-              }`}
-            >
-              <span className="text-[11px] opacity-70">{l.icon}</span>
-              {l.label}
+        <nav className="p-2 flex-1 overflow-auto">
+          <Link
+            href="/"
+            className={rowCls(pathname === "/")}
+            title="总览：接着上次继续，或建个新助手"
+          >
+            <span className="w-4 text-center text-[12px]">◆</span>
+            <span>概览</span>
+          </Link>
+
+          {groupLabel("使用")}
+          {USE_ITEMS.map((l) => (
+            <Link key={l.href} href={l.href} className={rowCls(isActive(l.href))} title={l.tip}>
+              <span className="w-4 text-center text-[12px]">{l.icon}</span>
+              <span>{l.label}</span>
+            </Link>
+          ))}
+
+          {groupLabel("配置")}
+          {SETUP_ITEMS.map((l) => (
+            <Link key={l.href} href={l.href} className={rowCls(isActive(l.href))} title={l.tip}>
+              <span className="w-4 text-center text-[12px]">{l.icon}</span>
+              <span>{l.label}</span>
             </Link>
           ))}
         </nav>
 
-        <div className="px-3 py-3 border-t border-[var(--color-border)] space-y-2">
+        <div className="p-3 border-t border-[var(--color-border)]">
           <ThemeToggle />
-          <div className="text-[10.5px] text-[var(--color-muted)] px-1">AgentScope · pi 预留</div>
         </div>
       </aside>
     </>
