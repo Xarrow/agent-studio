@@ -420,9 +420,10 @@ function NewCredentialDialog({
  * --------------
  * 1. **Key 留空 = 不修改**。改名字/端点/模型时不必重新粘贴密钥，避免用户
  *    为了改一个字段把密钥又贴一遍（也是泄露面）。
- * 2. **模型既可选也可填**。「探测可用模型」会真调一次 provider 的 /models
- *    接口拿清单，点一下就选中；探测不到（网络/权限/该家不支持）就直接手填
- *    —— 不给用户死路。
+ * 2. **模型只能从探测结果里选，不能手填**。「探测可用模型」会真调一次
+ *    provider 的 /models 接口拿清单，点一下就选中；探测不到时退回该 provider
+ *    的推荐清单（仍可点选），但**不开放自由输入** —— 手填一个不存在的模型名
+ *    只会在真正执行时才报错，把问题推迟到最难排查的时刻。
  */
 function EditCredentialDialog({
   providers,
@@ -587,16 +588,30 @@ function EditCredentialDialog({
           {/* ── 默认模型 ─────────────────────────────────────── */}
           <div className="pt-1 border-t border-[var(--color-border)]">
             <label className="label mt-3">默认模型</label>
-            <div className="flex gap-2">
-              <input
-                className="input mono flex-1"
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                placeholder="可直接填写，如 deepseek-v4-flash"
-              />
+            <div className="flex gap-2 items-stretch">
+              {/* 只读展示：模型不能手填，必须从探测出来的清单里点选 */}
+              <div className="input mono flex-1 flex items-center min-h-[38px]">
+                {model ? (
+                  <span className="text-[var(--color-text)]">{model}</span>
+                ) : (
+                  <span className="text-[var(--color-muted)]">未选择</span>
+                )}
+              </div>
               <button className="btn shrink-0" disabled={probing} onClick={probeModels}>
                 {probing ? "探测中…" : "探测可用模型"}
               </button>
+              {model && (
+                <button
+                  className="btn shrink-0"
+                  title="清除已选模型"
+                  onClick={() => {
+                    setModel("");
+                    setProbeNote(null);
+                  }}
+                >
+                  清除
+                </button>
+              )}
             </div>
 
             {probeNote && (
@@ -631,7 +646,7 @@ function EditCredentialDialog({
 
             {model.trim() === "" && (
               <p className="text-[11.5px] text-[var(--color-muted)] mt-1.5">
-                留空则由使用它的位置决定模型（新建助手时再选）。
+                未选择时，模型由使用它的助手决定（在助手的模型设置里选）。
               </p>
             )}
           </div>
