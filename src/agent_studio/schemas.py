@@ -508,6 +508,22 @@ class MemoryUpdate(BaseModel):
     status: MemoryStatus | None = None
     scope: MemoryScope | None = None
     ttl_s: int | None = None
+    #: 改归属。传 NULL 表示"不修改"，传 "" 表示改成全局（不绑任何 Agent）
+    agent_id: str | None = None
+
+
+class MemoryDuplicateRequest(BaseModel):
+    """复制一条记忆并绑定到别处。
+
+    平台刻意保持「一条记忆只属于一个 Agent」（共享用复制解决，而不是多对多）——
+    这样一方改动不会牵动另一方，责任边界清楚，召回过滤也简单。
+    """
+
+    #: 副本绑定到哪个 Agent；None = 复制成全局记忆
+    agent_id: str | None = None
+    scope: MemoryScope = "agent"
+    #: 可选：顺带改一下副本内容（默认与原件一致）
+    content: str | None = None
 
 
 class MemoryRead(BaseModel):

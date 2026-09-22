@@ -415,6 +415,16 @@ export const api = {
       body: JSON.stringify(patch),
     }),
   deleteMemory: (id: string) => del<{ deleted: number }>(`/api/memories/${id}`),
+  /**
+   * 复制一条记忆并绑定到别处。
+   *
+   * 平台的绑定模型是「一条记忆只属于一个 Agent」：要多个 Agent 共用同一条内容，
+   * 就复制一份再换绑 —— 而不是让它同时属于多个（那样一方改动会牵动另一方）。
+   */
+  duplicateMemory: (
+    id: string,
+    body: { agent_id?: string | null; scope?: "agent" | "global"; content?: string },
+  ) => post<Memory>(`/api/memories/${id}/duplicate`, body),
   memoryStats: () => request<MemoryStats>("/api/memories/stats"),
   bulkMemoryStatus: (ids: string[], status: string) =>
     post<{ updated: number }>("/api/memories/bulk-status", { ids, status }),

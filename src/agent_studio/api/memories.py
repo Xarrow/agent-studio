@@ -38,6 +38,7 @@ from ..schemas import (
     MemoryBindingRequest,
     MemoryBulkStatusRequest,
     MemoryCreate,
+    MemoryDuplicateRequest,
     MemoryExtractRequest,
     MemoryExtractResult,
     MemoryPolicyRead,
@@ -297,6 +298,58 @@ async def get_memory(memory_id: str, session: AsyncSession = Depends(get_session
     return _to_read(row, names.get(row.agent_id or ""))
 
 
+@router.post(
+    "/{memory_id}/duplicate", response_model=MemoryRead, status_code=status.HTTP_201_CREATED
+)
+async def duplicate_memory(
+    memory_id: str,
+    payload: MemoryDuplicateRequest,
+    session: AsyncSession = Depends(get_session),
+) -> MemoryRead:
+    """复制一条记忆并绑定到别处。
+
+    平台刻意保持「一条记忆只属于一个 Agent」：需要多个 Agent 共用同一条内容时，
+    **复制一份再换绑**，而不是让它同时属于多个 Agent ——
+    这样任何一方后续修改都不会牵动另一方，回滚和追责都清楚。
+    """
+    src = await session.get(Memory, memory_id)
+    if src is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"记忆不存在: {memory_id}")
+
+    content = ((payload.content if payload.content is not None else src.content) or "").strip()
+    if not content:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "记忆内容不能为空")
+
+    agent_id = payload.agent_id
+    scope = payload.scope
+    if scope == "global":
+        agent_id = None
+    elif not agent_id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "复制到某个助手时必须指定 agent_id")
+    elif await session.get(Agent, agent_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Agent 不存在: {agent_id}")
+
+    now = now_ms()
+    row = Memory(
+        workspace_id=src.workspace_id,
+        agent_id=agent_id,
+        scope=scope,
+        kind=src.kind,
+        content=content[:4000],
+        source="manual",          # 复制是人工动作，不是自动沉淀
+        status="active",          # 既然人主动复制，就不必再过一遍候选确认
+        importance=src.importance,
+        ttl_s=src.ttl_s,
+        created_at=now,
+        updated_at=now,
+    )
+    session.add(row)
+    await session.commit()
+    await session.refresh(row)
+    names = await _agent_names(session, [row.agent_id])
+    return _to_read(row, names.get(row.agent_id or ""))
+
+
 @router.patch("/{memory_id}", response_model=MemoryRead)
 async def update_memory(
     memory_id: str, payload: MemoryUpdate, session: AsyncSession = Depends(get_session)
@@ -316,6 +369,23 @@ async def update_memory(
         row.scope = payload.scope
     if payload.ttl_s is not None:
         row.ttl_s = payload.ttl_s
+
+    # 改归属。归属只有一个语义来源（agent_id），scope 跟着它走 ——
+    # 这样就不会出现"scope=global 却绑着某个 agent"这种自相矛盾的状态。
+    #   · None（不传）→ 不改
+    #   · ""（空串） → 改成全局记忆
+    #   · agent id   → 绑到该 Agent（会做存在性校验）
+    if payload.agent_id is not None:
+        if payload.agent_id == "":
+            row.agent_id = None
+            row.scope = "global"
+        else:
+            if await session.get(Agent, payload.agent_id) is None:
+                raise HTTPException(
+                    status.HTTP_404_NOT_FOUND, f"Agent 不存在: {payload.agent_id}"
+                )
+            row.agent_id = payload.agent_id
+            row.scope = "agent"
     row.updated_at = now_ms()
     await session.commit()
     await session.refresh(row)

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, fmt } from "@/lib/api";
 import type { Agent, Memory, MemoryStats } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
+import { MemoryCopyDialog } from "@/components/MemoryCopyDialog";
 
 const KIND_LABEL: Record<string, string> = {
   fact: "事实",
@@ -44,9 +45,12 @@ export default function MemoriesPage() {
   // 新建
   const [draft, setDraft] = useState("");
   const [draftKind, setDraftKind] = useState("fact");
-  const [draftScope, setDraftScope] = useState("global");
+  /** 新记忆归给谁："__global__" = 所有助手共用，否则是某个 Agent 的 id */
+  const [draftOwner, setDraftOwner] = useState("__global__");
   const [showMore, setShowMore] = useState(false);
   const [busy, setBusy] = useState(false);
+  /** 正在复制哪条记忆（null = 没在复制） */
+  const [copying, setCopying] = useState<Memory | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -87,14 +91,15 @@ export default function MemoriesPage() {
       fb.warn("内容不能为空");
       return;
     }
-    // 没选具体助手就按"所有助手可用"处理，不再用报错打断用户
-    const effectiveScope = draftScope === "agent" && !agentId ? "global" : draftScope;
+    // 归属由用户直接选定，不再"跟着页面上方的筛选走"——那样很绕
+    // （原来要先在下面按助手筛一遍，"只给某个助手"才可选）
+    const isGlobal = draftOwner === "__global__";
     setBusy(true);
     try {
       await api.createMemory({
         content,
-        agent_id: effectiveScope === "global" ? null : agentId || null,
-        scope: effectiveScope,
+        agent_id: isGlobal ? null : draftOwner,
+        scope: isGlobal ? "global" : "agent",
         kind: draftKind,
         active: true,
       });
@@ -320,14 +325,18 @@ export default function MemoriesPage() {
               </select>
             </div>
             <div>
-              <label className="label">给谁用</label>
-              <select className="input w-40" value={draftScope} onChange={(e) => setDraftScope(e.target.value)}>
-                <option value="global">所有助手都能用（默认）</option>
-                <option value="agent" disabled={!agentId}>
-                  {agentId
-                    ? `只给「${agents.find((a) => a.id === agentId)?.name ?? agentId}」用`
-                    : "只给某一个助手用（需先在下方筛选）"}
-                </option>
+              <label className="label">归给谁</label>
+              <select
+                className="input w-48"
+                value={draftOwner}
+                onChange={(e) => setDraftOwner(e.target.value)}
+              >
+                <option value="__global__">所有助手共用</option>
+                {agents.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name} 专有
+                  </option>
+                ))}
               </select>
             </div>
           </div>
@@ -388,8 +397,7 @@ export default function MemoriesPage() {
               <tr>
                 <th className="text-left px-3 py-2.5">内容</th>
                 <th className="text-left px-3 py-2.5 w-20">类型</th>
-                <th className="text-left px-3 py-2.5 w-32">Agent</th>
-                <th className="text-left px-3 py-2.5 w-20">谁能用</th>
+                <th className="text-left px-3 py-2.5 w-36">归属</th>
                 <th className="text-right px-3 py-2.5 w-16">被用过</th>
                 <th className="text-left px-3 py-2.5 w-24">更新</th>
                 <th className="text-left px-3 py-2.5 w-40">操作</th>
@@ -427,8 +435,13 @@ export default function MemoriesPage() {
                   <td className="px-3">
                     <KindTag kind={m.kind} />
                   </td>
-                  <td className="px-3 text-[var(--color-muted)]">{m.agent_name ?? "—"}</td>
-                  <td className="px-3 text-[var(--color-muted)]">{WHO_LABEL[m.scope] ?? m.scope}</td>
+                  <td className="px-3 text-[var(--color-muted)]">
+                    {m.scope === "global" ? (
+                      <span>所有助手共用</span>
+                    ) : (
+                      m.agent_name ?? <span title="绑定的助手已被删除">（已失效）</span>
+                    )}
+                  </td>
                   <td className="px-3 text-right mono" title={m.last_hit_at ? `最后使用：${fmt.time(m.last_hit_at)}` : "还没用过"}>
                     {m.hits}
                   </td>
@@ -437,6 +450,13 @@ export default function MemoriesPage() {
                     <div className="flex gap-1 whitespace-nowrap">
                       <button className="btn text-[11px] px-2 py-1" onClick={() => void edit(m)}>
                         编辑
+                      </button>
+                      <button
+                        className="btn text-[11px] px-2 py-1"
+                        title="复制一份并绑定到别的助手（原件不动）"
+                        onClick={() => setCopying(m)}
+                      >
+                        复制到…
                       </button>
                       {m.status !== "active" && (
                         <button className="btn text-[11px] px-2 py-1" onClick={() => void setStatusOf(m, "active")}>
@@ -469,7 +489,22 @@ export default function MemoriesPage() {
       <p className="text-[11.5px] text-[var(--color-muted)] mt-3">
         相关设置在每个 Agent 的「记忆」面板里。
         长期没被用到的记忆会自动降低优先级。
+        <br />
+        要让多个助手共用同一条内容，用「复制到…」—— 复制出的副本单独绑定，原件不受影响。
       </p>
+
+      {copying && (
+        <MemoryCopyDialog
+          key={copying.id}
+          memory={copying}
+          agents={agents}
+          onClose={() => setCopying(null)}
+          onCopied={async () => {
+            setCopying(null);
+            await load();
+          }}
+        />
+      )}
     </div>
   );
 }

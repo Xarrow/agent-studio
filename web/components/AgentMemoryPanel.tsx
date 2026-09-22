@@ -10,9 +10,13 @@
  *
  * 现在的映射：
  *   召回开关 + 自动沉淀开关  →  一个「记忆」总开关
- *   scope: agent | global    →  「交给谁用」两个自然语言选项（在记忆页里）
- *   中间表绑定               →  已移除（跨 Agent 借用属于进阶能力，界面上不再暴露）
+ *   一条记忆归属一个 Agent    →  面板只分两栏：「它自己的」和「所有助手共用的」
+ *   需要共用同一条内容        →  「复制到它」（复制一份再绑定，原件不动）
  *   top_k/注入预算/压缩阈值   →  「高级设置」（默认收起，全部换成人话）
+ *
+ * 绑定模型（用户拍板）：**一条记忆同时只属于一个 Agent**。共享靠复制实现，
+ * 而不是让一条记忆同时挂多个 Agent —— 那样一方改动会牵动另一方，
+ * 行为难以预期，也没法追责。
  */
 
 import Link from "next/link";
@@ -31,9 +35,10 @@ const KIND_LABEL: Record<string, string> = {
 export function AgentMemoryPanel({ agentId }: { agentId: string }) {
   const fb = useFeedback();
   const [policy, setPolicy] = useState<MemoryPolicy | null>(null);
-  const [usable, setUsable] = useState<Memory[]>([]);
-  const [bindings, setBindings] = useState<Set<string>>(new Set());
-  const [pool, setPool] = useState<Memory[]>([]);
+  /** 归属它自己的记忆 */
+  const [own, setOwn] = useState<Memory[]>([]);
+  /** 所有助手共用的记忆（它也能用到） */
+  const [shared, setShared] = useState<Memory[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [q, setQ] = useState("");
@@ -42,16 +47,16 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [p, u, b, all] = await Promise.all([
+      const [p, mine, shared] = await Promise.all([
         api.agentMemoryPolicy(agentId),
-        api.agentMemories(agentId),
-        api.agentMemoryBindings(agentId),
-        api.memories({ status: "active" }),
+        // 归属它自己的（scope=agent 会把全局的排除掉）
+        api.memories({ agentId, scope: "agent", status: "active" }),
+        // 所有助手共用的
+        api.memories({ scope: "global", status: "active" }),
       ]);
       setPolicy(p);
-      setUsable(u);
-      setBindings(new Set(b.memory_ids));
-      setPool(all);
+      setOwn(mine);
+      setShared(shared);
     } catch (e) {
       fb.error("加载记忆配置失败", e instanceof Error ? e.message : String(e));
     } finally {
@@ -62,6 +67,20 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /** 把一条共用记忆复制一份，绑定给当前助手（原件保持共用，不动） */
+  const copyToThisAgent = async (m: Memory) => {
+    setBusy(true);
+    try {
+      await api.duplicateMemory(m.id, { agent_id: agentId, scope: "agent" });
+      fb.success("已复制给它", "副本归它专有，之后单独改不会影响共用的那条。");
+      await load();
+    } catch (e) {
+      fb.error("复制失败", e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const patch = async (p: Partial<MemoryPolicy>) => {
     setBusy(true);
@@ -118,7 +137,12 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
 
         <div className="mt-3 pt-3 border-t border-[var(--color-border)] flex items-center gap-3 flex-wrap">
           <span className="text-[12.5px]">
-            它当前记得 <strong>{usable.length}</strong> 条
+            它当前记得 <strong>{own.length + shared.length}</strong> 条
+            {shared.length > 0 && (
+              <span className="text-[var(--color-muted)]">
+                （自己的 {own.length} + 共用的 {shared.length}）
+              </span>
+            )}
           </span>
           <Link
             className="text-[12px] hover:underline"
@@ -135,36 +159,64 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
         </div>
       </section>
 
-      {/* ── 它记住了什么 ───────────────────────────────────────── */}
+      {/* ── 它自己的记忆 ───────────────────────────────────────── */}
       <section className="card p-4">
-        <h3 className="text-[13px] font-medium mb-3">它记住的内容（{usable.length}）</h3>
-        {usable.length === 0 ? (
+        <h3 className="text-[13px] font-medium mb-3">它自己的记忆（{own.length}）</h3>
+        {own.length === 0 ? (
           <p className="text-[12.5px] text-[var(--color-muted)]">
-            还没有。和它聊几次，或到「记忆」页手动添加一条。
+            还没有。和它聊几次会自动沉淀，或到「记忆」页添加一条并归给它。
           </p>
         ) : (
           <div className="space-y-1.5">
-            {usable.map((m) => {
-              return (
-                <div key={m.id} className="p-2.5 rounded-md bg-[var(--color-surface-2)]">
-                  <div className="text-[12.5px] break-words">{m.content}</div>
-                  <div className="flex gap-2 mt-1 text-[10.5px] text-[var(--color-muted)] flex-wrap items-center">
-                    <span>{KIND_LABEL[m.kind] ?? m.kind}</span>
-                    <span>·</span>
-                    <span>被用过 {m.hits} 次</span>
-                    {m.scope === "global" && (
-                      <>
-                        <span>·</span>
-                        <span>所有 Agent 共用</span>
-                      </>
-                    )}
-                  </div>
+            {own.map((m) => (
+              <div key={m.id} className="p-2.5 rounded-md bg-[var(--color-surface-2)]">
+                <div className="text-[12.5px] break-words">{m.content}</div>
+                <div className="flex gap-2 mt-1 text-[10.5px] text-[var(--color-muted)] flex-wrap items-center">
+                  <span>{KIND_LABEL[m.kind] ?? m.kind}</span>
+                  <span>·</span>
+                  <span>被用过 {m.hits} 次</span>
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
         )}
+      </section>
 
+      {/* ── 所有助手共用的记忆 ─────────────────────────────────── */}
+      <section className="card p-4">
+        <h3 className="text-[13px] font-medium mb-1">所有助手共用的记忆（{shared.length}）</h3>
+        <p className="text-[11.5px] text-[var(--color-muted)] mb-3">
+          这些它对每个助手都生效。想让某个助手单独拥有一份（可以各自改、互不影响），
+          用「复制到它」。
+        </p>
+        {shared.length === 0 ? (
+          <p className="text-[12.5px] text-[var(--color-muted)]">还没有共用记忆。</p>
+        ) : (
+          <div className="space-y-1.5">
+            {shared.map((m) => (
+              <div key={m.id} className="p-2.5 rounded-md bg-[var(--color-surface-2)]">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[12.5px] break-words">{m.content}</div>
+                    <div className="flex gap-2 mt-1 text-[10.5px] text-[var(--color-muted)] flex-wrap items-center">
+                      <span>{KIND_LABEL[m.kind] ?? m.kind}</span>
+                      <span>·</span>
+                      <span>被用过 {m.hits} 次</span>
+                    </div>
+                  </div>
+                  <button
+                    className="btn text-[11px] px-2 py-1 shrink-0"
+                    disabled={busy}
+                    title="复制一份绑定给当前助手，之后可以单独修改"
+                    onClick={() => void copyToThisAgent(m)}
+                  >
+                    复制到它
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* ── 高级设置（默认收起，术语全部翻译成人话） ───────────── */}
