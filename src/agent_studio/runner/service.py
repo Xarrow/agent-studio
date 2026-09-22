@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 import zlib
 from typing import Any
 
@@ -43,6 +44,10 @@ from ..security.crypto import decrypt
 from .metrics import MetricsCollector
 
 logger = logging.getLogger(__name__)
+
+#: Run 的终态（与 api/runs.py 的 TERMINAL_STATUSES 保持同义；
+#: 这里单独定义是为了不让 runner 反向依赖 api 层）
+RUN_TERMINAL: frozenset[str] = frozenset({"ok", "error", "aborted"})
 
 
 def query_text(run_input: Any) -> str:
@@ -179,6 +184,31 @@ class RunService:
     def is_running(self, run_id: str) -> bool:
         task = self._tasks.get(run_id)
         return task is not None and not task.done()
+
+    async def wait(self, run_id: str, timeout: float | None = None) -> Run:
+        """等这次执行结束，返回结束时的 Run 快照。
+
+        给编排层（Playground）串联多个 Run 用 —— ``start()`` 是 fire-and-forget
+        的，编排需要知道"这一步什么时候能进下一步"。
+
+        两个刻意的设计：
+        - **轮询查库而不是等内存里的 asyncio.Task**：子 Run 有可能由另一个
+          进程接管（服务重启后继续），查库才是唯一可靠的真相来源。
+          0.3 秒间隔对秒级的 LLM 调用完全够。
+        - **``waiting_hitl`` 也立即返回**：Playground 不支持中途人工确认，
+          与其无限等下去，不如让编排层把这次编排标成 partial 并说明原因。
+        """
+        deadline = time.monotonic() + timeout if timeout else None
+        while True:
+            async with SessionLocal() as session:
+                run = await session.get(Run, run_id)
+                if run is None:
+                    raise LookupError(f"Run 不存在: {run_id}")
+                if run.status in RUN_TERMINAL or run.status == "waiting_hitl":
+                    return run
+            if deadline is not None and time.monotonic() > deadline:
+                raise TimeoutError(f"等待 Run {run_id} 超时（{timeout}s）")
+            await asyncio.sleep(0.3)
 
     # ------------------------------------------------------------------ #
     async def _execute(self, run_id: str, definition: AgentDefinition, run_input: Any) -> None:

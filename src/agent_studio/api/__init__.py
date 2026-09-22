@@ -7,6 +7,7 @@ from . import (
     credentials,
     memories,
     openai_compat,
+    orchestrations,
     runs,
     runtimes,
     sessions,
@@ -24,6 +25,7 @@ api_router.include_router(runs.router)          # /api/runs
 api_router.include_router(sessions.router)      # /api/sessions（多轮会话）
 api_router.include_router(memories.router)      # /api/memories（长期记忆）
 api_router.include_router(memories.agent_router)  # /api/agents/{id}/memories + memory-policy
+api_router.include_router(orchestrations.router)  # /api/orchestrations（Playground 多助手编排）
 
 # OpenAI 兼容层：任何 OpenAI 客户端都能直接用这些 Agent
 # （model = Agent，messages → 会话历史，text_delta → choices[].delta）

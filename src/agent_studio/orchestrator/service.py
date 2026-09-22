@@ -1,0 +1,506 @@
+"""编排器 —— 多助手协作的执行大脑。
+
+职责边界（很重要）
+------------------
+编排器**只做三件事**：
+
+1. 决定谁先跑、谁和谁同时跑（模式）
+2. 在步骤之间传递数据（上一步的产出怎么进下一步）
+3. 汇总出最终结果
+
+**单步执行完全交给 ``runner.run_service``** —— 编排器不碰 runtime、不碰
+AgentScope、不碰事件流。所以：
+
+- 每个子步骤都是一条普通的 ``run`` 记录 → 日志、耗时、TTFT、分色执行过程、
+  断线回放**全部白送**（前端复用同一套 RunTimeline）
+- 换运行时（agentscope → pi → …）**编排代码一行都不用改**
+
+四种模式
+--------
+| 模式 | 怎么跑 | 最终结果 |
+|---|---|---|
+| ``single`` | 一个助手跑一次 | 它的产出 |
+| ``serial`` | 按槽位顺序，**每步由用户决定是否接收上一步产出** | 最后一步的产出 |
+| ``parallel`` | 所有助手同时跑，各自拿同一份任务 | 各步产出的汇总（供对比） |
+| ``master_worker`` | 主控拆任务 → 干活的分头做 → **主控汇总** | **主控的汇总结论** |
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import re
+from typing import Any
+
+from ..db import SessionLocal
+from ..models import Agent, Orchestration, Run, now_ms
+from ..schemas import AgentDefinition
+
+logger = logging.getLogger(__name__)
+
+#: 单个子步骤最长等多久（秒）。够跑完一次带工具的多轮推理。
+STEP_TIMEOUT_S = 900
+
+#: 一次编排最多允许的步骤数（防手滑拖进来几十个把账单打爆）
+MAX_STEPS = 12
+
+
+class OrchestratorError(Exception):
+    """编排层面的错误（参数不对、Agent 缺失等）。"""
+
+
+# --------------------------------------------------------------------------- #
+# 提示词（主从模式用）
+# --------------------------------------------------------------------------- #
+_PLAN_PROMPT = """你是一个任务协调者。用户交给整个团队的任务是：
+
+{task}
+
+团队里有 {n} 位助手。请你把任务拆成 {n} 个子任务，每位助手负责一个。
+
+要求：
+1. 每个子任务要**具体、可独立完成**，写清楚要产出什么
+2. 子任务之间**不要重复**
+3. **只输出一个 JSON 数组**，不要任何解释、不要 markdown 代码块，格式严格如下：
+["第一个子任务", "第二个子任务", ...]
+"""
+
+_SUMMARY_PROMPT = """你是一个任务协调者。用户交给整个团队的任务是：
+
+{task}
+
+各位助手已经完成了各自的部分，产出如下：
+
+{parts}
+
+请你**综合**以上所有结果，直接给出对用户任务的最终答复。
+要求：不要罗列"某某助手说了什么"，而是把内容整合成一份完整、连贯的答复。
+"""
+
+
+class Orchestrator:
+    """编排执行器。无状态（所有状态都在库里），可以随处实例化。"""
+
+    # ------------------------------------------------------------------ #
+    # 入口
+    # ------------------------------------------------------------------ #
+    async def run(self, orc_id: str, spec: dict[str, Any]) -> None:
+        """执行一次编排（通常作为后台任务被调用）。"""
+        mode = spec.get("mode", "single")
+        handlers = {
+            "single": self._single,
+            "serial": self._serial,
+            "parallel": self._parallel,
+            "master_worker": self._master_worker,
+        }
+        handler = handlers.get(mode)
+        if handler is None:
+            await self._finish(orc_id, "error", error=f"未知编排模式: {mode}")
+            return
+
+        try:
+            await self._patch(orc_id, status="running")
+            await handler(orc_id, spec)
+        except asyncio.CancelledError:
+            await self._finish(orc_id, "aborted", error="编排被中止")
+            raise
+        except Exception as exc:  # noqa: BLE001 —— 兜底，任何异常都要落库
+            logger.exception("编排 %s 执行失败", orc_id)
+            await self._finish(orc_id, "error", error=f"{type(exc).__name__}: {exc}")
+
+    # ------------------------------------------------------------------ #
+    # 四种模式
+    # ------------------------------------------------------------------ #
+    async def _single(self, orc_id: str, spec: dict[str, Any]) -> None:
+        """单个助手：跑一次就完事。"""
+        steps = self._steps(spec)
+        task = self._task(spec)
+
+        run = await self._start_step(orc_id, steps[0]["agent_id"], "worker", 0, task)
+        done = await self._await(run.id)
+
+        await self._finish(
+            orc_id,
+            status=self._status_of([done]),
+            output={"content": self._text(done)},
+            runs=[done],
+        )
+
+    async def _serial(self, orc_id: str, spec: dict[str, Any]) -> None:
+        """串行：按槽位顺序跑，每步是否接收上一步产出由用户逐项决定。
+
+        某步失败**不中断**编排 —— 后面的步骤可能还能补救（比如"翻译失败但
+        校对可以基于原文直接干"）。失败的步骤计数进 partial。
+        """
+        steps = self._steps(spec)
+        task = self._task(spec)
+
+        prev_text: str | None = None
+        done: list[Run] = []
+
+        for i, step in enumerate(steps):
+            carry = bool(step.get("carry_prev"))
+            payload = self._compose(task, prev_text if carry else None, i)
+            run = await self._start_step(orc_id, step["agent_id"], "worker", i, payload)
+            r = await self._await(run.id)
+            done.append(r)
+            # 只有成功且有内容才更新"上一步产出"，失败的输出传下去没意义
+            if r.status == "ok" and (t := self._text(r)):
+                prev_text = t
+
+        await self._finish(
+            orc_id,
+            status=self._status_of(done),
+            output={"content": prev_text or ""},
+            runs=done,
+        )
+
+    async def _parallel(self, orc_id: str, spec: dict[str, Any]) -> None:
+        """并行：所有助手同时开跑，各自拿同一份任务，互不干扰。"""
+        steps = self._steps(spec)
+        task = self._task(spec)
+
+        # 先把所有 Run 建好并启动，让它们真正并发
+        runs = [
+            await self._start_step(orc_id, step["agent_id"], "worker", i, task)
+            for i, step in enumerate(steps)
+        ]
+        # return_exceptions=True：一个挂了不能拖垮其余
+        results = await asyncio.gather(
+            *(self._await(r.id) for r in runs), return_exceptions=True
+        )
+
+        done: list[Run] = []
+        for r, res in zip(runs, results):
+            if isinstance(res, BaseException):
+                logger.warning("并行分支 %s 异常: %s", r.id, res)
+                # 异常分支不阻塞汇总：把它当作"这一步没产出"
+                continue
+            done.append(res)
+
+        # 汇总成可对比的分段文本
+        parts = [
+            f"【{self._agent_name_of(r)}】\n{self._text(r)}" for r in done
+        ]
+        await self._finish(
+            orc_id,
+            status=self._status_of(done),
+            output={"content": "\n\n".join(parts)},
+            runs=done,
+        )
+
+    async def _master_worker(self, orc_id: str, spec: dict[str, Any]) -> None:
+        """主从：主控拆任务 → 干活的做 → **主控汇总出最终结果**。
+
+        拆解失败会**降级为「每个 worker 都拿原任务」**而不是直接报错 ——
+        对用户来说，拿到一份"各干各的"的结果，也远比一个错误提示有用。
+        """
+        task = self._task(spec)
+        master_id = spec.get("master_agent_id")
+        steps = self._steps(spec)
+        worker_mode = spec.get("worker_mode") or "parallel"
+        n = len(steps)
+
+        if not master_id:
+            raise OrchestratorError("主从模式必须指定一个主控助手")
+        if n == 0:
+            raise OrchestratorError("主从模式至少需要一位干活的助手")
+
+        done: list[Run] = []
+
+        # ── 第一步：主控拆任务 ────────────────────────────────────────
+        plan_payload = _PLAN_PROMPT.format(task=task, n=n)
+        plan_run = await self._start_step(orc_id, master_id, "master", 0, plan_payload)
+        plan_done = await self._await(plan_run.id)
+        done.append(plan_done)
+
+        subtasks = self._parse_plan(self._text(plan_done), n)
+        if subtasks is None:
+            logger.info("编排 %s：主控没给出可解析的任务清单，降级为各拿原任务", orc_id)
+            subtasks = [task] * n
+        # 数量对不上时（模型有时多给或少给）按位补齐/截断
+        subtasks = (subtasks + [task] * n)[:n]
+
+        # ── 第二步：干活的做 ──────────────────────────────────────────
+        worker_runs: list[Run] = []
+        if worker_mode == "serial":
+            prev: str | None = None
+            for i, step in enumerate(steps):
+                payload = self._compose_worker(subtasks[i], prev, i)
+                r = await self._start_step(orc_id, step["agent_id"], "worker", i + 1, payload)
+                d = await self._await(r.id)
+                worker_runs.append(d)
+                if d.status == "ok" and (t := self._text(d)):
+                    prev = t
+        else:
+            runs = [
+                await self._start_step(
+                    orc_id, step["agent_id"], "worker", i + 1, subtasks[i]
+                )
+                for i, step in enumerate(steps)
+            ]
+            results = await asyncio.gather(
+                *(self._await(r.id) for r in runs), return_exceptions=True
+            )
+            for r, res in zip(runs, results):
+                if isinstance(res, BaseException):
+                    logger.warning("主从分支 %s 异常: %s", r.id, res)
+                    continue
+                worker_runs.append(res)
+
+        done.extend(worker_runs)
+
+        # ── 第三步：主控汇总（这一步的产出就是整个编排的最终结果）─────
+        parts = "\n\n".join(
+            f"【{self._agent_name_of(r)}】\n{self._text(r) or '（无产出）'}"
+            for r in worker_runs
+        )
+        summary_payload = _SUMMARY_PROMPT.format(task=task, parts=parts or "（各位助手都没有产出）")
+        sum_run = await self._start_step(
+            orc_id, master_id, "master", n + 1, summary_payload
+        )
+        sum_done = await self._await(sum_run.id)
+        done.append(sum_done)
+
+        await self._finish(
+            orc_id,
+            status=self._status_of(done),
+            output={"content": self._text(sum_done)},
+            runs=done,
+        )
+
+    # ------------------------------------------------------------------ #
+    # 步骤：建 Run + 启动（复用运行时的全套能力）
+    # ------------------------------------------------------------------ #
+    async def _start_step(
+        self,
+        orc_id: str,
+        agent_id: str,
+        role: str,
+        order: int,
+        payload: str,
+    ) -> Run:
+        """建一条 run 记录并启动它。
+
+        刻意**不**经过 ``POST /api/runs`` 那层 HTTP —— 直接走库 + run_service，
+        少一次自打自的请求。但 Agent 定义解析、快照冻结、启动方式与那边一致。
+        """
+        from ..runner import run_service
+
+        async with SessionLocal() as session:
+            agent = await session.get(Agent, agent_id)
+            if agent is None:
+                raise OrchestratorError(f"助手不存在: {agent_id}")
+
+            definition = AgentDefinition.model_validate(agent.definition)
+            run = Run(
+                agent_id=agent.id,
+                agent_version=agent.version,
+                runtime=definition.runtime,
+                status="pending",
+                input={"text": payload},
+                # 冻结定义快照：与 /api/runs 一致，保证这次执行可复现
+                definition_snapshot=definition.model_dump(
+                    mode="json", exclude={"model": {"api_key"}}
+                ),
+                started_at=now_ms(),
+                orchestration_id=orc_id,
+                orch_role=role,
+                order_index=order,
+            )
+            session.add(run)
+            await session.commit()
+            await session.refresh(run)
+
+        await run_service.start(run.id, definition, payload)
+        return run
+
+    async def _await(self, run_id: str) -> Run:
+        """等一个子 Run 结束（超时即当失败，不拖住整个编排）。"""
+        from ..runner import run_service
+
+        try:
+            return await run_service.wait(run_id, timeout=STEP_TIMEOUT_S)
+        except TimeoutError:
+            logger.warning("子 Run %s 等待超时", run_id)
+            async with SessionLocal() as session:
+                run = await session.get(Run, run_id)
+                if run is not None:
+                    run.status = "error"
+                    run.error = f"等待超时（>{STEP_TIMEOUT_S}s）"
+                    await session.commit()
+                    return run
+            raise
+
+    # ------------------------------------------------------------------ #
+    # 输入拼装
+    # ------------------------------------------------------------------ #
+    def _compose(self, task: str, prev_text: str | None, index: int) -> str:
+        """串行模式下给某一步拼输入。
+
+        用户在编排界面上逐个勾选"是否带上一步结果"，所以这里只在
+        ``carry_prev`` 为真时拼接；拼接时明确标注来源，模型才不会误当成
+        自己的任务。
+        """
+        if index == 0 or not prev_text:
+            return task
+        return (
+            f"{task}\n\n"
+            f"---\n"
+            f"上一步的产出（供你参考，不必照抄）：\n{prev_text}\n"
+            f"---\n"
+            f"现在请完成你这一步。"
+        )
+
+    def _compose_worker(self, subtask: str, prev_text: str | None, index: int) -> str:
+        """主从模式（worker 串行）下给某一个 worker 拼输入。"""
+        if index == 0 or not prev_text:
+            return subtask
+        return (
+            f"{subtask}\n\n"
+            f"---\n"
+            f"上一位助手已经完成的部分（供参考）：\n{prev_text}\n"
+            f"---\n"
+            f"请完成你负责的部分。"
+        )
+
+    # ------------------------------------------------------------------ #
+    # 主控的任务清单解析
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def _parse_plan(text: str, expected: int) -> list[str] | None:
+        """从主控的输出里抠出子任务清单。
+
+        模型很爱加 ```json 围栏或前后废话，所以先剥围栏、再找第一个 JSON 数组。
+        实在解析不出来返回 None（调用方降级处理）。
+        """
+        if not text:
+            return None
+        cleaned = text.strip()
+        # 剥掉 markdown 代码围栏
+        fence = re.search(r"```(?:json)?\s*(.+?)```", cleaned, re.S)
+        if fence:
+            cleaned = fence.group(1).strip()
+        # 找第一个 [...] 数组
+        start, end = cleaned.find("["), cleaned.rfind("]")
+        if start >= 0 and end > start:
+            candidate = cleaned[start : end + 1]
+            try:
+                parsed = json.loads(candidate)
+                if isinstance(parsed, list) and parsed:
+                    return [str(x).strip() for x in parsed if str(x).strip()]
+            except json.JSONDecodeError:
+                pass
+        # 退一步：按行/编号切分（"1. xxx" / "- xxx"）
+        lines = [
+            re.sub(r"^\s*(?:[-*•]|\d+[.、)])\s*", "", ln).strip()
+            for ln in cleaned.splitlines()
+        ]
+        picked = [ln for ln in lines if len(ln) > 4]
+        if picked:
+            return picked[:expected] if len(picked) >= expected else None
+        return None
+
+    # ------------------------------------------------------------------ #
+    # 收尾与状态
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def _status_of(runs: list[Run]) -> str:
+        """由各子步骤的状态推出整次编排的状态。"""
+        if not runs:
+            return "error"
+        oks = sum(1 for r in runs if r.status == "ok")
+        if oks == len(runs):
+            return "ok"
+        if oks == 0:
+            return "error"
+        return "partial"
+
+    async def _finish(
+        self,
+        orc_id: str,
+        status: str,
+        *,
+        output: dict[str, Any] | None = None,
+        error: str | None = None,
+        runs: list[Run] | None = None,
+    ) -> None:
+        """落终态：状态、最终结果、错误、汇总用量。"""
+        usage = self._merge_usage(runs or [])
+        async with SessionLocal() as session:
+            orc = await session.get(Orchestration, orc_id)
+            if orc is None:  # pragma: no cover
+                return
+            orc.status = status
+            if output is not None:
+                orc.output = output
+            if error:
+                orc.error = error
+            orc.usage = usage
+            orc.ended_at = now_ms()
+            await session.commit()
+
+    async def _patch(self, orc_id: str, **fields: Any) -> None:
+        async with SessionLocal() as session:
+            orc = await session.get(Orchestration, orc_id)
+            if orc is None:  # pragma: no cover
+                return
+            for k, v in fields.items():
+                setattr(orc, k, v)
+            await session.commit()
+
+    @staticmethod
+    def _merge_usage(runs: list[Run]) -> dict[str, Any]:
+        """把各子 Run 的用量加起来（用户最关心"这一趟花了多少"）。"""
+        total: dict[str, Any] = {
+            "llm_calls": 0,
+            "tool_calls": 0,
+            "tokens_in": 0,
+            "tokens_out": 0,
+            "llm_ms": 0,
+            "tool_ms": 0,
+            "steps": len(runs),
+        }
+        for r in runs:
+            u = r.usage or {}
+            for k in ("llm_calls", "tool_calls", "tokens_in", "tokens_out", "llm_ms", "tool_ms"):
+                v = u.get(k)
+                if isinstance(v, (int, float)):
+                    total[k] += int(v)
+        return total
+
+    # ------------------------------------------------------------------ #
+    # 小工具
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def _task(spec: dict[str, Any]) -> str:
+        return str(spec.get("task") or "").strip()
+
+    @staticmethod
+    def _steps(spec: dict[str, Any]) -> list[dict[str, Any]]:
+        steps = spec.get("steps") or []
+        if not isinstance(steps, list) or not steps:
+            raise OrchestratorError("编排至少要有一个助手")
+        if len(steps) > MAX_STEPS:
+            raise OrchestratorError(f"一次编排最多 {MAX_STEPS} 个助手")
+        return steps
+
+    @staticmethod
+    def _text(run: Run | None) -> str:
+        """取一次执行的最终文本。"""
+        if run is None or not run.output:
+            return ""
+        out = run.output
+        if isinstance(out, dict):
+            return str(out.get("content") or "").strip()
+        return str(out).strip()
+
+    @staticmethod
+    def _agent_name_of(run: Run) -> str:
+        snap = run.definition_snapshot or {}
+        return str(snap.get("name") or run.agent_id)
+
+
+#: 全局单例
+orchestrator = Orchestrator()

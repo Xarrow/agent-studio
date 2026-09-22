@@ -297,3 +297,70 @@ export interface MemoryExtractResult {
   created: number;
   skipped: { content?: string; reason: string }[];
 }
+
+/* ------------------------------ Playground 编排 ------------------------------ */
+
+/** 编排模式 */
+export type OrchestrationMode = "single" | "serial" | "parallel" | "master_worker";
+
+/** 编排里的一个槽位（前端编排态） */
+export interface OrchStep {
+  agent_id: string;
+  /** 串行模式：这一步要不要接收上一步的产出（用户在界面上逐个勾选） */
+  carry_prev: boolean;
+}
+
+/** 编排下的一个子步骤（后端返回，就是一条 Run 的摘要） */
+export interface OrchestrationStepRead {
+  run_id: string;
+  agent_id: string;
+  agent_name: string;
+  role: string | null;
+  order_index: number | null;
+  status: string;
+  usage: Record<string, number>;
+  error: string | null;
+  started_at: number;
+  ended_at: number | null;
+}
+
+export interface Orchestration {
+  id: string;
+  name: string;
+  mode: OrchestrationMode;
+  worker_mode: string | null;
+  status: string;
+  input: Record<string, unknown>;
+  output: Record<string, unknown> | null;
+  usage: Record<string, number>;
+  error: string | null;
+  started_at: number;
+  ended_at: number | null;
+  step_count: number;
+}
+
+export interface OrchestrationDetail extends Orchestration {
+  spec: Record<string, unknown>;
+  steps: OrchestrationStepRead[];
+}
+
+/** 编排实时流的状态快照 */
+export interface OrchestrationStatusEvent {
+  kind: "status";
+  id: string;
+  status: string;
+  output: Record<string, unknown> | null;
+  error: string | null;
+  usage: Record<string, number>;
+  ended_at: number | null;
+  steps: {
+    run_id: string;
+    agent_id: string;
+    agent_name: string;
+    role: string | null;
+    order_index: number | null;
+    status: string;
+    error: string | null;
+    usage: Record<string, number>;
+  }[];
+}

@@ -136,6 +136,15 @@ class Run(Base):
     #: 会话内第几轮（从 1 开始）
     turn_index: Mapped[int | None] = mapped_column(Integer, default=None)
 
+    # ── 编排（Playground）────────────────────────────────────────────────
+    # 三列都可空：NULL 就表示「这是一次独立执行」，所以既有数据和代码不受影响。
+    #: 所属编排（NULL = 不属于任何编排）
+    orchestration_id: Mapped[str | None] = mapped_column(String(32), default=None, index=True)
+    #: 这一步在编排里的角色：master（指挥）/ worker（干活）
+    orch_role: Mapped[str | None] = mapped_column(String(16), default=None)
+    #: 在编排里的序号（从 0 起）；并行时也记槽位序，方便前端按顺序摆
+    order_index: Mapped[int | None] = mapped_column(Integer, default=None)
+
 
 class RunEvent(Base):
     """统一事件流（已归一化）。seq 单调递增，用于配对 start/end 算耗时。"""
@@ -392,3 +401,43 @@ class MemoryPolicy(Base):
     compress_after_turns: Mapped[int] = mapped_column(Integer, default=10)
 
     updated_at: Mapped[int] = mapped_column(Integer, default=now_ms)
+
+# --------------------------------------------------------------------------- #
+# 编排（Playground）—— 多个助手协作完成一件事
+# --------------------------------------------------------------------------- #
+class Orchestration(Base):
+    """一次多助手协作。
+
+    设计要点
+    --------
+    - **不新建执行引擎**：编排下的每个步骤都是一条普通的 ``run`` 记录
+      （通过 ``run.orchestration_id`` / ``orch_role`` / ``order_index`` 关联）。
+      好处是日志、耗时、TTFT、分色执行过程、断线回放**全部复用现成能力**，
+      编排层只负责「串起来 + 传数据」。
+    - ``spec`` 冻结整份编排定义（步骤顺序、每步是否接收上一步产出、主从关系），
+      所以历史记录永远可复现，即使之后 Agent 被改了也一样。
+    - ``output`` 是**最终结果**：单助手/串行/并行模式是最后一步的产出；
+      主从模式是 master 汇总后的结论。
+    """
+
+    __tablename__ = "orchestration"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("orc_"))
+    name: Mapped[str] = mapped_column(String(200), default="")
+    #: single | serial | parallel | master_worker
+    mode: Mapped[str] = mapped_column(String(16), default="single")
+    #: 主从模式下，worker 之间是串行还是并行（serial | parallel）
+    worker_mode: Mapped[str | None] = mapped_column(String(16), default=None)
+    #: 完整编排定义（冻结）：
+    #:   {"mode": ..., "steps": [{"agent_id": ..., "carry_prev": bool}, ...],
+    #:    "master_agent_id": ...}
+    spec: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    input: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    #: pending | running | ok | partial（部分步骤失败但整体有产出）| error | aborted
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    output: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+    error: Mapped[str | None] = mapped_column(Text, default=None)
+    #: 汇总的 token / 成本（各子 run 之和）
+    usage: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    started_at: Mapped[int] = mapped_column(Integer, default=now_ms, index=True)
+    ended_at: Mapped[int | None] = mapped_column(Integer, default=None)

@@ -59,6 +59,10 @@ async def init_db() -> None:
 _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("run", "session_id", "session_id VARCHAR(32)"),
     ("run", "turn_index", "turn_index INTEGER"),
+    # 编排（Playground）：三列都可空，NULL = 独立执行，既有数据不受影响
+    ("run", "orchestration_id", "orchestration_id VARCHAR(32)"),
+    ("run", "orch_role", "orch_role VARCHAR(16)"),
+    ("run", "order_index", "order_index INTEGER"),
 )
 
 

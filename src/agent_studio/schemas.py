@@ -565,3 +565,71 @@ class MemoryExtractResult(BaseModel):
     candidates: list[MemoryRead] = Field(default_factory=list)
     created: int = 0
     skipped: list[dict[str, Any]] = Field(default_factory=list)
+
+# --------------------------------------------------------------------------- #
+# 编排（Playground）—— 多助手协作
+# --------------------------------------------------------------------------- #
+class OrchestrationStep(BaseModel):
+    """编排里的一个槽位。"""
+
+    agent_id: str
+    #: **串行模式下才有意义**：这一步要不要接收上一步的产出。
+    #: 由用户在编排界面上逐个勾选；第一步会被忽略。
+    carry_prev: bool = False
+
+
+class OrchestrationCreate(BaseModel):
+    """发起一次编排。"""
+
+    #: single | serial | parallel | master_worker
+    mode: str = "single"
+    #: 主从模式下，干活的之间怎么跑：parallel（默认）| serial
+    worker_mode: str | None = None
+    #: 主从模式的主控
+    master_agent_id: str | None = None
+    #: 参与的助手（按槽位顺序）；主从模式下这里只放干活的
+    steps: list[OrchestrationStep]
+    #: 任务描述
+    task: str
+    #: 显示名（可空，服务端按模式自动起一个）
+    name: str | None = None
+
+
+class OrchestrationStepRead(BaseModel):
+    """编排下的一个子步骤（就是一条 Run 的摘要）。"""
+
+    run_id: str
+    agent_id: str
+    agent_name: str
+    role: str | None
+    order_index: int | None
+    status: str
+    usage: dict[str, Any] = {}
+    error: str | None = None
+    started_at: int
+    ended_at: int | None = None
+
+
+class OrchestrationRead(BaseModel):
+    """编排摘要（列表用）。"""
+
+    id: str
+    name: str
+    mode: str
+    worker_mode: str | None
+    status: str
+    input: dict[str, Any]
+    output: dict[str, Any] | None
+    usage: dict[str, Any]
+    error: str | None
+    started_at: int
+    ended_at: int | None
+    #: 参与者数量（列表页展示"3 个助手"）
+    step_count: int = 0
+
+
+class OrchestrationDetail(OrchestrationRead):
+    """编排详情（含每个子步骤）。"""
+
+    spec: dict[str, Any]
+    steps: list[OrchestrationStepRead] = []

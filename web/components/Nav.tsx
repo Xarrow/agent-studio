@@ -35,6 +35,12 @@ const USE_ITEMS: Item[] = [
     tip: "像聊天一样让 AI 帮你做事。历史记录会一直留着。",
   },
   {
+    href: "/playground",
+    label: "Playground",
+    icon: "⛓",
+    tip: "编排（Playground）：让几个助手分工干一件事 —— 一个查资料、一个写报告，接力或同时开工，最后由主控汇总。",
+  },
+  {
     href: "/runs",
     label: "Runs",
     icon: "▶",

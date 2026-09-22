@@ -10,6 +10,9 @@ import type {
   MemoryExtractResult,
   MemoryPolicy,
   MemoryStats,
+  Orchestration,
+  OrchestrationDetail,
+  OrchStep,
   Provider,
   Run,
   RunDeleteResult,
@@ -247,7 +250,27 @@ export const api = {
       { method: "DELETE" },
     ),
 
-  // SSE 事件流地址
+  /* ---------------------- Playground（多助手编排） ---------------------- */
+
+  orchestrations: (limit = 50) =>
+    request<Orchestration[]>(`/api/orchestrations?limit=${limit}`),
+  orchestration: (id: string) =>
+    request<OrchestrationDetail>(`/api/orchestrations/${id}`),
+  createOrchestration: (body: {
+    mode: string;
+    worker_mode?: string | null;
+    master_agent_id?: string | null;
+    steps: OrchStep[];
+    task: string;
+    name?: string | null;
+  }) => post<Orchestration>("/api/orchestrations", body),
+  abortOrchestration: (id: string) =>
+    post<{ aborted: number; status: string }>(`/api/orchestrations/${id}/abort`),
+  /** 编排的实时流（聚合所有子步骤的事件） */
+  orchestrationStreamUrl: (id: string) =>
+    `${API_BASE}/api/orchestrations/stream/${id}`,
+
+  // SSE 事件流地址（单次执行）
   streamUrl: (runId: string) => `${API_BASE}/api/runs/stream/${runId}`,
 
   /* ----------------------------- 会话（多轮） ----------------------------- */
