@@ -89,7 +89,12 @@ PROVIDERS: dict[str, ProviderMeta] = {
         name="volcengine",
         display_name="火山引擎（豆包）",
         default_base_url="https://ark.cn-beijing.volces.com/api/v3",
-        models=["doubao-pro-32k", "doubao-pro-128k"],
+        # 注意：方舟的「Agent Plan」类 key 不收 /api/v3（会 401），
+        # 要改用 https://ark.cn-beijing.volces.com/api/plan/v3 —— 且该端点下
+        # 只有部分模型可用（实测 deepseek-v4-flash 可以，doubao-* 会报
+        # UnsupportedModel）。方舟不提供 /models 列表，只能靠填写。
+        models=["deepseek-v4-flash", "doubao-pro-32k", "doubao-pro-128k"],
+        note="Agent Plan 类 key 需把 Base URL 改成 …/api/plan/v3",
         docs_url="https://www.volcengine.com/docs/82379",
     ),
     "ollama": ProviderMeta(

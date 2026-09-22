@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import httpx
 import inspect
 import re
 import time
@@ -182,61 +183,129 @@ async def delete_credential(
 # --------------------------------------------------------------------------- #
 # 连通性测试
 # --------------------------------------------------------------------------- #
-async def _probe(provider: str, api_key: str, base_url: str | None, model_name: str | None):
-    """真实探测：用 AgentScope 的 ``list_models()`` 打一次 provider 接口。
+async def _probe(
+    provider: str, api_key: str, base_url: str | None, model_name: str | None
+):
+    """真实探测：直接打 provider 的 OpenAI 兼容接口，确认 key 到底能不能用。
 
     返回 (ok, models, error, latency_ms)。
+
+    以前这里是调 AgentScope 的 ``list_models()``，**不可靠**：
+      · 有些 provider 的 list_models() 只返回本地静态清单，压根不发请求 ——
+        于是 key 早已失效，界面还报"测试通过"（实测延迟 2ms），
+        用户配好了却跑不起来，排查方向全被带偏（真实踩过）
+      · 有些 provider（如火山引擎方舟）根本没有 ``/models`` 接口
+
+    现在两步都基于真实 HTTP：
+      ① ``GET {base}/models``
+         200            → 清单可信，key 已验证通过
+         401/403        → key 无效，原样带回服务商的报错
+         404/405/其他   → 该家不支持列模型，走 ②
+      ② 用一次极小 chat 调用验证 key（``max_tokens=1``）
+         这样"没有 /models 接口"的服务商也能真正验证，而不是假装成功。
     """
-    from ..runtimes.agentscope_rt.compile import build_model
-    from ..schemas import ModelSpec
+    base = (base_url or "").rstrip("/")
+    meta = get_provider(provider)
+    if not base:
+        return False, [], f"{provider} 没有可用的 Base URL，请填写端点地址", None
 
+    headers = {"Authorization": f"Bearer {api_key}"}
     started = time.perf_counter()
-    try:
-        spec = ModelSpec(provider=provider, name=model_name or "", base_url=base_url)
-        model = build_model(spec, api_key)
-    except Exception as exc:
-        return False, [], f"构造模型失败: {type(exc).__name__}: {exc}", None
 
-    fn = getattr(model, "list_models", None)
-    if not callable(fn):
-        return (
-            True,
-            [],
-            "该 provider 不支持 list_models，已跳过探测（key 已保存）",
-            int((time.perf_counter() - started) * 1000),
-        )
+    def elapsed() -> int:
+        return int((time.perf_counter() - started) * 1000)
+
+    def err_of(resp: httpx.Response) -> str:
+        """从服务商返回体里抽出人话错误（OpenAI 兼容格式：error.message）"""
+        try:
+            body = resp.json()
+            if isinstance(body, dict):
+                e = body.get("error")
+                if isinstance(e, dict) and e.get("message"):
+                    return str(e["message"])
+                if body.get("message"):
+                    return str(body["message"])
+        except Exception:  # noqa: BLE001
+            pass
+        return (resp.text or "").strip()[:220] or f"HTTP {resp.status_code}"
 
     try:
-        result = fn()
-        if inspect.isawaitable(result):
-            result = await result
-        models: list[str] = []
-        items = result if isinstance(result, (list, tuple)) else []
-        for item in items:
-            if isinstance(item, str):
-                # AgentScope 可能返回对象的 repr，尝试提取 name='xxx'
-                m = re.search(r"name='([^']+)'", item)
-                models.append(m.group(1) if m else item[:60])
-            elif isinstance(item, dict):
-                models.append(str(item.get("id") or item.get("name") or item))
-            else:
-                models.append(str(getattr(item, "name", None) or getattr(item, "id", item)))
-        latency = int((time.perf_counter() - started) * 1000)
-        return True, models, None, latency
-    except Exception as exc:
-        latency = int((time.perf_counter() - started) * 1000)
-        return False, [], f"{type(exc).__name__}: {exc}", latency
-    finally:
-        for attr in ("aclose", "close"):
-            closer = getattr(model, attr, None)
-            if callable(closer):
+        async with httpx.AsyncClient(timeout=25.0, follow_redirects=True) as client:
+            # ── ① 试 /models ────────────────────────────────────────────
+            try:
+                r = await client.get(f"{base}/models", headers=headers)
+            except Exception as exc:  # noqa: BLE001
+                return False, [], f"连不上 {base}：{type(exc).__name__}: {exc}", elapsed()
+
+            if r.status_code == 200:
+                models: list[str] = []
                 try:
-                    r = closer()
-                    if inspect.isawaitable(r):
-                        await r
-                except Exception:
+                    data = r.json()
+                    items = data.get("data") if isinstance(data, dict) else data
+                    for it in items or []:
+                        if isinstance(it, dict):
+                            mid = it.get("id") or it.get("name")
+                            if mid:
+                                models.append(str(mid))
+                        elif isinstance(it, str):
+                            models.append(it)
+                except Exception:  # noqa: BLE001
                     pass
-                break
+                return True, models, None, elapsed()
+
+            if r.status_code in (401, 403):
+                return (
+                    False,
+                    [],
+                    f"密钥无效（HTTP {r.status_code}）：{err_of(r)}",
+                    elapsed(),
+                )
+
+            # ── ② 该家不支持列模型 → 用极小 chat 调用验证 key ──────────
+            model = model_name
+            if not model and meta and meta.models:
+                model = meta.models[0]
+            if not model:
+                return (
+                    False,
+                    [],
+                    f"该服务商不支持列出模型（HTTP {r.status_code}），"
+                    "且没有可用的默认模型 —— 请先选好模型再测试。",
+                    elapsed(),
+                )
+
+            try:
+                r2 = await client.post(
+                    f"{base}/chat/completions",
+                    headers={**headers, "Content-Type": "application/json"},
+                    json={
+                        "model": model,
+                        "messages": [{"role": "user", "content": "hi"}],
+                        "max_tokens": 1,
+                    },
+                )
+            except Exception as exc:  # noqa: BLE001
+                return False, [], f"调用失败：{type(exc).__name__}: {exc}", elapsed()
+
+            if r2.status_code == 200:
+                # 通了，但这家不提供模型清单 —— 返回空清单，前端用推荐清单兜底
+                return True, [], None, elapsed()
+            if r2.status_code in (401, 403):
+                return (
+                    False,
+                    [],
+                    f"密钥无效（HTTP {r2.status_code}）：{err_of(r2)}",
+                    elapsed(),
+                )
+            return (
+                False,
+                [],
+                f"HTTP {r2.status_code}（模型 {model}）：{err_of(r2)}",
+                elapsed(),
+            )
+    except Exception as exc:  # noqa: BLE001
+        return False, [], f"{type(exc).__name__}: {exc}", elapsed()
+
 
 
 @router.post("/credentials/{credential_id}/test", response_model=CredentialTestResult)
@@ -269,7 +338,13 @@ async def test_credential(
             models=[], error=msg, checked_at=ts,
         )
 
-    model_name = (payload.model if payload else None) or (meta.models[0] if meta and meta.models else "")
+    # 模型优先级：显式指定 > 凭据自己配的默认模型 > provider 推荐清单的第一个
+    # （原来漏了中间那档，导致用户明明配好了模型，测试却拿 provider 的默认模型去打）
+    model_name = (
+        (payload.model if payload else None)
+        or row.default_model
+        or (meta.models[0] if meta and meta.models else None)
+    )
 
     ok, models, error, latency = await _probe(row.provider, api_key, row.base_url, model_name)
 
@@ -311,7 +386,10 @@ async def list_credential_models(
 
     meta = get_provider(row.provider)
     ok, models, error, latency = await _probe(
-        row.provider, api_key, row.base_url, meta.models[0] if meta and meta.models else None
+        row.provider,
+        api_key,
+        row.base_url,
+        row.default_model or (meta.models[0] if meta and meta.models else None),
     )
     return {
         "ok": ok,
