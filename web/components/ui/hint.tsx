@@ -102,7 +102,7 @@ export function Hint({
           e.stopPropagation();
           setOpen((v) => !v);
         }}
-        className="shrink-0 w-[13px] h-[13px] rounded-full flex items-center justify-center text-[9px] font-bold leading-none transition-colors cursor-help"
+        className="shrink-0 w-[13px] h-[13px] rounded-full flex items-center justify-center text-[9px] font-bold leading-none transition-colors cursor-help relative before:content-[''] before:absolute before:-inset-2 before:rounded-full"
         style={{
           border: "1px solid color-mix(in srgb, var(--color-muted) 55%, transparent)",
           color: "var(--color-muted)",

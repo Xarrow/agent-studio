@@ -123,7 +123,7 @@ export function Nav() {
         <button
           onClick={() => setDrawerOpen(true)}
           aria-label="打开菜单"
-          className="w-9 h-9 -ml-1.5 flex items-center justify-center rounded-md hover:bg-[var(--color-surface-2)]"
+          className="w-11 h-11 -ml-2 flex items-center justify-center rounded-md hover:bg-[var(--color-surface-2)] active:bg-[var(--color-surface-2)]"
         >
           <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
             <path
@@ -157,7 +157,7 @@ export function Nav() {
               <button
                 onClick={() => setDrawerOpen(false)}
                 aria-label="关闭菜单"
-                className="ml-auto w-8 h-8 flex items-center justify-center rounded-md hover:bg-[var(--color-surface-2)]"
+                className="ml-auto w-10 h-10 flex items-center justify-center rounded-md hover:bg-[var(--color-surface-2)]"
               >
                 ✕
               </button>
@@ -194,7 +194,7 @@ export function Nav() {
         <Link
           href="/"
           title="概览"
-          className={`w-9 h-9 flex items-center justify-center rounded-md text-[14px] ${
+          className={`w-11 h-11 flex items-center justify-center rounded-md text-[15px] ${
             pathname === "/" ? "text-[var(--color-accent)] bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)]" : "hover:bg-[var(--color-surface-2)]"
           }`}
         >
@@ -206,7 +206,7 @@ export function Nav() {
             key={l.href}
             href={l.href}
             title={`${l.label} —— ${l.tip}`}
-            className={`w-9 h-9 flex items-center justify-center rounded-md text-[14px] ${
+            className={`w-11 h-11 flex items-center justify-center rounded-md text-[15px] ${
               isActive(l.href)
                 ? "text-[var(--color-accent)] bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)]"
                 : "hover:bg-[var(--color-surface-2)]"
@@ -221,7 +221,7 @@ export function Nav() {
             key={l.href}
             href={l.href}
             title={`${l.label} —— ${l.tip}`}
-            className={`w-9 h-9 flex items-center justify-center rounded-md text-[12.5px] ${
+            className={`w-11 h-11 flex items-center justify-center rounded-md text-[13.5px] ${
               isActive(l.href)
                 ? "text-[var(--color-accent)] bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)]"
                 : "hover:bg-[var(--color-surface-2)]"

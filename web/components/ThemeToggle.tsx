@@ -43,7 +43,7 @@ export function ThemeToggle({ compact = false }: { compact?: boolean }) {
             onClick={() => apply(value)}
             title={label}
             aria-label={label}
-            className={`w-9 h-9 flex items-center justify-center rounded text-[13px] transition-colors ${
+            className={`w-11 h-11 md:w-9 md:h-9 flex items-center justify-center rounded text-[13px] transition-colors ${
               theme === value
                 ? "bg-[var(--color-surface)] text-[var(--color-accent)]"
                 : "text-[var(--color-muted)] hover:text-[var(--color-text)]"
@@ -69,7 +69,7 @@ export function ThemeToggle({ compact = false }: { compact?: boolean }) {
           onClick={() => apply(value)}
           title={label}
           aria-label={label}
-          className={`flex-1 flex items-center justify-center gap-1 py-1 rounded text-[11.5px] transition-colors ${
+          className={`flex-1 flex items-center justify-center gap-1 py-2 md:py-1 rounded text-[12px] md:text-[11.5px] transition-colors ${
             theme === value
               ? "bg-[var(--color-surface)] text-[var(--color-accent)] font-medium"
               : "text-[var(--color-muted)] hover:text-[var(--color-text)]"

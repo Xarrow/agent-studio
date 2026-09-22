@@ -437,7 +437,7 @@ export default function MemoriesPage() {
                         </button>
                       )}
                       <button
-                        className="text-[var(--color-err)] hover:underline text-[11px] whitespace-nowrap min-w-[36px] text-center px-1.5 py-1 rounded hover:bg-[var(--color-surface-2)]"
+                        className="inline-block text-[var(--color-err)] hover:underline text-[12px] md:text-[11px] whitespace-nowrap min-w-[44px] md:min-w-[36px] text-center px-2 py-2.5 md:px-1.5 md:py-1 rounded hover:bg-[var(--color-surface-2)]"
                         onClick={() => void remove(m)}
                       >
                         删除

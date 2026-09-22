@@ -316,7 +316,7 @@ export default function ChatPage() {
                   </div>
                 </div>
                 <button
-                  className="opacity-0 group-hover:opacity-100 text-[11px] px-1 hover:text-[var(--color-text)]"
+                  className="shrink-0 w-9 h-9 flex items-center justify-center rounded-md text-[13px] text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] md:w-7 md:h-7 md:opacity-0 md:group-hover:opacity-100"
                   title="重命名"
                   onClick={(e) => {
                     e.stopPropagation();
@@ -326,7 +326,7 @@ export default function ChatPage() {
                   ✎
                 </button>
                 <button
-                  className="opacity-0 group-hover:opacity-100 text-[11px] px-1 hover:text-[var(--color-err)]"
+                  className="shrink-0 w-9 h-9 flex items-center justify-center rounded-md text-[13px] text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-err)] md:w-7 md:h-7 md:opacity-0 md:group-hover:opacity-100"
                   title="删除"
                   onClick={(e) => {
                     e.stopPropagation();

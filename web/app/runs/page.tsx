@@ -289,7 +289,7 @@ export default function RunsPage() {
                     </td>
                     <td className="px-3">
                       <button
-                        className="text-[var(--color-err)] hover:underline text-[12px] whitespace-nowrap min-w-[44px] text-center px-2 py-1 rounded hover:bg-[var(--color-surface-2)] disabled:opacity-40 disabled:no-underline disabled:hover:bg-transparent"
+                        className="inline-block text-[var(--color-err)] hover:underline text-[12.5px] md:text-[12px] whitespace-nowrap min-w-[52px] md:min-w-[44px] text-center px-2.5 py-2.5 md:px-2 md:py-1 rounded hover:bg-[var(--color-surface-2)] disabled:opacity-40 disabled:no-underline disabled:hover:bg-transparent"
                         disabled={inFlight || busy}
                         title={inFlight ? "运行中的记录需先中断" : "删除这条记录"}
                         onClick={async () => {
