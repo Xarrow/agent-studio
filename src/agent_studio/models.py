@@ -13,6 +13,7 @@ import uuid
 from typing import Any
 
 from sqlalchemy import JSON, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Base
@@ -29,6 +30,14 @@ def new_id(prefix: str = "") -> str:
 # --------------------------------------------------------------------------- #
 # 工作区
 # --------------------------------------------------------------------------- #
+#: 跨方言的长文本类型。
+#:
+#: SQLite / PostgreSQL 的 TEXT 没有实用上限，但 **MySQL 的 TEXT 只有 64KB** ——
+#: Skill 全文、会话消息、工具结果这些很容易超。统一用 LONGTEXT（4GB），
+#: 其他方言自动回落到普通 TEXT，行为不变。
+LongText = Text().with_variant(LONGTEXT(), "mysql")
+
+
 class Workspace(Base):
     __tablename__ = "workspace"
 
@@ -48,7 +57,7 @@ class Agent(Base):
     workspace_id: Mapped[str] = mapped_column(String(32), default="ws_default", index=True)
     slug: Mapped[str] = mapped_column(String(64))
     name: Mapped[str] = mapped_column(String(128))
-    description: Mapped[str | None] = mapped_column(Text, default=None)
+    description: Mapped[str | None] = mapped_column(LongText, default=None)
     runtime: Mapped[str] = mapped_column(String(32), default="agentscope")
     version: Mapped[int] = mapped_column(Integer, default=1)
     parent_id: Mapped[str | None] = mapped_column(String(32), default=None)  # 复制来源，血缘
@@ -67,7 +76,7 @@ class Tool(Base):
     workspace_id: Mapped[str] = mapped_column(String(32), default="ws_default", index=True)
     kind: Mapped[str] = mapped_column(String(16))            # builtin | http | code
     name: Mapped[str] = mapped_column(String(64))
-    description: Mapped[str] = mapped_column(Text, default="")
+    description: Mapped[str] = mapped_column(LongText, default="")
     input_schema: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     impl: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     flags: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
@@ -84,9 +93,9 @@ class Skill(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("sk_"))
     workspace_id: Mapped[str] = mapped_column(String(32), default="ws_default", index=True)
     name: Mapped[str] = mapped_column(String(128))
-    description: Mapped[str] = mapped_column(Text, default="")
+    description: Mapped[str] = mapped_column(LongText, default="")
     source: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)   # {type,url,ref,sha}
-    content: Mapped[str] = mapped_column(Text, default="")               # SKILL.md 全文
+    content: Mapped[str] = mapped_column(LongText, default="")               # SKILL.md 全文
     files: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)    # 附属文件
     created_at: Mapped[int] = mapped_column(Integer, default=now_ms)
     updated_at: Mapped[int] = mapped_column(Integer, default=now_ms)
@@ -123,7 +132,7 @@ class Run(Base):
     definition_snapshot: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
     usage: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
-    error: Mapped[str | None] = mapped_column(Text, default=None)
+    error: Mapped[str | None] = mapped_column(LongText, default=None)
 
     started_at: Mapped[int] = mapped_column(Integer, default=now_ms)
     ended_at: Mapped[int | None] = mapped_column(Integer, default=None)
@@ -186,7 +195,7 @@ class LlmCall(Base):
     cost_usd: Mapped[float] = mapped_column(default=0.0)
 
     status: Mapped[str] = mapped_column(String(16), default="ok")        # ok | error | timeout
-    error: Mapped[str | None] = mapped_column(Text, default=None)
+    error: Mapped[str | None] = mapped_column(LongText, default=None)
 
     request_blob: Mapped[bytes | None] = mapped_column(default=None)     # zlib 压缩
     response_blob: Mapped[bytes | None] = mapped_column(default=None)
@@ -211,8 +220,8 @@ class ToolCall(Base):
 
     status: Mapped[str] = mapped_column(String(16), default="ok")        # ok | error | denied | timeout
     result_size: Mapped[int] = mapped_column(Integer, default=0)
-    result_preview: Mapped[str | None] = mapped_column(Text, default=None)
-    error: Mapped[str | None] = mapped_column(Text, default=None)
+    result_preview: Mapped[str | None] = mapped_column(LongText, default=None)
+    error: Mapped[str | None] = mapped_column(LongText, default=None)
 
 
 class Span(Base):
@@ -252,7 +261,7 @@ class Secret(Base):
     #: 最近一次连通性测试结果（缓存展示用）
     last_test_at: Mapped[int | None] = mapped_column(Integer, default=None)
     last_test_ok: Mapped[int | None] = mapped_column(Integer, default=None)
-    last_test_error: Mapped[str | None] = mapped_column(Text, default=None)
+    last_test_error: Mapped[str | None] = mapped_column(LongText, default=None)
     created_at: Mapped[int] = mapped_column(Integer, default=now_ms)
 
 
@@ -275,7 +284,7 @@ class Session(Base):
     status: Mapped[str] = mapped_column(String(16), default="active", index=True)
 
     #: 历史压缩摘要（轮次超阈值时由轻量模型生成，替代完整历史注入）
-    summary: Mapped[str | None] = mapped_column(Text, default=None)
+    summary: Mapped[str | None] = mapped_column(LongText, default=None)
     #: 已被摘要覆盖的消息数（前端展示"已压缩 N 轮"）
     summarized_upto: Mapped[int] = mapped_column(Integer, default=0)
 
@@ -304,7 +313,7 @@ class SessionMessage(Base):
     turn_index: Mapped[int] = mapped_column(Integer, default=1)
     #: user | assistant | system
     role: Mapped[str] = mapped_column(String(16))
-    content: Mapped[str] = mapped_column(Text, default="")
+    content: Mapped[str] = mapped_column(LongText, default="")
     run_id: Mapped[str | None] = mapped_column(String(32), default=None, index=True)
     ts: Mapped[int] = mapped_column(Integer, default=now_ms)
 
@@ -339,7 +348,7 @@ class Memory(Base):
 
     #: fact | preference | summary | instruction
     kind: Mapped[str] = mapped_column(String(16), default="fact")
-    content: Mapped[str] = mapped_column(Text, default="")
+    content: Mapped[str] = mapped_column(LongText, default="")
 
     #: manual（人工录入/确认）| auto（执行后自动提炼）| import
     source: Mapped[str] = mapped_column(String(16), default="manual")
@@ -436,7 +445,7 @@ class Orchestration(Base):
     #: pending | running | ok | partial（部分步骤失败但整体有产出）| error | aborted
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
     output: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
-    error: Mapped[str | None] = mapped_column(Text, default=None)
+    error: Mapped[str | None] = mapped_column(LongText, default=None)
     #: 汇总的 token / 成本（各子 run 之和）
     usage: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     started_at: Mapped[int] = mapped_column(Integer, default=now_ms, index=True)

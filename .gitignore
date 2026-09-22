@@ -55,3 +55,7 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+
+# 环境配置（含本机数据库连接信息与加密后的密码，不入库）
+data/database.json
+data/database.json.bak-*

@@ -5,6 +5,9 @@ import type {
   AgentDefinition,
   Credential,
   CredentialTestResult,
+  DbDriverInfo,
+  DbStatus,
+  DbTestResult,
   Issue,
   Memory,
   MemoryExtractResult,
@@ -249,6 +252,28 @@ export const api = {
       `/api/runs?confirm=${encodeURIComponent(confirm)}${agentId ? `&agent_id=${agentId}` : ""}`,
       { method: "DELETE" },
     ),
+
+  /* ---------------------- 环境配置（数据库驱动切换） ---------------------- */
+
+  database: () => request<DbStatus>("/api/database"),
+  databaseDrivers: () =>
+    request<{ drivers: DbDriverInfo[]; current: string }>("/api/database/drivers"),
+  databaseTest: (body: Record<string, unknown>) =>
+    post<DbTestResult>("/api/database/test", body),
+  databaseSwitch: (body: Record<string, unknown>) =>
+    post<{
+      ok: boolean;
+      target: string;
+      driver: string;
+      tables: string[];
+      table_count: number;
+      created_database: boolean;
+      restarting: boolean;
+      note: string;
+    }>("/api/database/switch", body),
+  /** 切换后轮询这个确认服务回来了 */
+  databaseHealth: () =>
+    request<{ ok: boolean; driver: string; describe: string }>("/api/database/health"),
 
   /* ---------------------- Playground（多助手编排） ---------------------- */
 

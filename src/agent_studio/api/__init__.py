@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from . import (
     agents,
     credentials,
+    database,
     memories,
     openai_compat,
     orchestrations,
@@ -26,6 +27,7 @@ api_router.include_router(sessions.router)      # /api/sessions（多轮会话�
 api_router.include_router(memories.router)      # /api/memories（长期记忆）
 api_router.include_router(memories.agent_router)  # /api/agents/{id}/memories + memory-policy
 api_router.include_router(orchestrations.router)  # /api/orchestrations（Playground 多助手编排）
+api_router.include_router(database.router)        # /api/database（环境配置：切换持久化驱动）
 
 # OpenAI 兼容层：任何 OpenAI 客户端都能直接用这些 Agent
 # （model = Agent，messages → 会话历史，text_delta → choices[].delta）

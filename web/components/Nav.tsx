@@ -75,6 +75,12 @@ const SETUP_ITEMS: Item[] = [
     tip: "预先写好的「做事套路」。装上之后，助手遇到这类任务就知道该按什么步骤做。",
   },
   {
+    href: "/environment",
+    label: "环境配置",
+    icon: "⛁",
+    tip: "选择平台把数据存在哪里：默认是本地文件（SQLite），也可以切到你自己的 MySQL 或 PostgreSQL。切换时新库会自动建好表。",
+  },
+  {
     href: "/credentials",
     label: "LLM 配置",
     icon: "⚿",

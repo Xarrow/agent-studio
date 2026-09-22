@@ -6,10 +6,13 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "agentscope>=2.0.8",
+    "aiomysql>=0.3.2",
     "aiosqlite>=0.22.1",
+    "asyncpg>=0.31.0",
     "cryptography>=50.0.1",
     "fastapi>=0.141.1",
     "httpx>=0.28.1",
+    "psycopg>=3.3.6",
     "pydantic-settings>=2.15.0",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",

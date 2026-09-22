@@ -372,3 +372,65 @@ export interface OrchestrationStatusEvent {
     ended_at: number | null;
   }[];
 }
+
+/* ------------------------------ 环境配置（数据库驱动） ------------------------------ */
+
+export type DbDriver = "sqlite" | "mysql" | "postgresql";
+
+/** 一份数据库连接配置（后端返回，密码已打码） */
+export interface DbConfig {
+  driver: DbDriver;
+  sqlite_path: string;
+  host: string;
+  port: number;
+  user: string;
+  password: string;
+  database: string;
+  charset: string;
+  ssl: boolean;
+  has_password: boolean;
+  effective_port: number;
+  driver_label: string;
+  sqlite_file: string;
+}
+
+export interface DbRuntime {
+  driver: DbDriver;
+  describe: string;
+  url_masked: string;
+  sqlite_file: string;
+}
+
+export interface DbStatus {
+  config: DbConfig;
+  runtime: DbRuntime;
+  tables: string[];
+  table_count: number;
+  /** 配置里写的驱动 ≠ 进程实际用的驱动（说明改了还没重启） */
+  pending_restart: boolean;
+  reachable: boolean;
+  error: string | null;
+  config_path: string;
+  file_based: boolean;
+}
+
+export interface DbDriverInfo {
+  key: DbDriver;
+  label: string;
+  hint: string;
+  fields: string[];
+  default_port: number;
+}
+
+export interface DbTestResult {
+  ok: boolean;
+  stage: string;
+  problems: string[];
+  target?: string;
+  database_exists?: boolean | null;
+  created_database?: boolean;
+  tables?: string[];
+  table_count?: number;
+  server_version?: string | null;
+  error: string | null;
+}
