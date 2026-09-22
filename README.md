@@ -29,23 +29,57 @@
 
 ## 快速开始
 
-### 后端
+### 开发模式（改代码时用）
 
 ```bash
+# 后端
 cd /srv/src/agent-studio
 uv sync
 uv run uvicorn agent_studio.main:app --host 0.0.0.0 --port 8848
+
+# 前端（另开一个终端）
+cd /srv/src/agent-studio/web
+npm install
+npm run dev     # http://192.168.2.11:3000
 ```
 
-打开 http://127.0.0.1:8848/docs 看交互式 API 文档。
+### 生产部署（systemd，开机自启）
 
-### 前端
+服务已装成两个 systemd 单元，机器重启后自动拉起：
+
+| 单元 | 内容 | 端口 |
+|---|---|---|
+| `agent-studio-api.service` | FastAPI（跑 `.venv/bin/uvicorn`） | 8848 |
+| `agent-studio-web.service` | Next.js **生产模式**（`npm run start`，依赖 api） | 3000 |
 
 ```bash
-cd web
-npm install
-npm run dev     # http://localhost:3000
+systemctl status agent-studio-api agent-studio-web      # 看状态
+systemctl restart agent-studio-api agent-studio-web     # 重启
+journalctl -u agent-studio-api -f                       # 跟后端日志
+journalctl -u agent-studio-web -f                       # 跟前端日志
 ```
+
+**改了前端代码后必须重新构建**，否则页面还是旧版本：
+
+```bash
+cd /srv/src/agent-studio/web && npm run build && systemctl restart agent-studio-web
+```
+
+**改了后端代码**只需重启（uvicorn 直接读源码）：
+
+```bash
+systemctl restart agent-studio-api
+```
+
+#### 部署时的两个注意点
+
+1. **不要给服务设 `STUDIO_MASTER_KEY`**
+   `security/crypto.py` 在未设置时用代码里的开发默认值，**现有凭据就是用那个值加密的**。
+   给 systemd 换一个值 → 已存的 LLM 密钥全部解不开。要正式轮换密钥就得先把凭据
+   逐条解密再重新加密。
+2. **前端的环境变量在构建时固化**
+   `NEXT_PUBLIC_API_BASE`（在 `web/.env.local`）是 `next build` 时内联进产物的，
+   改了它必须重新 `npm run build`。拿不准就把 `.env.local` 留在原地。
 
 ## 核心概念
 

@@ -1,0 +1,33 @@
+[Unit]
+Description=Agent Studio Web (Next.js 生产模式)
+Documentation=http://192.168.2.11:3000
+After=network-online.target agent-studio-api.service
+Wants=network-online.target
+Requires=agent-studio-api.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/srv/src/agent-studio/web
+
+# npm 在 /root/.local/bin（不是系统路径），必须显式给出
+Environment=PATH=/root/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=NODE_ENV=production
+
+# 生产模式：跑的是 npm run build 的产物，比 next dev 快很多，
+# 也不会再有 HMR 状态漂移的问题（dev 模式改多了会累积成客户端异常）
+# 页面里用到的 NEXT_PUBLIC_API_BASE 已在构建时从 web/.env.local 内联进去
+ExecStart=/root/.local/bin/npm run start
+
+Restart=always
+RestartSec=3
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=agent-studio-web
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,38 @@
+[Unit]
+Description=Agent Studio API (FastAPI + AgentScope)
+Documentation=http://192.168.2.11:8848/docs
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/srv/src/agent-studio
+
+# 直接用虚拟环境里的解释器，不经过 uv —— 少一层包装，systemd 下更可靠
+Environment=PATH=/root/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+
+# 刻意不设 STUDIO_MASTER_KEY
+# security/crypto.py 在未设置时用代码里的开发默认值，现有凭据就是用那个值
+# 加密的。这里若改成别的值，已存的 LLM 密钥会全部解不开。
+#
+# 其他配置都有默认值（见 config.py），需要用环境变量覆盖时，
+# 取消下面这行的注释并新建 /srv/src/agent-studio/.env：
+# EnvironmentFile=-/srv/src/agent-studio/.env
+
+ExecStart=/srv/src/agent-studio/.venv/bin/uvicorn agent_studio.main:app --host 0.0.0.0 --port 8848
+
+Restart=always
+RestartSec=3
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=agent-studio-api
+
+[Install]
+WantedBy=multi-user.target
