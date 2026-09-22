@@ -22,6 +22,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import os
 import shutil
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -190,23 +191,36 @@ def _decrypt_password(token: str) -> str:
 
 
 def load() -> DbSettings:
-    """读配置。文件不存在/损坏时返回默认（SQLite）。"""
+    """读配置。文件不存在/损坏时返回默认（SQLite）。
+
+    ``STUDIO_DB_PATH`` 环境变量**优先级最高**，用于临时覆盖（测试、一次性
+    实例）。这一点很关键：测试套件就是靠它把数据写到临时目录的 ——
+    如果这里是"只看配置文件"，测试就会连上并写坏真实数据库。
+    """
+    override_path = os.environ.get("STUDIO_DB_PATH", "").strip()
+
     if not CONFIG_PATH.exists():
-        return DbSettings()
+        settings = DbSettings()
+    else:
+        try:
+            raw = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.warning("数据库配置读取失败，回退 SQLite: %s", exc)
+            raw = {}
 
-    try:
-        raw = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        logger.warning("数据库配置读取失败，回退 SQLite: %s", exc)
-        return DbSettings()
+        known = {f for f in DbSettings.__dataclass_fields__}
+        kwargs = {k: v for k, v in raw.items() if k in known and k != "password"}
+        settings = DbSettings(**kwargs)
+        settings.password = _decrypt_password(str(raw.get("password_enc") or ""))
+        if settings.driver not in DRIVERS:
+            logger.warning("配置里的驱动 %r 不认识，回退 SQLite", settings.driver)
+            settings.driver = "sqlite"
 
-    known = {f for f in DbSettings.__dataclass_fields__}
-    kwargs = {k: v for k, v in raw.items() if k in known and k != "password"}
-    settings = DbSettings(**kwargs)
-    settings.password = _decrypt_password(str(raw.get("password_enc") or ""))
-    if settings.driver not in DRIVERS:
-        logger.warning("配置里的驱动 %r 不认识，回退 SQLite", settings.driver)
+    # 环境变量覆盖：等价于"这个进程临时改用另一个 SQLite 文件"
+    if override_path:
         settings.driver = "sqlite"
+        settings.sqlite_path = override_path
+
     return settings
 
 

@@ -221,7 +221,28 @@ async def test_credential(
 ) -> CredentialTestResult:
     row = await _get_or_404(session, credential_id)
     meta = get_provider(row.provider)
-    api_key = decrypt(row.ciphertext)
+
+    # 解密失败要**明确告知**，而不是抛 500。
+    # 500 会绕过 CORSMiddleware（异常冒泡到最外层中间件），浏览器拿不到
+    # 跨域头，于是把「配置损坏」误报成「CORS 错误」—— 排查方向直接被带偏。
+    try:
+        api_key = decrypt(row.ciphertext)
+    except Exception:  # noqa: BLE001
+        msg = (
+            "这个配置的密钥解不开。通常是因为它由**另一个主密钥**加密写入的"
+            "（例如测试或临时实例用 STUDIO_MASTER_KEY 覆盖后写进了同一个库）。"
+            "请在下方重新填写 API Key 并保存。"
+        )
+        ts = now_ms()
+        row.last_test_at = ts
+        row.last_test_ok = 0
+        row.last_test_error = msg
+        await session.commit()
+        return CredentialTestResult(
+            ok=False, provider=row.provider, model=None, latency_ms=0,
+            models=[], error=msg, checked_at=ts,
+        )
+
     model_name = (payload.model if payload else None) or (meta.models[0] if meta and meta.models else "")
 
     ok, models, error, latency = await _probe(row.provider, api_key, row.base_url, model_name)
