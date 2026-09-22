@@ -23,7 +23,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { ThemeToggle } from "./ThemeToggle";
 
 type Item = { href: string; label: string; icon: string; tip: string };
 
@@ -136,9 +135,6 @@ export function Nav() {
           </svg>
         </button>
         <span className="font-semibold text-[15px] tracking-tight">Agent Studio</span>
-        <div className="ml-auto">
-          <ThemeToggle />
-        </div>
       </header>
 
       {/* ── 移动端抽屉 ─────────────────────────────────────── */}
@@ -182,9 +178,6 @@ export function Nav() {
                 </Link>
               ))}
             </nav>
-            <div className="p-3 border-t border-[var(--color-border)]">
-              <ThemeToggle />
-            </div>
           </aside>
         </>
       )}
@@ -230,9 +223,6 @@ export function Nav() {
             {l.icon}
           </Link>
         ))}
-        <div className="mt-auto">
-          <ThemeToggle compact />
-        </div>
       </aside>
 
       {/* ── 桌面：完整侧边栏 ───────────────────────────────── */}
@@ -273,9 +263,6 @@ export function Nav() {
           ))}
         </nav>
 
-        <div className="p-3 border-t border-[var(--color-border)]">
-          <ThemeToggle />
-        </div>
       </aside>
     </>
   );

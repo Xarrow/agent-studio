@@ -9,17 +9,13 @@ export const metadata: Metadata = {
 };
 
 /**
- * 在 HTML 解析阶段就定好主题，避免刷新时先白后黑的闪烁。
- * 默认 light（未设置或非 dark 时一律 light）。
+ * 主题固定为浅色。
+ *
+ * 说明：界面上的明暗切换入口已按需求移除；深色主题的 CSS 变量（globals.css
+ * 里的 [data-theme="dark"]）保留未删，日后若要恢复切换，只需在导航里重新挂
+ * 一个 ThemeToggle 并把下面这行改回读 localStorage 即可。
  */
-const THEME_INIT = `
-try {
-  var t = localStorage.getItem('agent-studio-theme');
-  document.documentElement.setAttribute('data-theme', t === 'dark' ? 'dark' : 'light');
-} catch (e) {
-  document.documentElement.setAttribute('data-theme', 'light');
-}
-`;
+const THEME_INIT = `document.documentElement.setAttribute('data-theme', 'light');`;
 
 export default function RootLayout({
   children,

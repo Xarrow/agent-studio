@@ -11,7 +11,7 @@
  * 现在的映射：
  *   召回开关 + 自动沉淀开关  →  一个「记忆」总开关
  *   scope: agent | global    →  「交给谁用」两个自然语言选项（在记忆页里）
- *   中间表绑定               →  「借用其他 Agent 的记忆」（进阶，默认收起）
+ *   中间表绑定               →  已移除（跨 Agent 借用属于进阶能力，界面上不再暴露）
  *   top_k/注入预算/压缩阈值   →  「高级设置」（默认收起，全部换成人话）
  */
 
@@ -38,7 +38,6 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
   const [busy, setBusy] = useState(false);
   const [q, setQ] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [showBorrow, setShowBorrow] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -76,33 +75,11 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
     }
   };
 
-  /** 借用 / 归还（只影响"显式绑定"，不改变记忆归属） */
-  const toggleBind = async (m: Memory) => {
-    const next = new Set(bindings);
-    if (next.has(m.id)) next.delete(m.id);
-    else next.add(m.id);
-    setBusy(true);
-    try {
-      const r = await api.setAgentMemories(agentId, [...next]);
-      setBindings(next);
-      fb.success(r.bound > 0 ? `已借用 ${r.bound} 条` : "已解除借用");
-      await load();
-    } catch (e) {
-      fb.error("操作失败", e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
   if (loading || !policy) {
     return <div className="card p-6 text-[13px] text-[var(--color-muted)]">加载中…</div>;
   }
 
   const memoryOn = policy.recall_enabled;
-  const borrowable = pool.filter(
-    (m) => !usable.some((u) => u.id === m.id) && m.content.includes(q.trim()),
-  );
-
   return (
     <div className="space-y-4 max-w-3xl">
       {/* ── 总开关 ─────────────────────────────────────────────── */}
@@ -168,7 +145,6 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
         ) : (
           <div className="space-y-1.5">
             {usable.map((m) => {
-              const borrowed = m.agent_id !== agentId && m.scope !== "global";
               return (
                 <div key={m.id} className="p-2.5 rounded-md bg-[var(--color-surface-2)]">
                   <div className="text-[12.5px] break-words">{m.content}</div>
@@ -182,19 +158,6 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
                         <span>所有 Agent 共用</span>
                       </>
                     )}
-                    {borrowed && (
-                      <>
-                        <span>·</span>
-                        <span style={{ color: "var(--color-accent)" }}>借用自其他 Agent</span>
-                        <button
-                          className="hover:underline"
-                          disabled={busy}
-                          onClick={() => void toggleBind(m)}
-                        >
-                          不再借用
-                        </button>
-                      </>
-                    )}
                   </div>
                 </div>
               );
@@ -202,53 +165,6 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
           </div>
         )}
 
-        {/* 借用其他 Agent 的记忆（进阶，默认收起） */}
-        <div className="mt-3 pt-3 border-t border-[var(--color-border)]">
-          <button
-            className="text-[12px] text-[var(--color-muted)] hover:text-[var(--color-text)]"
-            onClick={() => setShowBorrow((v) => !v)}
-          >
-            {showBorrow ? "▾" : "▸"} 借用其他 Agent 的记忆
-          </button>
-          {showBorrow && (
-            <div className="mt-2">
-              <input
-                className="input mb-2"
-                placeholder="搜索要借用的内容…"
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-              />
-              {borrowable.length === 0 ? (
-                <p className="text-[11.5px] text-[var(--color-muted)]">
-                  没有可借用的条目（只有其他 Agent 的私有记忆会出现在这里）。
-                </p>
-              ) : (
-                <div className="space-y-1 max-h-56 overflow-auto">
-                  {borrowable.slice(0, 30).map((m) => (
-                    <div
-                      key={m.id}
-                      className="flex items-center gap-2 p-2 rounded-md hover:bg-[var(--color-surface-2)]"
-                    >
-                      <span className="min-w-0 flex-1 text-[12px] truncate" title={m.content}>
-                        {m.content}
-                      </span>
-                      <span className="text-[10.5px] text-[var(--color-muted)] shrink-0">
-                        {m.agent_name ?? "—"}
-                      </span>
-                      <button
-                        className="btn text-[11px] shrink-0"
-                        disabled={busy}
-                        onClick={() => void toggleBind(m)}
-                      >
-                        借用
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
       </section>
 
       {/* ── 高级设置（默认收起，术语全部翻译成人话） ───────────── */}

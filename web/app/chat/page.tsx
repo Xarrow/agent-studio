@@ -16,6 +16,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, fmt } from "@/lib/api";
 import type { Agent, RunEvent, Session } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
+import { RunTimeline, eventsToSteps, summarize } from "@/components/ui/run-timeline";
 
 /** 流式渲染期间的一条临时消息 */
 interface LiveMsg {
@@ -37,6 +38,10 @@ export default function ChatPage() {
   >([]);
   /** 当前正在流式生成的内容 */
   const [live, setLive] = useState<LiveMsg | null>(null);
+  /** 正在生成的这次执行的**全部事件**（用来实时画分色过程） */
+  const [liveEvents, setLiveEvents] = useState<RunEvent[]>([]);
+  /** 本次发送的内容（作为执行过程的第一段「输入」） */
+  const [liveInput, setLiveInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(true);
@@ -201,6 +206,8 @@ export default function ChatPage() {
     const userEcho = { role: "user" as const, content: text, run_id: null, turn_index: 0 };
     setHistory((h) => [...h, userEcho]);
     setLive({ role: "assistant", text: "" });
+    setLiveEvents([]);
+    setLiveInput(text);
 
     try {
       const run = await api.createRun({ agent_id: agentId, input: text, session_id: sessionId });
@@ -211,6 +218,9 @@ export default function ChatPage() {
       const onDelta = (e: MessageEvent) => {
         try {
           const ev = JSON.parse(e.data) as RunEvent;
+          // 收下**全部**事件：不只文本，还包括思考与工具调用，
+          // 这样执行过程能实时按颜色分段显示出来
+          setLiveEvents((prev) => [...prev, ev]);
           const p = ev.payload as Record<string, unknown>;
           if (ev.type === "text_delta") {
             const t = typeof p.text === "string" ? p.text : typeof p.delta === "string" ? p.delta : "";
@@ -388,11 +398,33 @@ export default function ChatPage() {
             </div>
           ) : (
             <div className="max-w-3xl mx-auto space-y-5">
-              {history.map((m, i) => (
-                <Bubble key={i} role={m.role} content={m.content} runId={m.run_id} />
-              ))}
-              {live && live.text && <Bubble role={live.role} content={live.text} streaming />}
-              {busy && live && !live.text && (
+              {history.map((m, i) => {
+                // 给助手的执行过程带上「用户说了什么」，这样六段里第一段（输入）有着落
+                const prevUser =
+                  m.role === "assistant"
+                    ? ([...history.slice(0, i)].reverse().find((x) => x.role === "user")?.content ?? undefined)
+                    : undefined;
+                return (
+                  <Bubble
+                    key={i}
+                    role={m.role}
+                    content={m.content}
+                    runId={m.run_id}
+                    userInput={prevUser}
+                  />
+                );
+              })}
+
+              {/* 生成中：实时分色显示执行过程（思考 / 工具 / 结果 / 回答） */}
+              {busy && liveEvents.length > 0 && (
+                <div className="w-full">
+                  <div className="text-[11.5px] text-[var(--color-muted)] mb-2 flex items-center gap-1.5">
+                    <span className="live-dot">●</span> 执行中…
+                  </div>
+                  <RunTimeline steps={eventsToSteps(liveEvents, liveInput)} compact />
+                </div>
+              )}
+              {busy && liveEvents.length === 0 && (
                 <div className="text-[12.5px] text-[var(--color-muted)] live-dot">思考中…</div>
               )}
             </div>
@@ -434,25 +466,55 @@ export default function ChatPage() {
   );
 }
 
-/** 一条消息气泡：用户靠右，助手靠左（助手带"查看详情"入口） */
+/** 一条消息气泡：用户靠右，助手靠左；助手消息可展开**完整执行过程** */
 function Bubble({
   role,
   content,
   runId,
+  userInput,
   streaming = false,
 }: {
   role: "user" | "assistant";
   content: string;
   runId?: string | null;
+  /** 这一轮里用户说了什么（用于执行过程的第一段「输入」） */
+  userInput?: string;
   streaming?: boolean;
 }) {
   const isUser = role === "user";
+  const [open, setOpen] = useState(false);
+  const [events, setEvents] = useState<RunEvent[] | null>(null);
+  const [loadingEv, setLoadingEv] = useState(false);
+
+  const hasTrace = !isUser && !!runId && !streaming;
+
+  const toggle = async () => {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    setOpen(true);
+    // 懒加载：折叠时不拉数据，展开才拉（避免一进对话页就发一堆请求）
+    if (events === null && runId) {
+      setLoadingEv(true);
+      try {
+        setEvents(await api.runEvents(runId));
+      } catch {
+        setEvents([]);
+      } finally {
+        setLoadingEv(false);
+      }
+    }
+  };
+
+  const steps = events ? eventsToSteps(events, userInput) : [];
+
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
-      <div className={`max-w-[85%] ${isUser ? "order-2" : ""}`}>
+      <div className={isUser ? "max-w-[85%]" : "min-w-0 flex-1"}>
         <div
           className={`rounded-lg px-3.5 py-2.5 text-[13.5px] leading-relaxed whitespace-pre-wrap break-words ${
-            isUser ? "text-white" : ""
+            isUser ? "text-white w-fit ml-auto" : ""
           }`}
           style={
             isUser
@@ -463,13 +525,50 @@ function Bubble({
           {content}
           {streaming && <span className="live-dot ml-0.5">▍</span>}
         </div>
-        {!isUser && runId && !streaming && (
-          <Link
-            className="text-[11px] text-[var(--color-muted)] hover:text-[var(--color-text)] mt-1 inline-block"
-            href={`/runs/${runId}`}
-          >
-            查看这次执行的详情 →
-          </Link>
+
+        {hasTrace && (
+          <div className="mt-1.5">
+            <div className="flex items-center gap-3 flex-wrap">
+              <button
+                onClick={() => void toggle()}
+                className="text-[11.5px] text-[var(--color-accent)] hover:underline flex items-center gap-1"
+              >
+                <span>{open ? "▾" : "▸"}</span>
+                执行过程
+                {events && events.length > 0 && (
+                  <span className="text-[var(--color-muted)]">
+                    （{summarize(steps)}）
+                  </span>
+                )}
+              </button>
+              <Link
+                href={`/runs/${runId}`}
+                className="text-[11.5px] text-[var(--color-muted)] hover:text-[var(--color-text)]"
+              >
+                完整记录 →
+              </Link>
+            </div>
+
+            {open && (
+              <div
+                className="mt-2 p-3 rounded-lg"
+                style={{
+                  background: "var(--color-surface)",
+                  border: "1px solid var(--color-border)",
+                }}
+              >
+                {loadingEv ? (
+                  <div className="text-[12.5px] text-[var(--color-muted)]">加载执行过程…</div>
+                ) : steps.length === 0 ? (
+                  <div className="text-[12.5px] text-[var(--color-muted)]">
+                    这次执行没有可展示的步骤。
+                  </div>
+                ) : (
+                  <RunTimeline steps={steps} />
+                )}
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>

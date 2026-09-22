@@ -44,7 +44,8 @@ export default function MemoriesPage() {
   // 新建
   const [draft, setDraft] = useState("");
   const [draftKind, setDraftKind] = useState("fact");
-  const [draftScope, setDraftScope] = useState("agent");
+  const [draftScope, setDraftScope] = useState("global");
+  const [showMore, setShowMore] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -86,16 +87,14 @@ export default function MemoriesPage() {
       fb.warn("内容不能为空");
       return;
     }
-    if (draftScope === "agent" && !agentId) {
-      fb.warn("绑定到 Agent 的记忆需要先在上方选择一个 Agent");
-      return;
-    }
+    // 没选具体助手就按"所有助手可用"处理，不再用报错打断用户
+    const effectiveScope = draftScope === "agent" && !agentId ? "global" : draftScope;
     setBusy(true);
     try {
       await api.createMemory({
         content,
-        agent_id: draftScope === "global" ? null : agentId || null,
-        scope: draftScope,
+        agent_id: effectiveScope === "global" ? null : agentId || null,
+        scope: effectiveScope,
         kind: draftKind,
         active: true,
       });
@@ -294,29 +293,45 @@ export default function MemoriesPage() {
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
         />
+        {/* 默认「所有 Agent 都能用」，所以只需要写内容 + 点保存。
+            类型和范围属于进阶选项，收进「更多选项」里，不占视线。 */}
         <div className="flex gap-2 mt-3 flex-wrap items-center">
-          <select className="input w-36" value={draftKind} onChange={(e) => setDraftKind(e.target.value)}>
-            {Object.entries(KIND_LABEL).map(([v, label]) => (
-              <option key={v} value={v}>
-                {label}
-              </option>
-            ))}
-          </select>
-          <select className="input w-32" value={draftScope} onChange={(e) => setDraftScope(e.target.value)}>
-            <option value="agent">仅此 Agent</option>
-            <option value="global">所有 Agent</option>
-          </select>
-          <button className="btn" disabled={busy || !draft.trim()} onClick={() => void create()}>
+          <button className="btn btn-primary" disabled={busy || !draft.trim()} onClick={() => void create()}>
             保存
           </button>
-          <span className="text-[11.5px] text-[var(--color-muted)]">
-            {draftScope === "global"
-              ? "这条记忆所有 Agent 都能用"
-              : agentId
-                ? `将绑定到：${agents.find((a) => a.id === agentId)?.name ?? agentId}`
-                : "先在下方筛选器里选一个 Agent"}
-          </span>
+          <button
+            className="text-[12.5px] text-[var(--color-muted)] hover:text-[var(--color-text)]"
+            onClick={() => setShowMore((v) => !v)}
+          >
+            {showMore ? "▾" : "▸"} 更多选项
+          </button>
         </div>
+
+        {showMore && (
+          <div className="flex gap-2 mt-3 flex-wrap items-center pl-3 border-l-2 border-[var(--color-border)]">
+            <div>
+              <label className="label">类型</label>
+              <select className="input w-36" value={draftKind} onChange={(e) => setDraftKind(e.target.value)}>
+                {Object.entries(KIND_LABEL).map(([v, label]) => (
+                  <option key={v} value={v}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label">给谁用</label>
+              <select className="input w-40" value={draftScope} onChange={(e) => setDraftScope(e.target.value)}>
+                <option value="global">所有助手都能用（默认）</option>
+                <option value="agent" disabled={!agentId}>
+                  {agentId
+                    ? `只给「${agents.find((a) => a.id === agentId)?.name ?? agentId}」用`
+                    : "只给某一个助手用（需先在下方筛选）"}
+                </option>
+              </select>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 筛选 */}
