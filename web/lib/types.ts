@@ -322,6 +322,10 @@ export interface OrchestrationStepRead {
   error: string | null;
   started_at: number;
   ended_at: number | null;
+  /** 这个助手领到的任务（串行/主从下会和原任务不同） */
+  input_text: string;
+  /** 它的产出 */
+  output_text: string;
 }
 
 export interface Orchestration {
@@ -362,5 +366,9 @@ export interface OrchestrationStatusEvent {
     status: string;
     error: string | null;
     usage: Record<string, number>;
+    input_text: string;
+    output_text: string;
+    started_at: number;
+    ended_at: number | null;
   }[];
 }

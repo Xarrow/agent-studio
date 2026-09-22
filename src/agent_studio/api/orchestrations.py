@@ -60,6 +60,10 @@ def _agent_name(run: Run) -> str:
 
 
 def _step_read(run: Run) -> OrchestrationStepRead:
+    inp = run.input or {}
+    raw_in = inp.get("text") if isinstance(inp, dict) else None
+    out = run.output or {}
+    raw_out = out.get("content") if isinstance(out, dict) else None
     return OrchestrationStepRead(
         run_id=run.id,
         agent_id=run.agent_id,
@@ -71,6 +75,8 @@ def _step_read(run: Run) -> OrchestrationStepRead:
         error=run.error,
         started_at=run.started_at,
         ended_at=run.ended_at,
+        input_text=str(raw_in or ""),
+        output_text=str(raw_out or ""),
     )
 
 
@@ -285,6 +291,10 @@ async def stream_orchestration(orc_id: str) -> StreamingResponse:
                             "status": r.status,
                             "error": r.error,
                             "usage": r.usage or {},
+                            "input_text": _step_read(r).input_text,
+                            "output_text": _step_read(r).output_text,
+                            "started_at": r.started_at,
+                            "ended_at": r.ended_at,
                         }
                         for r in runs
                     ],

@@ -608,6 +608,11 @@ class OrchestrationStepRead(BaseModel):
     error: str | None = None
     started_at: int
     ended_at: int | None = None
+    #: 这个助手**领到的任务**（串行/主从模式下会和原任务不同：可能带了上一步的
+    #: 产出，也可能是主控拆出来的子任务）。前端用它显示"它在做什么"。
+    input_text: str = ""
+    #: 它的产出（方便在不展开完整日志时也能一眼看到这一步的结论）
+    output_text: str = ""
 
 
 class OrchestrationRead(BaseModel):

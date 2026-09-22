@@ -20,8 +20,11 @@ import Link from "next/link";
 import { api, fmt } from "@/lib/api";
 import type {
   Agent,
+  Orchestration,
+  OrchestrationDetail,
   OrchestrationMode,
   OrchestrationStatusEvent,
+  OrchestrationStepRead,
   OrchStep,
   RunEvent,
 } from "@/lib/types";
@@ -71,18 +74,109 @@ export default function PlaygroundPage() {
   const [openRun, setOpenRun] = useState<Record<string, boolean>>({});
   const esRef = useRef<EventSource | null>(null);
 
+  /** 历史编排（进页面就能看到之前跑过什么，而不是空白） */
+  const [history, setHistory] = useState<Orchestration[]>([]);
+  /** 当前正在查看的那次编排的详情（历史模式用；实时模式走 snapshot） */
+  const [detail, setDetail] = useState<OrchestrationDetail | null>(null);
+  const [histLoading, setHistLoading] = useState(false);
+
+
+
+
+  /** 订阅某次编排的实时流（状态快照 + 各子步骤事件） */
+  const subscribeLive = useCallback((id: string) => {
+    esRef.current?.close();
+    const es = new EventSource(api.orchestrationStreamUrl(id));
+    esRef.current = es;
+    es.addEventListener("status", (e) => {
+      try {
+        setSnapshot(JSON.parse((e as MessageEvent).data) as OrchestrationStatusEvent);
+      } catch {
+        /* ignore */
+      }
+    });
+    es.onmessage = (e) => {
+      try {
+        const item = JSON.parse(e.data) as { kind: string; run_id: string } & RunEvent;
+        if (item.kind !== "event") return;
+        setEvents((prev) => ({
+          ...prev,
+          [item.run_id]: [...(prev[item.run_id] ?? []), item],
+        }));
+      } catch {
+        /* ignore */
+      }
+    };
+    es.addEventListener("done", () => {
+      es.close();
+      setBusy(false);
+      // 结束后刷新历史列表，让状态徽标更新
+      void api.orchestrations(20).then(setHistory).catch(() => {});
+    });
+    es.onerror = () => {
+      if (es.readyState === EventSource.CLOSED) {
+        es.close();
+        setBusy(false);
+      }
+    };
+  }, []);
+
+  /** 加载某次编排：详情 + 各子步骤的历史事件（断线/刷新后也能看到完整过程） */
+  const loadOrchestration = useCallback(
+    async (id: string) => {
+      setHistLoading(true);
+      setOrcId(id);
+      setOpenRun({});
+      try {
+        const d = await api.orchestration(id);
+        setDetail(d);
+        setSnapshot(null);
+
+        // 各子步骤的事件都在库里，逐个取回来（复用 /api/runs/events）
+        const got: Record<string, RunEvent[]> = {};
+        await Promise.all(
+          d.steps.map(async (s) => {
+            try {
+              got[s.run_id] = await api.runEvents(s.run_id);
+            } catch {
+              got[s.run_id] = [];
+            }
+          }),
+        );
+        setEvents(got);
+
+        // 还在跑的话，接上实时流
+        if (!["ok", "partial", "error", "aborted"].includes(d.status)) {
+          subscribeLive(id);
+        }
+      } catch (e) {
+        fb.error("打开失败", e instanceof Error ? e.message : String(e));
+      } finally {
+        setHistLoading(false);
+      }
+    },
+    // subscribeLive 在下面用 useCallback 定义，这里不放进依赖避免循环
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [fb],
+  );
+
   /* ------------------------------ 载入 ------------------------------ */
   useEffect(() => {
     void (async () => {
       try {
-        setAgents(await api.agents());
+        const [ags, hist] = await Promise.all([api.agents(), api.orchestrations(20)]);
+        setAgents(ags);
+        setHistory(hist);
+        // 进页面直接展示最近一次编排 —— 否则用户看到的是空白，以为功能坏了
+        if (hist.length > 0) await loadOrchestration(hist[0].id);
       } catch (e) {
-        fb.error("加载助手失败", e instanceof Error ? e.message : String(e));
+        fb.error("加载失败", e instanceof Error ? e.message : String(e));
       } finally {
         setLoading(false);
       }
     })();
-  }, [fb]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /* --------------------- 模式变化时调整槽位数量 --------------------- */
   useEffect(() => {
@@ -121,42 +215,15 @@ export default function PlaygroundPage() {
         task: task.trim(),
       });
       setOrcId(orc.id);
-
-      // 订阅实时流：状态快照 + 各子步骤的事件
-      const es = new EventSource(api.orchestrationStreamUrl(orc.id));
-      esRef.current = es;
-      es.addEventListener("status", (e) => {
-        try {
-          setSnapshot(JSON.parse((e as MessageEvent).data) as OrchestrationStatusEvent);
-        } catch {
-          /* ignore */
-        }
-      });
-      es.onmessage = (e) => {
-        try {
-          const item = JSON.parse(e.data) as { kind: string; run_id: string } & RunEvent;
-          if (item.kind !== "event") return;
-          setEvents((prev) => ({
-            ...prev,
-            [item.run_id]: [...(prev[item.run_id] ?? []), item],
-          }));
-        } catch {
-          /* ignore */
-        }
-      };
-      es.addEventListener("done", () => {
-        es.close();
-        setBusy(false);
-      });
-      es.onerror = () => {
-        // 编排结束时服务端会关流，这里只在真的还在跑时报错
-        if (es.readyState === EventSource.CLOSED) setBusy(false);
-      };
+      setDetail(null);
+      // 刷新历史列表（新的一条要出现在最上面）
+      setHistory((prev) => [orc, ...prev]);
+      subscribeLive(orc.id);
     } catch (e) {
       fb.error("启动失败", e instanceof Error ? e.message : String(e));
       setBusy(false);
     }
-  }, [canRun, mode, filledSlots, workerMode, masterId, task, fb]);
+  }, [canRun, mode, filledSlots, workerMode, masterId, task, fb, subscribeLive]);
 
   const stop = useCallback(async () => {
     if (!orcId) return;
@@ -194,8 +261,14 @@ export default function PlaygroundPage() {
     );
   }
 
-  const orcSt = snapshot ? ORC_STATUS[snapshot.status] ?? ORC_STATUS.pending : null;
-  const running = snapshot ? !["ok", "partial", "error", "aborted"].includes(snapshot.status) : false;
+  // 统一数据源：正在跑就用实时快照（snapshot），看历史就用详情（detail）。
+  // 这样两种场景共用同一套渲染，不会出现"历史记录长得不一样"的问题。
+  const view = snapshot ?? detail;
+  const orcSt = view ? ORC_STATUS[view.status] ?? ORC_STATUS.pending : null;
+  const running = view ? !["ok", "partial", "error", "aborted"].includes(view.status) : false;
+  const stepsOf: OrchestrationStepRead[] = snapshot?.steps ?? detail?.steps ?? [];
+  const finalText = String((view?.output?.content as string) ?? "");
+  const hasMasterSummary = stepsOf.some((s) => s.role === "master" && (s.order_index ?? 0) > 0);
 
   return (
     <div className="p-4 md:p-6 lg:p-7 max-w-5xl">
@@ -259,7 +332,7 @@ export default function PlaygroundPage() {
           disabled={busy}
           onPick={(id) => {
             // 手机通道：点一下 → 填进第一个空位。
-            // 注意必须用**函数式更新**：连续点两次时，闭包里的 slots 还是旧快照，
+            // 必须用函数式更新：连续点两次时闭包里的 slots 是旧快照，
             // 直接读它会把第二次点击填到同一个槽位、覆盖掉第一次的结果。
             const isMaster = mode === "master_worker";
             if (isMaster && !masterId) {
@@ -268,7 +341,6 @@ export default function PlaygroundPage() {
             }
             setSlots((prev) => {
               const next = [...prev];
-              // 同一个助手不重复占位
               const dup = next.findIndex((s) => s?.agent_id === id);
               if (dup >= 0) next[dup] = null;
               const emptyIdx = next.findIndex((s) => !s);
@@ -291,8 +363,45 @@ export default function PlaygroundPage() {
         />
       </section>
 
-      {/* ── 执行过程（实时）──────────────────────────────────── */}
-      {snapshot && (
+      {/* ── 最近的编排（历史）────────────────────────────────── */}
+      {history.length > 0 && (
+        <section className="card p-4 mb-4">
+          <h2 className="text-[14px] font-medium mb-3">最近的编排</h2>
+          <div className="space-y-1.5">
+            {history.map((h) => {
+              const on = h.id === orcId;
+              const st = ORC_STATUS[h.status] ?? ORC_STATUS.pending;
+              const preview = String((h.output?.content as string) ?? "").replace(/\s+/g, " ").slice(0, 44);
+              return (
+                <button
+                  key={h.id}
+                  onClick={() => void loadOrchestration(h.id)}
+                  className="w-full text-left rounded-lg px-3 py-2 transition-colors"
+                  style={{
+                    background: on ? "color-mix(in srgb, var(--color-accent) 9%, transparent)" : "var(--color-surface-2)",
+                    border: `1px solid ${on ? "var(--color-accent)" : "transparent"}`,
+                  }}
+                >
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[12.5px] font-medium">{h.name}</span>
+                    <span className="text-[11px] text-[var(--color-muted)]">{h.step_count} 个助手</span>
+                    <span className="text-[11.5px]" style={{ color: st.color }}>{st.label}</span>
+                    <span className="text-[11px] text-[var(--color-muted)] ml-auto shrink-0">
+                      {fmt.relative(h.started_at)}
+                    </span>
+                  </div>
+                  {preview && (
+                    <div className="text-[11.5px] text-[var(--color-muted)] mt-0.5 truncate">{preview}</div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* ── 执行过程（每个助手在做什么）────────────────────── */}
+      {stepsOf.length > 0 && (
         <section className="card p-4 mb-4">
           <div className="flex items-center gap-2 mb-3 flex-wrap">
             <h2 className="text-[14px] font-medium">执行过程</h2>
@@ -308,16 +417,19 @@ export default function PlaygroundPage() {
                 {orcSt.label}
               </span>
             )}
-            {snapshot.usage && (snapshot.usage.llm_calls ?? 0) > 0 && (
+            {histLoading && (
+              <span className="text-[11.5px] text-[var(--color-muted)]">载入中…</span>
+            )}
+            {!!view?.usage?.llm_calls && (
               <span className="text-[11.5px] text-[var(--color-muted)]">
-                {snapshot.usage.llm_calls} 次模型调用 ·{" "}
-                {(snapshot.usage.tokens_in ?? 0) + (snapshot.usage.tokens_out ?? 0)} tokens
+                {view.usage.llm_calls} 次模型调用 ·{" "}
+                {(view.usage.tokens_in ?? 0) + (view.usage.tokens_out ?? 0)} tokens
               </span>
             )}
           </div>
 
           <div className="space-y-2">
-            {snapshot.steps.map((s, i) => {
+            {stepsOf.map((s, i) => {
               const st = STEP_STATUS[s.status] ?? STEP_STATUS.pending;
               const evs = events[s.run_id] ?? [];
               const steps = evs.length ? eventsToSteps(evs) : [];
@@ -377,10 +489,30 @@ export default function PlaygroundPage() {
                     </div>
                   </div>
 
-                  {/* 这一步正在做什么（实时）*/}
+                  {/* 它领到的任务 —— 这是"这个助手在做什么"最直接的答案 */}
+                  {s.input_text && (
+                    <div className="text-[11.5px] text-[var(--color-muted)] mt-1.5 ml-7 leading-snug">
+                      <span className="text-[var(--color-info)]">领到的任务：</span>
+                      {s.input_text.replace(/\s+/g, " ").slice(0, 150)}
+                      {s.input_text.length > 150 ? "…" : ""}
+                    </div>
+                  )}
+
+                  {/* 不展开时给一句行动摘要（有事件时） */}
                   {!open && steps.length > 0 && (
-                    <div className="text-[11.5px] text-[var(--color-muted)] mt-1.5 ml-7 truncate">
+                    <div className="text-[11.5px] text-[var(--color-muted)] mt-1 ml-7 truncate">
                       {summarize(steps)}
+                    </div>
+                  )}
+
+                  {/* 产出（跑完了、没展开日志时也能一眼看到结论） */}
+                  {!open && s.status === "ok" && s.output_text && (
+                    <div className="text-[12px] mt-1.5 ml-7 leading-snug">
+                      <span className="text-[var(--color-ok)]">产出：</span>
+                      <span className="text-[var(--color-muted)]">
+                        {s.output_text.replace(/\s+/g, " ").slice(0, 130)}
+                        {s.output_text.length > 130 ? "…" : ""}
+                      </span>
                     </div>
                   )}
 
@@ -403,24 +535,22 @@ export default function PlaygroundPage() {
       )}
 
       {/* ── 最终结果 ─────────────────────────────────────────── */}
-      {snapshot && ["ok", "partial"].includes(snapshot.status) && (
+      {view && ["ok", "partial"].includes(view.status) && finalText && (
         <section className="card p-4">
           <h2 className="text-[14px] font-medium mb-2">
-            {snapshot.steps.some((s) => s.role === "master" && s.order_index !== 0)
-              ? "主控汇总的最终结果"
-              : "最终结果"}
+            {hasMasterSummary ? "主控汇总的最终结果" : "最终结果"}
           </h2>
           <div className="text-[13.5px] leading-relaxed whitespace-pre-wrap break-words">
-            {String((snapshot.output?.content as string) ?? "(无产出)")}
+            {finalText}
           </div>
-          {snapshot.status === "partial" && (
+          {view.status === "partial" && (
             <p className="text-[11.5px] mt-3" style={{ color: "var(--color-warn)" }}>
               有步骤失败，这里是成功的部分汇总出来的结果。
             </p>
           )}
-          {snapshot.ended_at && (
+          {view.ended_at && (
             <p className="text-[11.5px] text-[var(--color-muted)] mt-3">
-              完成于 {fmt.relative(snapshot.ended_at)}
+              完成于 {fmt.relative(view.ended_at)}
             </p>
           )}
         </section>
