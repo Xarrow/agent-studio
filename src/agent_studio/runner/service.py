@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import time
+from pathlib import Path
 import zlib
 from typing import Any
 
@@ -178,6 +179,34 @@ bus = EventBus()
 # --------------------------------------------------------------------------- #
 # 辅助
 # --------------------------------------------------------------------------- #
+def resolve_work_dir(definition: Any) -> Path:
+    """把「这个助手的工作目录」解析成绝对路径，需要时建出来。
+
+    **安全边界就在这里**：workspace 只能是平台沙箱根目录下的子目录名 ——
+    绝对路径、``..``、解析后越出沙箱的，一律记 warning 并回退平台默认目录。
+    这不是洁癖：目录就是权限边界（accept_edits 放行的正是"工作目录内"），
+    能跳出目录，权限 scope 就形同虚设。
+    """
+    root = Path(settings.work_dir).resolve()
+    raw = str(getattr(definition, "workspace", "") or "").strip()
+    if not raw:
+        return root
+    # 先按**用户原样**判非法，再规整：否则 "/tmp/x" 会被 strip 成 "tmp/x"
+    # 静默当成子目录 —— 没逃出沙箱，但和用户写的语义不符，不如明确拒绝。
+    if os.path.isabs(raw) or ".." in Path(raw).parts:
+        logger.warning("助手工作目录非法（%r），回退平台默认", raw)
+        return root
+    name = raw.strip("/")
+    if not name:
+        return root
+    target = (root / name).resolve()
+    if target != root and root not in target.parents:
+        logger.warning("助手工作目录越出沙箱（%r），回退平台默认", name)
+        return root
+    target.mkdir(parents=True, exist_ok=True)
+    return target
+
+
 async def resolve_api_key(definition: AgentDefinition, session: Any) -> str | None:
     """解析 api_key：定义内明文 → Secret 表 → 环境变量兜底。"""
     key, _ = await resolve_credential(definition, session)
@@ -362,7 +391,7 @@ class RunService:
                 api_key=api_key,
                 tools=tools,
                 agent_id=run.agent_id,
-                work_dir=str(settings.work_dir),
+                work_dir=str(resolve_work_dir(definition)),
                 context=context,
             )
 
@@ -559,7 +588,7 @@ class RunService:
         try:
             compiled = await runtime.compile(
                 definition, api_key=api_key, tools=tools,
-                agent_id=run.agent_id, work_dir=str(settings.work_dir),
+                agent_id=run.agent_id, work_dir=str(resolve_work_dir(definition)),
             )
             # 把暂停那一刻的状态装回去 —— 否则新编译的 agent 不认为自己
             # 有待确认的调用，AgentScope 会直接拒绝确认事件

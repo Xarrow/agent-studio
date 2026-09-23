@@ -64,13 +64,7 @@ const SETUP_ITEMS: Item[] = [
     icon: "⚙",
     tip: "给助手加「手」：能查网页、读文件、跑命令之类。不加就只能聊天。",
   },
-  {
-    href: "/skills",
-    label: "Skills",
-    icon: "◈",
-    tip: "预先写好的「做事套路」。装上之后，助手遇到这类任务就知道该按什么步骤做。",
-  },
-  {
+    {
     href: "/environment",
     label: "环境配置",
     icon: "⛁",

@@ -253,3 +253,67 @@ body {
     width: 0%;
   }
 }
+
+/* ── 滑块（记忆面板的「回忆条数 / 占用字数」）─────────────────────────
+   浏览器默认的 range 又矮又灰，而且各平台长得都不一样（手机上尤其难看）。
+   统一成：细轨道 + **已选部分填强调色** + 圆形滑块头，点按区域按触屏留够。
+   填充比例由组件用内联 --fill 传进来（Chrome 只能靠渐变做"左侧填充"）。 */
+.range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 24px;                       /* 触屏可点区域，别只剩 6px 的轨道 */
+  background: transparent;
+  cursor: pointer;
+}
+.range::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: linear-gradient(
+    to right,
+    var(--color-accent) 0,
+    var(--color-accent) var(--fill, 0%),
+    var(--color-surface-2) var(--fill, 0%),
+    var(--color-surface-2) 100%
+  );
+}
+.range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -7px;                   /* 让 18px 的球落在 6px 轨道上（含 1px 边框） */
+  border-radius: 999px;
+  background: var(--color-accent);
+  border: 2px solid var(--color-surface);
+  box-shadow: 0 1px 4px rgba(20, 24, 31, .25);
+  transition: transform .12s ease;
+}
+.range:hover::-webkit-slider-thumb,
+.range:active::-webkit-slider-thumb {
+  transform: scale(1.08);
+}
+.range::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-2);
+}
+.range::-moz-range-progress {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--color-accent);
+}
+.range::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--color-accent);
+  border: 2px solid var(--color-surface);
+  box-shadow: 0 1px 4px rgba(20, 24, 31, .25);
+}
+.range:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}

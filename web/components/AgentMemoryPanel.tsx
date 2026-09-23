@@ -340,21 +340,33 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
             </div>
 
             <div>
-              <label className="label">每次最多回忆 {policy.recall_top_k} 条</label>
+              <label className="label">
+                每次最多回忆{" "}
+                <b style={{ color: "var(--color-accent)" }}>{policy.recall_top_k}</b> 条
+              </label>
               <input
                 type="range"
                 min={1}
                 max={20}
                 value={policy.recall_top_k}
                 disabled={busy}
-                className="w-full accent-[var(--color-accent)]"
+                className="range"
+                style={{ ["--fill" as string]: `${((policy.recall_top_k - 1) / 19) * 100}%` }}
                 onChange={(e) => void patch({ recall_top_k: Number(e.target.value) })}
               />
+              <div className="flex justify-between text-[11px] text-[var(--color-muted)]">
+                <span>少（省上下文）</span>
+                <span>多（更靠得住）</span>
+              </div>
             </div>
 
             <div>
               <label className="label">
-                记忆最多占上下文约 {Math.round(policy.max_inject_chars / 3)} 个字
+                记忆最多占上下文约{" "}
+                <b style={{ color: "var(--color-accent)" }}>
+                  {Math.round(policy.max_inject_chars / 3)}
+                </b>{" "}
+                个字
               </label>
               <input
                 type="range"
@@ -363,9 +375,16 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
                 step={100}
                 value={policy.max_inject_chars}
                 disabled={busy}
-                className="w-full accent-[var(--color-accent)]"
+                className="range"
+                style={{
+                  ["--fill" as string]: `${((policy.max_inject_chars - 200) / 7800) * 100}%`,
+                }}
                 onChange={(e) => void patch({ max_inject_chars: Number(e.target.value) })}
               />
+              <div className="flex justify-between text-[11px] text-[var(--color-muted)]">
+                <span>少（200 字）</span>
+                <span>多（8000 字）</span>
+              </div>
               <p className="text-[11px] text-[var(--color-muted)] mt-1">
                 超出时优先丢掉最不相关的，避免占用太多对话空间
               </p>

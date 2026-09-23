@@ -72,6 +72,11 @@ class AgentDefinition(BaseModel):
     middlewares: list[dict[str, Any]] = Field(default_factory=list)
     limits: Limits = Field(default_factory=Limits)
     runtime_options: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    #: 这个助手自己的工作目录（平台沙箱内的**子目录名**；空 = 用平台那个共用的）。
+    #: 它同时是**权限的边界**：权限 scope 里"工作目录内直接放行"指的就是这里，
+    #: 越出这个目录的操作才需要人工确认。只允许名字，不允许绝对路径 / ``..``
+    #: —— 后端 resolve_work_dir 会强制校验，非法就记 warning 并回退平台默认。
+    workspace: str = ""
 
     @field_validator("system_prompt")
     @classmethod

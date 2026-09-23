@@ -20,6 +20,7 @@ import type {
 } from "@/lib/types";
 import { AgentMemoryPanel } from "@/components/AgentMemoryPanel";
 import { PermissionScope, type PermConf } from "@/components/PermissionScope";
+import { Hint } from "@/components/ui/hint";
 import { ModelPicker } from "@/components/ModelPicker";
 import { RunPanel } from "@/components/AgentRunPanel";
 import { useFeedback } from "@/components/ui/feedback";
@@ -522,6 +523,29 @@ export function AgentDetail({
                   {caps.supports_structured_output && <span className="tag">结构化输出</span>}
                 </div>
               )}
+
+              {/* 工作目录 —— **紧挨着权限放**：目录就是权限的边界，
+                  "工作目录内直接放行"指的就是它，两者分开说得再清楚也容易脱节 */}
+              <div
+                className="mt-4 rounded-[10px] border p-3"
+                style={{ borderColor: "var(--color-border)" }}
+              >
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[13px] font-semibold">工作目录</span>
+                  <Hint text="这个助手读写文件、跑命令时落东西的目录。它建在平台沙箱里面，出不了沙箱；下面权限里说的「工作目录内」，指的就是它。" />
+                </div>
+                <input
+                  className="input mono mt-2 w-full"
+                  value={def.workspace ?? ""}
+                  placeholder="留空 = 用平台共用的那个"
+                  onChange={(e) => patch({ workspace: e.target.value })}
+                />
+                <p className="mt-1.5 text-[11.5px] leading-relaxed" style={{ color: "var(--color-muted)" }}>
+                  只填一个名字（例如 <code>报价调研</code>），不要写路径 —— 写了也会被拒绝并退回平台默认。
+                  实际位置：<code>data/work/{def.workspace?.trim() || "…"}</code>
+                  {" "}它与下面的权限配合：<b>目录内</b>按权限放行，<b>出目录</b>一律要你点头。
+                </p>
+              </div>
 
               {/* 权限 scope —— 由运行时能力决定是否出现（支持人工确认 = 有权限机制） */}
               {caps?.supports_hitl && (

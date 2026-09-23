@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, fmt } from "@/lib/api";
 import type { Tool } from "@/lib/types";
+import { SkillsPanel } from "@/components/SkillsPanel";
 import { useFeedback } from "@/components/ui/feedback";
 
 export default function ToolsPage() {
@@ -16,6 +17,8 @@ export default function ToolsPage() {
   const [testOut, setTestOut] = useState<Record<string, string>>({});
   const [argsInput, setArgsInput] = useState<Record<string, string>>({});
   const [kindFilter, setKindFilter] = useState("");
+  /** 这一页管三件事：工具 / Skills /（以后的）MCP —— 页签切换，不跳页 */
+  const [tab, setTab] = useState<"tools" | "skills">("tools");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -132,6 +135,39 @@ export default function ToolsPage() {
 
   return (
     <div className="p-4 md:p-6 lg:p-7 max-w-5xl">
+      {/* 页签：工具 / Skills —— 对用户本是同一件事（"这个助手能干什么"），
+          分成两个菜单只会让人先猜该点哪个 */}
+      <div className="mb-5 flex gap-1 border-b" style={{ borderColor: "var(--color-border)" }}>
+        {(
+          [
+            ["tools", "工具"],
+            ["skills", "Skills"],
+          ] as const
+        ).map(([k, label]) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => setTab(k)}
+            className="-mb-px border-b-2 px-3.5 py-2 text-[13.5px] transition-colors"
+            style={
+              tab === k
+                ? {
+                    borderColor: "var(--color-accent)",
+                    color: "var(--color-accent)",
+                    fontWeight: 600,
+                  }
+                : { borderColor: "transparent", color: "var(--color-muted)" }
+            }
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "skills" && <SkillsPanel embedded />}
+
+      {tab === "tools" && (
+        <>
       <header className="flex items-start justify-between mb-6">
         <div>
           <h1 className="text-[22px] font-semibold tracking-tight">工具</h1>
@@ -292,9 +328,12 @@ export default function ToolsPage() {
           ))}
         </div>
       )}
+        </>
+      )}
     </div>
   );
 }
+
 
 // --------------------------------------------------------------------------- //
 function NewToolDialog({

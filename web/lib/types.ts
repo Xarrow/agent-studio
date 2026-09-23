@@ -69,6 +69,8 @@ export interface AgentDefinition {
   middlewares: Record<string, unknown>[];
   limits: Limits;
   runtime_options: Record<string, Record<string, unknown>>;
+  /** 这个助手自己的工作目录（沙箱内的子目录名；空 = 平台共用那个）。**同时是权限边界** */
+  workspace?: string;
 }
 
 export interface Agent {
