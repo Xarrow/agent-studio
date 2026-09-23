@@ -619,8 +619,10 @@ class RunService:
 
             timeout = definition.limits.timeout_s or settings.default_timeout_s
 
+            hitl_payload: dict[str, Any] = {}
+
             async def consume() -> None:
-                nonlocal seq, status
+                nonlocal seq, status, hitl_payload
                 async for ev in runtime.resume(compiled, hitl):
                     ev = ev.model_copy(update={"run_id": run_id, "seq": seq})
                     seq += 1
@@ -630,8 +632,25 @@ class RunService:
                     # 同上：不提前 return，保证最终 Msg 被消费
                     if ev.type == "hitl_request":
                         status = "waiting_hitl"
+                        hitl_payload = dict(ev.payload)
 
             await asyncio.wait_for(consume(), timeout=timeout)
+
+            # 恢复之后**又**要授权（模型连着要两步是常事：先写脚本、再跑脚本）：
+            # 这里必须和正常执行路径一样，把待确认内容 + 状态快照一起落库。
+            # 少了这一步会留下一条"状态在等确认、内容却是空的"运行 ——
+            # 界面只能显示"（没有解析出具体调用）"，回灌时空 payload 还被接口拒收，
+            # 而且**再也恢复不了**（没有快照，AgentScope 不认这次确认）。
+            if status == "waiting_hitl":
+                async with SessionLocal() as session:
+                    _r = await session.get(Run, run_id)
+                    if _r is not None:
+                        _r.status = "waiting_hitl"
+                        _r.pending_hitl = hitl_payload or {}
+                        _r.pending_state = (
+                            runtime.snapshot_state(compiled) if compiled is not None else None
+                        )
+                        await session.commit()
         except asyncio.CancelledError:
             status, error = "aborted", "用户中断"
         except Exception as exc:  # pragma: no cover

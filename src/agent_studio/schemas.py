@@ -429,9 +429,16 @@ class ValidateResponse(BaseModel):
 
 
 class HitlResumeRequest(BaseModel):
+    """恢复一次待确认的调用。
+
+    ``payload`` 允许为 null：界面上万一没拿到明细（例如历史遗留记录），
+    也不该让整个恢复请求 422 —— 服务端本来就有这份 payload，
+    客户端传不传只是"能不能对上"，不是"必须由客户端提供"。
+    """
+
     confirm: bool = True
     reason: str | None = None
-    payload: dict[str, Any] = Field(default_factory=dict)
+    payload: dict[str, Any] | None = None
 
 
 # --------------------------------------------------------------------------- #

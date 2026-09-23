@@ -97,7 +97,11 @@ export function HitlPrompt({
     // 先接流，再恢复 —— 顺序不能反
     onBeforeResume?.();
     try {
-      await api.resumeRun(runId, { confirm, payload });
+      // 有明细才回灌；没有就让服务端用它自己存的那份（发 null 没有意义）
+      await api.resumeRun(runId, {
+        confirm,
+        ...(payload && Object.keys(payload).length ? { payload } : {}),
+      });
       onResumed?.(confirm);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

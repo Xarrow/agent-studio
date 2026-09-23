@@ -124,6 +124,45 @@ export function apiBase(): string {
   return process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8848";
 }
 
+/**
+ * 从错误响应里读出一句**人能看懂**的话。
+ *
+ * 为什么不能直接 `String(detail)`：FastAPI 的 422 返回的 detail 是**数组**
+ * （每个元素是 {type, loc, msg, input} 的校验错误），`String()` 一下就成了
+ * `[object Object]` —— 用户看到的就是这个，完全无从下手，而我们自己也丢了线索。
+ * 这里把两种形状都处理掉：字符串原样用，数组拼成"字段 位置：原因"。
+ */
+function readErrorDetail(body: unknown, fallback: string): string {
+  if (!body || typeof body !== "object") return fallback;
+  const raw = (body as { detail?: unknown }).detail;
+  if (typeof raw === "string" && raw.trim()) return raw;
+  if (Array.isArray(raw)) {
+    const parts = raw
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (item && typeof item === "object") {
+          const o = item as { loc?: unknown[]; msg?: string; type?: string };
+          const where = Array.isArray(o.loc)
+            ? o.loc.filter((x) => x !== "body" && x !== "query").join(".")
+            : "";
+          const msg = o.msg || o.type || "参数不合法";
+          return where ? `${where}：${msg}` : msg;
+        }
+        return "";
+      })
+      .filter(Boolean);
+    if (parts.length) return parts.join("；");
+  }
+  // 兜底：把对象序列化出来，至少不是 [object Object]
+  try {
+    const json = JSON.stringify(raw ?? body);
+    if (json && json !== "{}") return json.slice(0, 300);
+  } catch {
+    /* 序列化失败就退回原文本 */
+  }
+  return fallback;
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -161,10 +200,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   if (!res.ok) {
-    const detail =
-      typeof body === "object" && body && "detail" in body
-        ? String((body as { detail: unknown }).detail)
-        : text || res.statusText;
+    const detail = readErrorDetail(body, text || res.statusText);
     throw new ApiError(detail, res.status);
   }
   return body as T;

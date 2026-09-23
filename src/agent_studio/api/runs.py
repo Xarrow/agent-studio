@@ -277,9 +277,21 @@ async def resume_run(
         raise HTTPException(
             status.HTTP_409_CONFLICT, f"该 Run 不在等待确认状态（当前: {run.status}）"
         )
+    # 状态在等确认、待确认内容却是空的 —— 这是"修复前留下的记录"的特征：
+    # 那时续跑后再暂停没有落库。这种记录无法恢复（连状态快照都没有），
+    # 与其回一句含糊的错误，不如直接说清楚并给出路。
+    if not run.pending_hitl:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "这条运行的待确认内容已经丢失（旧的记录格式），没法继续；请重新发起一次。",
+        )
     ok = await run_service.resume(
         run_id,
-        HitlResponse(confirm=payload.confirm, reason=payload.reason, payload=payload.payload),
+        # payload 允许客户端不传（None）—— 服务端会用自己存的那份合并，
+        # 所以这里给 {} 而不是 None（HitlResponse 要求 dict）。
+        HitlResponse(
+            confirm=payload.confirm, reason=payload.reason, payload=payload.payload or {}
+        ),
     )
     return {"resumed": ok}
 
