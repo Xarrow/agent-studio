@@ -208,7 +208,13 @@ def resolve_work_dir(definition: Any) -> Path:
 
 
 async def resolve_api_key(definition: AgentDefinition, session: Any) -> str | None:
-    """解析 api_key：定义内明文 → Secret 表 → 环境变量兜底。"""
+    """只取 key、不要端点。
+
+    ⚠️ **执行路径请用 ``resolve_credential``** —— 只取 key 会把凭据上配的
+    base_url 丢掉，退回到框架自带默认端点。火山方舟那类"按套餐分端点"的 key
+    （只受理 ``/api/plan/v3``）就会 401，而且症状是"第一轮正常、续跑才报 key 无效"，
+    极难往端点方向想。留这个薄封装只为确实不需要端点的调用方。
+    """
     key, _ = await resolve_credential(definition, session)
     return key
 
@@ -581,7 +587,13 @@ class RunService:
             seq = (last or -1) + 1
             run = await session.get(Run, run_id)
             tools = await load_tools(session, run.agent_id)
-            api_key = await resolve_api_key(definition, session)
+            # 续跑（人工确认之后）也必须**连 base_url 一起**解析凭据：
+            # 只看 api_key 的话，凭据上配的端点会被丢掉，退回框架自带默认端点 ——
+            # 火山方舟的 Agent Plan key 打到 /api/v3 直接 401，
+            # 症状是"第一轮正常、点了允许续跑就报 key 无效"，极难往端点方向想。
+            # 与正常执行路径（见 resolve_credential 的说明）保持同一套解析。
+            api_key, _cred_base_url = await resolve_credential(definition, session)
+            definition = _with_base_url(definition, _cred_base_url)
 
         compiled = None
         status, error = "ok", None
