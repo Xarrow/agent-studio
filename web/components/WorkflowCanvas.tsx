@@ -112,6 +112,8 @@ type Props = {
   /** 从助手栏拖过来的助手 id（由上层维护，本组件只负责接收落点） */
   draggingAgentId: string | null;
   onDropped: (agentId: string, targetNid: string | null) => void;
+  /** 指针拖拽时**悬停到的节点**：用来预览"松手会插到它后面" */
+  hoverNid?: string | null;
   /** 运行中：冻结结构编辑，避免"改了图但对不上记录" */
   frozen?: boolean;
   /** 空态里给的三种起步方式 */
@@ -162,12 +164,14 @@ export function WorkflowCanvas({
   draggingAgentId,
   onDropped,
   frozen = false,
+  hoverNid = null,
   onPreset,
 }: Props) {
   const stageRef = useRef<HTMLDivElement>(null);
   const nodeRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [heights, setHeights] = useState<Record<string, number>>({});
-  const [hot, setHot] = useState(false);
+  /** 画布"可以放东西"的高亮：有人正拿着助手 */
+  const hot = !!draggingAgentId || hoverNid != null;
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [ghost, setGhost] = useState<string | null>(null);
   /** 窄屏：层改纵向排列（手机上横向滚动看不全一张图） */
@@ -238,25 +242,9 @@ export function WorkflowCanvas({
     if (dirty) setHeights(next);
   });
 
-  /* ── 拖拽：从助手栏落到空白 / 落到某个助手身上 ─────────────────────── */
-  const handleDragOver = (e: React.DragEvent) => {
-    if (frozen) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "copy";
-    setHot(true);
-    const el = (e.target as HTMLElement).closest("[data-nid]") as HTMLElement | null;
-    setDropTarget(el?.dataset.nid ?? null);
-  };
-  const handleDrop = (e: React.DragEvent) => {
-    if (frozen) return;
-    e.preventDefault();
-    setHot(false);
-    const target = dropTarget;
-    setDropTarget(null);
-    const aid = draggingAgentId || e.dataTransfer.getData("text/plain");
-    if (!aid) return;
-    onDropped(aid, target);
-  };
+  /* ── 从助手栏拿助手：走**指针事件**（见 PlaygroundConsole.startAgentDrag）──
+     不用 HTML5 拖放，是因为它在触屏上根本不触发 —— 手机上会完全拖不动。
+     这一侧只负责提供"这里是画布，可以放"的锚点，落点由 elementFromPoint 判定。 */
 
   /* ── 连线：从出口拖到另一个节点（用于分叉 / 汇合） ─────────────────── */
   const canLink = (from: string, to: string) => {
@@ -401,14 +389,7 @@ export function WorkflowCanvas({
   return (
     <div
       ref={stageRef}
-      onDragOver={handleDragOver}
-      onDragLeave={(e) => {
-        if (e.target === e.currentTarget) {
-          setHot(false);
-          setDropTarget(null);
-        }
-      }}
-      onDrop={handleDrop}
+      data-canvas-drop="1"
       onClick={(e) => {
         if (e.target === e.currentTarget) {
           onSelect(null);
@@ -545,7 +526,7 @@ export function WorkflowCanvas({
           const st = (runStates[n.nid] ?? "idle") as NodeState;
           const meta = META[st] ?? META.idle;
           const isSel = selected === n.nid;
-          const isTarget = dropTarget === n.nid;
+          const isTarget = (hoverNid ?? dropTarget) === n.nid;
           const stepNo = layout.layers.findIndex((ids) => ids.includes(n.nid)) + 1;
           const out = outputs[n.nid];
           return (

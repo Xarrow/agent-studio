@@ -59,6 +59,10 @@ export function PlaygroundConsole() {
 
   const [selected, setSelected] = useState<string | null>(null);
   const [draggingAgentId, setDragging] = useState<string | null>(null);
+  /** 拖拽时跟着手指/鼠标的小卡片（用 position:fixed，不受画布滚动影响） */
+  const [ghost, setGhost] = useState<{ x: number; y: number; name: string } | null>(null);
+  /** 指针正悬停在哪个节点上（画布据此预览"会插到它后面"） */
+  const [hoverNid, setHoverNid] = useState<string | null>(null);
 
   const [task, setTask] = useState("");
   const [running, setRunning] = useState(false);
@@ -135,6 +139,64 @@ export function PlaygroundConsole() {
       g.edges.filter((e) => e.from === cur).forEach((e) => stack.push(e.to));
     }
     return [...seen];
+  };
+
+  /**
+   * 从助手栏"拿起"一个助手 —— 用**指针事件**而不是 HTML5 拖放。
+   *
+   * 为什么不用 HTML5 拖放：它在**触屏上根本不触发**（浏览器不支持），
+   * 也就是手机上完全拖不动。指针事件鼠标和手指同一套，才谈得上"支持拖拽"。
+   *
+   * 两个动作都留了路：
+   *   · 拖（移动超过 6px）：跟手一张小卡片，松手落点决定"新开一条"还是"接在它后面"
+   *   · 点（没移动）：直接加一条 —— 手机上一根指头就能放，不必先学会拖
+   */
+  const startAgentDrag = (e: React.PointerEvent, agentId: string, name: string) => {
+    if (running) return;
+    e.preventDefault();
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    let moved = false;
+
+    const onMove = (ev: PointerEvent) => {
+      if (!moved && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 6) return;
+      if (!moved) {
+        moved = true;
+        setDragging(agentId);
+      }
+      setGhost({ x: ev.clientX, y: ev.clientY, name });
+      // 顺手告诉画布"现在悬在哪个节点上" —— 好让它提前显示"会插到它后面"
+      const el = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null;
+      setHoverNid(
+        el?.closest("[data-canvas-drop]")
+          ? ((el.closest("[data-nid]") as HTMLElement | null)?.dataset.nid ?? null)
+          : null,
+      );
+    };
+
+    const onUp = (ev: PointerEvent) => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      setGhost(null);
+      setDragging(null);
+      setHoverNid(null);
+      if (!moved) {
+        // 点击 = 加一条新的（不猜"加在哪" —— 直接新开一条，最不容易出错）
+        dropAgent(agentId, null);
+        return;
+      }
+      // 落点交给画布上的标记：节点上 → 接在它后面；画布空白 → 新开一条
+      const el = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null;
+      const onCanvas = el?.closest("[data-canvas-drop]");
+      if (!onCanvas) return; // 丢在别处（比如导航栏）= 取消
+      const nodeEl = el?.closest("[data-nid]") as HTMLElement | null;
+      dropAgent(agentId, nodeEl?.dataset.nid ?? null);
+    };
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
   };
 
   const dropAgent = (agentId: string, targetNid: string | null) => {
@@ -412,21 +474,21 @@ export function PlaygroundConsole() {
             助手
           </div>
           <div className="px-3.5 pb-2 text-[11.5px] leading-snug" style={{ color: "var(--color-muted)" }}>
-            拖到空白处 = 新开一条；拖到某个助手上 = 接在它后面。
+            拖到空白处 = 新开一条；拖到某个助手上 = 接在它后面；点一下 = 直接加一条。
           </div>
           <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-auto px-2.5 pb-3">
             {agents.map((a) => (
               <div
                 key={a.id}
-                draggable={!running}
-                onDragStart={(e) => {
-                  setDragging(a.id);
-                  e.dataTransfer.setData("text/plain", a.id);
-                  e.dataTransfer.effectAllowed = "copy";
+                onPointerDown={(e) => startAgentDrag(e, a.id, a.name)}
+                // touchAction:none —— 手指按在这张卡上时不要让它变成页面滚动，
+                // 否则 pointermove 会被浏览器截走，拖拽在手机上就废了
+                className="flex cursor-grab touch-none items-center gap-2 rounded-[8px] border px-2.5 py-2 active:cursor-grabbing"
+                style={{
+                  borderColor: draggingAgentId === a.id ? "var(--color-accent)" : "var(--color-border)",
+                  background: "var(--color-surface)",
+                  opacity: running ? 0.5 : 1,
                 }}
-                onDragEnd={() => setDragging(null)}
-                className="flex cursor-grab items-center gap-2 rounded-[8px] border px-2.5 py-2"
-                style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
                 title={`${a.name} · ${a.definition?.system_prompt?.slice(0, 40) ?? ""}`}
               >
                 <span
@@ -463,6 +525,7 @@ export function PlaygroundConsole() {
             hitl={hitl ? { nid: hitl.nid, payload: hitl.payload } : null}
             onHitl={(a) => void hitlAction(a)}
             draggingAgentId={draggingAgentId}
+            hoverNid={hoverNid}
             onDropped={dropAgent}
             frozen={running}
             onPreset={preset}
@@ -619,6 +682,23 @@ export function PlaygroundConsole() {
           </span>
         </div>
       </div>
+
+      {/* 跟手的小卡片：让"我正拿着谁"看得见（手机上尤其要紧，指头会挡住原件） */}
+      {ghost && (
+        <div
+          className="pointer-events-none fixed z-[60] rounded-[8px] border px-2.5 py-1.5 text-[12.5px] font-medium"
+          style={{
+            left: ghost.x + 14,
+            top: ghost.y + 10,
+            background: "var(--color-surface)",
+            borderColor: "var(--color-accent)",
+            color: "var(--color-accent)",
+            boxShadow: "0 8px 20px rgba(20,24,31,.16)",
+          }}
+        >
+          {ghost.name}
+        </div>
+      )}
     </div>
   );
 }
