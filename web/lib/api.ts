@@ -48,7 +48,12 @@ export const AUTH_REQUIRED_EVENT = "studio:auth-required";
 
 export function getAccessToken(): string {
   if (typeof window === "undefined") return "";
-  return window.localStorage.getItem(TOKEN_KEY) ?? "";
+  const stored = window.localStorage.getItem(TOKEN_KEY);
+  if (stored) return stored;
+  // 兜底：前端 Basic 认证通过时，middleware 会写一个普通 cookie，
+  // 让浏览器这边也能拿到口令去调 API —— 用户因此只需输一次口令。
+  const m = document.cookie.match(/(?:^|;\s*)studio_token=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : "";
 }
 
 export function setAccessToken(token: string): void {

@@ -50,15 +50,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
 # --------------------------------------------------------------------------- #
 # 访问口令（HTTP auth）
 # --------------------------------------------------------------------------- #
@@ -134,6 +125,27 @@ async def require_access_token(request: "Request", call_next):
         content={"detail": "需要访问口令。请在页面上输入，或带上 Authorization: Bearer <口令>。"},
         headers={"WWW-Authenticate": 'Basic realm="Agent Studio"'},
     )
+
+
+# --------------------------------------------------------------------------- #
+# 跨域
+# --------------------------------------------------------------------------- #
+# ⚠️ 注册位置很关键：Starlette 里**后注册的在外层**（add_middleware 插到链表头部，
+#    构建时链表第一个是最外层）。所以这里的顺序决定了真实的嵌套：
+#
+#        访问日志（最外） → CORS → 访问口令 → 业务路由（最内）
+#
+#    为什么 CORS 必须在「访问口令」**外面**：
+#    口令校验失败要返回 401，而 401 **必须带上跨域头**，否则浏览器只会报
+#    "CORS policy" 而看不到 401 —— 前端就永远不知道该弹输口令的浮层，
+#    排查时也会被"CORS 错误"带偏（这个坑刚踩过一次）。
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # --------------------------------------------------------------------------- #
