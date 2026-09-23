@@ -74,6 +74,14 @@ export function AgentDetail({
    * 改了配置界面毫无变化，切走就悄悄丢了，而且试跑用的是**旧版本**却毫无提示。
    */
   const [savedSnap, setSavedSnap] = useState<string>("");
+  /**
+   * 这个助手不存在（被删了 / id 写错）。
+   *
+   * 单独拎出来是因为它是**最常见**的"打不开"原因 —— 助手被删之后，
+   * 任何指向它的旧链接/书签都会落到这里。给一句人话 + 一条出路，
+   * 而不是把接口的 "404 Not Found" 原样糊在屏幕上。
+   */
+  const [notFound, setNotFound] = useState(false);
   const [ov, setOv] = useState<{
     memoryOwn: number | null;
     memoryShared: number | null;
@@ -118,7 +126,10 @@ export function AgentDetail({
       setRuntimes(r);
       setErr(null);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      // 后端的文案是中文（"Agent 不存在: ag_xxx"），别只认英文 404
+      setNotFound(/404|not found|不存在/i.test(msg));
+      setErr(msg);
     }
   }, [agentId]);
 
@@ -201,6 +212,26 @@ export function AgentDetail({
   }, [dirty]);
 
   if (!def || !agent) {
+    if (notFound) {
+      return (
+        <div className="p-4 md:p-6 lg:p-7 max-w-lg">
+          <div className="card p-5">
+            <h1 className="text-[16px] font-medium mb-2">这个助手不存在</h1>
+            <p className="text-[13px] text-[var(--color-muted)] mb-4">
+              它可能已经被删除了（旧链接或书签会落到这里）。平台现有的助手在列表里。
+            </p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <a className="btn btn-primary" href="/agents">
+                去助手列表
+              </a>
+              <a className="btn" href="/chat">
+                去对话
+              </a>
+            </div>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="p-4 md:p-6 lg:p-7 text-[13px] text-[var(--color-muted)]">
         {err ? `加载失败：${err}` : "加载中…"}
