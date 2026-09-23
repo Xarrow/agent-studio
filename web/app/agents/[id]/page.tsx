@@ -19,6 +19,7 @@ import type {
   Tool,
 } from "@/lib/types";
 import { AgentMemoryPanel } from "@/components/AgentMemoryPanel";
+import { ModelPicker } from "@/components/ModelPicker";
 import { RunPanel } from "@/components/AgentRunPanel";
 import { useFeedback } from "@/components/ui/feedback";
 
@@ -328,41 +329,36 @@ export default function AgentEditorPage() {
                 </select>
               </div>
               <div>
-                <label className="label">模型</label>
-                <input
-                  className="input mono"
-                  list="m-options"
-                  value={def.model.name}
+                <label className="label">LLM 配置</label>
+                <select
+                  className="input"
+                  value={def.model.credential_ref ?? ""}
                   onChange={(e) =>
-                    patch({ model: { ...def.model, name: e.target.value } })
+                    patch({
+                      model: { ...def.model, credential_ref: e.target.value || null },
+                    })
                   }
-                />
-                <datalist id="m-options">
-                  {(providerMeta?.models ?? []).map((m) => (
-                    <option key={m} value={m} />
+                >
+                  <option value="">— 环境变量默认 —</option>
+                  {usableCreds.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}（{c.masked_key}）
+                    </option>
                   ))}
-                </datalist>
+                </select>
               </div>
             </div>
 
+            {/* 模型放在「LLM 配置」之后 —— 下拉里的候选是靠那条凭据探测出来的 */}
             <div>
-              <label className="label">LLM 配置</label>
-              <select
-                className="input"
-                value={def.model.credential_ref ?? ""}
-                onChange={(e) =>
-                  patch({
-                    model: { ...def.model, credential_ref: e.target.value || null },
-                  })
-                }
-              >
-                <option value="">— 环境变量默认 —</option>
-                {usableCreds.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}（{c.masked_key}）
-                  </option>
-                ))}
-              </select>
+              <label className="label">模型</label>
+              <ModelPicker
+                providers={providers}
+                provider={def.model.provider}
+                credentialId={def.model.credential_ref}
+                value={def.model.name}
+                onChange={(v) => patch({ model: { ...def.model, name: v } })}
+              />
             </div>
 
             <div>

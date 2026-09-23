@@ -6,6 +6,7 @@ import { api, fmt } from "@/lib/api";
 import type { Agent, Credential, Provider, RuntimeCapabilities } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
 import { Hint, HINTS } from "@/components/ui/hint";
+import { ModelPicker } from "@/components/ModelPicker";
 
 /**
  * 「你希望它帮你做什么」的预设 —— 选一个就自动带上角色设定。
@@ -487,17 +488,13 @@ function NewAgentDialog({
                   <label className="label flex items-center gap-1.5">
                     <Hint text="同一家服务商里有不同档位，贵的更聪明、便宜的更快。">模型</Hint>
                   </label>
-                  <input
-                    className="input mono"
+                  <ModelPicker
+                    providers={providers}
+                    provider={provider}
+                    credentialId={credRef}
                     value={model}
-                    onChange={(e) => setModel(e.target.value)}
-                    list="model-options"
+                    onChange={setModel}
                   />
-                  <datalist id="model-options">
-                    {(providerMeta?.models ?? []).map((m) => (
-                      <option key={m} value={m} />
-                    ))}
-                  </datalist>
                 </div>
               </div>
             )}
