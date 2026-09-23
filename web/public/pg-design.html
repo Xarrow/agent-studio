@@ -1,0 +1,1041 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Playground 编排台 · 设计方案</title>
+<style>
+/* ─────────────────────────────────────────────────────────────
+   设计变量：直接沿用 agent-studio 现有 token（globals.css），
+   保证这个方案落地时不需要发明新颜色。
+   ───────────────────────────────────────────────────────────── */
+:root{
+  --bg:#f7f9fc; --surface:#ffffff; --surface-2:#eef2f8;
+  --border:#dce4ee; --text:#14181f; --muted:#5f6b7a;
+  --accent:#2563eb; --accent-dim:#1d4ed8; --accent-fg:#fff;
+  --ok:#15803d; --warn:#b45309; --err:#dc2626; --info:#0891b2;
+  --track:#e8eef6;
+  --radius:10px; --radius-sm:8px;
+  --shadow-1:0 1px 2px rgba(20,24,31,.06),0 2px 6px rgba(20,24,31,.05);
+  --shadow-2:0 10px 24px rgba(20,24,31,.13),0 2px 6px rgba(20,24,31,.06);
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+
+  /* 密度：Tweaks 可切 */
+  --gap-x:78px; --gap-y:22px; --node-w:236px; --pad:26px;
+}
+[data-density="compact"]{ --gap-x:62px; --gap-y:14px; --node-w:214px; --pad:18px; }
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg); color:var(--text);
+  font-family:var(--sans); font-size:14px; line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+button{font:inherit;color:inherit;cursor:pointer}
+.mono{font-family:var(--mono)}
+
+/* ── 顶栏 ───────────────────────────────────────────────── */
+.top{
+  display:flex; align-items:center; gap:14px;
+  padding:11px 16px; background:var(--surface);
+  border-bottom:1px solid var(--border); flex-wrap:wrap;
+}
+.brand{display:flex;align-items:baseline;gap:9px;min-width:0}
+.brand h1{margin:0;font-size:15.5px;font-weight:650;letter-spacing:-.01em}
+.brand .sub{color:var(--muted);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.spacer{flex:1 1 auto}
+
+/* 执行方式：由「图」推导出来，不是让用户选的第一道题 */
+.derived{
+  display:inline-flex;align-items:center;gap:7px;
+  border:1px solid var(--border);background:var(--surface-2);
+  border-radius:999px;padding:4px 6px 4px 11px;font-size:12.5px;
+}
+.derived b{font-weight:600}
+.derived .why{color:var(--muted)}
+.derived button{
+  border:0;background:transparent;color:var(--accent);
+  font-size:12px;padding:2px 6px;border-radius:6px;
+}
+.derived button:hover{background:color-mix(in srgb,var(--accent) 10%,transparent)}
+
+.btn{
+  border:1px solid var(--border);background:var(--surface);
+  border-radius:8px;padding:7px 13px;font-size:13px;font-weight:500;
+  transition:background .12s,border-color .12s,transform .06s;
+}
+.btn:hover{background:var(--surface-2)}
+.btn:active{transform:translateY(1px)}
+.btn.primary{
+  background:var(--accent);border-color:var(--accent);color:var(--accent-fg);
+  box-shadow:var(--shadow-1);
+}
+.btn.primary:hover{background:var(--accent-dim);border-color:var(--accent-dim)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--muted)}
+.btn.ghost:hover{background:var(--surface-2);color:var(--text)}
+
+/* ── 三栏主体 ───────────────────────────────────────────── */
+.shell{
+  display:grid; grid-template-columns:212px minmax(0,1fr);
+  height:calc(100vh - 55px); min-height:520px;
+}
+.shell.with-drawer{grid-template-columns:212px minmax(0,1fr) 320px}
+
+/* 左：助手库（可拖） */
+.rail{border-right:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;min-height:0}
+.rail-h{padding:11px 14px 8px;font-size:12px;font-weight:600;color:var(--muted);letter-spacing:.02em}
+.rail-hint{padding:0 14px 10px;font-size:11.5px;color:var(--muted);line-height:1.45}
+.rail-list{overflow:auto;padding:0 10px 12px;display:flex;flex-direction:column;gap:6px}
+.agent{
+  border:1px solid var(--border);background:var(--surface);
+  border-radius:var(--radius-sm);padding:8px 10px;cursor:grab;
+  display:flex;gap:9px;align-items:center;transition:border-color .12s,box-shadow .12s;
+}
+.agent:hover{border-color:color-mix(in srgb,var(--accent) 45%,var(--border));box-shadow:var(--shadow-1)}
+.agent:active{cursor:grabbing}
+.agent.dragging{opacity:.4}
+.agent .av{
+  width:26px;height:26px;border-radius:7px;flex:none;
+  display:grid;place-items:center;font-size:12px;font-weight:650;
+  background:var(--surface-2);color:var(--muted);border:1px solid var(--border);
+}
+.agent .nm{font-size:13px;font-weight:550;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.agent .ds{font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.agent .grip{margin-left:auto;color:var(--muted);flex:none;opacity:.5}
+
+/* 中：画布 */
+.stage{
+  position:relative;overflow:auto;min-width:0;
+  /* 工作面比页面底色略深一档，再铺网格 —— 这样"能往哪儿放"是看得见的 */
+  background-color:#eef2f8;
+  background-image:radial-gradient(circle at 1px 1px, #cbd6e6 1.2px, transparent 0);
+  background-size:20px 20px;
+  box-shadow:inset 0 1px 0 rgba(20,24,31,.03);
+}
+.stage.hot{background-color:color-mix(in srgb,var(--accent) 5%,#eef2f8)}
+.canvas{position:relative;min-width:100%;min-height:100%}
+.edges{position:absolute;inset:0;overflow:visible;pointer-events:none}
+.edges path{fill:none;stroke:var(--border);stroke-width:1.6}
+.edges path.live{stroke:var(--accent);stroke-dasharray:6 5;animation:flow .55s linear infinite}
+.edges path.done{stroke:color-mix(in srgb,var(--ok) 55%,var(--border))}
+@keyframes flow{to{stroke-dashoffset:-22}}
+[data-motion="off"] .edges path.live{animation:none;stroke-dasharray:none}
+
+.node{
+  position:absolute;width:var(--node-w);background:var(--surface);
+  border:1px solid var(--border);border-radius:var(--radius);
+  box-shadow:var(--shadow-1);transition:box-shadow .15s,border-color .15s,transform .12s;
+  cursor:grab;
+}
+.node:active{cursor:grabbing}
+.node:hover{box-shadow:var(--shadow-2)}
+.node.sel{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 14%,transparent),var(--shadow-2)}
+.node.drop-target{border-color:var(--accent);border-style:dashed}
+.node.running{border-color:color-mix(in srgb,var(--accent) 60%,var(--border))}
+.node.ok{border-color:color-mix(in srgb,var(--ok) 45%,var(--border))}
+.node.err{border-color:color-mix(in srgb,var(--err) 50%,var(--border))}
+.node.stale{border-style:dashed}
+.node.ask{border-color:var(--warn);border-style:solid;animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--warn) 26%,transparent),var(--shadow-1)}
+                 50%{box-shadow:0 0 0 6px color-mix(in srgb,var(--warn) 6%,transparent),var(--shadow-1)}}
+[data-motion="off"] .node.ask{animation:none}
+
+.node-h{display:flex;align-items:center;gap:8px;padding:9px 10px 8px;border-bottom:1px solid var(--border)}
+.node-h .av{width:22px;height:22px;border-radius:6px;flex:none;display:grid;place-items:center;
+  font-size:11px;font-weight:650;background:var(--surface-2);border:1px solid var(--border);color:var(--muted)}
+.node-h .nm{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.node-h .step{
+  margin-left:auto;flex:none;font-size:10.5px;color:var(--muted);
+  border:1px solid var(--border);border-radius:999px;padding:1px 6px;font-family:var(--mono);
+}
+.node-h .x{border:0;background:transparent;color:var(--muted);border-radius:5px;padding:1px 4px;opacity:0}
+.node:hover .x{opacity:1}
+.node-h .x:hover{background:color-mix(in srgb,var(--err) 12%,transparent);color:var(--err)}
+.node-b{padding:8px 10px 10px;font-size:12px;color:var(--muted);min-height:40px}
+.node-b .out{
+  color:var(--text);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;
+  overflow:hidden;white-space:pre-wrap;text-overflow:ellipsis;word-break:break-word;
+}
+.node-b .ph{color:var(--muted);font-style:normal}
+.node-f{display:flex;align-items:center;gap:8px;padding:7px 10px;border-top:1px solid var(--border);
+  font-size:11.5px;color:var(--muted)}
+.st{display:inline-flex;align-items:center;gap:5px;font-weight:550}
+.st i{width:7px;height:7px;border-radius:50%;background:var(--border);flex:none}
+.st.wait i{background:var(--border)}
+.st.run i{background:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent)}
+.st.ok{color:var(--ok)} .st.ok i{background:var(--ok)}
+.st.err{color:var(--err)} .st.err i{background:var(--err)}
+.st.ask{color:var(--warn)} .st.ask i{background:var(--warn)}
+.st.stale{color:var(--muted)} .st.stale i{background:var(--muted)}
+.node-f .ms{margin-left:auto;font-family:var(--mono);font-size:10.5px}
+
+/* 连接点 */
+.port{
+  position:absolute;width:13px;height:13px;border-radius:50%;
+  background:var(--surface);border:1.6px solid var(--border);top:50%;transform:translateY(-50%);
+  cursor:crosshair;opacity:0;transition:opacity .12s,transform .12s,border-color .12s;
+}
+.port:hover{border-color:var(--accent);transform:translateY(-50%) scale(1.22)}
+.node:hover .port{opacity:1}
+.node.sel .port{opacity:1}
+.port.in{left:-7px} .port.out{right:-7px}
+
+/* 画布空态 */
+.empty{
+  position:absolute;inset:0;display:grid;place-items:center;pointer-events:none;
+}
+.empty-in{max-width:420px;text-align:left;padding:0 24px}
+.empty.dragging .empty-in{opacity:.25}
+.empty h2{margin:0 0 6px;font-size:16px;font-weight:600}
+.empty p{margin:0 0 14px;color:var(--muted);font-size:13px}
+.tps{display:flex;gap:8px;flex-wrap:wrap;pointer-events:auto}
+.tpl{
+  border:1px dashed var(--border);background:var(--surface);border-radius:var(--radius-sm);
+  padding:8px 11px;font-size:12.5px;color:var(--text);
+}
+.tpl:hover{border-color:var(--accent);color:var(--accent);border-style:solid}
+
+/* 右：节点详情（选中才出现） */
+.drawer{border-left:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;min-height:0}
+.drawer-h{display:flex;align-items:center;gap:9px;padding:11px 13px;border-bottom:1px solid var(--border)}
+.drawer-h b{font-size:13.5px;font-weight:600}
+.drawer-b{overflow:auto;padding:13px;display:flex;flex-direction:column;gap:15px}
+.fld{display:flex;flex-direction:column;gap:5px}
+.fld .lb{font-size:11.5px;font-weight:600;color:var(--muted);display:flex;align-items:center;gap:6px}
+.fld .val{font-size:12.5px;background:var(--surface-2);border:1px solid var(--border);
+  border-radius:var(--radius-sm);padding:8px 10px;white-space:pre-wrap;word-break:break-word;max-height:190px;overflow:auto}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font-size:11.5px;border:1px solid var(--border);border-radius:999px;padding:2px 8px;color:var(--muted);background:var(--surface)}
+.chip.on{border-color:color-mix(in srgb,var(--accent) 40%,var(--border));color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,transparent)}
+.tip{font-size:11.5px;color:var(--muted);display:flex;gap:6px;align-items:flex-start}
+.tip svg{flex:none;margin-top:2px;opacity:.6}
+
+/* 人工确认条：就长在**那个节点**里 */
+.ask-bar{
+  margin:8px 10px 10px;border:1px solid color-mix(in srgb,var(--warn) 40%,var(--border));
+  background:color-mix(in srgb,var(--warn) 6%,var(--surface));border-radius:var(--radius-sm);padding:9px 10px;
+}
+.ask-bar .t{font-size:12px;font-weight:600;color:var(--warn);display:flex;gap:6px;align-items:center}
+.ask-bar .d{font-size:11.5px;color:var(--text);margin:6px 0 9px;font-family:var(--mono);
+  background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 8px;word-break:break-all}
+.ask-bar .a{display:flex;gap:6px}
+.ask-bar .a .btn{padding:5px 10px;font-size:12px}
+.ask-bar .a .ok{background:var(--ok);border-color:var(--ok);color:#fff}
+.ask-bar .a .ok:hover{filter:brightness(.94)}
+.ask-bar .a .no{color:var(--err);border-color:color-mix(in srgb,var(--err) 35%,var(--border))}
+
+/* 底部运行条 → 运行时升起 */
+.dock{border-top:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column}
+.dock-in{display:flex;gap:10px;align-items:center;padding:10px 16px;background:var(--surface)}
+.dock-in input{
+  flex:1;min-width:0;border:1px solid var(--border);background:var(--surface);
+  border-radius:8px;padding:8px 11px;font:inherit;font-size:13px;color:var(--text);
+}
+.dock-in input:focus{outline:0;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 12%,transparent)}
+.dock-in input::placeholder{color:var(--muted)}
+.dock-in .hintk{font-size:11px;color:var(--muted);white-space:nowrap}
+.log{max-height:0;overflow:hidden;transition:max-height .2s ease;border-top:0 solid var(--border)}
+.log.open{max-height:250px;overflow:auto;border-top:1px solid var(--border)}
+.log-in{padding:10px 16px;display:flex;flex-direction:column;gap:8px}
+.line{display:flex;gap:9px;font-size:12.5px;align-items:flex-start}
+.line .who{flex:none;width:74px;color:var(--muted);font-size:11.5px;padding-top:1px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}
+.line .tx{flex:1;min-width:0;white-space:pre-wrap;word-break:break-word}
+.line.sys .tx{color:var(--muted);font-size:12px}
+.line.ok .who{color:var(--ok)} .line.err .who{color:var(--err)} .line.ask .who{color:var(--warn)}
+details.tech{border-top:1px dashed var(--border);padding:8px 16px 12px}
+details.tech summary{font-size:11.5px;color:var(--muted);cursor:pointer}
+details.tech pre{margin:8px 0 0;font-family:var(--mono);font-size:11px;color:var(--muted);
+  background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:8px;max-height:150px;overflow:auto}
+
+/* ── 方案说明区（原型下方） ─────────────────────────────── */
+.spec{max-width:1000px;margin:0 auto;padding:44px 22px 90px}
+.spec h2{font-size:19px;font-weight:650;margin:0 0 6px;letter-spacing:-.01em}
+.spec h3{font-size:15px;font-weight:640;margin:34px 0 8px}
+.spec .lead{color:var(--muted);font-size:13.5px;margin:0 0 8px;max-width:76ch}
+.spec p{margin:8px 0;max-width:78ch}
+.spec ul{margin:8px 0;padding-left:20px;max-width:78ch}
+.spec li{margin:5px 0}
+.spec code{font-family:var(--mono);font-size:12.5px;background:var(--surface-2);
+  border:1px solid var(--border);border-radius:5px;padding:1px 5px}
+.rule{height:1px;background:var(--border);margin:34px 0}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.card{border:1px solid var(--border);background:var(--surface);border-radius:var(--radius);padding:14px 15px}
+.card h4{margin:0 0 6px;font-size:13.5px;font-weight:620;display:flex;align-items:center;gap:7px}
+.card h4::before{content:"";width:6px;height:6px;border-radius:50%;flex:none}
+.card.bad h4::before{background:var(--err)} .card.good h4::before{background:var(--ok)}
+.card p{margin:0;color:var(--muted);font-size:12.5px}
+.card.bad{background:color-mix(in srgb,var(--err) 4%,var(--surface));
+  border-color:color-mix(in srgb,var(--err) 30%,var(--border));box-shadow:inset 3px 0 0 color-mix(in srgb,var(--err) 55%,transparent)}
+.card.good{background:color-mix(in srgb,var(--ok) 4%,var(--surface));
+  border-color:color-mix(in srgb,var(--ok) 30%,var(--border));box-shadow:inset 3px 0 0 color-mix(in srgb,var(--ok) 55%,transparent)}
+table{border-collapse:collapse;width:100%;font-size:12.5px;margin:10px 0}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);vertical-align:top}
+th{color:var(--muted);font-weight:600;font-size:11.5px}
+.kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--border);border-bottom-width:2px;
+  border-radius:5px;padding:1px 5px;background:var(--surface)}
+
+/* ── Tweaks ─────────────────────────────────────────────── */
+.tweaks{position:fixed;right:14px;bottom:14px;z-index:40;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  box-shadow:var(--shadow-2);font-size:12px;max-width:212px}
+.tweaks>summary{padding:8px 11px;cursor:pointer;color:var(--muted);font-weight:600;list-style:none}
+.tweaks>summary::-webkit-details-marker{display:none}
+.tweaks .b{padding:0 11px 11px;display:flex;flex-direction:column;gap:9px}
+.tweaks .row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.tweaks select{border:1px solid var(--border);border-radius:6px;padding:3px 6px;font:inherit;font-size:12px;background:var(--surface);color:var(--text)}
+.sw{position:relative;width:34px;height:19px;flex:none}
+.sw input{position:absolute;opacity:0;width:100%;height:100%;margin:0;cursor:pointer}
+.sw span{position:absolute;inset:0;background:var(--track);border-radius:999px;transition:background .15s}
+.sw span::after{content:"";position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;
+  background:#fff;box-shadow:var(--shadow-1);transition:transform .15s}
+.sw input:checked+span{background:var(--accent)}
+.sw input:checked+span::after{transform:translateX(15px)}
+
+@media (max-width:860px){
+  .shell,.shell.with-drawer{grid-template-columns:1fr;grid-template-rows:auto minmax(240px,1fr) auto;height:auto;min-height:0}
+  .rail{border-right:0;border-bottom:1px solid var(--border)}
+  .rail-list{flex-direction:row;overflow-x:auto;padding-bottom:10px}
+  .agent{flex:none;max-width:186px}
+  .drawer{border-left:0;border-top:1px solid var(--border);max-height:46vh}
+  .stage{min-height:300px}
+  .two{grid-template-columns:1fr}
+  .brand .sub{display:none}
+}
+@media (prefers-reduced-motion:reduce){
+  .edges path.live{animation:none}
+  .node.ask{animation:none}
+}
+</style>
+</head>
+<body data-density="roomy" data-motion="on">
+
+<!-- ══ 顶栏 ══════════════════════════════════════════════ -->
+<div class="top">
+  <div class="brand">
+    <h1>Playground</h1>
+    <span class="sub">把助手拖进来，让它们分工做一件事 —— 只放一个，就是对话。</span>
+  </div>
+  <div class="spacer"></div>
+  <div class="derived" id="derived" title="执行方式由连线推导得出">
+    <b id="derivedTxt">空画布</b>
+    <span class="why" id="derivedWhy">拖一个助手进来开始</span>
+    <button id="overrideBtn" type="button">改</button>
+  </div>
+  <button class="btn ghost" id="clearBtn" type="button">清空</button>
+  <button class="btn primary" id="runBtn" type="button" disabled>运行 ⌘↵</button>
+</div>
+
+<!-- ══ 主体 ══════════════════════════════════════════════ -->
+<div class="shell" id="shell">
+  <!-- 左：助手库 -->
+  <aside class="rail">
+    <div class="rail-h">助手</div>
+    <div class="rail-hint">拖到空白处 = 新开一条；拖到某个助手上 = 接在它后面。</div>
+    <div class="rail-list" id="railList"></div>
+  </aside>
+
+  <!-- 中：画布 -->
+  <section class="stage" id="stage">
+    <div class="canvas" id="canvas">
+      <svg class="edges" id="edges"></svg>
+      <div class="empty" id="empty">
+        <div class="empty-in">
+          <h2>这里有三种开始方式</h2>
+          <p>一路摆下去就是一条流水线；摆两个谁也不连，就是并行两条线。</p>
+          <div class="tps">
+            <button class="tpl" data-tpl="single" type="button">只跟一个助手聊</button>
+            <button class="tpl" data-tpl="serial" type="button">串行：三个接力</button>
+            <button class="tpl" data-tpl="fan" type="button">并行：一个任务分三路</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 右：节点详情（选中才出现） -->
+  <aside class="drawer" id="drawer" style="display:none"></aside>
+</div>
+
+<!-- ══ 底部：运行 + 观测 ═════════════════════════════════ -->
+<div class="dock">
+  <div class="dock-in">
+    <input id="task" placeholder="给这次编排一个任务 —— 比如：调研三家云厂商的 GPU 报价并汇总成表" />
+    <span class="hintk">⌘↵ 运行</span>
+    <button class="btn primary" id="runBtn2" type="button" disabled>运行</button>
+  </div>
+  <div class="log" id="log"><div class="log-in" id="logIn"></div>
+    <details class="tech"><summary>技术细节（事件表 / 原始 JSON）</summary><pre id="raw">{}</pre></details>
+  </div>
+</div>
+
+<!-- ══ Tweaks ═══════════════════════════════════════════ -->
+<details class="tweaks" id="tweaks">
+  <summary>Tweaks</summary>
+  <div class="b">
+    <div class="row"><span>密度</span>
+      <select id="twDensity"><option value="roomy">舒适</option><option value="compact">紧凑</option></select></div>
+    <div class="row"><span>沿路径流动</span>
+      <label class="sw"><input type="checkbox" id="twMotion" checked><span></span></label></div>
+    <div class="row"><span>节点编号</span>
+      <label class="sw"><input type="checkbox" id="twStep" checked><span></span></label></div>
+  </div>
+</details>
+
+<!-- ══ 方案说明 ═════════════════════════════════════════ -->
+<main class="spec">
+  <h2>为什么这样设计</h2>
+  <p class="lead">这一页是 <b>Operate 面</b>（用户在组合并驱动），执行时叠加 <b>Monitor 面</b>（看状态流转）。
+  不是浏览页，所以没有 hero、没有卡片阵列 —— 一切让位于「看懂现在是什么图」和「下一步能做什么」。</p>
+
+  <h3>1 · 判据：编排不是「选模式」，是「摆助手 + 连线」</h3>
+  <div class="two">
+    <div class="card bad">
+      <h4>现在：两道题，一堵墙</h4>
+      <p>先选执行方式（单个 / 串行 / 并行 / 主从）→ 再把助手拖进固定槽位。<br>
+      「模式名」是系统的实现抽象，却成了用户的<b>第一道题</b>；而且槽位是死的，改结构要重来。</p>
+    </div>
+    <div class="card good">
+      <h4>改后：一道题，一张图</h4>
+      <p>只问「<b>谁，接在谁后面</b>」。执行方式由连线<b>推导</b>出来并显示在顶栏 ——
+      用户看到的是结果，不是选项。</p>
+    </div>
+  </div>
+
+  <h3>2 · 最重要的一个动作：拖到「某个助手」上 = 接在它后面</h3>
+  <ul>
+    <li><b>拖到空白</b> → 新开一条线（与已有节点互不依赖，天然并行）</li>
+    <li><b>拖到某个节点上</b> → 插到它与它的下游之间：<code>A→B</code> 变成 <code>A→N→B</code></li>
+    <li>连线只是这个动作的显式版本（用于分叉：一个 → 多个）</li>
+  </ul>
+  <p><b>为什么不让用户摆坐标</b>：位置由自动布局按拓扑分层算出来（列 = 第几步，行 = 同一步的第几条）。
+  摆积木的乐趣在「结构」，不在「对齐像素」—— 而且手机上摆坐标本来就不可能准。</p>
+
+  <h3>3 · 「单 Agent」不是另一种模式，是最小的图</h3>
+  <p>一个节点就是最简编排。它同样能多轮对话：节点内接着聊，<b>最后一条产出</b>自动成为下游的输入。
+  于是「对话」和「编排」不再是两个页面、也不再是两种模式 —— 同一个画布，节点数量不同而已。</p>
+
+  <h3>4 · 中断点长在节点上</h3>
+  <p>运行中途要人工确认时，确认条<b>出现在那个节点里</b>，不是页面顶部、更不是另一个页面。
+  因为用户的问题是「<b>哪个助手卡住了</b>」，答案就该在原地。失败同理：节点上给「重试这一步」，
+  不必重跑整条链。</p>
+
+  <h3>5 · 分工：拖拽是主路径，但不是唯一路径</h3>
+  <table>
+    <tr><th>方式</th><th>动作</th><th>为什么保留</th></tr>
+    <tr><td>拖拽（主）</td><td>从左边拖助手进来 / 拖到某个助手身上</td><td>组合结构最直接，一拖即成型</td></tr>
+    <tr><td>节点上的「+」</td><td>点一下 → 选助手 → 自动接在后面</td><td>触屏、窄屏、键盘用户；也是拖拽的兜底</td></tr>
+    <tr><td>模板</td><td>空画布给三个骨架</td><td>第一次来的人不用想结构</td></tr>
+  </table>
+
+  <h3>6 · 必须有的「反悔」</h3>
+  <p>拖拽式界面的最大风险是误操作。所以：<span class="kbd">⌘Z</span> 撤销、<span class="kbd">⌫</span> 删除选中、
+  <span class="kbd">⌘D</span> 复制节点、<span class="kbd">⌘↵</span> 运行。删节点时自动清理它身上的连线，
+  下游节点标记「输入变了，需重跑」。</p>
+
+  <h3>7 · 状态与边界（商业产品必须画出来的部分）</h3>
+  <table>
+    <tr><th>情形</th><th>界面反应</th></tr>
+    <tr><td>空画布</td><td>给三种起步方式，并说明「拖到空白 / 拖到助手上」的区别</td></tr>
+    <tr><td>连线成环</td><td>拖拽时非法落点直接变灰不接收；不弹错误框</td></tr>
+    <tr><td>正在运行</td><td>冻结结构编辑（保留暂停/中断），避免"改了图但记录对不上"</td></tr>
+    <tr><td>某节点失败</td><td>该节点红框 + 就地重试；下游标「等上游」（原型里点带「运维」的链可以看到确认条）</td></tr>
+    <tr><td>等待确认</td><td>节点琥珀色 + 呼吸边框 + 确认条；顶栏进度暂停</td></tr>
+    <tr><td>节点 &gt; 10 个</td><td>自动按层分组折叠（"第 3-5 步"），避免画布失控</td></tr>
+    <tr><td>窄屏 / 手机</td><td>分层改为纵向排列、画布纵向滚动；助手库转横向条；拖拽改长按拾起</td></tr>
+  </table>
+
+  <div class="rule"></div>
+  <h2>落地改动（复用现有资产，不重写）</h2>
+  <ul>
+    <li><code>OrchestrationCanvas.tsx</code> → 换成自动布局 + 自由连线（现在只支持「拖进固定槽位」）</li>
+    <li><code>ConversationConsole.tsx</code> → 画布成为唯一工作台，去掉节点数驱动的组件切换</li>
+    <li>沿用：<code>RunDetailDialog</code>（节点详情复用其内容组织）、<code>HitlPrompt</code>（搬家到节点里）、
+      <code>AgentDetailDialog</code>（点节点上的「配置」）、<code>AgentRunPanel</code> 的流接线</li>
+    <li>后端：<code>run.orchestration_id / orch_role / order_index</code> 已存在，够用；
+      需要新增的是「图」的持久化（nodes + edges 一份 JSON）</li>
+  </ul>
+  <p class="lead">以上是原型，交互都是真的：拖、连、跑、确认、撤销，都可以试。</p>
+</main>
+
+<script>
+/* ══════════════════════════════════════════════════════════════
+   数据
+   ══════════════════════════════════════════════════════════════ */
+const AGENTS = [
+  {id:'ag_research', nm:'研究员',  ds:'查资料、核对事实',      model:'deepseek-v4-flash', tools:['web','read']},
+  {id:'ag_writer',   nm:'撰稿',    ds:'把材料写成成稿',        model:'deepseek-v4-pro',   tools:['write']},
+  {id:'ag_review',   nm:'审校',    ds:'挑毛病、给修改意见',    model:'deepseek-v4-pro',   tools:['read','grep']},
+  {id:'ag_data',     nm:'取数',    ds:'查库、算指标',          model:'deepseek-v4-flash', tools:['http','bash']},
+  {id:'ag_draw',     nm:'制图',    ds:'出图表 / 架构图',       model:'deepseek-v4-flash', tools:['write','bash']},
+  {id:'ag_ops',      nm:'运维',    ds:'执行命令、查服务状态',  model:'deepseek-v4-flash', tools:['bash','http']},
+];
+const AV = a => a.nm.slice(0,1);
+const AG = id => AGENTS.find(a => a.id === id);
+
+/* ══════════════════════════════════════════════════════════════
+   状态
+   ══════════════════════════════════════════════════════════════ */
+let S = { nodes:[], edges:[], sel:null, seq:0 };
+let RUN = { on:false, phase:null, states:{}, out:{}, ask:null };
+let HIST = [];                      // 撤销栈
+const snap = () => JSON.stringify({nodes:S.nodes, edges:S.edges});
+const pushHist = () => { HIST.push(snap()); if (HIST.length > 60) HIST.shift(); };
+const undo = () => {
+  if (!HIST.length) return;
+  const s = JSON.parse(HIST.pop());
+  S.nodes = s.nodes; S.edges = s.edges;
+  if (S.sel && !S.nodes.some(n => n.nid === S.sel)) S.sel = null;
+  render();
+};
+
+/* ══════════════════════════════════════════════════════════════
+   自动布局：按拓扑分层（Kahn），列 = 第几步，行 = 同层第几条
+   坐标全部算出来 —— 不允许任何硬编码位置
+   ══════════════════════════════════════════════════════════════ */
+function layers(){
+  const indeg = {}, layer = {};
+  S.nodes.forEach(n => { indeg[n.nid] = 0; layer[n.nid] = 0; });
+  S.edges.forEach(e => { if (indeg[e.to] !== undefined) indeg[e.to]++; });
+  // 宽松的分层：沿边反复松弛，直到稳定（小图足够；有环会停在上限）
+  for (let i = 0; i < S.nodes.length + 2; i++){
+    let ch = false;
+    S.edges.forEach(e => {
+      const cand = (layer[e.from] ?? 0) + 1;
+      if ((layer[e.to] ?? 0) < cand){ layer[e.to] = cand; ch = true; }
+    });
+    if (!ch) break;
+  }
+  const byL = {};
+  S.nodes.forEach(n => { (byL[layer[n.nid]] ||= []).push(n.nid); });
+  return { layer, byL };
+}
+/* 自动布局：按拓扑分层（列 = 第几步，行 = 同层第几条）。
+   高度用**实测值**（H）而不是估算 —— 估算会让连线对不准节点中心。 */
+function layout(H){
+  const { byL } = layers();
+  const cs = getComputedStyle(document.documentElement);
+  const GX = parseFloat(cs.getPropertyValue('--gap-x'));
+  const GY = parseFloat(cs.getPropertyValue('--gap-y'));
+  const NW = parseFloat(cs.getPropertyValue('--node-w'));
+  const PAD = parseFloat(cs.getPropertyValue('--pad'));
+  const hOf = nid => H[nid] || 112;
+  const narrow = window.matchMedia('(max-width:860px)').matches;
+  const P = {};
+  const cols = Object.keys(byL).sort((a, b) => a - b);
+  if (narrow){
+    let y = PAD;                                    // 窄屏：层变行，层内横排
+    cols.forEach(L => {
+      const ids = byL[L];
+      const rowH = Math.max(...ids.map(hOf));
+      ids.forEach((nid, i) => { P[nid] = { x: PAD + i * (NW + 18), y }; });
+      y += rowH + 34;
+    });
+  } else {
+    cols.forEach((L, ci) => {
+      let y = PAD;                                  // 宽屏：层成列，列内纵排
+      byL[L].forEach(nid => { P[nid] = { x: PAD + ci * (NW + GX), y }; y += hOf(nid) + GY; });
+    });
+  }
+  return { P, NW, PAD, narrow };
+}
+
+const $ = s => document.querySelector(s);
+const canvas = $('#canvas'), edgesEl = $('#edges'), stage = $('#stage');
+
+function render(){
+  const layerOf = layers().layer;
+
+  /* ① 先把每个节点的内容渲染出来 —— 必须先有内容，才量得到真实高度 */
+  const seen = new Set();
+  S.nodes.forEach(n => {
+    seen.add(n.nid);
+    let el = document.getElementById('n_' + n.nid);
+    if (!el){ el = document.createElement('div'); el.id = 'n_' + n.nid; el.className = 'node'; canvas.appendChild(el); }
+    const a = AG(n.agentId);
+    // 跑完之后状态要留住 —— 那是这次执行的**事实**，不是运行时的临时装饰
+    const st = RUN.states[n.nid] || (RUN.on ? 'wait' : 'idle');
+    const stTxt = { idle:'待运行', wait:'等待', run:'运行中', ok:'完成', err:'失败', ask:'需你确认', stale:'需重跑' }[st];
+    el.className = 'node' + (S.sel === n.nid ? ' sel' : '') +
+      (st === 'run' ? ' running' : st === 'ok' ? ' ok' : st === 'err' ? ' err' : st === 'ask' ? ' ask' : st === 'stale' ? ' stale' : '') +
+      (n.dropping ? ' drop-target' : '');
+    el.innerHTML = `
+      <div class="node-h">
+        <span class="av">${AV(a)}</span>
+        <span class="nm" title="${a.nm}">${a.nm}</span>
+        <span class="step" ${$('#twStep').checked ? '' : 'style="display:none"'}>第${(layerOf[n.nid] ?? 0) + 1}步</span>
+        <button class="x" title="删掉这个节点" data-del="${n.nid}">✕</button>
+      </div>
+      <div class="node-b">${
+        RUN.out[n.nid] ? `<div class="out">${esc(RUN.out[n.nid])}</div>` : `<span class="ph">${a.ds}</span>`
+      }</div>
+      ${RUN.ask === n.nid ? askHTML(n, a) : ''}
+      <div class="node-f">
+        <span class="st ${st === 'idle' ? '' : st}"><i></i>${st === 'idle' ? '待运行' : stTxt}</span>
+        <span class="ms" title="模型">${a.model}</span>
+      </div>
+      <span class="port in" data-port="in" data-nid="${n.nid}" title="入口"></span>
+      <span class="port out" data-port="out" data-nid="${n.nid}" title="从这里拖到另一个助手 = 接在它后面"></span>`;
+  });
+  [...canvas.querySelectorAll('.node')].forEach(el => { if (!seen.has(el.id.slice(2))) el.remove(); });
+
+  /* ② 量真实高度 → 布局（列/行间距都由它算，因此不会重叠） */
+  const H = {};
+  S.nodes.forEach(n => { const el = document.getElementById('n_' + n.nid); H[n.nid] = el.offsetHeight; });
+  const hOf = nid => H[nid] || 112;
+  const { P, NW, PAD, narrow } = layout(H);
+
+  /* ③ 定位（位置全是算出来的，没有一处硬编码坐标） */
+  const maxX = PAD * 2 + NW + (narrow ? Object.keys(P).length * (NW + 18) : 0);
+  const right = Math.max(maxX, ...Object.values(P).map(p => p.x + NW + PAD));
+  const bottom = Math.max(320, ...Object.values(P).map(p => p.y + hOf(0) + PAD), 320);
+  canvas.style.width = (narrow ? right : Math.max(right, stage.clientWidth)) + 'px';
+  canvas.style.height = Math.max(bottom, ...Object.values(P).map(p => p.y + 160)) + 'px';
+  S.nodes.forEach(n => {
+    const el = document.getElementById('n_' + n.nid);
+    el.style.width = NW + 'px';
+    el.style.transform = `translate(${(P[n.nid] || { x: PAD, y: PAD }).x}px,${(P[n.nid] || { y: PAD }).y}px)`;
+  });
+
+  /* ④ 画边：端点取自**同一份布局 + 实测高度**，所以必然落在节点中心的水平线上 */
+  edgesEl.setAttribute('width', canvas.style.width);
+  edgesEl.setAttribute('height', canvas.style.height);
+  edgesEl.innerHTML = S.edges.map(e => {
+    const a = P[e.from], b = P[e.to];
+    if (!a || !b) return '';
+    const live = RUN.on && RUN.states[e.to] === 'run';
+    const done = RUN.out[e.from] !== undefined && ['run', 'ok'].includes(RUN.states[e.to]);
+    const cls = live ? 'live' : (done ? 'done' : '');
+    if (narrow){
+      const x1 = a.x + NW / 2, y1 = a.y + hOf(e.from);
+      const x2 = b.x + NW / 2, y2 = b.y;
+      const dy = Math.max(26, (y2 - y1) * .5);
+      return `<path d="M${x1},${y1} C${x1},${y1+dy} ${x2},${y2-dy} ${x2},${y2}" class="${cls}"/>`;
+    }
+    const x1 = a.x + NW, y1 = a.y + hOf(e.from) / 2;
+    const x2 = b.x, y2 = b.y + hOf(e.to) / 2;
+    const dx = Math.max(34, (x2 - x1) * .5);
+    return `<path d="M${x1},${y1} C${x1+dx},${y1} ${x2-dx},${y2} ${x2},${y2}" class="${cls}"/>`;
+  }).join('');
+
+  /* ⑤ 空态 / 顶栏 / 抽屉 */
+  const emp = $('#empty');
+  emp.style.display = S.nodes.length ? 'none' : '';
+  emp.classList.toggle('dragging', !!S._dragging);
+  const { txt, why } = derive();
+  $('#derivedTxt').textContent = txt;
+  $('#derivedWhy').textContent = why;
+  const can = S.nodes.length > 0 && !RUN.on;
+  $('#runBtn').disabled = !can; $('#runBtn2').disabled = !can;
+  const dr = $('#drawer'), shell = $('#shell');
+  if (S.sel){
+    dr.style.display = ''; shell.classList.add('with-drawer');
+    dr.innerHTML = drawerHTML(S.nodes.find(n => n.nid === S.sel));
+  } else { dr.style.display = 'none'; shell.classList.remove('with-drawer'); }
+}
+const esc = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+/* 执行方式：由「图」推导，而不是让用户选 */
+function derive(){
+  const n = S.nodes.length, e = S.edges.length;
+  if (!n) return { txt:'空画布', why:'拖一个助手进来开始' };
+  if (n === 1) return { txt:'单个助手', why:'摆第二个就会变成编排' };
+  const indeg = {}, outdeg = {};
+  S.nodes.forEach(x => { indeg[x.nid] = 0; outdeg[x.nid] = 0; });
+  S.edges.forEach(x => { indeg[x.to]++; outdeg[x.from]++; });
+  const roots = S.nodes.filter(x => !indeg[x.nid]).length;
+  const fan = S.nodes.filter(x => outdeg[x.nid] > 1).length;
+  const sink = S.nodes.filter(x => !outdeg[x.nid]).length;
+  if (!e) return { txt:`并行 · ${n} 条独立线`, why:'没有连线，各跑各的' };
+  if (fan && sink === 1) return { txt:`主从 · 1 主 ${n-1} 从`, why:'一个节点分给了多个，再汇到一处' };
+  if (fan) return { txt:`扇出 · ${n} 个节点`, why:'有节点分出多条支线' };
+  if (roots === 1) return { txt:`串行 · ${n} 步接力`, why:'一条链，上一步产出喂下一步' };
+  return { txt:`混合 · ${n} 个节点 / ${e} 条连线`, why:'多条链同时进行' };
+}
+function askHTML(n, a){
+  return `<div class="ask-bar">
+    <div class="t">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 9v5M12 18h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>
+      需要你点头才能继续
+    </div>
+    <div class="d">bash · mkdir -p /srv/out/report</div>
+    <div class="a">
+      <button class="btn ok" data-allow="1" type="button">允许一次</button>
+      <button class="btn" data-allow="all" type="button">允许并记住</button>
+      <button class="btn no" data-deny="1" type="button">拒绝</button>
+    </div>
+    <div class="tip" style="margin-top:8px">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 16v-5M12 8h.01"/></svg>
+      <span>不想每次都问？去「${a.nm}」的配置里调权限范围。</span>
+    </div>
+  </div>`;
+}
+function drawerHTML(n){
+  if (!n) return '';
+  const a = AG(n.agentId), L = layers().layer[n.nid];
+  const up = S.edges.filter(e => e.to === n.nid).map(e => AG(S.nodes.find(x => x.nid === e.from)?.agentId)?.nm).filter(Boolean);
+  const dn = S.edges.filter(e => e.from === n.nid).map(e => AG(S.nodes.find(x => x.nid === e.to)?.agentId)?.nm).filter(Boolean);
+  return `
+    <div class="drawer-h"><span class="av" style="width:22px;height:22px;border-radius:6px;display:grid;place-items:center;font-size:11px;font-weight:650;background:var(--surface-2);border:1px solid var(--border);color:var(--muted)">${AV(a)}</span>
+      <b>${a.nm}</b><span class="step" style="margin-left:auto;font-size:10.5px;color:var(--muted);border:1px solid var(--border);border-radius:999px;padding:1px 6px;font-family:var(--mono)">第 ${L+1} 步</span>
+      <button class="btn ghost" data-close="1" type="button">收起</button></div>
+    <div class="drawer-b">
+      <div class="fld"><span class="lb">这一步做什么</span>
+        <div class="val">${a.ds}</div></div>
+      <div class="fld"><span class="lb">模型</span><div class="chips"><span class="chip on">${a.model}</span></div></div>
+      <div class="fld"><span class="lb">可用工具</span><div class="chips">${a.tools.map(t=>`<span class="chip">${t}</span>`).join('')}</div></div>
+      <div class="fld"><span class="lb">上游</span><div class="chips">${up.length?up.map(x=>`<span class="chip">${x}</span>`).join(''):'<span class="chip">（无 · 起点）</span>'}</div></div>
+      <div class="fld"><span class="lb">下游</span><div class="chips">${dn.length?dn.map(x=>`<span class="chip">${x}</span>`).join(''):'<span class="chip">（无 · 终点）</span>'}</div></div>
+      <div class="fld"><span class="lb">这次的输入</span><div class="val">${esc(RUN.in?.[n.nid] || '（运行时才产生）')}</div></div>
+      <div class="fld"><span class="lb">这次的产出</span><div class="val">${esc(RUN.out[n.nid] || '（还没跑）')}</div></div>
+      <div class="tip"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 16v-5M12 8h.01"/></svg>
+        <span>提示词、记忆、权限这些属于助手本身，点下面的按钮去改 —— 这里只调它在这条链里的位置。</span></div>
+      <button class="btn" data-goto-agent="${n.agentId}" type="button">配置这个助手 →</button>
+    </div>`;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   助手库
+   ══════════════════════════════════════════════════════════════ */
+$('#railList').innerHTML = AGENTS.map(a =>
+  `<div class="agent" draggable="true" data-agent="${a.id}" title="拖到画布">
+     <span class="av">${AV(a)}</span>
+     <span style="min-width:0"><span class="nm">${a.nm}</span><br><span class="ds">${a.ds}</span></span>
+     <svg class="grip" width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>
+   </div>`).join('');
+
+let draggingAgent = null;
+$('#railList').addEventListener('dragstart', e => {
+  const el = e.target.closest('.agent'); if (!el) return;
+  draggingAgent = el.dataset.agent;
+  el.classList.add('dragging');
+  e.dataTransfer.setData('text/plain', draggingAgent);
+  e.dataTransfer.effectAllowed = 'copy';
+  S._dragging = true; render();
+});
+document.addEventListener('dragend', () => {
+  draggingAgent = null; S._dragging = false;
+  document.querySelectorAll('.agent.dragging').forEach(x => x.classList.remove('dragging'));
+  render();
+});
+
+/* 拖到空白 = 新开一条；拖到某个节点上 = 插到它后面 */
+stage.addEventListener('dragover', e => {
+  e.preventDefault(); e.dataTransfer.dropEffect = 'copy';
+  const overNode = !!e.target.closest('.node');
+  S.nodes.forEach(n => n.dropping = false);
+  if (overNode){ const el = e.target.closest('.node'); const n = S.nodes.find(x => x.nid === el.id.slice(2)); if (n) n.dropping = true; }
+  render(); stage.classList.add('hot');
+});
+stage.addEventListener('dragleave', e => {
+  if (e.target !== stage) return;
+  stage.classList.remove('hot');
+  S.nodes.forEach(n => n.dropping = false); render();
+});
+stage.addEventListener('drop', e => {
+  e.preventDefault(); stage.classList.remove('hot');
+  const aid = draggingAgent || e.dataTransfer.getData('text/plain');
+  if (!aid) return;
+  const over = e.target.closest('.node');
+  pushHist();
+  if (over) insertAfter(over.id.slice(2), aid);
+  else addNode(aid);
+  S._dragging = false; draggingAgent = null;
+  render();
+});
+
+function addNode(agentId, silent){
+  const nid = 'n' + (++S.seq);
+  S.nodes.push({ nid, agentId });
+  if (!silent) S.sel = nid;
+  return nid;
+}
+/* A→B 变 A→N→B：插到上游与它的下游之间 —— 这是「拖到助手身上」的语义 */
+function insertAfter(upstream, agentId){
+  const nid = addNode(agentId, true);
+  const downs = S.edges.filter(e => e.from === upstream);
+  downs.forEach(e => {
+    const i = S.edges.indexOf(e);
+    S.edges[i] = { from: nid, to: e.to };      // 下游改挂到新节点
+  });
+  S.edges.push({ from: upstream, to: nid });
+  markStale(upstream);
+  S.sel = nid;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   连线：从出口拖到另一个节点的入口（含成环拦截）
+   ══════════════════════════════════════════════════════════════ */
+let link = null;
+canvas.addEventListener('pointerdown', e => {
+  const p = e.target.closest('.port');
+  if (!p || p.dataset.port !== 'out') return;
+  const nid = p.dataset.nid;
+  link = { from: nid };
+  const g = document.createElementNS('http://www.w3.org/2000/svg','path');
+  g.setAttribute('stroke','var(--accent)'); g.setAttribute('stroke-width','1.6');
+  g.setAttribute('stroke-dasharray','5 4'); g.setAttribute('fill','none');
+  g.id = 'ghostLink'; edgesEl.appendChild(g);
+  stage.setPointerCapture?.(e.pointerId);
+});
+canvas.addEventListener('pointermove', e => {
+  if (!link) return;
+  const { P, NW, NH } = pos();
+  const r = canvas.getBoundingClientRect();
+  const a = P[link.from]; if (!a) return;
+  const mx = e.clientX - r.left, my = e.clientY - r.top;
+  const x1 = a.x + NW, y1 = a.y + NH/2;
+  document.getElementById('ghostLink')?.setAttribute('d', `M${x1},${y1} C${x1+50},${y1} ${mx-50},${my} ${mx},${my}`);
+  // 高亮合法落点
+  const hit = e.target.closest?.('.node');
+  S.nodes.forEach(n => n.dropping = false);
+  if (hit){
+    const to = hit.id.slice(2);
+    if (canLink(link.from, to)) S.nodes.find(n => n.nid === to).dropping = true;
+  }
+  render();
+});
+canvas.addEventListener('pointerup', e => {
+  if (!link) return;
+  document.getElementById('ghostLink')?.remove();
+  const hit = e.target.closest?.('.node');
+  if (hit){
+    const to = hit.id.slice(2);
+    if (canLink(link.from, to)){ pushHist(); S.edges.push({ from: link.from, to }); markStale(link.from); }
+  }
+  S.nodes.forEach(n => n.dropping = false);
+  link = null; render();
+});
+/* 不允许自连、不允许重复、不允许成环 */
+function canLink(from, to){
+  if (from === to) return false;
+  if (S.edges.some(e => e.from === from && e.to === to)) return false;
+  // 从 to 出发能否回到 from → 成环
+  const seen = new Set(); const stack = [to];
+  while (stack.length){
+    const cur = stack.pop();
+    if (cur === from) return false;
+    if (seen.has(cur)) continue;
+    seen.add(cur);
+    S.edges.filter(e => e.from === cur).forEach(e => stack.push(e.to));
+  }
+  return true;
+}
+
+/* 结构一变，这一步和它下游的产出就跟当前图对不上了 → 标「需重跑」。
+   不直接清空，是为了让用户还能看到上次跑出什么（只是提示要重来）。 */
+function markStale(fromNid){
+  const seen = new Set(), stack = [fromNid];
+  while (stack.length){
+    const cur = stack.pop();
+    if (seen.has(cur)) continue;
+    seen.add(cur);
+    RUN.states[cur] = 'stale';
+    S.edges.filter(e => e.from === cur).forEach(e => stack.push(e.to));
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   交互：选中 / 删除 / 撤销 / 快捷键
+   ══════════════════════════════════════════════════════════════ */
+canvas.addEventListener('click', e => {
+  if (e.target.closest('[data-del]')){
+    const nid = e.target.closest('[data-del]').dataset.del;
+    pushHist();
+    const downs = S.edges.filter(x => x.from === nid).map(x => x.to);
+    S.nodes = S.nodes.filter(n => n.nid !== nid);
+    S.edges = S.edges.filter(x => x.from !== nid && x.to !== nid);
+    downs.forEach(markStale);
+    if (S.sel === nid) S.sel = null;
+    render(); return;
+  }
+  if (e.target.closest('[data-allow],[data-deny]')){
+    const allow = e.target.closest('[data-allow]');
+    const nid = RUN.ask;
+    if (allow){
+      const remember = !!e.target.closest('[data-allow="all"]');
+      log(nid, 'ok', remember ? '已允许（并记住这类不再问）' : '已允许，继续执行');
+      resumeAfterAsk(nid);                        // 接着把剩下的跑完
+    } else {
+      log(nid, 'err', '你拒绝了这一步 —— 链停在这里');
+      RUN.ask = null;
+      RUN.states[nid] = 'err';
+      RUN.out[nid] = '这一步被你拒绝了，链停在这里。';
+      RUN.on = false;
+      S.nodes.forEach(n => { if (RUN.states[n.nid] === 'wait') RUN.states[n.nid] = 'stale'; });
+      render();
+    }
+    return;
+  }
+  const el = e.target.closest('.node');
+  S.sel = el ? el.id.slice(2) : null;
+  render();
+});
+$('#drawer').addEventListener('click', e => {
+  if (e.target.closest('[data-close]')){ S.sel = null; render(); }
+  if (e.target.closest('[data-goto-agent]')) toast('（原型示意）会打开「配置助手」整屏浮层');
+});
+document.addEventListener('keydown', e => {
+  const mod = e.metaKey || e.ctrlKey;
+  if (mod && e.key.toLowerCase() === 'z'){ e.preventDefault(); undo(); }
+  else if (mod && e.key === 'Enter'){ e.preventDefault(); run(); }
+  else if ((e.key === 'Backspace' || e.key === 'Delete') && S.sel && !/input|textarea/i.test(document.activeElement.tagName)){
+    e.preventDefault();
+    pushHist();
+    const nid = S.sel;
+    S.nodes = S.nodes.filter(n => n.nid !== nid);
+    S.edges = S.edges.filter(x => x.from !== nid && x.to !== nid);
+    S.sel = null; render();
+  }
+  else if (e.key === 'Escape'){ S.sel = null; render(); }
+});
+// 两个运行按钮都要绑 —— 之前只设了 disabled，点了没反应
+$('#runBtn').addEventListener('click', run);
+$('#runBtn2').addEventListener('click', run);
+
+$('#clearBtn').addEventListener('click', () => {
+  pushHist(); S.nodes = []; S.edges = []; S.sel = null;
+  RUN = { on:false, phase:null, states:{}, out:{}, ask:null, in:{} };
+  $('#log').classList.remove('open'); $('#logIn').innerHTML = '';
+  render();
+});
+
+/* 模板 */
+$('.empty').addEventListener('click', e => {
+  const b = e.target.closest('[data-tpl]'); if (!b) return;
+  pushHist(); S.nodes = []; S.edges = []; RUN.states = {}; RUN.out = {};
+  const t = b.dataset.tpl;
+  if (t === 'single'){ addNode('ag_research'); }
+  else if (t === 'serial'){
+    const a = addNode('ag_research', true), b2 = addNode('ag_writer', true), c = addNode('ag_review', true);
+    S.edges.push({from:a,to:b2},{from:b2,to:c}); S.sel = a;
+  } else {
+    const a = addNode('ag_research', true), b2 = addNode('ag_data', true), c = addNode('ag_draw', true);
+    S.sel = a;
+  }
+  render();
+});
+
+/* ══════════════════════════════════════════════════════════════
+   运行：按层推进（同层并行）+ 中途人工确认
+   ══════════════════════════════════════════════════════════════ */
+const wait = ms => new Promise(r => setTimeout(r, ms));
+function log(nid, kind, tx){
+  const a = nid ? AG(S.nodes.find(n => n.nid === nid)?.agentId) : null;
+  const el = document.createElement('div');
+  el.className = 'line ' + kind;
+  el.innerHTML = `<span class="who">${a ? a.nm : '系统'}</span><span class="tx">${esc(tx)}</span>`;
+  $('#logIn').appendChild(el); $('#log').classList.add('open');
+  $('#logIn').parentElement.scrollTop = $('#logIn').parentElement.scrollHeight;
+}
+async function run(){
+  if (!S.nodes.length || RUN.on) return;
+  const task = $('#task').value.trim() || '（未填任务，按各助手的默认职责执行）';
+  RUN = { on:true, phase:'layers', states:{}, out:{}, ask:null, in:{}, task };
+  S.nodes.forEach(n => RUN.states[n.nid] = 'wait');
+  S.sel = null; $('#logIn').innerHTML = ''; $('#log').classList.add('open');
+  log(null, 'sys', `任务：${task}`);
+  render();
+
+  const { byL } = layers();
+  const order = Object.keys(byL).sort((a,b)=>a-b);
+  for (const L of order){
+    const ids = byL[L];
+    log(null, 'sys', `第 ${+L+1} 步 · ${ids.length} 个助手${ids.length>1?'（并行）':''}`);
+    await Promise.all(ids.map(nid => runNode(nid, task)));
+    // 有人在等你确认 → 整条链**停在这一层**（下游不该抢跑）
+    if (ids.some(nid => RUN.states[nid] === 'ask')){
+      RUN.on = true; render();                       // 暂停中仍算"运行中"：结构不可改
+      log(null, 'sys', '已暂停 · 等你在节点上点「允许」');
+      return;
+    }
+    const bad = ids.find(nid => RUN.states[nid] === 'err');
+    if (bad){ log(null, 'err', '有节点失败，链在这里停住'); break; }
+  }
+  if (Object.values(RUN.states).every(s => s === 'ok' || s === 'err')){
+    log(null, 'ok', '编排结束');
+  }
+  RUN.on = false; RUN.ask = null;                   // 真正跑完才清
+  render();
+}
+
+/* 确认之后接着跑：先让被暂停的节点跑完，再把还「等待」的节点按层补上 */
+async function resumeAfterAsk(nid){
+  RUN.ask = null; RUN.on = true; render();
+  finishNode(nid, true);
+  const { byL } = layers();
+  for (const L of Object.keys(byL).sort((a,b)=>a-b)){
+    const ids = byL[L].filter(x => RUN.states[x] === 'wait');
+    if (!ids.length) continue;
+    await Promise.all(ids.map(x => runNode(x, RUN.task || '')));
+    if (ids.some(x => RUN.states[x] === 'ask')){ RUN.on = true; render(); log(null,'sys','已暂停 · 等你在节点上点「允许」'); return; }
+    if (ids.some(x => RUN.states[x] === 'err')) break;
+  }
+  RUN.on = false; render();
+  log(null, 'ok', '编排结束');
+}
+async function runNode(nid, task){
+  const n = S.nodes.find(x => x.nid === nid), a = AG(n.agentId);
+  RUN.states[nid] = 'run';
+  const up = S.edges.filter(e => e.to === nid).map(e => AG(S.nodes.find(x => x.nid === e.from).agentId).nm);
+  RUN.in[nid] = up.length ? `（来自 ${up.join('、')} 的产出）\n${task}` : task;
+  render();
+  await wait(520 + Math.random() * 420);
+
+  // 有一个节点会撞上权限确认 —— 演示「中断点长在节点上」
+  if (a.id === 'ag_ops' && !RUN._asked){ RUN._asked = true; RUN.states[nid] = 'ask'; RUN.ask = nid; render(); return; }
+
+  finishNode(nid, false);
+}
+function finishNode(nid, afterAsk){
+  const a = AG(S.nodes.find(x => x.nid === nid).agentId);
+  const seed = {
+    ag_research:'查到 3 家：A 家 ¥2.4/卡时（库存紧），B 家 ¥1.9（需预付），C 家 ¥2.1（新客 7 折）。关键差异在预付条款与可用区。',
+    ag_writer:'已按「结论先行 + 对比表 + 建议」三段写好初稿，约 620 字，表里列了价格、条款、可用区三列。',
+    ag_review:'发现 2 处问题：B 家的预付门槛没写清；结论段缺一句风险提示。其余可发。',
+    ag_data:'取到近 30 天 GPU 报价序列（1,842 条），按厂商聚合后均价与中位数已算好。',
+    ag_draw:'出了 1 张对比柱状图 + 1 张条款差异表，已存到 /srv/out/report。',
+    ag_ops:'已创建 /srv/out/report 并写入产物（3 个文件）。',
+  }[a.id] || '完成。';
+  RUN.out[nid] = afterAsk ? seed + '\n（你刚才允许的那一步已执行）' : seed;
+  RUN.states[nid] = 'ok';
+  log(nid, 'ok', RUN.out[nid]);
+  render();
+}
+
+/* ══════════════════════════════════════════════════════════════
+   Tweaks（本地持久化）
+   ══════════════════════════════════════════════════════════════ */
+const TW = JSON.parse(localStorage.getItem('pg-design') || '{}');
+const applyTW = () => {
+  document.body.dataset.density = TW.density || 'roomy';
+  document.body.dataset.motion = TW.motion === false ? 'off' : 'on';
+  $('#twDensity').value = TW.density || 'roomy';
+  $('#twMotion').checked = TW.motion !== false;
+  $('#twStep').checked = TW.step !== false;
+};
+$('#twDensity').onchange = e => { TW.density = e.target.value; save(); };
+$('#twMotion').onchange = e => { TW.motion = e.target.checked; save(); };
+$('#twStep').onchange = e => { TW.step = e.target.checked; save(); };
+function save(){ localStorage.setItem('pg-design', JSON.stringify(TW)); applyTW(); render(); }
+window.addEventListener('resize', render);
+
+function toast(msg){
+  const el = document.createElement('div');
+  el.textContent = msg;
+  el.style.cssText = 'position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--text);color:#fff;font-size:12.5px;padding:8px 14px;border-radius:8px;z-index:60;box-shadow:var(--shadow-2)';
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2200);
+}
+
+/* 起手：给一个开箱就能试的例子（单节点 = 对话） */
+applyTW();
+addNode('ag_research');
+S.sel = 'n1';
+render();
+</script>
+</body>
+</html>

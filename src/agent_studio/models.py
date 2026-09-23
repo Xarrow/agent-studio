@@ -489,7 +489,9 @@ class Orchestration(Base):
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("orc_"))
     name: Mapped[str] = mapped_column(String(200), default="")
-    #: single | serial | parallel | master_worker
+    #: 源自哪份编排设计稿（NULL = 界面上临时摆的、没存）
+    workflow_id: Mapped[str | None] = mapped_column(String(32), default=None, index=True)
+    #: single | serial | parallel | master_worker | dag
     mode: Mapped[str] = mapped_column(String(16), default="single")
     #: 主从模式下，worker 之间是串行还是并行（serial | parallel）
     worker_mode: Mapped[str | None] = mapped_column(String(16), default=None)
@@ -506,3 +508,36 @@ class Orchestration(Base):
     usage: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     started_at: Mapped[int] = mapped_column(Integer, default=now_ms, index=True)
     ended_at: Mapped[int | None] = mapped_column(Integer, default=None)
+
+
+class Workflow(Base):
+    """编排设计稿 —— 画布上的那张图（nodes + edges）。
+
+    为什么不塞进 Orchestration
+    -------------------------
+    ``orchestration`` 是**一次执行**的记录：不可变、可复现、跟着 run 一起进历史。
+    ``workflow`` 是**可反复改、可反复跑**的设计稿。两者生命周期完全不同 ——
+    改一份 workflow 不该动到历史执行，删一份 workflow 也不该让它跑出来的记录失忆。
+    所以分表，用 ``orchestration.workflow_id`` 单向引用。
+
+    ``graph`` 的形状（也是前后端约定的唯一格式）::
+
+        {
+          "nodes": [{"nid": "n1", "agent_id": "ag_xxx"}],
+          "edges": [{"from": "n1", "to": "n2"}],
+          "master_nid": "n1"          # 可选：主从里的"主"（不填 = 自动判断）
+        }
+    """
+
+    __tablename__ = "workflow"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("wf_"))
+    name: Mapped[str] = mapped_column(String(120), default="未命名编排")
+    description: Mapped[str] = mapped_column(String(500), default="")
+    #: 画布内容（nodes + edges），见类文档
+    graph: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    #: 执行方式覆盖（NULL = 按拓扑自动判断）
+    mode_override: Mapped[str | None] = mapped_column(String(24), default=None)
+    #: 只服务"最近"列表：用它排序，不用 created_at（改过的应该浮上来）
+    updated_at: Mapped[int] = mapped_column(Integer, default=now_ms, index=True)
+    created_at: Mapped[int] = mapped_column(Integer, default=now_ms)

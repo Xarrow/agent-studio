@@ -1,15 +1,17 @@
 /**
- * Playground —— 历史路径，只为老书签不失效。
+ * Playground —— 编排工作台。
  *
- * 功能和 /chat 完全一样（同一个 ConversationConsole）：现在"编排"不是一个模式，
- * 而是"参与者多于一个"的自然结果，所以这个路径没有自己的界面了。
- * 侧边栏早已不再单独列它。
+ * 这里是**唯一**干活的入口：一个节点是跟一个助手聊，多个节点就是编排。
+ * 原来的「对话」菜单已经并进来（/chat 会重定向到这里），所以侧边栏不再有
+ * 「对话 / Playground」两道门 —— 否则又变成"先选页面、再选摆几个助手"。
+ *
+ * 实现与设计理由写在 components/PlaygroundConsole.tsx。
  */
 
-import { ConversationConsole } from "@/components/ConversationConsole";
+import { PlaygroundConsole } from "@/components/PlaygroundConsole";
 
-export const metadata = { title: "对话 · Agent Studio" };
+export const metadata = { title: "Playground · Agent Studio" };
 
 export default function PlaygroundPage() {
-  return <ConversationConsole />;
+  return <PlaygroundConsole />;
 }

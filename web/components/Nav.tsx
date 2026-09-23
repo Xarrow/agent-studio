@@ -29,12 +29,12 @@ type Item = { href: string; label: string; icon: string; tip: string };
 /** 使用 —— 日常干活的入口 */
 const USE_ITEMS: Item[] = [
   {
-    href: "/chat",
-    label: "对话",
+    href: "/playground",
+    label: "Playground",
     icon: "✦",
-    // 「单 Agent 对话」和「多 Agent 编排」已合并进这一个页面（页内两档切换），
-    // 所以侧边栏不再单列 Playground —— 否则又变成"先选页面再选模式"两道门。
-    tip: "跟助手干活的地方：跟一个助手连续对话，或者让几个助手分工干一件事。历史记录会一直留着。",
+    // 「对话」已经并进这里 —— 一个节点就是对话，多个节点就是编排。
+    // 侧边栏只留这一个入口：同一件事不开两道门。
+    tip: "干活的地方：把助手拖进来摆成一条链，就是让它们分工做一件事；只放一个，就是跟它聊天。",
   },
   {
     href: "/runs",

@@ -93,6 +93,8 @@ class Orchestrator:
             "serial": self._serial,
             "parallel": self._parallel,
             "master_worker": self._master_worker,
+            # 画布上摆出来的任意 DAG（分叉再汇合）
+            "dag": self._dag,
         }
         handler = handlers.get(mode)
         if handler is None:
@@ -189,6 +191,125 @@ class Orchestrator:
             output={"content": "\n\n".join(parts)},
             runs=done,
         )
+
+    async def _dag(self, orc_id: str, spec: dict[str, Any]) -> None:
+        """画布模式：按拓扑**分层**跑，层内并发；**每条连线带自己的关系**。
+
+        与 serial 的区别（也是它存在的理由）：serial 假定"上一步"只有一个，
+        而画布允许分叉再汇合 —— 一个节点的输入是它所有上游按**各自关系**交来的东西。
+
+        四种关系（``orchestrator.graph.REL_*``）：
+          serial   交结论
+          parallel 不交、也不等（这条线不构成依赖，两者真并发）
+          context  交"上游看到的 + 上游说过的"（完整上下文，而不只是结论）
+          memory   交结论 **并且**把结论沉淀成下游的一条记忆
+
+        某一路失败**不中断**：其它分支照跑，失败的进 partial —— 与 serial 的取舍一致
+        （拿到大部分结果，比一个错误提示有用）。
+        """
+        from .graph import REL_CONTEXT, REL_MEMORY, is_dependency, topo_layers
+
+        task = self._task(spec)
+        nodes: list[dict[str, Any]] = list(spec.get("nodes") or [])
+        edges: list[dict[str, Any]] = list(spec.get("edges") or [])
+        if not nodes:
+            await self._finish(orc_id, "error", error="这份编排里一个助手都没有")
+            return
+
+        by_nid = {n["nid"]: n for n in nodes}
+        outputs: dict[str, str] = {}   # 每个节点跑出来的结论
+        inputs: dict[str, str] = {}    # 每个节点当时**领到**的任务（context 关系要用它）
+        run_of: dict[str, Run] = {}
+        done: list[Run] = []
+        order = 0
+
+        for layer in topo_layers(nodes, edges):
+            async def run_one(nid: str, idx: int) -> Run:
+                ups = [e for e in edges if e["to"] == nid and is_dependency(e)]
+                chunks: list[str] = []
+                for e in ups:
+                    text = outputs.get(e["from"], "")
+                    if not text:
+                        continue
+                    if e.get("rel") == REL_CONTEXT:
+                        # 上下文共享：连它当时领到什么都一起交过去 ——
+                        # 下游拿到的是一段"经过"，而不是一句结论
+                        src_in = inputs.get(e["from"], "")
+                        chunks.append(
+                            f"【{self._agent_name_of(run_of[e['from']])} 的上下文】\n"
+                            f"它领到的任务：{src_in}\n它的产出：{text}"
+                        )
+                    else:
+                        chunks.append(text)
+                prev = "\n\n".join(chunks) or None
+                payload = self._compose(task, prev, idx)
+                inputs[nid] = payload
+                run = await self._start_step(orc_id, by_nid[nid]["agent_id"], "worker", idx, payload)
+                return await self._await(run.id)
+
+            results = await asyncio.gather(
+                *(run_one(nid, order + i) for i, nid in enumerate(layer)),
+                return_exceptions=True,
+            )
+            for nid, res in zip(layer, results):
+                if isinstance(res, BaseException):
+                    logger.warning("DAG 分支 %s 异常: %s", nid, res)
+                    continue
+                done.append(res)
+                run_of[nid] = res
+                if res.status == "ok" and (t := self._text(res)):
+                    outputs[nid] = t
+                    # 「记忆」关系：产出落成下游的一条记忆（走 candidate 闸门，
+                    # 与自动沉淀同一套规矩 —— 自动但可控）
+                    for e in edges:
+                        if e["from"] == nid and e.get("rel") == REL_MEMORY:
+                            await self._deposit_memory(res, by_nid[e["to"]]["agent_id"], t)
+            order += len(layer)
+
+        # 最终结果 = **汇点**（没有下游的那些）的产出，按助手名分段
+        outs = {e["from"] for e in edges if is_dependency(e)}
+        sinks = [n for n in nodes if n["nid"] not in outs]
+        parts = [
+            f"【{self._agent_name_of(run_of[n['nid']])}】\n{outputs[n['nid']]}"
+            for n in sinks
+            if outputs.get(n["nid"]) and n["nid"] in run_of
+        ]
+        await self._finish(
+            orc_id,
+            status=self._status_of(done),
+            output={"content": "\n\n".join(parts)},
+            runs=done,
+        )
+
+    async def _deposit_memory(self, run: Run, to_agent_id: str, content: str) -> None:
+        """把一条产出沉淀成**下游助手**的记忆。
+
+        绑下游而不是上游：这条关系的用途是"让下一个能想起来"，
+        所以记忆要挂在**将来要召回它的那个助手**名下。
+        """
+        from ..models import Memory
+
+        text = (content or "").strip()
+        if not text:
+            return
+        ts = now_ms()
+        async with SessionLocal() as session:
+            session.add(
+                Memory(
+                    agent_id=to_agent_id,
+                    scope="agent",
+                    kind="summary",
+                    content=text[:4000],
+                    source="auto",
+                    source_run_id=run.id,
+                    # 自动产生的先进候选态，用户确认后才生效 —— 与自动沉淀同一套闸门
+                    status="candidate",
+                    importance=0.5,
+                    created_at=ts,
+                    updated_at=ts,
+                )
+            )
+            await session.commit()
 
     async def _master_worker(self, orc_id: str, spec: dict[str, Any]) -> None:
         """主从：主控拆任务 → 干活的做 → **主控汇总出最终结果**。

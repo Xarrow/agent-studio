@@ -1,15 +1,12 @@
 /**
- * 对话 —— 单助手对话与多助手编排，同一个界面。
+ * /chat —— 历史路径，重定向到 Playground。
  *
- * 早期这两件事是两个页面（/chat 和 /playground），后来合到一页但留着模式切换，
- * 现在连那道切换也去掉：**参与者本身决定它是对话还是编排**。
- * 实现与理由写在 components/ConversationConsole.tsx。
+ * 「对话」不再是一个独立入口：它只是"画布上只有一个助手"的那种情况。
+ * 留着这条路径只为老书签、老链接不失效。
  */
 
-import { ConversationConsole } from "@/components/ConversationConsole";
-
-export const metadata = { title: "对话 · Agent Studio" };
+import { redirect } from "next/navigation";
 
 export default function ChatPage() {
-  return <ConversationConsole />;
+  redirect("/playground");
 }

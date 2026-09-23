@@ -159,6 +159,8 @@ _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("run", "origin", "origin VARCHAR(16)"),
     # 中途暂停时的运行时状态快照（JSON，不透明）—— 人工确认后据此继续
     ("run", "pending_state", "pending_state JSON"),
+    # 这次编排源自哪份设计稿（NULL = 临时摆的）—— 「运行记录」据此回链到 workflow
+    ("orchestration", "workflow_id", "workflow_id VARCHAR(32)"),
     # 凭据的默认模型（LLM 配置页可探测后选择 / 手动填写）
     ("secret", "default_model", "default_model VARCHAR(128)"),
 )

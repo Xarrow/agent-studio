@@ -490,3 +490,69 @@ export interface CredentialChatResult {
   usage: Record<string, number> | null;
   error: string | null;
 }
+
+/**
+ * 两个助手之间的**关系** —— 连线上的语义，不是全局设置。
+ *
+ * serial   串行接力：等它跑完，把结论交给下一个（默认）
+ * parallel 并行：两者同时开始，这条线不构成依赖
+ * context  上下文共享：把它看到的和说过的，一起交给下一个
+ * memory   记忆：产出存成下游的记忆，以后能想起来
+ */
+export type EdgeRel = "serial" | "parallel" | "context" | "memory";
+
+export interface WorkflowNode {
+  nid: string;
+  agent_id: string;
+}
+
+export interface WorkflowEdge {
+  from: string;
+  to: string;
+  /** 连线的语义。**暂未实现**，缺省按 serial（串行接力）处理 —— 留字段是为了
+   *  以后能在线上直接表达"并行 / 共享上下文 / 沉淀为记忆"，不必再改数据结构。 */
+  rel?: EdgeRel;
+}
+
+export interface WorkflowGraph {
+  nodes: WorkflowNode[];
+  edges: WorkflowEdge[];
+  /** 主从里的"主"；不填 = 按连线自动判断 */
+  master_nid?: string | null;
+}
+
+export interface Workflow {
+  id: string;
+  name: string;
+  description: string;
+  graph: WorkflowGraph;
+  /** 用户覆盖（null = 自动判断） */
+  mode_override: string | null;
+  /** **服务端**推导的执行方式 + 人话说明（界面直接显示，不自己算） */
+  derived_mode: string;
+  derived_hint: string;
+  effective_mode: string;
+  node_count: number;
+  edge_count: number;
+  updated_at: number;
+  created_at: number;
+  run_count: number;
+}
+
+export interface WorkflowRunResult {
+  orchestration_id: string;
+  mode: string;
+  mode_label: string;
+  step_count: number;
+  stream_url: string;
+}
+
+export interface WorkflowRunBrief {
+  id: string;
+  mode: string;
+  status: string;
+  task: string;
+  started_at: number;
+  ended_at: number | null;
+  step_count: number;
+}

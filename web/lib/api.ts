@@ -19,6 +19,10 @@ import type {
   Orchestration,
   OrchestrationDetail,
   OrchStep,
+  Workflow,
+  WorkflowGraph,
+  WorkflowRunBrief,
+  WorkflowRunResult,
   Provider,
   Run,
   RunDeleteResult,
@@ -451,6 +455,35 @@ export const api = {
   /** 编排的实时流（聚合所有子步骤的事件） */
   orchestrationStreamUrl: (id: string) =>
     withToken(`${apiBase()}/api/orchestrations/stream/${id}`),
+
+  /* ── 编排设计稿（Playground 画布）──────────────────────────────────────────
+     设计稿和执行记录是两种东西：workflow 可反复改、反复跑；orchestration 是
+     一次执行的事实。所以存取走 workflows，跑完拿 orchestration_id 去订阅。 */
+  workflows: (limit = 50) => request<Workflow[]>(`/api/workflows?limit=${limit}`),
+  workflow: (id: string) => request<Workflow>(`/api/workflows/${id}`),
+  createWorkflow: (body: {
+    name?: string;
+    description?: string;
+    graph: WorkflowGraph;
+    mode_override?: string | null;
+  }) => post<Workflow>("/api/workflows", body),
+  updateWorkflow: (
+    id: string,
+    body: {
+      name?: string;
+      description?: string;
+      graph?: WorkflowGraph;
+      /** 传 "" 表示恢复"自动判断" */
+      mode_override?: string | null;
+    },
+  ) => request<Workflow>(`/api/workflows/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+  deleteWorkflow: (id: string) =>
+    request<{ deleted: number; id: string }>(`/api/workflows/${id}`, { method: "DELETE" }),
+  /** 跑一次：返回 orchestration_id，用它订阅现成的编排流 */
+  runWorkflow: (id: string, body: { task: string; timeout_s?: number }) =>
+    post<WorkflowRunResult>(`/api/workflows/${id}/run`, body),
+  workflowRuns: (id: string, limit = 20) =>
+    request<WorkflowRunBrief[]>(`/api/workflows/${id}/runs?limit=${limit}`),
 
   // SSE 事件流地址（单次执行）
   streamUrl: (runId: string) => withToken(`${apiBase()}/api/runs/stream/${runId}`),

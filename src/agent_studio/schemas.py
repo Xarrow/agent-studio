@@ -763,3 +763,84 @@ class OrchestrationDetail(OrchestrationRead):
 
     spec: dict[str, Any]
     steps: list[OrchestrationStepRead] = []
+
+
+# --------------------------------------------------------------------------- #
+# 编排设计稿（Workflow）—— Playground 画布上保存下来的那张图
+# --------------------------------------------------------------------------- #
+class WorkflowNode(BaseModel):
+    """画布上的一个节点：一个助手 + 它的位置（位置不入库，由布局算）。"""
+
+    nid: str
+    agent_id: str
+
+
+class WorkflowEdge(BaseModel):
+    """一条连线：**两个助手之间的关系**。
+
+    ``rel`` 决定怎么传、传什么（见 ``orchestrator.graph`` 的常量与文案）：
+
+    - ``serial``   串行接力：把上游的结论交给下游（默认）
+    - ``parallel`` 并行：两者同时开始，这条线不构成依赖
+    - ``context``  上下文共享：把上游的输入 + 产出都交给下游
+    - ``memory``   记忆：上游产出沉淀成下游的一条记忆
+    """
+
+    from_: str = Field(alias="from")
+    to: str
+    rel: str = "serial"
+
+    model_config = {"populate_by_name": True}
+
+
+class WorkflowGraph(BaseModel):
+    """整张图。前后端只有这一个格式。"""
+
+    nodes: list[WorkflowNode] = Field(default_factory=list)
+    edges: list[WorkflowEdge] = Field(default_factory=list)
+    #: 主从里的"主"；不填 = 按连线自动判断
+    master_nid: str | None = None
+
+
+class WorkflowCreate(BaseModel):
+    name: str = "未命名编排"
+    description: str = ""
+    graph: WorkflowGraph = Field(default_factory=WorkflowGraph)
+    #: 执行方式覆盖（NULL = 自动判断）
+    mode_override: str | None = None
+
+
+class WorkflowUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    graph: WorkflowGraph | None = None
+    #: 用哨兵区分"不改"和"改成自动"：传 "" 表示清除覆盖
+    mode_override: str | None = None
+
+
+class WorkflowRead(BaseModel):
+    id: str
+    name: str
+    description: str = ""
+    graph: WorkflowGraph
+    #: 用户覆盖（None = 自动）
+    mode_override: str | None = None
+    #: **服务端推导出来的**执行方式 + 人话说明 —— 界面直接显示，不自己算
+    derived_mode: str = "single"
+    derived_hint: str = ""
+    #: 真正会用的那个（覆盖优先）
+    effective_mode: str = "single"
+    node_count: int = 0
+    edge_count: int = 0
+    updated_at: int = 0
+    created_at: int = 0
+    #: 用这份设计稿跑过多少次
+    run_count: int = 0
+
+
+class WorkflowRunRequest(BaseModel):
+    """用这份设计稿跑一次。"""
+
+    task: str
+    #: 覆盖超时（不填用助手自己的）
+    timeout_s: int | None = None
