@@ -391,6 +391,12 @@ class RunService:
                     run = await session.get(Run, run_id)
                     run.status = "waiting_hitl"
                     run.pending_hitl = hitl_payload or {}
+                    # 状态快照必须**赶在 dispose 之前**取 —— dispose 会收掉编译产物，
+                    # 而"我在等谁确认"这件事只记在它体内。恢复时靠它把新 agent
+                    # 带回同一个处境，否则确认结果会被拒。
+                    run.pending_state = (
+                        runtime.snapshot_state(compiled) if compiled is not None else None
+                    )
                     await session.commit()
                 return
 
@@ -555,6 +561,21 @@ class RunService:
                 definition, api_key=api_key, tools=tools,
                 agent_id=run.agent_id, work_dir=str(settings.work_dir),
             )
+            # 把暂停那一刻的状态装回去 —— 否则新编译的 agent 不认为自己
+            # 有待确认的调用，AgentScope 会直接拒绝确认事件
+            # （表现：点了「允许」却报 Agent is not waiting for user confirmation）
+            async with SessionLocal() as session:
+                _run = await session.get(Run, run_id)
+                _snap = (_run.pending_state if _run else None) or None
+            if _snap:
+                await runtime.restore_state(compiled, _snap)
+                # 已装回内存，落库那份可以清掉（再次暂停会重新写）
+                async with SessionLocal() as session:
+                    _run = await session.get(Run, run_id)
+                    if _run is not None:
+                        _run.pending_state = None
+                        await session.commit()
+
             timeout = definition.limits.timeout_s or settings.default_timeout_s
 
             async def consume() -> None:

@@ -140,6 +140,11 @@ class Run(Base):
     # HITL：等待人工确认时的载荷
     pending_hitl: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
 
+    #: 暂停那一刻的运行时状态快照（不透明数据，只有对应运行时懂）。
+    #: 用于"人工确认后继续"—— 不存这个，恢复出来的是个空 agent，
+    #: 它不认为自己有待确认的调用，确认结果会被拒。
+    pending_state: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+
     #: 所属会话（NULL = 单轮执行，保持原有语义不变）
     #: 这次执行是**从哪儿发起的** —— 决定它在「运行记录」里归到哪一类。
     #:   chat       对话页（正式使用）

@@ -203,7 +203,27 @@ class AgentRuntime(ABC):
     async def resume(self, agent: CompiledAgent, hitl: HitlResponse) -> AsyncIterator[UnifiedEvent]:
         """HITL 恢复。不支持时抛 ``NotImplementedError``。"""
         raise NotImplementedError(f"{self.name} 不支持 HITL 恢复")
-        yield  # pragma: no cover  —— 让它是 async generator
+        yield  # pragma: no cover  —— 不可达；这个 yield 只是让本方法是 async generator
+
+    # ------------------------------------------------------------------ #
+    # 中途暂停的状态快照
+    #
+    # 为什么需要：暂停（等人工确认）之后进程可能没了一、run 会被重新编译。
+    # 而"我是不是在等人确认"这件事，各框架都是**记在自己那份状态里**的 ——
+    # 不把状态存下来，恢复时就是一个什么都不知道的新 agent，喂给它确认结果
+    # 会被直接拒绝（AgentScope 原话：Agent is not waiting for user confirmation）。
+    #
+    # 放在运行时契约上而不是让 runner 自己处理：快照的内容是**框架内部结构**
+    # （AgentScope 的 AgentState），对外只该是一个不透明的 dict。
+    # 换运行时（pi / 自研）时，各实现各存各的，上层零改动。
+    # ------------------------------------------------------------------ #
+    def snapshot_state(self, agent: CompiledAgent) -> dict[str, Any] | None:
+        """把"暂停这一刻的状态"导出为可存储的不透明数据。默认不支持。"""
+        return None
+
+    async def restore_state(self, agent: CompiledAgent, snapshot: dict[str, Any]) -> None:
+        """把之前导出的状态装回一个**新编译**的 agent。默认不支持。"""
+        return None
 
     async def discover_tools(self) -> list[dict[str, Any]]:
         """该运行时可用哪些内置工具（供 UI 展示）。"""

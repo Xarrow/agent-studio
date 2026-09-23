@@ -383,6 +383,38 @@ class AgentScopeRuntime(AgentRuntime):
                 yield unified
 
     # ------------------------------------------------------------------ #
+    # 中途暂停的状态快照
+    # ------------------------------------------------------------------ #
+    def snapshot_state(self, agent: CompiledAgent) -> dict[str, Any] | None:
+        """导出 AgentState（含 context 与待确认的工具调用）。
+
+        AgentScope 判断"我在不在等确认"看的是 ``state.context`` 最后一条消息里
+        工具调用的状态（``ASKING``）。所以**上下文本身就是状态**，必须整份存下来。
+        """
+        assert isinstance(agent, AgentScopeCompiled)
+        try:
+            return agent.agent.state.model_dump(mode="json")
+        except Exception:  # pragma: no cover
+            logger.warning("导出 AgentScope 状态失败", exc_info=True)
+            return None
+
+    async def restore_state(self, agent: CompiledAgent, snapshot: dict[str, Any]) -> None:
+        """把快照装回一个**新编译**的 Agent。
+
+        不装的话，恢复时会得到一个没有上下文的空 agent，喂确认结果会被拒：
+        ``Agent is not waiting for user confirmation, but received UserConfirmResultEvent``
+        —— 表现就是"点了允许但报错"。
+        """
+        from agentscope.state import AgentState
+
+        assert isinstance(agent, AgentScopeCompiled)
+        try:
+            agent.agent.state = AgentState.model_validate(snapshot)
+        except Exception:  # pragma: no cover
+            logger.warning("恢复 AgentScope 状态失败（本次确认可能无法继续）", exc_info=True)
+            raise
+
+    # ------------------------------------------------------------------ #
     # 辅助
     # ------------------------------------------------------------------ #
     @staticmethod

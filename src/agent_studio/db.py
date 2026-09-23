@@ -157,6 +157,8 @@ _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("run", "order_index", "order_index INTEGER"),
     # 执行来源（决定它在「运行记录」里归到哪一类）：chat / preview / playground
     ("run", "origin", "origin VARCHAR(16)"),
+    # 中途暂停时的运行时状态快照（JSON，不透明）—— 人工确认后据此继续
+    ("run", "pending_state", "pending_state JSON"),
     # 凭据的默认模型（LLM 配置页可探测后选择 / 手动填写）
     ("secret", "default_model", "default_model VARCHAR(128)"),
 )
