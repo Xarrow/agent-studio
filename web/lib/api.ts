@@ -147,6 +147,13 @@ export const api = {
     },
   ) => put<Credential>(`/api/credentials/${id}`, body),
   deleteCredential: (id: string) => del(`/api/credentials/${id}`),
+  /**
+   * 查看某个配置的**明文 API Key**。
+   * 注意：这个接口没有额外鉴权 —— 谁能访问 API 谁就能拿到明文 key，
+   * 所以不要在没有前置认证的情况下把平台暴露到公网。
+   */
+  revealCredentialKey: (id: string) =>
+    request<{ id: string; name: string; api_key: string }>(`/api/credentials/${id}/key`),
   testCredential: (id: string, model?: string) =>
     post<CredentialTestResult>(`/api/credentials/${id}/test`, { model }),
   /** 探测某凭据下可用的模型清单（编辑配置时让用户挑模型） */

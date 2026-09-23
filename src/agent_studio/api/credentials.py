@@ -171,6 +171,38 @@ async def update_credential(
     return to_read(row, plain)
 
 
+@router.get("/credentials/{credential_id}/key")
+async def reveal_credential_key(
+    credential_id: str, session: AsyncSession = Depends(get_session)
+) -> dict:
+    """查看某个配置的**明文 API Key**。
+
+    为什么要有这个接口
+    ------------------
+    配置是加密存的，列表只给脱敏串 —— 这在"核对配置对不对""换机器要迁移"
+    "手头 key 丢了要找回来"这些场景下不够用。所以提供一个显式查看入口。
+
+    ⚠️ 安全边界（重要）
+    -------------------
+    这个接口**不做任何额外鉴权** —— 谁能访问 API，谁就能拿到明文 key。
+    在内网可信的前提下没问题；但**一旦平台通过隧道暴露到公网且没有认证，
+    它等于把所有 key 公开**。所以：
+      · 如果有人要把它放到公网，必须先在前面加一层认证
+        （如 Cloudflare Access），否则不要暴露。
+    前端也在「显示」前加了确认步骤，避免误触发/肩窥。
+    """
+    row = await _get_or_404(session, credential_id)
+    try:
+        key = decrypt(row.ciphertext)
+    except Exception:  # noqa: BLE001
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "这个配置的密钥解不开 —— 通常是由另一个主密钥加密写入的，"
+            "请重新填写 API Key 并保存。",
+        ) from None
+    return {"id": row.id, "name": row.name, "api_key": key}
+
+
 @router.delete("/credentials/{credential_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_credential(
     credential_id: str, session: AsyncSession = Depends(get_session)

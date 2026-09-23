@@ -16,6 +16,8 @@ export default function CredentialsPage() {
   /** 正在编辑的凭据（null = 没在编辑） */
   const [editing, setEditing] = useState<Credential | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
+  /** 已显示明文的凭据：id → 明文 key（默认空 = 全部隐藏） */
+  const [revealed, setRevealed] = useState<Record<string, string>>({});
   const [testResult, setTestResult] = useState<Record<string, CredentialTestResult>>({});
 
   const load = useCallback(async () => {
@@ -35,6 +37,47 @@ export default function CredentialsPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /** 显示明文 key。先确认一次，避免误点/被旁人看到；60 秒后自动隐藏 */
+  const reveal = async (c: Credential) => {
+    const ok = await fb.confirm({
+      title: `显示「${c.name}」的 API Key？`,
+      description: "明文会显示在页面上，60 秒后自动隐藏。",
+      details: ["请确认屏幕前没有别人，也不要在录屏或共享屏幕时操作。"],
+      confirmText: "显示",
+    });
+    if (!ok) return;
+    try {
+      const r = await api.revealCredentialKey(c.id);
+      setRevealed((prev) => ({ ...prev, [c.id]: r.api_key }));
+      window.setTimeout(() => {
+        setRevealed((prev) => {
+          if (!(c.id in prev)) return prev;
+          const next = { ...prev };
+          delete next[c.id];
+          return next;
+        });
+      }, 60_000);
+    } catch (e) {
+      fb.error("读取密钥失败", e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const hide = (id: string) =>
+    setRevealed((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+
+  const copyKey = async (id: string) => {
+    try {
+      await navigator.clipboard.writeText(revealed[id]);
+      fb.success("已复制到剪贴板");
+    } catch {
+      fb.warn("复制失败", "浏览器不允许剪贴板访问，请手动选中复制。");
+    }
+  };
 
   const test = async (id: string) => {
     setTesting(id);
@@ -161,8 +204,29 @@ export default function CredentialsPage() {
                         <span className="tag text-[var(--color-err)]">✗ 上次测试失败</span>
                       )}
                     </div>
-                    <div className="text-[12px] text-[var(--color-muted)] mono mt-1.5">
-                      {c.masked_key} · {c.base_url || "默认端点"}
+                    <div className="text-[12px] text-[var(--color-muted)] mono mt-1.5 flex items-center gap-2 flex-wrap">
+                      {revealed[c.id] ? (
+                        <>
+                          <span className="text-[var(--color-text)] break-all">
+                            {revealed[c.id]}
+                          </span>
+                          <button
+                            className="btn text-[10.5px] px-1.5 py-0.5"
+                            onClick={() => void copyKey(c.id)}
+                          >
+                            复制
+                          </button>
+                          <button
+                            className="btn text-[10.5px] px-1.5 py-0.5"
+                            onClick={() => hide(c.id)}
+                          >
+                            隐藏
+                          </button>
+                        </>
+                      ) : (
+                        <span>{c.masked_key}</span>
+                      )}
+                      <span>· {c.base_url || "默认端点"}</span>
                     </div>
                     <div className="text-[12px] text-[var(--color-muted)] mt-1">
                       默认模型：{" "}
@@ -183,6 +247,15 @@ export default function CredentialsPage() {
                     <button className="btn" onClick={() => setEditing(c)}>
                       编辑
                     </button>
+                    {revealed[c.id] ? (
+                      <button className="btn" onClick={() => hide(c.id)}>
+                        隐藏密钥
+                      </button>
+                    ) : (
+                      <button className="btn" onClick={() => void reveal(c)}>
+                        显示密钥
+                      </button>
+                    )}
                     <button
                       className="btn"
                       disabled={testing === c.id}
