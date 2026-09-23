@@ -12,6 +12,7 @@
  */
 
 import Link from "next/link";
+import { HitlPrompt } from "@/components/HitlPrompt";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, fmt } from "@/lib/api";
 import type { Agent, RunEvent, Session } from "@/lib/types";
@@ -26,11 +27,20 @@ interface LiveMsg {
   text: string;
 }
 
-export function ChatConsole() {
+export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }) {
   const fb = useFeedback();
 
   const [agents, setAgents] = useState<Agent[]>([]);
-  const [agentId, setAgentId] = useState<string>("");
+  /**
+   * 跟谁聊。
+   *
+   * 外层（对话页的参与者条）传进来时**以外层为准** —— 参与者是页面级状态，
+   * 不该在两个组件里各存一份（那就会出现"上面显示 A、下面在跟 B 聊"）。
+   * 没传时才用自己这份（老的单独用法仍然成立）。
+   */
+  const [ownAgentId, setOwnAgentId] = useState<string>("");
+  const agentId = controlledAgentId ?? ownAgentId;
+  const setAgentId = setOwnAgentId;
   const [sessions, setSessions] = useState<Session[]>([]);
   const [sessionId, setSessionId] = useState<string>("");
   // 执行详情用弹框看，不跳页 —— 聊天上下文（输入框内容、滚动位置）不该
@@ -46,6 +56,13 @@ export function ChatConsole() {
    * 现在把失败摆出来，并且给一键重试（失败最常见的下一步就是"再试一次"）。
    */
   const [failed, setFailed] = useState<{ text: string; message: string } | null>(null);
+  /**
+   * 这一轮停在"等你授权"（hitl_request 的 payload）。
+   *
+   * 之前这里什么都不显示：AgentScope 停下来等人点头，而界面上没有任何可点的东西，
+   * 模型只能输出"我在等你的许可"—— 用户完全不知道该干什么。
+   */
+  const [hitl, setHitl] = useState<{ runId: string; payload: Record<string, unknown> } | null>(null);
 
   /** 已落库的历史消息 */
   const [history, setHistory] = useState<
@@ -210,12 +227,62 @@ export function ChatConsole() {
     }
   };
 
+  /**
+   * 挂上某个 Run 的事件流，直到它**结束或暂停**。
+   *
+   * 抽出来是因为两条路径都要用：新发送（send），以及人工确认后恢复 ——
+   * resume 之后运行会继续产出事件，必须有人接着收，否则用户只看到确认条消失、
+   * 后面发生了什么全然不知。
+   */
+  const attachStream = (runId: string, sentText: string) => {
+    const es = new EventSource(api.streamUrl(runId));
+    esRef.current = es;
+
+    es.onmessage = (e: MessageEvent) => {
+      try {
+        const ev = JSON.parse(e.data) as RunEvent;
+        // 收下**全部**事件：不只文本，还包括思考与工具调用，
+        // 这样执行过程能实时按颜色分段显示出来
+        setLiveEvents((prev) => [...prev, ev]);
+        const p = ev.payload as Record<string, unknown>;
+        if (ev.type === "text_delta") {
+          const t = typeof p.text === "string" ? p.text : typeof p.delta === "string" ? p.delta : "";
+          setLive((prev) => (prev ? { role: "assistant", text: prev.text + t } : prev));
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+
+    const settle = async () => {
+      es.close();
+      setBusy(false);
+      const r = await api.run(runId).catch(() => null);
+      if (r && r.status === "waiting_hitl") {
+        // **不是结束，是暂停等你点头** —— 保留现场（不清 live），
+        // 这样确认之后接着往同一个视图里追加，看起来是连贯的一次执行
+        setHitl({ runId, payload: (r.pending_hitl as Record<string, unknown>) ?? {} });
+        return;
+      }
+      setHitl(null);
+      setLive(null);
+      // 用服务端的权威历史覆盖（包含刚写入的这一轮）
+      await loadMessages(sessionId);
+      await loadSessions(agentId);
+      await verifyTurn(runId, sentText);
+    };
+
+    es.addEventListener("done", () => void settle());
+    es.onerror = () => void settle();
+  };
+
   const send = async (override?: unknown) => {
     // 允许传文本进来（重试时用）—— 传进来的可能是事件对象，所以只认字符串
     const text = (typeof override === "string" ? override : input).trim();
     if (!text || busy || !sessionId || !agentId) return;
 
     setFailed(null);
+    setHitl(null);
     setInput("");
     setBusy(true);
     setLive({ role: "user", text });
@@ -234,44 +301,7 @@ export function ChatConsole() {
         origin: "chat",
       });
 
-      const es = new EventSource(api.streamUrl(run.id));
-      esRef.current = es;
-
-      const onDelta = (e: MessageEvent) => {
-        try {
-          const ev = JSON.parse(e.data) as RunEvent;
-          // 收下**全部**事件：不只文本，还包括思考与工具调用，
-          // 这样执行过程能实时按颜色分段显示出来
-          setLiveEvents((prev) => [...prev, ev]);
-          const p = ev.payload as Record<string, unknown>;
-          if (ev.type === "text_delta") {
-            const t = typeof p.text === "string" ? p.text : typeof p.delta === "string" ? p.delta : "";
-            setLive((prev) => (prev ? { role: "assistant", text: prev.text + t } : prev));
-          }
-        } catch {
-          /* ignore */
-        }
-      };
-      es.onmessage = onDelta;
-
-      es.addEventListener("done", async () => {
-        es.close();
-        setLive(null);
-        setBusy(false);
-        // 用服务端的权威历史覆盖（包含刚写入的这一轮）
-        await loadMessages(sessionId);
-        await loadSessions(agentId);
-        await verifyTurn(run.id, text);
-      });
-
-      es.onerror = async () => {
-        es.close();
-        setLive(null);
-        setBusy(false);
-        await loadMessages(sessionId);
-        await loadSessions(agentId);
-        await verifyTurn(run.id, text);
-      };
+      attachStream(run.id, text);
     } catch (e) {
       // 请求本身就没发出去 —— 同样要摆出来（原来只弹个 toast，消失后无从追溯）
       setFailed({ text, message: e instanceof Error ? e.message : String(e) });
@@ -396,17 +426,26 @@ export function ChatConsole() {
       {/* ── 对话区 ───────────────────────────────────────────── */}
       <section className="flex-1 flex flex-col min-w-0">
         <header className="px-4 py-3 border-b border-[var(--color-border)] flex items-center gap-3 flex-wrap">
-          <select
-            className="input w-auto min-w-[160px]"
-            value={agentId}
-            onChange={(e) => setAgentId(e.target.value)}
-          >
-            {agents.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </select>
+          {/* 受外层控制时不显示自带的助手下拉 —— 参与者条是唯一入口，
+              两处都能选助手就是两套真相 */}
+          {controlledAgentId === undefined && (
+            <select
+              className="input w-auto min-w-[160px]"
+              value={agentId}
+              onChange={(e) => setAgentId(e.target.value)}
+            >
+              {agents.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          )}
+          {controlledAgentId !== undefined && (
+            <span className="text-[13.5px] font-medium truncate">
+              {currentAgent?.name ?? "（未选助手）"}
+            </span>
+          )}
           <span className="text-[11.5px] text-[var(--color-muted)] truncate">
             {currentAgent?.description || "runtime-agnostic Agent"}
           </span>
@@ -485,6 +524,19 @@ export function ChatConsole() {
 
         {/* 输入区 */}
         <div className="border-t border-[var(--color-border)] px-4 py-3">
+          {/* 这一轮停在等你授权 —— 就地确认，聊天现场不跳不丢 */}
+          {hitl && (
+            <div className="max-w-3xl mx-auto mb-2">
+              <HitlPrompt
+                runId={hitl.runId}
+                payload={hitl.payload}
+                onBeforeResume={() => attachStream(hitl.runId, liveInput)}
+                onResumed={() => setBusy(true)}
+                onError={(m) => fb.error("恢复失败", m)}
+              />
+            </div>
+          )}
+
           {/* 上一轮失败了 —— 摆出来 + 一键重试（失败后最常见的动作就是再试一次） */}
           {failed && (
             <div

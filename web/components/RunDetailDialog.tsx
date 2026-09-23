@@ -18,6 +18,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, fmt } from "@/lib/api";
 import type { ActivityItem, LlmCall, RunEvent, RunTrace, ToolCallRow } from "@/lib/types";
 import { RunTimeline, eventsToSteps } from "@/components/ui/run-timeline";
+import { HitlPrompt } from "@/components/HitlPrompt";
 import { useFeedback } from "@/components/ui/feedback";
 
 /** 状态配色（与全局一致） */
@@ -268,6 +269,21 @@ export function RunDetailDialog({
 
         {err && (
           <div className="text-[12.5px] text-[var(--color-err)] mb-3">✗ {err}</div>
+        )}
+
+        {/* 这个 Run 卡在等待授权 —— 就地确认。
+            放在最前面是因为：它是唯一挡住执行的东西，其他信息都可以等等。 */}
+        {run?.status === "waiting_hitl" && (
+          <div className="mb-3">
+            <HitlPrompt
+              runId={item.id}
+              payload={run.pending_hitl as Record<string, unknown> | null | undefined}
+              onResumed={() => {
+                // 恢复后运行会继续，隔一会儿把详情刷新一遍就能看到后续
+                setTimeout(() => void load(), 1500);
+              }}
+            />
+          </div>
         )}
 
         {/* ── 概览：一屏之内看清这条是什么 ─────────────────────── */}

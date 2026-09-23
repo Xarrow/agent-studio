@@ -16,6 +16,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { HitlPrompt } from "@/components/HitlPrompt";
 import Link from "next/link";
 import { api, fmt } from "@/lib/api";
 import type {
@@ -54,7 +55,20 @@ const ORC_STATUS: Record<string, { label: string; color: string }> = {
 //: 用得上串行开关的模式
 const SERIAL_LIKE: OrchestrationMode[] = ["serial", "master_worker"];
 
-export function OrchestrationConsole() {
+/**
+ * 从某一步的事件里取出待人工确认的请求。
+ *
+ * 编排本身不会等确认（后端 `wait_for_run` 见 waiting_hitl 就回，把整次编排标
+ * 成 partial）—— 但**这一步的 run 还活着**，用户点一下就能让它跑完。
+ * 取最后一次 hitl_request 的 payload，交给共享的确认条。
+ */
+function findHitlPayload(events: RunEvent[] | undefined): Record<string, unknown> | null {
+  const ev = [...(events ?? [])].reverse().find((e) => e.type === "hitl_request");
+  return ev ? ((ev.payload as Record<string, unknown>) ?? {}) : null;
+}
+
+
+export function OrchestrationConsole({ agentIds }: { agentIds?: string[] } = {}) {
   const fb = useFeedback();
 
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -65,6 +79,20 @@ export function OrchestrationConsole() {
   const [workerMode, setWorkerMode] = useState<"serial" | "parallel">("parallel");
   const [masterId, setMasterId] = useState<string | null>(null);
   const [slots, setSlots] = useState<(OrchStep | null)[]>([null]);
+
+  /**
+   * 由外层预填参与者。
+   *
+   * 这是"合并"的关键一环：用户在单助手对话里点「+ 加一个助手」，
+   * 直接就进到编排、两个助手**已经在槽里**—— 不需要他再去托盘里一个个拖。
+   * 只播一次种，之后画布/托盘归用户自己管。
+   */
+  const seeded = useRef(false);
+  useEffect(() => {
+    if (seeded.current || !agentIds?.length) return;
+    seeded.current = true;
+    setSlots(agentIds.map((id) => ({ agent_id: id, carry_prev: false })));
+  }, [agentIds]);
   const [task, setTask] = useState("");
 
   // 运行态
@@ -491,6 +519,19 @@ export function OrchestrationConsole() {
                       <span className="text-[var(--color-info)]">领到的任务：</span>
                       {s.input_text.replace(/\s+/g, " ").slice(0, 150)}
                       {s.input_text.length > 150 ? "…" : ""}
+                    </div>
+                  )}
+
+                  {/* 这一步停在等待授权 —— 就地确认。
+                      编排层自己不会等（它已把整次编排标为 partial），但这一步的
+                      Run 还活着：点一下它就跑完，结果照样进「运行记录」。 */}
+                  {s.status === "waiting_hitl" && (
+                    <div className="mt-2 ml-7">
+                      <HitlPrompt
+                        runId={s.run_id}
+                        payload={findHitlPayload(events[s.run_id])}
+                        onError={(m) => fb.error("恢复失败", m)}
+                      />
                     </div>
                   )}
 

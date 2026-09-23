@@ -252,6 +252,107 @@ def build_toolkit(specs: list[ToolSpec], skills_dir: Path | None = None):
 UNLIMITED_ITERS_SENTINEL = 999_999
 
 
+# --------------------------------------------------------------------------- #
+# 权限 scope（工具执行许可）
+#
+# 为什么要有这一块
+# --------------
+# AgentScope 的权限引擎默认是 ``DEFAULT``：**每个操作都要人确认**。而"确认"需要
+# 有人在运行中途点同意 —— 平台目前没有中途审批的界面，于是运行会停在那里干等，
+# 模型只能输出"我在等你的许可"。用户看到的就是"卡住了"。
+#
+# 所以这里做两件事：
+#   1. 把权限 scope 变成**可配置**的（放 runtime_options，通用层零改动）
+#   2. 给一个**能用**的默认值（ACCEPT_EDITS），而不是照抄 AgentScope 的严格默认
+#
+# 默认值的取舍：ACCEPT_EDITS 只自动放行**工作目录内**的读写，越界仍要确认/拒绝 ——
+# 既不卡住，又守住了边界。要更严可以选 EXPLORE（纯只读）或 DEFAULT（每个都问，
+# 但会卡住）；要全放行选 BYPASS（危险，仅限沙箱）。
+# --------------------------------------------------------------------------- #
+
+#: 平台侧模式名 → AgentScope 枚举名
+PERMISSION_MODES: dict[str, str] = {
+    "default": "DEFAULT",           # 每个操作都要确认（会卡住，见上文）
+    "accept_edits": "ACCEPT_EDITS",  # 工作目录内读写自动放行
+    "explore": "EXPLORE",           # 只读：能看不能改
+    "bypass": "BYPASS",             # 全部放行（危险）
+    "dont_ask": "DONT_ASK",         # 需要确认的一律拒绝（不卡，但可能做不了）
+}
+
+#: 未配置时用的模式
+DEFAULT_PERMISSION_MODE = "accept_edits"
+
+
+def build_permission_state(defn: AgentDefinition):
+    """把权限 scope 翻译成 ``AgentState``（AgentScope 从 state.permission_context 取）。
+
+    配置形如::
+
+        {"mode": "accept_edits",
+         "allow": [{"tool": "Bash", "pattern": "npm install"}],
+         "deny":  [{"tool": "Write", "pattern": "*.env"}],
+         "ask":   [{"tool": "Bash", "pattern": "rm -rf"}]}
+
+    ``pattern`` 的语义由工具自己解释（Bash 是命令子串，Read/Write 是路径 glob）。
+    留空表示"这个工具的所有调用"。
+    """
+    from agentscope.permission import (
+        PermissionBehavior,
+        PermissionContext,
+        PermissionMode,
+        PermissionRule,
+    )
+    from agentscope.state import AgentState
+
+    opts = defn.options_for("agentscope")
+    conf = opts.get("permission")
+    if not isinstance(conf, dict):
+        conf = {}
+
+    raw = str(conf.get("mode") or DEFAULT_PERMISSION_MODE).strip().lower()
+    mode = PermissionMode[PERMISSION_MODES.get(raw, PERMISSION_MODES[DEFAULT_PERMISSION_MODE])]
+
+    def _group(key: str, behavior: PermissionBehavior) -> dict[str, list]:
+        """按工具名分组 —— PermissionContext 的 *_rules 是 dict[tool_name, list]。
+
+        **工具名要翻译**：平台上叫 ``bash``，AgentScope 注册的是 ``Bash``。
+        规则里的 tool_name 必须用 AgentScope 的名字，否则永远匹配不上
+        （而且不会报错，只是"规则没生效"——这种坑最难查）。
+        所以这里按平台的命名收，再翻成 AgentScope 的命名。
+        非内置工具（HTTP / 自定义）原样传递。
+        """
+        out: dict[str, list] = {}
+        items = conf.get(key)
+        if not isinstance(items, list):
+            return out
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            tool = str(item.get("tool") or "").strip()
+            if not tool:
+                continue
+            # 平台名 → AgentScope 注册名（BUILTIN_TOOLS 的类名就是注册名）
+            tool = BUILTIN_TOOLS.get(tool.lower(), tool)
+            pattern = str(item.get("pattern") or "").strip() or None
+            out.setdefault(tool, []).append(
+                PermissionRule(
+                    tool_name=tool,
+                    rule_content=pattern,
+                    behavior=behavior,
+                    source="userSettings",
+                )
+            )
+        return out
+
+    ctx = PermissionContext(
+        mode=mode,
+        allow_rules=_group("allow", PermissionBehavior.ALLOW),
+        deny_rules=_group("deny", PermissionBehavior.DENY),
+        ask_rules=_group("ask", PermissionBehavior.ASK),
+    )
+    return AgentState(permission_context=ctx)
+
+
 def build_configs(defn: AgentDefinition):
     """把定义里的通用/专有配置翻译成 AgentScope 的四个 Config。"""
     from agentscope.agent import ContextConfig, InjectionConfig, ModelConfig, ReActConfig
@@ -311,6 +412,9 @@ def build_agent(
         system_prompt=system_prompt,
         model=model,
         toolkit=toolkit,
+        # 权限 scope：不注入的话 AgentScope 用自己的默认（每个操作都要确认），
+        # 而平台没有中途审批界面 → 运行会停在等待人工确认上。
+        state=build_permission_state(defn),
         model_config=model_cfg,
         context_config=context_cfg,
         react_config=react_cfg,

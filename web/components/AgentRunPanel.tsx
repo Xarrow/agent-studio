@@ -11,6 +11,7 @@
  */
 
 import Link from "next/link";
+import { HitlPrompt } from "@/components/HitlPrompt";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, fmt, STATUS_STYLE } from "@/lib/api";
 import type { RunEvent, Session } from "@/lib/types";
@@ -158,6 +159,13 @@ export function RunPanel({
   // 最近执行的详情用弹框看 —— 试跑时正在看的对话和事件流不该被跳页冲掉
   const [detailRun, setDetailRun] = useState<string | null>(null);
   const [status, setStatus] = useState("");
+  /**
+   * 待人工确认的请求（hitl_request 的 payload）。
+   *
+   * 运行中途需要授权时，AgentScope 会停下来等 —— 后端支持 resume，
+   * 但得有人把"同意"点出来，否则用户只看到"卡住了"。
+   */
+  const [hitl, setHitl] = useState<Record<string, unknown> | null>(null);
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [view, setView] = useState<"chat" | "table" | "raw">("chat");
   const [autoScroll, setAutoScroll] = useState(true);
@@ -250,10 +258,63 @@ export function RunPanel({
 
   useEffect(() => () => esRef.current?.close(), []);
 
+  /**
+   * 挂上某个 Run 的事件流，直到它结束。
+   *
+   * 抽出来是因为**两条路径都要用**：新执行（start），以及人工确认后恢复 ——
+   * resume 之后运行会继续产出事件，必须有人接着收，否则用户只看到确认条消失、
+   * 后面发生了什么全然不知。
+   *
+   * ``waiting_hitl`` 也要能识别：那意味着"停在等你点头"，不是结束。
+   */
+  const attachStream = (rid: string) => {
+    const es = new EventSource(api.streamUrl(rid));
+    esRef.current = es;
+    es.onmessage = (e) => {
+      try {
+        const ev = JSON.parse(e.data) as RunEvent;
+        setEvents((prev) => [...prev, ev]);
+        // 实时捕获待确认请求（事件里就带着 payload，不用等轮询）
+        if (ev.type === "hitl_request") {
+          setHitl((ev.payload as Record<string, unknown>) ?? {});
+        }
+      } catch {
+        /* ignore malformed */
+      }
+    };
+    es.addEventListener("done", async () => {
+      es.close();
+      const r = await api.run(rid).catch(() => null);
+      if (r) {
+        setStatus(r.status);
+        if (r.status === "waiting_hitl") {
+          setHitl((r.pending_hitl as Record<string, unknown>) ?? {});
+          return; // 不是结束，是暂停 —— 别把 busy 关掉，等用户决定
+        }
+      }
+      setBusy(false);
+      await Promise.all([loadRecent(), loadSessions()]);
+    });
+    es.onerror = async () => {
+      es.close();
+      const r = await api.run(rid).catch(() => null);
+      if (r) {
+        setStatus(r.status);
+        if (r.status === "waiting_hitl") {
+          setHitl((r.pending_hitl as Record<string, unknown>) ?? {});
+          return;
+        }
+      }
+      setBusy(false);
+      await Promise.all([loadRecent(), loadSessions()]);
+    };
+  };
+
   const start = async () => {
     if (!input.trim()) return;
     setBusy(true);
     setEvents([]);
+    setHitl(null);
     setStatus("pending");
     try {
       const run = await api.createRun({
@@ -268,29 +329,7 @@ export function RunPanel({
       setStatus(run.status);
       if (run.turn_index) setTurnIndex(run.turn_index);
 
-      const es = new EventSource(api.streamUrl(run.id));
-      esRef.current = es;
-      es.onmessage = (e) => {
-        try {
-          setEvents((prev) => [...prev, JSON.parse(e.data) as RunEvent]);
-        } catch {
-          /* ignore malformed */
-        }
-      };
-      es.addEventListener("done", async () => {
-        es.close();
-        const r = await api.run(run.id);
-        setStatus(r.status);
-        setBusy(false);
-        await Promise.all([loadRecent(), loadSessions()]);
-      });
-      es.onerror = async () => {
-        es.close();
-        const r = await api.run(run.id).catch(() => null);
-        if (r) setStatus(r.status);
-        setBusy(false);
-        await Promise.all([loadRecent(), loadSessions()]);
-      };
+      attachStream(run.id);
     } catch (e) {
       fb.error("执行失败", e instanceof Error ? e.message : String(e));
       setBusy(false);
@@ -472,6 +511,20 @@ export function RunPanel({
 
         {/* 输入区 */}
         <div className="mt-3 flex gap-2 items-end">
+          {/* 运行停在等待授权 —— 就地确认。这里是最该出现的地方：
+              用户正盯着这次试跑，别让他去别处找。 */}
+          {status === "waiting_hitl" && runId && (
+            <div className="mt-3">
+              <HitlPrompt
+                runId={runId}
+                payload={hitl}
+                onBeforeResume={() => attachStream(runId)}
+                onResumed={() => setStatus("running")}
+                onError={(m) => fb.error("恢复失败", m)}
+              />
+            </div>
+          )}
+
           <textarea
             className="input mono text-[12.5px] flex-1"
             rows={2}

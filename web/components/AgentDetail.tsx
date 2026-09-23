@@ -19,6 +19,7 @@ import type {
   Tool,
 } from "@/lib/types";
 import { AgentMemoryPanel } from "@/components/AgentMemoryPanel";
+import { PermissionScope, type PermConf } from "@/components/PermissionScope";
 import { ModelPicker } from "@/components/ModelPicker";
 import { RunPanel } from "@/components/AgentRunPanel";
 import { useFeedback } from "@/components/ui/feedback";
@@ -240,6 +241,22 @@ export function AgentDetail({
   }
 
   const caps = runtimes.find((r) => r.name === def.runtime);
+
+  /**
+   * 这个助手实际挂上的工具（平台侧命名）。
+   * 权限规则只对助手真有的工具才有意义 —— 所以只列这些，不把全平台工具都倒出来。
+   */
+  const selectedToolNames = def.tools
+    .filter((t) => t.enabled)
+    .map((t) => tools.find((x) => x.id === t.ref)?.name)
+    .filter((x): x is string => Boolean(x));
+
+  /**
+   * 当前运行时的权限 scope。
+   * 刻意放在 ``runtime_options``（运行时专有配置的逃生舱）而不是通用定义里 ——
+   * "权限"是 AgentScope 的概念，别的运行时未必有；这样通用层零改动。
+   */
+  const permConf = def.runtime_options?.[def.runtime]?.permission as PermConf | undefined;
   const providerMeta = providers.find((p) => p.name === def.model.provider);
   /** 这个助手实际用的那条 LLM 配置 */
   const usedCred = creds.find((c) => c.id === def.model.credential_ref) ?? null;
@@ -504,6 +521,25 @@ export function AgentDetail({
                   {caps.supports_skills && <span className="tag">Skill</span>}
                   {caps.supports_structured_output && <span className="tag">结构化输出</span>}
                 </div>
+              )}
+
+              {/* 权限 scope —— 由运行时能力决定是否出现（支持人工确认 = 有权限机制） */}
+              {caps?.supports_hitl && (
+                <PermissionScope
+                  conf={permConf}
+                  toolNames={selectedToolNames}
+                  onChange={(next) =>
+                    patch({
+                      runtime_options: {
+                        ...def.runtime_options,
+                        [def.runtime]: {
+                          ...(def.runtime_options?.[def.runtime] ?? {}),
+                          permission: next,
+                        },
+                      },
+                    })
+                  }
+                />
               )}
             </div>
 
