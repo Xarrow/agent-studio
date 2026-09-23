@@ -32,13 +32,9 @@ const USE_ITEMS: Item[] = [
     href: "/chat",
     label: "对话",
     icon: "✦",
-    tip: "像聊天一样让 AI 帮你做事。历史记录会一直留着。",
-  },
-  {
-    href: "/playground",
-    label: "Playground",
-    icon: "⛓",
-    tip: "编排（Playground）：让几个助手分工干一件事 —— 一个查资料、一个写报告，接力或同时开工，最后由主控汇总。",
+    // 「单 Agent 对话」和「多 Agent 编排」已合并进这一个页面（页内两档切换），
+    // 所以侧边栏不再单列 Playground —— 否则又变成"先选页面再选模式"两道门。
+    tip: "跟助手干活的地方：跟一个助手连续对话，或者让几个助手分工干一件事。历史记录会一直留着。",
   },
   {
     href: "/runs",
