@@ -140,10 +140,16 @@ export function RunPanel({
   agentId,
   agentName,
   disabled,
+  unsaved = false,
+  onSave,
 }: {
   agentId: string;
   agentName: string;
   disabled: boolean;
+  /** 助手定义有未保存的改动（试跑用的是**已保存**的版本，必须说清楚） */
+  unsaved?: boolean;
+  /** 让用户能在这里直接保存，不用滚回去找按钮 */
+  onSave?: () => void | Promise<void>;
 }) {
   const fb = useFeedback();
   const [input, setInput] = useState("");
@@ -310,6 +316,27 @@ export function RunPanel({
     <div className="grid gap-4 grid-cols-1 xl:grid-cols-[1fr_320px]">
       <section className="card p-4 flex flex-col min-h-[420px]">
         {/* 会话栏 —— 多轮对话的入口 */}
+        {/* 试跑用的是**已保存**的版本 —— 这件事必须显式说，否则用户改了 System Prompt
+            再试跑，看到的还是旧行为，会误判「改了没用」（其实是没保存）。 */}
+        {unsaved && (
+          <div
+            className="mb-3 rounded-md px-3 py-2 flex items-center gap-3 flex-wrap text-[12px]"
+            style={{
+              background: "color-mix(in srgb, var(--color-warn) 10%, transparent)",
+              color: "var(--color-warn)",
+            }}
+          >
+            <span>
+              你有未保存的改动，而试跑用的是<strong>已保存</strong>的版本 —— 先保存再试跑才准。
+            </span>
+            {onSave && (
+              <button className="btn btn-sm" onClick={() => void onSave()}>
+                保存改动
+              </button>
+            )}
+          </div>
+        )}
+
         <div className="flex items-center gap-2 mb-3 flex-wrap pb-3 border-b border-[var(--color-border)]">
           <span className="text-[11.5px] text-[var(--color-muted)] whitespace-nowrap">会话</span>
           <select

@@ -67,6 +67,13 @@ export function AgentDetail({
    * **一屏之内**回答"它现在是什么状态"，所以这里取个轻量摘要 ——
    * 一两百毫秒，换来不用上下翻找。
    */
+  /**
+   * "已保存的样子"的快照（序列化）。
+   *
+   * 用途：算出当前是否有**未保存的改动**。之前这个页面完全没有这个概念 ——
+   * 改了配置界面毫无变化，切走就悄悄丢了，而且试跑用的是**旧版本**却毫无提示。
+   */
+  const [savedSnap, setSavedSnap] = useState<string>("");
   const [ov, setOv] = useState<{
     memoryOwn: number | null;
     memoryShared: number | null;
@@ -103,6 +110,7 @@ export function AgentDetail({
       ]);
       setAgent(a);
       setDef(a.definition);
+      setSavedSnap(JSON.stringify(a.definition));
       setProviders(p);
       setCreds(c);
       setTools(t);
@@ -165,6 +173,33 @@ export function AgentDetail({
     return () => clearTimeout(timer);
   }, [def]);
 
+  /**
+   * 是否有未保存的改动。
+   *
+   * ⚠️ 必须定义在**下面这个 effect 之前**：effect 的依赖数组 `[dirty]` 是在
+   * 渲染期求值的，如果 dirty 声明在后面，这里会撞上 TDZ
+   * （Cannot access 'dirty' before initialization）→ 整页白掉。
+   */
+  const dirty = def !== null && savedSnap !== "" && JSON.stringify(def) !== savedSnap;
+
+  /**
+   * 有未保存改动时，关页面/刷新给个提示（不然改了半天一刷新全没）。
+   *
+   * ⚠️ 这个 effect **必须放在下面那个 `if (!def || !agent)` 早退之前** ——
+   * 首次渲染 def 还是 null 会走早退，数据到了才执行到这里；如果它排在早退之后，
+   * 两次渲染的 hook 数量就不一致，React 会直接抛错、整页白掉。
+   * （踩过一次：页面变成 "This page couldn't load"。）
+   */
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+
   if (!def || !agent) {
     return (
       <div className="p-4 md:p-6 lg:p-7 text-[13px] text-[var(--color-muted)]">
@@ -183,6 +218,7 @@ export function AgentDetail({
 
   const patch = (p: Partial<AgentDefinition>) => setDef({ ...def, ...p });
 
+
   const save = async () => {
     setSaving(true);
     setMsg(null);
@@ -190,6 +226,7 @@ export function AgentDetail({
       const updated = await api.updateAgent(agentId, { definition: def });
       setAgent(updated);
       setDef(updated.definition);
+      setSavedSnap(JSON.stringify(updated.definition));
       setMsg(`已保存（v${updated.version}）`);
       setTimeout(() => setMsg(null), 2500);
     } catch (e) {
@@ -236,6 +273,15 @@ export function AgentDetail({
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {msg && <span className="text-[12px] text-[var(--color-ok)]">{msg}</span>}
+          {dirty && !saving && (
+            <span
+              className="text-[11.5px] flex items-center gap-1"
+              style={{ color: "var(--color-warn)" }}
+              title="改动还没写回去 —— 点「保存改动」，或离开前会被提醒"
+            >
+              <span className="live-dot">●</span> 有未保存的改动
+            </span>
+          )}
           <button
             className="btn"
             onClick={async () => {
@@ -251,7 +297,7 @@ export function AgentDetail({
             复制为副本
           </button>
           <button className="btn btn-primary" disabled={saving} onClick={save}>
-            {saving ? "保存中…" : "保存"}
+            {saving ? "保存中…" : dirty ? "保存改动" : "保存"}
           </button>
         </div>
       </header>
@@ -641,7 +687,13 @@ export function AgentDetail({
       {/* ── 试跑与观测 ─────────────────────────────────────────── */}
       <section id="sec-run" className="mt-4 scroll-mt-14">
         <h2 className="text-[14px] font-medium mb-3">试跑与观测</h2>
-        <RunPanel agentId={agentId} agentName={agent.name} disabled={errors.length > 0} />
+        <RunPanel
+          agentId={agentId}
+          agentName={agent.name}
+          disabled={errors.length > 0}
+          unsaved={dirty}
+          onSave={save}
+        />
       </section>
 
       {/* ── 记忆 ───────────────────────────────────────────────── */}

@@ -38,6 +38,14 @@ export function ChatConsole() {
   const [detailRun, setDetailRun] = useState<string | null>(null);
   /** 正在浮层里配置的助手（从对话页直接打开，不离开对话） */
   const [configAgent, setConfigAgent] = useState<string | null>(null);
+  /**
+   * 上一轮失败的记录（原始输入 + 错误原因）。
+   *
+   * 之前这里完全看不到失败：会话消息结构里没有状态字段，一轮跑挂了界面上
+   * 什么都不显示 —— 用户只看到"没反应"，不知道是失败了还是没发出去。
+   * 现在把失败摆出来，并且给一键重试（失败最常见的下一步就是"再试一次"）。
+   */
+  const [failed, setFailed] = useState<{ text: string; message: string } | null>(null);
 
   /** 已落库的历史消息 */
   const [history, setHistory] = useState<
@@ -202,10 +210,12 @@ export function ChatConsole() {
     }
   };
 
-  const send = async () => {
-    const text = input.trim();
+  const send = async (override?: unknown) => {
+    // 允许传文本进来（重试时用）—— 传进来的可能是事件对象，所以只认字符串
+    const text = (typeof override === "string" ? override : input).trim();
     if (!text || busy || !sessionId || !agentId) return;
 
+    setFailed(null);
     setInput("");
     setBusy(true);
     setLive({ role: "user", text });
@@ -251,6 +261,7 @@ export function ChatConsole() {
         // 用服务端的权威历史覆盖（包含刚写入的这一轮）
         await loadMessages(sessionId);
         await loadSessions(agentId);
+        await verifyTurn(run.id, text);
       });
 
       es.onerror = async () => {
@@ -259,11 +270,27 @@ export function ChatConsole() {
         setBusy(false);
         await loadMessages(sessionId);
         await loadSessions(agentId);
+        await verifyTurn(run.id, text);
       };
     } catch (e) {
-      fb.error("发送失败", e instanceof Error ? e.message : String(e));
+      // 请求本身就没发出去 —— 同样要摆出来（原来只弹个 toast，消失后无从追溯）
+      setFailed({ text, message: e instanceof Error ? e.message : String(e) });
       setLive(null);
       setBusy(false);
+    }
+  };
+
+  /**
+   * 一轮跑完后核对结果：失败就把错误摆到界面上（而不是静默什么都没发生）。
+   */
+  const verifyTurn = async (runId: string, sentText: string) => {
+    try {
+      const r = await api.run(runId);
+      if (r.status === "error" || r.status === "aborted") {
+        setFailed({ text: sentText, message: r.error || `执行${r.status === "aborted" ? "被中断" : "失败"}` });
+      }
+    } catch {
+      /* 核对失败不影响主流程 */
     }
   };
 
@@ -458,6 +485,33 @@ export function ChatConsole() {
 
         {/* 输入区 */}
         <div className="border-t border-[var(--color-border)] px-4 py-3">
+          {/* 上一轮失败了 —— 摆出来 + 一键重试（失败后最常见的动作就是再试一次） */}
+          {failed && (
+            <div
+              className="max-w-3xl mx-auto mb-2 rounded-md px-3 py-2 flex items-start gap-3 flex-wrap text-[12px]"
+              style={{
+                background: "color-mix(in srgb, var(--color-err) 10%, transparent)",
+                color: "var(--color-err)",
+              }}
+            >
+              <span className="flex-1 min-w-[200px] break-words">
+                这一轮失败了：{failed.message}
+              </span>
+              <button
+                className="btn btn-sm shrink-0"
+                disabled={busy}
+                onClick={() => void send(failed.text)}
+              >
+                重试
+              </button>
+              <button
+                className="text-[11.5px] shrink-0 hover:underline"
+                onClick={() => setFailed(null)}
+              >
+                忽略
+              </button>
+            </div>
+          )}
           <div className="max-w-3xl mx-auto flex gap-2 items-end">
             <textarea
               className="input flex-1 resize-none text-[13px]"
