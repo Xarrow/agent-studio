@@ -18,6 +18,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, fmt } from "@/lib/api";
 import type { ActivityItem, LlmCall, RunEvent, RunTrace, ToolCallRow } from "@/lib/types";
 import { RunTimeline, eventsToSteps } from "@/components/ui/run-timeline";
+import { useFeedback } from "@/components/ui/feedback";
 
 /** 状态配色（与全局一致） */
 const STATUS_STYLE: Record<string, string> = {
@@ -65,15 +66,21 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 export function RunDetailDialog({
   item,
   onClose,
+  onDeleted,
 }: {
   item: ActivityItem;
   onClose: () => void;
+  /** 删掉这条记录后通知外层刷新列表（弹框自己不负责刷新别人的数据） */
+  onDeleted?: () => void;
 }) {
   const [trace, setTrace] = useState<RunTrace | null>(null);
+  const [sinking, setSinking] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [test, setTest] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [rawOpen, setRawOpen] = useState(false);
+  const fb = useFeedback();
 
   const isTest = item.kind === "llm_test";
 
@@ -105,6 +112,70 @@ export function RunDetailDialog({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  /**
+   * 把这次执行沉淀为记忆。
+   *
+   * 这个动作原来在 /runs/<id> 详情页上，那个页面删掉后它就没了入口 ——
+   * 后端端点还在、文案还在承诺，但用户点不到。现在挪到这里反而更合理：
+   * **在哪看这次执行，就在哪把它沉淀掉**，不用先跳到别处。
+   *
+   * 保留人工闸门：模型提炼出候选 → 用户确认 → 才落库（避免噪音进记忆库）。
+   */
+  const sink = async () => {
+    setSinking(true);
+    try {
+      const r = await api.extractMemories(item.id);
+      if (r.candidates.length === 0) {
+        fb.warn(
+          "没有提炼到值得记住的内容",
+          r.skipped.length > 0 ? `跳过 ${r.skipped.length} 条：与已有记忆高度相似` : undefined,
+        );
+        return;
+      }
+      const ok = await fb.confirm({
+        title: `提炼出 ${r.candidates.length} 条候选记忆，保存？`,
+        description: "保存后会在后续执行时按相关度召回，并注入 System Prompt。",
+        details: r.candidates.map((c) => `[${c.kind}] ${c.content}`),
+        confirmText: "保存为记忆",
+      });
+      if (!ok) return;
+      const saved = await api.extractMemories(
+        item.id,
+        r.candidates.map((c) => ({
+          content: c.content,
+          agent_id: c.agent_id,
+          kind: c.kind,
+        })),
+      );
+      fb.success(`已保存 ${saved.created} 条记忆`, "可在「记忆」页查看与编辑");
+    } catch (e) {
+      fb.error("提炼失败", e instanceof Error ? e.message : String(e));
+    } finally {
+      setSinking(false);
+    }
+  };
+
+  const remove = async () => {
+    const ok = await fb.confirm({
+      title: "删除这条执行记录？",
+      details: [item.id, "含其事件流、模型调用与工具调用明细"],
+      danger: true,
+      confirmText: "删除",
+    });
+    if (!ok) return;
+    setDeleting(true);
+    try {
+      // 用统一入口（按 id 前缀分流）—— 助手执行和 LLM 测试都能删
+      await api.bulkDeleteRuns([item.id]);
+      fb.success("已删除");
+      onDeleted?.();
+      onClose();
+    } catch (e) {
+      fb.error("删除失败", e instanceof Error ? e.message : String(e));
+      setDeleting(false);
+    }
+  };
 
   const run = trace?.run;
   const events: RunEvent[] = trace?.events ?? [];
@@ -365,6 +436,35 @@ export function RunDetailDialog({
             </Section>
           </>
         )}
+
+        {/* ── 底部动作区 ─────────────────────────────────────────
+            把"对这条记录能做的事"放在看它的地方 —— 不用先记住 id 再跳去别处操作。 */}
+        <div className="flex items-center gap-2 mt-5 pt-4 border-t border-[var(--color-border)] flex-wrap">
+          {!isTest && status === "ok" && (
+            <button
+              className="btn btn-sm"
+              disabled={sinking}
+              title="用模型从这次执行里提炼候选记忆，确认后保存"
+              onClick={() => void sink()}
+            >
+              {sinking ? "提炼中…" : "沉淀为记忆"}
+            </button>
+          )}
+          {!isTest && status !== "ok" && (
+            <span className="text-[11.5px] text-[var(--color-muted)]">
+              只有成功的执行才能沉淀记忆
+            </span>
+          )}
+          <div className="flex-1" />
+          <button
+            className="btn btn-sm text-[var(--color-err)]"
+            disabled={deleting}
+            title="删除这条记录（含事件与调用明细）"
+            onClick={() => void remove()}
+          >
+            {deleting ? "删除中…" : "删除这条记录"}
+          </button>
+        </div>
       </div>
     </div>
   );

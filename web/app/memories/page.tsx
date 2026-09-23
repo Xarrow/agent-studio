@@ -388,7 +388,7 @@ export default function MemoriesPage() {
           <div className="p-8 text-center text-[13px] text-[var(--color-muted)]">
             还没有记忆。
             <br />
-            可以在上面手动新增，或在 Agent 详情页执行一次后点「沉淀为记忆」。
+            可以在上面手动新增，或打开任意一次执行记录（运行记录 / 对话页 / 助手页都能点开）点「沉淀为记忆」。
           </div>
         ) : (
           <table className="w-full min-w-[720px] text-[12.5px]">

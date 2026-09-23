@@ -426,7 +426,9 @@ export default function RunsPage() {
         )}
       </div>
 
-      {open && <RunDetailDialog item={open} onClose={() => setOpen(null)} />}
+      {open && (
+        <RunDetailDialog item={open} onClose={() => setOpen(null)} onDeleted={() => void load()} />
+      )}
     </div>
   );
 }
