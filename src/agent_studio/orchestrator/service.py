@@ -308,6 +308,8 @@ class Orchestrator:
                 orchestration_id=orc_id,
                 orch_role=role,
                 order_index=order,
+                # 编排发起的执行 —— 在「运行记录」里归为 playground 类
+                origin="playground",
             )
             session.add(run)
             await session.commit()

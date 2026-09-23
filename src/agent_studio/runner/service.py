@@ -98,7 +98,11 @@ async def reap_orphan_runs(boot_ms: int) -> int:
             was = r.status
             r.status = "error"
             r.pending_hitl = None
-            r.ended_at = now
+            # **不设 ended_at**：我们并不知道它究竟何时停的（进程是被重启带走的）。
+            # 早先这里写成 `= now`，结果列表里出现"耗时 13 小时"这种荒唐数字 ——
+            # 那是回收时刻减开始时刻，跟真实执行时长毫无关系。
+            # 留 None，展示层会显示"—"，比编一个假数字诚实。
+            r.ended_at = None
             r.error = (
                 f"执行被中断：服务在它运行期间重启了（原状态 {was}）。"
                 "这条记录由启动时的自动回收标记，现在可以正常删除。"

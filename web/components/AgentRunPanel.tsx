@@ -252,6 +252,8 @@ export function RunPanel({
         input: input.trim(),
         // 传了 session_id 就是多轮：后端会带上历史 + 召回记忆
         session_id: sessionId || undefined,
+        // 这里是「配置时试跑」，在「运行记录」里归为"助手试跑"
+        origin: "preview",
       });
       setRunId(run.id);
       setStatus(run.status);

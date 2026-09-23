@@ -18,7 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_session
-from ..models import Secret, now_ms
+from ..models import ModelTest, Secret, now_ms
 from ..providers import get_provider, list_providers, normalize_provider
 from ..schemas import (
     CredentialChatRequest,
@@ -399,6 +399,54 @@ async def test_credential(
     )
 
 
+async def _record_model_test(
+    session: AsyncSession,
+    row: Secret,
+    *,
+    model: str,
+    base_url: str,
+    messages: list[dict],
+    reply: str | None,
+    status: str,
+    error: str | None,
+    latency_ms: int,
+    usage: dict | None,
+) -> None:
+    """把一次「对话测试」写进 llm 测试记录。
+
+    为什么必须落库
+    --------------
+    这是**唯一**一次"裸模型调用"的实测证据：换了 key / 端点 / 模型之后，
+    下次出问题时要能回头看"上次是通过还是不通过、报的什么错"。
+    只留在页面上就等于没有 —— 刷新就没了。
+
+    注意：写失败不能影响返回值 —— 记录是旁路，测通了就该告诉用户测通了。
+    """
+    usage = usage or {}
+    try:
+        session.add(
+            ModelTest(
+                credential_id=row.id,
+                credential_name=row.name,
+                provider=row.provider,
+                base_url=base_url,
+                model=model,
+                messages=messages,
+                reply=reply,
+                status=status,
+                error=error,
+                duration_ms=latency_ms,
+                tokens_in=int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0),
+                tokens_out=int(
+                    usage.get("completion_tokens") or usage.get("output_tokens") or 0
+                ),
+            )
+        )
+        await session.commit()
+    except Exception:  # noqa: BLE001
+        await session.rollback()
+
+
 CHAT_ENDPOINT_FAIL = "这条配置暂时没法试聊"
 
 
@@ -460,10 +508,12 @@ async def chat_with_credential(
         latency = int((time.perf_counter() - started) * 1000)
 
         if resp.status_code != 200:
-            return CredentialChatResult(
-                ok=False, model=model, latency_ms=latency,
-                error=f"HTTP {resp.status_code}：{_err_of(resp)}",
+            msg = f"HTTP {resp.status_code}：{_err_of(resp)}"
+            await _record_model_test(
+                session, row, model=model, base_url=base, messages=msgs,
+                reply=None, status="error", error=msg, latency_ms=latency, usage=None,
             )
+            return CredentialChatResult(ok=False, model=model, latency_ms=latency, error=msg)
 
         data = resp.json()
         reply = ""
@@ -477,11 +527,20 @@ async def chat_with_credential(
                 error=f"拿到了响应但没有正文：{str(data)[:200]}",
             )
         usage = data.get("usage") if isinstance(data, dict) else None
+        usage = usage if isinstance(usage, dict) else None
+        await _record_model_test(
+            session, row, model=model, base_url=base, messages=msgs,
+            reply=reply, status="ok", error=None, latency_ms=latency, usage=usage,
+        )
         return CredentialChatResult(
-            ok=True, model=model, reply=reply, latency_ms=latency,
-            usage=usage if isinstance(usage, dict) else None,
+            ok=True, model=model, reply=reply, latency_ms=latency, usage=usage,
         )
     except Exception as exc:  # noqa: BLE001
+        await _record_model_test(
+            session, row, model=model, base_url=base, messages=msgs,
+            reply=None, status="error", error=f"{type(exc).__name__}: {exc}",
+            latency_ms=int((time.perf_counter() - started) * 1000), usage=None,
+        )
         return CredentialChatResult(
             ok=False, model=model,
             latency_ms=int((time.perf_counter() - started) * 1000),

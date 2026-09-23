@@ -174,6 +174,34 @@ export interface ToolCallRow {
   error: string | null;
 }
 
+/**
+ * 「运行记录」里的一条 —— 三类调用统一成同一个形状。
+ *
+ * kind：chat 对话 / preview 助手试跑 / playground 编排 / llm_test 裸模型测试
+ */
+export interface ActivityItem {
+  kind: "chat" | "preview" | "playground" | "llm_test";
+  id: string;
+  at: number;
+  duration_ms: number | null;
+  status: string;
+  title: string;
+  subtitle: string | null;
+  agent_id: string | null;
+  credential_id: string | null;
+  model: string | null;
+  tokens_in: number;
+  tokens_out: number;
+  summary: string | null;
+  error: string | null;
+}
+
+export interface ActivityList {
+  items: ActivityItem[];
+  /** 各类型总数（筛选栏上的计数徽标，不用额外请求） */
+  counts: Record<string, number>;
+}
+
 export interface RunTrace {
   run: Run;
   events: RunEvent[];

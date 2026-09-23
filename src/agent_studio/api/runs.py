@@ -12,13 +12,16 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import SessionLocal, get_session
-from ..models import Agent, LlmCall, Run, RunEvent, ToolCall, now_ms
+from ..models import Agent, LlmCall, ModelTest, Run, RunEvent, ToolCall, now_ms
 from ..runner import run_service
 from ..runner.service import resolve_api_key
 from ..schemas import (
+    ActivityItem,
+    ActivityList,
     AgentDefinition,
     HitlResumeRequest,
     LlmCallRead,
+    ModelTestRead,
     RunBulkDeleteRequest,
     RunCreate,
     RunDeleteResponse,
@@ -28,6 +31,7 @@ from ..schemas import (
     RunTrace,
     ToolCallRead,
 )
+
 from ..runtimes.base import HitlResponse
 
 router = APIRouter(prefix="/api/runs", tags=["runs"])
@@ -40,6 +44,7 @@ def to_read(run: Run) -> RunRead:
         agent_version=run.agent_version,
         runtime=run.runtime,
         status=run.status,
+        origin=run.origin,
         input=run.input or {},
         output=run.output,
         usage=run.usage or {},
@@ -104,6 +109,8 @@ async def create_run(payload: RunCreate, session: AsyncSession = Depends(get_ses
         started_at=now_ms(),
         session_id=session_id,
         turn_index=turn_index,
+        # 来源决定它在「运行记录」里归到哪一类（对话 / 试跑 / 编排）
+        origin=payload.origin if payload.origin in ("chat", "preview", "playground") else None,
     )
     session.add(run)
     await session.commit()
@@ -299,6 +306,183 @@ async def compare_runs(
     return {"a": await _side(run_a), "b": await _side(run_b)}
 
 
+# --------------------------------------------------------------------------- #
+# 统一「运行记录」时间线
+# --------------------------------------------------------------------------- #
+def _run_kind(run: Run) -> str:
+    """这条执行记录属于哪一类。
+
+    优先用显式的 origin；老数据没这一列（NULL）时按 session/orchestration 推断：
+    带编排 → playground，带会话 → chat，都没有 → preview（助手页试跑）。
+    推断只是为了让历史数据也能归类，新数据一律显式记录。
+    """
+    if run.origin in ("chat", "preview", "playground"):
+        return run.origin
+    if run.orchestration_id:
+        return "playground"
+    if run.session_id:
+        return "chat"
+    return "preview"
+
+
+def _text_of(blob: Any) -> str:
+    """从 input/output 里抠出一句话，够列表显示就行。"""
+    if isinstance(blob, str):
+        return blob
+    if isinstance(blob, dict):
+        for k in ("text", "content", "message"):
+            v = blob.get(k)
+            if isinstance(v, str) and v.strip():
+                return v
+            if isinstance(v, list) and v and isinstance(v[0], dict):
+                c = v[0].get("content") or v[0].get("text")
+                if isinstance(c, str) and c.strip():
+                    return c
+        return ""
+    return ""
+
+
+@router.get("/timeline", response_model=ActivityList)
+async def activity_timeline(
+    kind: str | None = Query(None, description="chat / preview / playground / llm_test"),
+    status: str | None = Query(None),
+    agent_id: str | None = Query(None),
+    q: str | None = Query(None, description="关键词：主体名 / 模型 / 摘要 / 错误"),
+    limit: int = Query(200, ge=1, le=1000),
+    session: AsyncSession = Depends(get_session),
+) -> ActivityList:
+    """把**三类调用**并成一条时间线，供「运行记录」页展示。
+
+    为什么要合并（而不是分三个列表）
+    ------------------------------
+    用户脑子里的问题是"我发起过哪些调用、结果如何、哪次出错了"，而不是
+    "它存在哪张表"。分开放，就等于逼用户在几个列表之间对照着看。
+
+    存储上仍然是分开的，原因见 ``models.ModelTest`` 的注释：
+    助手执行（run，带 agent）和裸模型调用（model_test，无 agent）语义不同。
+    这里只在**读取时**合并 —— 一次调用就是一次调用。
+    """
+    # 助手名映射（列表里要显示"哪次是哪个助手跑的"）
+    agents = {a.id: a.name for a in (await session.execute(select(Agent))).scalars()}
+
+    runs = list(
+        (await session.execute(select(Run).order_by(Run.started_at.desc()).limit(1000)))
+        .scalars()
+    )
+    tests = list(
+        (
+            await session.execute(
+                select(ModelTest).order_by(ModelTest.started_at.desc()).limit(1000)
+            )
+        ).scalars()
+    )
+
+    items: list[ActivityItem] = []
+    for r in runs:
+        out = r.output if isinstance(r.output, dict) else {}
+        dur = (r.ended_at - r.started_at) if (r.ended_at and r.started_at) else None
+        usage = r.usage if isinstance(r.usage, dict) else {}
+        items.append(
+            ActivityItem(
+                kind=_run_kind(r),  # type: ignore[arg-type]
+                id=r.id,
+                at=r.started_at,
+                duration_ms=dur,
+                status=r.status,
+                title=agents.get(r.agent_id, r.agent_id),
+                subtitle=(
+                    f"多轮第 {r.turn_index} 轮" if r.turn_index else None
+                ),
+                agent_id=r.agent_id,
+                model=(r.definition_snapshot or {}).get("model", {}).get("name"),
+                tokens_in=int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0),
+                tokens_out=int(
+                    usage.get("completion_tokens") or usage.get("output_tokens") or 0
+                ),
+                summary=(_text_of(r.input) or _text_of(out))[:120] or None,
+                error=r.error,
+            )
+        )
+
+    for t in tests:
+        first_user = next(
+            (m.get("content", "") for m in (t.messages or []) if m.get("role") == "user"), ""
+        )
+        items.append(
+            ActivityItem(
+                kind="llm_test",
+                id=t.id,
+                at=t.started_at,
+                duration_ms=t.duration_ms,
+                status=t.status,
+                title=f"{t.credential_name or t.provider} · {t.model}",
+                subtitle="裸模型调用（不带助手）",
+                credential_id=t.credential_id,
+                model=t.model,
+                tokens_in=t.tokens_in,
+                tokens_out=t.tokens_out,
+                summary=(first_user or t.reply or "")[:120] or None,
+                error=t.error,
+            )
+        )
+
+    items.sort(key=lambda x: x.at, reverse=True)
+
+    # 计数徽标：基于"还没按类型筛选"的全集，这样切换筛选时徽标不会跳
+    counts: dict[str, int] = {}
+    for it in items:
+        counts[it.kind] = counts.get(it.kind, 0) + 1
+
+    if kind and kind != "all":
+        items = [x for x in items if x.kind == kind]
+    if status:
+        items = [x for x in items if x.status == status]
+    if agent_id:
+        items = [x for x in items if x.agent_id == agent_id]
+    if q:
+        needle = q.strip().lower()
+        items = [
+            x
+            for x in items
+            if needle
+            in " ".join(
+                filter(None, [x.title, x.subtitle, x.summary, x.model, x.error])
+            ).lower()
+        ]
+
+    return ActivityList(items=items[:limit], counts=counts)
+
+
+@router.get("/model-tests/{test_id}", response_model=ModelTestRead)
+async def get_model_test(
+    test_id: str, session: AsyncSession = Depends(get_session)
+) -> ModelTestRead:
+    """单条 LLM 对话测试的完整记录（弹框里要看请求原文与回复）。
+
+    时间线接口只带摘要 —— 列表不需要每条都背着完整消息体；
+    要展开看细节时再取这一条。
+    """
+    row = await session.get(ModelTest, test_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"记录不存在: {test_id}")
+    return ModelTestRead.model_validate(row, from_attributes=True)
+
+
+@router.post("/model-tests/bulk-delete", response_model=RunDeleteResponse)
+async def bulk_delete_model_tests(
+    payload: BulkDeleteRequest, session: AsyncSession = Depends(get_session)
+) -> RunDeleteResponse:
+    """删除选中的 LLM 对话测试记录（「运行记录」页里和助手执行一起勾选的）。"""
+    deleted = 0
+    for _id in payload.ids:
+        row = await session.get(ModelTest, _id)
+        if row is not None:
+            await session.delete(row)
+            deleted += 1
+    await session.commit()
+    return RunDeleteResponse(deleted=deleted, skipped=[])
+
+
 @router.get("/{run_id}", response_model=RunRead)
 async def get_run(run_id: str, session: AsyncSession = Depends(get_session)) -> RunRead:
     return to_read(await _get_or_404(session, run_id))
@@ -360,8 +544,29 @@ async def delete_run(
 async def bulk_delete_runs(
     payload: RunBulkDeleteRequest, session: AsyncSession = Depends(get_session)
 ) -> RunDeleteResponse:
-    """批量删除选中的 Run。"""
-    deleted, skipped = await _delete_runs(session, payload.ids)
+    """批量删除选中的记录。
+
+    「运行记录」页把助手执行和 LLM 对话测试并成了一条时间线，用户勾选时
+    不该关心哪条存在哪张表 —— 所以这里按 id 前缀分流（``mt_`` = 模型测试）。
+    前端因此只需要一个「删除选中」。
+    """
+    run_ids = [i for i in payload.ids if not i.startswith("mt_")]
+    test_ids = [i for i in payload.ids if i.startswith("mt_")]
+
+    deleted, skipped = (0, [])
+    if run_ids:
+        deleted, skipped = await _delete_runs(session, run_ids)
+
+    for _id in test_ids:
+        row = await session.get(ModelTest, _id)
+        if row is not None:
+            await session.delete(row)
+            deleted += 1
+        else:
+            skipped = [*skipped, {"id": _id, "reason": "不存在"}]
+    if test_ids:
+        await session.commit()
+
     return RunDeleteResponse(deleted=deleted, skipped=skipped)
 
 

@@ -227,6 +227,68 @@ class RunCreate(BaseModel):
     stream: bool = True
     #: 所属会话 —— 传了就是"多轮对话的第 N 轮"，不传即单轮执行（原行为）
     session_id: str | None = None
+    #: 发起来源：chat（对话页）/ preview（助手页试跑）/ playground（编排）。
+    #: 只影响「运行记录」怎么分类展示，不影响执行逻辑。
+    origin: str | None = None
+
+
+class ModelTestRead(BaseModel):
+    """一次「LLM 对话测试」的记录（LLM 配置页里点「对话测试」产生的）。"""
+
+    id: str
+    credential_id: str | None = None
+    credential_name: str = ""
+    provider: str = ""
+    base_url: str | None = None
+    model: str = ""
+    messages: list[dict[str, Any]] = Field(default_factory=list)
+    reply: str | None = None
+    status: str = "ok"
+    error: str | None = None
+    started_at: int
+    duration_ms: int | None = None
+    tokens_in: int = 0
+    tokens_out: int = 0
+
+
+class ActivityItem(BaseModel):
+    """「运行记录」里的一条 —— 把三类调用统一成同一个形状。
+
+    为什么要统一
+    -----------
+    用户关心的是"我发起过哪些调用、结果如何"，而不是"它存在哪张表"。
+    助手执行和裸模型调用在**存储**上分开（语义不同，见 models.ModelTest），
+    但在**展示**上必须是一条连续的时间线，否则用户又要去两个地方看。
+
+    kind 取值：
+      chat       对话页的一轮
+      preview    助手详情页「试跑与观测」的一次
+      playground 多 Agent 编排里的一步/一次
+      llm_test   LLM 配置页的「对话测试」
+    """
+
+    kind: Literal["chat", "preview", "playground", "llm_test"]
+    id: str
+    at: int                                  # 开始时间（毫秒）
+    duration_ms: int | None = None
+    status: str = "ok"
+    #: 主体显示名：助手执行 → 助手名；LLM 测试 → "provider · model"
+    title: str = ""
+    subtitle: str | None = None
+    agent_id: str | None = None
+    credential_id: str | None = None
+    model: str | None = None
+    tokens_in: int = 0
+    tokens_out: int = 0
+    #: 一句话摘要（输入的前几十字），列表里就能看出"这条是什么"
+    summary: str | None = None
+    error: str | None = None
+
+
+class ActivityList(BaseModel):
+    items: list[ActivityItem] = Field(default_factory=list)
+    #: 各类型的总数（用于筛选栏上的计数徽标，不用额外请求）
+    counts: dict[str, int] = Field(default_factory=dict)
 
 
 class RunRead(BaseModel):
@@ -243,6 +305,7 @@ class RunRead(BaseModel):
     ended_at: int | None
     pending_hitl: dict[str, Any] | None = None
     #: 会话归属（试跑面板据此把多轮串起来）
+    origin: str | None = None
     session_id: str | None = None
     turn_index: int | None = None
 

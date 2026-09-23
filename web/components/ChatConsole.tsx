@@ -210,7 +210,12 @@ export function ChatConsole() {
     setLiveInput(text);
 
     try {
-      const run = await api.createRun({ agent_id: agentId, input: text, session_id: sessionId });
+      const run = await api.createRun({
+        agent_id: agentId,
+        input: text,
+        session_id: sessionId,
+        origin: "chat",
+      });
 
       const es = new EventSource(api.streamUrl(run.id));
       esRef.current = es;

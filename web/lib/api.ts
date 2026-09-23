@@ -1,6 +1,7 @@
 /** 后端 API 客户端（类型化 fetch 封装）。 */
 
 import type {
+  ActivityList,
   Agent,
   AgentDefinition,
   Credential,
@@ -355,8 +356,32 @@ export const api = {
     timeout_s?: number;
     /** 多轮会话：传了就带上会话历史 + 召回记忆 */
     session_id?: string;
+    /** 发起来源：chat（对话页）/ preview（助手页试跑）/ playground（编排）。
+     *  只影响「运行记录」怎么分类，不影响执行。 */
+    origin?: "chat" | "preview" | "playground";
   }) => post<Run>("/api/runs", body),
   runEvents: (id: string) => request<RunEvent[]>(`/api/runs/events/${id}`),
+  /** 单条 LLM 对话测试的完整记录（弹框里要看请求原文与回复） */
+  modelTest: (id: string) =>
+    request<Record<string, unknown>>(`/api/runs/model-tests/${id}`),
+  /**
+   * 统一的「运行记录」时间线：助手执行（对话/试跑/编排）+ LLM 对话测试。
+   * 一次请求拿全，前端不用为了看另一类再切页面。
+   */
+  runTimeline: (params?: {
+    kind?: string;
+    status?: string;
+    agent_id?: string;
+    q?: string;
+    limit?: number;
+  }) => {
+    const sp = new URLSearchParams();
+    Object.entries(params ?? {}).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") sp.set(k, String(v));
+    });
+    const qs = sp.toString();
+    return request<ActivityList>(`/api/runs/timeline${qs ? `?${qs}` : ""}`);
+  },
   runTrace: (id: string) => request<RunTrace>(`/api/runs/trace/${id}`),
   abortRun: (id: string) => post<{ aborted: boolean }>(`/api/runs/abort/${id}`),
   resumeRun: (

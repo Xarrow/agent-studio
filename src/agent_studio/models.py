@@ -141,6 +141,13 @@ class Run(Base):
     pending_hitl: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
 
     #: 所属会话（NULL = 单轮执行，保持原有语义不变）
+    #: 这次执行是**从哪儿发起的** —— 决定它在「运行记录」里归到哪一类。
+    #:   chat       对话页（正式使用）
+    #:   preview    助手详情页的「试跑与观测」（配置时试跑）
+    #:   playground 多 Agent 编排
+    #: 老数据没这一列（NULL），展示时按 session/orchestration 推断兜底。
+    origin: Mapped[str | None] = mapped_column(String(16), default=None)
+
     session_id: Mapped[str | None] = mapped_column(String(32), default=None, index=True)
     #: 会话内第几轮（从 1 开始）
     turn_index: Mapped[int | None] = mapped_column(Integer, default=None)
@@ -200,6 +207,48 @@ class LlmCall(Base):
     request_blob: Mapped[bytes | None] = mapped_column(default=None)     # zlib 压缩
     response_blob: Mapped[bytes | None] = mapped_column(default=None)
     payload_truncated: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class ModelTest(Base):
+    """「LLM 配置」里的一次对话测试记录。
+
+    为什么单独一张表（而不是塞进 run）
+    ---------------------------------
+    ``run`` 是**助手执行**的记录，天然带 agent_id；而对话测试是**裸模型调用**：
+    没有助手、没有工具、没有记忆、没有系统提示词 —— 它回答的是另一个问题：
+    "这把 key + 这个端点 + 这个模型，本身能不能用？"
+
+    语义不同。硬塞进 run 得把 agent_id 改成可空（SQLite 还得重建表），而且
+    之后每处查询都要判空。分开存各自干净。
+
+    但**展示上要合并** —— 对用户来说"一次调用就是一次调用"，
+    所以 Runs 页面把两类记录并成一条时间线（见 api/runs.py 的 /timeline）。
+    """
+
+    __tablename__ = "model_test"
+    __table_args__ = (Index("idx_mt_started", "started_at"),)
+
+    id: Mapped[str] = mapped_column(
+        String(32), primary_key=True, default=lambda: new_id("mt_")
+    )
+    #: 凭据事后可能被删 —— 所以名字/provider 存快照，保证记录仍然读得懂
+    credential_id: Mapped[str | None] = mapped_column(String(32), default=None, index=True)
+    credential_name: Mapped[str] = mapped_column(String(128), default="")
+    provider: Mapped[str] = mapped_column(String(32), default="")
+    base_url: Mapped[str | None] = mapped_column(String(255), default=None)
+    model: Mapped[str] = mapped_column(String(128), default="")
+
+    #: 发出去的对话（role/content 列表）与拿到的回复
+    messages: Mapped[list[Any]] = mapped_column(JSON, default=list)
+    reply: Mapped[str | None] = mapped_column(LongText, default=None)
+
+    status: Mapped[str] = mapped_column(String(16), default="ok", index=True)  # ok | error
+    error: Mapped[str | None] = mapped_column(LongText, default=None)
+
+    started_at: Mapped[int] = mapped_column(Integer, default=now_ms, index=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, default=None)
+    tokens_in: Mapped[int] = mapped_column(Integer, default=0)
+    tokens_out: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class ToolCall(Base):
