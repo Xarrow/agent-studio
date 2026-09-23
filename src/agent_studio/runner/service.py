@@ -37,6 +37,7 @@ from ..models import (
     ToolCall,
     now_ms,
 )
+from ..providers import get_provider
 from ..runtimes import get_runtime
 from ..runtimes.base import HitlResponse, TurnContext, UnifiedEvent
 from ..schemas import AgentDefinition, MemoryPolicyRead, ToolSpec
@@ -116,8 +117,16 @@ def query_text(run_input: Any) -> str:
     return str(run_input)
 
 
-def _default_base_url(definition: AgentDefinition) -> str:
-    return definition.model.base_url or "https://api.deepseek.com/v1"
+def _default_base_url(definition: AgentDefinition) -> str | None:
+    """端点兜底：定义 ＞ 服务商元数据里的默认。
+
+    原来这里**写死** ``https://api.deepseek.com/v1`` —— 于是非 DeepSeek 的助手
+    （比如火山引擎）在做历史压缩、记忆提炼时会打到 DeepSeek 去。
+    """
+    if definition.model.base_url:
+        return definition.model.base_url
+    meta = get_provider(definition.model.provider)
+    return meta.default_base_url if meta else None
 
 
 # --------------------------------------------------------------------------- #
@@ -167,13 +176,52 @@ bus = EventBus()
 # --------------------------------------------------------------------------- #
 async def resolve_api_key(definition: AgentDefinition, session: Any) -> str | None:
     """解析 api_key：定义内明文 → Secret 表 → 环境变量兜底。"""
+    key, _ = await resolve_credential(definition, session)
+    return key
+
+
+async def resolve_credential(
+    definition: AgentDefinition, session: Any
+) -> tuple[str | None, str | None]:
+    """解析执行凭据：返回 ``(api_key, base_url)``。
+
+    为什么 base_url 必须跟 key 一起解析
+    ----------------------------------
+    有些服务商的 key 是**分套餐/分区域**的，端点不同 —— 典型是火山引擎方舟的
+    Agent Plan key：它只受理 ``/api/plan/v3``，打到 ``/api/v3`` 直接 401。
+    "这把 key 该往哪个端点打"属于**凭据的属性**，所以 base_url 配在凭据上。
+
+    但执行路径原来只看 ``definition.model.base_url``（助手定义里通常是空的），
+    于是退回到框架自带的默认端点，**凭据上配好的 base_url 被完全无视**。
+    症状特别有迷惑性：配置页「测试连接」是通的（那条路径确实用了凭据的
+    base_url），一执行就 401 —— 让人以为 key 坏了。
+
+    优先级：助手定义里显式写的 base_url ＞ 凭据上的 base_url。
+    """
     if definition.model.api_key:
-        return definition.model.api_key
+        return definition.model.api_key, definition.model.base_url
     if definition.model.credential_ref:
         secret = await session.get(Secret, definition.model.credential_ref)
         if secret is not None:
-            return decrypt(secret.ciphertext)
-    return os.environ.get("STUDIO_DEFAULT_API_KEY")
+            return (
+                decrypt(secret.ciphertext),
+                secret.base_url or definition.model.base_url,
+            )
+    return os.environ.get("STUDIO_DEFAULT_API_KEY"), definition.model.base_url
+
+
+def _with_base_url(definition: AgentDefinition, base_url: str | None) -> AgentDefinition:
+    """把解析出的 base_url 补进定义（定义里已有则不覆盖）。
+
+    补在定义上，是为了让**三条用到端点的路径**都拿到正确的值：
+    模型编译、历史压缩、记忆提炼 —— 它们原来各自读
+    ``definition.model.base_url``，值不对就一起错。
+    """
+    if not base_url or definition.model.base_url:
+        return definition
+    return definition.model_copy(
+        update={"model": definition.model.model_copy(update={"base_url": base_url})}
+    )
 
 
 async def load_tools(session: Any, agent_id: str) -> list[ToolSpec]:
@@ -288,7 +336,10 @@ class RunService:
                 if run is None:  # pragma: no cover
                     return
                 tools = await load_tools(session, run.agent_id)
-                api_key = await resolve_api_key(definition, session)
+                api_key, cred_base_url = await resolve_credential(definition, session)
+                # 凭据上的 base_url 必须补进定义 —— 否则 compile / 压缩 / 提炼
+                # 都会用错端点（火山引擎 plan key 打 /api/v3 会 401）
+                definition = _with_base_url(definition, cred_base_url)
                 # 组装上下文：短期记忆（会话历史）+ 长期记忆（召回注入）
                 # 注意：这里只产出**平台中立**的 TurnContext，不含任何框架对象
                 policy = await get_policy(session, run.agent_id)
