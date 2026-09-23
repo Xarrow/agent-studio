@@ -4,6 +4,7 @@ import type {
   Agent,
   AgentDefinition,
   Credential,
+  CredentialChatResult,
   CredentialModelsResult,
   CredentialTestResult,
   DbDriverInfo,
@@ -207,6 +208,19 @@ export const api = {
     request<{ id: string; name: string; api_key: string }>(`/api/credentials/${id}/key`),
   testCredential: (id: string, model?: string) =>
     post<CredentialTestResult>(`/api/credentials/${id}/test`, { model }),
+  /**
+   * 直接用这条凭据聊一句 —— **不经过任何 Agent**。
+   *
+   * 为什么要有它：配好模型要验证两件独立的事 ——「这把 key+端点+模型能不能
+   * 对话」和「这个助手配得对不对」。混在一起测，报错分不清是哪一层。
+   */
+  credentialChat: (
+    id: string,
+    body: {
+      model?: string;
+      messages: { role: "system" | "user" | "assistant"; content: string }[];
+    },
+  ) => post<CredentialChatResult>(`/api/credentials/${id}/chat`, body),
   /** 探测某凭据下可用的模型清单（编辑配置时让用户挑模型） */
   credentialModels: (id: string) =>
     request<CredentialModelsResult>(`/api/credentials/${id}/models`),

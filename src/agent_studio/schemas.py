@@ -415,6 +415,28 @@ class CredentialTestResult(BaseModel):
     checked_at: int
 
 
+class CredentialChatMessage(BaseModel):
+    role: Literal["system", "user", "assistant"]
+    content: str
+
+
+class CredentialChatRequest(BaseModel):
+    """在「LLM 配置」里直接试聊一段 —— 不经过任何 Agent。"""
+
+    #: 留空 = 用该凭据配置的默认模型
+    model: str | None = None
+    messages: list[CredentialChatMessage] = Field(default_factory=list)
+
+
+class CredentialChatResult(BaseModel):
+    ok: bool
+    model: str | None = None
+    reply: str | None = None
+    latency_ms: int | None = None
+    usage: dict[str, Any] | None = None
+    error: str | None = None
+
+
 class ProviderRead(BaseModel):
     name: str
     display_name: str

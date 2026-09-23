@@ -21,6 +21,8 @@ from ..db import get_session
 from ..models import Secret, now_ms
 from ..providers import get_provider, list_providers, normalize_provider
 from ..schemas import (
+    CredentialChatRequest,
+    CredentialChatResult,
     CredentialCreate,
     CredentialRead,
     CredentialTestRequest,
@@ -215,6 +217,21 @@ async def delete_credential(
 # --------------------------------------------------------------------------- #
 # 连通性测试
 # --------------------------------------------------------------------------- #
+def _err_of(resp: "httpx.Response") -> str:
+    """从服务商返回体里抽出人话错误（OpenAI 兼容格式：error.message）。"""
+    try:
+        body = resp.json()
+        if isinstance(body, dict):
+            e = body.get("error")
+            if isinstance(e, dict) and e.get("message"):
+                return str(e["message"])
+            if body.get("message"):
+                return str(body["message"])
+    except Exception:  # noqa: BLE001
+        pass
+    return (resp.text or "").strip()[:220] or f"HTTP {resp.status_code}"
+
+
 async def _probe(
     provider: str, api_key: str, base_url: str | None, model_name: str | None
 ):
@@ -247,20 +264,6 @@ async def _probe(
     def elapsed() -> int:
         return int((time.perf_counter() - started) * 1000)
 
-    def err_of(resp: httpx.Response) -> str:
-        """从服务商返回体里抽出人话错误（OpenAI 兼容格式：error.message）"""
-        try:
-            body = resp.json()
-            if isinstance(body, dict):
-                e = body.get("error")
-                if isinstance(e, dict) and e.get("message"):
-                    return str(e["message"])
-                if body.get("message"):
-                    return str(body["message"])
-        except Exception:  # noqa: BLE001
-            pass
-        return (resp.text or "").strip()[:220] or f"HTTP {resp.status_code}"
-
     try:
         async with httpx.AsyncClient(timeout=25.0, follow_redirects=True) as client:
             # ── ① 试 /models ────────────────────────────────────────────
@@ -289,7 +292,7 @@ async def _probe(
                 return (
                     False,
                     [],
-                    f"密钥无效（HTTP {r.status_code}）：{err_of(r)}",
+                    f"密钥无效（HTTP {r.status_code}）：{_err_of(r)}",
                     elapsed(),
                 )
 
@@ -326,13 +329,13 @@ async def _probe(
                 return (
                     False,
                     [],
-                    f"密钥无效（HTTP {r2.status_code}）：{err_of(r2)}",
+                    f"密钥无效（HTTP {r2.status_code}）：{_err_of(r2)}",
                     elapsed(),
                 )
             return (
                 False,
                 [],
-                f"HTTP {r2.status_code}（模型 {model}）：{err_of(r2)}",
+                f"HTTP {r2.status_code}（模型 {model}）：{_err_of(r2)}",
                 elapsed(),
             )
     except Exception as exc:  # noqa: BLE001
@@ -394,6 +397,96 @@ async def test_credential(
         error=error,
         checked_at=row.last_test_at,
     )
+
+
+CHAT_ENDPOINT_FAIL = "这条配置暂时没法试聊"
+
+
+@router.post("/credentials/{credential_id}/chat", response_model=CredentialChatResult)
+async def chat_with_credential(
+    credential_id: str,
+    payload: CredentialChatRequest,
+    session: AsyncSession = Depends(get_session),
+) -> CredentialChatResult:
+    """用这条凭据**直接跑一段对话** —— 完全不经过 Agent。
+
+    为什么要跟"Agent 试跑"分开
+    -------------------------
+    配好一个模型要验证两件独立的事：
+      ① 这把 key + 这个端点 + 这个模型，能不能正常对话？
+      ② 这个助手的提示词/工具/记忆配得对不对？
+    混在一起测的话，一旦报错你分不清是①还是② —— 得先去建助手才能验证①，
+    而建助手又依赖①。分开之后，①在「LLM 配置」里当场就能确认。
+
+    与 ``/test`` 的区别：``/test`` 只探端点连通性（一次极小调用）；
+    这里是把真实的多轮对话发过去、把回复取回来。
+    """
+    row = await _get_or_404(session, credential_id)
+    meta = get_provider(row.provider)
+
+    try:
+        api_key = decrypt(row.ciphertext)
+    except Exception:  # noqa: BLE001
+        return CredentialChatResult(
+            ok=False,
+            error="这个配置的密钥解不开（可能由另一个主密钥加密）。请重新填写 API Key 并保存。",
+        )
+
+    model = payload.model or row.default_model or (meta.models[0] if meta and meta.models else None)
+    if not model:
+        return CredentialChatResult(
+            ok=False, error="还没有选模型。先点「编辑」选一个默认模型，或在上面手动指定。"
+        )
+
+    base = (row.base_url or "").rstrip("/")
+    if not base:
+        return CredentialChatResult(ok=False, error=f"{row.provider} 没有可用的 Base URL")
+
+    msgs = [m.model_dump() for m in payload.messages] or [
+        {"role": "user", "content": "你好"}
+    ]
+
+    started = time.perf_counter()
+    try:
+        async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as client:
+            resp = await client.post(
+                f"{base}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={"model": model, "messages": msgs, "stream": False},
+            )
+        latency = int((time.perf_counter() - started) * 1000)
+
+        if resp.status_code != 200:
+            return CredentialChatResult(
+                ok=False, model=model, latency_ms=latency,
+                error=f"HTTP {resp.status_code}：{_err_of(resp)}",
+            )
+
+        data = resp.json()
+        reply = ""
+        try:
+            reply = data["choices"][0]["message"]["content"] or ""
+        except Exception:  # noqa: BLE001
+            reply = ""
+        if not reply:
+            return CredentialChatResult(
+                ok=False, model=model, latency_ms=latency,
+                error=f"拿到了响应但没有正文：{str(data)[:200]}",
+            )
+        usage = data.get("usage") if isinstance(data, dict) else None
+        return CredentialChatResult(
+            ok=True, model=model, reply=reply, latency_ms=latency,
+            usage=usage if isinstance(usage, dict) else None,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return CredentialChatResult(
+            ok=False, model=model,
+            latency_ms=int((time.perf_counter() - started) * 1000),
+            error=f"{type(exc).__name__}: {exc}",
+        )
 
 
 @router.get("/credentials/{credential_id}/models")

@@ -23,8 +23,6 @@ import { ModelPicker } from "@/components/ModelPicker";
 import { RunPanel } from "@/components/AgentRunPanel";
 import { useFeedback } from "@/components/ui/feedback";
 
-type Tab = "define" | "run" | "memory";
-
 /** 执行观测的三种视图：给人看 / 给开发者看 / 原始数据 */
 type ViewMode = "chat" | "table" | "raw";
 
@@ -42,11 +40,21 @@ export default function AgentEditorPage() {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [runtimes, setRuntimes] = useState<RuntimeCapabilities[]>([]);
   const [issues, setIssues] = useState<Issue[]>([]);
-  const [tab, setTab] = useState<Tab>("define");
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
-
+  /**
+   * 概览汇总：这个助手「用了什么 + 最近跑成什么样」。
+   *
+   * 为什么单独取一份：记忆面板和试跑面板各自会拉自己的详情数据，但概览要在
+   * **一屏之内**回答"它现在是什么状态"，所以这里取个轻量摘要 ——
+   * 一两百毫秒，换来不用上下翻找。
+   */
+  const [ov, setOv] = useState<{
+    memoryOwn: number | null;
+    memoryShared: number | null;
+    lastRun: { status: string; at: number; ms: number | null } | null;
+  }>({ memoryOwn: null, memoryShared: null, lastRun: null });
   const load = useCallback(async () => {
     try {
       const [a, p, c, t, s, r] = await Promise.all([
@@ -74,6 +82,41 @@ export default function AgentEditorPage() {
     void load();
   }, [load]);
 
+  // 概览数据：记忆条数 + 最近一次执行。只读展示，不需要用户操作。
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const [own, shared, runs] = await Promise.all([
+          api.memories({ agentId, scope: "agent", status: "active" }),
+          api.memories({ scope: "global", status: "active" }),
+          api.runs(agentId, 1),
+        ]);
+        if (!alive) return;
+        const last = runs[0];
+        setOv({
+          memoryOwn: own.length,
+          memoryShared: shared.length,
+          lastRun: last
+            ? {
+                status: last.status,
+                at: last.started_at,
+                ms:
+                  last.ended_at && last.started_at
+                    ? last.ended_at - last.started_at
+                    : null,
+              }
+            : null,
+        });
+      } catch {
+        if (alive) setOv({ memoryOwn: null, memoryShared: null, lastRun: null });
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [agentId]);
+
   // 定义变化时做实时校验（防抖）
   useEffect(() => {
     if (!def) return;
@@ -96,6 +139,8 @@ export default function AgentEditorPage() {
 
   const caps = runtimes.find((r) => r.name === def.runtime);
   const providerMeta = providers.find((p) => p.name === def.model.provider);
+  /** 这个助手实际用的那条 LLM 配置 */
+  const usedCred = creds.find((c) => c.id === def.model.credential_ref) ?? null;
   const usableCreds = creds.filter((c) => c.provider === def.model.provider);
   const errors = issues.filter((i) => i.level === "error");
   const warnings = issues.filter((i) => i.level === "warning");
@@ -185,30 +230,69 @@ export default function AgentEditorPage() {
         </div>
       )}
 
-      <div className="flex gap-1 mb-4 border-b border-[var(--color-border)]">
-        {(
-          [
-            ["define", "定义"],
-            ["run", "试跑与观测"],
-            ["memory", "记忆"],
-          ] as [Tab, string][]
-        ).map(([k, label]) => (
-          <button
-            key={k}
-            onClick={() => setTab(k)}
-            className={`px-4 py-2 text-[13px] border-b-2 -mb-px transition-colors ${
-              tab === k
-                ? "border-[var(--color-accent)] text-[var(--color-accent)]"
-                : "border-transparent text-[var(--color-muted)] hover:text-[var(--color-text)]"
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      {/* ── 概览：一屏之内回答"这个助手现在是什么状态" ──────────────
+          以前要看这些得在三个 tab 之间来回切；现在一眼扫完。 */}
+      <section className="card p-4 mb-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div>
+            <div className="text-[11.5px] text-[var(--color-muted)]">模型</div>
+            <div className="text-[13.5px] mono mt-0.5 break-all">
+              {def.model.name || "—"}
+            </div>
+            <div className="text-[11px] text-[var(--color-muted)] mt-0.5">
+              {providers.find((x) => x.name === def.model.provider)?.display_name ??
+                def.model.provider}
+              {usedCred ? ` · ${usedCred.name}` : " · 用环境变量密钥"}
+            </div>
+          </div>
+          <div>
+            <div className="text-[11.5px] text-[var(--color-muted)]">工具</div>
+            <div className="text-[13.5px] mt-0.5">{def.tools.length} 个已选</div>
+            <div className="text-[11px] text-[var(--color-muted)] mt-0.5">
+              共 {tools.length} 个可用
+            </div>
+          </div>
+          <div>
+            <div className="text-[11.5px] text-[var(--color-muted)]">Skills</div>
+            <div className="text-[13.5px] mt-0.5">{def.skills.length} 个已选</div>
+            <div className="text-[11px] text-[var(--color-muted)] mt-0.5">
+              共 {skills.length} 个可用
+            </div>
+          </div>
+          <div>
+            <div className="text-[11.5px] text-[var(--color-muted)]">记忆</div>
+            <div className="text-[13.5px] mt-0.5">
+              {ov.memoryOwn === null || ov.memoryShared === null
+                ? "…"
+                : `${ov.memoryOwn + ov.memoryShared} 条`}
+            </div>
+            <div className="text-[11px] text-[var(--color-muted)] mt-0.5">
+              {ov.memoryOwn === null
+                ? ""
+                : `自己的 ${ov.memoryOwn} · 共用 ${ov.memoryShared}`}
+            </div>
+          </div>
+        </div>
+        {ov.lastRun && (
+          <div className="mt-3 pt-3 border-t border-[var(--color-border)] text-[12px] text-[var(--color-muted)]">
+            最近一次执行：
+            <span
+              className="mono"
+              style={{ color: STATUS_STYLE[ov.lastRun.status as keyof typeof STATUS_STYLE] }}
+            >
+              {ov.lastRun.status}
+            </span>
+            {" · "}
+            {fmt.ms(ov.lastRun.ms)}
+            {" · "}
+            {fmt.relative(ov.lastRun.at)}
+          </div>
+        )}
+      </section>
 
-      {tab === "define" ? (
-        <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
+
+      {/* ── 定义 ──────────────────────────────────────────────── */}
+      <div id="sec-define" className="grid gap-4 grid-cols-1 lg:grid-cols-2 scroll-mt-14">
           <section className="card p-4 space-y-3.5">
             <h2 className="text-[14px] font-medium">基础</h2>
             <div>
@@ -489,11 +573,18 @@ export default function AgentEditorPage() {
             )}
           </section>
         </div>
-      ) : tab === "run" ? (
+
+      {/* ── 试跑与观测 ─────────────────────────────────────────── */}
+      <section id="sec-run" className="mt-4 scroll-mt-14">
+        <h2 className="text-[14px] font-medium mb-3">试跑与观测</h2>
         <RunPanel agentId={agentId} agentName={agent.name} disabled={errors.length > 0} />
-      ) : (
+      </section>
+
+      {/* ── 记忆 ───────────────────────────────────────────────── */}
+      {/* 不另加外层标题：记忆面板的卡片自带「记忆」标题，再加一层就重复了 */}
+      <section id="sec-memory" className="mt-4 scroll-mt-14">
         <AgentMemoryPanel agentId={agentId} />
-      )}
+      </section>
     </div>
   );
 }

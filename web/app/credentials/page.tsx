@@ -5,6 +5,7 @@ import { api, fmt } from "@/lib/api";
 import type { Credential, CredentialTestResult, Provider } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
 import { Hint, HINTS } from "@/components/ui/hint";
+import { CredentialChatDialog } from "@/components/CredentialChatDialog";
 
 export default function CredentialsPage() {
   const fb = useFeedback();
@@ -18,6 +19,8 @@ export default function CredentialsPage() {
   const [testing, setTesting] = useState<string | null>(null);
   /** 已显示明文的凭据：id → 明文 key（默认空 = 全部隐藏） */
   const [revealed, setRevealed] = useState<Record<string, string>>({});
+  /** 正在做「对话测试」的凭据（null = 没开） */
+  const [chatting, setChatting] = useState<Credential | null>(null);
   const [testResult, setTestResult] = useState<Record<string, CredentialTestResult>>({});
 
   const load = useCallback(async () => {
@@ -161,6 +164,14 @@ export default function CredentialsPage() {
         />
       )}
 
+      {chatting && (
+        <CredentialChatDialog
+          key={chatting.id}
+          credential={chatting}
+          onClose={() => setChatting(null)}
+        />
+      )}
+
       {editing && (
         <EditCredentialDialog
           key={editing.id}
@@ -256,6 +267,13 @@ export default function CredentialsPage() {
                         显示密钥
                       </button>
                     )}
+                    <button
+                      className="btn"
+                      title="直接跟模型聊两句，不经过助手"
+                      onClick={() => setChatting(c)}
+                    >
+                      对话测试
+                    </button>
                     <button
                       className="btn"
                       disabled={testing === c.id}

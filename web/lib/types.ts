@@ -448,3 +448,13 @@ export interface CredentialModelsResult {
   latency_ms?: number | null;
   error?: string | null;
 }
+
+/** 在「LLM 配置」里直接试聊一段（不经过 Agent）的结果 */
+export interface CredentialChatResult {
+  ok: boolean;
+  model: string | null;
+  reply: string | null;
+  latency_ms: number | null;
+  usage: Record<string, number> | null;
+  error: string | null;
+}
