@@ -499,6 +499,8 @@ export interface CredentialChatResult {
  * context  上下文共享：把它看到的和说过的，一起交给下一个
  * memory   记忆：产出存成下游的记忆，以后能想起来
  */
+export type EdgeOrder = "serial" | "parallel";
+/** @deprecated 旧的单一枚举，已被 order + share_* 取代 */
 export type EdgeRel = "serial" | "parallel" | "context" | "memory";
 
 export interface WorkflowNode {
@@ -509,8 +511,17 @@ export interface WorkflowNode {
 export interface WorkflowEdge {
   from: string;
   to: string;
-  /** 连线的语义。**暂未实现**，缺省按 serial（串行接力）处理 —— 留字段是为了
-   *  以后能在线上直接表达"并行 / 共享上下文 / 沉淀为记忆"，不必再改数据结构。 */
+  /**
+   * 时序（与"共享"正交，可任意组合）：
+   *   serial   串行接力 —— 等它跑完，把结论交给下一个（默认）
+   *   parallel 并行 —— 同时开始，这条线不构成依赖
+   */
+  order?: EdgeOrder;
+  /** 共享上下文：产出进同一个上下文池，组内谁先跑完都互相看得见 */
+  share_context?: boolean;
+  /** 共享记忆：产出沉淀成记忆，而且**双方**都能想起来 */
+  share_memory?: boolean;
+  /** @deprecated 旧字段（单一枚举），读的时候会被映射到上面三项 */
   rel?: EdgeRel;
 }
 

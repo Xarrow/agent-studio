@@ -199,6 +199,17 @@ export function PlaygroundConsole() {
     window.addEventListener("pointercancel", onUp);
   };
 
+  /** 把一个助手从编排里移掉 —— 它两端的连线一起清掉（留着悬空连线只会让人困惑） */
+  const removeNode = (nid: string) => {
+    const next: WorkflowGraph = {
+      ...graph,
+      nodes: graph.nodes.filter((n) => n.nid !== nid),
+      edges: graph.edges.filter((e) => e.from !== nid && e.to !== nid),
+    };
+    patchGraph(next, { resetRun: downstreamOf(nid, graph) });   // 下游要重跑：输入变了
+    if (selected === nid) setSelected(null);
+  };
+
   const dropAgent = (agentId: string, targetNid: string | null) => {
     const nid = `n${nidRef.current++}`;
     if (!targetNid) {
@@ -596,6 +607,18 @@ export function PlaygroundConsole() {
               >
                 配置这个助手 →
               </a>
+              <button
+                type="button"
+                disabled={running}
+                onClick={() => removeNode(selNode.nid)}
+                className="rounded-[8px] border px-3 py-2 text-center text-[12.5px] disabled:opacity-50"
+                style={{
+                  borderColor: "color-mix(in srgb, var(--color-err) 30%, var(--color-border))",
+                  color: "var(--color-err)",
+                }}
+              >
+                把这个助手从编排里移掉
+              </button>
             </div>
           </aside>
         )}

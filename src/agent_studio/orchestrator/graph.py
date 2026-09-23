@@ -39,13 +39,47 @@ REL_HINT_CN: dict[str, str] = {
 }
 
 
-def is_dependency(edge: dict[str, Any]) -> bool:
-    """这条线要不要构成"等它"的依赖？
+# ── 连线的**两个维度** ────────────────────────────────────────────────────────
+#
+# 原来我把它做成"四选一"（串行/并行/上下文/记忆），这是**建模错误**：
+#   顺序 与 共享 是两件独立的事 —— 并行的时候一样可以共享记忆或上下文，串行也可以。
+# 所以拆成两条正交的轴：
+#
+#   ① 时序（二选一）：serial 等它跑完 | parallel 同时开始
+#   ② 共享（可任意组合）：share_context 共享上下文 | share_memory 共享记忆
+#
+# 下面这些函数是**唯一入口**：界面上怎么判断、执行时怎么跑，都从这里取。
+# 同时兼容旧的 rel 单一枚举（老图不用迁移）。
 
-    并行的线**不算依赖** —— 它画出来是为了表达"这几个是一组、同时跑"，
-    而不是"后一个等前一个"。分层算法据此忽略它，两者才会真的并发起来。
+ORDER_SERIAL = "serial"
+ORDER_PARALLEL = "parallel"
+
+
+def edge_order(e: dict[str, Any]) -> str:
+    """时序：默认串行。旧数据里 rel=parallel 等价于 order=parallel。"""
+    if e.get("order") == ORDER_PARALLEL:
+        return ORDER_PARALLEL
+    if e.get("rel") == REL_PARALLEL:
+        return ORDER_PARALLEL
+    return ORDER_SERIAL
+
+
+def shares_context(e: dict[str, Any]) -> bool:
+    """这条线要不要进"上下文池"（旧数据 rel=context 等价）。"""
+    return bool(e.get("share_context")) or e.get("rel") == REL_CONTEXT
+
+
+def shares_memory(e: dict[str, Any]) -> bool:
+    """这条线要不要把产出沉淀成记忆、双方共享（旧数据 rel=memory 等价）。"""
+    return bool(e.get("share_memory")) or e.get("rel") == REL_MEMORY
+
+
+def is_dependency(e: dict[str, Any]) -> bool:
+    """这条线算不算"依赖" —— 只有依赖才决定先后。
+
+    **并行线不算**：它表达的是"这两个同时跑"，不是"后一个等前一个"。
     """
-    return str((edge or {}).get("rel") or REL_SERIAL) != REL_PARALLEL
+    return edge_order(e) != ORDER_PARALLEL
 
 
 def dep_edges(edges: list[dict[str, str]]) -> list[dict[str, str]]:
@@ -72,7 +106,7 @@ def normalise(graph: Graph | None) -> tuple[list[dict[str, str]], list[dict[str,
         nodes.append({"nid": nid, "agent_id": aid})
 
     ids = {n["nid"] for n in nodes}
-    edges: list[dict[str, str]] = []
+    edges: list[dict[str, Any]] = []
     eseen: set[tuple[str, str]] = set()
     for e in raw_edges:
         a = str((e or {}).get("from") or "").strip()
@@ -80,8 +114,16 @@ def normalise(graph: Graph | None) -> tuple[list[dict[str, str]], list[dict[str,
         if a not in ids or b not in ids or a == b or (a, b) in eseen:
             continue
         eseen.add((a, b))
-        rel = str((e or {}).get("rel") or REL_SERIAL).strip()
-        edges.append({"from": a, "to": b, "rel": rel if rel in RELS else REL_SERIAL})
+        # 统一归一到**两维**形状；旧的 rel 单枚举在这里被翻译掉，老图不用迁移
+        edges.append(
+            {
+                "from": a,
+                "to": b,
+                "order": edge_order(e),
+                "share_context": shares_context(e),
+                "share_memory": shares_memory(e),
+            }
+        )
 
     return nodes, edges
 
@@ -157,7 +199,8 @@ def derive_mode(graph: Graph | None) -> str:
 
     # 有"上下文共享 / 记忆"这类关系时，只有通用分层执行器认得它们 ——
     # 老的四种模式（serial/parallel/master_worker）表达不了，所以直接走 dag。
-    if any(e.get("rel") in (REL_CONTEXT, REL_MEMORY) for e in edges):
+    # 带"共享"的图必须走 dag：老四种模式没有地方表达"共享上下文 / 共享记忆"
+    if any(shares_context(e) or shares_memory(e) for e in edges):
         return "dag"
 
     edges = dep_edges(edges)  # 并行线不计入结构判断：两个节点画一条并行线 = 并行
@@ -202,7 +245,11 @@ def mode_hint(graph: Graph | None, mode: str) -> str:
     """
     if mode == "dag":
         nodes, edges = normalise(graph)
-        used = [REL_LABEL_CN.get(e["rel"], e["rel"]) for e in edges if e.get("rel") in (REL_CONTEXT, REL_MEMORY)]
+        used: list[str] = []
+        if any(shares_context(e) for e in edges):
+            used.append("共享上下文")
+        if any(shares_memory(e) for e in edges):
+            used.append("共享记忆")
         if used and len(nodes) <= 2:
             return f"按你选的连线关系执行：{'、'.join(dict.fromkeys(used))}"
         if used:

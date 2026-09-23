@@ -776,19 +776,27 @@ class WorkflowNode(BaseModel):
 
 
 class WorkflowEdge(BaseModel):
-    """一条连线：**两个助手之间的关系**。
+    """一条连线 —— 两个助手之间怎么配合。
 
-    ``rel`` 决定怎么传、传什么（见 ``orchestrator.graph`` 的常量与文案）：
+    **两个维度，正交，可任意组合**（原来做成"四选一"是建模错误：
+    并行的时候一样可以共享记忆/上下文，串行也可以）：
 
-    - ``serial``   串行接力：把上游的结论交给下游（默认）
-    - ``parallel`` 并行：两者同时开始，这条线不构成依赖
-    - ``context``  上下文共享：把上游的输入 + 产出都交给下游
-    - ``memory``   记忆：上游产出沉淀成下游的一条记忆
+    ① ``order`` 时序二选一
+       - ``serial``   串行接力：等它跑完，把结论交给下一个（默认）
+       - ``parallel`` 并行：同时开始；这条线**不构成依赖**
+
+    ② 共享开关（各自独立）
+       - ``share_context`` 共享上下文：产出进同一个上下文池，组内谁先跑完都互相看得见
+       - ``share_memory``  共享记忆：产出沉淀成记忆，而且**双方**都能想起来
     """
 
     from_: str = Field(alias="from")
     to: str
-    rel: str = "serial"
+    order: str = "serial"
+    share_context: bool = False
+    share_memory: bool = False
+    #: 旧字段（单一枚举）。保留只为老数据能读进来，会被映射到上面三项。
+    rel: str | None = None
 
     model_config = {"populate_by_name": True}
 

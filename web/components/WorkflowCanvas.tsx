@@ -43,8 +43,23 @@ const META: Record<NodeState, { dot: string; text: string; border: string }> = {
  * **并行线不算** —— 它画出来是为了表达"这两个同时跑"，不是"后一个等前一个"。
  * 分层算法据此忽略它，两者才会真的并发；否则界面上写着并行、实际却串着跑。
  */
+export function edgeOrder(e: WorkflowEdge): "serial" | "parallel" {
+  if (e.order === "parallel") return "parallel";
+  if (e.rel === "parallel") return "parallel"; // 旧数据
+  return "serial";
+}
+
+export function sharesContext(e: WorkflowEdge): boolean {
+  return !!e.share_context || e.rel === "context";
+}
+
+export function sharesMemory(e: WorkflowEdge): boolean {
+  return !!e.share_memory || e.rel === "memory";
+}
+
+/** 只有"串行"才构成依赖；并行线表达的是"同时跑"，不参与排序 */
 export function isDep(e: WorkflowEdge): boolean {
-  return (e.rel ?? "serial") !== "parallel";
+  return edgeOrder(e) !== "parallel";
 }
 
 export function depEdges(edges: WorkflowEdge[]): WorkflowEdge[] {
@@ -123,34 +138,27 @@ type Props = {
 const NODE_W = 232;
 
 /**
- * 连线上的四种关系 —— **这是"两个助手之间"的语义，不是全局设置**。
+ * 连线上的**两个维度** —— 它们**正交**，可以任意组合。
  *
- * 用户的心智是"这两个怎么配合"，而不是"整个流程用哪个模式"。所以选择放在连线上：
- * 点一下那条线，选它们之间的关系。文案与后端 orchestrator/graph.py 保持一致。
+ * 原来我做成"四选一"（串行/并行/上下文/记忆），这是**建模错误**：
+ * 并行的时候一样可以共享记忆、共享上下文，串行也可以。
+ * 用户的心智是"这两个怎么配合" —— 时序一件事，共享另外两件事。
  */
-const REL_OPTIONS = [
-  { rel: "serial", label: "串行接力", hint: "等它跑完，把结论交给下一个" },
-  { rel: "parallel", label: "并行", hint: "两个同时开始，互不等待" },
-  { rel: "context", label: "上下文共享", hint: "把它看到的和说过的，一起交给下一个" },
-  { rel: "memory", label: "记忆", hint: "产出存成下游的记忆，以后能想起来" },
+const ORDER_OPTIONS = [
+  { order: "serial", label: "串行接力", hint: "等它跑完，把结论交给下一个" },
+  { order: "parallel", label: "并行", hint: "两个同时开始，互不等待" },
 ] as const;
 
-/** 每种关系怎么画：颜色 + 虚实。**靠形状区分**，不只靠颜色（色弱也能分辨） */
-const REL_META: Record<string, { short: string; stroke: string; dash?: string }> = {
-  serial: { short: "串行", stroke: "var(--color-border)" },
-  parallel: {
-    short: "并行",
-    stroke: "color-mix(in srgb, var(--color-muted) 50%, var(--color-border))",
-    dash: "2 5",
-  },
-  context: { short: "上下文", stroke: "color-mix(in srgb, var(--color-info) 60%, var(--color-border))" },
-  memory: {
-    short: "记忆",
-    stroke: "color-mix(in srgb, var(--color-warn) 55%, var(--color-border))",
-    dash: "8 4 2 4",
-  },
-};
+const SHARE_OPTIONS = [
+  { key: "share_context", label: "共享上下文", hint: "跑的时候能看见对方说过的话" },
+  { key: "share_memory", label: "共享记忆", hint: "结论沉淀成记忆，双方都记得" },
+] as const;
 
+/** 时序怎么画：靠**虚实**区分，不只靠颜色（色弱也能分辨） */
+const ORDER_META: Record<string, { short: string; dash?: string }> = {
+  serial: { short: "串行" },
+  parallel: { short: "并行", dash: "2 5" },
+};
 export function WorkflowCanvas({
   agents,
   graph,
@@ -308,14 +316,18 @@ export function WorkflowCanvas({
     const st = runStates[e.to];
     const live = st === "run";
     const done = runStates[e.from] === "ok" && (st === "run" || st === "ok");
-    const rel = e.rel ?? "serial";
-    const meta = REL_META[rel] ?? REL_META.serial;
-    // 运行中的颜色优先（正在流动比"什么关系"更重要）；空闲时才用关系色
+    const ord = edgeOrder(e);
+    const ordMeta = ORDER_META[ord] ?? ORDER_META.serial;
+    const shared = sharesContext(e) || sharesMemory(e);
+    // 运行中的颜色优先（正在流动比"什么关系"更重要）；空闲时"共享"用青色系，
+    // 一眼看出这一组在互相共享（虚实区分时序，颜色区分共享）
     const stroke = live
       ? "var(--color-accent)"
       : done
         ? "color-mix(in srgb, var(--color-ok) 55%, var(--color-border))"
-        : meta.stroke;
+        : shared
+          ? "color-mix(in srgb, var(--color-info) 55%, var(--color-border))"
+          : "var(--color-border)";
     const key = `${e.from}->${e.to}`;
     let d: string;
     if (narrow) {
@@ -344,7 +356,7 @@ export function WorkflowCanvas({
           fill="none"
           stroke={stroke}
           strokeWidth={active ? 2.4 : 1.6}
-          strokeDasharray={live ? "6 5" : meta.dash}
+          strokeDasharray={live ? "6 5" : ordMeta.dash}
           className={live ? "wf-edge-live" : undefined}
         />
         {/* 细线太难点中 —— 铺一条透明的粗线专门接点击 */}
@@ -360,25 +372,39 @@ export function WorkflowCanvas({
             setEdgeSel(active ? null : { from: e.from, to: e.to });
           }}
         />
-        {/* 关系标签：一眼看出这条线是什么关系，不必点开 */}
+        {/* 连线标签：时序 + 有没有共享，一眼看出这两个怎么配合，不必点开 */}
         <g transform={`translate(${mid.x},${mid.y})`} style={{ pointerEvents: "none" }}>
-          <rect
-            x={-23}
-            y={-9.5}
-            width={46}
-            height={19}
-            rx={9.5}
-            fill="var(--color-surface)"
-            stroke={active ? "var(--color-accent)" : stroke}
-          />
-          <text
-            textAnchor="middle"
-            dominantBaseline="central"
-            fontSize={10.5}
-            fill={active ? "var(--color-accent)" : "var(--color-muted)"}
-          >
-            {meta.short}
-          </text>
+          {(() => {
+            const label = shared ? `${ordMeta.short}·共享` : ordMeta.short;
+            const w = label.length * 10.5 + 12;
+            return (
+              <>
+                <rect
+                  x={-w / 2}
+                  y={-9.5}
+                  width={w}
+                  height={19}
+                  rx={9.5}
+                  fill="var(--color-surface)"
+                  stroke={active ? "var(--color-accent)" : stroke}
+                />
+                <text
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                  fontSize={10.5}
+                  fill={
+                    active
+                      ? "var(--color-accent)"
+                      : shared
+                        ? "color-mix(in srgb, var(--color-info) 80%, var(--color-muted))"
+                        : "var(--color-muted)"
+                  }
+                >
+                  {label}
+                </text>
+              </>
+            );
+          })()}
         </g>
       </g>
     );
@@ -418,14 +444,22 @@ export function WorkflowCanvas({
             if (!e) return null;
             const mid = edgeMids[`${e.from}->${e.to}`];
             if (!mid) return null;
-            const cur = e.rel ?? "serial";
+            const ord = edgeOrder(e);
             const nameOf = (nid: string) =>
               agentOf(graph.nodes.find((n) => n.nid === nid)?.agent_id ?? "")?.name ?? "?";
+            // 改任何一项都顺手清掉旧的 rel（否则老字段会继续盖着新字段）
+            const patch = (next: Partial<WorkflowEdge>) =>
+              onChange({
+                ...graph,
+                edges: graph.edges.map((x) =>
+                  x.from === e.from && x.to === e.to ? { ...x, ...next, rel: undefined } : x,
+                ),
+              });
             return (
               <div
-                className="absolute z-20 w-[252px] rounded-[10px] border p-2.5"
+                className="absolute z-20 w-[264px] rounded-[10px] border p-2.5"
                 style={{
-                  left: Math.max(8, mid.x - 126),
+                  left: Math.max(8, mid.x - 132),
                   top: mid.y + 16,
                   background: "var(--color-surface)",
                   borderColor: "var(--color-border)",
@@ -436,38 +470,83 @@ export function WorkflowCanvas({
                 <div className="mb-2 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
                   {nameOf(e.from)} → {nameOf(e.to)}：这两个怎么配合？
                 </div>
-                <div className="flex flex-col gap-1">
-                  {REL_OPTIONS.map((o) => (
+
+                {/* ① 顺序：二选一 */}
+                <div className="mb-1 text-[11px] font-medium" style={{ color: "var(--color-muted)" }}>
+                  顺序
+                </div>
+                <div className="mb-2.5 flex gap-1">
+                  {ORDER_OPTIONS.map((o) => (
                     <button
-                      key={o.rel}
+                      key={o.order}
                       type="button"
                       disabled={frozen}
-                      onClick={() => {
-                        onChange({
-                          ...graph,
-                          edges: graph.edges.map((x) =>
-                            x.from === e.from && x.to === e.to ? { ...x, rel: o.rel } : x,
-                          ),
-                        });
-                        setEdgeSel(null);
-                      }}
-                      className="rounded-[8px] border px-2.5 py-1.5 text-left text-[12.5px] disabled:opacity-50"
+                      title={o.hint}
+                      onClick={() => patch({ order: o.order })}
+                      className="flex-1 rounded-[8px] border px-2 py-1.5 text-[12.5px] disabled:opacity-50"
                       style={
-                        cur === o.rel
+                        ord === o.order
                           ? {
                               borderColor: "var(--color-accent)",
                               background: "color-mix(in srgb, var(--color-accent) 7%, transparent)",
+                              fontWeight: 600,
                             }
                           : { borderColor: "var(--color-border)" }
                       }
                     >
-                      <span className="font-semibold">{o.label}</span>
-                      <span className="ml-1.5 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
-                        {o.hint}
-                      </span>
+                      {o.label}
                     </button>
                   ))}
                 </div>
+
+                {/* ② 共享：可多选（和顺序正交，怎么组都行） */}
+                <div className="mb-1 text-[11px] font-medium" style={{ color: "var(--color-muted)" }}>
+                  共享（可以不选、可以都选）
+                </div>
+                <div className="flex flex-col gap-1">
+                  {SHARE_OPTIONS.map((o) => {
+                    const on =
+                      o.key === "share_context" ? sharesContext(e) : sharesMemory(e);
+                    return (
+                      <button
+                        key={o.key}
+                        type="button"
+                        disabled={frozen}
+                        onClick={() =>
+                          patch(
+                            o.key === "share_context"
+                              ? { share_context: !on }
+                              : { share_memory: !on },
+                          )
+                        }
+                        className="flex items-center gap-2 rounded-[8px] border px-2.5 py-1.5 text-left text-[12.5px] disabled:opacity-50"
+                        style={
+                          on
+                            ? {
+                                borderColor: "color-mix(in srgb, var(--color-info) 55%, var(--color-border))",
+                                background: "color-mix(in srgb, var(--color-info) 7%, transparent)",
+                              }
+                            : { borderColor: "var(--color-border)" }
+                        }
+                      >
+                        <span
+                          className="grid h-[15px] w-[15px] shrink-0 place-items-center rounded-[4px] border text-[10px]"
+                          style={{
+                            borderColor: on ? "var(--color-info)" : "var(--color-border)",
+                            color: on ? "var(--color-info)" : "transparent",
+                          }}
+                        >
+                          ✓
+                        </span>
+                        <span className="font-semibold">{o.label}</span>
+                        <span className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                          {o.hint}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
                 <button
                   type="button"
                   disabled={frozen}
@@ -478,7 +557,7 @@ export function WorkflowCanvas({
                     });
                     setEdgeSel(null);
                   }}
-                  className="mt-2 w-full rounded-[8px] border px-2 py-1 text-[12px] disabled:opacity-50"
+                  className="mt-2.5 w-full rounded-[8px] border px-2 py-1 text-[12px] disabled:opacity-50"
                   style={{
                     borderColor: "color-mix(in srgb, var(--color-err) 30%, var(--color-border))",
                     color: "var(--color-err)",
@@ -582,7 +661,8 @@ export function WorkflowCanvas({
                 {!frozen && (
                   <button
                     type="button"
-                    title="删掉这个节点"
+                    title="把这一步从编排里移掉"
+                    aria-label="把这一步从编排里移掉"
                     onClick={(e) => {
                       e.stopPropagation();
                       onChange({
@@ -591,7 +671,7 @@ export function WorkflowCanvas({
                         edges: graph.edges.filter((x) => x.from !== n.nid && x.to !== n.nid),
                       });
                     }}
-                    className="shrink-0 rounded px-1 text-[12px] opacity-0 transition-opacity hover:opacity-100 group-hover:opacity-100"
+                    className="shrink-0 rounded border px-1.5 text-[12px] opacity-60 transition-opacity hover:opacity-100"
                     style={{ color: "var(--color-muted)" }}
                   >
                     ✕

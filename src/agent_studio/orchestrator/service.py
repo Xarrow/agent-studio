@@ -198,16 +198,15 @@ class Orchestrator:
         与 serial 的区别（也是它存在的理由）：serial 假定"上一步"只有一个，
         而画布允许分叉再汇合 —— 一个节点的输入是它所有上游按**各自关系**交来的东西。
 
-        四种关系（``orchestrator.graph.REL_*``）：
-          serial   交结论
-          parallel 不交、也不等（这条线不构成依赖，两者真并发）
-          context  交"上游看到的 + 上游说过的"（完整上下文，而不只是结论）
-          memory   交结论 **并且**把结论沉淀成下游的一条记忆
+        连线有**两个维度**（正交，可任意组合 —— 原来做成"四选一"是建模错误）：
+          时序：serial 等它跑完交结论 | parallel 同时开始、不构成依赖
+          共享：share_context 产出进同一个上下文池，组内谁先跑完都互相看得见
+                share_memory  产出沉淀成记忆，而且**双方**都能想起来
 
         某一路失败**不中断**：其它分支照跑，失败的进 partial —— 与 serial 的取舍一致
         （拿到大部分结果，比一个错误提示有用）。
         """
-        from .graph import REL_CONTEXT, REL_MEMORY, is_dependency, topo_layers
+        from .graph import is_dependency, shares_context, shares_memory, topo_layers
 
         task = self._task(spec)
         nodes: list[dict[str, Any]] = list(spec.get("nodes") or [])
@@ -225,13 +224,13 @@ class Orchestrator:
 
         for layer in topo_layers(nodes, edges):
             async def run_one(nid: str, idx: int) -> Run:
-                ups = [e for e in edges if e["to"] == nid and is_dependency(e)]
                 chunks: list[str] = []
-                for e in ups:
+                # ① 上游依赖（串行线）：把结论交过来
+                for e in [x for x in edges if x["to"] == nid and is_dependency(x)]:
                     text = outputs.get(e["from"], "")
                     if not text:
                         continue
-                    if e.get("rel") == REL_CONTEXT:
+                    if shares_context(e):
                         # 上下文共享：连它当时领到什么都一起交过去 ——
                         # 下游拿到的是一段"经过"，而不是一句结论
                         src_in = inputs.get(e["from"], "")
@@ -241,6 +240,23 @@ class Orchestrator:
                         )
                     else:
                         chunks.append(text)
+                # ② 共享伙伴（串行并行都算）：谁已经跑完了，就把它的上下文带上 ——
+                #    并行伙伴通常还没跑完，池子里就没有它，这符合"同时开始"；
+                #    而这一组**下游**的节点因此能同时看到组内所有人的产出。
+                partners = [
+                    x["from"] if x["to"] == nid else x["to"]
+                    for x in edges
+                    if shares_context(x) and nid in (x["from"], x["to"])
+                ]
+                for pid in dict.fromkeys(partners):
+                    if pid == nid or pid not in outputs:
+                        continue
+                    if any(x["to"] == nid and x["from"] == pid and is_dependency(x) for x in edges):
+                        continue  # ① 已经交过了，别重复
+                    chunks.append(
+                        f"【共享上下文 · {self._agent_name_of(run_of[pid])}】\n"
+                        f"它领到的任务：{inputs.get(pid, '')}\n它的产出：{outputs[pid]}"
+                    )
                 prev = "\n\n".join(chunks) or None
                 payload = self._compose(task, prev, idx)
                 inputs[nid] = payload
@@ -259,11 +275,15 @@ class Orchestrator:
                 run_of[nid] = res
                 if res.status == "ok" and (t := self._text(res)):
                     outputs[nid] = t
-                    # 「记忆」关系：产出落成下游的一条记忆（走 candidate 闸门，
-                    # 与自动沉淀同一套规矩 —— 自动但可控）
+                    # 「共享记忆」：产出沉淀成记忆，并且**双方都能想起来** ——
+                    # 只给下游存一条那叫"传递"，不叫共享。
                     for e in edges:
-                        if e["from"] == nid and e.get("rel") == REL_MEMORY:
-                            await self._deposit_memory(res, by_nid[e["to"]]["agent_id"], t)
+                        if not shares_memory(e) or nid not in (e["from"], e["to"]):
+                            continue
+                        for other in (e["from"], e["to"]):
+                            if other == nid or other not in by_nid:
+                                continue
+                            await self._deposit_memory(res, by_nid[other]["agent_id"], t)
             order += len(layer)
 
         # 最终结果 = **汇点**（没有下游的那些）的产出，按助手名分段
