@@ -1,15 +1,15 @@
 /**
- * Playground —— 保留的入口，直接进「多 Agent 编排」模式。
+ * Playground —— 历史路径，只为老书签不失效。
  *
- * 功能已合并进 components/ConversationWorkbench.tsx（和 /chat 是同一个工作台）。
- * 这个路径保留下来只为**老书签不失效**：它和 /chat 点一下「多 Agent 编排」
- * 是完全一样的界面。侧边栏已不再单独列它。
+ * 功能和 /chat 完全一样（同一个 ConversationConsole）：现在"编排"不是一个模式，
+ * 而是"参与者多于一个"的自然结果，所以这个路径没有自己的界面了。
+ * 侧边栏早已不再单独列它。
  */
 
-import { ConversationWorkbench } from "@/components/ConversationWorkbench";
+import { ConversationConsole } from "@/components/ConversationConsole";
 
-export const metadata = { title: "编排 · Agent Studio" };
+export const metadata = { title: "对话 · Agent Studio" };
 
 export default function PlaygroundPage() {
-  return <ConversationWorkbench initialMode="orchestration" />;
+  return <ConversationConsole />;
 }
