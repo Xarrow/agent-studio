@@ -48,7 +48,7 @@ const MODES: { value: string; label: string; desc: string; warn?: string }[] = [
     value: "default",
     label: "严格：每个操作都要确认",
     desc: "AgentScope 的原生默认，最保守。",
-    warn: "平台目前没有「运行中途点同意」的界面 —— 选这个，助手一遇到需要确认的操作就会停在那里等，你会看到它在说「我在等你的许可」。",
+    warn: "最保守：每个操作都会停下来问。停下来时对话/试跑/编排里会出现「允许 / 拒绝」，点一下才继续 —— 所以它不会卡死，只是需要你盯着。想省事就换成上面几档。",
   },
   {
     value: "bypass",

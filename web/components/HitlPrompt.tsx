@@ -23,24 +23,50 @@ import { useState } from "react";
 
 import { api } from "@/lib/api";
 
-type ToolCall = { id?: string; name?: string; input?: Record<string, unknown> };
+type ToolCall = { id?: string; name?: string; input?: unknown };
 
-/** 把待确认的调用提炼成"工具 + 关键参数"，用人话显示出来 */
+/** 事件里的 input 可能是**对象**，也可能是**JSON 字符串**（AgentScope 两种都给过） */
+function parseInput(raw: unknown): Record<string, unknown> | null {
+  if (raw && typeof raw === "object") return raw as Record<string, unknown>;
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
+    } catch {
+      return null; // 不是 JSON，交给调用方按原文显示
+    }
+  }
+  return null;
+}
+
+/**
+ * 把待确认的调用提炼成"工具 + 关键参数"，用人话显示出来。
+ *
+ * 坑：`input` 有时是 JSON **字符串**（`"{\"command\": \"mkdir -p x\"}"`）。
+ * 直接当对象用会得到 `0: {` 这种鬼东西 —— 必须先将它解析成对象。
+ */
 export function describeHitl(
   payload: Record<string, unknown> | null | undefined,
 ): { tool: string; detail: string }[] {
   const calls = (payload?.tool_calls as ToolCall[] | undefined) ?? [];
   return calls.map((tc) => {
-    const input = tc.input ?? {};
+    const tool = tc.name ?? "(未知工具)";
+    const input = parseInput(tc.input);
+    if (!input) {
+      // 解析不出对象就把原文摆出来（宁可丑，也别显示错）
+      const raw = typeof tc.input === "string" ? tc.input : JSON.stringify(tc.input ?? {});
+      return { tool, detail: raw.slice(0, 200) };
+    }
     // 参数里挑最像"要害"的那个显示；挑不到就把整个入参摊平
     const key =
-      ["command", "file_path", "path", "url", "query"].find((k) => typeof input[k] === "string") ??
-      Object.keys(input)[0];
+      ["command", "file_path", "path", "url", "query"].find(
+        (k) => typeof input[k] === "string",
+      ) ?? Object.keys(input)[0];
     const detail =
       key && input[key] !== undefined
         ? `${key}: ${String(input[key])}`
-        : JSON.stringify(input).slice(0, 160);
-    return { tool: tc.name ?? "(未知工具)", detail };
+        : JSON.stringify(input).slice(0, 200);
+    return { tool, detail };
   });
 }
 
