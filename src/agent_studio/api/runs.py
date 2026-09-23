@@ -174,8 +174,11 @@ async def get_trace(run_id: str, session: AsyncSession = Depends(get_session)) -
         )
     ).scalars().all()
 
+    agent = await session.get(Agent, run.agent_id)
+
     return RunTrace(
         run=to_read(run),
+        agent_name=agent.name if agent else None,
         events=[
             RunEventRead(seq=e.seq, type=e.type, ts=e.ts, payload=e.payload or {}) for e in events
         ],

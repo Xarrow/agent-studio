@@ -124,6 +124,44 @@ export function RunDetailDialog({
   const messages = (test?.messages as { role: string; content: string }[] | undefined) ?? [];
   const reply = (test?.reply as string | undefined) ?? "";
 
+  /**
+   * 展示用的值：一律优先用**拉回来的真实数据**，传入的 item 只当加载前的占位。
+   *
+   * 为什么这样写：这个弹框要从很多入口打开（对话页、试跑面板、编排、概览、
+   * 记忆页……），有的入口手里只有一个 run id，什么都不知道。如果概览依赖
+   * 调用方把字段准备齐全，每个入口都得先查一遍 —— 那是重复且易错的。
+   * 让弹框自己按 id 取全，调用方就只需要传一个 id。
+   */
+  const usage = (run?.usage ?? {}) as Record<string, number>;
+  const startedAt = isTest
+    ? ((test?.started_at as number | undefined) ?? item.at)
+    : (run?.started_at ?? item.at);
+  const status = isTest
+    ? ((test?.status as string | undefined) ?? item.status)
+    : (run?.status ?? item.status);
+  const duration = isTest
+    ? ((test?.duration_ms as number | null | undefined) ?? item.duration_ms)
+    : run?.ended_at != null && run?.started_at != null
+      ? run.ended_at - run.started_at
+      : item.duration_ms;
+  const tokensIn = isTest
+    ? Number(test?.tokens_in ?? item.tokens_in ?? 0)
+    : Number(usage.prompt_tokens ?? usage.input_tokens ?? item.tokens_in ?? 0);
+  const tokensOut = isTest
+    ? Number(test?.tokens_out ?? item.tokens_out ?? 0)
+    : Number(usage.completion_tokens ?? usage.output_tokens ?? item.tokens_out ?? 0);
+  const title = isTest
+    ? [test?.credential_name, test?.model].filter(Boolean).join(" · ") || item.title
+    : (trace?.agent_name ?? item.title ?? run?.agent_id ?? "");
+  const model = isTest
+    ? ((test?.model as string | undefined) ?? item.model)
+    : (((run?.definition_snapshot as Record<string, unknown> | undefined)?.model as
+        | Record<string, string>
+        | undefined)?.name ?? item.model);
+  const errorText = isTest
+    ? ((test?.error as string | null | undefined) ?? null)
+    : (run?.error ?? null);
+
   return (
     <div
       className="fixed inset-0 bg-[var(--color-overlay)] flex items-start justify-center p-4 z-50 overflow-y-auto"
@@ -146,7 +184,9 @@ export function RunDetailDialog({
               >
                 {KIND_LABEL[item.kind]}
               </span>
-              <h2 className="text-[16px] font-medium truncate">{item.title}</h2>
+              <h2 className="text-[16px] font-medium truncate">
+                {title || <span className="text-[var(--color-muted)]">加载中…</span>}
+              </h2>
             </div>
             <p className="text-[11.5px] text-[var(--color-muted)] mt-1 mono">{item.id}</p>
           </div>
@@ -162,42 +202,40 @@ export function RunDetailDialog({
         {/* ── 概览：一屏之内看清这条是什么 ─────────────────────── */}
         <div className="card p-3.5 bg-[var(--color-surface-2)]">
           <Row label="时间">
-            {new Date(item.at).toLocaleString()}
-            <span className="text-[var(--color-muted)]"> · {fmt.relative(item.at)}</span>
+            {new Date(startedAt).toLocaleString()}
+            <span className="text-[var(--color-muted)]"> · {fmt.relative(startedAt)}</span>
           </Row>
           <Row label="状态">
-            <span
-              className="mono"
-              style={{ color: STATUS_STYLE[item.status] ?? "var(--color-text)" }}
-            >
-              {item.status}
+            <span className="mono" style={{ color: STATUS_STYLE[status] ?? "var(--color-text)" }}>
+              {status}
             </span>
-            {item.duration_ms != null && (
-              <span className="text-[var(--color-muted)]"> · 耗时 {fmt.ms(item.duration_ms)}</span>
+            {duration != null && (
+              <span className="text-[var(--color-muted)]"> · 耗时 {fmt.ms(duration)}</span>
             )}
           </Row>
           {isTest ? (
             <>
-              <Row label="模型">{item.model || "—"}</Row>
+              <Row label="模型">{model || "—"}</Row>
               <Row label="端点">{(test?.base_url as string) ?? "—"}</Row>
             </>
           ) : (
             <>
-              <Row label="助手">{item.title}</Row>
-              {item.model && <Row label="模型">{item.model}</Row>}
+              <Row label="助手">{title || "—"}</Row>
+              {model && <Row label="模型">{model}</Row>}
               {item.subtitle && <Row label="上下文">{item.subtitle}</Row>}
+              {run?.session_id && <Row label="会话">多轮对话</Row>}
             </>
           )}
           <Row label="Tokens">
-            {item.tokens_in || item.tokens_out
-              ? `输入 ${item.tokens_in} · 输出 ${item.tokens_out}`
+            {tokensIn || tokensOut
+              ? `输入 ${tokensIn} · 输出 ${tokensOut}`
               : loading
                 ? "…"
                 : "未记录"}
           </Row>
-          {item.error && (
+          {errorText && (
             <Row label="错误">
-              <span className="text-[var(--color-err)] break-all">{item.error}</span>
+              <span className="text-[var(--color-err)] break-all">{errorText}</span>
             </Row>
           )}
         </div>
@@ -329,5 +367,36 @@ export function RunDetailDialog({
         )}
       </div>
     </div>
+  );
+}
+
+
+/**
+ * 便捷入口：手里只有一个 run id 时用这个。
+ *
+ * 详情全部由弹框自己按 id 拉取，调用方不需要准备任何字段 ——
+ * 所以「哪里点开详情」这件事在各页面都能写成一行，行为也天然一致。
+ */
+export function RunDetailById({ runId, onClose }: { runId: string; onClose: () => void }) {
+  return (
+    <RunDetailDialog
+      item={{
+        kind: "preview",
+        id: runId,
+        at: Date.now(),
+        duration_ms: null,
+        status: "ok",
+        title: "",
+        subtitle: null,
+        agent_id: null,
+        credential_id: null,
+        model: null,
+        tokens_in: 0,
+        tokens_out: 0,
+        summary: null,
+        error: null,
+      }}
+      onClose={onClose}
+    />
   );
 }

@@ -133,6 +133,8 @@ export interface Run {
   session_id?: string | null;
   /** 会话内第几轮（从 1 开始） */
   turn_index?: number | null;
+  /** 执行时的助手定义快照（冻结的，保证这次执行可复现） */
+  definition_snapshot?: Record<string, unknown> | null;
 }
 
 export interface RunEvent {
@@ -204,6 +206,8 @@ export interface ActivityList {
 
 export interface RunTrace {
   run: Run;
+  /** 助手名 —— 弹框从任意入口打开都要能显示"这是谁跑的" */
+  agent_name?: string | null;
   events: RunEvent[];
   llm_calls: LlmCall[];
   tool_calls: ToolCallRow[];

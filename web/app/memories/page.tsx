@@ -5,6 +5,7 @@ import { api, fmt } from "@/lib/api";
 import type { Agent, Memory, MemoryStats } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
 import { MemoryCopyDialog } from "@/components/MemoryCopyDialog";
+import { RunIdLink } from "@/components/RunIdLink";
 
 const KIND_LABEL: Record<string, string> = {
   fact: "事实",
@@ -262,13 +263,11 @@ export default function MemoriesPage() {
                     {m.source_run_id && (
                       <>
                         <span>·</span>
-                        <a
+                        <RunIdLink
+                          runId={m.source_run_id}
+                          label={m.source_run_id}
                           className="hover:underline"
-                          style={{ color: "var(--color-accent)" }}
-                          href={`/runs/${m.source_run_id}`}
-                        >
-                          {m.source_run_id}
-                        </a>
+                        />
                       </>
                     )}
                   </div>
@@ -413,13 +412,11 @@ export default function MemoriesPage() {
                       {m.source_run_id && (
                         <>
                           <span>·</span>
-                          <a
+                          <RunIdLink
+                            runId={m.source_run_id}
+                            label={`来源 ${m.source_run_id.slice(0, 12)}…`}
                             className="hover:underline"
-                            style={{ color: "var(--color-accent)" }}
-                            href={`/runs/${m.source_run_id}`}
-                          >
-                            来源 {m.source_run_id.slice(0, 12)}…
-                          </a>
+                          />
                         </>
                       )}
                       {m.status !== "active" && (

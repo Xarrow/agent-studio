@@ -16,6 +16,7 @@ import { api, fmt, STATUS_STYLE } from "@/lib/api";
 import type { RunEvent, Session } from "@/lib/types";
 import { useFeedback } from "./ui/feedback";
 import { Hint, HINTS } from "@/components/ui/hint";
+import { RunDetailById } from "@/components/RunDetailDialog";
 
 /** 事件类型 → 展示样式（12 类统一事件） */
 const EVENT_KIND: Record<string, { label: string; color: string; icon: string }> = {
@@ -148,6 +149,8 @@ export function RunPanel({
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [runId, setRunId] = useState<string | null>(null);
+  // 最近执行的详情用弹框看 —— 试跑时正在看的对话和事件流不该被跳页冲掉
+  const [detailRun, setDetailRun] = useState<string | null>(null);
   const [status, setStatus] = useState("");
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [view, setView] = useState<"chat" | "table" | "raw">("chat");
@@ -482,10 +485,10 @@ export function RunPanel({
         ) : (
           <div className="space-y-1">
             {recent.map((r) => (
-              <Link
+              <button
                 key={r.id}
-                href={`/runs/${r.id}`}
-                className="block p-2 rounded-md hover:bg-[var(--color-surface-2)] transition-colors"
+                onClick={() => setDetailRun(r.id)}
+                className="block w-full text-left p-2 rounded-md hover:bg-[var(--color-surface-2)] transition-colors"
               >
                 <div className="flex items-center gap-2">
                   <span className={`text-[11px] ${STATUS_STYLE[r.status] ?? ""}`}>●</span>
@@ -495,10 +498,11 @@ export function RunPanel({
                   {fmt.relative(r.started_at)}
                   {r.usage?.total_tokens ? ` · ${r.usage.total_tokens} tokens` : ""}
                 </div>
-              </Link>
+              </button>
             ))}
           </div>
         )}
+        {detailRun && <RunDetailById runId={detailRun} onClose={() => setDetailRun(null)} />}
       </aside>
     </div>
   );

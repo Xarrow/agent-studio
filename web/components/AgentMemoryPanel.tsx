@@ -82,6 +82,72 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
     }
   };
 
+  /**
+   * 页内直接改一条记忆。
+   *
+   * 为什么不让用户跳到「记忆」页去改：改一条内容是很小的动作，跳页的代价却是
+   * **整个助手配置页的状态全丢**（改到一半的表单、正在看的试跑结果）。所以
+   * 这里就地弹一个输入框 —— 用的是记忆页同一套 fb.prompt，行为一致。
+   */
+  const editMemory = async (m: Memory) => {
+    const next = await fb.prompt({
+      title: "编辑记忆内容",
+      description: "这段内容会作为「已知信息」注入到 System Prompt。",
+      label: "内容",
+      multiline: true,
+      defaultValue: m.content,
+      validate: (v) => (v.trim() ? null : "内容不能为空"),
+      confirmText: "保存",
+    });
+    if (next === null || next.trim() === m.content) return;
+    try {
+      await api.updateMemory(m.id, { content: next.trim() });
+      fb.success("已更新");
+      await load();
+    } catch (e) {
+      fb.error("更新失败", e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const removeMemory = async (m: Memory) => {
+    const ok = await fb.confirm({
+      title: "删除这条记忆？",
+      description: "删掉后它不会再被想起。此操作不可撤销。",
+      details: [m.content],
+      danger: true,
+      confirmText: "删除",
+    });
+    if (!ok) return;
+    try {
+      await api.deleteMemory(m.id);
+      fb.success("已删除");
+      await load();
+    } catch (e) {
+      fb.error("删除失败", e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  /** 直接给这个助手加一条记忆（不用再跳去「记忆」页选归属） */
+  const addMemory = async () => {
+    const text = await fb.prompt({
+      title: "记一条新的事",
+      description: "写给这个助手看的「已知信息」，比如它的工作习惯、你的偏好。",
+      label: "内容",
+      multiline: true,
+      placeholder: "例如：回复尽量简短，先给结论。",
+      validate: (v) => (v.trim() ? null : "内容不能为空"),
+      confirmText: "保存",
+    });
+    if (text === null || !text.trim()) return;
+    try {
+      await api.createMemory({ content: text.trim(), agent_id: agentId });
+      fb.success("已记住");
+      await load();
+    } catch (e) {
+      fb.error("保存失败", e instanceof Error ? e.message : String(e));
+    }
+  };
+
   const patch = async (p: Partial<MemoryPolicy>) => {
     setBusy(true);
     try {
@@ -144,12 +210,12 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
               </span>
             )}
           </span>
+          {/* 上面已能就地增删改；这个链接只留给"跨助手批量管理"这种确实是另一件事的场景 */}
           <Link
-            className="text-[12px] hover:underline"
-            style={{ color: "var(--color-accent)" }}
+            className="text-[12px] text-[var(--color-muted)] hover:underline"
             href={`/memories?agent=${agentId}`}
           >
-            查看 / 编辑 →
+            管理全部记忆 →
           </Link>
           {!memoryOn && (
             <span className="text-[11.5px] text-[var(--color-muted)]">
@@ -161,7 +227,13 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
 
       {/* ── 它自己的记忆 ───────────────────────────────────────── */}
       <section className="card p-4">
-        <h3 className="text-[13px] font-medium mb-3">它自己的记忆（{own.length}）</h3>
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <h3 className="text-[13px] font-medium">它自己的记忆（{own.length}）</h3>
+          {/* 就地加一条 —— 不必跳去「记忆」页再选归属 */}
+          <button className="btn btn-sm" disabled={busy} onClick={() => void addMemory()}>
+            + 记一条
+          </button>
+        </div>
         {own.length === 0 ? (
           <p className="text-[12.5px] text-[var(--color-muted)]">
             还没有。和它聊几次会自动沉淀，或到「记忆」页添加一条并归给它。
@@ -175,6 +247,23 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
                   <span>{KIND_LABEL[m.kind] ?? m.kind}</span>
                   <span>·</span>
                   <span>被用过 {m.hits} 次</span>
+                  {/* 就地改 / 删 —— 不跳页，助手配置页的状态不丢 */}
+                  <button
+                    className="ml-auto hover:underline"
+                    style={{ color: "var(--color-accent)" }}
+                    disabled={busy}
+                    onClick={() => void editMemory(m)}
+                  >
+                    编辑
+                  </button>
+                  <button
+                    className="hover:underline"
+                    style={{ color: "var(--color-err)" }}
+                    disabled={busy}
+                    onClick={() => void removeMemory(m)}
+                  >
+                    删除
+                  </button>
                 </div>
               </div>
             ))}

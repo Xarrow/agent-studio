@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { RunIdLink } from "@/components/RunIdLink";
 import { api, fmt, STATUS_STYLE } from "@/lib/api";
 import { Hint, HINTS } from "@/components/ui/hint";
 
@@ -239,9 +240,7 @@ export default async function HomePage() {
                     {runs.map((r) => (
                       <tr key={r.id} className="border-t border-[var(--color-border)]">
                         <td className="py-1.5">
-                          <Link href={`/runs/${r.id}`} className="mono text-[var(--color-accent)]">
-                            {r.id.slice(4, 12)}
-                          </Link>
+                          <RunIdLink runId={r.id} />
                         </td>
                         <td className={`${STATUS_STYLE[r.status] ?? ""}`}>{r.status}</td>
                         <td className="text-right mono">{r.usage?.llm_calls ?? 0}</td>

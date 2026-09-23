@@ -17,6 +17,8 @@ import { api, fmt } from "@/lib/api";
 import type { Agent, RunEvent, Session } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
 import { RunTimeline, eventsToSteps, summarize } from "@/components/ui/run-timeline";
+import { RunDetailById } from "@/components/RunDetailDialog";
+import { AgentDetailDialog } from "@/components/AgentDetailDialog";
 
 /** 流式渲染期间的一条临时消息 */
 interface LiveMsg {
@@ -31,6 +33,11 @@ export function ChatConsole() {
   const [agentId, setAgentId] = useState<string>("");
   const [sessions, setSessions] = useState<Session[]>([]);
   const [sessionId, setSessionId] = useState<string>("");
+  // 执行详情用弹框看，不跳页 —— 聊天上下文（输入框内容、滚动位置）不该
+  // 因为「想看一眼这轮到底怎么回事」而丢掉。
+  const [detailRun, setDetailRun] = useState<string | null>(null);
+  /** 正在浮层里配置的助手（从对话页直接打开，不离开对话） */
+  const [configAgent, setConfigAgent] = useState<string | null>(null);
 
   /** 已落库的历史消息 */
   const [history, setHistory] = useState<
@@ -303,6 +310,9 @@ export function ChatConsole() {
 
   return (
     <div className="h-full flex flex-col lg:flex-row">
+      {configAgent && (
+        <AgentDetailDialog agentId={configAgent} onClose={() => setConfigAgent(null)} />
+      )}
       {/* ── 会话列表 ─────────────────────────────────────────── */}
       <aside className="lg:w-64 shrink-0 border-b lg:border-b-0 lg:border-r border-[var(--color-border)] bg-[var(--color-surface)] flex flex-col max-h-[38vh] lg:max-h-none">
         <div className="p-3 border-b border-[var(--color-border)]">
@@ -375,20 +385,29 @@ export function ChatConsole() {
           </span>
           <div className="ml-auto flex items-center gap-3">
             {history.length > 0 && history[history.length - 1].run_id && (
-              <Link
-                className="text-[11.5px] hover:underline whitespace-nowrap"
-                style={{ color: "var(--color-accent)" }}
-                href={`/runs/${history[history.length - 1].run_id}`}
-              >
-                查看详情 →
-              </Link>
+              <>
+                <button
+                  className="text-[11.5px] hover:underline whitespace-nowrap"
+                  style={{ color: "var(--color-accent)" }}
+                  onClick={() => setDetailRun(history[history.length - 1].run_id ?? null)}
+                >
+                  查看详情 →
+                </button>
+                {detailRun && (
+                  <RunDetailById runId={detailRun} onClose={() => setDetailRun(null)} />
+                )}
+              </>
             )}
-            <Link
-              className="text-[11.5px] text-[var(--color-muted)] hover:text-[var(--color-text)] whitespace-nowrap"
-              href={agentId ? `/agents/${agentId}` : "/agents"}
-            >
-              配置
-            </Link>
+            {/* 「配置」用整屏浮层打开，不跳页 —— 正在聊的时候去改配置，
+                回来时对话、输入框、滚动位置都还在（跳页就全丢了） */}
+            {agentId && (
+              <button
+                className="text-[11.5px] text-[var(--color-muted)] hover:text-[var(--color-text)] whitespace-nowrap"
+                onClick={() => setConfigAgent(agentId)}
+              >
+                配置
+              </button>
+            )}
           </div>
         </header>
 
@@ -490,6 +509,8 @@ function Bubble({
   const [open, setOpen] = useState(false);
   const [events, setEvents] = useState<RunEvent[] | null>(null);
   const [loadingEv, setLoadingEv] = useState(false);
+  /** 完整记录弹框（气泡内自己持有 —— 它是独立组件，不是 ChatConsole 的作用域） */
+  const [detailOpen, setDetailOpen] = useState(false);
 
   const hasTrace = !isUser && !!runId && !streaming;
 
@@ -546,12 +567,15 @@ function Bubble({
                   </span>
                 )}
               </button>
-              <Link
-                href={`/runs/${runId}`}
+              <button
+                onClick={() => setDetailOpen(true)}
                 className="text-[11.5px] text-[var(--color-muted)] hover:text-[var(--color-text)]"
               >
                 完整记录 →
-              </Link>
+              </button>
+              {detailOpen && runId && (
+                <RunDetailById runId={runId} onClose={() => setDetailOpen(false)} />
+              )}
             </div>
 
             {open && (

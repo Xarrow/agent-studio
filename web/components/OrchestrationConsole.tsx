@@ -30,6 +30,7 @@ import type {
 } from "@/lib/types";
 import { RunTimeline, eventsToSteps, summarize } from "@/components/ui/run-timeline";
 import { AgentTray, OrchestrationCanvas } from "@/components/OrchestrationCanvas";
+import { RunDetailById } from "@/components/RunDetailDialog";
 import { useFeedback } from "@/components/ui/feedback";
 
 const STEP_STATUS: Record<string, { label: string; color: string }> = {
@@ -72,6 +73,8 @@ export function OrchestrationConsole() {
   const [snapshot, setSnapshot] = useState<OrchestrationStatusEvent | null>(null);
   const [events, setEvents] = useState<Record<string, RunEvent[]>>({});
   const [openRun, setOpenRun] = useState<Record<string, boolean>>({});
+  // 某一步的执行详情用弹框看 —— 编排正在跑，跳页会看不到进度
+  const [detailRun, setDetailRun] = useState<string | null>(null);
   const esRef = useRef<EventSource | null>(null);
 
   /** 历史编排（进页面就能看到之前跑过什么，而不是空白） */
@@ -473,12 +476,12 @@ export function OrchestrationConsole() {
                           {open ? "▾" : "▸"} 它的操作
                         </button>
                       )}
-                      <Link
+                      <button
                         className="text-[11.5px] text-[var(--color-muted)] hover:text-[var(--color-text)]"
-                        href={`/runs/${s.run_id}`}
+                        onClick={() => setDetailRun(s.run_id)}
                       >
                         完整记录 →
-                      </Link>
+                      </button>
                     </div>
                   </div>
 
@@ -548,6 +551,8 @@ export function OrchestrationConsole() {
           )}
         </section>
       )}
+
+      {detailRun && <RunDetailById runId={detailRun} onClose={() => setDetailRun(null)} />}
     </div>
   );
 }

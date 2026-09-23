@@ -353,6 +353,9 @@ class RunTrace(BaseModel):
     """Run 的完整可观测视图（瀑布图数据源）。"""
 
     run: RunRead
+    #: 助手名 —— 弹框从任意入口打开都要能显示"这是谁跑的"，
+    #: 而 RunRead 里只有 agent_id，所以在这里带上名字，省得前端再查一次
+    agent_name: str | None = None
     events: list[RunEventRead]
     llm_calls: list[LlmCallRead]
     tool_calls: list[ToolCallRead]
