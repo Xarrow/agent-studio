@@ -30,6 +30,45 @@ import type {
 } from "./types";
 
 /** 内网/本机地址判定：这些主机名直连后端端口，不绕公网 */
+/**
+ * 访问口令（公网访问平台时需要）。
+ *
+ * 为什么口令存在前端、而不是让浏览器弹原生框：
+ *   平台分两个域名（页面 dev.zeit.ccwu.cc / API dev-api.zeit.ccwu.cc）。
+ *   浏览器的原生 Basic 认证弹窗是**按域名各弹一次**的，而且跨域 fetch
+ *   **不会**自动带上缓存的口令 —— 靠浏览器原生弹窗根本走不通。
+ *   所以改成：自己存、自己带，用户只需在页面上输一次。
+ *
+ * 内网直连（192.168.2.11:3000）后端不校验口令，本地开发完全不受影响。
+ */
+const TOKEN_KEY = "studio_access_token";
+
+/** 认证失效时广播出去，由 AccessGate 弹输入框 */
+export const AUTH_REQUIRED_EVENT = "studio:auth-required";
+
+export function getAccessToken(): string {
+  if (typeof window === "undefined") return "";
+  return window.localStorage.getItem(TOKEN_KEY) ?? "";
+}
+
+export function setAccessToken(token: string): void {
+  if (typeof window === "undefined") return;
+  if (token) window.localStorage.setItem(TOKEN_KEY, token);
+  else window.localStorage.removeItem(TOKEN_KEY);
+}
+
+/**
+ * 给 SSE 地址带上口令。
+ *
+ * **EventSource 无法自定义请求头** —— 所以流式接口（对话、Playground、Runs）
+ * 只能通过查询参数传口令，否则这些页面会全部 401 断流。
+ */
+export function withToken(url: string): string {
+  const t = getAccessToken();
+  if (!t) return url;
+  return `${url}${url.includes("?") ? "&" : "?"}token=${encodeURIComponent(t)}`;
+}
+
 function isLanHost(host: string): boolean {
   if (!host) return false;
   if (host === "localhost" || host.endsWith(".local")) return true;
@@ -81,14 +120,21 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = getAccessToken();
   const res = await fetch(`${apiBase()}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(init?.headers ?? {}),
     },
     cache: "no-store",
   });
+
+  // 口令失效/未提供 —— 广播出去让 AccessGate 弹输入框，而不是抛一个看不懂的错
+  if (res.status === 401 && typeof window !== "undefined") {
+    window.dispatchEvent(new Event(AUTH_REQUIRED_EVENT));
+  }
 
   if (res.status === 204) return undefined as T;
 
@@ -360,10 +406,10 @@ export const api = {
     post<{ aborted: number; status: string }>(`/api/orchestrations/${id}/abort`),
   /** 编排的实时流（聚合所有子步骤的事件） */
   orchestrationStreamUrl: (id: string) =>
-    `${apiBase()}/api/orchestrations/stream/${id}`,
+    withToken(`${apiBase()}/api/orchestrations/stream/${id}`),
 
   // SSE 事件流地址（单次执行）
-  streamUrl: (runId: string) => `${apiBase()}/api/runs/stream/${runId}`,
+  streamUrl: (runId: string) => withToken(`${apiBase()}/api/runs/stream/${runId}`),
 
   /* ----------------------------- 会话（多轮） ----------------------------- */
   sessions: (agentId?: string) =>

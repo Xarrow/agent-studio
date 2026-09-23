@@ -49,6 +49,63 @@ logger = logging.getLogger(__name__)
 #: 这里单独定义是为了不让 runner 反向依赖 api 层）
 RUN_TERMINAL: frozenset[str] = frozenset({"ok", "error", "aborted"})
 
+#: 在途（尚未收尾）的状态。这些状态的记录**必须**有人在内存里推进它。
+RUN_IN_FLIGHT: frozenset[str] = frozenset({"pending", "running", "waiting_hitl"})
+
+
+async def reap_orphan_runs(boot_ms: int) -> int:
+    """把「本进程启动前就处于在途状态」的执行记录判为中断。
+
+    为什么必须做
+    ------------
+    执行状态存在数据库里，但**推进它的协程在内存里**。服务一重启（部署、
+    崩溃、手动重启），那些记录仍停在 ``running`` / ``waiting_hitl``，而协程
+    已经不存在了 —— 于是陷入死结：
+
+      · Runs 页永远转圈（● running 一直亮，哪怕已经过去十几个小时）
+      · 「中断」按钮无效：它要操作内存里那个早已消失的任务
+      · 「删除」被拒：界面对在途状态一律不许删（"运行中的记录需先中断"）
+      → **卡死，在界面上谁也清不掉**。重启一次服务就中招，真实可复现。
+
+    判定依据（保守、安全）
+    ----------------------
+    ``started_at`` 早于本进程启动时间的在途记录，其协程必然已经不存在 ——
+    不可能还有人在推进它，所以标记为中断是准确的，不会误伤刚提交的新执行。
+    ``waiting_hitl`` 也一并回收：人工确认靠内存里的事件唤醒，重启后同样失效
+    （留着只会是一条永远等不到回应、又删不掉的记录）。
+
+    返回回收条数。
+    """
+    async with SessionLocal() as session:
+        rows = (
+            (
+                await session.execute(
+                    select(Run).where(
+                        Run.status.in_(RUN_IN_FLIGHT),
+                        Run.started_at.is_not(None),
+                        Run.started_at < boot_ms,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if not rows:
+            return 0
+        now = now_ms()
+        for r in rows:
+            was = r.status
+            r.status = "error"
+            r.pending_hitl = None
+            r.ended_at = now
+            r.error = (
+                f"执行被中断：服务在它运行期间重启了（原状态 {was}）。"
+                "这条记录由启动时的自动回收标记，现在可以正常删除。"
+            )
+        await session.commit()
+        logger.warning("回收 %d 条因服务重启而中断的执行记录", len(rows))
+        return len(rows)
+
 
 def query_text(run_input: Any) -> str:
     """把 run_input 转成用于召回打分的查询文本。"""

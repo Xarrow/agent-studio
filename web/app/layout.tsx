@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Nav } from "@/components/Nav";
 import { FeedbackProvider } from "@/components/ui/feedback";
+import { AccessGate } from "@/components/AccessGate";
 
 export const metadata: Metadata = {
   title: "Agent Studio",
@@ -29,6 +30,8 @@ export default function RootLayout({
           会让 React 报 hydration 不匹配。这里显式忽略顶层差异。 */}
       <body className="antialiased" suppressHydrationWarning>
         <FeedbackProvider>
+          {/* 公网访问的口令浮层：收到 401 时自动弹出（内网直连不会出现） */}
+          <AccessGate />
           <div className="flex h-screen overflow-hidden">
             <Nav />
             {/* pt-14：移动端顶部栏是 fixed，需要给内容留出高度（≥768px 无顶栏） */}
