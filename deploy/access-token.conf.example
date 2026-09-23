@@ -1,0 +1,23 @@
+# 公网访问口令 —— systemd drop-in 模板
+#
+# 用法（api 与 web **必须用同一个值**）：
+#   sudo mkdir -p /etc/systemd/system/agent-studio-api.service.d
+#   sudo cp deploy/access-token.conf.example \
+#           /etc/systemd/system/agent-studio-api.service.d/10-access-token.conf
+#   sudo sed -i 's/CHANGE_ME/你的口令/' \
+#           /etc/systemd/system/agent-studio-api.service.d/10-access-token.conf
+#   sudo chmod 600 /etc/systemd/system/agent-studio-api.service.d/10-access-token.conf
+#   # web 服务同样处理（目录换成 agent-studio-web.service.d）
+#   sudo systemctl daemon-reload
+#   sudo systemctl restart agent-studio-api agent-studio-web
+#
+# 留空 / 不建这个文件 = 不启用口令（保持内网无认证的原始行为）。
+#
+# 注意：口令本身不放仓库，只放这个模板。
+
+[Service]
+Environment=STUDIO_ACCESS_TOKEN=CHANGE_ME
+
+# 可选：指定隧道对端（= cloudflared 所在机器）。默认 192.168.2.7。
+# 只有来自这些地址的请求会被要求口令，内网直连一律放行。
+# Environment=STUDIO_TUNNEL_PEERS=192.168.2.7
