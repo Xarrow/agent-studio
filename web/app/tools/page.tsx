@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, fmt } from "@/lib/api";
 import type { Tool } from "@/lib/types";
 import { SkillsPanel } from "@/components/SkillsPanel";
+import { McpPanel } from "@/components/McpPanel";
 import { useFeedback } from "@/components/ui/feedback";
 
 export default function ToolsPage() {
@@ -18,7 +19,7 @@ export default function ToolsPage() {
   const [argsInput, setArgsInput] = useState<Record<string, string>>({});
   const [kindFilter, setKindFilter] = useState("");
   /** 这一页管三件事：工具 / Skills /（以后的）MCP —— 页签切换，不跳页 */
-  const [tab, setTab] = useState<"tools" | "skills">("tools");
+  const [tab, setTab] = useState<"tools" | "skills" | "mcp">("tools");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -142,6 +143,7 @@ export default function ToolsPage() {
           [
             ["tools", "工具"],
             ["skills", "Skills"],
+            ["mcp", "MCP"],
           ] as const
         ).map(([k, label]) => (
           <button
@@ -165,6 +167,8 @@ export default function ToolsPage() {
       </div>
 
       {tab === "skills" && <SkillsPanel embedded />}
+
+      {tab === "mcp" && <McpPanel embedded />}
 
       {tab === "tools" && (
         <>

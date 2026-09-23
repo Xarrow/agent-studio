@@ -69,6 +69,8 @@ export interface AgentDefinition {
   middlewares: Record<string, unknown>[];
   limits: Limits;
   runtime_options: Record<string, Record<string, unknown>>;
+  /** 挂哪几台 MCP 服务器（存 id）。工具清单由探测得到，这里只记"用哪几台" */
+  mcp_servers?: string[];
   /** 这个助手自己的工作目录（沙箱内的子目录名；空 = 平台共用那个）。**同时是权限边界** */
   workspace?: string;
 }
@@ -568,4 +570,50 @@ export interface WorkflowRunBrief {
   started_at: number;
   ended_at: number | null;
   step_count: number;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   MCP（工具协议）—— 服务器注册表
+   ───────────────────────────────────────────────────────────────────────────── */
+
+export interface McpToolInfo {
+  name: string;
+  description: string;
+}
+
+export interface McpServer {
+  id: string;
+  name: string;
+  /** stdio = 本地起进程；http = 远端服务 */
+  transport: "stdio" | "http";
+  command: string;
+  args: string[];
+  url: string;
+  env: Record<string, string>;
+  headers: Record<string, string>;
+  enabled: boolean;
+  /** 最近一次探测到的工具（由探测写入，不手填） */
+  tools: McpToolInfo[];
+  last_probe_ok: boolean;
+  last_probe_at: number;
+  last_probe_error: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export type McpServerInput = {
+  name: string;
+  transport: "stdio" | "http";
+  command: string;
+  args: string[];
+  url: string;
+  env: Record<string, string>;
+  headers: Record<string, string>;
+  enabled: boolean;
+};
+
+export interface McpProbeResult {
+  ok: boolean;
+  tools: McpToolInfo[];
+  error: string;
 }

@@ -16,6 +16,9 @@ import type {
   MemoryExtractResult,
   MemoryPolicy,
   MemoryStats,
+  McpProbeResult,
+  McpServer,
+  McpServerInput,
   Orchestration,
   OrchestrationDetail,
   OrchStep,
@@ -174,6 +177,19 @@ const put = <T>(p: string, body?: unknown) =>
 const del = <T = void,>(p: string) => request<T>(p, { method: "DELETE" });
 
 export const api = {
+  /* ── MCP 服务器（注册 / 探测 / 绑定）────────────────────────────────── */
+  mcpServers: (limit = 100) => request<McpServer[]>(`/api/mcp?limit=${limit}`),
+  createMcpServer: (body: McpServerInput) => post<McpServer>("/api/mcp", body),
+  updateMcpServer: (id: string, body: Partial<McpServerInput>) =>
+    request<McpServer>(`/api/mcp/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+  deleteMcpServer: (id: string) =>
+    request<void>(`/api/mcp/${id}`, { method: "DELETE" }),
+  /** 重新探测已保存的服务器，结果（工具清单/成败）会写进去 */
+  probeMcpServer: (id: string) =>
+    post<McpServer>(`/api/mcp/${id}/probe`, {}),
+  /** 保存前先试连（不落库）—— 让"连不上"在保存之前就暴露 */
+  probeMcpDraft: (body: McpServerInput) => post<McpProbeResult>("/api/mcp/probe", body),
+
   // 健康
   health: () =>
     request<{ status: string; version: string; runtimes: string[] }>(

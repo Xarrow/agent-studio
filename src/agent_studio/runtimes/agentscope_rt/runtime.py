@@ -38,6 +38,7 @@ from .compile import (
     BUILTIN_TOOLS,
     PROVIDER_CREDENTIALS,
     build_agent,
+    build_mcp_client,
 )
 from .normalize import is_final_message, normalize_event
 
@@ -59,12 +60,16 @@ class AgentScopeCompiled(CompiledAgent):
         agent: Any,
         model: Any,
         work_dir: str | None = None,
+        mcp_clients: list[Any] | None = None,
     ) -> None:
         self.agent_id = agent_id
         self.runtime = "agentscope"
         self.agent = agent
         self.model = model
         self.work_dir = work_dir
+        #: 这次运行开的 MCP 连接 —— 必须在 dispose 时关掉，否则每跑一次
+        #: 就漏一个子进程（stdio server）或一条长连接，跑几十次机器就满了。
+        self.mcp_clients: list[Any] = list(mcp_clients or [])
         #: 最后一次运行的最终消息（由 run 填充，runner 读取后写 run.output）
         self.last_output: dict[str, Any] | None = None
         self._disposed = False
@@ -73,6 +78,14 @@ class AgentScopeCompiled(CompiledAgent):
         if self._disposed:
             return
         self._disposed = True
+        for client in self.mcp_clients:
+            try:
+                close = getattr(client, "close", None)
+                if callable(close):
+                    await _maybe_await(close())
+            except Exception as exc:  # pragma: no cover
+                logger.debug("关闭 MCP 连接失败: %s", exc)
+        self.mcp_clients = []
         for obj in (self.model, self.agent):
             for attr in ("aclose", "close", "shutdown"):
                 fn = getattr(obj, attr, None)
@@ -273,12 +286,55 @@ class AgentScopeRuntime(AgentRuntime):
         skills_dir = work_dir / "skills" if work_dir else None
         context: TurnContext | None = ctx.get("context")
 
+        # ── MCP：把挂在这个助手上的服务器的工具**探测回来**并进 toolkit ──
+        # 连接在这里开、在 dispose 里关（stdio 会起子进程，漏关就跑一次漏一个）。
+        # 失败只告警不中断：一台 MCP 连不上，不该让整个助手不可用。
+        mcp_clients: list[Any] = []
+        mcp_tools: list[Any] = []
+        server_ids = [str(x) for x in (getattr(definition, "mcp_servers", None) or [])]
+        if server_ids:
+            try:
+                from ...db import SessionLocal
+                from ...models import McpServer
+
+                async with SessionLocal() as session:
+                    for sid in server_ids:
+                        row = await session.get(McpServer, sid)
+                        if row is None or not row.enabled:
+                            continue
+                        client = build_mcp_client(
+                            {
+                                "name": row.name,
+                                "transport": row.transport,
+                                "command": row.command,
+                                "args": list(row.args or []),
+                                "url": row.url,
+                                "env": dict(row.env or {}),
+                                "headers": dict(row.headers or {}),
+                            }
+                        )
+                        if row.transport != "http":
+                            await client.connect()
+                        got = await client.list_tools()
+                        mcp_tools.extend(got)
+                        mcp_clients.append(client)
+                        logger.info("MCP「%s」装载 %d 个工具", row.name, len(got))
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("MCP 工具装载失败（这次照常跑，只是少那部分工具）: %s", exc)
+                for c in mcp_clients:
+                    try:
+                        await c.close()
+                    except Exception:  # pragma: no cover
+                        pass
+                mcp_clients, mcp_tools = [], []
+
         agent, model = build_agent(
             definition,
             api_key,
             specs,
             skills_dir,
             memory_text=context.memory_text if context else None,
+            mcp_tools=mcp_tools,
         )
 
         # 多轮会话：把历史消息预置进 Agent。
@@ -293,6 +349,7 @@ class AgentScopeRuntime(AgentRuntime):
             agent=agent,
             model=model,
             work_dir=str(work_dir),
+            mcp_clients=mcp_clients,
         )
 
     @staticmethod

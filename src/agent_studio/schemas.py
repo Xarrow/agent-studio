@@ -72,6 +72,9 @@ class AgentDefinition(BaseModel):
     middlewares: list[dict[str, Any]] = Field(default_factory=list)
     limits: Limits = Field(default_factory=Limits)
     runtime_options: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    #: 挂哪几个 MCP 服务器（存的是 McpServer 的 id）。工具清单由**探测**得到，
+    #: 这里只记"用哪几台"，改服务器不用动助手。
+    mcp_servers: list[str] = Field(default_factory=list)
     #: 这个助手自己的工作目录（平台沙箱内的**子目录名**；空 = 用平台那个共用的）。
     #: 它同时是**权限的边界**：权限 scope 里"工作目录内直接放行"指的就是这里，
     #: 越出这个目录的操作才需要人工确认。只允许名字，不允许绝对路径 / ``..``
@@ -857,3 +860,58 @@ class WorkflowRunRequest(BaseModel):
     task: str
     #: 覆盖超时（不填用助手自己的）
     timeout_s: int | None = None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MCP（工具协议）—— 服务器注册表
+# ─────────────────────────────────────────────────────────────────────────────
+class McpServerBase(BaseModel):
+    name: str = ""
+    #: "stdio"（本地起进程）| "http"（远端 streamable-http / sse）
+    transport: Literal["stdio", "http"] = "stdio"
+    command: str = ""
+    args: list[str] = Field(default_factory=list)
+    url: str = ""
+    env: dict[str, str] = Field(default_factory=dict)
+    headers: dict[str, str] = Field(default_factory=dict)
+    enabled: bool = True
+
+
+class McpServerCreate(McpServerBase):
+    pass
+
+
+class McpServerUpdate(BaseModel):
+    """改名/改连接/启用停用都走它；字段缺省 = 不改。"""
+
+    name: str | None = None
+    transport: Literal["stdio", "http"] | None = None
+    command: str | None = None
+    args: list[str] | None = None
+    url: str | None = None
+    env: dict[str, str] | None = None
+    headers: dict[str, str] | None = None
+    enabled: bool | None = None
+
+
+class McpToolInfo(BaseModel):
+    """探测到的工具。名字和说明**都来自服务器**，不让人手填（手填一定漂移）。"""
+
+    name: str
+    description: str = ""
+
+
+class McpServerRead(McpServerBase):
+    id: str
+    tools: list[McpToolInfo] = Field(default_factory=list)
+    last_probe_ok: bool = False
+    last_probe_at: int = 0
+    last_probe_error: str = ""
+    created_at: int = 0
+    updated_at: int = 0
+
+
+class McpProbeResult(BaseModel):
+    ok: bool
+    tools: list[McpToolInfo] = Field(default_factory=list)
+    error: str = ""

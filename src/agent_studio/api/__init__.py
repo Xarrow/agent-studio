@@ -6,6 +6,7 @@ from . import (
     agents,
     credentials,
     database,
+    mcp,
     memories,
     openai_compat,
     orchestrations,
@@ -25,6 +26,7 @@ api_router.include_router(tools.router)         # /api/tools
 api_router.include_router(skills.router)        # /api/skills
 api_router.include_router(runs.router)          # /api/runs
 api_router.include_router(sessions.router)      # /api/sessions（多轮会话）
+api_router.include_router(mcp.router)          # /api/mcp（MCP 服务器注册与探测）
 api_router.include_router(memories.router)      # /api/memories（长期记忆）
 api_router.include_router(memories.agent_router)  # /api/agents/{id}/memories + memory-policy
 api_router.include_router(orchestrations.router)  # /api/orchestrations（一次多助手协作的执行记录）

@@ -12,7 +12,7 @@ import time
 import uuid
 from typing import Any
 
-from sqlalchemy import JSON, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, JSON, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -541,3 +541,38 @@ class Workflow(Base):
     #: 只服务"最近"列表：用它排序，不用 created_at（改过的应该浮上来）
     updated_at: Mapped[int] = mapped_column(Integer, default=now_ms, index=True)
     created_at: Mapped[int] = mapped_column(Integer, default=now_ms)
+
+
+class McpServer(Base):
+    """一个 MCP 服务器（注册表条目）。
+
+    为什么要单独建表而不是塞进 Agent：MCP 服务器是**平台级资源** ——
+    一个服务器注册一次，多个助手挂它。反过来写（每个助手各存一份连接信息）
+    就会出现同一台服务器配了十遍、改一次漏九处的老问题。
+
+    工具清单是**探测的结果**（``tools``），不是手填的 —— 手填一定会和实际漂移。
+    """
+
+    __tablename__ = "mcp_server"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("mcp_"))
+    name: Mapped[str] = mapped_column(String(120), default="")
+    #: "stdio" | "http"
+    transport: Mapped[str] = mapped_column(String(16), default="stdio")
+    #: stdio：启动命令与参数（如 npx -y @modelcontextprotocol/server-filesystem /data）
+    command: Mapped[str] = mapped_column(String(400), default="")
+    args: Mapped[list[Any]] = mapped_column(JSON, default=list)
+    #: http：端点 URL（streamable-http 或 sse）
+    url: Mapped[str] = mapped_column(String(500), default="")
+    #: 额外环境变量 / 请求头（值里可以引用 .env 的变量名，不落明文）
+    env: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    headers: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    #: 最近一次探测到的工具：[{name, description}] —— 由探测写入，不手改
+    tools: Mapped[list[Any]] = mapped_column(JSON, default=list)
+    #: 最近一次探测的结果：ok / error + 说明（界面上要能看出"这个连不上了"）
+    last_probe_ok: Mapped[bool] = mapped_column(Boolean, default=False)
+    last_probe_at: Mapped[int] = mapped_column(BigInteger, default=0)
+    last_probe_error: Mapped[str] = mapped_column(String(600), default="")
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+    updated_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)

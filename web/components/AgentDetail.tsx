@@ -9,6 +9,7 @@ import type {
   AgentDefinition,
   Credential,
   Issue,
+  McpServer,
   Memory,
   MemoryPolicy,
   Provider,
@@ -55,6 +56,8 @@ export function AgentDetail({
   const [creds, setCreds] = useState<Credential[]>([]);
   const [tools, setTools] = useState<Tool[]>([]);
   const [skills, setSkills] = useState<Skill[]>([]);
+  /** 平台里已注册的 MCP 服务器（助手从这里勾选要挂哪些） */
+  const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
   const [runtimes, setRuntimes] = useState<RuntimeCapabilities[]>([]);
   const [issues, setIssues] = useState<Issue[]>([]);
   const [saving, setSaving] = useState(false);
@@ -110,12 +113,13 @@ export function AgentDetail({
 
   const load = useCallback(async () => {
     try {
-      const [a, p, c, t, s, r] = await Promise.all([
+      const [a, p, c, t, s, m, r] = await Promise.all([
         api.agent(agentId),
         api.providers(),
         api.credentials(),
         api.tools(),
         api.skills(),
+        api.mcpServers().catch(() => [] as McpServer[]),
         api.runtimes(),
       ]);
       setAgent(a);
@@ -125,6 +129,7 @@ export function AgentDetail({
       setCreds(c);
       setTools(t);
       setSkills(s);
+      setMcpServers(m);
       setRuntimes(r);
       setErr(null);
     } catch (e) {
@@ -292,6 +297,12 @@ export function AgentDetail({
         ? def.tools.filter((t) => t.ref !== id)
         : [...def.tools, { ref: id, enabled: true }],
     });
+  };
+
+  /** 勾/取消一台 MCP 服务器 —— 清单由探测得到，这里只记"挂哪几台" */
+  const toggleMcp = (id: string) => {
+    const cur = def.mcp_servers ?? [];
+    patch({ mcp_servers: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] });
   };
 
   const toggleSkill = (id: string) => {
@@ -644,6 +655,60 @@ export function AgentDetail({
                 }
               />
             </div>
+          </section>
+
+          {/* MCP：挂哪几台外部工具服务（在「工具 → MCP」里注册与探测） */}
+          <section className="card p-4">
+            <h2 className="text-[14px] font-medium mb-3 flex items-center gap-1.5">
+              <Hint text="MCP 是一套标准协议：别人写好的工具服务，用这个协议接进来就能给助手用。挂上之后，它有哪些工具由服务器说了算（平台负责探测）。">
+                MCP 工具
+              </Hint>
+              （{(def.mcp_servers ?? []).length} 已选 / {mcpServers.length} 已注册）
+            </h2>
+            {mcpServers.length === 0 ? (
+              <p className="text-[12.5px] text-[var(--color-muted)]">
+                还没有注册 MCP 服务器。去{" "}
+                <a href="/tools" className="underline" style={{ color: "var(--color-accent)" }}>
+                  工具 → MCP
+                </a>{" "}
+                注册一台（本地的 npx 服务或远端地址都行）。
+              </p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {mcpServers.map((m) => {
+                  const on = (def.mcp_servers ?? []).includes(m.id);
+                  return (
+                    <label
+                      key={m.id}
+                      className="flex cursor-pointer items-start gap-2.5 rounded-[8px] border p-2.5"
+                      style={{
+                        borderColor: on ? "var(--color-accent)" : "var(--color-border)",
+                        background: on
+                          ? "color-mix(in srgb, var(--color-accent) 5%, transparent)"
+                          : "transparent",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        className="mt-0.5"
+                        checked={on}
+                        onChange={() => toggleMcp(m.id)}
+                      />
+                      <span className="min-w-0">
+                        <span className="block text-[13px] font-medium">{m.name}</span>
+                        <span className="block text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                          {!m.enabled
+                            ? "已停用（挂上也不会加载）"
+                            : m.last_probe_ok
+                              ? `${m.tools.length} 个工具`
+                              : "还没探测成功，去工具页点「重新探测」"}
+                        </span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
           </section>
 
           <section className="card p-4">

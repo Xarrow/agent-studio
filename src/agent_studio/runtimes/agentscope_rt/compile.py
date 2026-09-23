@@ -225,8 +225,17 @@ def build_tools(specs: list[ToolSpec]) -> list[Any]:
 # --------------------------------------------------------------------------- #
 # Toolkit / Skill
 # --------------------------------------------------------------------------- #
-def build_toolkit(specs: list[ToolSpec], skills_dir: Path | None = None):
-    """构造 Toolkit（工具 + Skill 的唯一注册源）。"""
+def build_toolkit(
+    specs: list[ToolSpec],
+    skills_dir: Path | None = None,
+    extra_tools: list[Any] | None = None,
+):
+    """构造 Toolkit（工具 + Skill 的唯一注册源）。
+
+    ``extra_tools`` 是已经构造好的工具对象（目前只有 MCP 的）——
+    它们的定义不在平台里，而是在远端服务器上，所以只能"探测回来直接塞进去"，
+    不能走 ``ToolSpec`` 那条路（那条路要求平台先知道工具长什么样）。
+    """
     from agentscope.tool import Toolkit
 
     skills_or_loaders = []
@@ -238,7 +247,10 @@ def build_toolkit(specs: list[ToolSpec], skills_dir: Path | None = None):
         except Exception as exc:  # pragma: no cover
             logger.warning("Skill loader 初始化失败: %s", exc)
 
-    return Toolkit(tools=build_tools(specs), skills_or_loaders=skills_or_loaders)
+    return Toolkit(
+        tools=[*build_tools(specs), *(extra_tools or [])],
+        skills_or_loaders=skills_or_loaders,
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -384,12 +396,45 @@ def build_configs(defn: AgentDefinition):
     )
 
 
+def build_mcp_client(server: dict[str, Any]) -> Any:
+    """按注册信息造一个 MCP 客户端（**还没连**）。
+
+    stdio 必须 stateful（要显式 connect/close）；http 用 stateless
+    （每次调用临时开会话，省掉长连接的生命周期管理）。
+    """
+    from agentscope.mcp import HttpMCPConfig, MCPClient, StdioMCPConfig
+
+    # 名字会变成工具名前缀（mcp__<name>__<tool>）并进 LLM 的函数定义，
+    # 只能 ASCII 标识符 —— 与 api/mcp.py 的 safe_mcp_name 同一套规则。
+    raw_name = str(server.get("name") or "mcp")
+    name = "".join(c if (c.isascii() and (c.isalnum() or c in "_-")) else "-" for c in raw_name).strip("-")[:48] or "mcp"
+    if server.get("transport") == "http":
+        return MCPClient(
+            name=name,
+            is_stateful=False,
+            mcp_config=HttpMCPConfig(
+                url=str(server.get("url") or ""),
+                headers={str(k): str(v) for k, v in (server.get("headers") or {}).items()} or None,
+            ),
+        )
+    return MCPClient(
+        name=name,
+        is_stateful=True,
+        mcp_config=StdioMCPConfig(
+            command=str(server.get("command") or ""),
+            args=[str(a) for a in (server.get("args") or [])] or None,
+            env={str(k): str(v) for k, v in (server.get("env") or {}).items()} or None,
+        ),
+    )
+
+
 def build_agent(
     defn: AgentDefinition,
     api_key: str | None,
     tools: list[ToolSpec],
     skills_dir: Path | None = None,
     memory_text: str | None = None,
+    mcp_tools: list[Any] | None = None,
 ):
     """编译出 ``(agent, model)`` —— 二者都需在 dispose 时收尾。
 
@@ -400,7 +445,7 @@ def build_agent(
     from agentscope.agent import Agent
 
     model = build_model(defn.model, api_key)
-    toolkit = build_toolkit(tools, skills_dir)
+    toolkit = build_toolkit(tools, skills_dir, extra_tools=mcp_tools)
     model_cfg, context_cfg, react_cfg, injection_cfg = build_configs(defn)
 
     system_prompt = defn.system_prompt or ""
