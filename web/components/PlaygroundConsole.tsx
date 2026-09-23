@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFeedback } from "@/components/ui/feedback";
 import { WorkflowCanvas, flattenLayers, type NodeState } from "@/components/WorkflowCanvas";
+import { StepExecPanel, type StepBrief } from "@/components/StepExecPanel";
 import { api } from "@/lib/api";
 import type {
   Agent,
@@ -72,6 +73,8 @@ export function PlaygroundConsole() {
   const [outputs, setOutputs] = useState<Record<string, string>>({});
   const [hitl, setHitl] = useState<{ nid: string; runId: string; payload: Record<string, unknown> | null } | null>(null);
   const [showLog, setShowLog] = useState(false);
+  /** 哪些步骤的过程被收起了（默认全展开：2~3 个助手正好一屏看全） */
+  const [closedSteps, setClosedSteps] = useState<Record<string, boolean>>({});
   const esRef = useRef<EventSource | null>(null);
   const nidRef = useRef(1);
 
@@ -82,7 +85,17 @@ export function PlaygroundConsole() {
         const [ags, wfs] = await Promise.all([api.agents(), api.workflows(30)]);
         setAgents(ags);
         setList(wfs);
-        if (wfs.length) loadWorkflow(wfs[0]);
+        if (wfs.length) {
+          loadWorkflow(wfs[0]);
+          // 顺手把这份设计稿**最近一次执行**带出来 —— 一进来就能看到上次每个助手
+          // 干了什么（思考/工具/输出），不用先跑一遍才有东西看。
+          const lastRuns = await api.workflowRuns(wfs[0].id, 1).catch(() => []);
+          const last = lastRuns[0];
+          if (last?.id) {
+            setOrcId(last.id);          // 列表里的 id 就是编排 id
+            subscribe(last.id);
+          }
+        }
       } catch {
         /* 初次进来拉不到就留空画布，不打断 */
       }
@@ -273,6 +286,7 @@ export function PlaygroundConsole() {
       try {
         const d = await api.orchestration(id);
         setDetail(d);
+        if ((d.steps ?? []).length) setShowLog(true);   // 有步骤就直接摊开，不用再点一次
         syncFromDetail(d);
         // 有步骤在等确认 → 把待确认内容取回来，显示在**那个节点**上
         const waiting = (d.steps ?? []).find((s) => s.status === "waiting_hitl");
@@ -633,34 +647,21 @@ export function PlaygroundConsole() {
                 {running ? "已发起，等第一个步骤开始…" : "这次编排还没有步骤"}
               </div>
             )}
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-2.5">
               {(detail?.steps ?? [])
                 .slice()
                 .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0))
-                .map((s) => (
-                  <div key={s.run_id} className="flex items-start gap-2.5 text-[12.5px]">
-                    <span className="w-[70px] shrink-0 truncate text-right" style={{ color: "var(--color-muted)" }}>
-                      {s.agent_name}
-                    </span>
-                    <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">
-                      {s.output_text || s.input_text || "…"}
-                    </span>
-                    <span
-                      className="shrink-0 font-mono text-[11px]"
-                      style={{
-                        color:
-                          s.status === "ok"
-                            ? "var(--color-ok)"
-                            : s.status === "error"
-                              ? "var(--color-err)"
-                              : s.status === "waiting_hitl"
-                                ? "var(--color-warn)"
-                                : "var(--color-muted)",
-                      }}
-                    >
-                      {s.status}
-                    </span>
-                  </div>
+                .map((s, i) => (
+                  <StepExecPanel
+                    key={s.run_id}
+                    index={i}
+                    step={s as unknown as StepBrief}
+                    live={running && (s.status === "running" || s.status === "pending")}
+                    open={!closedSteps[s.run_id]}
+                    onToggle={() =>
+                      setClosedSteps((prev) => ({ ...prev, [s.run_id]: !prev[s.run_id] }))
+                    }
+                  />
                 ))}
             </div>
             {finalText && (
