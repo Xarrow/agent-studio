@@ -249,6 +249,38 @@ body {
     flex: 0 0 auto;
     width: auto;
   }
+  /* ── 助手栏在手机上的显示优化 ───────────────────────────────────────
+     上一版只把 .pg-rail 自己改成横排，**忘了它里面那层列表还是 flex-col**，
+     结果 4 个助手在横向栏里上下叠成 ~230px 高，把画布挤掉一大块 —— 这次补上。 */
+  .pg-rail-list {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 6px;
+    padding: 0 0 0 2px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    /* 一次滑一张，手指停在哪张就对齐哪张 */
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+  }
+  .pg-rail-title {
+    flex: 0 0 auto;
+    padding: 0 4px 0 0;
+  }
+  /* 卡片 → chip：横排、扁一点、触摸目标 ≥40px */
+  .pg-rail-card {
+    flex: 0 0 auto;
+    min-height: 40px;
+    padding: 6px 10px;
+    gap: 6px;
+    scroll-snap-align: start;
+  }
+  /* 手机上 chip 里只留 头像 + 名字；模型名收起（触屏没地方，
+     完整信息仍在 title 里，不影响可达性） */
+  .pg-rail-card > span:last-child > span:last-child {
+    display: none;
+  }
   /* 顶栏换行，别把运行键挤没 */
   .pg-topbar {
     flex-wrap: wrap;

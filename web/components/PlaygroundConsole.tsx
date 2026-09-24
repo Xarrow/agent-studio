@@ -920,20 +920,20 @@ export function PlaygroundConsole() {
           title={running ? "运行中不能改结构 —— 跑完再拖" : undefined}
         >
           <div
-            className="px-3.5 pt-3 pb-2 text-[12px] font-semibold"
+            className="pg-rail-title px-3.5 pt-3 pb-2 text-[12px] font-semibold"
             style={{ color: "var(--color-muted)" }}
             title="拖到空白处 = 新开一条；拖到某个助手上 = 接在它后面；点一下 = 直接加一条。"
           >
             助手
           </div>
-          <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-auto px-2.5 pb-3">
+          <div className="pg-rail-list flex min-h-0 flex-1 flex-col gap-1.5 overflow-auto px-2.5 pb-3">
             {agents.map((a) => (
               <div
                 key={a.id}
                 onPointerDown={(e) => startAgentDrag(e, a.id, a.name)}
                 // touchAction:none —— 手指按在这张卡上时不要让它变成页面滚动，
                 // 否则 pointermove 会被浏览器截走，拖拽在手机上就废了
-                className="flex cursor-grab touch-none items-center gap-2 rounded-[8px] border px-2.5 py-2 active:cursor-grabbing"
+                className="pg-rail-card flex cursor-grab touch-none items-center gap-2 rounded-[8px] border px-2.5 py-2 active:cursor-grabbing"
                 style={{
                   borderColor: draggingAgentId === a.id ? "var(--color-accent)" : "var(--color-border)",
                   background: "var(--color-surface)",
