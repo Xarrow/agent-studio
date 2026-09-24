@@ -164,7 +164,7 @@ type Props = {
   onPreset?: (kind: "single" | "serial" | "fan") => void;
 };
 
-const NODE_W = 232;
+const NODE_W = 240;
 
 /**
  * 连线上的**两个维度** —— 它们**正交**，可以任意组合。
@@ -279,8 +279,10 @@ export function WorkflowCanvas({
   /* ── 布局：先量高度，再按层排版（位置全是算出来的，没有一处硬编码） ── */
   const layout = useMemo(() => {
     const layers = topoLayers(graph.nodes, graph.edges);
-    const GAP_X = 76;
-    const GAP_Y = 20;
+    // 间距/尺寸对齐 Dify 的 workflow 常量（NODE_WIDTH 240 / X_OFFSET 60 / Y_OFFSET 39）——
+    // 直接读它源码拿的数，不是凭观感调的
+    const GAP_X = 60;
+    const GAP_Y = 39;
     const PAD = 24;
     /** 两端的卡宽度（任务卡 / 结论卡）—— 它们排在助手节点这一列的左边和右边 */
     // 卡片宽度：要能让「任务卡 + 一层节点 + 结论卡」在 864px 画布内同屏放下
@@ -1167,7 +1169,7 @@ export function WorkflowCanvas({
               }}
               onMouseEnter={() => peekIn(n.nid)}
               onMouseLeave={() => peekOut()}
-              className={`wf-node group absolute rounded-[12px] border ${
+              className={`wf-node group absolute rounded-[15px] border shadow-xs hover:shadow-lg ${
                 lv && st === "run" ? "node-run" : st === "ask" ? "node-ask" : ""
               }`}
               style={{
@@ -1176,14 +1178,16 @@ export function WorkflowCanvas({
                 background: "var(--color-surface)",
                 borderColor: isTarget ? "var(--color-accent)" : isSel ? "var(--color-accent)" : meta.border,
                 borderStyle: isTarget ? "dashed" : st === "stale" ? "dashed" : "solid",
+                // 常态阴影交给 Tailwind 的 shadow-xs / hover:shadow-lg（与 Dify 一致）；
+                // 只有"选中"时才用内联覆盖（加一圈强调色描边环）
                 boxShadow: isSel
                   ? "0 0 0 3px color-mix(in srgb, var(--color-accent) 14%, transparent), 0 6px 18px rgba(20,24,31,.10)"
-                  : "0 1px 2px rgba(20,24,31,.06), 0 2px 6px rgba(20,24,31,.05)",
+                  : undefined,
                 cursor: frozen ? "default" : "grab",
               }}
             >
               <div
-                className="flex items-center gap-2 border-b px-2.5 py-2"
+                className="flex items-center gap-2 border-b px-3 pt-3 pb-2"
                 style={{ borderColor: "var(--color-border)" }}
               >
                 {/* 节点上只留三样：**序号、名字、一行摘要**。
@@ -1195,7 +1199,7 @@ export function WorkflowCanvas({
                 {/* 图标方块：参考 Dify 的 block —— 用**状态色**染底（跑=蓝、成=绿、败=红），
                     一眼从颜色就知道这一步处在什么状态，比小圆点醒目得多 */}
                 <span
-                  className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-[9px] text-[13px] font-semibold"
+                  className="grid h-[28px] w-[28px] shrink-0 place-items-center rounded-[8px] text-[12.5px] font-semibold"
                   style={{
                     background: `color-mix(in srgb, ${meta.dot} 14%, var(--color-surface))`,
                     color: meta.text,
