@@ -574,6 +574,35 @@ export function WorkflowCanvas({
     setInsertAt(null);
   };
 
+  /** 富文本（Markdown）插入工具 —— 参考开源 workflow 的输入框：
+   *  B/I 包裹选区，列表/引用/代码给整行加前缀。不引第三方编辑器，自己包一层就够用。 */
+  const wrapSel = (pre: string, post = pre) => {
+    const el = taskBoxRef.current;
+    if (!el) return;
+    const a = el.selectionStart ?? 0;
+    const b = el.selectionEnd ?? 0;
+    const sel = taskValue.slice(a, b) || "文字";
+    const next = taskValue.slice(0, a) + pre + sel + post + taskValue.slice(b);
+    onTaskValue?.(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(a + pre.length, a + pre.length + sel.length);
+    });
+  };
+  const prefixLine = (mark: string) => {
+    const el = taskBoxRef.current;
+    if (!el) return;
+    const a = el.selectionStart ?? 0;
+    const lineStart = taskValue.lastIndexOf("\n", Math.max(0, a - 1)) + 1;
+    const next = taskValue.slice(0, lineStart) + mark + taskValue.slice(lineStart);
+    onTaskValue?.(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = a + mark.length;
+      el.setSelectionRange(pos, pos);
+    });
+  };
+
   /** 任务卡：点一下就地变输入框（这是方案 C —— 不再有页面底部的发令区） */
   const [editTask, setEditTask] = useState(false);
   const taskBoxRef = useRef<HTMLTextAreaElement>(null);
@@ -851,6 +880,34 @@ export function WorkflowCanvas({
 
           {editTask ? (
             <>
+              {/* 工具栏：加粗 / 斜体 / 列表 / 引用 / 代码（
+                  写的还是 Markdown，非编辑态会按排版渲染出来） */}
+              <div className="mt-1 flex items-center gap-0.5">
+                {(
+                  [
+                    ["B", "加粗", () => wrapSel("**")],
+                    ["I", "斜体", () => wrapSel("*")],
+                    ["≔", "列表", () => prefixLine("- ")],
+                    ["❝", "引用", () => prefixLine("> ")],
+                    ["{}", "代码", () => wrapSel("`")],
+                  ] as const
+                ).map(([label, tip, act]) => (
+                  <button
+                    key={label}
+                    type="button"
+                    title={tip}
+                    onMouseDown={(ev) => ev.preventDefault()}
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      act();
+                    }}
+                    className="rounded-[5px] px-1.5 py-0.5 text-[11.5px] hover:bg-[var(--color-surface)]"
+                    style={{ color: "var(--color-muted)" }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
               <textarea
                 ref={taskBoxRef}
                 autoFocus
@@ -860,6 +917,12 @@ export function WorkflowCanvas({
                 onKeyDown={(e) => {
                   if (e.key === "Escape") {
                     setEditTask(false);
+                    return;
+                  }
+                  // ⌘/Ctrl+B、⌘/Ctrl+I 与工具栏等效
+                  if ((e.metaKey || e.ctrlKey) && (e.key === "b" || e.key === "i")) {
+                    e.preventDefault();
+                    wrapSel(e.key === "b" ? "**" : "*");
                     return;
                   }
                   if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -881,12 +944,13 @@ export function WorkflowCanvas({
                 Enter 运行 · Shift+Enter 换行
               </div>
             </>
+          ) : taskText.trim() ? (
+            <div className="mt-0.5 max-h-[150px] overflow-auto">
+              <Markdown text={taskText} />
+            </div>
           ) : (
-            <div
-              className="mt-0.5 line-clamp-4 whitespace-pre-wrap break-words text-[12px] leading-[1.6]"
-              style={taskText.trim() ? undefined : { color: "var(--color-muted)" }}
-            >
-              {taskText.trim() || "点一下写任务 —— 写完按 Enter 就跑"}
+            <div className="mt-0.5 text-[12px] leading-[1.6]" style={{ color: "var(--color-muted)" }}>
+              点一下写任务 —— 写完按 Enter 就跑
             </div>
           )}
 

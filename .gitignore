@@ -59,3 +59,5 @@ Thumbs.db
 # 环境配置（含本机数据库连接信息与加密后的密码，不入库）
 data/database.json
 data/database.json.bak-*
+# 全量重建时的旧构建备份（mv 出来的，留作回滚点，不入库）
+web/.next-old-*
