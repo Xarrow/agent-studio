@@ -61,6 +61,16 @@ export function middleware(req: NextRequest) {
             // 刻意不设 httpOnly：前端 JS 要读它去调 API
           });
         }
+        // ⚠️ HTML 不许被浏览器/中间层缓存。
+        // 为什么要加：这个页面在开发期**反复重建**，每次重建都会换掉 chunk 的文件名哈希。
+        // 浏览器若还揣着旧 HTML，就会去要一个已经不存在的 chunk → 报
+        // "This page couldn't load" / "Failed to load chunk"。
+        // 实测过：服务端全 200、所有 chunk 都在，用户那头照样报错 —— 就是这一条。
+        // 注意**只对页面导航**用 no-store；/_next/static 下的 chunk 是内容哈希命名的，
+        // 必须继续长缓存（缓存它们才是对的，长期不失效）。
+        if (!req.nextUrl.pathname.startsWith("/_next/")) {
+          res.headers.set("Cache-Control", "no-store, must-revalidate");
+        }
         return res;
       }
     } catch {
@@ -71,8 +81,9 @@ export function middleware(req: NextRequest) {
   return new NextResponse("需要访问口令", {
     status: 401,
     headers: {
+      // 认证挑战同样不能缓存：否则换了口令、浏览器还拿着旧的 401
+      "Cache-Control": "no-store, must-revalidate",
       "WWW-Authenticate": 'Basic realm="Agent Studio", charset="UTF-8"',
-      "Cache-Control": "no-store",
     },
   });
 }
