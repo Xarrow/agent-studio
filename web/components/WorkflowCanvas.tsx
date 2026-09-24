@@ -259,6 +259,11 @@ export function WorkflowCanvas({
   const [ghost, setGhost] = useState<string | null>(null);
   /** 窄屏：层改纵向排列（手机上横向滚动看不全一张图） */
   const [narrow, setNarrow] = useState(false);
+  /** 任务卡的实测高度 —— 窄屏排布要按它让位。
+   *  为什么不能写死：任务卡现在是"输入框常驻"，高度随内容变（原来 96 够，现在不够，
+   *  写死会让节点压在任务卡上）。用 ResizeObserver 跟着量。 */
+  const taskCardRef = useRef<HTMLDivElement>(null);
+  const [taskH, setTaskH] = useState(0);
   /** 选中的连线（点一下那条线 → 就地选它们之间的关系） */
   const [edgeSel, setEdgeSel] = useState<{ from: string; to: string } | null>(null);
 
@@ -274,6 +279,20 @@ export function WorkflowCanvas({
     apply();
     mq.addEventListener("change", apply);
     return () => mq.removeEventListener("change", apply);
+  }, []);
+
+  /* 任务卡高度实测：内容/换行/字号变化都会影响它，所以用 ResizeObserver */
+  useEffect(() => {
+    const el = taskCardRef.current;
+    if (!el) return;
+    const measure = () => {
+      const h = Math.round(el.getBoundingClientRect().height);
+      setTaskH((prev) => (Math.abs(prev - h) > 1 ? h : prev));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
   }, []);
 
   /* ── 布局：先量高度，再按层排版（位置全是算出来的，没有一处硬编码） ── */
@@ -299,14 +318,17 @@ export function WorkflowCanvas({
     let maxX = 0;
     let maxY = 0;
     if (narrow) {
-      let y = PAD + 96;                 // 窄屏：给顶部的任务卡让一行
+      // 窄屏：任务卡在最上，中间节点**纵向逐个排**，结论最下。
+      // 1) 让位高度改成**实测**（taskH）：任务卡现在是"输入框常驻"，比原来高得多，
+      //    写死 96 会让节点压在任务卡上（实测就是这么坏掉的）。
+      // 2) 同层节点不再横排 —— 手机宽 390，两个节点横排就是 490，必然横向溢出。
+      let y = PAD + (taskH || 190) + 14;
       layers.forEach((ids) => {
-        const rowH = Math.max(...ids.map(hOf));
-        ids.forEach((nid, i) => {
-          pos[nid] = { x: PAD + i * (NODE_W + 16), y };
+        ids.forEach((nid) => {
+          pos[nid] = { x: PAD, y };
           maxX = Math.max(maxX, pos[nid].x + NODE_W + PAD);
+          y += hOf(nid) + 30;
         });
-        y += rowH + 30;
         maxY = Math.max(maxY, y);
       });
     } else {
@@ -330,9 +352,14 @@ export function WorkflowCanvas({
     let w = Math.max(maxX, 320);
     let h = Math.max(maxY, 260);
     if (!narrow) w = Math.max(w, concAt.x + CONC_W + PAD);
-    else h = Math.max(h, concAt.y + 150);
+    else {
+      // 窄屏：三张卡都从 PAD 竖排，宽度只需容下**最宽的一张**，
+      // 不能用 maxX（它累计了 NODE_W + PAD），否则手机会横向滚动。
+      w = Math.max(CARD_W, NODE_W, CONC_W) + PAD * 2;
+      h = Math.max(h, concAt.y + 150);
+    }
     return { pos, w, h, layers, taskAt, concAt, CARD_W, CONC_W };
-  }, [graph.nodes, graph.edges, heights, narrow, taskText, finalText]);
+  }, [graph.nodes, graph.edges, heights, narrow, taskText, finalText, taskH]);
 
   /* 高度变化要在**绘制前**同步进布局，否则连线会先画在旧位置上再跳一下 */
   useLayoutEffect(() => {
@@ -901,6 +928,7 @@ export function WorkflowCanvas({
             运行键（也就是流程的启动键）就长在起点上 —— 符合"一条线从这头流到那头"的直觉。
             Enter 运行 · Shift+Enter 换行 · Esc 收起（与原来全站一致）。 */}
         <div
+          ref={taskCardRef}
           className="task-card absolute rounded-[10px] border px-2.5 py-2"
           style={{
             transform: `translate(${layout.taskAt.x}px, ${layout.taskAt.y}px)`,
