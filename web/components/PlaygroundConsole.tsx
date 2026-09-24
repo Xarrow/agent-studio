@@ -107,6 +107,17 @@ export function PlaygroundConsole() {
    *  统一在这里轮询，避免画布和详情各拉一遍。 */
   const [traces, setTraces] = useState<Record<string, TraceData>>({});
   const tracesRef = useRef<Record<string, TraceData>>({});
+  /** 任务输入框：自适应高度（任务常常不止一行，硬塞一行会看不全） */
+  const taskRef = useRef<HTMLTextAreaElement>(null);
+  const grow = (el: HTMLTextAreaElement | null) => {
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 132)}px`;
+  };
+  useEffect(() => {
+    grow(taskRef.current); // 恢复上次没跑完的任务时，高度也要跟着回来
+  }, [task]);
+
   /** 顶栏那个「名字 ⌄」的小菜单（切换最近编排 / 保存改动都收在这里） */
   const [wfMenu, setWfMenu] = useState(false);
 
@@ -693,40 +704,6 @@ export function PlaygroundConsole() {
           )}
         </div>
 
-        <div className="ml-auto flex items-center gap-2">
-          <select
-            value={modeOverride}
-            onChange={(e) => {
-              setModeOverride(e.target.value);
-              setDirty(true);
-            }}
-            className={`rounded-[8px] border px-2 py-1.5 text-[12px] transition-opacity ${
-              running ? "opacity-40" : ""
-            }`}
-            style={{
-              borderColor: "var(--color-border)",
-              background: "var(--color-surface-2)",
-              color: "var(--color-muted)",
-            }}
-            title={`执行方式由连线推导：现在会跑 ${derived}（${derivedHint}）`}
-          >
-            {MODE_OPTIONS.map(([v, label]) => (
-              <option key={v} value={v}>
-                {label}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            disabled={running}
-            onClick={() => void run()}
-            className="rounded-[8px] px-3.5 py-1.5 text-[13px] font-medium text-white disabled:opacity-45"
-            style={{ background: "var(--color-accent)" }}
-            title={`按 ${derived} 方式执行`}
-          >
-            {running ? "运行中…" : `运行 · ${derived}`}
-          </button>
-        </div>
       </div>
 
       {/* ══ 主体：助手栏 / 画布 / 节点详情 ══ */}
@@ -895,34 +872,91 @@ export function PlaygroundConsole() {
         className="border-t"
         style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
       >
-        <div className="flex items-center gap-2.5 px-4 py-2.5">
-          <input
-            value={task}
-            onChange={(e) => {
-              setTask(e.target.value);
-              if (typeof window !== "undefined")
-                window.localStorage.setItem(LAST_TASK_KEY, e.target.value);
-            }}
-            onKeyDown={(e) => {
-              if ((e.metaKey || e.ctrlKey) && e.key === "Enter") void run();
-            }}
-            placeholder="给这次编排一个任务 —— 比如：调研三家云厂商的 GPU 报价并汇总成表"
-            className="min-w-0 flex-1 rounded-[8px] border px-3 py-2 text-[13px]"
-            style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
-          />
-          {orcId && (
-            <a
-              href="/runs"
-              className="shrink-0 text-[11.5px]"
-              style={{ color: "var(--color-accent)" }}
-              title="这次执行的完整记录在「运行记录」里"
-            >
-              运行记录 →
-            </a>
-          )}
-          <span className="shrink-0 text-[11px]" style={{ color: "var(--color-muted)" }}>
-            ⌘↵
-          </span>
+        {/* ── 发令区：输入 + 执行方式 + 运行，**在同一处** ────────────────────
+            原来运行按钮在顶栏、输入框在页面最下，打完字得把鼠标从下挪到上 ——
+            这一页的主操作就是"写一句、跑"，两者分居屏幕两端是这里最别扭的一处。
+            现在按所有对话产品的样子放一起，并且限宽居中（输入一行拉满 1200px 很难读）。 */}
+        <div
+          className="flex justify-center border-t px-4 py-3"
+          style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+        >
+          <div className="w-full max-w-[760px]">
+            <div className="flex items-end gap-2">
+              <textarea
+                ref={taskRef}
+                value={task}
+                rows={1}
+                onChange={(e) => {
+                  setTask(e.target.value);
+                  if (typeof window !== "undefined")
+                    window.localStorage.setItem(LAST_TASK_KEY, e.target.value);
+                }}
+                onKeyDown={(e) => {
+                  // Enter 直接跑（对话产品的惯例）；Shift+Enter 换行。
+                  // isComposing：中文输入法选词时的回车不算提交，否则打一半就被送出去。
+                  if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                    e.preventDefault();
+                    void run();
+                  }
+                }}
+                placeholder="给这次编排一个任务 —— 比如：调研三家云厂商的 GPU 报价并汇总成表"
+                className="min-w-0 flex-1 resize-none rounded-[10px] border px-3 py-2.5 text-[13px] leading-[1.65] outline-none"
+                style={{
+                  borderColor: "var(--color-border)",
+                  background: "var(--color-surface-2)",
+                }}
+                onFocus={(e) => (e.currentTarget.style.borderColor = "var(--color-accent)")}
+                onBlur={(e) => (e.currentTarget.style.borderColor = "var(--color-border)")}
+              />
+              <select
+                value={modeOverride}
+                onChange={(e) => {
+                  setModeOverride(e.target.value);
+                  setDirty(true);
+                }}
+                className={`shrink-0 rounded-[10px] border px-2 py-2.5 text-[12px] ${
+                  running ? "opacity-40" : ""
+                }`}
+                style={{
+                  borderColor: "var(--color-border)",
+                  background: "var(--color-surface)",
+                  color: "var(--color-muted)",
+                }}
+                title={`执行方式由连线推导：现在会跑 ${derived}（${derivedHint}）`}
+              >
+                {MODE_OPTIONS.map(([v, label]) => (
+                  <option key={v} value={v}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                disabled={running}
+                onClick={() => void run()}
+                className="shrink-0 rounded-[10px] px-4 py-2.5 text-[13px] font-medium text-white disabled:opacity-45"
+                style={{ background: "var(--color-accent)" }}
+                title={`按 ${derived} 方式执行（Enter）`}
+              >
+                {running ? "运行中…" : `运行 · ${derived}`}
+              </button>
+            </div>
+            <div className="mt-1.5 flex items-center gap-3">
+              <span className="text-[11px]" style={{ color: "var(--color-muted)" }}>
+                Enter 运行 · Shift+Enter 换行
+              </span>
+              {orcId && (
+                <a
+                  href="/runs"
+                  className="ml-auto text-[11.5px]"
+                  style={{ color: "var(--color-accent)" }}
+                  title="这次执行的完整记录在「运行记录」里"
+                >
+                  运行记录 →
+                </a>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
