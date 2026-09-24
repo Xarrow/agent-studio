@@ -128,6 +128,12 @@ type Props = {
   /** 右侧抽屉正在看哪个节点（null = 收起）。抽屉在画布内，不跳页、不挡画布 */
   detailNid?: string | null;
   onDetail?: (nid: string | null) => void;
+  /** 画布两端的"卡"：左边是你这次交给它们的任务，右边是合起来的结论 ——
+   *  画布因此自己讲完一次执行：我让你做什么 → 谁做了什么 → 合起来是什么。 */
+  taskText?: string;
+  finalText?: string;
+  /** 结论卡点开时定位到哪一步（最后一步） */
+  lastNid?: string | null;
   /** 正在等确认的节点 + 待确认内容 */
   hitl?: { nid: string; payload: Record<string, unknown> | null } | null;
   onHitl?: (action: "allow" | "allow_all" | "deny") => void;
@@ -177,6 +183,9 @@ export function WorkflowCanvas({
   live,
   detailNid = null,
   onDetail,
+  taskText = "",
+  finalText = "",
+  lastNid = null,
   hitl,
   onHitl,
   draggingAgentId,
@@ -249,12 +258,15 @@ export function WorkflowCanvas({
     const GAP_X = 76;
     const GAP_Y = 20;
     const PAD = 24;
+    /** 两端的卡宽度（任务卡 / 结论卡）—— 它们排在助手节点这一列的左边和右边 */
+    const CARD_W = 208;
+    const LEAD = CARD_W + GAP_X;
     const hOf = (nid: string) => heights[nid] || 104;
     const pos: Record<string, { x: number; y: number }> = {};
     let maxX = 0;
     let maxY = 0;
     if (narrow) {
-      let y = PAD;
+      let y = PAD + 96;                 // 窄屏：给顶部的任务卡让一行
       layers.forEach((ids) => {
         const rowH = Math.max(...ids.map(hOf));
         ids.forEach((nid, i) => {
@@ -268,15 +280,26 @@ export function WorkflowCanvas({
       layers.forEach((ids, ci) => {
         let y = PAD;
         ids.forEach((nid) => {
-          pos[nid] = { x: PAD + ci * (NODE_W + GAP_X), y };
+          pos[nid] = { x: PAD + LEAD + ci * (NODE_W + GAP_X), y };
           y += hOf(nid) + GAP_Y;
           maxX = Math.max(maxX, pos[nid].x + NODE_W + PAD);
         });
         maxY = Math.max(maxY, y);
       });
     }
-    return { pos, w: Math.max(maxX, 320), h: Math.max(maxY, 260), layers };
-  }, [graph.nodes, graph.edges, heights, narrow]);
+    // 两端的卡：宽屏放在首/末层同一行；窄屏放最上/最下
+    const firstIds = layers[0] ?? [];
+    const lastIds = layers[layers.length - 1] ?? [];
+    const firstY = firstIds.length ? (pos[firstIds[0]]?.y ?? PAD) : PAD;
+    const lastY = lastIds.length ? (pos[lastIds[0]]?.y ?? PAD) : PAD;
+    const taskAt = narrow ? { x: PAD, y: PAD } : { x: PAD, y: firstY };
+    const concAt = narrow ? { x: PAD, y: maxY + 10 } : { x: maxX + GAP_X, y: lastY };
+    let w = Math.max(maxX, 320);
+    let h = Math.max(maxY, 260);
+    if (!narrow) w = Math.max(w, concAt.x + CARD_W + PAD);
+    else h = Math.max(h, concAt.y + 150);
+    return { pos, w, h, layers, taskAt, concAt, CARD_W };
+  }, [graph.nodes, graph.edges, heights, narrow, taskText, finalText]);
 
   /* 高度变化要在**绘制前**同步进布局，否则连线会先画在旧位置上再跳一下 */
   useLayoutEffect(() => {
@@ -464,6 +487,32 @@ export function WorkflowCanvas({
     ? graph.nodes.findIndex((x) => x.nid === detailNid)
     : -1;
   const [drawerLog, setDrawerLog] = useState(false);
+
+  /** 抽屉打开时把选中的节点滚进视野 —— 抽屉占掉右侧一截，
+   *  不滚的话点开的节点可能正好被挤到视口外（点了没反应，最劝退）。 */
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage || !detailNid) return;
+    const at = layout.pos[detailNid];
+    if (!at) return;
+    // 按**最右边的内容**算（结论卡常常比节点更靠右）—— 差一点就会少露 60px
+    const rightEdge = Math.max(at.x + NODE_W, layout.concAt.x + layout.CARD_W) + 4;
+    const need = rightEdge - stage.clientWidth;
+    if (need > stage.scrollLeft) stage.scrollTo({ left: need, behavior: "smooth" });
+  }, [detailNid, layout]);
+
+  /** 跑完时把结论卡滚进视野（只在"结论刚出现"那一次）——
+   *  结论是这次执行最该看到的东西，不该藏在右边要人手动拖过去。 */
+  const lastFinal = useRef("");
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage || !finalText.trim() || lastFinal.current === finalText) return;
+    lastFinal.current = finalText;
+    const need = layout.concAt.x + layout.CARD_W + 6 - stage.clientWidth;
+    if (need > stage.scrollLeft) {
+      window.setTimeout(() => stage.scrollTo({ left: need, behavior: "smooth" }), 300);
+    }
+  }, [finalText, layout]);
 
   /** 悬停浮层要用到的：那个节点 / 它的助手 / 实时摘要 / 状态 */
   const peekNode = peek ? graph.nodes.find((x) => x.nid === peek.nid) : undefined;
@@ -663,6 +712,100 @@ export function WorkflowCanvas({
           </div>
         )}
 
+        {/* ── 画布两端的两张卡 ──────────────────────────────────────────────
+            左：任务（你这次交给了它们什么）  右：结论（合起来是什么）
+            为什么要画进画布里，而不是放页面底部：一次编排本来就是"从任务流向结论"的
+            一条线 —— 结论是流程的**终点**，不是页面的脚注。放在画布上，它自己就把
+            故事讲完了；页面下方也就不用再占一块地方。 */}
+        {taskText.trim() && (
+          <div
+            className="absolute rounded-[10px] border border-dashed px-2.5 py-2"
+            style={{
+              transform: `translate(${layout.taskAt.x}px, ${layout.taskAt.y}px)`,
+              width: layout.CARD_W,
+              background: "var(--color-surface-2)",
+              borderColor: "var(--color-border)",
+            }}
+            title="这次执行的任务"
+          >
+            <div className="text-[10.5px] font-semibold" style={{ color: "var(--color-muted)" }}>
+              任务
+            </div>
+            <div className="mt-0.5 line-clamp-4 whitespace-pre-wrap break-words text-[12px] leading-[1.6]">
+              {taskText}
+            </div>
+          </div>
+        )}
+
+        {finalText.trim() && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (lastNid) onDetail?.(lastNid);
+            }}
+            className="absolute rounded-[10px] border px-2.5 py-2 text-left transition-shadow hover:shadow-md"
+            style={{
+              transform: `translate(${layout.concAt.x}px, ${layout.concAt.y}px)`,
+              width: layout.CARD_W,
+              background: "color-mix(in srgb, var(--color-accent) 6%, var(--color-surface))",
+              borderColor: "color-mix(in srgb, var(--color-accent) 45%, var(--color-border))",
+            }}
+            title="这次执行合起来的结论（点开看全文）"
+          >
+            <div className="text-[10.5px] font-semibold" style={{ color: "var(--color-accent)" }}>
+              结论
+            </div>
+            <div className="mt-0.5 line-clamp-3 whitespace-pre-wrap break-words text-[12px] leading-[1.6]">
+              {finalText}
+            </div>
+            <div className="mt-1 text-[10.5px]" style={{ color: "var(--color-accent)" }}>
+              点开看全文 →
+            </div>
+          </button>
+        )}
+
+        {/* 卡与节点之间的两条虚线：把"任务 → … → 结论"串起来 */}
+        <svg className="pointer-events-none absolute inset-0" width={layout.w} height={layout.h}>
+          {(() => {
+            const lines: React.ReactNode[] = [];
+            const first = layout.layers[0] ?? [];
+            const last = layout.layers[layout.layers.length - 1] ?? [];
+            const yOf = (nid: string) => (layout.pos[nid]?.y ?? 24) + (heights[nid] || 104) / 2;
+            const f = first[0];
+            if (f && taskText.trim()) {
+              const x1 = layout.taskAt.x + layout.CARD_W;
+              const y1 = yOf(f);
+              lines.push(
+                <path
+                  key="t"
+                  d={`M${x1},${y1} L${layout.pos[f].x - 10},${y1}`}
+                  stroke="var(--color-border)"
+                  strokeWidth={1.6}
+                  strokeDasharray="5 5"
+                  fill="none"
+                />,
+              );
+            }
+            const l = last[0];
+            if (l && finalText.trim()) {
+              const x1 = layout.pos[l].x + NODE_W;
+              const y1 = yOf(l);
+              lines.push(
+                <path
+                  key="c"
+                  d={`M${x1},${y1} L${layout.concAt.x - 10},${y1}`}
+                  stroke="var(--color-border)"
+                  strokeWidth={1.6}
+                  strokeDasharray="5 5"
+                  fill="none"
+                />,
+              );
+            }
+            return lines;
+          })()}
+        </svg>
+
         {graph.nodes.map((n) => {
           const a = agentOf(n.agent_id);
           const p = layout.pos[n.nid] ?? { x: 0, y: 0 };
@@ -688,7 +831,7 @@ export function WorkflowCanvas({
               }}
               onMouseEnter={() => peekIn(n.nid)}
               onMouseLeave={() => peekOut()}
-              className={`absolute rounded-[10px] border transition-shadow ${
+              className={`group absolute rounded-[10px] border transition-shadow ${
                 lv && st === "run" ? "node-run" : st === "ask" ? "node-ask" : ""
               }`}
               style={{
@@ -707,60 +850,74 @@ export function WorkflowCanvas({
                 className="flex items-center gap-2 border-b px-2.5 py-2"
                 style={{ borderColor: "var(--color-border)" }}
               >
+                {/* 节点上只留三样：**序号、名字、一行摘要**。
+                    原来这里有 10 个元素：[主控] 徽标、[第N步] 徽标、⚙、✕、模型名…
+                    · [第N步] → 就是序号（不需要两个都在）
+                    · [主控] → 名字前一个星标
+                    · ⚙ / ✕ → 悬停或选中才出现（平时不占位）
+                    · 模型名 → 进右侧抽屉（助手栏已经写着了） */}
                 <span
-                  className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-[6px] border text-[11px] font-semibold"
-                  style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)", color: "var(--color-muted)" }}
+                  className="grid h-[20px] w-[20px] shrink-0 place-items-center rounded-full border text-[10.5px] font-semibold"
+                  style={{ borderColor: meta.border, background: "var(--color-surface-2)", color: meta.text }}
+                  title={`第 ${stepNo} 步`}
                 >
-                  {(a?.name ?? "?").slice(0, 1)}
+                  {stepNo}
                 </span>
-                <span className="truncate text-[13px] font-semibold">{a?.name ?? "助手已删除"}</span>
                 {master === n.nid && (
                   <span
-                    className="shrink-0 rounded-full border px-1.5 py-px text-[10px]"
-                    style={{ borderColor: "var(--color-accent)", color: "var(--color-accent)" }}
-                    title="主控（按连线自动判断，可在右侧改）"
+                    className="shrink-0 text-[11px] leading-none"
+                    style={{ color: "var(--color-accent)" }}
+                    title="主控（按连线自动判断）"
                   >
-                    主控
+                    ★
                   </span>
                 )}
-                <span
-                  className="ml-auto shrink-0 rounded-full border px-1.5 py-px text-[10.5px]"
-                  style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
-                >
-                  第 {stepNo} 步
+                <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">
+                  {a?.name ?? "助手已删除"}
                 </span>
-                <button
-                  type="button"
-                  title="配置这个助手"
-                  aria-label="配置这个助手"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onSelect(n.nid);
-                  }}
-                  className="shrink-0 rounded border px-1.5 text-[12px] opacity-60 transition-opacity hover:opacity-100"
-                  style={{ color: "var(--color-muted)" }}
+                <i
+                  className="h-[7px] w-[7px] shrink-0 rounded-full"
+                  style={{ background: meta.dot }}
+                  title={STATE_LABEL[st]}
+                />
+                <div
+                  className={`flex shrink-0 items-center gap-1 transition-opacity ${
+                    isSel || detailNid === n.nid ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                  }`}
                 >
-                  ⚙
-                </button>
-                {!frozen && (
                   <button
                     type="button"
-                    title="把这一步从编排里移掉"
-                    aria-label="把这一步从编排里移掉"
+                    title="配置这个助手"
+                    aria-label="配置这个助手"
                     onClick={(e) => {
                       e.stopPropagation();
-                      onChange({
-                        ...graph,
-                        nodes: graph.nodes.filter((x) => x.nid !== n.nid),
-                        edges: graph.edges.filter((x) => x.from !== n.nid && x.to !== n.nid),
-                      });
+                      onSelect(n.nid);
                     }}
-                    className="shrink-0 rounded border px-1.5 text-[12px] opacity-60 transition-opacity hover:opacity-100"
+                    className="shrink-0 rounded border px-1.5 text-[12px] hover:opacity-100"
                     style={{ color: "var(--color-muted)" }}
                   >
-                    ✕
+                    ⚙
                   </button>
-                )}
+                  {!frozen && (
+                    <button
+                      type="button"
+                      title="把这一步从编排里移掉"
+                      aria-label="把这一步从编排里移掉"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onChange({
+                          ...graph,
+                          nodes: graph.nodes.filter((x) => x.nid !== n.nid),
+                          edges: graph.edges.filter((x) => x.from !== n.nid && x.to !== n.nid),
+                        });
+                      }}
+                      className="shrink-0 rounded border px-1.5 text-[12px] hover:opacity-100"
+                      style={{ color: "var(--color-muted)" }}
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* 实时摘要：一眼看出"它在干什么" —— 不用点、不用往下看 */}
@@ -785,21 +942,6 @@ export function WorkflowCanvas({
                 </div>
               )}
               {st === "run" && <div className="indeterminate mx-2.5 mt-1.5" />}
-
-              <div className="min-h-[40px] px-2.5 py-2 text-[12px]">
-                {out ? (
-                  <div
-                    className="line-clamp-3 whitespace-pre-wrap break-words"
-                    style={{ color: "var(--color-text)" }}
-                  >
-                    {out}
-                  </div>
-                ) : (
-                  <span style={{ color: "var(--color-muted)" }}>
-                    {a?.definition?.system_prompt?.slice(0, 60) || "（没有说明）"}
-                  </span>
-                )}
-              </div>
 
               {hitl?.nid === n.nid && (
                 <div
@@ -834,19 +976,6 @@ export function WorkflowCanvas({
                   </div>
                 </div>
               )}
-
-              <div
-                className="flex items-center gap-2 border-t px-2.5 py-1.5 text-[11.5px]"
-                style={{ borderColor: "var(--color-border)" }}
-              >
-                <span className="inline-flex items-center gap-1.5 font-medium" style={{ color: meta.text }}>
-                  <i className="h-[7px] w-[7px] rounded-full" style={{ background: meta.dot }} />
-                  {STATE_LABEL[st]}
-                </span>
-                <span className="ml-auto truncate font-mono text-[10.5px]" style={{ color: "var(--color-muted)" }}>
-                  {a?.definition?.model?.name ?? ""}
-                </span>
-              </div>
 
               {/* 连接点：入口 / 出口（拖出口到另一个节点 = 连一条线） */}
               <span
@@ -971,7 +1100,7 @@ export function WorkflowCanvas({
       {/* ── 右侧抽屉：这一次跑了什么（思考/工具/输出/日志全文）────────────── */}
       {detailNid && (
         <aside
-          className="flex w-[380px] shrink-0 flex-col border-l"
+          className="flex w-[320px] shrink-0 flex-col border-l"
           style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
         >
           <div

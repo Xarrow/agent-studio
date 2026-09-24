@@ -33,8 +33,9 @@ import type {
 } from "@/lib/types";
 
 /** 顶栏可选的执行方式（"" = 自动判断） */
+/** 执行方式：标签只留最短的词（长解释放 title，不占界面） */
 const MODE_OPTIONS: [string, string][] = [
-  ["", "自动判断（按连线）"],
+  ["", "自动"],
   ["single", "单个助手"],
   ["serial", "串行接力"],
   ["parallel", "并行"],
@@ -106,6 +107,9 @@ export function PlaygroundConsole() {
    *  统一在这里轮询，避免画布和详情各拉一遍。 */
   const [traces, setTraces] = useState<Record<string, TraceData>>({});
   const tracesRef = useRef<Record<string, TraceData>>({});
+  /** 顶栏那个「名字 ⌄」的小菜单（切换最近编排 / 保存改动都收在这里） */
+  const [wfMenu, setWfMenu] = useState(false);
+
   /** 画布右侧抽屉正在看哪个节点（null = 收起）。执行内容都从这里看，不在页面下方另开一块 */
   const [detailNid, setDetailNid] = useState<string | null>(null);
   const esRef = useRef<EventSource | null>(null);
@@ -478,6 +482,16 @@ export function PlaygroundConsole() {
   const derived = wf?.derived_mode ?? (graph.nodes.length > 1 ? "待保存" : "single");
   const derivedHint = wf?.derived_hint ?? "保存后由服务端按连线判断";
 
+  /** 画布两端的卡要用：这次的任务原文、最后一步落在哪个节点 */
+  const shownTask = (detail?.input as { text?: string } | undefined)?.text || task;
+  const lastNid = useMemo(() => {
+    const ordered = (detail?.steps ?? [])
+      .slice()
+      .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
+    const last = ordered[ordered.length - 1];
+    return last ? nodeForStep(last) : null;
+  }, [detail]);
+
   /** 把每个步骤的 trace 挂回它的节点 —— 画布据此在节点上显示"正在干什么" */
   const liveInfo = useMemo(() => {
     const out: Record<string, NodeLiveInfo> = {};
@@ -492,90 +506,125 @@ export function PlaygroundConsole() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* ══ 顶栏：名字 + 推导出的执行方式（可覆盖）+ 运行 ══ */}
+      {/* ══ 顶栏：只有两样 —— 编排名（自带切换/保存）+ 运行（自带执行方式）══════
+          原来这里有 6 个控件：名字框、最近编排下拉、执行方式徽标 + 一段说明文字、
+          执行方式下拉、保存、运行。同一件事两个控件（名字与下拉）、旁边还常驻一段
+          解释 —— 这些不是信息，是噪音。现在合成两个：
+            · 名字旁边的小箭头 = 切换最近编排 + 保存改动（脏了名字角上有个橙点）
+            · 执行方式收进运行按钮旁的小选择器，当前会跑什么模式写在运行按钮上 */}
       <div
-        className="flex flex-wrap items-center gap-3 border-b px-4 py-2.5"
+        className="flex items-center gap-3 border-b px-4 py-2.5"
         style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
       >
-        <div className="flex min-w-0 items-baseline gap-2">
-          <h1 className="text-[15.5px] font-semibold tracking-tight">Playground</h1>
-          <span className="truncate text-[12.5px]" style={{ color: "var(--color-muted)" }}>
-            把助手拖进来，让它们分工做一件事 —— 只放一个，就是对话。
-          </span>
-        </div>
-        <div className="ml-auto flex flex-wrap items-center gap-2">
+        <h1 className="shrink-0 text-[15.5px] font-semibold tracking-tight">Playground</h1>
+
+        <div className="relative flex items-stretch">
           <input
             value={name}
             onChange={(e) => {
               setName(e.target.value);
               setDirty(true);
             }}
-            className="w-[168px] rounded-[8px] border px-2 py-1.5 text-[12.5px]"
+            className="w-[150px] rounded-l-[8px] border border-r-0 px-2 py-1.5 text-[12.5px]"
             style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
             placeholder="给这份编排起个名字"
+            title="改名字（改完在右侧小箭头里保存）"
           />
-          {list.length > 1 && (
-            <select
-              value={wf?.id ?? ""}
-              onChange={(e) => {
-                const w = list.find((x) => x.id === e.target.value);
-                if (w) loadWorkflow(w);
-              }}
-              className="rounded-[8px] border px-2 py-1.5 text-[12.5px]"
-              style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
-              title="最近编排"
-            >
-              {list.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.name}
-                </option>
-              ))}
-            </select>
-          )}
-          <div
-            className="flex items-center gap-2 rounded-full border px-2.5 py-1 text-[12.5px]"
-            style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
-          >
-            <b>{derived}</b>
-            <span style={{ color: "var(--color-muted)" }}>{derivedHint}</span>
-            <select
-              value={modeOverride}
-              onChange={(e) => {
-                setModeOverride(e.target.value);
-                setDirty(true);
-              }}
-              className="rounded-[6px] border-0 bg-transparent text-[12px]"
-              style={{ color: "var(--color-accent)" }}
-              title="执行方式由连线推导；这里可以覆盖"
-            >
-              {MODE_OPTIONS.map(([v, label]) => (
-                <option key={v} value={v}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </div>
-          {dirty && (
-            <span className="text-[12px]" style={{ color: "var(--color-warn)" }}>
-              ● 有未保存的改动
-            </span>
-          )}
           <button
             type="button"
-            onClick={() => void save()}
-            className="rounded-[8px] border px-3 py-1.5 text-[13px]"
-            style={{ borderColor: "var(--color-border)" }}
+            onClick={() => setWfMenu((v) => !v)}
+            className="rounded-r-[8px] border px-1.5 text-[12px]"
+            style={{
+              borderColor: "var(--color-border)",
+              background: "var(--color-surface-2)",
+              color: "var(--color-muted)",
+            }}
+            title="切换最近编排 / 保存改动"
           >
-            {dirty ? "保存改动" : "保存"}
+            ⌄
           </button>
+          {dirty && (
+            <span
+              className="absolute -right-1 -top-1 h-2 w-2 rounded-full"
+              style={{ background: "var(--color-warn)" }}
+              title="有未保存的改动"
+            />
+          )}
+          {wfMenu && (
+            <div
+              className="absolute left-0 top-full z-50 mt-1 w-[240px] rounded-[10px] border p-1"
+              style={{
+                borderColor: "var(--color-border)",
+                background: "var(--color-surface)",
+                boxShadow: "0 10px 28px rgba(20,24,31,.16)",
+              }}
+            >
+              {list.map((w) => (
+                <button
+                  key={w.id}
+                  type="button"
+                  onClick={() => {
+                    loadWorkflow(w);
+                    setWfMenu(false);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-[6px] px-2 py-1.5 text-left text-[12.5px] hover:bg-[var(--color-surface-2)]"
+                >
+                  <span className="min-w-0 flex-1 truncate">{w.name}</span>
+                  {w.id === wf?.id && (
+                    <span className="shrink-0 text-[11px]" style={{ color: "var(--color-accent)" }}>
+                      当前
+                    </span>
+                  )}
+                </button>
+              ))}
+              <div className="my-1 border-t" style={{ borderColor: "var(--color-border)" }} />
+              <button
+                type="button"
+                disabled={!dirty}
+                onClick={() => {
+                  setWfMenu(false);
+                  void save();
+                }}
+                className="w-full rounded-[6px] px-2 py-1.5 text-left text-[12.5px] disabled:opacity-45 hover:bg-[var(--color-surface-2)]"
+              >
+                {dirty ? "保存改动" : "已保存"}
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="ml-auto flex items-center gap-2">
+          <select
+            value={modeOverride}
+            onChange={(e) => {
+              setModeOverride(e.target.value);
+              setDirty(true);
+            }}
+            className={`rounded-[8px] border px-2 py-1.5 text-[12px] transition-opacity ${
+              running ? "opacity-40" : ""
+            }`}
+            style={{
+              borderColor: "var(--color-border)",
+              background: "var(--color-surface-2)",
+              color: "var(--color-muted)",
+            }}
+            title={`执行方式由连线推导：现在会跑 ${derived}（${derivedHint}）`}
+          >
+            {MODE_OPTIONS.map(([v, label]) => (
+              <option key={v} value={v}>
+                {label}
+              </option>
+            ))}
+          </select>
           <button
             type="button"
             disabled={running}
             onClick={() => void run()}
             className="rounded-[8px] px-3.5 py-1.5 text-[13px] font-medium text-white disabled:opacity-45"
             style={{ background: "var(--color-accent)" }}
+            title={`按 ${derived} 方式执行`}
           >
-            {running ? "运行中…" : "运行"}
+            {running ? "运行中…" : `运行 · ${derived}`}
           </button>
         </div>
       </div>
@@ -583,14 +632,18 @@ export function PlaygroundConsole() {
       {/* ══ 主体：助手栏 / 画布 / 节点详情 ══ */}
       <div className="flex min-h-0 flex-1">
         <aside
-          className="flex w-[208px] shrink-0 flex-col border-r"
+          className={`flex w-[208px] shrink-0 flex-col border-r transition-opacity ${
+            running ? "opacity-40" : ""
+          }`}
           style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+          title={running ? "运行中不能改结构 —— 跑完再拖" : undefined}
         >
-          <div className="px-3.5 pt-3 pb-1 text-[12px] font-semibold" style={{ color: "var(--color-muted)" }}>
+          <div
+            className="px-3.5 pt-3 pb-2 text-[12px] font-semibold"
+            style={{ color: "var(--color-muted)" }}
+            title="拖到空白处 = 新开一条；拖到某个助手上 = 接在它后面；点一下 = 直接加一条。"
+          >
             助手
-          </div>
-          <div className="px-3.5 pb-2 text-[11.5px] leading-snug" style={{ color: "var(--color-muted)" }}>
-            拖到空白处 = 新开一条；拖到某个助手上 = 接在它后面；点一下 = 直接加一条。
           </div>
           <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-auto px-2.5 pb-3">
             {agents.map((a) => (
@@ -640,6 +693,9 @@ export function PlaygroundConsole() {
             live={liveInfo}
             detailNid={detailNid}
             onDetail={setDetailNid}
+            taskText={shownTask}
+            finalText={finalText}
+            lastNid={lastNid}
             outputs={outputs}
             hitl={hitl ? { nid: hitl.nid, payload: hitl.payload } : null}
             onHitl={(a) => void hitlAction(a)}
@@ -732,46 +788,13 @@ export function PlaygroundConsole() {
         )}
       </div>
 
-      {/* ══ 底部只留两样：一条结论带 + 任务输入 ═════════════════════════════
-          执行内容全部搬进画布右侧抽屉（点节点即现），页面下方不再单独占一块 ——
-          "内容在画布、输入在底部"才是这块地方唯一该干的事。 */}
+      {/* ══ 底部只留一样：任务输入 ══════════════════════════════════════════
+          结论已经画在画布上（流程的终点），执行详情在右侧抽屉里（点节点即现）——
+          页面下方除了"写下一句话"不该再有别的。 */}
       <div
         className="border-t"
         style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
       >
-        {finalText && (
-          <button
-            type="button"
-            onClick={() => {
-              const steps = (detail?.steps ?? [])
-                .slice()
-                .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
-              const last = steps[steps.length - 1];
-              const nid = last ? nodeForStep(last) : null;
-              if (nid) setDetailNid(nid);
-            }}
-            className="flex w-full items-center gap-2 border-b px-4 py-2 text-left"
-            style={{ borderColor: "var(--color-border)" }}
-            title="点开看最后一步的完整过程"
-          >
-            <span
-              className="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full text-[10px] text-white"
-              style={{ background: "var(--color-accent)" }}
-            >
-              ✓
-            </span>
-            <span className="shrink-0 text-[11.5px] font-semibold">最终结果</span>
-            <span
-              className="min-w-0 flex-1 truncate text-[12.5px]"
-              style={{ color: "var(--color-muted)" }}
-            >
-              {finalText.replace(/\s+/g, " ")}
-            </span>
-            <span className="shrink-0 text-[11.5px]" style={{ color: "var(--color-accent)" }}>
-              看最后一步 →
-            </span>
-          </button>
-        )}
         <div className="flex items-center gap-2.5 px-4 py-2.5">
           <input
             value={task}
