@@ -141,6 +141,13 @@ type Props = {
   derived?: string;
   /** 结论卡点开时定位到哪一步（最后一步） */
   lastNid?: string | null;
+  /** 右栏页签：过程（这次跑了什么）/ 配置（这个助手怎么配）。
+   *  两者是**同一个节点**的两面 —— 之前各开一栏（并排两列 + 画布被压到 244px，实测），
+   *  这里合并成一栏切换。 */
+  panelTab?: "process" | "config";
+  onPanelTab?: (t: "process" | "config") => void;
+  /** 配置页签的内容由 Console 传进来（配置状态属于 Console，不搬进画布） */
+  configSlot?: React.ReactNode;
   /** 正在等确认的节点 + 待确认内容 */
   hitl?: { nid: string; payload: Record<string, unknown> | null } | null;
   onHitl?: (action: "allow" | "allow_all" | "deny") => void;
@@ -198,6 +205,9 @@ export function WorkflowCanvas({
   onRun,
   running = false,
   derived = "",
+  panelTab = "process",
+  onPanelTab,
+  configSlot = null,
   hitl,
   onHitl,
   draggingAgentId,
@@ -1198,13 +1208,51 @@ export function WorkflowCanvas({
     </div>
 
       {/* ── 右侧抽屉：这一次跑了什么（思考/工具/输出/日志全文）────────────── */}
-      {detailNid && (
+      {((panelTab === "process" && detailNid) || (panelTab === "config" && !!configSlot)) && (
         <aside
           className={`flex shrink-0 flex-col border-l ${
-            narrow ? "absolute inset-y-0 right-0 z-50 w-full" : "w-[320px]"
+            narrow ? "absolute inset-y-0 right-0 z-50 w-full" : "w-[360px]"
           }`}
           style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
         >
+          {/* 页签：过程 / 配置 —— 同一个节点的两面，一栏切换 */}
+          <div
+            className="flex items-center gap-1 border-b px-2 py-1.5"
+            style={{ borderColor: "var(--color-border)" }}
+          >
+            {(["process", "config"] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => onPanelTab?.(t)}
+                className="rounded-[7px] px-2.5 py-1 text-[12.5px] font-medium"
+                style={
+                  panelTab === t
+                    ? { background: "color-mix(in srgb, var(--color-accent) 12%, transparent)", color: "var(--color-accent)" }
+                    : { color: "var(--color-muted)" }
+                }
+              >
+                {t === "process" ? "过程" : "配置"}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => {
+                onDetail?.(null);
+                onPanelTab?.("process");
+              }}
+              className="ml-auto rounded px-1.5 text-[12px]"
+              style={{ color: "var(--color-muted)" }}
+              title="收起"
+            >
+              ✕
+            </button>
+          </div>
+
+          {panelTab === "config" ? (
+            configSlot
+          ) : (
+            <>
           <div
             className="flex items-center gap-2 border-b px-3 py-2.5"
             style={{ borderColor: "var(--color-border)" }}
@@ -1374,6 +1422,8 @@ export function WorkflowCanvas({
                 在运行记录里打开这一步 →
               </a>
             </div>
+          )}
+            </>
           )}
         </aside>
       )}

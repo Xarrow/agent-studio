@@ -107,6 +107,9 @@ export function PlaygroundConsole() {
    *  统一在这里轮询，避免画布和详情各拉一遍。 */
   const [traces, setTraces] = useState<Record<string, TraceData>>({});
   const tracesRef = useRef<Record<string, TraceData>>({});
+  /** 右栏页签：点节点=看过程，点 ⚙=看配置 —— 同一个栏切换，不再并排开两栏 */
+  const [panelTab, setPanelTab] = useState<"process" | "config">("process");
+
   /** 顶栏那个「名字 ⌄」的小菜单（切换最近编排 / 保存改动都收在这里） */
   const [wfMenu, setWfMenu] = useState(false);
 
@@ -579,6 +582,91 @@ export function PlaygroundConsole() {
     return out;
   }, [detail, traces]);
 
+  /* 配置页签的内容 —— 它属于 Console 的状态（selNode / 助手编辑），所以不搬进画布，
+     而是作为插槽传给画布那个"唯一的右栏"。以前它是并排的第二个右栏。 */
+  const configSlot = selNode ? (
+    <div className="flex min-h-0 flex-1 flex-col">
+
+          <aside
+            className="flex w-[300px] shrink-0 flex-col overflow-auto border-l"
+            style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+          >
+            <div className="flex items-center gap-2 border-b px-3.5 py-3" style={{ borderColor: "var(--color-border)" }}>
+              <b className="text-[13.5px]">{selAgent?.name ?? "助手已删除"}</b>
+              <button
+                type="button"
+                className="ml-auto text-[12px]"
+                style={{ color: "var(--color-muted)" }}
+                onClick={() => setSelected(null)}
+              >
+                收起
+              </button>
+            </div>
+            <div className="flex flex-col gap-3.5 p-3.5 text-[12.5px]">
+              <Field label="这一步做什么" hint="它给这个助手的定位">
+                {selAgent?.definition?.system_prompt || "（没写 System Prompt）"}
+              </Field>
+              <Field label="上游" hint="它的输入来自谁">
+                {graph.edges
+                  .filter((e) => e.to === selNode.nid)
+                  .map((e) => agents.find((a) => a.id === graph.nodes.find((n) => n.nid === e.from)?.agent_id)?.name)
+                  .filter(Boolean)
+                  .join("、") || "（无 · 起点）"}
+              </Field>
+              <Field label="下游" hint="它的产出喂给谁">
+                {graph.edges
+                  .filter((e) => e.from === selNode.nid)
+                  .map((e) => agents.find((a) => a.id === graph.nodes.find((n) => n.nid === e.to)?.agent_id)?.name)
+                  .filter(Boolean)
+                  .join("、") || "（无 · 终点）"}
+              </Field>
+              <Field label="这次的产出">{outputs[selNode.nid] || "（还没跑）"}</Field>
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[11.5px] font-semibold" style={{ color: "var(--color-muted)" }}>
+                  角色
+                </span>
+                <label className="flex items-center gap-2 text-[12.5px]">
+                  <input
+                    type="checkbox"
+                    checked={graph.master_nid === selNode.nid}
+                    onChange={(e) =>
+                      patchGraph({ ...graph, master_nid: e.target.checked ? selNode.nid : null })
+                    }
+                  />
+                  这是主控（不勾 = 按连线自动判断）
+                </label>
+              </div>
+              <p
+                className="rounded-[8px] border px-2.5 py-2 text-[11.5px] leading-relaxed"
+                style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
+              >
+                提示词、记忆、权限这些属于助手本身，点下面的按钮去改 ——
+                这里只调它在整条链里的位置。
+              </p>
+              <a
+                href={`/agents/${selNode.agent_id}`}
+                className="rounded-[8px] border px-3 py-2 text-center text-[12.5px]"
+                style={{ borderColor: "var(--color-border)" }}
+              >
+                配置这个助手 →
+              </a>
+              <button
+                type="button"
+                disabled={running}
+                onClick={() => removeNode(selNode.nid)}
+                className="rounded-[8px] border px-3 py-2 text-center text-[12.5px] disabled:opacity-50"
+                style={{
+                  borderColor: "color-mix(in srgb, var(--color-err) 30%, var(--color-border))",
+                  color: "var(--color-err)",
+                }}
+              >
+                把这个助手从编排里移掉
+              </button>
+            </div>
+          </aside>
+    </div>
+  ) : null;
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* ══ 顶栏：只有两样 —— 编排名（自带切换/保存）+ 运行（自带执行方式）══════
@@ -790,11 +878,22 @@ export function PlaygroundConsole() {
             graph={graph}
             onChange={(next) => patchGraph(next, { resetRun: downstreamOf(selected ?? "", next) })}
             selected={selected}
-            onSelect={setSelected}
+            onSelect={(nid) => {
+              // 点 ⚙ = 看这个助手怎么配：切到配置页签，并让画布把它滚进视野
+              setSelected(nid);
+              if (nid) {
+                setPanelTab("config");
+                setDetailNid(nid);
+              }
+            }}
             runStates={runStates}
             live={liveInfo}
             detailNid={detailNid}
-            onDetail={setDetailNid}
+            onDetail={(nid) => {
+              // 点节点 = 看它这次跑了什么：切到过程页签
+              setDetailNid(nid);
+              if (nid) setPanelTab("process");
+            }}
             taskText={shownTask}
             finalText={finalText}
             lastNid={lastNid}
@@ -806,6 +905,9 @@ export function PlaygroundConsole() {
             onRun={() => void run()}
             running={running}
             derived={derived}
+            panelTab={panelTab}
+            onPanelTab={setPanelTab}
+            configSlot={configSlot}
             outputs={outputs}
             hitl={hitl ? { nid: hitl.nid, payload: hitl.payload } : null}
             onHitl={(a) => void hitlAction(a)}
@@ -817,85 +919,7 @@ export function PlaygroundConsole() {
           />
         </div>
 
-        {selNode && (
-          <aside
-            className="flex w-[300px] shrink-0 flex-col overflow-auto border-l"
-            style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
-          >
-            <div className="flex items-center gap-2 border-b px-3.5 py-3" style={{ borderColor: "var(--color-border)" }}>
-              <b className="text-[13.5px]">{selAgent?.name ?? "助手已删除"}</b>
-              <button
-                type="button"
-                className="ml-auto text-[12px]"
-                style={{ color: "var(--color-muted)" }}
-                onClick={() => setSelected(null)}
-              >
-                收起
-              </button>
-            </div>
-            <div className="flex flex-col gap-3.5 p-3.5 text-[12.5px]">
-              <Field label="这一步做什么" hint="它给这个助手的定位">
-                {selAgent?.definition?.system_prompt || "（没写 System Prompt）"}
-              </Field>
-              <Field label="上游" hint="它的输入来自谁">
-                {graph.edges
-                  .filter((e) => e.to === selNode.nid)
-                  .map((e) => agents.find((a) => a.id === graph.nodes.find((n) => n.nid === e.from)?.agent_id)?.name)
-                  .filter(Boolean)
-                  .join("、") || "（无 · 起点）"}
-              </Field>
-              <Field label="下游" hint="它的产出喂给谁">
-                {graph.edges
-                  .filter((e) => e.from === selNode.nid)
-                  .map((e) => agents.find((a) => a.id === graph.nodes.find((n) => n.nid === e.to)?.agent_id)?.name)
-                  .filter(Boolean)
-                  .join("、") || "（无 · 终点）"}
-              </Field>
-              <Field label="这次的产出">{outputs[selNode.nid] || "（还没跑）"}</Field>
-              <div className="flex flex-col gap-1.5">
-                <span className="text-[11.5px] font-semibold" style={{ color: "var(--color-muted)" }}>
-                  角色
-                </span>
-                <label className="flex items-center gap-2 text-[12.5px]">
-                  <input
-                    type="checkbox"
-                    checked={graph.master_nid === selNode.nid}
-                    onChange={(e) =>
-                      patchGraph({ ...graph, master_nid: e.target.checked ? selNode.nid : null })
-                    }
-                  />
-                  这是主控（不勾 = 按连线自动判断）
-                </label>
-              </div>
-              <p
-                className="rounded-[8px] border px-2.5 py-2 text-[11.5px] leading-relaxed"
-                style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
-              >
-                提示词、记忆、权限这些属于助手本身，点下面的按钮去改 ——
-                这里只调它在整条链里的位置。
-              </p>
-              <a
-                href={`/agents/${selNode.agent_id}`}
-                className="rounded-[8px] border px-3 py-2 text-center text-[12.5px]"
-                style={{ borderColor: "var(--color-border)" }}
-              >
-                配置这个助手 →
-              </a>
-              <button
-                type="button"
-                disabled={running}
-                onClick={() => removeNode(selNode.nid)}
-                className="rounded-[8px] border px-3 py-2 text-center text-[12.5px] disabled:opacity-50"
-                style={{
-                  borderColor: "color-mix(in srgb, var(--color-err) 30%, var(--color-border))",
-                  color: "var(--color-err)",
-                }}
-              >
-                把这个助手从编排里移掉
-              </button>
-            </div>
-          </aside>
-        )}
+
       </div>
 
       {/* 页面下方**不再有任何常驻组件** —— 任务输入搬进了画布左端的任务卡（方案 C）：
