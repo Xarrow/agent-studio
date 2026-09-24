@@ -761,7 +761,7 @@ export function PlaygroundConsole() {
             · 名字旁边的小箭头 = 切换最近编排 + 保存改动（脏了名字角上有个橙点）
             · 执行方式收进运行按钮旁的小选择器，当前会跑什么模式写在运行按钮上 */}
       <div
-        className="flex items-center gap-3 border-b px-4 py-2.5"
+        className="pg-topbar flex items-center gap-3 border-b px-4 py-2.5"
         style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
       >
         <h1 className="shrink-0 text-[15.5px] font-semibold tracking-tight">Playground</h1>
@@ -911,9 +911,9 @@ export function PlaygroundConsole() {
       </div>
 
       {/* ══ 主体：助手栏 / 画布 / 节点详情 ══ */}
-      <div className="flex min-h-0 flex-1">
+      <div className="pg-split flex min-h-0 flex-1">
         <aside
-          className={`flex w-[208px] shrink-0 flex-col border-r transition-opacity ${
+          className={`pg-rail flex w-[208px] shrink-0 flex-col border-r transition-opacity ${
             running ? "opacity-40" : ""
           }`}
           style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
@@ -1014,12 +1014,12 @@ export function PlaygroundConsole() {
           画布就换成那次的图（图来自 orchestration.spec，冻结的是当时的定义）。 */}
       {histOpen && (
         <div
-          className="fixed inset-0 z-[70] flex items-center justify-center p-6"
+          className="pg-modal fixed inset-0 z-[70] flex items-center justify-center p-6"
           style={{ background: "var(--color-overlay)" }}
           onClick={() => setHistOpen(false)}
         >
           <div
-            className="flex max-h-[80vh] w-full max-w-[620px] flex-col overflow-hidden rounded-[14px] border"
+            className="pg-panel flex max-h-[80vh] w-full max-w-[620px] flex-col overflow-hidden rounded-[14px] border"
             style={{ background: "var(--color-surface)", borderColor: "var(--color-border)" }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -1052,7 +1052,7 @@ export function PlaygroundConsole() {
                       key={h.id}
                       type="button"
                       onClick={() => void loadHistory(h.id)}
-                      className="mb-1 flex w-full items-center gap-3 rounded-[9px] border px-3 py-2 text-left transition-colors hover:bg-[var(--color-surface-2)]"
+                      className="pg-hist-row mb-1 flex w-full items-center gap-3 rounded-[9px] border px-3 py-2 text-left transition-colors hover:bg-[var(--color-surface-2)]"
                       style={{ borderColor: "var(--color-border)" }}
                     >
                       <span
@@ -1067,7 +1067,7 @@ export function PlaygroundConsole() {
                       <span className="shrink-0 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
                         {when}
                       </span>
-                      <span className="min-w-0 flex-1 truncate text-[12.5px]">{h.task || "（无任务描述）"}</span>
+                      <span className="pg-hist-task min-w-0 flex-1 truncate text-[12.5px]">{h.task || "（无任务描述）"}</span>
                       <span className="shrink-0 text-[11px]" style={{ color: "var(--color-muted)" }}>
                         {h.step_count} 步{secs != null ? ` · ${secs}s` : ""}
                       </span>
@@ -1109,12 +1109,12 @@ export function PlaygroundConsole() {
           不常驻占位），关掉后画布仍是全宽。 */}
       {configPanel && (
         <div
-          className="fixed inset-0 z-[70] flex items-center justify-center p-6"
+          className="pg-modal fixed inset-0 z-[70] flex items-center justify-center p-6"
           style={{ background: "var(--color-overlay)" }}
           onClick={() => setSelected(null)}
         >
           <div
-            className="flex max-h-[86vh] w-full max-w-[720px] flex-col overflow-hidden rounded-[14px] border"
+            className="pg-panel flex max-h-[86vh] w-full max-w-[720px] flex-col overflow-hidden rounded-[14px] border"
             style={{ background: "var(--color-surface)", borderColor: "var(--color-border)" }}
             onClick={(e) => e.stopPropagation()}
           >

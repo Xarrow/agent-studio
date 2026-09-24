@@ -1292,7 +1292,7 @@ export function WorkflowCanvas({
                       e.stopPropagation();
                       setNodeMenu(nodeMenu === n.nid ? null : n.nid);
                     }}
-                    className="shrink-0 rounded border px-1.5 text-[12px] hover:opacity-100"
+                    className="pg-more shrink-0 rounded border px-1.5 text-[12px] hover:opacity-100"
                     style={{ color: "var(--color-muted)" }}
                   >
                     ⋯

@@ -221,6 +221,64 @@ body {
   }
 }
 
+/* ── Playground 移动端（≤900px，与画布窄屏断点一致）────────────────────────
+   为什么要单独一条：画布的"窄屏"是 JS 判 900px（matchMedia），而 Tailwind 的 md:
+   是 768px —— 两个断点对不齐，会出现"画布已经换成纵向、外壳还是横向"的错位。
+   这里统一按 900px 来，和画布保持一致。 */
+@media (max-width: 900px) {
+  /* 主体：助手栏从左侧竖排 → 顶部横排。
+     原来 208px 固定宽，在 390px 手机上占掉 53%，画布被挤成一条缝。 */
+  .pg-split {
+    flex-direction: column;
+  }
+  .pg-rail {
+    width: 100%;
+    min-height: 0;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: 0;
+    border-bottom: 1px solid var(--color-border);
+    padding: 8px 10px;
+  }
+  /* 助手卡在横排里按内容宽度，不伸缩 */
+  .pg-rail > * {
+    flex: 0 0 auto;
+    width: auto;
+  }
+  /* 顶栏换行，别把运行键挤没 */
+  .pg-topbar {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+  /* 弹层：手机上去掉大留白，面板占满宽度 */
+  .pg-modal {
+    padding: 10px;
+  }
+  .pg-modal .pg-panel {
+    width: 100%;
+    max-width: 100%;
+  }
+  /* 历史那一行：手机上折两行（任务独占一行），不然四段挤成一坨 */
+  .pg-hist-row {
+    flex-wrap: wrap;
+    row-gap: 3px;
+  }
+  .pg-hist-task {
+    order: 3;
+    width: 100%;
+    flex: 0 0 100%;
+  }
+  /* ⋯ 按钮：触屏要够大 */
+  .pg-more {
+    min-width: 30px;
+    min-height: 30px;
+  }
+}
+
 @keyframes pulse-dot {
   0%,
   100% {
