@@ -45,6 +45,12 @@ const MODE_OPTIONS: [string, string][] = [
 ];
 
 /** 对话窗口里每条的状态用词（与画布同一套口径） */
+/** 记住"上次在编哪份设计稿 / 上次的任务原文" —— 页面切走再回来要接得上。
+ *  为什么值得记：编排是"边搭边想"的东西，回来发现画布换成了另一份、
+ *  输入框也空了，人只能靠回忆重建上下文 —— 这是最劝退的一种丢失。 */
+const LAST_WF_KEY = "playground:last-workflow";
+const LAST_TASK_KEY = "playground:last-task";
+
 const STEP_STATUS_TEXT: Record<string, string> = {
   pending: "等待",
   running: "进行中",
@@ -116,11 +122,19 @@ export function PlaygroundConsole() {
         const [ags, wfs] = await Promise.all([api.agents(), api.workflows(30)]);
         setAgents(ags);
         setList(wfs);
-        if (wfs.length) {
-          loadWorkflow(wfs[0]);
+        // 上次在编哪一份就回到哪一份（找不到才退回最近改动的那份）
+        const remembered =
+          typeof window !== "undefined" ? window.localStorage.getItem(LAST_WF_KEY) : null;
+        const target = wfs.find((w) => w.id === remembered) ?? wfs[0];
+        // 上次输入框里的任务也还回去（没跑过的话，这就是他刚写了一半的东西）
+        const rememberedTask =
+          typeof window !== "undefined" ? window.localStorage.getItem(LAST_TASK_KEY) : null;
+        if (rememberedTask) setTask(rememberedTask);
+        if (target) {
+          loadWorkflow(target);
           // 顺手把这份设计稿**最近一次执行**带出来 —— 一进来就能看到上次每个助手
           // 干了什么（思考/工具/输出），不用先跑一遍才有东西看。
-          const lastRuns = await api.workflowRuns(wfs[0].id, 1).catch(() => []);
+          const lastRuns = await api.workflowRuns(target.id, 1).catch(() => []);
           const last = lastRuns[0];
           if (last?.id) {
             setOrcId(last.id);          // 列表里的 id 就是编排 id
@@ -135,6 +149,7 @@ export function PlaygroundConsole() {
   }, []);
 
   const loadWorkflow = (w: Workflow) => {
+    if (typeof window !== "undefined") window.localStorage.setItem(LAST_WF_KEY, w.id);
     setWf(w);
     setName(w.name);
     setGraph(w.graph);
@@ -853,7 +868,11 @@ export function PlaygroundConsole() {
         >
           <input
             value={task}
-            onChange={(e) => setTask(e.target.value)}
+            onChange={(e) => {
+              setTask(e.target.value);
+              if (typeof window !== "undefined")
+                window.localStorage.setItem(LAST_TASK_KEY, e.target.value);
+            }}
             onKeyDown={(e) => {
               if ((e.metaKey || e.ctrlKey) && e.key === "Enter") void run();
             }}
