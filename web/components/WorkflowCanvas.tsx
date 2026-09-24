@@ -166,7 +166,12 @@ type Props = {
   onPreset?: (kind: "single" | "serial" | "fan") => void;
 };
 
-const NODE_W = 232;
+/** 流水线列宽上限。之前是 232（横向拼装时代的节点宽），
+ *  现在改成 660 —— 一列到底，产出全文放得下（"看到内容更多"）。
+ *  实际宽度取 min(660, 容器宽-20)，由 stage 的 ResizeObserver 实测（见 colW）。 */
+const NODE_W_MAX = 660;
+/** 实测列宽的兜底值（首帧还没量到时用），与 NODE_W_MAX 一致即可 */
+const NODE_W = 660;
 
 /**
  * 连线上的**两个维度** —— 它们**正交**，可以任意组合。
@@ -297,7 +302,25 @@ export function WorkflowCanvas({
     return () => ro.disconnect();
   }, []);
 
-  /* ── 布局：先量高度，再按层排版（位置全是算出来的，没有一处硬编码） ── */
+  /* ── 实测列宽 ──────────────────────────────────────────────────────────
+     流水线是"一列到底"，列宽跟着容器走（桌面最多 660，手机就是屏宽-20）。
+     宽度必须实测、不能写死：写死 660 在 390 手机上就是横向滚动条 ——
+     这正是这一路"溢出/重叠"bug 的同一种病根。 */
+  const [colW, setColW] = useState(NODE_W_MAX);
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    const apply = () => setColW(Math.max(260, Math.min(NODE_W_MAX, el.clientWidth - 20)));
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  /* ── 布局：纵向流水线（唯一一种布局，桌面手机同一套）───────────────
+     为什么删掉横向拼装：横向是"固定像素往 864 里凑"，每加一个元素都要重算，
+     算错就溢出/重叠 —— 本会话修的三个 bug 全是这一种。纵向流式后，
+     宽度跟着容器走，**结构上不可能重叠**。 */
   const layout = useMemo(() => {
     const layers = topoLayers(graph.nodes, graph.edges);
     // 间距/尺寸对齐 Dify 的 workflow 常量（NODE_WIDTH 240 / X_OFFSET 60 / Y_OFFSET 39）——
@@ -305,21 +328,21 @@ export function WorkflowCanvas({
     // 间距/宽度要满足"任务卡 + 节点 + 结论卡"在 864px 画布内一次放下
     //（200 + 44 + 232 + 44 + 300 = 820，加左右 padding 24 = 844 ✓）
     // —— 之前 60 + 各卡更宽，总量 1000+，结论卡会被右边缘切掉
-    const GAP_X = 40;
-    const GAP_Y = 39;
+    const GAP_Y = 30;   // 步与步之间的距离（含连接线）
     const PAD = 10;
+    /** 列宽 = 实测值（唯一宽度源，下面所有 x 都以它为基准） */
+    const CW = colW;
     /** 两端的卡宽度（任务卡 / 结论卡）—— 它们排在助手节点这一列的左边和右边 */
     // 卡片宽度：要能让「任务卡 + 一层节点 + 结论卡」在 864px 画布内同屏放下
     // （280+76+232+76+280 = 944 放不下，会切掉一头；224 刚好）
-    const CARD_W = 200;
-    /** 结论区宽度：任务是"要写"的（窄点无妨），结论是"要读"的 —— 给它更宽的台面 */
-    const CONC_W = 288;
-    const LEAD = CARD_W + GAP_X;
+    /** 三块同宽 —— 一列到底，宽度只有一个来源（CW） */
+    const CARD_W = CW;
+    const CONC_W = CW;
     const hOf = (nid: string) => heights[nid] || 104;
     const pos: Record<string, { x: number; y: number }> = {};
     let maxX = 0;
     let maxY = 0;
-    if (narrow) {
+    {
       // 窄屏：任务卡在最上，中间节点**纵向逐个排**，结论最下。
       // 1) 让位高度改成**实测**（taskH）：任务卡现在是"输入框常驻"，比原来高得多，
       //    写死 96 会让节点压在任务卡上（实测就是这么坏掉的）。
@@ -330,18 +353,8 @@ export function WorkflowCanvas({
       layers.forEach((ids) => {
         ids.forEach((nid) => {
           pos[nid] = { x: PAD, y };
-          maxX = Math.max(maxX, pos[nid].x + NODE_W + PAD);
+          maxX = Math.max(maxX, pos[nid].x + CW + PAD);
           y += hOf(nid) + 30;
-        });
-        maxY = Math.max(maxY, y);
-      });
-    } else {
-      layers.forEach((ids, ci) => {
-        let y = PAD;
-        ids.forEach((nid) => {
-          pos[nid] = { x: PAD + LEAD + ci * (NODE_W + GAP_X), y };
-          y += hOf(nid) + GAP_Y;
-          maxX = Math.max(maxX, pos[nid].x + NODE_W + PAD);
         });
         maxY = Math.max(maxY, y);
       });
@@ -351,19 +364,14 @@ export function WorkflowCanvas({
     const lastIds = layers[layers.length - 1] ?? [];
     const firstY = firstIds.length ? (pos[firstIds[0]]?.y ?? PAD) : PAD;
     const lastY = lastIds.length ? (pos[lastIds[0]]?.y ?? PAD) : PAD;
-    const taskAt = narrow ? { x: PAD, y: PAD } : { x: PAD, y: firstY };
-    const concAt = narrow ? { x: PAD, y: maxY + 10 } : { x: maxX + GAP_X, y: lastY };
-    let w = Math.max(maxX, 320);
-    let h = Math.max(maxY, 260);
-    if (!narrow) w = Math.max(w, concAt.x + CONC_W + PAD);
-    else {
-      // 窄屏：三张卡都从 PAD 竖排，宽度只需容下**最宽的一张**，
-      // 不能用 maxX（它累计了 NODE_W + PAD），否则手机会横向滚动。
-      w = Math.max(CARD_W, NODE_W, CONC_W) + PAD * 2;
-      h = Math.max(h, concAt.y + 150);
-    }
-    return { pos, w, h, layers, taskAt, concAt, CARD_W, CONC_W };
-  }, [graph.nodes, graph.edges, heights, narrow, taskText, finalText, taskH]);
+    // 三块都在同一列上：任务在最上、节点按层依次往下、结论在最下
+    const taskAt = { x: PAD, y: PAD };
+    const concAt = { x: PAD, y: maxY + 10 };
+    // 宽度只有一个来源：列宽 + 左右内边距（不再累计节点宽，永远不会有横向滚动）
+    const w = CW + PAD * 2;
+    const h = Math.max(maxY, 260, concAt.y + 150);
+    return { pos, w, h, layers, taskAt, concat: concAt, concAt, CARD_W, CONC_W, CW, lead: firstY, tail: lastY };
+  }, [graph.nodes, graph.edges, heights, colW, taskText, finalText, taskH]);
 
   /* 高度变化要在**绘制前**同步进布局，否则连线会先画在旧位置上再跳一下 */
   useLayoutEffect(() => {
@@ -407,7 +415,7 @@ export function WorkflowCanvas({
       const rect = stageRef.current?.getBoundingClientRect();
       const p = layout.pos[from];
       if (!rect || !p) return;
-      const x1 = p.x + NODE_W;
+      const x1 = p.x + colW;
       const y1 = p.y + (heights[from] || 104) / 2;
       const mx = ev.clientX - rect.left + (stageRef.current?.scrollLeft ?? 0);
       const my = ev.clientY - rect.top + (stageRef.current?.scrollTop ?? 0);
@@ -463,26 +471,16 @@ export function WorkflowCanvas({
     /** 终点坐标（给 Dify 那个 2×8 的箭头方条用）—— 两个分支各自算完再带出来 */
     let tx = 0;
     let ty = 0;
-    if (narrow) {
-      const x1 = a.x + NODE_W / 2;
+        {
+      const x1 = a.x + colW / 2;
       const y1 = a.y + (heights[e.from] || 104);
-      const x2 = b.x + NODE_W / 2;
+      const x2 = b.x + colW / 2;
       const y2 = b.y;
       tx = x2;
       ty = y2;
       const dy = Math.max(24, (y2 - y1) * 0.5);
       d = `M${x1},${y1} C${x1},${y1 + dy} ${x2},${y2 - dy} ${x2},${y2}`;
       edgeMids[key] = { x: x1, y: (y1 + y2) / 2 };
-    } else {
-      const x1 = a.x + NODE_W;
-      const y1 = a.y + (heights[e.from] || 104) / 2;
-      const x2 = b.x;
-      const y2 = b.y + (heights[e.to] || 104) / 2;
-      tx = x2;
-      ty = y2;
-      const dx = Math.max(30, (x2 - x1) * 0.5);
-      d = `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`;
-      edgeMids[key] = { x: (x1 + x2) / 2, y: (y1 + y2) / 2 };
     }
     const active = edgeSel?.from === e.from && edgeSel?.to === e.to;
     const mid = edgeMids[key];
@@ -708,7 +706,7 @@ export function WorkflowCanvas({
     const at = layout.pos[detailNid];
     if (!at) return;
     // 按**最右边的内容**算（结论卡常常比节点更靠右）—— 差一点就会少露 60px
-    const rightEdge = Math.max(at.x + NODE_W, layout.concAt.x + layout.CONC_W) + 4;
+    const rightEdge = Math.max(at.x + colW, layout.concAt.x + layout.CONC_W) + 4;
     const need = rightEdge - stage.clientWidth;
     if (need > stage.scrollLeft) stage.scrollTo({ left: need, behavior: "smooth" });
   }, [detailNid, layout]);
@@ -1174,7 +1172,7 @@ export function WorkflowCanvas({
             }
             const l = last[0];
             if (l && finalText.trim()) {
-              const x1 = layout.pos[l].x + NODE_W;
+              const x1 = layout.pos[l].x + colW;
               const y1 = yOf(l);
               lines.push(
                 <path
@@ -1221,7 +1219,7 @@ export function WorkflowCanvas({
               }`}
               style={{
                 transform: `translate(${p.x}px, ${p.y}px)`,
-                width: NODE_W,
+                width: layout.CARD_W,
                 background: "var(--color-surface)",
                 borderColor: isTarget ? "var(--color-accent)" : isSel ? "var(--color-accent)" : meta.border,
                 borderStyle: isTarget ? "dashed" : st === "stale" ? "dashed" : "solid",
