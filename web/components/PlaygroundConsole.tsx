@@ -108,6 +108,14 @@ export function PlaygroundConsole() {
    *  统一在这里轮询，避免画布和详情各拉一遍。 */
   const [traces, setTraces] = useState<Record<string, TraceData>>({});
   const tracesRef = useRef<Record<string, TraceData>>({});
+  /** 历史执行（就地列表）—— 用户明确要求：不跳页，在 Playground 上就能看跑过什么 */
+  const [hist, setHist] = useState<{ id: string; status: string; task: string; started_at: number; ended_at: number | null; step_count: number }[]>([]);
+  const [histOpen, setHistOpen] = useState(false);
+  /** 正在看的那次历史执行（非 null = 只读回放态） */
+  const [viewing, setViewing] = useState<string | null>(null);
+  /** 进历史前的编辑态（退出时还原） */
+  const prevRef = useRef<{ graph: WorkflowGraph; detail: OrchestrationDetail | null; task: string } | null>(null);
+
   /** 顶栏那个「名字 ⌄」的小菜单（切换最近编排 / 保存改动都收在这里） */
   const [wfMenu, setWfMenu] = useState(false);
 
@@ -302,6 +310,44 @@ export function PlaygroundConsole() {
         ? nodes.slice(1).map((n, i) => ({ from: nodes[i].nid, to: n.nid }))
         : [];
     patchGraph({ nodes, edges });
+  };
+
+  /** 载入一次历史执行到画布 —— 只读回放，不碰当前正在编辑的设计稿。
+   *
+   *  数据来源：orchestration.spec 冻结了当时那份图（即使之后助手被改也照样可复现），
+   *  detail 提供每一步的状态/耗时/产出，于是画布、节点上的分色过程、结论卡
+   *  全部复用同一套渲染 —— 不需要为"回放"再写一个界面。
+   */
+  const loadHistory = async (orcId: string) => {
+    try {
+      // 记住进入历史前的编辑态（退出时原样还原，不丢正在编的东西）
+      prevRef.current = { graph, detail, task };
+      const d = (await api.orchestration(orcId)) as unknown as OrchestrationDetail;
+      const spec = (d.spec ?? {}) as { nodes?: { nid: string; agent_id: string }[]; edges?: { from: string; to: string }[] };
+      if (spec.nodes?.length) {
+        const g = { nodes: spec.nodes, edges: spec.edges ?? [] };
+        setGraph(g);
+      }
+      setDetail(d);
+      setTask((d.input as { text?: string } | undefined)?.text ?? "");
+      setViewing(orcId);
+      setHistOpen(false);
+      fb.success("已载入历史执行", "只读回放 —— 想改就「用这次新建一份编排」");
+    } catch {
+      fb.error("载入失败", "这次执行可能已被清理");
+    }
+  };
+
+  /** 退出历史回放：把进历史前的图/状态/任务原样还原（不用重新请求，也不会丢草稿） */
+  const exitHistory = () => {
+    const prev = prevRef.current;
+    if (prev) {
+      setGraph(prev.graph);
+      setDetail(prev.detail);
+      setTask(prev.task);
+    }
+    prevRef.current = null;
+    setViewing(null);
   };
 
   /* ── 拉每个步骤的 trace（画布与详情共用一份）───────────────────────────── */
@@ -819,14 +865,20 @@ export function PlaygroundConsole() {
                   ))}
                 </select>
               </div>
-              {orcId && (
-                <a
-                  href="/runs"
+              {wf && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    // 就地展开历史，**不跳页**（"所有操作只在一个页面内完成"）
+                    setWfMenu(false);
+                    setHistOpen(true);
+                    void api.workflowRuns(wf.id).then(setHist).catch(() => setHist([]));
+                  }}
                   className="block w-full rounded-[6px] px-2 py-1.5 text-left text-[12.5px] hover:bg-[var(--color-surface-2)]"
                   style={{ color: "var(--color-accent)" }}
                 >
-                  运行记录 →
-                </a>
+                  历史执行（这份编排跑过的）…
+                </button>
               )}
               <div className="my-1 border-t" style={{ borderColor: "var(--color-border)" }} />
               {wf && (
@@ -943,6 +995,100 @@ export function PlaygroundConsole() {
 
       {/* 页面下方**不再有任何常驻组件** —— 任务输入搬进了画布左端的任务卡（方案 C）：
           写任务 = 给流程填入口，运行键就长在起点上，那一整条底栏还给画布。 */}
+
+      {/* ══ 历史执行：居中弹层 ══════════════════════════════════════════════
+          "workflow 的历史执行应该以 workflow 的方式显示" —— 点一次执行，
+          画布就换成那次的图（图来自 orchestration.spec，冻结的是当时的定义）。 */}
+      {histOpen && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center p-6"
+          style={{ background: "var(--color-overlay)" }}
+          onClick={() => setHistOpen(false)}
+        >
+          <div
+            className="flex max-h-[80vh] w-full max-w-[620px] flex-col overflow-hidden rounded-[14px] border"
+            style={{ background: "var(--color-surface)", borderColor: "var(--color-border)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 border-b px-4 py-3" style={{ borderColor: "var(--color-border)" }}>
+              <span className="text-[13.5px] font-semibold">历史执行</span>
+              <span className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                这份编排跑过的 {hist.length} 次（最近在前）
+              </span>
+              <button
+                type="button"
+                onClick={() => setHistOpen(false)}
+                className="ml-auto rounded-[6px] px-2 py-1 text-[12px] hover:bg-[var(--color-surface-2)]"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-auto p-2">
+              {hist.length === 0 ? (
+                <div className="px-3 py-8 text-center text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+                  这份编排还没跑过
+                </div>
+              ) : (
+                hist.map((h) => {
+                  const ok = h.status === "ok";
+                  const bad = h.status === "error" || h.status === "failed";
+                  const secs = h.ended_at && h.started_at ? Math.round((h.ended_at - h.started_at) / 1000) : null;
+                  const when = new Date(h.started_at).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+                  return (
+                    <button
+                      key={h.id}
+                      type="button"
+                      onClick={() => void loadHistory(h.id)}
+                      className="mb-1 flex w-full items-center gap-3 rounded-[9px] border px-3 py-2 text-left transition-colors hover:bg-[var(--color-surface-2)]"
+                      style={{ borderColor: "var(--color-border)" }}
+                    >
+                      <span
+                        className="shrink-0 rounded-[5px] px-1.5 py-px text-[10.5px] font-medium"
+                        style={{
+                          background: `color-mix(in srgb, ${ok ? "var(--color-ok)" : bad ? "var(--color-err)" : "var(--color-accent)"} 12%, transparent)`,
+                          color: ok ? "var(--color-ok)" : bad ? "var(--color-err)" : "var(--color-accent)",
+                        }}
+                      >
+                        {ok ? "成功" : bad ? "失败" : h.status}
+                      </span>
+                      <span className="shrink-0 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                        {when}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-[12.5px]">{h.task || "（无任务描述）"}</span>
+                      <span className="shrink-0 text-[11px]" style={{ color: "var(--color-muted)" }}>
+                        {h.step_count} 步{secs != null ? ` · ${secs}s` : ""}
+                      </span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 只读回放横幅：明确告诉用户"你现在看的是历史，不是正在编的图" */}
+      {viewing && (
+        <div
+          className="flex items-center gap-3 border-b px-4 py-2 text-[12.5px]"
+          style={{ background: "color-mix(in srgb, var(--color-accent) 8%, transparent)", borderColor: "var(--color-border)" }}
+        >
+          <span className="font-medium" style={{ color: "var(--color-accent)" }}>
+            正在回放一次历史执行
+          </span>
+          <span style={{ color: "var(--color-muted)" }}>
+            图取自那次执行时保存的定义；右边是它当时的真实状态与产出
+          </span>
+          <button
+            type="button"
+            onClick={exitHistory}
+            className="ml-auto rounded-[6px] border px-2.5 py-1 text-[12px] hover:bg-[var(--color-surface)]"
+            style={{ borderColor: "var(--color-border)" }}
+          >
+            退出回放
+          </button>
+        </div>
+      )}
 
       {/* ══ 助手配置：居中弹层 ══════════════════════════════════════════════
           为什么不放右侧栏：用户要求"移除右边侧边栏，直接在 agent 默认显示" ——
