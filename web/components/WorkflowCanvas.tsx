@@ -537,6 +537,36 @@ export function WorkflowCanvas({
 
   const empty = graph.nodes.length === 0;
 
+  /** 被选中的那个节点 → 它的**上游/下游链路**（选中时点亮，看清这条链怎么串的）
+   *  现在只高亮自己，看不出依赖关系；Dify 选中节点会把整条依赖链着色。 */
+  const chainRoot = detailNid ?? null;
+  const chain = (() => {
+    if (!chainRoot) return null;
+    const up = new Set<string>();
+    const down = new Set<string>();
+    let q = [chainRoot];
+    while (q.length) {
+      const x = q.pop()!;
+      for (const e of graph.edges)
+        if (e.from === x && !down.has(e.to)) {
+          down.add(e.to);
+          q.push(e.to);
+        }
+    }
+    q = [chainRoot];
+    while (q.length) {
+      const x = q.pop()!;
+      for (const e of graph.edges)
+        if (e.to === x && !up.has(e.from)) {
+          up.add(e.from);
+          q.push(e.from);
+        }
+    }
+    return { up, down };
+  })();
+  /** 节点右上角 ⋯ 菜单当前开着的是哪一个 */
+  const [nodeMenu, setNodeMenu] = useState<string | null>(null);
+
   /** 右侧抽屉要用的：哪个节点 / 它的助手 / 这一步的完整数据 / 状态 / 序号 */
   const drawerStep = detailNid ? live?.[detailNid] : undefined;
   const drawerNode = detailNid ? graph.nodes.find((x) => x.nid === detailNid) : undefined;
@@ -1171,8 +1201,8 @@ export function WorkflowCanvas({
               }}
               onClick={(e) => {
                 e.stopPropagation();
-                // 点节点 = 看它**这次跑了什么**（右侧抽屉）。配置是"改设置"，
-                // 频率低得多，挪到 ⚙ —— 两种意图分开，不用猜。
+                // 点节点 = 选中它（点亮上下游链路 + 让它的产出/过程显示在卡上）。
+                // 信息默认就在卡上，不再开右侧抽屉 —— 用户明确要求过。
                 onDetail?.(detailNid === n.nid ? null : n.nid);
               }}
               onMouseEnter={() => peekIn(n.nid)}
@@ -1186,6 +1216,13 @@ export function WorkflowCanvas({
                 background: "var(--color-surface)",
                 borderColor: isTarget ? "var(--color-accent)" : isSel ? "var(--color-accent)" : meta.border,
                 borderStyle: isTarget ? "dashed" : st === "stale" ? "dashed" : "solid",
+                // 选中某节点时，它的上游/下游给一层淡底 —— 一眼看清这条链怎么串
+                //（不动边框：边框已被"状态/拖放目标/失效"占用）
+                ...(chain && (chain.up.has(n.nid) || chain.down.has(n.nid))
+                  ? {
+                      background: `color-mix(in srgb, var(--color-accent) ${chain.down.has(n.nid) ? "8%" : "5%"}, var(--color-surface))`,
+                    }
+                  : {}),
                 // 常态阴影交给 Tailwind 的 shadow-xs / hover:shadow-lg（与 Dify 一致）；
                 // 只有"选中"时才用内联覆盖（加一圈强调色描边环）
                 boxShadow: isSel
@@ -1239,38 +1276,23 @@ export function WorkflowCanvas({
                     isSel || detailNid === n.nid ? "opacity-100" : "opacity-0 group-hover:opacity-100"
                   }`}
                 >
+                  {/* 节点操作收进一个 ⋯ 菜单 —— 原来 ⚙ 和 ✕ 并排常驻：
+                      ① 两个小按钮挤在卡头，且 ✕ 太容易误点；
+                      ② 手机上没有悬停，常驻按钮反而占位。
+                      ⋯ 是个通用约定（触屏也能点），点开才列出动作。 */}
                   <button
                     type="button"
-                    title="配置这个助手"
-                    aria-label="配置这个助手"
+                    title="这一步的操作"
+                    aria-label="这一步的操作"
                     onClick={(e) => {
                       e.stopPropagation();
-                      onSelect(n.nid);
+                      setNodeMenu(nodeMenu === n.nid ? null : n.nid);
                     }}
                     className="shrink-0 rounded border px-1.5 text-[12px] hover:opacity-100"
                     style={{ color: "var(--color-muted)" }}
                   >
-                    ⚙
+                    ⋯
                   </button>
-                  {!frozen && (
-                    <button
-                      type="button"
-                      title="把这一步从编排里移掉"
-                      aria-label="把这一步从编排里移掉"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onChange({
-                          ...graph,
-                          nodes: graph.nodes.filter((x) => x.nid !== n.nid),
-                          edges: graph.edges.filter((x) => x.from !== n.nid && x.to !== n.nid),
-                        });
-                      }}
-                      className="shrink-0 rounded border px-1.5 text-[12px] hover:opacity-100"
-                      style={{ color: "var(--color-muted)" }}
-                    >
-                      ✕
-                    </button>
-                  )}
                 </div>
               </div>
 
@@ -1323,6 +1345,68 @@ export function WorkflowCanvas({
                     })}
                   </div>
                 </>
+              )}
+
+              {/* ⋯ 菜单：配置 / 复制 / 删除 —— 点开才出现，触屏可用 */}
+              {nodeMenu === n.nid && (
+                <div
+                  className="absolute right-1 top-[32px] z-40 w-[148px] overflow-hidden rounded-[9px] border py-1"
+                  style={{
+                    background: "var(--color-surface)",
+                    borderColor: "var(--color-border)",
+                    boxShadow: "0 10px 28px rgba(20,24,31,.16)",
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNodeMenu(null);
+                      onSelect(n.nid);
+                    }}
+                    className="block w-full px-2.5 py-1.5 text-left text-[12.5px] hover:bg-[var(--color-surface-2)]"
+                  >
+                    配置这个助手
+                  </button>
+                  {!frozen && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // 复制这一步：在它后面接一个同名助手（不用再拖一次）
+                        setNodeMenu(null);
+                        const used = new Set(graph.nodes.map((x) => x.nid));
+                        let k = graph.nodes.length + 1;
+                        while (used.has(`n${k}`)) k++;
+                        const nid = `n${k}`;
+                        onChange({
+                          ...graph,
+                          nodes: [...graph.nodes, { nid, agent_id: n.agent_id }],
+                          edges: [...graph.edges, { from: n.nid, to: nid }],
+                        });
+                      }}
+                      className="block w-full px-2.5 py-1.5 text-left text-[12.5px] hover:bg-[var(--color-surface-2)]"
+                    >
+                      在它后面复制一步
+                    </button>
+                  )}
+                  {!frozen && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNodeMenu(null);
+                        onChange({
+                          ...graph,
+                          nodes: graph.nodes.filter((x) => x.nid !== n.nid),
+                          edges: graph.edges.filter((x) => x.from !== n.nid && x.to !== n.nid),
+                        });
+                      }}
+                      className="block w-full px-2.5 py-1.5 text-left text-[12.5px] hover:bg-[var(--color-surface-2)]"
+                      style={{ color: "var(--color-err)" }}
+                    >
+                      删除这一步
+                    </button>
+                  )}
+                </div>
               )}
 
               {/* ── 卡体：参考 Dify 的 block body ──────────────────────────
