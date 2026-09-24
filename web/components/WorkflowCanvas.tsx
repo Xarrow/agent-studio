@@ -35,8 +35,10 @@ const META: Record<NodeState, { dot: string; text: string; border: string }> = {
   idle: { dot: "var(--color-border)", text: "var(--color-muted)", border: "var(--color-border)" },
   wait: { dot: "var(--color-border)", text: "var(--color-muted)", border: "var(--color-border)" },
   run: { dot: "var(--color-accent)", text: "var(--color-accent)", border: "var(--color-accent)" },
-  ok: { dot: "var(--color-ok)", text: "var(--color-ok)", border: "color-mix(in srgb, var(--color-ok) 45%, var(--color-border))" },
-  err: { dot: "var(--color-err)", text: "var(--color-err)", border: "color-mix(in srgb, var(--color-err) 50%, var(--color-border))" },
+  // Dify 的状态边框是**纯实线色**（border-state-success-solid / destructive-solid），
+  // 不是掺了边框色的淡版 —— 之前掺淡是"看着柔和"，但跟 Dify 不一致，改回纯色。
+  ok: { dot: "var(--color-ok)", text: "var(--color-ok)", border: "var(--color-ok)" },
+  err: { dot: "var(--color-err)", text: "var(--color-err)", border: "var(--color-err)" },
   ask: { dot: "var(--color-warn)", text: "var(--color-warn)", border: "var(--color-warn)" },
   stale: { dot: "var(--color-muted)", text: "var(--color-muted)", border: "var(--color-border)" },
 };
@@ -453,14 +455,19 @@ export function WorkflowCanvas({
         ? "color-mix(in srgb, var(--color-ok) 55%, var(--color-border))"
         : shared
           ? "color-mix(in srgb, var(--color-info) 55%, var(--color-border))"
-          : "var(--color-border)";
+          : "#D0D5DD";   // Dify 的连线基线灰（custom-connection-line.tsx 实测）
     const key = `${e.from}->${e.to}`;
     let d: string;
+    /** 终点坐标（给 Dify 那个 2×8 的箭头方条用）—— 两个分支各自算完再带出来 */
+    let tx = 0;
+    let ty = 0;
     if (narrow) {
       const x1 = a.x + NODE_W / 2;
       const y1 = a.y + (heights[e.from] || 104);
       const x2 = b.x + NODE_W / 2;
       const y2 = b.y;
+      tx = x2;
+      ty = y2;
       const dy = Math.max(24, (y2 - y1) * 0.5);
       d = `M${x1},${y1} C${x1},${y1 + dy} ${x2},${y2 - dy} ${x2},${y2}`;
       edgeMids[key] = { x: x1, y: (y1 + y2) / 2 };
@@ -469,6 +476,8 @@ export function WorkflowCanvas({
       const y1 = a.y + (heights[e.from] || 104) / 2;
       const x2 = b.x;
       const y2 = b.y + (heights[e.to] || 104) / 2;
+      tx = x2;
+      ty = y2;
       const dx = Math.max(30, (x2 - x1) * 0.5);
       d = `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`;
       edgeMids[key] = { x: (x1 + x2) / 2, y: (y1 + y2) / 2 };
@@ -481,10 +490,13 @@ export function WorkflowCanvas({
           d={d}
           fill="none"
           stroke={stroke}
-          strokeWidth={active || hoverEdge === key ? 2.6 : 1.6}
+          strokeWidth={active || hoverEdge === key ? 2.6 : 2}
           strokeDasharray={live ? "6 5" : ordMeta.dash}
           className={live ? "wf-edge-live" : done ? "edge-flow" : undefined}
         />
+        {/* 终点小方块（Dify 的箭头就是这个 2×8 的方条，fill #2970FF，不是三角） */}
+        <rect x={tx - 2} y={ty - 4} width={2} height={8} fill="#2970FF" />
+
         {/* 细线太难点中 —— 铺一条透明的粗线专门接点击 */}
         <path
           d={d}
@@ -1251,7 +1263,7 @@ export function WorkflowCanvas({
                     ★
                   </span>
                 )}
-                <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold leading-[1.35]">
+                <span className="min-w-0 flex-1 truncate text-[12px] font-semibold uppercase leading-[1.35] tracking-wide">
                   {a?.name ?? "助手已删除"}
                 </span>
                 <i
@@ -1335,24 +1347,10 @@ export function WorkflowCanvas({
                 </>
               )}
 
-              {/* 连接点圆点（Dify 的 block 每边一个）—— 平时不显，悬停/选中时浮出，
-                  告诉用户"这里可以接线"，而不是只能靠"拖到助手上"这种暗规则 */}
-              {!frozen && (
-                <>
-                  <i
-                    className={`absolute -left-[5px] top-[24px] h-[9px] w-[9px] rounded-full border-2 transition-opacity ${
-                      isSel || detailNid === n.nid ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-                    }`}
-                    style={{ background: "var(--color-surface)", borderColor: meta.dot }}
-                  />
-                  <i
-                    className={`absolute -right-[5px] top-[24px] h-[9px] w-[9px] rounded-full border-2 transition-opacity ${
-                      isSel || detailNid === n.nid ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-                    }`}
-                    style={{ background: "var(--color-surface)", borderColor: meta.dot }}
-                  />
-                </>
-              )}
+              {/* 连接点：按 Dify 做成**隐形**热区（它源码里是 size-4 的
+                  rounded-none/border-none/bg-transparent 元素），不再画可见圆点 —— 
+                  可见圆点是上一轮我自己加的，跟 Dify 不一致，这里改回。
+                  点击范围仍在（左右各一块 16px 热区，见下方 · 悬停显示提示） */}
 
               {/* ⋯ 菜单：配置 / 复制 / 删除 —— 点开才出现，触屏可用 */}
               {nodeMenu === n.nid && (
