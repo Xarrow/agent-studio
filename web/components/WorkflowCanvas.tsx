@@ -309,10 +309,9 @@ export function WorkflowCanvas({
     return () => ro.disconnect();
   }, []);
 
-  /* ── 实测列宽 ──────────────────────────────────────────────────────────
-     流水线是"一列到底"，列宽跟着容器走（桌面最多 660，手机就是屏宽-20）。
-     宽度必须实测、不能写死：写死 660 在 390 手机上就是横向滚动条 ——
-     这正是这一路"溢出/重叠"bug 的同一种病根。 */
+  /* ── 实测列宽（手机纵向时三块共用的宽度）───────────────────────────────
+     纵向流水线是"一列到底"，列宽跟着容器走（桌面最多 660，手机就是屏宽-20）。
+     宽度必须实测、不能写死：写死 660 在 390 手机上就是横向滚动条。 */
   const [colW, setColW] = useState(NODE_W_MAX);
   useEffect(() => {
     const el = stageRef.current;
@@ -324,74 +323,87 @@ export function WorkflowCanvas({
     return () => ro.disconnect();
   }, []);
 
-  /* ── 布局：纵向流水线（唯一一种布局，桌面手机同一套）───────────────
-     为什么删掉横向拼装：横向是"固定像素往 864 里凑"，每加一个元素都要重算，
-     算错就溢出/重叠 —— 本会话修的三个 bug 全是这一种。纵向流式后，
-     宽度跟着容器走，**结构上不可能重叠**。 */
+  /* ── 布局：**横向为主**（Dify 式），手机上自动降级为纵向流水线 ──────────────
+     横向 = 列（第几步）× 行（同层第几个），位置全由拓扑算出来，用户不用摆坐标。
+     关键改变：画布**允许横向滚动**，所以不再有"把三张卡塞进 864px"的凑数逻辑 ——
+     那正是过去三个溢出/重叠 bug 的根（每加一个元素就要重算宽度、算错就压上）。
+     手机（≤900px）自动换成纵向流水线：同一份图，两套排版，窄屏不横向溢出。 */
   const layout = useMemo(() => {
     const layers = topoLayers(graph.nodes, graph.edges);
-    // 间距/尺寸对齐 Dify 的 workflow 常量（NODE_WIDTH 240 / X_OFFSET 60 / Y_OFFSET 39）——
-    // 直接读它源码拿的数，不是凭观感调的
-    // 间距/宽度要满足"任务卡 + 节点 + 结论卡"在 864px 画布内一次放下
-    //（200 + 44 + 232 + 44 + 300 = 820，加左右 padding 24 = 844 ✓）
-    // —— 之前 60 + 各卡更宽，总量 1000+，结论卡会被右边缘切掉
-    const GAP_Y = 30;   // 步与步之间的距离（含连接线）
     const PAD = 10;
-    /** 列宽 = 实测值（唯一宽度源，下面所有 x 都以它为基准） */
+    /** 横向卡宽：节点对齐 Dify 的 NODE_WIDTH 240；任务是"要写"的、结论是"要读"的 */
+    const W_TASK = 220;
+    const W_NODE = 240;
+    const W_CONC = 320;
+    const GAP_X = 56;   // 层间距（Dify X_OFFSET 60 的量级）
+    const GAP_Y = 39;   // 同层节点间距（Dify Y_OFFSET 39）
+    /** 纵向（手机）三块统一用实测列宽 */
     const CW = colW;
-    /** 两端的卡宽度（任务卡 / 结论卡）—— 它们排在助手节点这一列的左边和右边 */
-    // 卡片宽度：要能让「任务卡 + 一层节点 + 结论卡」在 864px 画布内同屏放下
-    // （280+76+232+76+280 = 944 放不下，会切掉一头；224 刚好）
-    /** 三块同宽 —— 一列到底，宽度只有一个来源（CW） */
-    const CARD_W = CW;
-    const CONC_W = CW;
     const hOf = (nid: string) => heights[nid] || 104;
     const pos: Record<string, { x: number; y: number }> = {};
     let maxX = 0;
     let maxY = 0;
-    {
-      // 窄屏：任务卡在最上，中间节点**纵向逐个排**，结论最下。
-      // 1) 让位高度改成**实测**（taskH）：任务卡现在是"输入框常驻"，比原来高得多，
-      //    写死 96 会让节点压在任务卡上（实测就是这么坏掉的）。
-      // 2) 同层节点不再横排 —— 手机宽 390，两个节点横排就是 490，必然横向溢出。
-      // 兜底 240：实测任务卡高 211（输入框常驻后），给足余量 ——
-      // 宁可多留 30px 空白，也不要因为"没量到"就让节点压在卡上。
+    if (narrow) {
+      // ── 纵向流水线（手机）：任务 → 各步 → 结论，一列到底
+      // 兜底 240：实测任务卡高 211，宁可多留白，也不要节点压在卡上
       let y = PAD + (taskH || 240) + 14;
       layers.forEach((ids) => {
         ids.forEach((nid) => {
           pos[nid] = { x: PAD, y };
-          maxX = Math.max(maxX, pos[nid].x + CW + PAD);
           y += hOf(nid) + 30;
         });
         maxY = Math.max(maxY, y);
       });
+    } else {
+      // ── 横向（桌面）：列 = 第几步，行 = 同层第几个
+      layers.forEach((ids, ci) => {
+        let y = PAD;
+        ids.forEach((nid) => {
+          pos[nid] = { x: PAD + W_TASK + GAP_X + ci * (W_NODE + GAP_X), y };
+          y += hOf(nid) + GAP_Y;
+          maxX = Math.max(maxX, pos[nid].x + W_NODE + PAD);
+        });
+        maxY = Math.max(maxY, y);
+      });
     }
-    // 两端的卡：宽屏放在首/末层同一行；窄屏放最上/最下
+    // 两端的卡：宽屏与首/末层同一行；窄屏放最上/最下
     const firstIds = layers[0] ?? [];
     const lastIds = layers[layers.length - 1] ?? [];
     const firstY = firstIds.length ? (pos[firstIds[0]]?.y ?? PAD) : PAD;
     const lastY = lastIds.length ? (pos[lastIds[0]]?.y ?? PAD) : PAD;
-    // 三块都在同一列上：任务在最上、节点按层依次往下、结论在最下
-    const taskAt = { x: PAD, y: PAD };
-    const concAt = { x: PAD, y: maxY + 10 };
-    // 宽度只有一个来源：列宽 + 左右内边距（不再累计节点宽，永远不会有横向滚动）
-    const w = CW + PAD * 2;
-    const h = Math.max(maxY, 260, concAt.y + 150);
-    // 纵向流的"筋"：相邻两块之间画一条竖线（色/宽对齐 Dify 的 edge：#D0D5DD / 2px）。
-    // 按 y 排序取空隙 —— 并行层、多节点、任意顺序都不会画错。
-    const seq = [
-      { y: PAD, h: taskH || 240 },
-      ...layers.flat().map((nid) => ({ y: pos[nid]?.y ?? PAD, h: hOf(nid) })),
-      { y: concAt.y, h: 0 },
-    ].sort((a, b) => a.y - b.y);
-    const links: { x: number; y1: number; y2: number }[] = [];
-    for (let i = 0; i < seq.length - 1; i++) {
-      const y1 = seq[i].y + seq[i].h;
-      const y2 = seq[i + 1].y;
-      if (y2 - y1 > 6) links.push({ x: PAD + CW / 2, y1: y1 + 3, y2: y2 - 3 });
+    const taskAt = narrow ? { x: PAD, y: PAD } : { x: PAD, y: firstY };
+    const concAt = narrow ? { x: PAD, y: maxY + 10 } : { x: maxX + GAP_X, y: lastY };
+    /** 三块的实际宽度（窄屏=列宽；宽屏=各自的固定宽）—— 渲染只读这三个值 */
+    const CARD_W = narrow ? CW : W_TASK;
+    const NW = narrow ? CW : W_NODE;
+    const CONC_W = narrow ? CW : W_CONC;
+    let w = Math.max(maxX, 320);
+    let h = Math.max(maxY, 260);
+    if (narrow) {
+      // 纵向：宽度只需容下**最宽的一张**（不能用 maxX，否则手机横向滚动）
+      w = CW + PAD * 2;
+      h = Math.max(h, concAt.y + 150);
+    } else {
+      // 横向：宽度 = 结论卡右边缘（超出容器就横向滚动 —— 这是 Dify 的画布行为）
+      w = Math.max(w, concAt.x + CONC_W + PAD);
+      h = Math.max(h, concAt.y + 200);
     }
-    return { pos, w, h, layers, taskAt, concat: concAt, concAt, CARD_W, CONC_W, CW, lead: firstY, tail: lastY, links };
-  }, [graph.nodes, graph.edges, heights, colW, taskText, finalText, taskH]);
+    // 流水线"筋"（块与块之间的竖线）：只有纵向模式需要；横向模式由图的连线负责
+    const links: { x: number; y1: number; y2: number }[] = [];
+    if (narrow) {
+      const seq = [
+        { y: PAD, h: taskH || 240 },
+        ...layers.flat().map((nid) => ({ y: pos[nid]?.y ?? PAD, h: hOf(nid) })),
+        { y: concAt.y, h: 0 },
+      ].sort((a, b) => a.y - b.y);
+      for (let i = 0; i < seq.length - 1; i++) {
+        const y1 = seq[i].y + seq[i].h;
+        const y2 = seq[i + 1].y;
+        if (y2 - y1 > 6) links.push({ x: PAD + CW / 2, y1: y1 + 3, y2: y2 - 3 });
+      }
+    }
+    return { pos, w, h, layers, taskAt, concat: concAt, concAt, CARD_W, NW, CONC_W, CW, links };
+  }, [graph.nodes, graph.edges, heights, colW, narrow, taskText, finalText, taskH]);
 
   /* 高度变化要在**绘制前**同步进布局，否则连线会先画在旧位置上再跳一下 */
   useLayoutEffect(() => {
@@ -435,7 +447,7 @@ export function WorkflowCanvas({
       const rect = stageRef.current?.getBoundingClientRect();
       const p = layout.pos[from];
       if (!rect || !p) return;
-      const x1 = p.x + colW;
+      const x1 = p.x + layout.NW;
       const y1 = p.y + (heights[from] || 104) / 2;
       const mx = ev.clientX - rect.left + (stageRef.current?.scrollLeft ?? 0);
       const my = ev.clientY - rect.top + (stageRef.current?.scrollTop ?? 0);
@@ -491,16 +503,28 @@ export function WorkflowCanvas({
     /** 终点坐标（给 Dify 那个 2×8 的箭头方条用）—— 两个分支各自算完再带出来 */
     let tx = 0;
     let ty = 0;
-        {
-      const x1 = a.x + colW / 2;
+        if (narrow) {
+      // 纵向（手机）：从 A 底部中间 → B 顶部中间，贝塞尔往下走
+      const x1 = a.x + layout.CW / 2;
       const y1 = a.y + (heights[e.from] || 104);
-      const x2 = b.x + colW / 2;
+      const x2 = b.x + layout.CW / 2;
       const y2 = b.y;
       tx = x2;
       ty = y2;
       const dy = Math.max(24, (y2 - y1) * 0.5);
       d = `M${x1},${y1} C${x1},${y1 + dy} ${x2},${y2 - dy} ${x2},${y2}`;
       edgeMids[key] = { x: x1, y: (y1 + y2) / 2 };
+    } else {
+      // 横向（桌面）：从 A 右侧中间 → B 左侧中间，贝塞尔往右走
+      const x1 = a.x + layout.NW;
+      const y1 = a.y + (heights[e.from] || 104) / 2;
+      const x2 = b.x;
+      const y2 = b.y + (heights[e.to] || 104) / 2;
+      tx = x2;
+      ty = y2;
+      const dx = Math.max(30, (x2 - x1) * 0.5);
+      d = `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`;
+      edgeMids[key] = { x: (x1 + x2) / 2, y: (y1 + y2) / 2 };
     }
     const active = edgeSel?.from === e.from && edgeSel?.to === e.to;
     const mid = edgeMids[key];
@@ -773,7 +797,7 @@ export function WorkflowCanvas({
     const at = layout.pos[detailNid];
     if (!at) return;
     // 按**最右边的内容**算（结论卡常常比节点更靠右）—— 差一点就会少露 60px
-    const rightEdge = Math.max(at.x + colW, layout.concAt.x + layout.CONC_W) + 4;
+    const rightEdge = Math.max(at.x + layout.NW, layout.concAt.x + layout.CONC_W) + 4;
     const need = rightEdge - stage.clientWidth;
     if (need > stage.scrollLeft) stage.scrollTo({ left: need, behavior: "smooth" });
   }, [detailNid, layout]);
@@ -1249,7 +1273,7 @@ export function WorkflowCanvas({
             }
             const l = last[0];
             if (l && finalText.trim()) {
-              const x1 = layout.pos[l].x + colW;
+              const x1 = layout.pos[l].x + layout.NW;
               const y1 = yOf(l);
               lines.push(
                 <path
@@ -1305,7 +1329,7 @@ export function WorkflowCanvas({
               }`}
               style={{
                 transform: `translate(${p.x}px, ${p.y}px)`,
-                width: layout.CARD_W,
+                width: layout.NW,
                 background: "var(--color-surface)",
                 borderColor: isTarget ? "var(--color-accent)" : isSel ? "var(--color-accent)" : meta.border,
                 borderStyle: isTarget ? "dashed" : st === "stale" ? "dashed" : "solid",
