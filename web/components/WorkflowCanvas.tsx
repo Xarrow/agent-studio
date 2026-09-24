@@ -489,7 +489,7 @@ export function WorkflowCanvas({
         <path
           d={d}
           fill="none"
-          stroke={stroke}
+          stroke={active ? "var(--color-accent)" : stroke}
           strokeWidth={active || hoverEdge === key ? 2.6 : 2}
           strokeDasharray={live ? "6 5" : ordMeta.dash}
           className={live ? "wf-edge-live" : done ? "edge-flow" : undefined}
@@ -749,8 +749,10 @@ export function WorkflowCanvas({
       className="relative h-full min-w-0 flex-1 overflow-auto"
       style={{
         backgroundColor: hot ? "color-mix(in srgb, var(--color-accent) 5%, var(--color-surface-2))" : "var(--color-surface-2)",
-        backgroundImage: "radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--color-border) 85%, transparent) 1.2px, transparent 0)",
-        backgroundSize: "20px 20px",
+        // 点阵对齐 Dify（nodes/loop/node.tsx: <Background gap={[14,14]} size={2} />）：
+        // 点是 2px、间距 14px；我们原来是 1.2px / 20px，显得又稀又小。
+        backgroundImage: "radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--color-border) 85%, transparent) 2px, transparent 0)",
+        backgroundSize: "14px 14px",
       }}
     >
               {/* 居中：内容比视口小时整体居中（不然挤在左上角像没做完）；比视口大时照旧滚动 */}
