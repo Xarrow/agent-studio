@@ -618,6 +618,55 @@ export function WorkflowCanvas({
     }
     return { up, down };
   })();
+  /** 上移 / 下移一位 —— 手机上拖拽不可靠，顺序编辑改用菜单点选（操作更少、必成功）。
+   *
+   *  只对**链式**成立（该助手进出各 ≤1 条边）；分叉/汇合处不动，否则会把拓扑改坏。
+   *  实现要点：**不重建边对象，只重新指向** —— 边上的设置（串行/并行、带上下文、
+   *  带记忆）描述的是"这两步之间的关系"，换位置后依然成立，不能因为搬个顺序就丢掉。
+   */
+  const moveStep = (nid: string, dir: -1 | 1) => {
+    const ins = graph.edges.filter((e) => e.to === nid);
+    const outs = graph.edges.filter((e) => e.from === nid);
+    const pred = ins[0]?.from ?? null;
+    const succ = outs[0]?.to ?? null;
+    const other = dir === -1 ? pred : succ;
+    if (!other) return;
+    const chainOk = (x: string) =>
+      graph.edges.filter((e) => e.to === x).length <= 1 &&
+      graph.edges.filter((e) => e.from === x).length <= 1;
+    if (ins.length > 1 || outs.length > 1 || !chainOk(other)) return;
+
+    if (dir === -1) {
+      // 上移： gp → pred → nid → succ   ⇒   gp → nid → pred → succ
+      const gp = graph.edges.find((e) => e.to === pred && e.from !== nid) ?? null;
+      const mid = graph.edges.find((e) => e.from === pred && e.to === nid) ?? null;
+      const tail = graph.edges.find((e) => e.from === nid && e.to === succ) ?? null;
+      onChange({
+        ...graph,
+        edges: graph.edges.map((e) => {
+          if (gp && e === gp) return { ...e, to: nid };
+          if (mid && e === mid) return { ...e, from: nid, to: pred };
+          if (tail && e === tail) return { ...e, from: pred, to: succ };
+          return e;
+        }),
+      });
+      return;
+    }
+    // 下移： pred → nid → succ → next   ⇒   pred → succ → nid → next
+    const head = graph.edges.find((e) => e.from === pred && e.to === nid) ?? null;
+    const mid = graph.edges.find((e) => e.from === nid && e.to === succ) ?? null;
+    const next = graph.edges.find((e) => e.from === succ && e.to !== nid) ?? null;
+    onChange({
+      ...graph,
+      edges: graph.edges.map((e) => {
+        if (head && e === head) return { ...e, to: succ };
+        if (mid && e === mid) return { ...e, from: succ, to: nid };
+        if (next && e === next) return { ...e, from: nid };
+        return e;
+      }),
+    });
+  };
+
   /** 节点右上角 ⋯ 菜单当前开着的是哪一个 */
   const [nodeMenu, setNodeMenu] = useState<string | null>(null);
   /** 鼠标悬在哪条连线上（悬停时加粗，告诉用户"这条线是可点的"） */
@@ -1403,6 +1452,40 @@ export function WorkflowCanvas({
                   >
                     配置这个助手
                   </button>
+                  {!frozen && (
+                    <>
+                      {(() => {
+                        const pred = graph.edges.find((e) => e.to === n.nid)?.from ?? null;
+                        const succ = graph.edges.find((e) => e.from === n.nid)?.to ?? null;
+                        return (
+                          <>
+                            <button
+                              type="button"
+                              disabled={!pred}
+                              onClick={() => {
+                                setNodeMenu(null);
+                                moveStep(n.nid, -1);
+                              }}
+                              className="df-menu-item hover:bg-[var(--color-surface-2)] disabled:opacity-35"
+                            >
+                              上移一位
+                            </button>
+                            <button
+                              type="button"
+                              disabled={!succ}
+                              onClick={() => {
+                                setNodeMenu(null);
+                                moveStep(n.nid, 1);
+                              }}
+                              className="df-menu-item hover:bg-[var(--color-surface-2)] disabled:opacity-35"
+                            >
+                              下移一位
+                            </button>
+                          </>
+                        );
+                      })()}
+                    </>
+                  )}
                   {!frozen && (
                     <button
                       type="button"
