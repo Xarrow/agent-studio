@@ -278,6 +278,8 @@ class ActivityItem(BaseModel):
     kind: Literal["chat", "preview", "playground", "llm_test"]
     id: str
     at: int                                  # 开始时间（毫秒）
+    # 编排执行才有：点这一行可以「以流程查看」—— 前端据此深链到 Playground 的历史回放
+    orchestration_id: str | None = None
     duration_ms: int | None = None
     status: str = "ok"
     #: 主体显示名：助手执行 → 助手名；LLM 测试 → "provider · model"

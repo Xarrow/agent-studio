@@ -189,6 +189,8 @@ export interface ActivityItem {
   kind: "chat" | "preview" | "playground" | "llm_test";
   id: string;
   at: number;
+  /** 编排执行才有：有它就能「以流程查看」（深链到 Playground 的历史回放） */
+  orchestration_id?: string | null;
   duration_ms: number | null;
   status: string;
   title: string;

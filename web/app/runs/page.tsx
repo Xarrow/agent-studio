@@ -388,6 +388,19 @@ export default function RunsPage() {
                       >
                         {KIND_LABEL[it.kind]}
                       </span>
+                      {/* 编排执行额外给个「以流程查看」：直接进 Playground 的历史回放，
+                          用画布看那次的图 —— 而不是在这里弹一个五页签的日志框 */}
+                      {it.kind === "playground" && it.orchestration_id && (
+                        <a
+                          href={`/playground?history=${it.orchestration_id}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="ml-1.5 whitespace-nowrap text-[11px] underline decoration-dotted"
+                          style={{ color: "var(--color-accent)" }}
+                          title="用画布看这次执行（哪一步在跑、跑成什么样）"
+                        >
+                          以流程查看
+                        </a>
+                      )}
                     </td>
                     <td className="px-3 py-2.5">
                       <div className="truncate max-w-[240px]">{it.title}</div>

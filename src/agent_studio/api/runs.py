@@ -402,6 +402,7 @@ async def activity_timeline(
                 kind=_run_kind(r),  # type: ignore[arg-type]
                 id=r.id,
                 at=r.started_at,
+                orchestration_id=r.orchestration_id,
                 duration_ms=dur,
                 status=r.status,
                 title=agents.get(r.agent_id, r.agent_id),

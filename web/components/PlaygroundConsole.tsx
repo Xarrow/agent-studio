@@ -350,6 +350,19 @@ export function PlaygroundConsole() {
     setViewing(null);
   };
 
+  /** 从「运行记录」深链过来：/playground?history=<orc_id> 直接进入那次执行的回放。
+   *  这样 Runs 里点编排执行 = 以 workflow 的形式看它，而不是弹一个五页签的日志框。 */
+  useEffect(() => {
+    const h = new URLSearchParams(window.location.search).get("history");
+    if (h) {
+      void loadHistory(h);
+      // 清掉参数，避免手动刷新时反复载入同一次（也便于用户接着编辑）
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+    // 只在挂载时执行一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   /* ── 拉每个步骤的 trace（画布与详情共用一份）───────────────────────────── */
   useEffect(() => {
     const steps = detail?.steps ?? [];
