@@ -1167,7 +1167,7 @@ export function WorkflowCanvas({
               }}
               onMouseEnter={() => peekIn(n.nid)}
               onMouseLeave={() => peekOut()}
-              className={`group absolute rounded-[10px] border transition-shadow ${
+              className={`wf-node group absolute rounded-[12px] border ${
                 lv && st === "run" ? "node-run" : st === "ask" ? "node-ask" : ""
               }`}
               style={{
@@ -1192,9 +1192,15 @@ export function WorkflowCanvas({
                     · [主控] → 名字前一个星标
                     · ⚙ / ✕ → 悬停或选中才出现（平时不占位）
                     · 模型名 → 进右侧抽屉（助手栏已经写着了） */}
+                {/* 图标方块：参考 Dify 的 block —— 用**状态色**染底（跑=蓝、成=绿、败=红），
+                    一眼从颜色就知道这一步处在什么状态，比小圆点醒目得多 */}
                 <span
-                  className="grid h-[20px] w-[20px] shrink-0 place-items-center rounded-full border text-[10.5px] font-semibold"
-                  style={{ borderColor: meta.border, background: "var(--color-surface-2)", color: meta.text }}
+                  className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-[9px] text-[13px] font-semibold"
+                  style={{
+                    background: `color-mix(in srgb, ${meta.dot} 14%, var(--color-surface))`,
+                    color: meta.text,
+                    border: `1px solid color-mix(in srgb, ${meta.dot} 32%, transparent)`,
+                  }}
                   title={`第 ${stepNo} 步`}
                 >
                   {stepNo}
@@ -1208,7 +1214,7 @@ export function WorkflowCanvas({
                     ★
                   </span>
                 )}
-                <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">
+                <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold leading-[1.35]">
                   {a?.name ?? "助手已删除"}
                 </span>
                 <i
