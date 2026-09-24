@@ -17,7 +17,7 @@ import Markdown from "./Markdown";
 
 import type { NodeLiveInfo } from "@/components/StepExecPanel";
 import { STEP_STYLE, type StepKind } from "@/components/ui/run-timeline";
-import type { Agent, WorkflowEdge, WorkflowGraph, WorkflowNode } from "@/lib/types";
+import type { Agent, UploadItem, WorkflowEdge, WorkflowGraph, WorkflowNode } from "@/lib/types";
 
 export type NodeState = "idle" | "wait" | "run" | "ok" | "err" | "ask" | "stale";
 
@@ -139,6 +139,10 @@ type Props = {
   /** 任务卡就是输入口：文本、改文本、跑（运行键长在流程起点上） */
   taskValue?: string;
   onTaskValue?: (v: string) => void;
+  /** 任务卡上的附件（图片/文件）—— 上传在 PlaygroundConsole 里做，这里只管展示与交互 */
+  attachments?: UploadItem[];
+  onAttach?: (files: File[]) => void;
+  onDetach?: (id: string) => void;
   onRun?: () => void;
   running?: boolean;
   /** 当前会跑什么模式（显示在运行键上） */
@@ -210,6 +214,9 @@ export function WorkflowCanvas({
   finalText = "",
   lastNid = null,
   taskValue = "",
+  attachments = [],
+  onAttach,
+  onDetach,
   onTaskValue,
   onRun,
   running = false,
@@ -744,39 +751,11 @@ export function WorkflowCanvas({
     setInsertAt(null);
   };
 
-  /** 富文本（Markdown）插入工具 —— 参考开源 workflow 的输入框：
-   *  B/I 包裹选区，列表/引用/代码给整行加前缀。不引第三方编辑器，自己包一层就够用。 */
-  const wrapSel = (pre: string, post = pre) => {
-    const el = taskBoxRef.current;
-    if (!el) return;
-    const a = el.selectionStart ?? 0;
-    const b = el.selectionEnd ?? 0;
-    const sel = taskValue.slice(a, b) || "文字";
-    const next = taskValue.slice(0, a) + pre + sel + post + taskValue.slice(b);
-    onTaskValue?.(next);
-    requestAnimationFrame(() => {
-      el.focus();
-      el.setSelectionRange(a + pre.length, a + pre.length + sel.length);
-    });
-  };
-  const prefixLine = (mark: string) => {
-    const el = taskBoxRef.current;
-    if (!el) return;
-    const a = el.selectionStart ?? 0;
-    const lineStart = taskValue.lastIndexOf("\n", Math.max(0, a - 1)) + 1;
-    const next = taskValue.slice(0, lineStart) + mark + taskValue.slice(lineStart);
-    onTaskValue?.(next);
-    requestAnimationFrame(() => {
-      el.focus();
-      const pos = a + mark.length;
-      el.setSelectionRange(pos, pos);
-    });
-  };
-
   /** 任务卡的输入框（方案 C：不再有页面底部的发令区）。
    *  它是**默认就在**的输入框 —— 不再"点一下才展开"，所以自动长高要在
    *  内容变化时一直生效，而不是只在某个"编辑态"里。 */
   const taskBoxRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const growTask = () => {
     const el = taskBoxRef.current;
     if (!el) return;
@@ -1045,6 +1024,20 @@ export function WorkflowCanvas({
         <div
           ref={taskCardRef}
           className="task-card df-card absolute border px-3 py-2"
+            onDragOver={(e) => {
+              // 只认"文件"，不干扰从助手栏拖助手进来那条路径
+              if (Array.from(e.dataTransfer.types).includes("Files")) {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "copy";
+              }
+            }}
+            onDrop={(e) => {
+              const files = Array.from(e.dataTransfer.files ?? []);
+              if (!files.length) return;      // 没有文件 → 交给画布处理（拖助手）
+              e.preventDefault();
+              e.stopPropagation();
+              onAttach?.(files);
+            }}
           style={{
             transform: `translate(${layout.taskAt.x}px, ${layout.taskAt.y}px)`,
             width: layout.CARD_W,
@@ -1072,12 +1065,6 @@ export function WorkflowCanvas({
                 e.currentTarget.blur();
                 return;
               }
-              // ⌘/Ctrl+B、⌘/Ctrl+I 与工具栏等效
-              if ((e.metaKey || e.ctrlKey) && (e.key === "b" || e.key === "i")) {
-                e.preventDefault();
-                wrapSel(e.key === "b" ? "**" : "*");
-                return;
-              }
               if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault();
                 onRun?.();
@@ -1093,31 +1080,67 @@ export function WorkflowCanvas({
             }}
           />
 
-          {/* 工具栏常驻（写的是 Markdown，回车运行前随手加格式） */}
-          <div className="mt-1 flex flex-wrap items-center gap-0.5">
-            {(
-              [
-                ["B", "加粗", () => wrapSel("**")],
-                ["I", "斜体", () => wrapSel("*")],
-                ["≔", "列表", () => prefixLine("- ")],
-                ["❝", "引用", () => prefixLine("> ")],
-                ["{}", "代码", () => wrapSel("`")],
-              ] as const
-            ).map(([label, tip, act]) => (
-              <button
-                key={label}
-                type="button"
-                title={tip}
-                onMouseDown={(ev) => ev.preventDefault()}
-                onClick={(ev) => {
-                  ev.stopPropagation();
-                  act();
-                }}
-                className="df-ctl-sm justify-center hover:bg-[var(--color-surface-2)]"
-                style={{ color: "var(--color-muted)" }}
+          {/* 附件行（工具栏已按要求去掉 —— 任务不需要富文本，只需要能带料进来）：
+              文本之外可以塞 **图片** 和 **文件**：点「＋」或直接把文件拖到这张卡上。
+              缩略图/文件名做成可删的小条，删除不弹窗（点 ✕ 即走，要恢复再拖一次就行）。 */}
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              title="加图片或文件（也可以直接把文件拖到这张卡上）"
+              onMouseDown={(ev) => ev.preventDefault()}
+              onClick={(ev) => {
+                ev.stopPropagation();
+                fileInputRef.current?.click();
+              }}
+              className="df-ctl-sm justify-center hover:bg-[var(--color-surface-2)]"
+              style={{ color: "var(--color-accent)", border: "1px dashed var(--color-border)" }}
+            >
+              ＋ 图片 / 文件
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept="image/*,.pdf,.txt,.md,.csv,.json,.xlsx,.xls,.docx,.doc,.zip,.log"
+              className="hidden"
+              onChange={(ev) => {
+                const files = Array.from(ev.target.files ?? []);
+                if (files.length) onAttach?.(files);
+                ev.target.value = "";   // 同一个文件再选一次也要触发
+              }}
+            />
+            {attachments.map((f) => (
+              <span
+                key={f.id}
+                className="flex items-center gap-1.5 rounded-[6px] border px-1.5 py-1 text-[12px]"
+                style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
               >
-                {label}
-              </button>
+                {f.kind === "image" ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={f.url} alt={f.name} className="h-[22px] w-[22px] rounded-[4px] object-cover" />
+                ) : (
+                  <span
+                    className="grid h-[22px] w-[22px] place-items-center rounded-[4px] text-[11px]"
+                    style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)" }}
+                  >
+                    ▤
+                  </span>
+                )}
+                <span className="max-w-[130px] truncate" title={`${f.name} · ${Math.max(1, Math.round(f.size / 1024))} KB`}>
+                  {f.name}
+                </span>
+                <button
+                  type="button"
+                  title="移除这个附件"
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    onDetach?.(f.id);
+                  }}
+                  className="px-1 text-[var(--color-muted)] hover:text-[var(--color-err)]"
+                >
+                  ✕
+                </button>
+              </span>
             ))}
           </div>
 

@@ -31,6 +31,7 @@ import type {
   OrchestrationStepRead,
   Workflow,
   WorkflowGraph,
+  UploadItem,
 } from "@/lib/types";
 
 /** 顶栏可选的执行方式（"" = 自动判断） */
@@ -95,6 +96,8 @@ export function PlaygroundConsole() {
   /** 「选择助手」下拉（手机上拖拽手势不可靠：手指一动就从"点选"变成"拖拽"，
    *  所以给出下拉框这条确定性路径 —— 点选 = 一定能加进去） */
   const [agentPick, setAgentPick] = useState(false);
+  /** 任务卡上的附件（图片/文件）。上传后即落盘，运行时装进任务交给助手去读。 */
+  const [attachments, setAttachments] = useState<UploadItem[]>([]);
   /** 拖拽时跟着手指/鼠标的小卡片（用 position:fixed，不受画布滚动影响） */
   const [ghost, setGhost] = useState<{ x: number; y: number; name: string } | null>(null);
   /** 指针正悬停在哪个节点上（画布据此预览"会插到它后面"） */
@@ -574,6 +577,22 @@ export function PlaygroundConsole() {
     setOutputs(outs);
   }, [detail, graph]);
 
+  /** 上传附件：逐个传（一个失败不影响别的，失败原因指名道姓报给用户） */
+  const attachFiles = async (files: File[]) => {
+    for (const f of files) {
+      try {
+        const up = await api.uploadFile(f);
+        setAttachments((arr) => [...arr, up]);
+      } catch (e) {
+        fb.error(`「${f.name}」没传上去`, e instanceof Error ? e.message : String(e));
+      }
+    }
+  };
+  const detachFile = (id: string) => {
+    setAttachments((arr) => arr.filter((a) => a.id !== id));
+    void api.deleteUpload(id).catch(() => null);
+  };
+
   const run = async () => {
     const text = task.trim();
     if (!text) return fb.error("还差一步", "先写一句任务，助手才知道要干什么");
@@ -588,7 +607,14 @@ export function PlaygroundConsole() {
         setRunning(false);
         return;
       }
-      const started = await api.runWorkflow(saved.id, { task: text });
+      // 附件：把**落盘路径**一并交给助手 —— 助手本来就有读文件的工具，
+      // 不必为"传图/传文件"另造一套协议（少一层抽象，模型也看得懂）。
+      const withFiles = attachments.length
+        ? text +
+          "\n\n附件（本次任务的参考资料，请按需读取）：\n" +
+          attachments.map((a) => `- ${a.name} → ${a.path}`).join("\n")
+        : text;
+      const started = await api.runWorkflow(saved.id, { task: withFiles });
       setOrcId(started.orchestration_id);
       fb.success(`已开始：${started.mode_label} · ${started.step_count} 步`);
       subscribe(started.orchestration_id);
@@ -1045,6 +1071,9 @@ export function PlaygroundConsole() {
             finalText={finalText}
             lastNid={lastNid}
             taskValue={task}
+            attachments={attachments}
+            onAttach={(files) => void attachFiles(files)}
+            onDetach={detachFile}
             onTaskValue={(v) => {
               setTask(v);
               if (typeof window !== "undefined") window.localStorage.setItem(LAST_TASK_KEY, v);

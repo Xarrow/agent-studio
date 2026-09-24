@@ -619,3 +619,24 @@ export interface McpProbeResult {
   tools: McpToolInfo[];
   error: string;
 }
+
+/* ── 任务卡的上传附件 ──────────────────────────────────────────────── */
+export type UploadItem = {
+  id: string;
+  name: string;
+  size: number;
+  ext: string;
+  kind: "image" | "file";
+  path: string;   // 落盘绝对路径 —— 运行时拼进任务交给助手（助手用读文件的工具读它）
+  url: string;    // /api/uploads/file/<id>
+  ts: number;
+};
+
+export type UploadConfigRead = {
+  dir: string;
+  default_dir: string;
+  is_default: boolean;
+  exists: boolean;
+  writable: boolean;
+  error?: string;
+};

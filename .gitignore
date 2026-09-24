@@ -61,3 +61,7 @@ data/database.json
 data/database.json.bak-*
 # 全量重建时的旧构建备份（mv 出来的，留作回滚点，不入库）
 web/.next-old-*
+
+# 用户上传的附件（跟 data/studio.db 一样属于本地数据，不进库）
+data/uploads/
+data/uploads.config.json

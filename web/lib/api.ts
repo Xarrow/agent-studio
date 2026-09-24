@@ -36,6 +36,8 @@ import type {
   SessionDetail,
   Skill,
   Tool,
+  UploadConfigRead,
+  UploadItem,
 } from "./types";
 
 /** 内网/本机地址判定：这些主机名直连后端端口，不绕公网 */
@@ -174,10 +176,12 @@ export class ApiError extends Error {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getAccessToken();
+  // 上传（FormData）时**不能**自己设 Content-Type —— 必须让浏览器带 boundary
+  const isForm = typeof FormData !== "undefined" && init?.body instanceof FormData;
   const res = await fetch(`${apiBase()}${path}`, {
     ...init,
     headers: {
-      "Content-Type": "application/json",
+      ...(isForm ? {} : { "Content-Type": "application/json" }),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(init?.headers ?? {}),
     },
@@ -289,6 +293,22 @@ export const api = {
   }) => post<CredentialTestResult>("/api/credentials/probe", body),
 
   // 运行时
+  /* ── 任务卡的上传附件 ──────────────────────────────────────────────
+     存储目录可由用户在「环境配置」页自定义（uploadConfig / setUploadConfig） */
+  uploadFile: (file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return request<UploadItem>("/api/uploads", { method: "POST", body: fd });
+  },
+  uploadConfig: () => request<UploadConfigRead>("/api/uploads/config"),
+  setUploadConfig: (dir: string) =>
+    request<UploadConfigRead>("/api/uploads/config", {
+      method: "PUT",
+      body: JSON.stringify({ dir }),
+    }),
+  deleteUpload: (id: string) =>
+    request<{ deleted: number }>(`/api/uploads/file/${id}`, { method: "DELETE" }),
+
   runtimes: () => request<RuntimeCapabilities[]>("/api/runtimes"),
   runtimeCapabilities: (name: string) =>
     request<RuntimeCapabilities>(`/api/runtimes/${name}/capabilities`),
