@@ -689,7 +689,7 @@ export function PlaygroundConsole() {
                   .join("、") || "（无 · 终点）"}
               </Field>
               <div className="flex flex-col gap-1">
-                <span className="text-[11.5px] font-semibold" style={{ color: "var(--color-muted)" }}>
+                <span className="text-[12px] font-semibold" style={{ color: "var(--color-muted)" }}>
                   这次的产出
                 </span>
                 {/* 产出是模型给的 Markdown，必须渲染 —— 当纯文本贴出来会看到 `##` `**` 这类标记 */}
@@ -707,7 +707,7 @@ export function PlaygroundConsole() {
                 </div>
               </div>
               <div className="flex flex-col gap-1.5">
-                <span className="text-[11.5px] font-semibold" style={{ color: "var(--color-muted)" }}>
+                <span className="text-[12px] font-semibold" style={{ color: "var(--color-muted)" }}>
                   角色
                 </span>
                 <label className="flex items-center gap-2 text-[12.5px]">
@@ -722,7 +722,7 @@ export function PlaygroundConsole() {
                 </label>
               </div>
               <p
-                className="rounded-[8px] border px-2.5 py-2 text-[11.5px] leading-relaxed"
+                className="rounded-[8px] border px-2.5 py-2 text-[12px] leading-relaxed"
                 style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
               >
                 提示词、记忆、权限这些属于助手本身，点下面的按钮去改 ——
@@ -819,7 +819,7 @@ export function PlaygroundConsole() {
                 >
                   <span className="min-w-0 flex-1 truncate">{w.name}</span>
                   {w.id === wf?.id && (
-                    <span className="shrink-0 text-[11px]" style={{ color: "var(--color-accent)" }}>
+                    <span className="shrink-0 text-[12px]" style={{ color: "var(--color-accent)" }}>
                       当前
                     </span>
                   )}
@@ -854,7 +854,7 @@ export function PlaygroundConsole() {
               </button>
               <div className="my-1 border-t" style={{ borderColor: "var(--color-border)" }} />
               <div className="flex items-center gap-2 px-2 py-1.5">
-                <span className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
                   执行方式
                 </span>
                 <select
@@ -863,7 +863,7 @@ export function PlaygroundConsole() {
                     setModeOverride(e.target.value);
                     setDirty(true);
                   }}
-                  className="ml-auto rounded-[6px] border px-1.5 py-1 text-[11.5px]"
+                  className="ml-auto rounded-[6px] border px-1.5 py-1 text-[12px]"
                   style={{
                     borderColor: "var(--color-border)",
                     background: "var(--color-surface)",
@@ -949,7 +949,7 @@ export function PlaygroundConsole() {
                 </span>
                 <span className="min-w-0">
                   <span className="block truncate text-[13px] font-medium">{a.name}</span>
-                  <span className="block truncate text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                  <span className="block truncate text-[12px]" style={{ color: "var(--color-muted)" }}>
                     {a.definition?.model?.name ?? ""}
                   </span>
                 </span>
@@ -1019,13 +1019,13 @@ export function PlaygroundConsole() {
           onClick={() => setHistOpen(false)}
         >
           <div
-            className="pg-panel flex max-h-[80vh] w-full max-w-[620px] flex-col overflow-hidden rounded-[14px] border"
+            className="pg-panel df-card flex max-h-[80vh] w-full max-w-[620px] flex-col overflow-hidden border"
             style={{ background: "var(--color-surface)", borderColor: "var(--color-border)" }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center gap-2 border-b px-4 py-3" style={{ borderColor: "var(--color-border)" }}>
               <span className="text-[13.5px] font-semibold">历史执行</span>
-              <span className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+              <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
                 这份编排跑过的 {hist.length} 次（最近在前）
               </span>
               <button
@@ -1056,7 +1056,7 @@ export function PlaygroundConsole() {
                       style={{ borderColor: "var(--color-border)" }}
                     >
                       <span
-                        className="shrink-0 rounded-[5px] px-1.5 py-px text-[10.5px] font-medium"
+                        className="shrink-0 rounded-[5px] px-1.5 py-px text-[12px] font-medium"
                         style={{
                           background: `color-mix(in srgb, ${ok ? "var(--color-ok)" : bad ? "var(--color-err)" : "var(--color-accent)"} 12%, transparent)`,
                           color: ok ? "var(--color-ok)" : bad ? "var(--color-err)" : "var(--color-accent)",
@@ -1064,11 +1064,11 @@ export function PlaygroundConsole() {
                       >
                         {ok ? "成功" : bad ? "失败" : h.status}
                       </span>
-                      <span className="shrink-0 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                      <span className="shrink-0 text-[12px]" style={{ color: "var(--color-muted)" }}>
                         {when}
                       </span>
                       <span className="pg-hist-task min-w-0 flex-1 truncate text-[12.5px]">{h.task || "（无任务描述）"}</span>
-                      <span className="shrink-0 text-[11px]" style={{ color: "var(--color-muted)" }}>
+                      <span className="shrink-0 text-[12px]" style={{ color: "var(--color-muted)" }}>
                         {h.step_count} 步{secs != null ? ` · ${secs}s` : ""}
                       </span>
                     </button>
@@ -1114,7 +1114,7 @@ export function PlaygroundConsole() {
           onClick={() => setSelected(null)}
         >
           <div
-            className="pg-panel flex max-h-[86vh] w-full max-w-[720px] flex-col overflow-hidden rounded-[14px] border"
+            className="pg-panel df-card flex max-h-[86vh] w-full max-w-[720px] flex-col overflow-hidden border"
             style={{ background: "var(--color-surface)", borderColor: "var(--color-border)" }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -1154,7 +1154,7 @@ function Field({
 }) {
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-[11.5px] font-semibold" style={{ color: "var(--color-muted)" }}>
+      <span className="text-[12px] font-semibold" style={{ color: "var(--color-muted)" }}>
         {label}
         {hint && (
           <span className="ml-1.5 font-normal" style={{ color: "var(--color-muted)" }}>

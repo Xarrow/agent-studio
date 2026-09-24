@@ -279,6 +279,73 @@ body {
   }
 }
 
+/* ── Dify 令牌层 ────────────────────────────────────────────────────────────
+   数字来源：本地克隆的 Dify 源码（/srv/src/dify-ref，HEAD a7f8901）里对
+   base/ + workflow/ 全部 tsx 做的用量统计，不是估的：
+     控件高 h-8(32px) 146 次、h-7(28) 50 次        → 控件 32 / 小控件 28
+     圆角 rounded-lg(8px) 418 次、md(6) 230 次      → 控件 8 / 小件 6
+          rounded-xl(12) 121、2xl(16) 93、节点卡 15  → 卡片 12 / 节点卡 15
+     字号 text-xs(12px) 256 次、text-sm(14) 148 次  → 正文 12 / 标题 14
+     内距 px-3(12) / py-1(4) 主流；图标 size-4(16px) 485 次
+   为什么要固化：之前每个组件各写一套（高 20~22、字号 10.5~13.5、圆角 5~15 混用），
+   摆在同一个画布上就"尺寸不一致"。从此组件只引用类名，尺度只有一个来源。 */
+.df-ctl {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.df-ctl-sm {
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+}
+.df-ctl-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: inline-grid;
+  place-items: center;
+  font-size: 14px;
+}
+.df-card { border-radius: 12px; }
+.df-node { border-radius: 15px; }        /* 节点卡：Dify nodes/_base/node.tsx 实测 */
+.df-input {
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.df-menu {
+  border-radius: 8px;
+  padding: 4px 0;
+}
+.df-menu-item {
+  height: 32px;
+  padding: 0 12px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.df-chip {
+  height: 20px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+}
+
 @keyframes pulse-dot {
   0%,
   100% {

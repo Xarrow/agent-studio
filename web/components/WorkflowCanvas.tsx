@@ -784,12 +784,12 @@ export function WorkflowCanvas({
                 }}
                 onClick={(ev) => ev.stopPropagation()}
               >
-                <div className="mb-2 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                <div className="mb-2 text-[12px]" style={{ color: "var(--color-muted)" }}>
                   {nameOf(e.from)} → {nameOf(e.to)}：这两个怎么配合？
                 </div>
 
                 {/* ① 顺序：二选一 */}
-                <div className="mb-1 text-[11px] font-medium" style={{ color: "var(--color-muted)" }}>
+                <div className="mb-1 text-[12px] font-medium" style={{ color: "var(--color-muted)" }}>
                   顺序
                 </div>
                 <div className="mb-2.5 flex gap-1">
@@ -817,7 +817,7 @@ export function WorkflowCanvas({
                 </div>
 
                 {/* ② 共享：可多选（和顺序正交，怎么组都行） */}
-                <div className="mb-1 text-[11px] font-medium" style={{ color: "var(--color-muted)" }}>
+                <div className="mb-1 text-[12px] font-medium" style={{ color: "var(--color-muted)" }}>
                   共享（可以不选、可以都选）
                 </div>
                 <div className="flex flex-col gap-1">
@@ -847,7 +847,7 @@ export function WorkflowCanvas({
                         }
                       >
                         <span
-                          className="grid h-[15px] w-[15px] shrink-0 place-items-center rounded-[4px] border text-[10px]"
+                          className="grid h-[15px] w-[15px] shrink-0 place-items-center rounded-[4px] border text-[12px]"
                           style={{
                             borderColor: on ? "var(--color-info)" : "var(--color-border)",
                             color: on ? "var(--color-info)" : "transparent",
@@ -856,7 +856,7 @@ export function WorkflowCanvas({
                           ✓
                         </span>
                         <span className="font-semibold">{o.label}</span>
-                        <span className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                        <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
                           {o.hint}
                         </span>
                       </button>
@@ -929,7 +929,7 @@ export function WorkflowCanvas({
             Enter 运行 · Shift+Enter 换行 · Esc 收起（与原来全站一致）。 */}
         <div
           ref={taskCardRef}
-          className="task-card absolute rounded-[10px] border px-2.5 py-2"
+          className="task-card df-card absolute border px-3 py-2"
           style={{
             transform: `translate(${layout.taskAt.x}px, ${layout.taskAt.y}px)`,
             width: layout.CARD_W,
@@ -939,7 +939,7 @@ export function WorkflowCanvas({
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center gap-2">
-            <span className="text-[10.5px] font-semibold" style={{ color: "var(--color-muted)" }}>
+            <span className="text-[12px] font-semibold" style={{ color: "var(--color-muted)" }}>
               任务
             </span>
           </div>
@@ -969,7 +969,7 @@ export function WorkflowCanvas({
               }
             }}
             placeholder="写一句任务 —— 比如：调研三家云厂商的 GPU 报价并汇总成表"
-            className="mt-1 w-full resize-none rounded-[8px] border px-2 py-1.5 text-[12.5px] leading-[1.65] outline-none"
+            className="df-input mt-1 w-full resize-none border outline-none"
             style={{
               borderColor: "var(--color-border)",
               background: "var(--color-surface-2)",
@@ -998,7 +998,7 @@ export function WorkflowCanvas({
                   ev.stopPropagation();
                   act();
                 }}
-                className="rounded-[5px] px-1.5 py-0.5 text-[11.5px] hover:bg-[var(--color-surface-2)]"
+                className="df-ctl-sm justify-center hover:bg-[var(--color-surface-2)]"
                 style={{ color: "var(--color-muted)" }}
               >
                 {label}
@@ -1012,14 +1012,14 @@ export function WorkflowCanvas({
                 e.stopPropagation();
                 onRun?.();
               }}
-              className="ml-auto rounded-[7px] px-2.5 py-1 text-[11.5px] font-medium text-white disabled:opacity-45"
+              className="df-ctl ml-auto font-medium text-white disabled:opacity-45"
               style={{ background: "var(--color-accent)" }}
               title={`按 ${derived || "自动"} 方式执行（Enter）`}
             >
               {running ? "运行中…" : `▸ 运行 · ${derived || "自动"}`}
             </button>
           </div>
-          <div className="mt-1 text-[10px]" style={{ color: "var(--color-muted)" }}>
+          <div className="mt-1 text-[12px]" style={{ color: "var(--color-muted)" }}>
             Enter 运行 · Shift+Enter 换行
           </div>
         </div>
@@ -1038,12 +1038,12 @@ export function WorkflowCanvas({
           >
             <div className="flex items-center gap-2 border-b px-2.5 py-1.5" style={{ borderColor: "color-mix(in srgb, var(--color-accent) 24%, var(--color-border))" }}>
               <span
-                className="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full text-[10px] text-white"
+                className="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full text-[12px] text-white"
                 style={{ background: "var(--color-accent)" }}
               >
                 ✓
               </span>
-              <span className="text-[11.5px] font-semibold" style={{ color: "var(--color-accent)" }}>
+              <span className="text-[12px] font-semibold" style={{ color: "var(--color-accent)" }}>
                 结论
               </span>
               {lastNid && (
@@ -1053,7 +1053,7 @@ export function WorkflowCanvas({
                     e.stopPropagation();
                     onDetail?.(lastNid);
                   }}
-                  className="ml-auto text-[11px]"
+                  className="ml-auto text-[12px]"
                   style={{ color: "var(--color-accent)" }}
                   title="看最后一步的完整过程"
                 >
@@ -1066,7 +1066,7 @@ export function WorkflowCanvas({
                   e.stopPropagation();
                   void navigator.clipboard?.writeText(finalText);
                 }}
-                className={`${lastNid ? "" : "ml-auto "}text-[11px]`}
+                className={`${lastNid ? "" : "ml-auto "}text-[12px]`}
                 style={{ color: "var(--color-muted)" }}
                 title="复制结论全文"
               >
@@ -1094,7 +1094,7 @@ export function WorkflowCanvas({
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="px-2 py-1 text-[10.5px]" style={{ color: "var(--color-muted)" }}>
+            <div className="px-2 py-1 text-[12px]" style={{ color: "var(--color-muted)" }}>
               插到这两步中间
             </div>
             <div className="max-h-[220px] overflow-auto">
@@ -1109,7 +1109,7 @@ export function WorkflowCanvas({
                   className="flex w-full items-center gap-2 rounded-[6px] px-2 py-1.5 text-left text-[12.5px] hover:bg-[var(--color-surface-2)]"
                 >
                   <span
-                    className="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-[5px] border text-[10px]"
+                    className="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-[5px] border text-[12px]"
                     style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
                   >
                     {a.name.slice(0, 1)}
@@ -1244,7 +1244,7 @@ export function WorkflowCanvas({
                 </span>
                 {master === n.nid && (
                   <span
-                    className="shrink-0 text-[11px] leading-none"
+                    className="shrink-0 text-[12px] leading-none"
                     style={{ color: "var(--color-accent)" }}
                     title="主控（按连线自动判断）"
                   >
@@ -1276,7 +1276,7 @@ export function WorkflowCanvas({
                       e.stopPropagation();
                       setNodeMenu(nodeMenu === n.nid ? null : n.nid);
                     }}
-                    className="pg-more shrink-0 rounded border px-1.5 text-[12px] hover:opacity-100"
+                    className="pg-more df-ctl-icon shrink-0 border hover:opacity-100"
                     style={{ color: "var(--color-muted)" }}
                   >
                     ⋯
@@ -1297,13 +1297,13 @@ export function WorkflowCanvas({
                       borderBottom: "1px solid color-mix(in srgb, var(--color-accent) 30%, transparent)",
                     }}
                   >
-                    <span className="live-dot shrink-0 text-[10px]" style={{ color: "var(--color-accent)" }}>
+                    <span className="live-dot shrink-0 text-[12px]" style={{ color: "var(--color-accent)" }}>
                       ●
                     </span>
-                    <span className="text-[11.5px] font-semibold" style={{ color: "var(--color-accent)" }}>
+                    <span className="text-[12px] font-semibold" style={{ color: "var(--color-accent)" }}>
                       正在执行
                     </span>
-                    <span className="ml-auto text-[11px] font-medium" style={{ color: "var(--color-accent)" }}>
+                    <span className="ml-auto text-[12px] font-medium" style={{ color: "var(--color-accent)" }}>
                       {lv.elapsedMs == null
                         ? ""
                         : lv.elapsedMs < 1000
@@ -1319,7 +1319,7 @@ export function WorkflowCanvas({
                       return (
                         <div
                           key={i}
-                          className="flex items-start gap-1.5 rounded-[5px] px-1.5 py-[3px] text-[11.5px] leading-[1.45]"
+                          className="flex items-start gap-1.5 rounded-[5px] px-1.5 py-[3px] text-[12px] leading-[1.45]"
                           style={{ background: sty.bg, border: `1px solid ${sty.border}` }}
                         >
                           <span className="shrink-0" style={{ color: sty.color }}>
@@ -1357,7 +1357,7 @@ export function WorkflowCanvas({
               {/* ⋯ 菜单：配置 / 复制 / 删除 —— 点开才出现，触屏可用 */}
               {nodeMenu === n.nid && (
                 <div
-                  className="absolute right-1 top-[32px] z-40 w-[148px] overflow-hidden rounded-[9px] border py-1"
+                  className="df-menu absolute right-1 top-[34px] z-40 w-[152px] overflow-hidden border"
                   style={{
                     background: "var(--color-surface)",
                     borderColor: "var(--color-border)",
@@ -1371,7 +1371,7 @@ export function WorkflowCanvas({
                       setNodeMenu(null);
                       onSelect(n.nid);
                     }}
-                    className="block w-full px-2.5 py-1.5 text-left text-[12.5px] hover:bg-[var(--color-surface-2)]"
+                    className="df-menu-item hover:bg-[var(--color-surface-2)]"
                   >
                     配置这个助手
                   </button>
@@ -1391,7 +1391,7 @@ export function WorkflowCanvas({
                           edges: [...graph.edges, { from: n.nid, to: nid }],
                         });
                       }}
-                      className="block w-full px-2.5 py-1.5 text-left text-[12.5px] hover:bg-[var(--color-surface-2)]"
+                      className="df-menu-item hover:bg-[var(--color-surface-2)]"
                     >
                       在它后面复制一步
                     </button>
@@ -1407,7 +1407,7 @@ export function WorkflowCanvas({
                           edges: graph.edges.filter((x) => x.from !== n.nid && x.to !== n.nid),
                         });
                       }}
-                      className="block w-full px-2.5 py-1.5 text-left text-[12.5px] hover:bg-[var(--color-surface-2)]"
+                      className="df-menu-item hover:bg-[var(--color-surface-2)]"
                       style={{ color: "var(--color-err)" }}
                     >
                       删除这一步
@@ -1432,13 +1432,13 @@ export function WorkflowCanvas({
                   <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                     {a?.definition?.model?.name && (
                       <span
-                        className="rounded-[5px] px-1.5 py-px text-[10px] font-medium"
+                        className="rounded-[5px] px-1.5 py-px text-[12px] font-medium"
                         style={{ background: "var(--color-surface-2)", color: "var(--color-muted)" }}
                       >
                         {a.definition.model.name}
                       </span>
                     )}
-                    <span className="text-[11.5px] leading-[1.55]" style={{ color: "var(--color-muted)" }}>
+                    <span className="text-[12px] leading-[1.55]" style={{ color: "var(--color-muted)" }}>
                       {a?.definition?.system_prompt
                         ? `${a.definition.system_prompt.replace(/\s+/g, " ").slice(0, 52)}…`
                         : "还没跑过"}
@@ -1450,7 +1450,7 @@ export function WorkflowCanvas({
               {/* 实时摘要：一眼看出"它在干什么" —— 不用点、不用往下看 */}
               {lv && (st === "run" || st === "ok" || st === "err" || st === "ask") && (
                 <div
-                  className="mx-3 mb-2.5 mt-1 flex items-center gap-2 rounded-[7px] px-2 py-1 text-[11px]"
+                  className="mx-3 mb-2.5 mt-1 flex items-center gap-2 rounded-[7px] px-2 py-1 text-[12px]"
                   style={{
                     color: meta.text,
                     background: `color-mix(in srgb, ${meta.dot} 10%, transparent)`,
@@ -1486,7 +1486,7 @@ export function WorkflowCanvas({
                     需要你点头才能继续
                   </div>
                   <div
-                    className="my-1.5 break-all rounded-[6px] border px-2 py-1 font-mono text-[11px]"
+                    className="my-1.5 break-all rounded-[6px] border px-2 py-1 font-mono text-[12px]"
                     style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
                   >
                     {hitlText(hitl.payload)}
@@ -1502,7 +1502,7 @@ export function WorkflowCanvas({
                       拒绝
                     </button>
                   </div>
-                  <div className="mt-1.5 text-[11px]" style={{ color: "var(--color-muted)" }}>
+                  <div className="mt-1.5 text-[12px]" style={{ color: "var(--color-muted)" }}>
                     不想每次都问？去「{a?.name}」的配置里调权限范围。
                   </div>
                 </div>
@@ -1547,16 +1547,16 @@ export function WorkflowCanvas({
               style={{ borderColor: "var(--color-border)" }}
             >
               <span className="truncate text-[12.5px] font-semibold">{peekAgent?.name ?? "助手"}</span>
-              <span className="ml-auto shrink-0 text-[11px]" style={{ color: peekMeta.text }}>
+              <span className="ml-auto shrink-0 text-[12px]" style={{ color: peekMeta.text }}>
                 {STATE_LABEL[peekState]}
               </span>
             </div>
 
             <div className="min-h-0 flex-1 overflow-auto px-2.5 py-2">
-              <div className="mb-1 text-[10.5px] font-semibold" style={{ color: "var(--color-muted)" }}>
+              <div className="mb-1 text-[12px] font-semibold" style={{ color: "var(--color-muted)" }}>
                 思考
               </div>
-              <div className="mb-2 whitespace-pre-wrap break-words text-[11.5px] leading-[1.6]">
+              <div className="mb-2 whitespace-pre-wrap break-words text-[12px] leading-[1.6]">
                 {peekLive.thinking ? (
                   peekLive.thinking.length > 700 ? peekLive.thinking.slice(-700) : peekLive.thinking
                 ) : (
@@ -1566,17 +1566,17 @@ export function WorkflowCanvas({
                 )}
               </div>
 
-              <div className="mb-1 text-[10.5px] font-semibold" style={{ color: "var(--color-muted)" }}>
+              <div className="mb-1 text-[12px] font-semibold" style={{ color: "var(--color-muted)" }}>
                 工具（{peekLive.tools.length}）
               </div>
               <div className="mb-2 flex flex-col gap-1">
                 {peekLive.tools.length === 0 ? (
-                  <span className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                  <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
                     还没调用工具
                   </span>
                 ) : (
                   peekLive.tools.slice(-3).map((t, i) => (
-                    <div key={i} className="flex items-baseline gap-1.5 text-[11px]">
+                    <div key={i} className="flex items-baseline gap-1.5 text-[12px]">
                       <code className="mono shrink-0 font-semibold">{t.name}</code>
                       <span
                         className="shrink-0"
@@ -1599,10 +1599,10 @@ export function WorkflowCanvas({
                 )}
               </div>
 
-              <div className="mb-1 text-[10.5px] font-semibold" style={{ color: "var(--color-muted)" }}>
+              <div className="mb-1 text-[12px] font-semibold" style={{ color: "var(--color-muted)" }}>
                 输出
               </div>
-              <div className="whitespace-pre-wrap break-words text-[11.5px] leading-[1.6]">
+              <div className="whitespace-pre-wrap break-words text-[12px] leading-[1.6]">
                 {peekLive.output ? (
                   peekLive.output.length > 600 ? `${peekLive.output.slice(0, 600)}…` : peekLive.output
                 ) : (
@@ -1614,7 +1614,7 @@ export function WorkflowCanvas({
             </div>
 
             <div
-              className="flex items-center gap-2 border-t px-2.5 py-1.5 text-[10.5px]"
+              className="flex items-center gap-2 border-t px-2.5 py-1.5 text-[12px]"
               style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
             >
               <span>日志 {peekLive.eventCount} 条</span>
@@ -1695,7 +1695,7 @@ function Block({ title, children }: { title: string; children: React.ReactNode }
   return (
     <div className="mb-3">
       <div
-        className="mb-1 text-[11px] font-semibold"
+        className="mb-1 text-[12px] font-semibold"
         style={{ color: "var(--color-muted)" }}
       >
         {title}
