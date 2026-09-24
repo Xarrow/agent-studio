@@ -492,7 +492,7 @@ export function WorkflowCanvas({
    *  不滚的话点开的节点可能正好被挤到视口外（点了没反应，最劝退）。 */
   useEffect(() => {
     const stage = stageRef.current;
-    if (!stage || !detailNid) return;
+    if (!stage || !detailNid || narrow) return;
     const at = layout.pos[detailNid];
     if (!at) return;
     // 按**最右边的内容**算（结论卡常常比节点更靠右）—— 差一点就会少露 60px
@@ -506,7 +506,7 @@ export function WorkflowCanvas({
   const lastFinal = useRef("");
   useEffect(() => {
     const stage = stageRef.current;
-    if (!stage || !finalText.trim() || lastFinal.current === finalText) return;
+    if (!stage || narrow || !finalText.trim() || lastFinal.current === finalText) return;
     lastFinal.current = finalText;
     const need = layout.concAt.x + layout.CARD_W + 6 - stage.clientWidth;
     if (need > stage.scrollLeft) {
@@ -525,7 +525,7 @@ export function WorkflowCanvas({
     /* 外层 flex：画布 + 右侧抽屉左右并排。
        抽屉**在画布这一层**，不是页面下方、也不是弹窗 —— 点节点内容就在旁边出现，
        视线不用离开对象；收起后画布自动恢复全宽。 */
-    <div className="flex h-full min-h-0 w-full">
+    <div className="relative flex h-full min-h-0 w-full">
     <div
       ref={stageRef}
       data-canvas-drop="1"
@@ -1100,7 +1100,9 @@ export function WorkflowCanvas({
       {/* ── 右侧抽屉：这一次跑了什么（思考/工具/输出/日志全文）────────────── */}
       {detailNid && (
         <aside
-          className="flex w-[320px] shrink-0 flex-col border-l"
+          className={`flex shrink-0 flex-col border-l ${
+            narrow ? "absolute inset-y-0 right-0 z-50 w-full" : "w-[320px]"
+          }`}
           style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
         >
           <div
