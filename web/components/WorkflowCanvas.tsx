@@ -408,6 +408,7 @@ export function WorkflowCanvas({
     const st = runStates[e.to];
     const live = st === "run";
     const done = runStates[e.from] === "ok" && (st === "run" || st === "ok");
+    const ek = `${e.from}->${e.to}`;   // 这条边的身份（插一步 + 选择器定位都用它）
     const ord = edgeOrder(e);
     const ordMeta = ORDER_META[ord] ?? ORDER_META.serial;
     const shared = sharesContext(e) || sharesMemory(e);
@@ -497,6 +498,32 @@ export function WorkflowCanvas({
               </>
             );
           })()}
+          {/* ＋：在这一段流程里插一个助手 */}
+          <g
+            transform="translate(0,27)"
+            style={{ cursor: "pointer" }}
+            onPointerDown={(ev) => ev.stopPropagation()}
+            onClick={(ev) => {
+              ev.stopPropagation();
+              setInsertAt(insertAt === ek ? null : ek);
+            }}
+          >
+            <circle
+              r={10.5}
+              fill={insertAt === ek ? "var(--color-accent)" : "var(--color-surface)"}
+              stroke="var(--color-accent)"
+              strokeWidth={1.4}
+            />
+            <text
+              textAnchor="middle"
+              dominantBaseline="central"
+              fontSize={14}
+              fill={insertAt === ek ? "#fff" : "var(--color-accent)"}
+              style={{ userSelect: "none" }}
+            >
+              ＋
+            </text>
+          </g>
         </g>
       </g>
     );
@@ -514,6 +541,38 @@ export function WorkflowCanvas({
     ? graph.nodes.findIndex((x) => x.nid === detailNid)
     : -1;
   const [drawerLog, setDrawerLog] = useState(false);
+
+  /** 「＋」插一步：悬停/点击连线中点时打开选择器（开源 workflow 的标准交互 ——
+   *  操作发生在你要改的那个位置，而不是"先记住拖到某个助手上是接在后面"这种暗规则） */
+  const [insertAt, setInsertAt] = useState<string | null>(null);
+
+  /** 把某个助手插到 from → to 中间：拆掉原边，接成 from → 新 → to */
+  const insertBetween = (from: string, to: string, agentId: string) => {
+    const used = new Set(graph.nodes.map((n) => n.nid));
+    let k = graph.nodes.length + 1;
+    while (used.has(`n${k}`)) k++;
+    const nid = `n${k}`;
+    const dead = graph.edges.find((e) => e.from === from && e.to === to);
+    const kept = graph.edges.filter((e) => !(e.from === from && e.to === to));
+    // 原边的设置（时序 + 共享上下文/记忆）跟着继承到新接出来的两段上，不然一插就丢设置
+    const inherit = dead
+      ? {
+          order: dead.order,
+          share_context: dead.share_context,
+          share_memory: dead.share_memory,
+        }
+      : {};
+    const legs: WorkflowGraph["edges"] = [
+      { from, to: nid, ...inherit },
+      { from: nid, to, ...inherit },   // 第二段：新节点 → 原来的下游（别写成 nid 当键）
+    ];
+    onChange({
+      ...graph,
+      nodes: [...graph.nodes, { nid, agent_id: agentId }],
+      edges: [...kept, ...legs],
+    });
+    setInsertAt(null);
+  };
 
   /** 任务卡：点一下就地变输入框（这是方案 C —— 不再有页面底部的发令区） */
   const [editTask, setEditTask] = useState(false);
@@ -904,6 +963,54 @@ export function WorkflowCanvas({
             <div className="min-h-0 flex-1 overflow-auto px-2.5 py-2">
               <Markdown text={finalText} />
             </div>
+          </div>
+        )}
+
+        {/* 插一步的选择器：点了连线上那个 ＋ 才出现 —— 列出助手，选中就插到这两步中间 */}
+        {insertAt && edgeMids[insertAt] && (
+          <div
+            className="absolute z-40 w-[196px] rounded-[10px] border p-1"
+            style={{
+              left: Math.min(edgeMids[insertAt].x - 98, layout.w - 210),
+              top: edgeMids[insertAt].y + 44,
+              background: "var(--color-surface)",
+              borderColor: "var(--color-border)",
+              boxShadow: "0 10px 28px rgba(20,24,31,.16)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-2 py-1 text-[10.5px]" style={{ color: "var(--color-muted)" }}>
+              插到这两步中间
+            </div>
+            <div className="max-h-[220px] overflow-auto">
+              {agents.map((a) => (
+                <button
+                  key={a.id}
+                  type="button"
+                  onClick={() => {
+                    const [from, to] = insertAt.split("->");
+                    insertBetween(from, to, a.id);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-[6px] px-2 py-1.5 text-left text-[12.5px] hover:bg-[var(--color-surface-2)]"
+                >
+                  <span
+                    className="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-[5px] border text-[10px]"
+                    style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
+                  >
+                    {a.name.slice(0, 1)}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">{a.name}</span>
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setInsertAt(null)}
+              className="mt-0.5 w-full rounded-[6px] px-2 py-1 text-left text-[12px]"
+              style={{ color: "var(--color-muted)" }}
+            >
+              取消
+            </button>
           </div>
         )}
 
