@@ -454,7 +454,7 @@ export function WorkflowCanvas({
           d={d}
           fill="none"
           stroke={stroke}
-          strokeWidth={active ? 2.4 : 1.6}
+          strokeWidth={active || hoverEdge === key ? 2.6 : 1.6}
           strokeDasharray={live ? "6 5" : ordMeta.dash}
           className={live ? "wf-edge-live" : done ? "edge-flow" : undefined}
         />
@@ -465,6 +465,8 @@ export function WorkflowCanvas({
           stroke="transparent"
           strokeWidth={18}
           style={{ pointerEvents: "stroke", cursor: "pointer" }}
+          onMouseEnter={() => setHoverEdge(key)}
+          onMouseLeave={() => setHoverEdge((x) => (x === key ? null : x))}
           onClick={(ev) => {
             ev.stopPropagation();
             onSelect(null);
@@ -566,6 +568,8 @@ export function WorkflowCanvas({
   })();
   /** 节点右上角 ⋯ 菜单当前开着的是哪一个 */
   const [nodeMenu, setNodeMenu] = useState<string | null>(null);
+  /** 鼠标悬在哪条连线上（悬停时加粗，告诉用户"这条线是可点的"） */
+  const [hoverEdge, setHoverEdge] = useState<string | null>(null);
 
   /** 右侧抽屉要用的：哪个节点 / 它的助手 / 这一步的完整数据 / 状态 / 序号 */
   const drawerStep = detailNid ? live?.[detailNid] : undefined;
@@ -1344,6 +1348,25 @@ export function WorkflowCanvas({
                       );
                     })}
                   </div>
+                </>
+              )}
+
+              {/* 连接点圆点（Dify 的 block 每边一个）—— 平时不显，悬停/选中时浮出，
+                  告诉用户"这里可以接线"，而不是只能靠"拖到助手上"这种暗规则 */}
+              {!frozen && (
+                <>
+                  <i
+                    className={`absolute -left-[5px] top-[24px] h-[9px] w-[9px] rounded-full border-2 transition-opacity ${
+                      isSel || detailNid === n.nid ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                    }`}
+                    style={{ background: "var(--color-surface)", borderColor: meta.dot }}
+                  />
+                  <i
+                    className={`absolute -right-[5px] top-[24px] h-[9px] w-[9px] rounded-full border-2 transition-opacity ${
+                      isSel || detailNid === n.nid ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                    }`}
+                    style={{ background: "var(--color-surface)", borderColor: meta.dot }}
+                  />
                 </>
               )}
 
