@@ -643,8 +643,9 @@ export function WorkflowCanvas({
     });
   };
 
-  /** 任务卡：点一下就地变输入框（这是方案 C —— 不再有页面底部的发令区） */
-  const [editTask, setEditTask] = useState(false);
+  /** 任务卡的输入框（方案 C：不再有页面底部的发令区）。
+   *  它是**默认就在**的输入框 —— 不再"点一下才展开"，所以自动长高要在
+   *  内容变化时一直生效，而不是只在某个"编辑态"里。 */
   const taskBoxRef = useRef<HTMLTextAreaElement>(null);
   const growTask = () => {
     const el = taskBoxRef.current;
@@ -653,11 +654,13 @@ export function WorkflowCanvas({
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   };
   useEffect(() => {
-    if (editTask) growTask();
-  }, [editTask, taskValue]);
+    growTask();
+  }, [taskValue]);
 
-  /** 抽屉打开时把选中的节点滚进视野 —— 抽屉占掉右侧一截，
-   *  不滚的话点开的节点可能正好被挤到视口外（点了没反应，最劝退）。 */
+  /** 点开某个节点时把它滚进视野。
+   *  现在没有右侧抽屉了（内容默认显示在卡上），但如果节点多了、画布横向溢出，
+   *  选中的节点仍可能落在视口外 —— 点了没反应最劝退，所以这条留着。
+   *  没有溢出时它是空操作（need 不会大于 scrollLeft）。 */
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage || !detailNid || narrow) return;
@@ -898,145 +901,98 @@ export function WorkflowCanvas({
             运行键（也就是流程的启动键）就长在起点上 —— 符合"一条线从这头流到那头"的直觉。
             Enter 运行 · Shift+Enter 换行 · Esc 收起（与原来全站一致）。 */}
         <div
-          className="absolute rounded-[10px] border border-dashed px-2.5 py-2"
+          className="task-card absolute rounded-[10px] border px-2.5 py-2"
           style={{
             transform: `translate(${layout.taskAt.x}px, ${layout.taskAt.y}px)`,
-            // 编辑时展开成宽输入框（用户反馈"太小太丑"）—— 就地变大，不跳页、不弹窗；
-            // z 抬高 + 阴影，让它清楚地浮在流程之上，一眼看出"我正在编辑这一步"
-            width: editTask ? 480 : layout.CARD_W,
-            zIndex: editTask ? 45 : undefined,
-            background: editTask ? "var(--color-surface)" : "var(--color-surface-2)",
-            borderColor: editTask ? "var(--color-accent)" : "var(--color-border)",
-            borderStyle: editTask ? "solid" : "dashed",
-            boxShadow: editTask ? "0 12px 34px rgba(20,24,31,.18)" : undefined,
-            cursor: editTask ? "text" : "pointer",
+            width: layout.CARD_W,
+            background: "var(--color-surface)",
+            borderColor: "var(--color-border)",
           }}
-          onClick={(e) => {
-            e.stopPropagation();
-            setEditTask(true);
-          }}
-          title={editTask ? undefined : "点一下写任务"}
+          onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center gap-2">
             <span className="text-[10.5px] font-semibold" style={{ color: "var(--color-muted)" }}>
               任务
             </span>
-            {!editTask && taskText.trim() && (
-              <span className="ml-auto text-[10.5px]" style={{ color: "var(--color-accent)" }}>
-                点击修改
-              </span>
-            )}
           </div>
 
-          {editTask ? (
-            <>
-              <div className="mt-0.5 text-[11.5px] font-semibold" style={{ color: "var(--color-accent)" }}>
-                这次要让它们做什么？
-              </div>
-              {/* 工具栏：加粗 / 斜体 / 列表 / 引用 / 代码（
-                  写的还是 Markdown，非编辑态会按排版渲染出来） */}
-              <div className="mt-1 flex items-center gap-0.5">
-                {(
-                  [
-                    ["B", "加粗", () => wrapSel("**")],
-                    ["I", "斜体", () => wrapSel("*")],
-                    ["≔", "列表", () => prefixLine("- ")],
-                    ["❝", "引用", () => prefixLine("> ")],
-                    ["{}", "代码", () => wrapSel("`")],
-                  ] as const
-                ).map(([label, tip, act]) => (
-                  <button
-                    key={label}
-                    type="button"
-                    title={tip}
-                    onMouseDown={(ev) => ev.preventDefault()}
-                    onClick={(ev) => {
-                      ev.stopPropagation();
-                      act();
-                    }}
-                    className="rounded-[5px] px-1.5 py-0.5 text-[11.5px] hover:bg-[var(--color-surface)]"
-                    style={{ color: "var(--color-muted)" }}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-              <textarea
-                ref={taskBoxRef}
-                autoFocus
-                value={taskValue}
-                rows={2}
-                onChange={(e) => onTaskValue?.(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") {
-                    setEditTask(false);
-                    return;
-                  }
-                  // ⌘/Ctrl+B、⌘/Ctrl+I 与工具栏等效
-                  if ((e.metaKey || e.ctrlKey) && (e.key === "b" || e.key === "i")) {
-                    e.preventDefault();
-                    wrapSel(e.key === "b" ? "**" : "*");
-                    return;
-                  }
-                  if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                    e.preventDefault();
-                    setEditTask(false);
-                    onRun?.();
-                  }
-                }}
-                onBlur={() => window.setTimeout(() => setEditTask(false), 160)}
-                placeholder="写一句任务 —— 比如：调研三家云厂商的 GPU 报价并汇总成表"
-                className="mt-1 w-full resize-none rounded-[8px] border px-2.5 py-2 text-[13px] leading-[1.7] outline-none"
-                style={{
-                  borderColor: "var(--color-border)",
-                  background: "var(--color-surface-2)",
-                  minHeight: 84,
-                  maxHeight: 220,
-                }}
-              />
-              <div className="mt-1.5 flex items-center gap-2">
-                <span className="text-[10.5px]" style={{ color: "var(--color-muted)" }}>
-                  Enter 运行 · Shift+Enter 换行 · Esc 收起
-                </span>
-                <button
-                  type="button"
-                  onClick={(ev) => {
-                    ev.stopPropagation();
-                    setEditTask(false);
-                  }}
-                  className="ml-auto rounded-[6px] px-2 py-1 text-[11.5px]"
-                  style={{ color: "var(--color-muted)" }}
-                >
-                  完成
-                </button>
-              </div>
-            </>
-          ) : taskText.trim() ? (
-            <div className="mt-0.5 max-h-[150px] overflow-auto">
-              <Markdown text={taskText} />
-            </div>
-          ) : (
-            <div className="mt-0.5 text-[12px] leading-[1.6]" style={{ color: "var(--color-muted)" }}>
-              点一下写任务 —— 写完按 Enter 就跑
-            </div>
-          )}
+          {/* 输入框**默认就在卡上** —— 不"点一下才展开"、不弹窗、不跳页。
+              之前是「点击 → 就地放大成 480 的编辑态」，用户明确要求改掉：
+              默认显示即输入，进来就能打字（少一次点击，也少一层状态）。 */}
+          <textarea
+            ref={taskBoxRef}
+            value={taskValue}
+            rows={2}
+            onChange={(e) => onTaskValue?.(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.currentTarget.blur();
+                return;
+              }
+              // ⌘/Ctrl+B、⌘/Ctrl+I 与工具栏等效
+              if ((e.metaKey || e.ctrlKey) && (e.key === "b" || e.key === "i")) {
+                e.preventDefault();
+                wrapSel(e.key === "b" ? "**" : "*");
+                return;
+              }
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                onRun?.();
+              }
+            }}
+            placeholder="写一句任务 —— 比如：调研三家云厂商的 GPU 报价并汇总成表"
+            className="mt-1 w-full resize-none rounded-[8px] border px-2 py-1.5 text-[12.5px] leading-[1.65] outline-none"
+            style={{
+              borderColor: "var(--color-border)",
+              background: "var(--color-surface-2)",
+              minHeight: 72,
+              maxHeight: 220,
+            }}
+          />
 
-          {/* 运行键就在起点上：流程从这里开跑 */}
-          <div className="mt-2 flex items-center gap-2">
+          {/* 工具栏常驻（写的是 Markdown，回车运行前随手加格式） */}
+          <div className="mt-1 flex items-center gap-0.5">
+            {(
+              [
+                ["B", "加粗", () => wrapSel("**")],
+                ["I", "斜体", () => wrapSel("*")],
+                ["≔", "列表", () => prefixLine("- ")],
+                ["❝", "引用", () => prefixLine("> ")],
+                ["{}", "代码", () => wrapSel("`")],
+              ] as const
+            ).map(([label, tip, act]) => (
+              <button
+                key={label}
+                type="button"
+                title={tip}
+                onMouseDown={(ev) => ev.preventDefault()}
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  act();
+                }}
+                className="rounded-[5px] px-1.5 py-0.5 text-[11.5px] hover:bg-[var(--color-surface-2)]"
+                style={{ color: "var(--color-muted)" }}
+              >
+                {label}
+              </button>
+            ))}
+            {/* 运行键就在起点上：流程从这里开跑 */}
             <button
               type="button"
               disabled={running}
               onClick={(e) => {
                 e.stopPropagation();
-                setEditTask(false);
                 onRun?.();
               }}
-              className="rounded-[8px] px-3 py-1.5 text-[12px] font-medium text-white disabled:opacity-45"
+              className="ml-auto rounded-[7px] px-2.5 py-1 text-[11.5px] font-medium text-white disabled:opacity-45"
               style={{ background: "var(--color-accent)" }}
               title={`按 ${derived || "自动"} 方式执行（Enter）`}
             >
               {running ? "运行中…" : `▸ 运行 · ${derived || "自动"}`}
             </button>
+          </div>
+          <div className="mt-1 text-[10px]" style={{ color: "var(--color-muted)" }}>
+            Enter 运行 · Shift+Enter 换行
           </div>
         </div>
 
