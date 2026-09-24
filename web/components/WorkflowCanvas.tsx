@@ -13,6 +13,7 @@
  */
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import Markdown from "./Markdown";
 
 import type { NodeLiveInfo } from "@/components/StepExecPanel";
 import type { Agent, WorkflowEdge, WorkflowGraph, WorkflowNode } from "@/lib/types";
@@ -284,6 +285,8 @@ export function WorkflowCanvas({
     // 卡片宽度：要能让「任务卡 + 一层节点 + 结论卡」在 864px 画布内同屏放下
     // （280+76+232+76+280 = 944 放不下，会切掉一头；224 刚好）
     const CARD_W = 224;
+    /** 结论区宽度：任务是"要写"的（窄点无妨），结论是"要读"的 —— 给它更宽的台面 */
+    const CONC_W = 400;
     const LEAD = CARD_W + GAP_X;
     const hOf = (nid: string) => heights[nid] || 104;
     const pos: Record<string, { x: number; y: number }> = {};
@@ -320,9 +323,9 @@ export function WorkflowCanvas({
     const concAt = narrow ? { x: PAD, y: maxY + 10 } : { x: maxX + GAP_X, y: lastY };
     let w = Math.max(maxX, 320);
     let h = Math.max(maxY, 260);
-    if (!narrow) w = Math.max(w, concAt.x + CARD_W + PAD);
+    if (!narrow) w = Math.max(w, concAt.x + CONC_W + PAD);
     else h = Math.max(h, concAt.y + 150);
-    return { pos, w, h, layers, taskAt, concAt, CARD_W };
+    return { pos, w, h, layers, taskAt, concAt, CARD_W, CONC_W };
   }, [graph.nodes, graph.edges, heights, narrow, taskText, finalText]);
 
   /* 高度变化要在**绘制前**同步进布局，否则连线会先画在旧位置上再跳一下 */
@@ -533,7 +536,7 @@ export function WorkflowCanvas({
     const at = layout.pos[detailNid];
     if (!at) return;
     // 按**最右边的内容**算（结论卡常常比节点更靠右）—— 差一点就会少露 60px
-    const rightEdge = Math.max(at.x + NODE_W, layout.concAt.x + layout.CARD_W) + 4;
+    const rightEdge = Math.max(at.x + NODE_W, layout.concAt.x + layout.CONC_W) + 4;
     const need = rightEdge - stage.clientWidth;
     if (need > stage.scrollLeft) stage.scrollTo({ left: need, behavior: "smooth" });
   }, [detailNid, layout]);
@@ -545,7 +548,7 @@ export function WorkflowCanvas({
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage || narrow || !finalText.trim()) return;
-    const need = layout.concAt.x + layout.CARD_W + 6 - stage.clientWidth;
+    const need = layout.concAt.x + layout.CONC_W + 6 - stage.clientWidth;
     if (need > stage.scrollLeft + 4) {
       const t = window.setTimeout(() => stage.scrollTo({ left: need, behavior: "smooth" }), 300);
       return () => window.clearTimeout(t);
@@ -848,31 +851,60 @@ export function WorkflowCanvas({
         </div>
 
         {finalText.trim() && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              if (lastNid) onDetail?.(lastNid);
-            }}
-            className="absolute rounded-[10px] border px-2.5 py-2 text-left transition-shadow hover:shadow-md"
+          <div
+            className="absolute flex flex-col rounded-[10px] border"
             style={{
               transform: `translate(${layout.concAt.x}px, ${layout.concAt.y}px)`,
-              width: layout.CARD_W,
-              background: "color-mix(in srgb, var(--color-accent) 6%, var(--color-surface))",
-              borderColor: "color-mix(in srgb, var(--color-accent) 45%, var(--color-border))",
+              width: layout.CONC_W,
+              maxHeight: 460,
+              background: "color-mix(in srgb, var(--color-accent) 5%, var(--color-surface))",
+              borderColor: "color-mix(in srgb, var(--color-accent) 40%, var(--color-border))",
             }}
-            title="这次执行合起来的结论（点开看全文）"
+            title="这次执行合起来的结论"
           >
-            <div className="text-[10.5px] font-semibold" style={{ color: "var(--color-accent)" }}>
-              结论
+            <div className="flex items-center gap-2 border-b px-2.5 py-1.5" style={{ borderColor: "color-mix(in srgb, var(--color-accent) 24%, var(--color-border))" }}>
+              <span
+                className="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full text-[10px] text-white"
+                style={{ background: "var(--color-accent)" }}
+              >
+                ✓
+              </span>
+              <span className="text-[11.5px] font-semibold" style={{ color: "var(--color-accent)" }}>
+                结论
+              </span>
+              {lastNid && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDetail?.(lastNid);
+                  }}
+                  className="ml-auto text-[11px]"
+                  style={{ color: "var(--color-accent)" }}
+                  title="看最后一步的完整过程"
+                >
+                  看最后一步 →
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void navigator.clipboard?.writeText(finalText);
+                }}
+                className={`${lastNid ? "" : "ml-auto "}text-[11px]`}
+                style={{ color: "var(--color-muted)" }}
+                title="复制结论全文"
+              >
+                复制
+              </button>
             </div>
-            <div className="mt-0.5 line-clamp-3 whitespace-pre-wrap break-words text-[12px] leading-[1.6]">
-              {finalText}
+            {/* 用 Markdown 渲染 —— 模型产出天然是 Markdown，之前是当纯文本贴出来的
+                （`## 🔥` `**加粗**` `---` 全部原样显示） */}
+            <div className="min-h-0 flex-1 overflow-auto px-2.5 py-2">
+              <Markdown text={finalText} />
             </div>
-            <div className="mt-1 text-[10.5px]" style={{ color: "var(--color-accent)" }}>
-              点开看全文 →
-            </div>
-          </button>
+          </div>
         )}
 
         {/* 卡与节点之间的两条虚线：把"任务 → … → 结论"串起来 */}
@@ -1374,13 +1406,13 @@ export function WorkflowCanvas({
 
             {drawerStep && (
               <Block title="输出">
-                <div className="whitespace-pre-wrap text-[12.5px] leading-[1.7]">
-                  {drawerStep.output || (
-                    <span style={{ color: "var(--color-muted)" }}>
-                      {drawerState === "run" ? "还没输出" : "没有输出"}
-                    </span>
-                  )}
-                </div>
+                {drawerStep.output ? (
+                  <Markdown text={drawerStep.output} />
+                ) : (
+                  <div className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+                    {drawerState === "run" ? "还没输出" : "没有输出"}
+                  </div>
+                )}
               </Block>
             )}
 

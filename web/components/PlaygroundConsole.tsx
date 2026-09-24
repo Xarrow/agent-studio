@@ -16,6 +16,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Markdown from "./Markdown";
 import { useFeedback } from "@/components/ui/feedback";
 import { WorkflowCanvas, flattenLayers, type NodeState } from "@/components/WorkflowCanvas";
 import {
@@ -620,7 +621,24 @@ export function PlaygroundConsole() {
                   .filter(Boolean)
                   .join("、") || "（无 · 终点）"}
               </Field>
-              <Field label="这次的产出">{outputs[selNode.nid] || "（还没跑）"}</Field>
+              <div className="flex flex-col gap-1">
+                <span className="text-[11.5px] font-semibold" style={{ color: "var(--color-muted)" }}>
+                  这次的产出
+                </span>
+                {/* 产出是模型给的 Markdown，必须渲染 —— 当纯文本贴出来会看到 `##` `**` 这类标记 */}
+                <div
+                  className="max-h-[220px] overflow-auto rounded-[8px] border px-2.5 py-2"
+                  style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
+                >
+                  {outputs[selNode.nid] ? (
+                    <Markdown text={outputs[selNode.nid]} />
+                  ) : (
+                    <span className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+                      （还没跑）
+                    </span>
+                  )}
+                </div>
+              </div>
               <div className="flex flex-col gap-1.5">
                 <span className="text-[11.5px] font-semibold" style={{ color: "var(--color-muted)" }}>
                   角色
