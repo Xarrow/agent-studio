@@ -359,3 +359,11 @@ body {
 }
 /* 正在执行的那条线：比"已流过"更快地流动 —— 速度也是信息 */
 .wf-edge-live { stroke-dasharray: 6 5; animation: edge-flow 0.7s linear infinite; }
+
+/* ── 节点卡（参考 Dify 的 block 观感）：静态一层浅影，悬停抬起一点 ── */
+.wf-node {
+  transition: box-shadow .16s ease, border-color .16s ease;
+}
+.wf-node:hover {
+  box-shadow: 0 6px 20px rgba(20, 24, 31, .10), 0 2px 6px rgba(20, 24, 31, .06);
+}
