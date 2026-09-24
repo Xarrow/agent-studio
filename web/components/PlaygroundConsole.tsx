@@ -355,6 +355,81 @@ export function PlaygroundConsole() {
     }
   };
 
+  /* ── 编排本身的管理：新建 / 复制 / 删除 ──────────────────────────────────
+     之前这里只有"保存"一条路 —— 改完图保存只会**覆盖当前这份**，
+     想留一份旧的、或者从头开一份新的，都没有入口（要新建只能改名字再存，
+     还会把老的那份冲掉）。三个动作补在这里，都在 ⌄ 菜单里。 */
+  /** 新建也要两步 —— 有未保存改动时直接清空等于把它们丢了，
+   *  用户点"新建"的心智是"再开一份"，不是"扔掉手上这份"。 */
+  const [confirmNew, setConfirmNew] = useState(false);
+  const newWorkflow = () => {
+    if (dirty && !confirmNew) {
+      setConfirmNew(true);
+      window.setTimeout(() => setConfirmNew(false), 4000);
+      return;
+    }
+    setConfirmNew(false);
+    setWf(null);                       // 没有 id → 下次保存走"新建"
+    setName("未命名编排");
+    setGraph({ nodes: [], edges: [] });
+    setModeOverride("");
+    setDirty(true);
+    setOrcId(null);
+    setDetail(null);
+    setDetailNid(null);
+    setWfMenu(false);
+    fb.info("新编排", "拖一个助手进来就能开搭；保存时会新建一份，不覆盖原来的");
+  };
+
+  const duplicateWorkflow = async () => {
+    try {
+      const created = await api.createWorkflow({
+        name: `${name.trim() || "未命名编排"} 副本`,
+        graph,
+        mode_override: modeOverride || null,
+      });
+      setList((prev) => [created, ...prev.filter((x) => x.id !== created.id)].slice(0, 30));
+      loadWorkflow(created);
+      setWfMenu(false);
+      fb.success("已复制为副本", created.name);
+    } catch (e) {
+      fb.error("复制失败", e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  /** 删除要两步 —— 不用浏览器原生 confirm（原生弹窗在这个产品里是禁的），
+   *  菜单里点一下变成"确认删除？"，再点一下才真删。 */
+  const [confirmDel, setConfirmDel] = useState(false);
+  const removeWorkflow = async () => {
+    if (!wf) return;
+    if (!confirmDel) {
+      setConfirmDel(true);
+      window.setTimeout(() => setConfirmDel(false), 4000);
+      return;
+    }
+    try {
+      const gone = wf.id;
+      await api.deleteWorkflow(gone);
+      const rest = list.filter((x) => x.id !== gone);
+      setList(rest);
+      setConfirmDel(false);
+      setWfMenu(false);
+      if (rest.length) {
+        loadWorkflow(rest[0]);
+      } else {
+        setWf(null);
+        setName("未命名编排");
+        setGraph({ nodes: [], edges: [] });
+        setOrcId(null);
+        setDetail(null);
+        setDetailNid(null);
+      }
+      fb.success("已删除", "这份编排没了（执行记录还在「运行记录」里）");
+    } catch (e) {
+      fb.error("删除失败", e instanceof Error ? e.message : String(e));
+    }
+  };
+
   /* ── 跑 ─────────────────────────────────────────────────────────────── */
   const subscribe = (id: string) => {
     esRef.current?.close();
@@ -589,6 +664,31 @@ export function PlaygroundConsole() {
               >
                 {dirty ? "保存改动" : "已保存"}
               </button>
+              <button
+                type="button"
+                onClick={newWorkflow}
+                className="w-full rounded-[6px] px-2 py-1.5 text-left text-[12.5px] hover:bg-[var(--color-surface-2)]"
+                style={{ color: confirmNew ? "var(--color-warn)" : undefined }}
+              >
+                {confirmNew ? "有未保存改动 —— 再点一下丢弃并新建" : "新建编排"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void duplicateWorkflow()}
+                className="w-full rounded-[6px] px-2 py-1.5 text-left text-[12.5px] hover:bg-[var(--color-surface-2)]"
+              >
+                复制为副本
+              </button>
+              {wf && (
+                <button
+                  type="button"
+                  onClick={() => void removeWorkflow()}
+                  className="w-full rounded-[6px] px-2 py-1.5 text-left text-[12.5px] hover:bg-[var(--color-surface-2)]"
+                  style={{ color: confirmDel ? "var(--color-err)" : "var(--color-muted)" }}
+                >
+                  {confirmDel ? "再点一下确认删除" : "删除这份编排"}
+                </button>
+              )}
             </div>
           )}
         </div>
