@@ -326,13 +326,24 @@ export function PlaygroundConsole() {
       }
     };
     void pull(!running);   // 没在跑（刚跑完/看历史）→ 强制重拉一次，保证拿到完整 trace
-    // 只有还在跑的时候才持续轮询 —— 看历史时拉一次就够，别空转
-    const timer = window.setInterval(() => {
-      if (running) void pull();
-    }, 2000);
+    // 轮询节奏**自适应**：刚开始密集拉（250ms），逐渐退到 2s。
+    // 为什么不能固定 2s：用户点「运行」后要干等最多 2 秒才看见第一个动作，
+    // 那段时间被他当成"点了没反应"。后端实测 run_start→首次调模型是 0.00s，
+    // 延迟全在轮询节奏上。
+    let timer: number | undefined;
+    let delay = 250;
+    const tick = async () => {
+      if (stop) return;
+      if (running) {
+        await pull();
+        delay = Math.min(2000, Math.round(delay * 1.6));   // 250→400→640→1024→1638→2000
+      }
+      timer = window.setTimeout(tick, delay);
+    };
+    timer = window.setTimeout(tick, 120);
     return () => {
       stop = true;
-      window.clearInterval(timer);
+      if (timer) window.clearTimeout(timer);
     };
   }, [detail, running]);
 

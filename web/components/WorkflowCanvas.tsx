@@ -164,7 +164,7 @@ type Props = {
   onPreset?: (kind: "single" | "serial" | "fan") => void;
 };
 
-const NODE_W = 240;
+const NODE_W = 232;
 
 /**
  * 连线上的**两个维度** —— 它们**正交**，可以任意组合。
@@ -281,15 +281,18 @@ export function WorkflowCanvas({
     const layers = topoLayers(graph.nodes, graph.edges);
     // 间距/尺寸对齐 Dify 的 workflow 常量（NODE_WIDTH 240 / X_OFFSET 60 / Y_OFFSET 39）——
     // 直接读它源码拿的数，不是凭观感调的
-    const GAP_X = 60;
+    // 间距/宽度要满足"任务卡 + 节点 + 结论卡"在 864px 画布内一次放下
+    //（200 + 44 + 232 + 44 + 300 = 820，加左右 padding 24 = 844 ✓）
+    // —— 之前 60 + 各卡更宽，总量 1000+，结论卡会被右边缘切掉
+    const GAP_X = 40;
     const GAP_Y = 39;
-    const PAD = 24;
+    const PAD = 10;
     /** 两端的卡宽度（任务卡 / 结论卡）—— 它们排在助手节点这一列的左边和右边 */
     // 卡片宽度：要能让「任务卡 + 一层节点 + 结论卡」在 864px 画布内同屏放下
     // （280+76+232+76+280 = 944 放不下，会切掉一头；224 刚好）
-    const CARD_W = 224;
+    const CARD_W = 200;
     /** 结论区宽度：任务是"要写"的（窄点无妨），结论是"要读"的 —— 给它更宽的台面 */
-    const CONC_W = 400;
+    const CONC_W = 288;
     const LEAD = CARD_W + GAP_X;
     const hOf = (nid: string) => heights[nid] || 104;
     const pos: Record<string, { x: number; y: number }> = {};
@@ -674,7 +677,12 @@ export function WorkflowCanvas({
         backgroundSize: "20px 20px",
       }}
     >
-      <div className="relative" style={{ width: layout.w, height: layout.h, minWidth: "100%" }}>
+              {/* 居中：内容比视口小时整体居中（不然挤在左上角像没做完）；比视口大时照旧滚动 */}
+        <div className="flex min-h-full min-w-full p-1">
+        {/* 用 auto margin 居中，而不是 justify-center ——
+            内容比画布宽时（任务卡+节点+结论约 1000px > 864px），justify-center 会**两头都裁**，
+            实测把任务卡和结论卡同时切掉了。auto margin 有空间时居中、超出时从左边开始，不裁。 */}
+        <div className="relative m-auto shrink-0" style={{ width: layout.w, height: layout.h }}>
         <svg className="pointer-events-none absolute inset-0" width={layout.w} height={layout.h}>
           {ghost && (
             <path d={ghost} fill="none" stroke="var(--color-accent)" strokeWidth={1.6} strokeDasharray="5 4" />
@@ -1322,23 +1330,41 @@ export function WorkflowCanvas({
                   跑完   → 产出（markdown 渲染，最多 4 行；点节点看全部）
                   没跑过 → 这个助手是干什么的一句话（不再是空卡） */}
               {st === "ok" && lv?.output?.trim() && (
-                <div className="max-h-[92px] overflow-hidden px-3 pb-2">
+                <div className="node-body max-h-[104px] overflow-hidden px-3 pb-2">
                   <Markdown text={lv.output} />
                 </div>
               )}
               {!lv && !out && (
-                <div className="px-3 pb-2 text-[11.5px] leading-[1.6]" style={{ color: "var(--color-muted)" }}>
-                  {a?.definition?.system_prompt
-                    ? a.definition.system_prompt.replace(/\s+/g, " ").slice(0, 60)
-                    : "（还没跑过）"}
+                /* 没跑过：显示"模型 · 这助手干什么" —— 不是一句灰字，而是让人一眼
+                   知道这张卡的用途（Dify 的 block 也有这么一行副标题） */
+                <div className="px-3 pb-2">
+                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                    {a?.definition?.model?.name && (
+                      <span
+                        className="rounded-[5px] px-1.5 py-px text-[10px] font-medium"
+                        style={{ background: "var(--color-surface-2)", color: "var(--color-muted)" }}
+                      >
+                        {a.definition.model.name}
+                      </span>
+                    )}
+                    <span className="text-[11.5px] leading-[1.55]" style={{ color: "var(--color-muted)" }}>
+                      {a?.definition?.system_prompt
+                        ? `${a.definition.system_prompt.replace(/\s+/g, " ").slice(0, 52)}…`
+                        : "还没跑过"}
+                    </span>
+                  </div>
                 </div>
               )}
 
               {/* 实时摘要：一眼看出"它在干什么" —— 不用点、不用往下看 */}
               {lv && (st === "run" || st === "ok" || st === "err" || st === "ask") && (
                 <div
-                  className="flex items-center gap-2 px-2.5 pt-1.5 text-[11px]"
-                  style={{ color: meta.text }}
+                  className="mx-3 mb-2.5 mt-1 flex items-center gap-2 rounded-[7px] px-2 py-1 text-[11px]"
+                  style={{
+                    color: meta.text,
+                    background: `color-mix(in srgb, ${meta.dot} 10%, transparent)`,
+                    border: `1px solid color-mix(in srgb, ${meta.dot} 26%, transparent)`,
+                  }}
                 >
                   <span className="shrink-0 font-medium">
                     {st === "run" ? "⟳" : st === "ok" ? "✓" : st === "err" ? "✕" : "⏸"}{" "}
@@ -1508,9 +1534,9 @@ export function WorkflowCanvas({
             </div>
           </div>
         )}
+        </div>
+        </div>
       </div>
-    </div>
-
     </div>
   );
 }
