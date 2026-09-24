@@ -317,3 +317,45 @@ body {
   opacity: .45;
   cursor: not-allowed;
 }
+
+/* ── 编排执行时的动效 ────────────────────────────────────────────────────
+   为什么必须"动"：七种状态里最要紧的两件事是"正在跑"和"等你点头"。
+   静态颜色在十几秒的执行里抓不住眼睛 —— 用户扫一眼画布，得立刻知道
+   现在轮到谁、卡在谁那儿。动效只承担这一个语义，不要花哨。
+   ─────────────────────────────────────────────────────────────────────── */
+@keyframes node-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 34%, transparent); }
+  50%      { box-shadow: 0 0 0 6px color-mix(in srgb, var(--color-accent) 10%, transparent); }
+}
+@keyframes node-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-warn) 42%, transparent); }
+  50%      { box-shadow: 0 0 0 8px color-mix(in srgb, var(--color-warn) 8%, transparent); }
+}
+@keyframes edge-flow {
+  to { stroke-dashoffset: -24; }
+}
+@keyframes bar-slide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(320%); }
+}
+.node-run  { animation: node-breathe 2s ease-in-out infinite; }
+.node-ask  { animation: node-pulse 1.1s ease-in-out infinite; }
+.edge-flow { stroke-dasharray: 5 5; animation: edge-flow 0.9s linear infinite; }
+.indeterminate {
+  position: relative;
+  overflow: hidden;
+  height: 2px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+}
+.indeterminate::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 30%;
+  border-radius: 2px;
+  background: var(--color-accent);
+  animation: bar-slide 1.4s ease-in-out infinite;
+}
+/* 正在执行的那条线：比"已流过"更快地流动 —— 速度也是信息 */
+.wf-edge-live { stroke-dasharray: 6 5; animation: edge-flow 0.7s linear infinite; }

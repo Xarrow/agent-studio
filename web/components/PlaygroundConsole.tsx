@@ -15,10 +15,16 @@
  * 所以画布上的改动只动 workflow，跑的时候才产生 orchestration。
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFeedback } from "@/components/ui/feedback";
 import { WorkflowCanvas, flattenLayers, type NodeState } from "@/components/WorkflowCanvas";
-import { StepExecPanel, type StepBrief } from "@/components/StepExecPanel";
+import {
+  StepExecPanel,
+  buildNodeLive,
+  type NodeLiveInfo,
+  type StepBrief,
+  type TraceData,
+} from "@/components/StepExecPanel";
 import { api } from "@/lib/api";
 import type {
   Agent,
@@ -73,6 +79,10 @@ export function PlaygroundConsole() {
   const [outputs, setOutputs] = useState<Record<string, string>>({});
   const [hitl, setHitl] = useState<{ nid: string; runId: string; payload: Record<string, unknown> | null } | null>(null);
   const [showLog, setShowLog] = useState(false);
+  /** 每个子步骤的 trace —— **一份数据两处用**（画布上的节点摘要 + 下方详情），
+   *  统一在这里轮询，避免画布和详情各拉一遍。 */
+  const [traces, setTraces] = useState<Record<string, TraceData>>({});
+  const tracesRef = useRef<Record<string, TraceData>>({});
   /** 哪些步骤的过程被收起了（默认全展开：2~3 个助手正好一屏看全） */
   const [closedSteps, setClosedSteps] = useState<Record<string, boolean>>({});
   const esRef = useRef<EventSource | null>(null);
@@ -257,6 +267,38 @@ export function PlaygroundConsole() {
     patchGraph({ nodes, edges });
   };
 
+  /* ── 拉每个步骤的 trace（画布与详情共用一份）───────────────────────────── */
+  useEffect(() => {
+    const steps = detail?.steps ?? [];
+    if (!steps.length) return;
+    let stop = false;
+    const pull = async (force = false) => {
+      for (const st of steps) {
+        const settled = ["ok", "error", "aborted"].includes(st.status);
+        // force：刚跑完时**必须重拉一次** —— 上一次拉到的可能还是半截的
+        // trace（事件正在写），不重拉的话悬停卡里会出现"没有思考/没有输出"。
+        if (!force && settled && tracesRef.current[st.run_id]) continue;
+        try {
+          const t = (await api.runTrace(st.run_id)) as unknown as TraceData;
+          if (stop) return;
+          tracesRef.current = { ...tracesRef.current, [st.run_id]: t };
+          setTraces(tracesRef.current);
+        } catch {
+          /* 拿不到就等下一轮 */
+        }
+      }
+    };
+    void pull(!running);   // 没在跑（刚跑完/看历史）→ 强制重拉一次，保证拿到完整 trace
+    // 只有还在跑的时候才持续轮询 —— 看历史时拉一次就够，别空转
+    const timer = window.setInterval(() => {
+      if (running) void pull();
+    }, 2000);
+    return () => {
+      stop = true;
+      window.clearInterval(timer);
+    };
+  }, [detail, running]);
+
   /* ── 存 ─────────────────────────────────────────────────────────────── */
   const save = async (silent = false): Promise<Workflow | null> => {
     try {
@@ -287,7 +329,6 @@ export function PlaygroundConsole() {
         const d = await api.orchestration(id);
         setDetail(d);
         if ((d.steps ?? []).length) setShowLog(true);   // 有步骤就直接摊开，不用再点一次
-        syncFromDetail(d);
         // 有步骤在等确认 → 把待确认内容取回来，显示在**那个节点**上
         const waiting = (d.steps ?? []).find((s) => s.status === "waiting_hitl");
         if (waiting) {
@@ -324,22 +365,30 @@ export function PlaygroundConsole() {
     return graph.nodes.find((n) => n.agent_id === s.agent_id)?.nid ?? null;
   };
 
-  const syncFromDetail = (d: OrchestrationDetail) => {
+  /** 把"这次执行的事实"映射回画布节点 —— 由状态驱动，不写在刷新回调里。
+   *
+   * 为什么必须是 effect：进页面时 **graph 和 detail 是前后脚到的**，谁先谁后不定。
+   * 写在刷新回调里会读到闭包中**旧的 graph**（那时还是空的）→ 一个节点都映射不上 →
+   * 画布上全是"待运行"，而底部面板却有数据；更糟的是这次执行已经结束，
+   * 不会再有下一次刷新来纠正它。做成 effect 后，graph 或 detail 一变就重算。 */
+  useEffect(() => {
+    const steps = (detail?.steps ?? [])
+      .slice()
+      .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
+    if (!steps.length || !graph.nodes.length) return;
     const states: Record<string, NodeState> = {};
     const outs: Record<string, string> = {};
     const used = new Set<string>();
-    const steps = (d.steps ?? []).slice().sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
     for (const s of steps) {
       const hit = graph.nodes.find((n) => n.agent_id === s.agent_id && !used.has(n.nid));
-      const nid = hit?.nid;
-      if (!nid) continue;
-      used.add(nid);
-      states[nid] = STATUS_TO_NODE[s.status] ?? "wait";
-      if (s.output_text) outs[nid] = s.output_text;
+      if (!hit) continue;
+      used.add(hit.nid);
+      states[hit.nid] = STATUS_TO_NODE[s.status] ?? "wait";
+      if (s.output_text) outs[hit.nid] = s.output_text;
     }
     setRunStates(states);
     setOutputs(outs);
-  };
+  }, [detail, graph]);
 
   const run = async () => {
     const text = task.trim();
@@ -398,6 +447,18 @@ export function PlaygroundConsole() {
   const selAgent = agents.find((a) => a.id === selNode?.agent_id);
   const derived = wf?.derived_mode ?? (graph.nodes.length > 1 ? "待保存" : "single");
   const derivedHint = wf?.derived_hint ?? "保存后由服务端按连线判断";
+
+  /** 把每个步骤的 trace 挂回它的节点 —— 画布据此在节点上显示"正在干什么" */
+  const liveInfo = useMemo(() => {
+    const out: Record<string, NodeLiveInfo> = {};
+    for (const st of detail?.steps ?? []) {
+      const t = traces[st.run_id];
+      if (!t) continue;
+      const nid = nodeForStep(st);
+      if (nid) out[nid] = buildNodeLive(t, st.status);
+    }
+    return out;
+  }, [detail, traces]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -546,6 +607,7 @@ export function PlaygroundConsole() {
             selected={selected}
             onSelect={setSelected}
             runStates={runStates}
+            live={liveInfo}
             outputs={outputs}
             hitl={hitl ? { nid: hitl.nid, payload: hitl.payload } : null}
             onHitl={(a) => void hitlAction(a)}
@@ -656,6 +718,7 @@ export function PlaygroundConsole() {
                     key={s.run_id}
                     index={i}
                     step={s as unknown as StepBrief}
+                    trace={traces[s.run_id]}
                     live={running && (s.status === "running" || s.status === "pending")}
                     open={!closedSteps[s.run_id]}
                     onToggle={() =>

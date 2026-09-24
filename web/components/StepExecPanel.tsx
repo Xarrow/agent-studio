@@ -22,7 +22,7 @@ import { api } from "@/lib/api";
 import { Hint } from "@/components/ui/hint";
 
 type TraceEvent = { seq: number; type: string; ts: number; payload?: Record<string, unknown> };
-type TraceData = {
+export type TraceData = {
   run?: {
     id: string;
     status: string;
@@ -72,7 +72,7 @@ const statusColor = (s: string) =>
 
 /* ── 从事件流里提炼"人要看的三样" ─────────────────────────────────────── */
 
-function collect(events: TraceEvent[]) {
+export function collect(events: TraceEvent[]) {
   let thinking = "";
   let answer = "";
   const tools: { name: string; args: string; state: string; result: string }[] = [];
@@ -138,12 +138,50 @@ const hhmmss = (ts: number) => new Date(ts).toLocaleTimeString("zh-CN", { hour12
 
 /* ─────────────────────────────────────────────────────────────────────── */
 
+/** 画布节点上要显示的一行摘要（悬停卡也用这份） */
+export type NodeLiveInfo = {
+  status: string;
+  elapsedMs: number | null;
+  action: string;
+  thinking: string;
+  output: string;
+  tools: { name: string; args: string; state: string; result: string }[];
+  iters: number;
+  eventCount: number;
+};
+
+/** 从一次运行的 trace 里提炼"节点上那一行" —— 画布与详情共用同一个提炼口径 */
+export function buildNodeLive(t: TraceData, status: string): NodeLiveInfo {
+  const { thinking, answer, tools } = collect(t.events ?? []);
+  const started = t.run?.started_at ?? null;
+  const ended = t.run?.ended_at ?? null;
+  const last = tools[tools.length - 1];
+  return {
+    status,
+    elapsedMs: started ? (ended ?? Date.now()) - started : null,
+    // 一句话说清"它现在在干什么"：正在调工具 > 在思考 > 刚开始
+    action: last
+      ? `${last.name}${last.state === "调用中" ? " 执行中…" : " 完成"}`
+      : thinking
+        ? "思考中…"
+        : status === "running"
+          ? "刚起步…"
+          : "",
+    thinking,
+    output: answer || t.run?.output?.content || "",
+    tools,
+    iters: t.llm_calls?.length ?? 0,
+    eventCount: (t.events ?? []).length,
+  };
+}
+
 export function StepExecPanel({
   step,
   index,
   open,
   onToggle,
   live,
+  trace,
 }: {
   step: StepBrief;
   index: number;
@@ -151,8 +189,10 @@ export function StepExecPanel({
   onToggle: () => void;
   /** 这一步还在跑（决定要不要轮询） */
   live: boolean;
+  /** 外部已拉的 trace（Playground 统一轮询一份，画布和这里共用，不重复请求） */
+  trace?: TraceData;
 }) {
-  const [data, setData] = useState<TraceData | null>(null);
+  const [data, setData] = useState<TraceData | null>(trace ?? null);
   const [err, setErr] = useState<string | null>(null);
   const [showLog, setShowLog] = useState(false);
   const timer = useRef<number | null>(null);
@@ -168,12 +208,17 @@ export function StepExecPanel({
   }, [step.run_id]);
 
   useEffect(() => {
-    // 折叠时也拉一次：块头的耗时/轮数要有数（不然展开前是个空壳）
-    void load();
-  }, [load]);
+    if (trace) setData(trace);        // 外部给了就用外部的（一份数据两处用）
+  }, [trace]);
 
   useEffect(() => {
-    if (!live) return;
+    if (trace) return;                // 外部统一轮询时，这里不再自己拉
+    // 折叠时也拉一次：块头的耗时/轮数要有数（不然展开前是个空壳）
+    void load();
+  }, [load, trace]);
+
+  useEffect(() => {
+    if (trace || !live) return;
     // 运行中的步骤轻量轮询 —— 思考和输出就会边跑边长出来
     timer.current = window.setInterval(() => void load(), 2000);
     return () => {

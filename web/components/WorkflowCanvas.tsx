@@ -13,6 +13,8 @@
  */
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+
+import type { NodeLiveInfo } from "@/components/StepExecPanel";
 import type { Agent, WorkflowEdge, WorkflowGraph, WorkflowNode } from "@/lib/types";
 
 export type NodeState = "idle" | "wait" | "run" | "ok" | "err" | "ask" | "stale";
@@ -121,6 +123,8 @@ type Props = {
   runStates: Record<string, NodeState>;
   /** 各节点本轮产出，直接显示在卡片上 */
   outputs: Record<string, string>;
+  /** 各节点**实时摘要**（正在干什么/耗时/思考/工具/输出）—— 悬停卡与节点角标用 */
+  live?: Record<string, NodeLiveInfo>;
   /** 正在等确认的节点 + 待确认内容 */
   hitl?: { nid: string; payload: Record<string, unknown> | null } | null;
   onHitl?: (action: "allow" | "allow_all" | "deny") => void;
@@ -167,6 +171,7 @@ export function WorkflowCanvas({
   onSelect,
   runStates,
   outputs,
+  live,
   hitl,
   onHitl,
   draggingAgentId,
@@ -178,6 +183,38 @@ export function WorkflowCanvas({
   const stageRef = useRef<HTMLDivElement>(null);
   const nodeRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [heights, setHeights] = useState<Record<string, number>>({});
+  /**
+   * 鼠标悬停在哪个节点上（= 就地看它在干什么）。
+   * 延迟 350ms 才弹，避免"鼠标划过就闪"；移出后延迟 250ms 才收，
+   * 这样鼠标能移进卡片里滚动阅读（否则一离开节点卡片就没了，滚不了）。
+   */
+  const [peek, setPeek] = useState<{ nid: string; left: number; top: number; maxH: number } | null>(
+    null,
+  );
+  const peekTimer = useRef<number | null>(null);
+  const peekIn = (nid: string, delay = 350) => {
+    if (peekTimer.current) window.clearTimeout(peekTimer.current);
+    peekTimer.current = window.setTimeout(() => {
+      // 位置在**真要显示时**才量 —— 期间画布可能滚过/重排过
+      const el = nodeRefs.current[nid];
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const W = 320;
+      const H = 380;
+      const below = r.bottom + 12;
+      const flip = below + H > window.innerHeight - 8;   // 下方不够 → 翻到上方
+      setPeek({
+        nid,
+        left: Math.min(Math.max(8, r.left), window.innerWidth - W - 8),
+        top: flip ? Math.max(8, r.top - H - 12) : below,
+        maxH: flip ? r.top - 20 : window.innerHeight - below - 12,
+      });
+    }, delay);
+  };
+  const peekOut = (delay = 250) => {
+    if (peekTimer.current) window.clearTimeout(peekTimer.current);
+    peekTimer.current = window.setTimeout(() => setPeek(null), delay);
+  };
   /** 画布"可以放东西"的高亮：有人正拿着助手 */
   const hot = !!draggingAgentId || hoverNid != null;
   const [dropTarget, setDropTarget] = useState<string | null>(null);
@@ -357,7 +394,7 @@ export function WorkflowCanvas({
           stroke={stroke}
           strokeWidth={active ? 2.4 : 1.6}
           strokeDasharray={live ? "6 5" : ordMeta.dash}
-          className={live ? "wf-edge-live" : undefined}
+          className={live ? "wf-edge-live" : done ? "edge-flow" : undefined}
         />
         {/* 细线太难点中 —— 铺一条透明的粗线专门接点击 */}
         <path
@@ -411,6 +448,13 @@ export function WorkflowCanvas({
   });
 
   const empty = graph.nodes.length === 0;
+
+  /** 悬停浮层要用到的：那个节点 / 它的助手 / 实时摘要 / 状态 */
+  const peekNode = peek ? graph.nodes.find((x) => x.nid === peek.nid) : undefined;
+  const peekAgent = peekNode ? agentOf(peekNode.agent_id) : undefined;
+  const peekLive = peek ? live?.[peek.nid] : undefined;
+  const peekState = (peek ? (runStates[peek.nid] ?? "idle") : "idle") as NodeState;
+  const peekMeta = META[peekState] ?? META.idle;
 
   return (
     <div
@@ -604,6 +648,7 @@ export function WorkflowCanvas({
           const p = layout.pos[n.nid] ?? { x: 0, y: 0 };
           const st = (runStates[n.nid] ?? "idle") as NodeState;
           const meta = META[st] ?? META.idle;
+          const lv = live?.[n.nid];
           const isSel = selected === n.nid;
           const isTarget = (hoverNid ?? dropTarget) === n.nid;
           const stepNo = layout.layers.findIndex((ids) => ids.includes(n.nid)) + 1;
@@ -619,7 +664,11 @@ export function WorkflowCanvas({
                 e.stopPropagation();
                 onSelect(n.nid);
               }}
-              className="absolute rounded-[10px] border transition-shadow"
+              onMouseEnter={() => peekIn(n.nid)}
+              onMouseLeave={() => peekOut()}
+              className={`absolute rounded-[10px] border transition-shadow ${
+                lv && st === "run" ? "node-run" : st === "ask" ? "node-ask" : ""
+              }`}
               style={{
                 transform: `translate(${p.x}px, ${p.y}px)`,
                 width: NODE_W,
@@ -678,6 +727,29 @@ export function WorkflowCanvas({
                   </button>
                 )}
               </div>
+
+              {/* 实时摘要：一眼看出"它在干什么" —— 不用点、不用往下看 */}
+              {lv && (st === "run" || st === "ok" || st === "err" || st === "ask") && (
+                <div
+                  className="flex items-center gap-2 px-2.5 pt-1.5 text-[11px]"
+                  style={{ color: meta.text }}
+                >
+                  <span className="shrink-0 font-medium">
+                    {st === "run" ? "⟳" : st === "ok" ? "✓" : st === "err" ? "✕" : "⏸"}{" "}
+                    {lv.elapsedMs == null ? "—" : lv.elapsedMs < 1000
+                      ? `${Math.round(lv.elapsedMs)}ms`
+                      : `${(lv.elapsedMs / 1000).toFixed(1)}s`}
+                  </span>
+                  {lv.iters > 0 && <span className="shrink-0">↻{lv.iters}</span>}
+                  {lv.tools.length > 0 && <span className="shrink-0">🛠{lv.tools.length}</span>}
+                  {lv.action && (
+                    <span className="truncate" style={{ color: "var(--color-muted)" }}>
+                      {lv.action}
+                    </span>
+                  )}
+                </div>
+              )}
+              {st === "run" && <div className="indeterminate mx-2.5 mt-1.5" />}
 
               <div className="min-h-[40px] px-2.5 py-2 text-[12px]">
                 {out ? (
@@ -756,6 +828,108 @@ export function WorkflowCanvas({
             </div>
           );
         })}
+
+        {/* 悬停卡（浮层）—— 鼠标停在节点上就地看它在干什么。
+            为什么用 fixed：画布容器有固定高度，卡片挂在节点里会被下边缘裁掉
+            （只露出第一行）。浮层不受裁剪，下方不够会自动翻到节点上方。 */}
+        {peek && peekLive && (
+          <div
+            onMouseEnter={() => peekIn(peek.nid, 0)}
+            onMouseLeave={() => peekOut(120)}
+            className="fixed z-[70] flex flex-col overflow-hidden rounded-[10px] border"
+            style={{
+              left: peek.left,
+              top: peek.top,
+              width: 320,
+              maxHeight: Math.max(160, peek.maxH),
+              background: "var(--color-surface)",
+              borderColor: "var(--color-border)",
+              boxShadow: "0 12px 34px rgba(20,24,31,.20)",
+            }}
+          >
+            <div
+              className="flex items-center gap-2 border-b px-2.5 py-2"
+              style={{ borderColor: "var(--color-border)" }}
+            >
+              <span className="truncate text-[12.5px] font-semibold">{peekAgent?.name ?? "助手"}</span>
+              <span className="ml-auto shrink-0 text-[11px]" style={{ color: peekMeta.text }}>
+                {STATE_LABEL[peekState]}
+              </span>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-auto px-2.5 py-2">
+              <div className="mb-1 text-[10.5px] font-semibold" style={{ color: "var(--color-muted)" }}>
+                思考
+              </div>
+              <div className="mb-2 whitespace-pre-wrap break-words text-[11.5px] leading-[1.6]">
+                {peekLive.thinking ? (
+                  peekLive.thinking.length > 700 ? peekLive.thinking.slice(-700) : peekLive.thinking
+                ) : (
+                  <span style={{ color: "var(--color-muted)" }}>
+                    {peekState === "run" ? "还在想…" : "这一步没有思考内容"}
+                  </span>
+                )}
+              </div>
+
+              <div className="mb-1 text-[10.5px] font-semibold" style={{ color: "var(--color-muted)" }}>
+                工具（{peekLive.tools.length}）
+              </div>
+              <div className="mb-2 flex flex-col gap-1">
+                {peekLive.tools.length === 0 ? (
+                  <span className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                    还没调用工具
+                  </span>
+                ) : (
+                  peekLive.tools.slice(-3).map((t, i) => (
+                    <div key={i} className="flex items-baseline gap-1.5 text-[11px]">
+                      <code className="mono shrink-0 font-semibold">{t.name}</code>
+                      <span
+                        className="shrink-0"
+                        style={{
+                          color:
+                            t.state === "成功"
+                              ? "var(--color-ok)"
+                              : t.state === "调用中"
+                                ? "var(--color-accent)"
+                                : "var(--color-err)",
+                        }}
+                      >
+                        {t.state}
+                      </span>
+                      <span className="truncate" style={{ color: "var(--color-muted)" }}>
+                        {t.args.replace(/\s+/g, " ").slice(0, 60)}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="mb-1 text-[10.5px] font-semibold" style={{ color: "var(--color-muted)" }}>
+                输出
+              </div>
+              <div className="whitespace-pre-wrap break-words text-[11.5px] leading-[1.6]">
+                {peekLive.output ? (
+                  peekLive.output.length > 600 ? `${peekLive.output.slice(0, 600)}…` : peekLive.output
+                ) : (
+                  <span style={{ color: "var(--color-muted)" }}>
+                    {peekState === "run" ? "还没输出" : "没有输出"}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div
+              className="flex items-center gap-2 border-t px-2.5 py-1.5 text-[10.5px]"
+              style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
+            >
+              <span>日志 {peekLive.eventCount} 条</span>
+              <span>↻{peekLive.iters} 轮</span>
+              <span className="ml-auto" style={{ color: "var(--color-accent)" }}>
+                按一下看全部 →
+              </span>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
