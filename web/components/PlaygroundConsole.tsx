@@ -108,9 +108,6 @@ export function PlaygroundConsole() {
    *  统一在这里轮询，避免画布和详情各拉一遍。 */
   const [traces, setTraces] = useState<Record<string, TraceData>>({});
   const tracesRef = useRef<Record<string, TraceData>>({});
-  /** 右栏页签：点节点=看过程，点 ⚙=看配置 —— 同一个栏切换，不再并排开两栏 */
-  const [panelTab, setPanelTab] = useState<"process" | "config">("process");
-
   /** 顶栏那个「名字 ⌄」的小菜单（切换最近编排 / 保存改动都收在这里） */
   const [wfMenu, setWfMenu] = useState(false);
 
@@ -585,7 +582,7 @@ export function PlaygroundConsole() {
 
   /* 配置页签的内容 —— 它属于 Console 的状态（selNode / 助手编辑），所以不搬进画布，
      而是作为插槽传给画布那个"唯一的右栏"。以前它是并排的第二个右栏。 */
-  const configSlot = selNode ? (
+  const configPanel = selNode ? (
     <div className="flex min-h-0 flex-1 flex-col">
 
           <aside
@@ -897,20 +894,16 @@ export function PlaygroundConsole() {
             onChange={(next) => patchGraph(next, { resetRun: downstreamOf(selected ?? "", next) })}
             selected={selected}
             onSelect={(nid) => {
-              // 点 ⚙ = 看这个助手怎么配：切到配置页签，并让画布把它滚进视野
+              // 点 ⚙ = 打开"这个助手怎么配"的**居中弹层**（不再占右侧一栏）
               setSelected(nid);
-              if (nid) {
-                setPanelTab("config");
-                setDetailNid(nid);
-              }
             }}
             runStates={runStates}
             live={liveInfo}
             detailNid={detailNid}
             onDetail={(nid) => {
-              // 点节点 = 看它这次跑了什么：切到过程页签
+              // 点节点 = 只做选中高亮。信息（名字/状态/产出/分色过程）**直接显示在节点上**，
+              // 不再往右侧开栏 —— 用户明确要求"移除右边侧边栏，直接在 agent 默认显示"
               setDetailNid(nid);
-              if (nid) setPanelTab("process");
             }}
             taskText={shownTask}
             finalText={finalText}
@@ -923,9 +916,6 @@ export function PlaygroundConsole() {
             onRun={() => void run()}
             running={running}
             derived={derived}
-            panelTab={panelTab}
-            onPanelTab={setPanelTab}
-            configSlot={configSlot}
             outputs={outputs}
             hitl={hitl ? { nid: hitl.nid, payload: hitl.payload } : null}
             onHitl={(a) => void hitlAction(a)}
@@ -942,6 +932,26 @@ export function PlaygroundConsole() {
 
       {/* 页面下方**不再有任何常驻组件** —— 任务输入搬进了画布左端的任务卡（方案 C）：
           写任务 = 给流程填入口，运行键就长在起点上，那一整条底栏还给画布。 */}
+
+      {/* ══ 助手配置：居中弹层 ══════════════════════════════════════════════
+          为什么不放右侧栏：用户要求"移除右边侧边栏，直接在 agent 默认显示" ——
+          执行过程已经画在节点上默认可见；配置是低频动作，用弹层（同一页、不跳转、
+          不常驻占位），关掉后画布仍是全宽。 */}
+      {configPanel && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center p-6"
+          style={{ background: "var(--color-overlay)" }}
+          onClick={() => setSelected(null)}
+        >
+          <div
+            className="flex max-h-[86vh] w-full max-w-[720px] flex-col overflow-hidden rounded-[14px] border"
+            style={{ background: "var(--color-surface)", borderColor: "var(--color-border)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="min-h-0 flex-1 overflow-auto">{configPanel}</div>
+          </div>
+        </div>
+      )}
 
       {/* 跟手的小卡片：让"我正拿着谁"看得见（手机上尤其要紧，指头会挡住原件） */}
       {ghost && (

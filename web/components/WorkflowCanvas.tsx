@@ -1317,6 +1317,23 @@ export function WorkflowCanvas({
                 </>
               )}
 
+              {/* ── 卡体：参考 Dify 的 block body ──────────────────────────
+                  运行中 → 分色动作行（思考紫/工具橙/工具输出青/输出绿）
+                  跑完   → 产出（markdown 渲染，最多 4 行；点节点看全部）
+                  没跑过 → 这个助手是干什么的一句话（不再是空卡） */}
+              {st === "ok" && lv?.output?.trim() && (
+                <div className="max-h-[92px] overflow-hidden px-3 pb-2">
+                  <Markdown text={lv.output} />
+                </div>
+              )}
+              {!lv && !out && (
+                <div className="px-3 pb-2 text-[11.5px] leading-[1.6]" style={{ color: "var(--color-muted)" }}>
+                  {a?.definition?.system_prompt
+                    ? a.definition.system_prompt.replace(/\s+/g, " ").slice(0, 60)
+                    : "（还没跑过）"}
+                </div>
+              )}
+
               {/* 实时摘要：一眼看出"它在干什么" —— 不用点、不用往下看 */}
               {lv && (st === "run" || st === "ok" || st === "err" || st === "ask") && (
                 <div
@@ -1494,226 +1511,6 @@ export function WorkflowCanvas({
       </div>
     </div>
 
-      {/* ── 右侧抽屉：这一次跑了什么（思考/工具/输出/日志全文）────────────── */}
-      {((panelTab === "process" && detailNid) || (panelTab === "config" && !!configSlot)) && (
-        <aside
-          className={`flex shrink-0 flex-col border-l ${
-            narrow ? "absolute inset-y-0 right-0 z-50 w-full" : "w-[360px]"
-          }`}
-          style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
-        >
-          {/* 页签：过程 / 配置 —— 同一个节点的两面，一栏切换 */}
-          <div
-            className="flex items-center gap-1 border-b px-2 py-1.5"
-            style={{ borderColor: "var(--color-border)" }}
-          >
-            {(["process", "config"] as const).map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => onPanelTab?.(t)}
-                className="rounded-[7px] px-2.5 py-1 text-[12.5px] font-medium"
-                style={
-                  panelTab === t
-                    ? { background: "color-mix(in srgb, var(--color-accent) 12%, transparent)", color: "var(--color-accent)" }
-                    : { color: "var(--color-muted)" }
-                }
-              >
-                {t === "process" ? "过程" : "配置"}
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={() => {
-                onDetail?.(null);
-                onPanelTab?.("process");
-              }}
-              className="ml-auto rounded px-1.5 text-[12px]"
-              style={{ color: "var(--color-muted)" }}
-              title="收起"
-            >
-              ✕
-            </button>
-          </div>
-
-          {panelTab === "config" ? (
-            configSlot
-          ) : (
-            <>
-          <div
-            className="flex items-center gap-2 border-b px-3 py-2.5"
-            style={{ borderColor: "var(--color-border)" }}
-          >
-            <span
-              className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-full border text-[11px] font-semibold"
-              style={{
-                borderColor: "var(--color-border)",
-                background: "var(--color-surface-2)",
-                color: "var(--color-muted)",
-              }}
-            >
-              {drawerIdx + 1}
-            </span>
-            <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">
-              {drawerAgent?.name ?? "助手"}
-            </span>
-            <span className="shrink-0 text-[11.5px]" style={{ color: drawerMeta.text }}>
-              {STATE_LABEL[drawerState]}
-            </span>
-            {drawerStep?.elapsedMs != null && drawerStep.elapsedMs > 0 && (
-              <span className="shrink-0 text-[11px]" style={{ color: "var(--color-muted)" }}>
-                {drawerStep.elapsedMs < 1000
-                  ? `${Math.round(drawerStep.elapsedMs)}ms`
-                  : `${(drawerStep.elapsedMs / 1000).toFixed(1)}s`}
-              </span>
-            )}
-            <button
-              type="button"
-              title="收起"
-              aria-label="收起"
-              onClick={() => onDetail?.(null)}
-              className="shrink-0 rounded border px-1.5 text-[12px] opacity-60 transition-opacity hover:opacity-100"
-              style={{ color: "var(--color-muted)" }}
-            >
-              ✕
-            </button>
-          </div>
-
-          <div className="min-h-0 flex-1 overflow-auto px-3 py-2.5">
-            {!drawerStep && (
-              <p className="text-[12.5px] leading-[1.7]" style={{ color: "var(--color-muted)" }}>
-                这个助手还没跑过。写下任务点「运行」，这里会显示它的思考、工具调用与输出。
-              </p>
-            )}
-
-            {drawerStep?.input && (
-              <Block title="这一步收到">
-                <div className="whitespace-pre-wrap text-[12px] leading-[1.7]">
-                  {drawerStep.input}
-                </div>
-              </Block>
-            )}
-
-            {drawerStep && (
-              <Block title="思考">
-                <div className="whitespace-pre-wrap text-[12px] leading-[1.7]">
-                  {drawerStep.thinking || (
-                    <span style={{ color: "var(--color-muted)" }}>
-                      {drawerState === "run" ? "还在想…" : "这一步没有思考内容"}
-                    </span>
-                  )}
-                </div>
-              </Block>
-            )}
-
-            {drawerStep && (
-              <Block title={`工具（${drawerStep.tools.length}）`}>
-                {drawerStep.tools.length === 0 ? (
-                  <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
-                    没调用工具
-                  </span>
-                ) : (
-                  <div className="flex flex-col gap-1.5">
-                    {drawerStep.tools.map((t, i) => (
-                      <div
-                        key={i}
-                        className="rounded-[6px] border px-2 py-1.5"
-                        style={{ borderColor: "var(--color-border)" }}
-                      >
-                        <div className="flex flex-wrap items-baseline gap-2 text-[12px]">
-                          <code className="mono font-semibold">{t.name}</code>
-                          <span
-                            className="text-[11px]"
-                            style={{
-                              color:
-                                t.state === "成功"
-                                  ? "var(--color-ok)"
-                                  : t.state === "调用中"
-                                    ? "var(--color-accent)"
-                                    : "var(--color-err)",
-                            }}
-                          >
-                            {t.state}
-                          </span>
-                        </div>
-                        {t.args.trim() && (
-                          <div
-                            className="mono mt-0.5 break-all text-[11.5px]"
-                            style={{ color: "var(--color-muted)" }}
-                          >
-                            {t.args}
-                          </div>
-                        )}
-                        {t.result.trim() && (
-                          <div
-                            className="mono mt-1 max-h-[160px] overflow-auto whitespace-pre-wrap break-all rounded-[4px] px-1.5 py-1 text-[11.5px]"
-                            style={{ background: "var(--color-surface-2)" }}
-                          >
-                            {t.result}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </Block>
-            )}
-
-            {drawerStep && (
-              <Block title="输出">
-                {drawerStep.output ? (
-                  <Markdown text={drawerStep.output} />
-                ) : (
-                  <div className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
-                    {drawerState === "run" ? "还没输出" : "没有输出"}
-                  </div>
-                )}
-              </Block>
-            )}
-
-            {drawerStep && drawerStep.events.length > 0 && (
-              <div className="mt-2 border-t pt-2" style={{ borderColor: "var(--color-border)" }}>
-                <button
-                  type="button"
-                  onClick={() => setDrawerLog((v) => !v)}
-                  className="text-[11.5px]"
-                  style={{ color: "var(--color-muted)" }}
-                >
-                  {drawerLog ? "收起日志" : `日志（${drawerStep.events.length} 条事件）`}
-                </button>
-                {drawerLog && (
-                  <div className="mono mt-1.5 max-h-[220px] overflow-auto text-[11px] leading-[1.8]">
-                    {drawerStep.events.map((ev) => (
-                      <div key={ev.seq} className="flex gap-2">
-                        <span className="shrink-0" style={{ color: "var(--color-muted)" }}>
-                          {new Date(ev.ts).toLocaleTimeString("zh-CN", { hour12: false })}
-                        </span>
-                        <span style={{ color: "var(--color-accent)" }}>{ev.type}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {drawerStep?.runId && (
-            <div
-              className="border-t px-3 py-2 text-right text-[11.5px]"
-              style={{ borderColor: "var(--color-border)" }}
-            >
-              <a
-                href={`/runs?run=${drawerStep.runId}`}
-                style={{ color: "var(--color-accent)" }}
-              >
-                在运行记录里打开这一步 →
-              </a>
-            </div>
-          )}
-            </>
-          )}
-        </aside>
-      )}
     </div>
   );
 }

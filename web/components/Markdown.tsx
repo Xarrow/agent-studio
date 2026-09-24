@@ -112,6 +112,51 @@ export default function Markdown({ text }: { text: string }) {
       continue;
     }
 
+    // 表格：| 列 | 列 | 换行后跟 |---|---| —— 模型产出里很常见（天气、对比、参数表）
+    if (/^\s*\|/.test(line) && i + 1 < lines.length && /^\s*\|[\s:|-]+\|\s*$/.test(lines[i + 1])) {
+      const cells = (l: string) =>
+        l.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((x) => x.trim());
+      const head = cells(lines[i]);
+      i += 2; // 跳过表头行与分隔行
+      const rows: string[][] = [];
+      while (i < lines.length && /^\s*\|/.test(lines[i])) rows.push(cells(lines[i++]));
+      blocks.push(
+        <div key={`tb${k++}`} className="my-2 overflow-auto rounded-[8px] border" style={{ borderColor: "var(--color-border)" }}>
+          <table className="w-full border-collapse text-[11.5px]">
+            <thead>
+              <tr style={{ background: "var(--color-surface-2)" }}>
+                {head.map((h, n) => (
+                  <th
+                    key={n}
+                    className="border-b px-2 py-1 text-left font-semibold"
+                    style={{ borderColor: "var(--color-border)" }}
+                  >
+                    {inline(h, `th${k}-${n}`)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, ri) => (
+                <tr key={ri}>
+                  {r.map((c, ci) => (
+                    <td
+                      key={ci}
+                      className="border-b px-2 py-1 align-top"
+                      style={{ borderColor: "color-mix(in srgb, var(--color-border) 60%, transparent)" }}
+                    >
+                      {inline(c, `td${k}-${ri}-${ci}`)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>,
+      );
+      continue;
+    }
+
     // 分隔线
     if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
       blocks.push(
@@ -179,7 +224,8 @@ export default function Markdown({ text }: { text: string }) {
       !/^\s*([-*]|\d+\.)\s+/.test(lines[i]) &&
       !lines[i].trimStart().startsWith("```") &&
       !/^\s*>\s?/.test(lines[i]) &&
-      !/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(lines[i])
+      !/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(lines[i]) &&
+      !/^\s*\|/.test(lines[i])
     ) {
       buf.push(lines[i++]);
     }
