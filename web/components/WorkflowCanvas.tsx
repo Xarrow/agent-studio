@@ -274,6 +274,13 @@ export function WorkflowCanvas({
   /** 选中的连线（点一下那条线 → 就地选它们之间的关系） */
   const [edgeSel, setEdgeSel] = useState<{ from: string; to: string } | null>(null);
 
+  /* ⚠️ hoverEdge / insertAt 必须声明在 edgesSvg（graph.edges.map）**之前**：
+     那个 map 在渲染时就地执行，会读这两个 state。声明在后面 = 读到未初始化的 const
+     → **多节点（有连线）页面直接崩**（ReferenceError: Cannot access 'X' before initialization）。
+     单节点时 map 空转所以不崩 —— 这就是"选多个 agent 编排就报错"的根因。 */
+  const [hoverEdge, setHoverEdge] = useState<string | null>(null);
+  const [insertAt, setInsertAt] = useState<string | null>(null);
+
   const agentOf = useCallback(
     (id: string) => agents.find((a) => a.id === id),
     [agents],
@@ -670,7 +677,6 @@ export function WorkflowCanvas({
   /** 节点右上角 ⋯ 菜单当前开着的是哪一个 */
   const [nodeMenu, setNodeMenu] = useState<string | null>(null);
   /** 鼠标悬在哪条连线上（悬停时加粗，告诉用户"这条线是可点的"） */
-  const [hoverEdge, setHoverEdge] = useState<string | null>(null);
 
   /** 右侧抽屉要用的：哪个节点 / 它的助手 / 这一步的完整数据 / 状态 / 序号 */
   const drawerStep = detailNid ? live?.[detailNid] : undefined;
@@ -685,7 +691,6 @@ export function WorkflowCanvas({
 
   /** 「＋」插一步：悬停/点击连线中点时打开选择器（开源 workflow 的标准交互 ——
    *  操作发生在你要改的那个位置，而不是"先记住拖到某个助手上是接在后面"这种暗规则） */
-  const [insertAt, setInsertAt] = useState<string | null>(null);
 
   /** 把某个助手插到 from → to 中间：拆掉原边，接成 from → 新 → to */
   const insertBetween = (from: string, to: string, agentId: string) => {
