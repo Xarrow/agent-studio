@@ -36,7 +36,9 @@ export default function MemoriesPage() {
 
   // 筛选
   const [agentId, setAgentId] = useState("");
-  const [status, setStatus] = useState<string>("active");
+  /* 默认**不筛状态**：待确认的才是要用户动手的（现在 10 条里 8 条待确认）。
+     默认只显示"在用"= 8 条待办默认看不见，还得手动切筛选 —— 违背「操作更少」。 */
+  const [status, setStatus] = useState<string>("");
   const [kind, setKind] = useState("");
   const [query, setQuery] = useState("");
 
@@ -118,7 +120,7 @@ export default function MemoriesPage() {
   const setStatusOf = async (m: Memory, next: string) => {
     try {
       await api.updateMemory(m.id, { status: next });
-      fb.success(next === "active" ? "已转正" : next === "archived" ? "已停用" : "已丢弃");
+      fb.success(next === "active" ? "已确认使用" : next === "archived" ? "已停用" : "已丢弃");
       await load();
     } catch (e) {
       fb.error("更新失败", e instanceof Error ? e.message : String(e));
@@ -279,7 +281,7 @@ export default function MemoriesPage() {
                     void setStatusOf(m, "active");
                   }}
                 >
-                  转正
+                  确认使用
                 </button>
               </label>
             ))}
@@ -391,95 +393,108 @@ export default function MemoriesPage() {
             可以在上面手动新增，或打开任意一次执行记录（运行记录 / 对话页 / 助手页都能点开）点「沉淀为记忆」。
           </div>
         ) : (
-          <table className="w-full min-w-[720px] text-[12.5px]">
-            <thead className="bg-[var(--color-surface-2)] text-[var(--color-muted)]">
-              <tr>
-                <th className="text-left px-3 py-2.5">内容</th>
-                <th className="text-left px-3 py-2.5 w-20">类型</th>
-                <th className="text-left px-3 py-2.5 w-36">归属</th>
-                <th className="text-right px-3 py-2.5 w-16">被用过</th>
-                <th className="text-left px-3 py-2.5 w-24">更新</th>
-                <th className="text-left px-3 py-2.5 w-40">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((m) => (
-                <tr key={m.id} className="border-t border-[var(--color-border)] hover:bg-[var(--color-surface-2)]">
-                  <td className="px-3 py-2.5">
-                    <div className="break-words">{m.content}</div>
-                    <div className="text-[11px] text-[var(--color-muted)] mt-0.5 flex gap-2 items-center">
-                      <span>{m.source === "auto" ? "自动提炼" : "手动录入"}</span>
-                      {m.source_run_id && (
-                        <>
-                          <span>·</span>
-                          <RunIdLink
-                            runId={m.source_run_id}
-                            label={`来源 ${m.source_run_id.slice(0, 12)}…`}
-                            className="hover:underline"
-                          />
-                        </>
-                      )}
-                      {m.status !== "active" && (
-                        <>
-                          <span>·</span>
-                          <span style={{ color: m.status === "candidate" ? "var(--color-warn)" : "var(--color-muted)" }}>
-                            {m.status === "candidate" ? "候选" : "已停用"}
-                          </span>
-                        </>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-3">
+          /* 卡片流（原来是一张表格）：表格把内容压进一列窄字里，读起来最费劲。
+             改卡片后 —— 内容默认**全展开**；**状态用卡片外观**表达
+             （待确认 = 橙色左边条 + 确认/丢弃 常驻；生效中 = 蓝色条；
+               已停用 = 灰条 + 整体压暗）；**类型用颜色徽章**（另一条视觉通道，不与状态色打架）。 */
+          <div className="flex flex-col gap-2">
+            {items
+              /* 看「全部」时，待确认的由上面的候选区负责（那里有批量选中），
+                 这里就不再重复显示一遍；筛到具体状态时才由卡片流负责。 */
+              .filter((m) => !(status === "" && m.status === "candidate"))
+              .map((m) => {
+              const cand = m.status === "candidate";
+              const arch = m.status === "archived";
+              return (
+                <div
+                  key={m.id}
+                  data-mem={m.id}
+                  className="card p-3 pl-4"
+                  style={{
+                    opacity: arch ? 0.62 : 1,
+                    borderLeft: `3px solid ${
+                      cand ? "var(--color-warn)" : arch ? "var(--color-border)" : "var(--color-accent)"
+                    }`,
+                  }}
+                >
+                  {/* 内容：默认全展开 */}
+                  <div className="text-[13px] leading-relaxed whitespace-pre-wrap break-words">{m.content}</div>
+
+                  {/* 元信息一行：类型徽章 · 来源 · 归属 · 用过几次 · 更新时间 · 状态 */}
+                  <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] text-[var(--color-muted)]">
                     <KindTag kind={m.kind} />
-                  </td>
-                  <td className="px-3 text-[var(--color-muted)]">
-                    {m.scope === "global" ? (
-                      <span>所有助手共用</span>
-                    ) : (
-                      m.agent_name ?? <span title="绑定的助手已被删除">（已失效）</span>
+                    <span>{m.source === "auto" ? "自动提炼" : "手动录入"}</span>
+                    {m.source_run_id && (
+                      <>
+                        <span>·</span>
+                        <RunIdLink
+                          runId={m.source_run_id}
+                          label={`来源 ${m.source_run_id.slice(0, 12)}…`}
+                          className="hover:underline"
+                        />
+                      </>
                     )}
-                  </td>
-                  <td className="px-3 text-right mono" title={m.last_hit_at ? `最后使用：${fmt.time(m.last_hit_at)}` : "还没用过"}>
-                    {m.hits}
-                  </td>
-                  <td className="px-3 text-[var(--color-muted)]">{fmt.relative(m.updated_at)}</td>
-                  <td className="px-3">
-                    <div className="flex gap-1 whitespace-nowrap">
-                      <button className="btn text-[11px] px-2 py-1" onClick={() => void edit(m)}>
-                        编辑
-                      </button>
-                      <button
-                        className="btn text-[11px] px-2 py-1"
-                        title="复制一份并绑定到别的助手（原件不动）"
-                        onClick={() => setCopying(m)}
-                      >
-                        复制到…
-                      </button>
-                      {m.status !== "active" && (
-                        <button className="btn text-[11px] px-2 py-1" onClick={() => void setStatusOf(m, "active")}>
-                          启用
-                        </button>
-                      )}
-                      {m.status === "active" && (
+                    <span>·</span>
+                    <span>{m.scope === "global" ? "所有助手共用" : (m.agent_name ?? "（绑定助手已失效）")}</span>
+                    <span>·</span>
+                    <span title={m.last_hit_at ? `最后使用：${fmt.time(m.last_hit_at)}` : "还没用过"}>用过 {m.hits} 次</span>
+                    <span>·</span>
+                    <span>{fmt.relative(m.updated_at)}</span>
+                    {cand && <span style={{ color: "var(--color-warn)" }}>· 待你确认</span>}
+                    {arch && <span>· 已停用</span>}
+                  </div>
+
+                  {/* 操作：常用在前、危险在后；待确认的直接给「确认使用 / 丢弃」（一步到位） */}
+                  <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                    {cand && (
+                      <>
                         <button
-                          className="btn text-[11px] px-2 py-1"
-                          onClick={() => void setStatusOf(m, "archived")}
+                          className="btn text-[11.5px] px-2.5 py-1"
+                          style={{
+                            background: "var(--color-warn)",
+                            borderColor: "var(--color-warn)",
+                            color: "#fff",
+                          }}
+                          onClick={() => void setStatusOf(m, "active")}
                         >
-                          停用
+                          确认使用
                         </button>
-                      )}
-                      <button
-                        className="inline-block text-[var(--color-err)] hover:underline text-[12px] md:text-[11px] whitespace-nowrap min-w-[44px] md:min-w-[36px] text-center px-2 py-2.5 md:px-1.5 md:py-1 rounded hover:bg-[var(--color-surface-2)]"
-                        onClick={() => void remove(m)}
-                      >
-                        删除
+                        <button className="btn text-[11.5px] px-2.5 py-1" onClick={() => void setStatusOf(m, "archived")}>
+                          丢弃
+                        </button>
+                      </>
+                    )}
+                    <button className="btn text-[11.5px] px-2.5 py-1" onClick={() => void edit(m)}>
+                      编辑
+                    </button>
+                    <button
+                      className="btn text-[11.5px] px-2.5 py-1"
+                      title="复制一份并绑定到别的助手（原件不动）"
+                      onClick={() => setCopying(m)}
+                    >
+                      复制到…
+                    </button>
+                    {m.status === "active" && (
+                      <button className="btn text-[11.5px] px-2.5 py-1" onClick={() => void setStatusOf(m, "archived")}>
+                        停用
                       </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                    )}
+                    {m.status === "archived" && (
+                      <button className="btn text-[11.5px] px-2.5 py-1" onClick={() => void setStatusOf(m, "active")}>
+                        启用
+                      </button>
+                    )}
+                    <button
+                      className="ml-auto text-[11.5px] text-[var(--color-err)] hover:underline px-2 py-1 rounded hover:bg-[var(--color-surface-2)]"
+                      onClick={() => void remove(m)}
+                    >
+                      删除
+                    </button>
+                  </div>
+                  </div>
+                );
+              })}
+          </div>
         )}
       </div>
 
