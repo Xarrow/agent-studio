@@ -225,6 +225,20 @@ body {
    为什么要单独一条：画布的"窄屏"是 JS 判 900px（matchMedia），而 Tailwind 的 md:
    是 768px —— 两个断点对不齐，会出现"画布已经换成纵向、外壳还是横向"的错位。
    这里统一按 900px 来，和画布保持一致。 */
+/* 助手栏的「选择助手 ▾」：桌面端冗余（卡片就在下面、点一下就能加）→ 只在窄屏露出来，
+   窄屏拖拽不可靠时才需要"点选"这条确定性路径。 */
+/* 写成 .pg-rail-pick.pg-rail-pick（重复一次类名）= 提高特异性：
+   .df-ctl-sm 也给它设了 display:flex，同为单类选择器、谁在后面谁赢 ——
+   所以这里必须靠特异性压过去，不能靠顺序。 */
+.pg-rail-pick.pg-rail-pick {
+  display: none;
+}
+@media (max-width: 900px) {
+  .pg-rail-pick.pg-rail-pick {
+    display: inline-flex;
+  }
+}
+
 @media (max-width: 900px) {
   /* 主体：助手栏从左侧竖排 → 顶部横排。
      原来 208px 固定宽，在 390px 手机上占掉 53%，画布被挤成一条缝。 */

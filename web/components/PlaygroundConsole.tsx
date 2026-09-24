@@ -124,6 +124,8 @@ export function PlaygroundConsole() {
 
   /** 顶栏那个「名字 ⌄」的小菜单（切换最近编排 / 保存改动都收在这里） */
   const [wfMenu, setWfMenu] = useState(false);
+  /** 重命名态：名字**默认是入口**（点开=切换/新建/保存），只有点了「重命名」才变输入框 */
+  const [renaming, setRenaming] = useState(false);
 
   /** 画布右侧抽屉正在看哪个节点（null = 收起）。执行内容都从这里看，不在页面下方另开一块 */
   const [detailNid, setDetailNid] = useState<string | null>(null);
@@ -795,38 +797,68 @@ export function PlaygroundConsole() {
       >
         <h1 className="shrink-0 text-[15.5px] font-semibold tracking-tight">Playground</h1>
 
-        <div className="relative flex items-stretch">
-          <input
-            value={name}
-            onChange={(e) => {
-              setName(e.target.value);
-              setDirty(true);
-            }}
-            className="w-[150px] rounded-l-[8px] border border-r-0 px-2 py-1.5 text-[12.5px]"
-            style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
-            placeholder="给这份编排起个名字"
-            title="改名字（改完在右侧小箭头里保存）"
-          />
-          <button
-            type="button"
-            onClick={() => setWfMenu((v) => !v)}
-            className="rounded-r-[8px] border px-1.5 text-[12px]"
-            style={{
-              borderColor: "var(--color-border)",
-              background: "var(--color-surface-2)",
-              color: "var(--color-muted)",
-            }}
-            title="切换最近编排 / 保存改动"
-          >
-            ⌄
-          </button>
+        {/* 工作流入口（重做过）：
+            以前是「一个输入框 + 一个无名 ⌄」—— 输入框看起来像"你必须先改名"，
+            ⌄ 把切换/新建/保存/历史/删除全藏进一个符号里（"看到更多"的反面）。
+            现在：**名字本身就是入口**（点开=菜单），**新建独立成一键**（一步可达），
+            重命名收进菜单（点了才变输入框），未保存小点挂在名字旁。 */}
+        <div className="relative flex items-center gap-1.5">
+          <span className="shrink-0 text-[12px]" style={{ color: "var(--color-muted)" }}>
+            工作流
+          </span>
+          {renaming ? (
+            <input
+              autoFocus
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value);
+                setDirty(true);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === "Escape") {
+                  e.preventDefault();
+                  setRenaming(false);
+                }
+              }}
+              onBlur={() => setRenaming(false)}
+              className="w-[170px] rounded-[8px] border px-2 py-1.5 text-[12.5px] outline-none"
+              style={{ borderColor: "var(--color-accent)", background: "var(--color-surface)" }}
+              placeholder="给这份编排起个名字"
+              title="回车保存名字（Esc 取消）"
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setWfMenu((v) => !v)}
+              className="flex max-w-[220px] items-center gap-1.5 rounded-[8px] border px-2.5 py-1.5 text-[12.5px] font-medium hover:bg-[var(--color-surface-2)]"
+              style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+              title="切换编排 / 新建 / 重命名 / 保存 / 历史"
+            >
+              <span className="min-w-0 truncate">{name || "未命名编排"}</span>
+              <span className="shrink-0 text-[11px]" style={{ color: "var(--color-muted)" }}>
+                ▾
+              </span>
+            </button>
+          )}
           {dirty && (
             <span
-              className="absolute -right-1 -top-1 h-2 w-2 rounded-full"
+              className="h-2 w-2 shrink-0 rounded-full"
               style={{ background: "var(--color-warn)" }}
               title="有未保存的改动"
             />
           )}
+          <button
+            type="button"
+            onClick={newWorkflow}
+            className="df-ctl-sm shrink-0 justify-center hover:bg-[var(--color-surface-2)]"
+            style={{
+              color: confirmNew ? "var(--color-warn)" : "var(--color-accent)",
+              border: `1px ${confirmNew ? "solid" : "dashed"} ${confirmNew ? "var(--color-warn)" : "var(--color-border)"}`,
+            }}
+            title={confirmNew ? "有未保存改动 —— 再点一下丢弃并新建" : "新建一个空白编排"}
+          >
+            {confirmNew ? "再点一次" : "＋"}
+          </button>
           {wfMenu && (
             <div
               className="absolute left-0 top-full z-50 mt-1 w-[240px] rounded-[10px] border p-1"
@@ -836,6 +868,17 @@ export function PlaygroundConsole() {
                 boxShadow: "0 10px 28px rgba(20,24,31,.16)",
               }}
             >
+              <button
+                type="button"
+                onClick={() => {
+                  setWfMenu(false);
+                  setRenaming(true);
+                }}
+                className="w-full rounded-[6px] px-2 py-1.5 text-left text-[12.5px] hover:bg-[var(--color-surface-2)]"
+              >
+                重命名当前编排…
+              </button>
+              <div className="my-1 border-t" style={{ borderColor: "var(--color-border)" }} />
               {list.map((w) => (
                 <button
                   key={w.id}
@@ -872,7 +915,7 @@ export function PlaygroundConsole() {
                 className="w-full rounded-[6px] px-2 py-1.5 text-left text-[12.5px] hover:bg-[var(--color-surface-2)]"
                 style={{ color: confirmNew ? "var(--color-warn)" : undefined }}
               >
-                {confirmNew ? "有未保存改动 —— 再点一下丢弃并新建" : "新建编排"}
+                {confirmNew ? "有未保存改动 —— 再点一下丢弃并新建" : "新建空白编排"}
               </button>
               <button
                 type="button"
@@ -961,7 +1004,7 @@ export function PlaygroundConsole() {
                 e.stopPropagation();
                 setAgentPick((v) => !v);
               }}
-              className="df-ctl-sm hover:bg-[var(--color-surface-2)] disabled:opacity-45"
+              className="pg-rail-pick df-ctl-sm hover:bg-[var(--color-surface-2)] disabled:opacity-45"
               style={{ color: "var(--color-accent)", border: "1px solid var(--color-border)" }}
               title="从列表里选一个助手，加到流程末尾（手机上比拖拽可靠）"
             >
