@@ -148,6 +148,10 @@ export type NodeLiveInfo = {
   tools: { name: string; args: string; state: string; result: string }[];
   iters: number;
   eventCount: number;
+  /** 下面三样给"画布右侧抽屉"用（悬停卡不用）：哪一次运行、这一步收到什么、原始事件 */
+  runId: string;
+  input: string;
+  events: TraceEvent[];
 };
 
 /** 从一次运行的 trace 里提炼"节点上那一行" —— 画布与详情共用同一个提炼口径 */
@@ -172,6 +176,9 @@ export function buildNodeLive(t: TraceData, status: string): NodeLiveInfo {
     tools,
     iters: t.llm_calls?.length ?? 0,
     eventCount: (t.events ?? []).length,
+    runId: t.run?.id ?? "",
+    input: (t.run?.input?.text as string | undefined) ?? "",
+    events: t.events ?? [],
   };
 }
 

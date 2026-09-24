@@ -123,8 +123,11 @@ type Props = {
   runStates: Record<string, NodeState>;
   /** 各节点本轮产出，直接显示在卡片上 */
   outputs: Record<string, string>;
-  /** 各节点**实时摘要**（正在干什么/耗时/思考/工具/输出）—— 悬停卡与节点角标用 */
+  /** 各节点**实时摘要**（正在干什么/耗时/思考/工具/输出）—— 悬停卡、节点角标、右侧抽屉共用 */
   live?: Record<string, NodeLiveInfo>;
+  /** 右侧抽屉正在看哪个节点（null = 收起）。抽屉在画布内，不跳页、不挡画布 */
+  detailNid?: string | null;
+  onDetail?: (nid: string | null) => void;
   /** 正在等确认的节点 + 待确认内容 */
   hitl?: { nid: string; payload: Record<string, unknown> | null } | null;
   onHitl?: (action: "allow" | "allow_all" | "deny") => void;
@@ -172,6 +175,8 @@ export function WorkflowCanvas({
   runStates,
   outputs,
   live,
+  detailNid = null,
+  onDetail,
   hitl,
   onHitl,
   draggingAgentId,
@@ -449,6 +454,17 @@ export function WorkflowCanvas({
 
   const empty = graph.nodes.length === 0;
 
+  /** 右侧抽屉要用的：哪个节点 / 它的助手 / 这一步的完整数据 / 状态 / 序号 */
+  const drawerStep = detailNid ? live?.[detailNid] : undefined;
+  const drawerNode = detailNid ? graph.nodes.find((x) => x.nid === detailNid) : undefined;
+  const drawerAgent = drawerNode ? agentOf(drawerNode.agent_id) : undefined;
+  const drawerState = (detailNid ? (runStates[detailNid] ?? "idle") : "idle") as NodeState;
+  const drawerMeta = META[drawerState] ?? META.idle;
+  const drawerIdx = detailNid
+    ? graph.nodes.findIndex((x) => x.nid === detailNid)
+    : -1;
+  const [drawerLog, setDrawerLog] = useState(false);
+
   /** 悬停浮层要用到的：那个节点 / 它的助手 / 实时摘要 / 状态 */
   const peekNode = peek ? graph.nodes.find((x) => x.nid === peek.nid) : undefined;
   const peekAgent = peekNode ? agentOf(peekNode.agent_id) : undefined;
@@ -457,6 +473,10 @@ export function WorkflowCanvas({
   const peekMeta = META[peekState] ?? META.idle;
 
   return (
+    /* 外层 flex：画布 + 右侧抽屉左右并排。
+       抽屉**在画布这一层**，不是页面下方、也不是弹窗 —— 点节点内容就在旁边出现，
+       视线不用离开对象；收起后画布自动恢复全宽。 */
+    <div className="flex h-full min-h-0 w-full">
     <div
       ref={stageRef}
       data-canvas-drop="1"
@@ -466,7 +486,7 @@ export function WorkflowCanvas({
           setEdgeSel(null);
         }
       }}
-      className="relative h-full w-full overflow-auto"
+      className="relative h-full min-w-0 flex-1 overflow-auto"
       style={{
         backgroundColor: hot ? "color-mix(in srgb, var(--color-accent) 5%, var(--color-surface-2))" : "var(--color-surface-2)",
         backgroundImage: "radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--color-border) 85%, transparent) 1.2px, transparent 0)",
@@ -662,7 +682,9 @@ export function WorkflowCanvas({
               }}
               onClick={(e) => {
                 e.stopPropagation();
-                onSelect(n.nid);
+                // 点节点 = 看它**这次跑了什么**（右侧抽屉）。配置是"改设置"，
+                // 频率低得多，挪到 ⚙ —— 两种意图分开，不用猜。
+                onDetail?.(detailNid === n.nid ? null : n.nid);
               }}
               onMouseEnter={() => peekIn(n.nid)}
               onMouseLeave={() => peekOut()}
@@ -707,6 +729,19 @@ export function WorkflowCanvas({
                 >
                   第 {stepNo} 步
                 </span>
+                <button
+                  type="button"
+                  title="配置这个助手"
+                  aria-label="配置这个助手"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelect(n.nid);
+                  }}
+                  className="shrink-0 rounded border px-1.5 text-[12px] opacity-60 transition-opacity hover:opacity-100"
+                  style={{ color: "var(--color-muted)" }}
+                >
+                  ⚙
+                </button>
                 {!frozen && (
                   <button
                     type="button"
@@ -931,6 +966,201 @@ export function WorkflowCanvas({
           </div>
         )}
       </div>
+    </div>
+
+      {/* ── 右侧抽屉：这一次跑了什么（思考/工具/输出/日志全文）────────────── */}
+      {detailNid && (
+        <aside
+          className="flex w-[380px] shrink-0 flex-col border-l"
+          style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+        >
+          <div
+            className="flex items-center gap-2 border-b px-3 py-2.5"
+            style={{ borderColor: "var(--color-border)" }}
+          >
+            <span
+              className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-full border text-[11px] font-semibold"
+              style={{
+                borderColor: "var(--color-border)",
+                background: "var(--color-surface-2)",
+                color: "var(--color-muted)",
+              }}
+            >
+              {drawerIdx + 1}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">
+              {drawerAgent?.name ?? "助手"}
+            </span>
+            <span className="shrink-0 text-[11.5px]" style={{ color: drawerMeta.text }}>
+              {STATE_LABEL[drawerState]}
+            </span>
+            {drawerStep?.elapsedMs != null && drawerStep.elapsedMs > 0 && (
+              <span className="shrink-0 text-[11px]" style={{ color: "var(--color-muted)" }}>
+                {drawerStep.elapsedMs < 1000
+                  ? `${Math.round(drawerStep.elapsedMs)}ms`
+                  : `${(drawerStep.elapsedMs / 1000).toFixed(1)}s`}
+              </span>
+            )}
+            <button
+              type="button"
+              title="收起"
+              aria-label="收起"
+              onClick={() => onDetail?.(null)}
+              className="shrink-0 rounded border px-1.5 text-[12px] opacity-60 transition-opacity hover:opacity-100"
+              style={{ color: "var(--color-muted)" }}
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-auto px-3 py-2.5">
+            {!drawerStep && (
+              <p className="text-[12.5px] leading-[1.7]" style={{ color: "var(--color-muted)" }}>
+                这个助手还没跑过。写下任务点「运行」，这里会显示它的思考、工具调用与输出。
+              </p>
+            )}
+
+            {drawerStep?.input && (
+              <Block title="这一步收到">
+                <div className="whitespace-pre-wrap text-[12px] leading-[1.7]">
+                  {drawerStep.input}
+                </div>
+              </Block>
+            )}
+
+            {drawerStep && (
+              <Block title="思考">
+                <div className="whitespace-pre-wrap text-[12px] leading-[1.7]">
+                  {drawerStep.thinking || (
+                    <span style={{ color: "var(--color-muted)" }}>
+                      {drawerState === "run" ? "还在想…" : "这一步没有思考内容"}
+                    </span>
+                  )}
+                </div>
+              </Block>
+            )}
+
+            {drawerStep && (
+              <Block title={`工具（${drawerStep.tools.length}）`}>
+                {drawerStep.tools.length === 0 ? (
+                  <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+                    没调用工具
+                  </span>
+                ) : (
+                  <div className="flex flex-col gap-1.5">
+                    {drawerStep.tools.map((t, i) => (
+                      <div
+                        key={i}
+                        className="rounded-[6px] border px-2 py-1.5"
+                        style={{ borderColor: "var(--color-border)" }}
+                      >
+                        <div className="flex flex-wrap items-baseline gap-2 text-[12px]">
+                          <code className="mono font-semibold">{t.name}</code>
+                          <span
+                            className="text-[11px]"
+                            style={{
+                              color:
+                                t.state === "成功"
+                                  ? "var(--color-ok)"
+                                  : t.state === "调用中"
+                                    ? "var(--color-accent)"
+                                    : "var(--color-err)",
+                            }}
+                          >
+                            {t.state}
+                          </span>
+                        </div>
+                        {t.args.trim() && (
+                          <div
+                            className="mono mt-0.5 break-all text-[11.5px]"
+                            style={{ color: "var(--color-muted)" }}
+                          >
+                            {t.args}
+                          </div>
+                        )}
+                        {t.result.trim() && (
+                          <div
+                            className="mono mt-1 max-h-[160px] overflow-auto whitespace-pre-wrap break-all rounded-[4px] px-1.5 py-1 text-[11.5px]"
+                            style={{ background: "var(--color-surface-2)" }}
+                          >
+                            {t.result}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Block>
+            )}
+
+            {drawerStep && (
+              <Block title="输出">
+                <div className="whitespace-pre-wrap text-[12.5px] leading-[1.7]">
+                  {drawerStep.output || (
+                    <span style={{ color: "var(--color-muted)" }}>
+                      {drawerState === "run" ? "还没输出" : "没有输出"}
+                    </span>
+                  )}
+                </div>
+              </Block>
+            )}
+
+            {drawerStep && drawerStep.events.length > 0 && (
+              <div className="mt-2 border-t pt-2" style={{ borderColor: "var(--color-border)" }}>
+                <button
+                  type="button"
+                  onClick={() => setDrawerLog((v) => !v)}
+                  className="text-[11.5px]"
+                  style={{ color: "var(--color-muted)" }}
+                >
+                  {drawerLog ? "收起日志" : `日志（${drawerStep.events.length} 条事件）`}
+                </button>
+                {drawerLog && (
+                  <div className="mono mt-1.5 max-h-[220px] overflow-auto text-[11px] leading-[1.8]">
+                    {drawerStep.events.map((ev) => (
+                      <div key={ev.seq} className="flex gap-2">
+                        <span className="shrink-0" style={{ color: "var(--color-muted)" }}>
+                          {new Date(ev.ts).toLocaleTimeString("zh-CN", { hour12: false })}
+                        </span>
+                        <span style={{ color: "var(--color-accent)" }}>{ev.type}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {drawerStep?.runId && (
+            <div
+              className="border-t px-3 py-2 text-right text-[11.5px]"
+              style={{ borderColor: "var(--color-border)" }}
+            >
+              <a
+                href={`/runs?run=${drawerStep.runId}`}
+                style={{ color: "var(--color-accent)" }}
+              >
+                在运行记录里打开这一步 →
+              </a>
+            </div>
+          )}
+        </aside>
+      )}
+    </div>
+  );
+}
+
+/** 抽屉里的小节标题 */
+function Block({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="mb-3">
+      <div
+        className="mb-1 text-[11px] font-semibold"
+        style={{ color: "var(--color-muted)" }}
+      >
+        {title}
+      </div>
+      {children}
     </div>
   );
 }

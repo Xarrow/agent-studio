@@ -19,10 +19,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFeedback } from "@/components/ui/feedback";
 import { WorkflowCanvas, flattenLayers, type NodeState } from "@/components/WorkflowCanvas";
 import {
-  StepExecPanel,
   buildNodeLive,
   type NodeLiveInfo,
-  type StepBrief,
   type TraceData,
 } from "@/components/StepExecPanel";
 import { api } from "@/lib/api";
@@ -108,10 +106,8 @@ export function PlaygroundConsole() {
    *  统一在这里轮询，避免画布和详情各拉一遍。 */
   const [traces, setTraces] = useState<Record<string, TraceData>>({});
   const tracesRef = useRef<Record<string, TraceData>>({});
-  /** 对话窗口里哪几条展开了详情（默认收起：每条只占一行产出，展开才看思考/工具/日志） */
-  const [openRows, setOpenRows] = useState<Record<string, boolean>>({});
-  /** 对话窗口自动滚到底（像聊天一样，新内容不该被埋在下面） */
-  const logRef = useRef<HTMLDivElement>(null);
+  /** 画布右侧抽屉正在看哪个节点（null = 收起）。执行内容都从这里看，不在页面下方另开一块 */
+  const [detailNid, setDetailNid] = useState<string | null>(null);
   const esRef = useRef<EventSource | null>(null);
   const nidRef = useRef(1);
 
@@ -483,12 +479,6 @@ export function PlaygroundConsole() {
   const derivedHint = wf?.derived_hint ?? "保存后由服务端按连线判断";
 
   /** 把每个步骤的 trace 挂回它的节点 —— 画布据此在节点上显示"正在干什么" */
-  /** 对话窗口：新内容出现就滚到底（跟聊天一样） */
-  useEffect(() => {
-    const el = logRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [detail, traces]);
-
   const liveInfo = useMemo(() => {
     const out: Record<string, NodeLiveInfo> = {};
     for (const st of detail?.steps ?? []) {
@@ -499,10 +489,6 @@ export function PlaygroundConsole() {
     }
     return out;
   }, [detail, traces]);
-
-  /** 对话窗口顶上那句"你要的"：优先用这次执行记录里的任务原文（看历史也对得上） */
-  const shownTask =
-    (detail?.input as { text?: string } | undefined)?.text || task;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -652,6 +638,8 @@ export function PlaygroundConsole() {
             onSelect={setSelected}
             runStates={runStates}
             live={liveInfo}
+            detailNid={detailNid}
+            onDetail={setDetailNid}
             outputs={outputs}
             hitl={hitl ? { nid: hitl.nid, payload: hitl.payload } : null}
             onHitl={(a) => void hitlAction(a)}
@@ -744,128 +732,47 @@ export function PlaygroundConsole() {
         )}
       </div>
 
-      {/* ══ 对话窗口 —— 画布回答"谁在跑"，这里回答"跑了什么、合起来是什么" ══
-          为什么做成对话：编排本来就是一次对话 —— 你说一句任务、几个助手依次接话、
-          最后给出结论。按对话排版不用先理解"过程面板"这个概念，一眼就知道从上往下读。
-          原来那个"看过程/收起过程"的开关也去掉了：窗口一直在，开关本身才是负担。 */}
+      {/* ══ 底部只留两样：一条结论带 + 任务输入 ═════════════════════════════
+          执行内容全部搬进画布右侧抽屉（点节点即现），页面下方不再单独占一块 ——
+          "内容在画布、输入在底部"才是这块地方唯一该干的事。 */}
       <div
-        className="flex min-h-0 flex-col border-t"
+        className="border-t"
         style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
       >
-        <div ref={logRef} className="max-h-[240px] min-h-[76px] flex-1 overflow-auto px-4 py-3">
-          {!(detail?.steps ?? []).length && (
-            <p className="text-[12.5px] leading-[1.7]" style={{ color: "var(--color-muted)" }}>
-              {running
-                ? "已发起，等第一个助手接话…"
-                : "写好任务、点「运行」：这里会依次出现每个助手的产出，最后给出合起来的结论。"}
-            </p>
-          )}
-
-          {/* 你说的那一句 */}
-          {shownTask && (detail?.steps ?? []).length > 0 && (
-            <div className="mb-3 flex justify-end">
-              <div
-                className="max-w-[78%] rounded-[12px] rounded-br-[4px] px-3 py-2 text-[12.5px] leading-[1.7]"
-                style={{ background: "color-mix(in srgb, var(--color-accent) 9%, var(--color-surface))" }}
-              >
-                {shownTask}
-              </div>
-            </div>
-          )}
-
-          {/* 每个助手接一句 */}
-          {(detail?.steps ?? [])
-            .slice()
-            .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0))
-            .map((st, i) => {
-              const t = traces[st.run_id];
-              const ms =
-                t?.run?.started_at != null ? (t.run.ended_at ?? Date.now()) - t.run.started_at : null;
-              const detailOpen = !!openRows[st.run_id];
-              return (
-                <div key={st.run_id} className="mb-2.5 flex gap-2.5">
-                  <span
-                    className="mt-0.5 grid h-[22px] w-[22px] shrink-0 place-items-center rounded-full border text-[11px] font-semibold"
-                    style={{
-                      borderColor: "var(--color-border)",
-                      background: "var(--color-surface-2)",
-                      color: "var(--color-muted)",
-                    }}
-                  >
-                    {i + 1}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-baseline gap-2">
-                      <span className="text-[12.5px] font-medium">{st.agent_name}</span>
-                      <span className="text-[11px]" style={{ color: stepStatusColor(st.status) }}>
-                        {STEP_STATUS_TEXT[st.status] ?? st.status}
-                        {ms != null && ms > 0
-                          ? ` · ${ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`}`
-                          : ""}
-                      </span>
-                      <button
-                        type="button"
-                        className="ml-auto shrink-0 text-[11px]"
-                        style={{ color: "var(--color-accent)" }}
-                        onClick={() =>
-                          setOpenRows((prev) => ({ ...prev, [st.run_id]: !prev[st.run_id] }))
-                        }
-                      >
-                        {detailOpen ? "收起详情" : "展开详情"}
-                      </button>
-                    </div>
-                    <div className="mt-0.5 whitespace-pre-wrap break-words text-[12.5px] leading-[1.7]">
-                      {st.output_text || (
-                        <span style={{ color: "var(--color-muted)" }}>
-                          {st.status === "running"
-                            ? "正在做…（画布上悬停可看实时过程）"
-                            : "（没有产出）"}
-                        </span>
-                      )}
-                    </div>
-                    {detailOpen && (
-                      <div className="mt-1.5">
-                        <StepExecPanel
-                          index={i}
-                          step={st as unknown as StepBrief}
-                          trace={t}
-                          live={running && (st.status === "running" || st.status === "pending")}
-                          open
-                          onToggle={() => setOpenRows((prev) => ({ ...prev, [st.run_id]: false }))}
-                        />
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-
-          {/* 合起来的结论 */}
-          {finalText && (
-            <div
-              className="mt-3 flex gap-2.5 border-t pt-2.5"
-              style={{ borderColor: "var(--color-border)" }}
+        {finalText && (
+          <button
+            type="button"
+            onClick={() => {
+              const steps = (detail?.steps ?? [])
+                .slice()
+                .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
+              const last = steps[steps.length - 1];
+              const nid = last ? nodeForStep(last) : null;
+              if (nid) setDetailNid(nid);
+            }}
+            className="flex w-full items-center gap-2 border-b px-4 py-2 text-left"
+            style={{ borderColor: "var(--color-border)" }}
+            title="点开看最后一步的完整过程"
+          >
+            <span
+              className="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full text-[10px] text-white"
+              style={{ background: "var(--color-accent)" }}
             >
-              <span
-                className="mt-0.5 grid h-[22px] w-[22px] shrink-0 place-items-center rounded-full text-[11px] text-white"
-                style={{ background: "var(--color-accent)" }}
-              >
-                ✓
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="text-[12.5px] font-semibold">最终结果</div>
-                <div className="mt-0.5 whitespace-pre-wrap break-words text-[12.5px] leading-[1.7]">
-                  {finalText}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div
-          className="flex items-center gap-2.5 border-t px-4 py-2.5"
-          style={{ borderColor: "var(--color-border)" }}
-        >
+              ✓
+            </span>
+            <span className="shrink-0 text-[11.5px] font-semibold">最终结果</span>
+            <span
+              className="min-w-0 flex-1 truncate text-[12.5px]"
+              style={{ color: "var(--color-muted)" }}
+            >
+              {finalText.replace(/\s+/g, " ")}
+            </span>
+            <span className="shrink-0 text-[11.5px]" style={{ color: "var(--color-accent)" }}>
+              看最后一步 →
+            </span>
+          </button>
+        )}
+        <div className="flex items-center gap-2.5 px-4 py-2.5">
           <input
             value={task}
             onChange={(e) => {
