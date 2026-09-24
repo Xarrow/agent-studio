@@ -92,6 +92,9 @@ export function PlaygroundConsole() {
 
   const [selected, setSelected] = useState<string | null>(null);
   const [draggingAgentId, setDragging] = useState<string | null>(null);
+  /** 「选择助手」下拉（手机上拖拽手势不可靠：手指一动就从"点选"变成"拖拽"，
+   *  所以给出下拉框这条确定性路径 —— 点选 = 一定能加进去） */
+  const [agentPick, setAgentPick] = useState(false);
   /** 拖拽时跟着手指/鼠标的小卡片（用 position:fixed，不受画布滚动影响） */
   const [ghost, setGhost] = useState<{ x: number; y: number; name: string } | null>(null);
   /** 指针正悬停在哪个节点上（画布据此预览"会插到它后面"） */
@@ -916,16 +919,73 @@ export function PlaygroundConsole() {
           className={`pg-rail flex w-[208px] shrink-0 flex-col border-r transition-opacity ${
             running ? "opacity-40" : ""
           }`}
-          style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+          style={{ borderColor: "var(--color-border)", background: "var(--color-surface)", position: "relative" }}
           title={running ? "运行中不能改结构 —— 跑完再拖" : undefined}
         >
           <div
-            className="pg-rail-title px-3.5 pt-3 pb-2 text-[12px] font-semibold"
+            className="pg-rail-title flex items-center justify-between px-3.5 pt-3 pb-2 text-[12px] font-semibold"
             style={{ color: "var(--color-muted)" }}
             title="拖到空白处 = 新开一条；拖到某个助手上 = 接在它后面；点一下 = 直接加一条。"
           >
-            助手
+            <span>助手</span>
+            <button
+              type="button"
+              disabled={running}
+              onClick={(e) => {
+                e.stopPropagation();
+                setAgentPick((v) => !v);
+              }}
+              className="df-ctl-sm hover:bg-[var(--color-surface-2)] disabled:opacity-45"
+              style={{ color: "var(--color-accent)", border: "1px solid var(--color-border)" }}
+              title="从列表里选一个助手，加到流程末尾（手机上比拖拽可靠）"
+            >
+              选择助手 ▾
+            </button>
           </div>
+          {agentPick && (
+            <>
+              {/* 点空白处收起（与全站弹层一致，不用原生弹窗） */}
+              <div className="fixed inset-0 z-30" onClick={() => setAgentPick(false)} />
+              <div
+                className="df-menu absolute left-2 top-[46px] z-40 max-h-[60vh] w-[228px] overflow-auto border"
+                style={{
+                  background: "var(--color-surface)",
+                  borderColor: "var(--color-border)",
+                  boxShadow: "0 8px 24px rgba(16, 24, 40, 0.14)",
+                }}
+              >
+                {agents.map((a) => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    className="df-menu-item hover:bg-[var(--color-surface-2)]"
+                    onClick={() => {
+                      setAgentPick(false);
+                      dropAgent(a.id, null);
+                    }}
+                  >
+                    <span
+                      className="grid h-[24px] w-[24px] shrink-0 place-items-center rounded-[6px] border text-[12px] font-semibold"
+                      style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
+                    >
+                      {a.name.slice(0, 1)}
+                    </span>
+                    <span className="min-w-0 flex-1 text-left">
+                      <span className="block truncate">{a.name}</span>
+                      <span className="block truncate text-[12px]" style={{ color: "var(--color-muted)" }}>
+                        {a.definition?.model?.name ?? ""}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+                {!agents.length && (
+                  <div className="px-3 py-2 text-[12px]" style={{ color: "var(--color-muted)" }}>
+                    还没有助手，先去 Agents 建一个。
+                  </div>
+                )}
+              </div>
+            </>
+          )}
           <div className="pg-rail-list flex min-h-0 flex-1 flex-col gap-1.5 overflow-auto px-2.5 pb-3">
             {agents.map((a) => (
               <div
