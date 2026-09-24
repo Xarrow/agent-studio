@@ -501,6 +501,14 @@ body {
    静态颜色在十几秒的执行里抓不住眼睛 —— 用户扫一眼画布，得立刻知道
    现在轮到谁、卡在谁那儿。动效只承担这一个语义，不要花哨。
    ─────────────────────────────────────────────────────────────────────── */
+/* 运行中的"进度感"：还没轮到的步骤压暗。
+   opacity 的过渡并进 .wf-node 那条现有 transition 里（两条规则会打架，
+   实测被 box-shadow/border-color 那条覆盖 → 压暗会"跳"而不是平滑过渡）。
+   切记：卡片用 transform: translate 定位，transition 里**不能**带 transform。 */
+.node-dim {
+  opacity: 0.52;
+}
+
 @keyframes node-breathe {
   0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 34%, transparent); }
   50%      { box-shadow: 0 0 0 6px color-mix(in srgb, var(--color-accent) 10%, transparent); }
@@ -540,7 +548,7 @@ body {
 
 /* ── 节点卡（参考 Dify 的 block 观感）：静态一层浅影，悬停抬起一点 ── */
 .wf-node {
-  transition: box-shadow .16s ease, border-color .16s ease;
+  transition: box-shadow .16s ease, border-color .16s ease, opacity .25s ease;
 }
 .wf-node:hover {
   box-shadow: 0 6px 20px rgba(20, 24, 31, .10), 0 2px 6px rgba(20, 24, 31, .06);

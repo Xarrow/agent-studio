@@ -1266,6 +1266,11 @@ export function WorkflowCanvas({
           const p = layout.pos[n.nid] ?? { x: 0, y: 0 };
           const st = (runStates[n.nid] ?? "idle") as NodeState;
           const meta = META[st] ?? META.idle;
+          /** 本轮有没有任何一步在"跑/等你确认" —— 用来给未轮到的步骤压暗（进度一眼可见） */
+          const anyActive = graph.nodes.some((x) => {
+            const st2 = runStates[x.nid] ?? "idle";
+            return st2 === "run" || st2 === "ask";
+          });
           const lv = live?.[n.nid];
           const isSel = selected === n.nid;
           const isTarget = (hoverNid ?? dropTarget) === n.nid;
@@ -1288,6 +1293,10 @@ export function WorkflowCanvas({
               onMouseLeave={() => peekOut()}
               className={`wf-node group absolute rounded-[15px] border shadow-xs hover:shadow-lg ${
                 lv && st === "run" ? "node-run" : st === "ask" ? "node-ask" : ""
+              } ${
+                // 进度可视化（零操作）：只要有任何一步在跑/等待确认，还没轮到的步骤就压暗。
+                // 扫一眼就知道"跑到哪了"，不用点、不用悬停（触屏同样成立）。
+                anyActive && (st === "idle" || st === "wait") ? "node-dim" : ""
               }`}
               style={{
                 transform: `translate(${p.x}px, ${p.y}px)`,
