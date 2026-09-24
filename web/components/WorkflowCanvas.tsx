@@ -324,7 +324,9 @@ export function WorkflowCanvas({
       // 1) 让位高度改成**实测**（taskH）：任务卡现在是"输入框常驻"，比原来高得多，
       //    写死 96 会让节点压在任务卡上（实测就是这么坏掉的）。
       // 2) 同层节点不再横排 —— 手机宽 390，两个节点横排就是 490，必然横向溢出。
-      let y = PAD + (taskH || 190) + 14;
+      // 兜底 240：实测任务卡高 211（输入框常驻后），给足余量 ——
+      // 宁可多留 30px 空白，也不要因为"没量到"就让节点压在卡上。
+      let y = PAD + (taskH || 240) + 14;
       layers.forEach((ids) => {
         ids.forEach((nid) => {
           pos[nid] = { x: PAD, y };
@@ -993,7 +995,7 @@ export function WorkflowCanvas({
           />
 
           {/* 工具栏常驻（写的是 Markdown，回车运行前随手加格式） */}
-          <div className="mt-1 flex items-center gap-0.5">
+          <div className="mt-1 flex flex-wrap items-center gap-0.5">
             {(
               [
                 ["B", "加粗", () => wrapSel("**")],
@@ -1018,21 +1020,26 @@ export function WorkflowCanvas({
                 {label}
               </button>
             ))}
-            {/* 运行键就在起点上：流程从这里开跑 */}
-            <button
-              type="button"
-              disabled={running}
-              onClick={(e) => {
-                e.stopPropagation();
-                onRun?.();
-              }}
-              className="df-ctl ml-auto font-medium text-white disabled:opacity-45"
-              style={{ background: "var(--color-accent)" }}
-              title={`按 ${derived || "自动"} 方式执行（Enter）`}
-            >
-              {running ? "运行中…" : `▸ 运行 · ${derived || "自动"}`}
-            </button>
           </div>
+
+          {/* 运行键**独占一行、撑满宽度**。
+              原因（实测踩到）：原来它和上面 5 个工具栏键挤在同一行（ml-auto 顶右），
+              那行内容 ~240px，而卡片内宽只有 ~174px（200 卡宽 - px-3×2 - 边框）——
+              溢出 66px，运行键撑出卡片右边缘压到右边的节点卡上，就是用户看到的
+              "组件叠加一起了"。主操作单独一行既修了溢出，也更像个启动键。 */}
+          <button
+            type="button"
+            disabled={running}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRun?.();
+            }}
+            className="df-ctl mt-1.5 w-full justify-center font-medium text-white disabled:opacity-45"
+            style={{ background: "var(--color-accent)" }}
+            title={`按 ${derived || "自动"} 方式执行（Enter）`}
+          >
+            {running ? "运行中…" : `▸ 运行 · ${derived || "自动"}`}
+          </button>
           <div className="mt-1 text-[12px]" style={{ color: "var(--color-muted)" }}>
             Enter 运行 · Shift+Enter 换行
           </div>
