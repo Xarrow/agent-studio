@@ -16,6 +16,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import Markdown from "./Markdown";
 
 import type { NodeLiveInfo } from "@/components/StepExecPanel";
+import { STEP_STYLE, type StepKind } from "@/components/ui/run-timeline";
 import type { Agent, WorkflowEdge, WorkflowGraph, WorkflowNode } from "@/lib/types";
 
 export type NodeState = "idle" | "wait" | "run" | "ok" | "err" | "ask" | "stale";
@@ -856,9 +857,14 @@ export function WorkflowCanvas({
           className="absolute rounded-[10px] border border-dashed px-2.5 py-2"
           style={{
             transform: `translate(${layout.taskAt.x}px, ${layout.taskAt.y}px)`,
-            width: layout.CARD_W,
-            background: "var(--color-surface-2)",
+            // 编辑时展开成宽输入框（用户反馈"太小太丑"）—— 就地变大，不跳页、不弹窗；
+            // z 抬高 + 阴影，让它清楚地浮在流程之上，一眼看出"我正在编辑这一步"
+            width: editTask ? 480 : layout.CARD_W,
+            zIndex: editTask ? 45 : undefined,
+            background: editTask ? "var(--color-surface)" : "var(--color-surface-2)",
             borderColor: editTask ? "var(--color-accent)" : "var(--color-border)",
+            borderStyle: editTask ? "solid" : "dashed",
+            boxShadow: editTask ? "0 12px 34px rgba(20,24,31,.18)" : undefined,
             cursor: editTask ? "text" : "pointer",
           }}
           onClick={(e) => {
@@ -880,6 +886,9 @@ export function WorkflowCanvas({
 
           {editTask ? (
             <>
+              <div className="mt-0.5 text-[11.5px] font-semibold" style={{ color: "var(--color-accent)" }}>
+                这次要让它们做什么？
+              </div>
               {/* 工具栏：加粗 / 斜体 / 列表 / 引用 / 代码（
                   写的还是 Markdown，非编辑态会按排版渲染出来） */}
               <div className="mt-1 flex items-center gap-0.5">
@@ -933,15 +942,29 @@ export function WorkflowCanvas({
                 }}
                 onBlur={() => window.setTimeout(() => setEditTask(false), 160)}
                 placeholder="写一句任务 —— 比如：调研三家云厂商的 GPU 报价并汇总成表"
-                className="mt-1 w-full resize-none rounded-[6px] border px-2 py-1.5 text-[12px] leading-[1.65] outline-none"
+                className="mt-1 w-full resize-none rounded-[8px] border px-2.5 py-2 text-[13px] leading-[1.7] outline-none"
                 style={{
                   borderColor: "var(--color-border)",
-                  background: "var(--color-surface)",
-                  maxHeight: 200,
+                  background: "var(--color-surface-2)",
+                  minHeight: 84,
+                  maxHeight: 220,
                 }}
               />
-              <div className="mt-1 text-[10px]" style={{ color: "var(--color-muted)" }}>
-                Enter 运行 · Shift+Enter 换行
+              <div className="mt-1.5 flex items-center gap-2">
+                <span className="text-[10.5px]" style={{ color: "var(--color-muted)" }}>
+                  Enter 运行 · Shift+Enter 换行 · Esc 收起
+                </span>
+                <button
+                  type="button"
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    setEditTask(false);
+                  }}
+                  className="ml-auto rounded-[6px] px-2 py-1 text-[11.5px]"
+                  style={{ color: "var(--color-muted)" }}
+                >
+                  完成
+                </button>
               </div>
             </>
           ) : taskText.trim() ? (
@@ -1236,16 +1259,52 @@ export function WorkflowCanvas({
               {/* 实时尾巴：正在跑的时候给 2~3 行（最近一次工具调用 + 当前思考/输出），
                   跑完就折叠回那行摘要 —— 用户反馈"执行中看不到具体过程"就是这里。 */}
               {st === "run" && lv && (
-                <div className="flex flex-col gap-0.5 px-2.5 pb-1.5 pt-1">
-                  {tailOf(lv.events).map((l, i) => (
-                    <div key={i} className="flex items-start gap-1.5 text-[11px] leading-[1.5]">
-                      <span className="shrink-0">{l.icon}</span>
-                      <span className="min-w-0 break-words" style={{ color: l.tone }}>
-                        {l.text}
-                      </span>
-                    </div>
-                  ))}
-                </div>
+                <>
+                  {/* 正在执行：给一条**抢眼**的横幅（之前只有一行灰字，用户说"没看到"） */}
+                  <div
+                    className="mt-1 flex items-center gap-1.5 rounded-[6px] px-2 py-1"
+                    style={{
+                      background: "color-mix(in srgb, var(--color-accent) 10%, transparent)",
+                      borderTop: "1px solid color-mix(in srgb, var(--color-accent) 30%, transparent)",
+                      borderBottom: "1px solid color-mix(in srgb, var(--color-accent) 30%, transparent)",
+                    }}
+                  >
+                    <span className="live-dot shrink-0 text-[10px]" style={{ color: "var(--color-accent)" }}>
+                      ●
+                    </span>
+                    <span className="text-[11.5px] font-semibold" style={{ color: "var(--color-accent)" }}>
+                      正在执行
+                    </span>
+                    <span className="ml-auto text-[11px] font-medium" style={{ color: "var(--color-accent)" }}>
+                      {lv.elapsedMs == null
+                        ? ""
+                        : lv.elapsedMs < 1000
+                          ? `${Math.round(lv.elapsedMs)}ms`
+                          : `${(lv.elapsedMs / 1000).toFixed(1)}s`}
+                    </span>
+                  </div>
+                  {/* 尾巴：不同动作不同颜色（思考紫 / 工具橙 / 工具输出青 / 输出绿）——
+                      配色直接复用全站那套 STEP_STYLE，保证"同一动作到处一个颜色" */}
+                  <div className="flex flex-col gap-[3px] px-2.5 pb-2 pt-1.5">
+                    {tailOf(lv.events).map((l, i) => {
+                      const sty = STEP_STYLE[l.kind];
+                      return (
+                        <div
+                          key={i}
+                          className="flex items-start gap-1.5 rounded-[5px] px-1.5 py-[3px] text-[11.5px] leading-[1.45]"
+                          style={{ background: sty.bg, border: `1px solid ${sty.border}` }}
+                        >
+                          <span className="shrink-0" style={{ color: sty.color }}>
+                            {sty.icon}
+                          </span>
+                          <span className="min-w-0 break-words font-medium" style={{ color: sty.color }}>
+                            {l.text}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
               )}
 
               {/* 实时摘要：一眼看出"它在干什么" —— 不用点、不用往下看 */}
@@ -1655,19 +1714,19 @@ export function WorkflowCanvas({
  *  （`⟳ 2.3s 思考中…`）—— 于是执行中**看不见过程**（用户原话）。
  *  这里取中间：**跑的时候给尾巴（最近一次工具调用 + 当前思考/输出），跑完只留一行摘要**。
  *  事件是流式的 delta（每次几个字），所以按"末尾连续同类型"回卷累积，才拼得出完整一句。 */
-function tailOf(evts: NodeLiveInfo["events"], max = 3): { icon: string; text: string; tone: string }[] {
+function tailOf(evts: NodeLiveInfo["events"], max = 3): { kind: StepKind; text: string }[] {
   type Ev = { type?: string; payload?: Record<string, unknown> };
   const list = evts as unknown as Ev[];
   const str = (v: unknown) => (typeof v === "string" ? v : "");
   /** 单行化 + 截断（保留**尾部**：正在发生的东西在末尾） */
-  const one = (t: string, n = 56) => {
+  const one = (t: string, n = 52) => {
     const x = t.replace(/\s+/g, " ").trim();
     return x.length > n ? `…${x.slice(-n)}` : x;
   };
 
-  const lines: { icon: string; text: string; tone: string }[] = [];
+  const lines: { kind: StepKind; text: string }[] = [];
 
-  // ① 最近一次工具调用（从它的 start 往后把入参与结果攒起来）
+  // ① 最近一次工具调用（入参 + 返回）—— 分两类颜色：发出是"工具"，回来是"工具输出"
   let lastToolAt = -1;
   for (let i = list.length - 1; i >= 0; i--) {
     if (list[i].type === "tool_call_start" || list[i].type === "tool_exec_start") {
@@ -1683,14 +1742,14 @@ function tailOf(evts: NodeLiveInfo["events"], max = 3): { icon: string; text: st
       if (list[i].type === "tool_call_args") args += str(list[i].payload?.delta);
       else if (list[i].type === "tool_result_delta") result += str(list[i].payload?.delta);
     }
-    if (name) lines.push({ icon: "🛠", text: `${name} ${one(args, 34)}`, tone: "var(--color-accent)" });
+    if (name) lines.push({ kind: "tool", text: `${name} ${one(args, 32)}` });
     if (result.trim()) {
       const firstLine = result.split("\n").find((x) => x.trim()) ?? result;
-      lines.push({ icon: "↳", text: one(firstLine), tone: "var(--color-muted)" });
+      lines.push({ kind: "tool_response", text: one(firstLine) });
     }
   }
 
-  // ② 当前正在说的（末尾连续段）：输出优先，没有就显示思考
+  // ② 当前正在说的：输出优先，没有就显示思考（两类颜色不同）
   const runOf = (type: string) => {
     let acc = "";
     for (let i = list.length - 1; i >= 0; i--) {
@@ -1701,14 +1760,8 @@ function tailOf(evts: NodeLiveInfo["events"], max = 3): { icon: string; text: st
   };
   const out = runOf("text_delta");
   const think = runOf("thinking_delta");
-  const cur = out.trim() ? out : think;
-  if (cur.trim()) {
-    lines.push({
-      icon: out.trim() ? "答" : "思",
-      text: one(cur),
-      tone: out.trim() ? "var(--color-ok)" : "var(--color-muted)",
-    });
-  }
+  if (out.trim()) lines.push({ kind: "output", text: one(out) });
+  else if (think.trim()) lines.push({ kind: "think", text: one(think) });
 
   return lines.slice(-max);
 }
