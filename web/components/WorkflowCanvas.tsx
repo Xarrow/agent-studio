@@ -132,6 +132,13 @@ type Props = {
    *  画布因此自己讲完一次执行：我让你做什么 → 谁做了什么 → 合起来是什么。 */
   taskText?: string;
   finalText?: string;
+  /** 任务卡就是输入口：文本、改文本、跑（运行键长在流程起点上） */
+  taskValue?: string;
+  onTaskValue?: (v: string) => void;
+  onRun?: () => void;
+  running?: boolean;
+  /** 当前会跑什么模式（显示在运行键上） */
+  derived?: string;
   /** 结论卡点开时定位到哪一步（最后一步） */
   lastNid?: string | null;
   /** 正在等确认的节点 + 待确认内容 */
@@ -186,6 +193,11 @@ export function WorkflowCanvas({
   taskText = "",
   finalText = "",
   lastNid = null,
+  taskValue = "",
+  onTaskValue,
+  onRun,
+  running = false,
+  derived = "",
   hitl,
   onHitl,
   draggingAgentId,
@@ -259,7 +271,9 @@ export function WorkflowCanvas({
     const GAP_Y = 20;
     const PAD = 24;
     /** 两端的卡宽度（任务卡 / 结论卡）—— 它们排在助手节点这一列的左边和右边 */
-    const CARD_W = 208;
+    // 卡片宽度：要能让「任务卡 + 一层节点 + 结论卡」在 864px 画布内同屏放下
+    // （280+76+232+76+280 = 944 放不下，会切掉一头；224 刚好）
+    const CARD_W = 224;
     const LEAD = CARD_W + GAP_X;
     const hOf = (nid: string) => heights[nid] || 104;
     const pos: Record<string, { x: number; y: number }> = {};
@@ -488,6 +502,19 @@ export function WorkflowCanvas({
     : -1;
   const [drawerLog, setDrawerLog] = useState(false);
 
+  /** 任务卡：点一下就地变输入框（这是方案 C —— 不再有页面底部的发令区） */
+  const [editTask, setEditTask] = useState(false);
+  const taskBoxRef = useRef<HTMLTextAreaElement>(null);
+  const growTask = () => {
+    const el = taskBoxRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  };
+  useEffect(() => {
+    if (editTask) growTask();
+  }, [editTask, taskValue]);
+
   /** 抽屉打开时把选中的节点滚进视野 —— 抽屉占掉右侧一截，
    *  不滚的话点开的节点可能正好被挤到视口外（点了没反应，最劝退）。 */
   useEffect(() => {
@@ -501,18 +528,19 @@ export function WorkflowCanvas({
     if (need > stage.scrollLeft) stage.scrollTo({ left: need, behavior: "smooth" });
   }, [detailNid, layout]);
 
-  /** 跑完时把结论卡滚进视野（只在"结论刚出现"那一次）——
-   *  结论是这次执行最该看到的东西，不该藏在右边要人手动拖过去。 */
-  const lastFinal = useRef("");
+  /** 把结论卡滚进视野 —— 结论是这次执行最该看到的东西，不该藏在右边要人手动拖过去。
+   *  写成**幂等**（"没滚到位就滚"），不用"只滚一次"的守卫：
+   *  第一版用了守卫，结果它第一次触发时节点高度还没量完、布局还是旧的，
+   *  算出不需要滚 → 守卫记下"滚过了" → 之后布局就算好也不会再滚（结论卡真的被切在屏幕外）。 */
   useEffect(() => {
     const stage = stageRef.current;
-    if (!stage || narrow || !finalText.trim() || lastFinal.current === finalText) return;
-    lastFinal.current = finalText;
+    if (!stage || narrow || !finalText.trim()) return;
     const need = layout.concAt.x + layout.CARD_W + 6 - stage.clientWidth;
-    if (need > stage.scrollLeft) {
-      window.setTimeout(() => stage.scrollTo({ left: need, behavior: "smooth" }), 300);
+    if (need > stage.scrollLeft + 4) {
+      const t = window.setTimeout(() => stage.scrollTo({ left: need, behavior: "smooth" }), 300);
+      return () => window.clearTimeout(t);
     }
-  }, [finalText, layout]);
+  }, [finalText, layout, narrow]);
 
   /** 悬停浮层要用到的：那个节点 / 它的助手 / 实时摘要 / 状态 */
   const peekNode = peek ? graph.nodes.find((x) => x.nid === peek.nid) : undefined;
@@ -717,25 +745,97 @@ export function WorkflowCanvas({
             为什么要画进画布里，而不是放页面底部：一次编排本来就是"从任务流向结论"的
             一条线 —— 结论是流程的**终点**，不是页面的脚注。放在画布上，它自己就把
             故事讲完了；页面下方也就不用再占一块地方。 */}
-        {taskText.trim() && (
-          <div
-            className="absolute rounded-[10px] border border-dashed px-2.5 py-2"
-            style={{
-              transform: `translate(${layout.taskAt.x}px, ${layout.taskAt.y}px)`,
-              width: layout.CARD_W,
-              background: "var(--color-surface-2)",
-              borderColor: "var(--color-border)",
-            }}
-            title="这次执行的任务"
-          >
-            <div className="text-[10.5px] font-semibold" style={{ color: "var(--color-muted)" }}>
+        {/* ── 任务卡：流程的起点，同时就是**输入口**（方案 C，2026-09-24 定案）──
+            为什么把页面底部那个输入框去掉：任务本来就是画布上这张卡的一张脸，
+            写任务 = 给流程填入口。分成"画布上的卡 + 页面底部的框"两处，
+            是同一件事抄两份，眼睛还得上下跑。现在：点一下就地在卡里写，
+            运行键（也就是流程的启动键）就长在起点上 —— 符合"一条线从这头流到那头"的直觉。
+            Enter 运行 · Shift+Enter 换行 · Esc 收起（与原来全站一致）。 */}
+        <div
+          className="absolute rounded-[10px] border border-dashed px-2.5 py-2"
+          style={{
+            transform: `translate(${layout.taskAt.x}px, ${layout.taskAt.y}px)`,
+            width: layout.CARD_W,
+            background: "var(--color-surface-2)",
+            borderColor: editTask ? "var(--color-accent)" : "var(--color-border)",
+            cursor: editTask ? "text" : "pointer",
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+            setEditTask(true);
+          }}
+          title={editTask ? undefined : "点一下写任务"}
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-[10.5px] font-semibold" style={{ color: "var(--color-muted)" }}>
               任务
-            </div>
-            <div className="mt-0.5 line-clamp-4 whitespace-pre-wrap break-words text-[12px] leading-[1.6]">
-              {taskText}
-            </div>
+            </span>
+            {!editTask && taskText.trim() && (
+              <span className="ml-auto text-[10.5px]" style={{ color: "var(--color-accent)" }}>
+                点击修改
+              </span>
+            )}
           </div>
-        )}
+
+          {editTask ? (
+            <>
+              <textarea
+                ref={taskBoxRef}
+                autoFocus
+                value={taskValue}
+                rows={2}
+                onChange={(e) => onTaskValue?.(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    setEditTask(false);
+                    return;
+                  }
+                  if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                    e.preventDefault();
+                    setEditTask(false);
+                    onRun?.();
+                  }
+                }}
+                onBlur={() => window.setTimeout(() => setEditTask(false), 160)}
+                placeholder="写一句任务 —— 比如：调研三家云厂商的 GPU 报价并汇总成表"
+                className="mt-1 w-full resize-none rounded-[6px] border px-2 py-1.5 text-[12px] leading-[1.65] outline-none"
+                style={{
+                  borderColor: "var(--color-border)",
+                  background: "var(--color-surface)",
+                  maxHeight: 200,
+                }}
+              />
+              <div className="mt-1 text-[10px]" style={{ color: "var(--color-muted)" }}>
+                Enter 运行 · Shift+Enter 换行
+              </div>
+            </>
+          ) : (
+            <div
+              className="mt-0.5 line-clamp-4 whitespace-pre-wrap break-words text-[12px] leading-[1.6]"
+              style={taskText.trim() ? undefined : { color: "var(--color-muted)" }}
+            >
+              {taskText.trim() || "点一下写任务 —— 写完按 Enter 就跑"}
+            </div>
+          )}
+
+          {/* 运行键就在起点上：流程从这里开跑 */}
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              type="button"
+              disabled={running}
+              onClick={(e) => {
+                e.stopPropagation();
+                setEditTask(false);
+                onRun?.();
+              }}
+              className="rounded-[8px] px-3 py-1.5 text-[12px] font-medium text-white disabled:opacity-45"
+              style={{ background: "var(--color-accent)" }}
+              title={`按 ${derived || "自动"} 方式执行（Enter）`}
+            >
+              {running ? "运行中…" : `▸ 运行 · ${derived || "自动"}`}
+            </button>
+          </div>
+        </div>
 
         {finalText.trim() && (
           <button
