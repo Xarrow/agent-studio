@@ -370,7 +370,20 @@ export function WorkflowCanvas({
     // 宽度只有一个来源：列宽 + 左右内边距（不再累计节点宽，永远不会有横向滚动）
     const w = CW + PAD * 2;
     const h = Math.max(maxY, 260, concAt.y + 150);
-    return { pos, w, h, layers, taskAt, concat: concAt, concAt, CARD_W, CONC_W, CW, lead: firstY, tail: lastY };
+    // 纵向流的"筋"：相邻两块之间画一条竖线（色/宽对齐 Dify 的 edge：#D0D5DD / 2px）。
+    // 按 y 排序取空隙 —— 并行层、多节点、任意顺序都不会画错。
+    const seq = [
+      { y: PAD, h: taskH || 240 },
+      ...layers.flat().map((nid) => ({ y: pos[nid]?.y ?? PAD, h: hOf(nid) })),
+      { y: concAt.y, h: 0 },
+    ].sort((a, b) => a.y - b.y);
+    const links: { x: number; y1: number; y2: number }[] = [];
+    for (let i = 0; i < seq.length - 1; i++) {
+      const y1 = seq[i].y + seq[i].h;
+      const y2 = seq[i + 1].y;
+      if (y2 - y1 > 6) links.push({ x: PAD + CW / 2, y1: y1 + 3, y2: y2 - 3 });
+    }
+    return { pos, w, h, layers, taskAt, concat: concAt, concAt, CARD_W, CONC_W, CW, lead: firstY, tail: lastY, links };
   }, [graph.nodes, graph.edges, heights, colW, taskText, finalText, taskH]);
 
   /* 高度变化要在**绘制前**同步进布局，否则连线会先画在旧位置上再跳一下 */
@@ -761,6 +774,16 @@ export function WorkflowCanvas({
             内容比画布宽时（任务卡+节点+结论约 1000px > 864px），justify-center 会**两头都裁**，
             实测把任务卡和结论卡同时切掉了。auto margin 有空间时居中、超出时从左边开始，不裁。 */}
         <div className="relative m-auto shrink-0" style={{ width: layout.w, height: layout.h }}>
+          {/* 流水线连接线：纵向流的筋。必须挂在这个 position:relative 的居中框里 ——
+              挂外层会以整个舞台为基准，线就画到空白处去了（上一版就是这么错的）。 */}
+          {layout.links.map((l, i) => (
+            <div
+              key={`pl-lnk-${i}`}
+              aria-hidden
+              className="pl-connector"
+              style={{ left: l.x - 1, top: l.y1, height: Math.max(2, l.y2 - l.y1) }}
+            />
+          ))}
         <svg className="pointer-events-none absolute inset-0" width={layout.w} height={layout.h}>
           {ghost && (
             <path d={ghost} fill="none" stroke="var(--color-accent)" strokeWidth={1.6} strokeDasharray="5 4" />
@@ -1116,7 +1139,7 @@ export function WorkflowCanvas({
             <div className="px-2 py-1 text-[12px]" style={{ color: "var(--color-muted)" }}>
               插到这两步中间
             </div>
-            <div className="max-h-[220px] overflow-auto">
+            <div className="overflow-visible">
               {agents.map((a) => (
                 <button
                   key={a.id}
@@ -1423,10 +1446,10 @@ export function WorkflowCanvas({
 
               {/* ── 卡体：参考 Dify 的 block body ──────────────────────────
                   运行中 → 分色动作行（思考紫/工具橙/工具输出青/输出绿）
-                  跑完   → 产出（markdown 渲染，最多 4 行；点节点看全部）
+                  跑完   → 产出（markdown 全文，默认展开）
                   没跑过 → 这个助手是干什么的一句话（不再是空卡） */}
               {st === "ok" && lv?.output?.trim() && (
-                <div className="node-body max-h-[104px] overflow-hidden px-3 pb-2">
+                <div className="node-body px-3 pb-2">
                   <Markdown text={lv.output} />
                 </div>
               )}

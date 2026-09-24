@@ -369,6 +369,27 @@ body {
   gap: 8px;
   width: 100%;
 }
+/* 流水线连接线：纵向流的"筋"。色/宽对齐 Dify 的 edge 常量
+   （custom-connection-line.tsx: stroke #D0D5DD / strokeWidth 2），
+   末端一个小横条对应它的箭头（那个 2×8 的方块）。 */
+.pl-connector {
+  position: absolute;
+  width: 2px;
+  border-radius: 1px;
+  background: #d0d5dd;
+  pointer-events: none;
+}
+.pl-connector::after {
+  content: "";
+  position: absolute;
+  left: -3px;
+  bottom: -2px;
+  width: 8px;
+  height: 2px;
+  border-radius: 1px;
+  background: #2970ff;
+}
+
 .df-chip {
   height: 20px;
   padding: 0 10px;
