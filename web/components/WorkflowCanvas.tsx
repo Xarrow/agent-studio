@@ -1062,6 +1062,21 @@ export function WorkflowCanvas({
                 </div>
               </div>
 
+              {/* 实时尾巴：正在跑的时候给 2~3 行（最近一次工具调用 + 当前思考/输出），
+                  跑完就折叠回那行摘要 —— 用户反馈"执行中看不到具体过程"就是这里。 */}
+              {st === "run" && lv && (
+                <div className="flex flex-col gap-0.5 px-2.5 pb-1.5 pt-1">
+                  {tailOf(lv.events).map((l, i) => (
+                    <div key={i} className="flex items-start gap-1.5 text-[11px] leading-[1.5]">
+                      <span className="shrink-0">{l.icon}</span>
+                      <span className="min-w-0 break-words" style={{ color: l.tone }}>
+                        {l.text}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {/* 实时摘要：一眼看出"它在干什么" —— 不用点、不用往下看 */}
               {lv && (st === "run" || st === "ok" || st === "err" || st === "ask") && (
                 <div
@@ -1461,6 +1476,70 @@ export function WorkflowCanvas({
       )}
     </div>
   );
+}
+
+/** 节点上的「实时尾巴」：从最近的事件里挑 2~3 行，说清"它此刻正在干什么"。
+ *
+ *  为什么需要它：老版节点把整段产出贴在卡上（太吵，被砍掉了）；砍完只剩一行摘要
+ *  （`⟳ 2.3s 思考中…`）—— 于是执行中**看不见过程**（用户原话）。
+ *  这里取中间：**跑的时候给尾巴（最近一次工具调用 + 当前思考/输出），跑完只留一行摘要**。
+ *  事件是流式的 delta（每次几个字），所以按"末尾连续同类型"回卷累积，才拼得出完整一句。 */
+function tailOf(evts: NodeLiveInfo["events"], max = 3): { icon: string; text: string; tone: string }[] {
+  type Ev = { type?: string; payload?: Record<string, unknown> };
+  const list = evts as unknown as Ev[];
+  const str = (v: unknown) => (typeof v === "string" ? v : "");
+  /** 单行化 + 截断（保留**尾部**：正在发生的东西在末尾） */
+  const one = (t: string, n = 56) => {
+    const x = t.replace(/\s+/g, " ").trim();
+    return x.length > n ? `…${x.slice(-n)}` : x;
+  };
+
+  const lines: { icon: string; text: string; tone: string }[] = [];
+
+  // ① 最近一次工具调用（从它的 start 往后把入参与结果攒起来）
+  let lastToolAt = -1;
+  for (let i = list.length - 1; i >= 0; i--) {
+    if (list[i].type === "tool_call_start" || list[i].type === "tool_exec_start") {
+      lastToolAt = i;
+      break;
+    }
+  }
+  if (lastToolAt >= 0) {
+    const name = str(list[lastToolAt].payload?.tool_call_name);
+    let args = "";
+    let result = "";
+    for (let i = lastToolAt; i < list.length; i++) {
+      if (list[i].type === "tool_call_args") args += str(list[i].payload?.delta);
+      else if (list[i].type === "tool_result_delta") result += str(list[i].payload?.delta);
+    }
+    if (name) lines.push({ icon: "🛠", text: `${name} ${one(args, 34)}`, tone: "var(--color-accent)" });
+    if (result.trim()) {
+      const firstLine = result.split("\n").find((x) => x.trim()) ?? result;
+      lines.push({ icon: "↳", text: one(firstLine), tone: "var(--color-muted)" });
+    }
+  }
+
+  // ② 当前正在说的（末尾连续段）：输出优先，没有就显示思考
+  const runOf = (type: string) => {
+    let acc = "";
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (list[i].type === type) acc = str(list[i].payload?.delta) + acc;
+      else if (acc) break;
+    }
+    return acc;
+  };
+  const out = runOf("text_delta");
+  const think = runOf("thinking_delta");
+  const cur = out.trim() ? out : think;
+  if (cur.trim()) {
+    lines.push({
+      icon: out.trim() ? "答" : "思",
+      text: one(cur),
+      tone: out.trim() ? "var(--color-ok)" : "var(--color-muted)",
+    });
+  }
+
+  return lines.slice(-max);
 }
 
 /** 抽屉里的小节标题 */
