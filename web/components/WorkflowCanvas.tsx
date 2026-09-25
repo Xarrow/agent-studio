@@ -181,6 +181,8 @@ type Props = {
   live?: Record<string, NodeLiveInfo>;
   /** 右侧抽屉正在看哪个节点（null = 收起）。抽屉在画布内，不跳页、不挡画布 */
   detailNid?: string | null;
+  configNid?: string | null;
+  onConfigNid?: (nid: string | null) => void;
   onDetail?: (nid: string | null) => void;
   /** 画布两端的"卡"：左边是你这次交给它们的任务，右边是合起来的结论 ——
    *  画布因此自己讲完一次执行：我让你做什么 → 谁做了什么 → 合起来是什么。 */
@@ -285,6 +287,9 @@ export function WorkflowCanvas({
   outputs,
   live,
   detailNid = null,
+  /** 助手设置浮层的受控值（Console 点"看这个助手的设置"时传进来；不传则用内部状态） */
+  configNid: configNidProp,
+  onConfigNid,
   onDetail,
   taskText = "",
   finalText = "",
@@ -836,6 +841,19 @@ export function WorkflowCanvas({
 
   /** 节点右上角 ⋯ 菜单当前开着的是哪一个 */
   const [nodeMenu, setNodeMenu] = useState<string | null>(null);
+  /** 「配置这个助手」点开后**就地在画布上**弹出的助手设置浮层。
+   *  之前这个动作只把节点选中、什么都不打开 —— 点了没反应等于空承诺
+   *  （用户反馈"点击后弹出不会消失"，根子在"点了没有正经回应"）。
+   *  现在：就地给一份**只读的助手设置摘要**，底部一个「打开完整设置 →」
+   *  （要改再去 Agents 页，是全流程里唯一一次跳页，且是明确意图）。 */
+  const [configInternal, setConfigInternal] = useState<string | null>(null);
+  /** 受控优先：Console 能直接指定"给哪个节点看助手设置"，不传就用内部状态 */
+  const configNid = configNidProp !== undefined ? configNidProp : configInternal;
+  const setConfigNid = (v: string | null) => {
+    setConfigInternal(v);
+    onConfigNid?.(v);
+  };
+
   /** 鼠标悬在哪条连线上（悬停时加粗，告诉用户"这条线是可点的"） */
 
   /** 右侧抽屉要用的：哪个节点 / 它的助手 / 这一步的完整数据 / 状态 / 序号 */
@@ -888,6 +906,32 @@ export function WorkflowCanvas({
   /** 选助手气泡：null=关；mode=add（加在末尾）| swap（换掉某一步）。
       气泡**贴着触发点**出现，不居中、不盖画布（用户明确要求"不遮画布"）。 */
   const [picking, setPicking] = useState<{ mode: "add" | "swap"; nid?: string } | null>(null);
+
+  /** Esc：收起画布上"浮出来的东西"（助手设置浮层 / 详情浮层 / 节点菜单）。
+      统一一个键收口，用户不用去猜"刚才弹出来的怎么关"。 */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      let hit = false;
+      if (configNid) {
+        hit = true;
+        setConfigNid(null);
+      }
+      setNodeMenu((v) => {
+        if (v) hit = true;
+        return null;
+      });
+      if (picking) {
+        hit = true;
+        setPicking(null);
+      }
+      if (hit) onDetail?.(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onDetail, picking, configNid]);
   /** 跑完把结论**带到眼前** —— 而不是给一个"看最后一步 →"的跳转键。
       结论在流程最右端（横向布局下常常在视口外），跑完正是用户最想看它的时刻，
       所以自动滑过去。只在"运行中 → 结束"那一次触发，不打扰正在看别处的人。 */
@@ -1962,6 +2006,7 @@ export function WorkflowCanvas({
                 // 点节点 = 选中它（点亮上下游链路 + 让它的产出/过程显示在卡上）。
                 // 信息默认就在卡上，不再开右侧抽屉 —— 用户明确要求过。
                 onDetail?.(detailNid === n.nid ? null : n.nid);
+                        setConfigNid(null);
               }}
               onMouseEnter={() => peekIn(n.nid)}
               onMouseLeave={() => peekOut()}
@@ -2055,8 +2100,8 @@ export function WorkflowCanvas({
                   </button>
                   <button
                     type="button"
-                    title="配置这个助手"
-                    onClick={() => onSelect(n.nid)}
+                    title="看这个助手的设置（模型 / 能力 / 工作目录）"
+                    onClick={() => { onSelect(n.nid); onDetail?.(null); }}
                     className="rounded-[5px] px-1.5 py-0.5 text-[11.5px] hover:bg-[var(--color-surface-2)]"
                     style={{ color: "var(--color-muted)" }}
                   >
@@ -2226,6 +2271,7 @@ export function WorkflowCanvas({
                     onClick={() => {
                       setNodeMenu(null);
                       onSelect(n.nid);
+                      onDetail?.(null);
                     }}
                     className="df-menu-item hover:bg-[var(--color-surface-2)]"
                   >
@@ -2444,6 +2490,110 @@ export function WorkflowCanvas({
     独立事件；点节点时鼠标必然在它上面，于是详情浮层刚出来、悬停卡又叠一个。
     两者信息本来就重叠（都是"这一步在干什么"），所以约定：
     **同一时刻只留一个面板** —— 要看别的节点就点它（详情跟着切换），逻辑一致、也好解释。 */}
+        {/* 「配置这个助手」→ **就地在画布上**给一份助手设置（只读摘要）。
+            之前这个动作只"选中节点"，点了没反应 = 空承诺（用户反馈"弹出不会消失"的根子）。
+            这里把设置摊开：一句话职责 / 模型 / 运行时 / 工作目录 / 上限 / 能力清单，
+            底部「打开完整设置 →」是**唯一**的跳页处，且是明确意图，不是被迫切页。 */}
+        {configNid &&
+          (() => {
+            const n = graph.nodes.find((x) => x.nid === configNid);
+            const at = n ? layout.pos[n.nid] : null;
+            const agent = n ? agents.find((a) => a.id === n.agent_id) : null;
+            if (!n || !at || !agent) return null;
+            const def = agent.definition;
+            const caps = skillsOf(agent, toolNames) as unknown as string[];
+            const BW = narrow ? Math.max(240, colW - 8) : 340;
+            const toRight = at.x + layout.NW + 14;
+            const flip = toRight + BW > layout.w - 6;
+            const left = narrow ? Math.max(4, at.x) : flip ? Math.max(6, at.x - BW - 14) : toRight;
+            const top = narrow ? at.y + (heights[n.nid] ?? 220) + 10 : at.y;
+            const rows: [string, string][] = [
+              ["模型", `${def.model?.provider ?? "—"} · ${def.model?.name ?? "—"}`],
+              ["运行时", def.runtime ?? "—"],
+              ["工作目录", def.workspace ? `${def.workspace}（沙箱内）` : "平台共用目录"],
+              [
+                "上限",
+                `${
+                  def.limits?.max_iters === -1 ? "不限轮数" : `最多 ${def.limits?.max_iters ?? "—"} 轮`
+                } · 超时 ${def.limits?.timeout_s ?? "—"}s`,
+              ],
+            ];
+            return (
+              <div
+                className="absolute z-30 flex flex-col rounded-[12px] border shadow-lg"
+                style={{
+                  transform: `translate(${left}px, ${top}px)`,
+                  width: BW,
+                  maxHeight: narrow ? "62vh" : 460,
+                  background: "var(--color-surface)",
+                  borderColor: "var(--color-border)",
+                }}
+              >
+                <div className="flex items-center gap-2 border-b px-3 py-2" style={{ borderColor: "var(--color-border)" }}>
+                  <span className="min-w-0 truncate text-[13px] font-medium">{agent.name}</span>
+                  <span
+                    className="shrink-0 rounded-full px-1.5 py-[1px] text-[10.5px]"
+                    style={{ color: "var(--color-accent)", background: "color-mix(in srgb, var(--color-accent) 12%, transparent)" }}
+                  >
+                    助手设置
+                  </span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setConfigNid(null);
+                    }}
+                    className="ml-auto shrink-0 rounded-[5px] px-1.5 text-[13px] leading-none hover:bg-[var(--color-surface-2)]"
+                    style={{ color: "var(--color-muted)" }}
+                    title="收起"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="min-h-0 flex-1 overflow-auto px-3 py-2">
+                  {agent.description?.trim() ? (
+                    <p className="mb-2 text-[12.5px] leading-[1.6]" style={{ color: "var(--color-muted)" }}>
+                      {agent.description}
+                    </p>
+                  ) : null}
+                  <dl className="flex flex-col gap-1.5">
+                    {rows.map(([k, v]) => (
+                      <div key={k} className="flex items-start gap-2">
+                        <dt className="w-[62px] shrink-0 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                          {k}
+                        </dt>
+                        <dd className="min-w-0 flex-1 break-words text-[12px]">{v}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                  {Array.isArray(caps) && caps.length > 0 && (
+                    <div className="mt-2.5">
+                      <div className="mb-1 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                        能力（{caps.length}）
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {caps.map((c, i) => (
+                          <span
+                            key={i}
+                            className="rounded-full border px-1.5 py-[1px] text-[11px]"
+                            style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
+                          >
+                            {c}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="border-t px-3 py-2" style={{ borderColor: "var(--color-border)" }}>
+                  <a href={`/agents/${agent.id}`} className="text-[12.5px] hover:underline" style={{ color: "var(--color-accent)" }}>
+                    打开完整设置 →
+                  </a>
+                </div>
+              </div>
+            );
+          })()}
+
         {peek && peekLive && !(detailNid && peek.nid === detailNid) && !detailNid && (
           <div
             onMouseEnter={() => peekIn(peek.nid, 0)}

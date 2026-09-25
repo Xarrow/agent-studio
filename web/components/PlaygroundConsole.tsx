@@ -117,6 +117,9 @@ export function PlaygroundConsole() {
   const [wfMenu, setWfMenu] = useState(false);
   /** 流程管理浮层（Playground 内就地打开，不跳页） */
   const [manager, setManager] = useState(false);
+  /** 画布上的"助手设置浮层"在看哪个节点 —— 由 Console 指定，
+   *  实现"节点配置面板 → 助手设置"的**就地切换**（不跳页）。 */
+  const [canvasConfig, setCanvasConfig] = useState<string | null>(null);
   /** 重命名态：名字**默认是入口**（点开=切换/新建/保存），只有点了「重命名」才变输入框 */
   const [renaming, setRenaming] = useState(false);
 
@@ -792,13 +795,20 @@ export function PlaygroundConsole() {
                 提示词、记忆、权限这些属于助手本身，点下面的按钮去改 ——
                 这里只调它在整条链里的位置。
               </p>
-              <a
-                href={`/agents/${selNode.agent_id}`}
-                className="rounded-[8px] border px-3 py-2 text-center text-[12.5px]"
+              {/* 由"跳去 Agents 页"改成**就地打开这个助手的设置**（用户定过"尽量不跳页"）。
+                  助手级的东西（模型/能力/工作目录/上限）在画布上就地给一份只读摘要；
+                  真要改，浮层底部还有一个「打开完整设置 →」—— 那一步是明确意图。 */}
+              <button
+                type="button"
+                onClick={() => {
+                  setSelected(null);
+                  setCanvasConfig(selNode.nid);
+                }}
+                className="rounded-[8px] border px-3 py-2 text-center text-[12.5px] hover:bg-[var(--color-surface-2)]"
                 style={{ borderColor: "var(--color-border)" }}
               >
-                配置这个助手 →
-              </a>
+                看这个助手的设置 →
+              </button>
               <button
                 type="button"
                 disabled={running}
@@ -1080,6 +1090,8 @@ export function PlaygroundConsole() {
             runStates={runStates}
             live={liveInfo}
             detailNid={detailNid}
+    configNid={canvasConfig}
+    onConfigNid={(nid) => setCanvasConfig(nid)}
             onDetail={(nid) => {
               // 点节点 = 只做选中高亮。信息（名字/状态/产出/分色过程）**直接显示在节点上**，
               // 不再往右侧开栏 —— 用户明确要求"移除右边侧边栏，直接在 agent 默认显示"
