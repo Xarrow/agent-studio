@@ -1164,8 +1164,8 @@ export function WorkflowCanvas({
                   1 个助手是流程，5 个助手也是流程；怎么跑由连线决定，用户不用先选类型。 */}
               <h2 className="text-[15px] font-semibold">加一个助手，就开始</h2>
               <p className="mt-1 text-[13px]" style={{ color: "var(--color-muted)" }}>
-                点下面的「＋ 加一步」选助手；想接几步就接几步。一路连下去是接力，谁也不连是各跑各的 ——
-                都一样，都是一条流程。
+                上面选一个起步，或者直接加一个助手 —— 想接几步就接几步。
+                一路连下去是接力，谁也不连是各跑各的，都一样，都是一条流程。
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 {(
@@ -1219,6 +1219,9 @@ export function WorkflowCanvas({
               onAttach?.(files);
             }}
           style={{
+            // 空画布时**不显示**任务卡：此时还没有流程可跑，它只会和空状态引导叠在一起
+            // （实测空状态下两者重叠、标题被压掉一半）。加进第一个助手后它自然出现。
+            display: empty ? "none" : undefined,
             transform: `translate(${layout.taskAt.x}px, ${layout.taskAt.y}px)`,
             width: layout.CARD_W,
             background: "var(--color-surface)",
@@ -1523,7 +1526,7 @@ export function WorkflowCanvas({
             );
           })}
 
-        {!frozen && (
+        {!frozen && !empty && (
           <button
             type="button"
             onClick={() => setPicking({ mode: "add" })}
