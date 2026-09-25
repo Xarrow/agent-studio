@@ -129,6 +129,13 @@ export function PlaygroundConsole() {
   useEffect(() => {
     void (async () => {
       try {
+        // 深链：/playground?manage=1 直接打开流程管理（Runs 页的入口用这个）
+        if (
+          typeof window !== "undefined" &&
+          new URLSearchParams(window.location.search).get("manage") === "1"
+        ) {
+          setManager(true);
+        }
         const [ags, wfs] = await Promise.all([api.agents(), api.workflows(30)]);
         setAgents(ags);
         setList(wfs);
@@ -822,6 +829,19 @@ export function PlaygroundConsole() {
         style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
       >
         <h1 className="shrink-0 text-[15.5px] font-semibold tracking-tight">Playground</h1>
+
+        {/* **流程管理入口（常驻）** —— 方案 ③：以前只有「名字 ⌄ → 菜单里第二项」两层才够得到，
+            用户反馈"藏太深"。这里在顶栏给一个一眼可见的键，一键打开
+            「全部流程 + 每份的执行链路」；Runs 页顶部也有同一个入口（深链 ?manage=1）。 */}
+        <button
+          type="button"
+          onClick={() => setManager(true)}
+          className="shrink-0 rounded-[8px] border px-2.5 py-1.5 text-[12.5px] hover:bg-[var(--color-surface-2)]"
+          style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
+          title="流程管理：全部流程 + 每份的执行链路"
+        >
+          流程
+        </button>
 
         {/* 工作流入口（重做过）：
             以前是「一个输入框 + 一个无名 ⌄」—— 输入框看起来像"你必须先改名"，

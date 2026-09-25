@@ -265,6 +265,31 @@ function NewAgentDialog({
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** 关闭的两步确认态（首次点关闭 → 变成"再点一次"）。
+   *  用户明确要求：破坏性/丢改动的动作**不用原生弹窗**，用变色 + 再点一次。 */
+  const [confirmClose, setConfirmClose] = useState(false);
+
+  /** 填过东西没有 —— 决定了关闭要不要两步确认（空表单直接关） */
+  const dirty = !!(name.trim() || presetKey || prompt.trim() || desc.trim());
+
+  const requestClose = () => {
+    if (dirty && !confirmClose) {
+      setConfirmClose(true);
+      window.setTimeout(() => setConfirmClose(false), 4000);   // 4 秒内有效
+      return;
+    }
+    onClose();
+  };
+
+  /** Esc 关闭（浮层再长也能关；未保存时同样走两步确认） */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") requestClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirty, confirmClose]);
 
   // 初始化「用哪个 AI」：优先选**已经配好密钥**的服务商，并自动带上那条密钥
   useEffect(() => {
@@ -325,12 +350,39 @@ function NewAgentDialog({
   };
 
   return (
-    <div className="fixed inset-0 bg-[var(--color-overlay)] flex items-start sm:items-center justify-center p-4 z-50 overflow-auto">
-      <div className="card w-full max-w-lg p-5 my-auto">
-        <h2 className="text-[16px] font-medium mb-1">新建助手</h2>
-        <p className="text-[12.5px] text-[var(--color-muted)] mb-4">
-          回答三个问题就行，其他的它会自己配好。
-        </p>
+    <div
+      className="fixed inset-0 bg-[var(--color-overlay)] flex items-start sm:items-center justify-center p-4 z-50 overflow-auto"
+      onClick={requestClose}
+    >
+      {/* 面板本体：点它不关（否则点输入框就把弹层关掉了） */}
+      <div className="card w-full max-w-lg p-5 my-auto" onClick={(e) => e.stopPropagation()}>
+        {/* 头部：标题 + **右上角固定的关闭键** —— 之前只有最底部一个"取消"，
+            内容一长就得滚到底才找得到，用户反馈"弹出来关不掉"。 */}
+        <div className="mb-4 flex items-start gap-3">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-[16px] font-medium mb-1">新建助手</h2>
+            <p className="text-[12.5px] text-[var(--color-muted)]">
+              回答三个问题就行，其他的它会自己配好。
+            </p>
+          </div>
+          <div className="flex shrink-0 flex-col items-end gap-1">
+            <button
+              type="button"
+              onClick={requestClose}
+              title="关闭（Esc）"
+              aria-label="关闭"
+              className="rounded-[8px] px-2 py-1 text-[15px] leading-none hover:bg-[var(--color-surface-2)]"
+              style={{ color: confirmClose ? "var(--color-err)" : "var(--color-muted)" }}
+            >
+              ✕
+            </button>
+            {confirmClose && (
+              <span className="text-[11.5px]" style={{ color: "var(--color-err)" }}>
+                再点一次关闭，填的内容会丢
+              </span>
+            )}
+          </div>
+        </div>
 
         <div className="space-y-5">
           {/* ① 名字 */}

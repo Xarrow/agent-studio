@@ -225,6 +225,18 @@ export default function RunsPage() {
   return (
     <div className="p-4 md:p-6 lg:p-7 max-w-[1400px]">
       <header className="mb-4">
+        {/* 流程管理入口（方案 ③）：和 Playground 顶栏那个键通向同一处
+            （深链 /playground?manage=1）—— 看运行记录时也能一键跳到"按流程看"。 */}
+        <div className="mb-2 flex justify-end">
+          <Link
+            href="/playground?manage=1"
+            className="rounded-[8px] border px-2.5 py-1.5 text-[12.5px] hover:bg-[var(--color-surface-2)]"
+            style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
+            title="流程管理：全部流程 + 每份的执行链路"
+          >
+            流程管理 →
+          </Link>
+        </div>
         <h1 className="text-[22px] font-semibold tracking-tight flex items-center gap-1.5">
           <Hint text="每一次调用的完整流水：在 LLM 配置里的裸模型测试、助手试跑、正式对话、多条流程的执行，都在这一条时间线上。点任意一行即可在原地看详情。">
             运行记录

@@ -317,8 +317,52 @@ export function WorkflowManager({
             })}
           </div>
 
-          {/* 右：每次执行一张卡（含"这次走了哪几步"） */}
+          {/* 右：**这条流程长什么样（骨架）** + 每次执行一张卡 */}
           <div className="min-w-0 flex-1 overflow-auto">
+            {/* 骨架段：即使一次都没跑过，右边也有内容 —— 之前只写"跑过几次"，
+                没跑过就是一片空白，用户看成了"点开流程显示不全"。
+                这里把流程本身摊开：几步、每步是谁、怎么连的（与画布同一套编号 + 助手名）。 */}
+            {cur && (
+              <div className="border-b px-3 py-3" style={{ borderColor: "var(--color-border)" }}>
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+                    这条流程
+                  </span>
+                  <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+                    · {chain.length} 步
+                  </span>
+                </div>
+                {chain.length > 0 ? (
+                  <div className="flex flex-wrap items-center gap-1">
+                    {chain.map((c, i) => (
+                      <span key={c.nid} className="flex items-center gap-1">
+                        {i > 0 && (
+                          <span className="px-0.5 text-[11px]" style={{ color: "var(--color-border)" }}>
+                            →
+                          </span>
+                        )}
+                        <span
+                          className="flex items-center gap-1.5 rounded-full border px-2 py-[2px] text-[11.5px]"
+                          style={{
+                            borderColor: "color-mix(in srgb, var(--color-accent) 34%, var(--color-border))",
+                            background: "color-mix(in srgb, var(--color-accent) 6%, transparent)",
+                            color: "var(--color-accent)",
+                          }}
+                          title={`第 ${c.no} 步 · ${c.name}`}
+                        >
+                          <span className="tabular-nums opacity-70">{c.no}</span>
+                          {c.name}
+                        </span>
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+                    这份流程还没有助手。打开到画布，点节点右边的 ＋ 起步。
+                  </div>
+                )}
+              </div>
+            )}
             {renaming && cur && (
               <div className="flex items-center gap-2 border-b px-4 py-2" style={{ borderColor: "var(--color-border)" }}>
                 <span className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>

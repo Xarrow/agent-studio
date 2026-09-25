@@ -447,7 +447,7 @@ export function WorkflowCanvas({
     const layers = topoLayers(graph.nodes, graph.edges);
     const PAD = 10;
     /** 横向卡宽：节点对齐 Dify 的 NODE_WIDTH 240；任务是"要写"的、结论是"要读"的 */
-    const W_TASK = 220;
+    const W_TASK = 320;   // 方案 C：发令区加宽到与结论卡同级（节点卡 240）
     const W_NODE = 240;
     const W_CONC = 320;
     const GAP_X = 56;   // 层间距（Dify X_OFFSET 60 的量级）
@@ -1348,15 +1348,33 @@ export function WorkflowCanvas({
             display: empty ? "none" : undefined,
             transform: `translate(${layout.taskAt.x}px, ${layout.taskAt.y}px)`,
             width: layout.CARD_W,
-            background: "var(--color-surface)",
-            borderColor: "var(--color-border)",
+            // 与节点卡**视觉分层**：发令区是"起点"，给一点强调底色 + 左侧 3px 色条
+            // （用 inset box-shadow 画色条，零额外 DOM）
+            background: "color-mix(in srgb, var(--color-accent) 4%, var(--color-surface))",
+            borderColor: "color-mix(in srgb, var(--color-accent) 26%, var(--color-border))",
+            boxShadow: "inset 3px 0 0 color-mix(in srgb, var(--color-accent) 55%, transparent)",
           }}
           onClick={(e) => e.stopPropagation()}
         >
+          {/* 发令区头部（方案 C）：左=这次要做什么、右=**运行键**。
+              主操作放在第一眼的位置，不再像之前那样独占整行、把卡片撑得很笨重。 */}
           <div className="flex items-center gap-2">
-            <span className="text-[12px] font-semibold" style={{ color: "var(--color-muted)" }}>
-              任务
+            <span className="text-[12.5px] font-semibold" style={{ color: "var(--color-muted)" }}>
+              这次要做什么
             </span>
+            <button
+              type="button"
+              disabled={running}
+              onClick={(e) => {
+                e.stopPropagation();
+                onRun?.();
+              }}
+              className="df-ctl-sm ml-auto shrink-0 justify-center px-3 font-medium text-white disabled:opacity-45"
+              style={{ background: "var(--color-accent)" }}
+              title={`开始执行这条流程（Enter）· 共 ${layout.layers.flat().length} 步，怎么跑由连线决定`}
+            >
+              {running ? "运行中…" : `▸ 运行${layout.layers.flat().length > 1 ? ` · ${layout.layers.flat().length} 步` : ""}`}
+            </button>
           </div>
 
           {/* 输入框**默认就在卡上** —— 不"点一下才展开"、不弹窗、不跳页。
@@ -1365,7 +1383,7 @@ export function WorkflowCanvas({
           <textarea
             ref={taskBoxRef}
             value={taskValue}
-            rows={2}
+            rows={3}
             onChange={(e) => onTaskValue?.(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Escape") {
@@ -1382,8 +1400,8 @@ export function WorkflowCanvas({
             style={{
               borderColor: "var(--color-border)",
               background: "var(--color-surface-2)",
-              minHeight: 72,
-              maxHeight: 220,
+              minHeight: 84,
+              maxHeight: 260,
             }}
           />
 
@@ -1451,27 +1469,8 @@ export function WorkflowCanvas({
             ))}
           </div>
 
-          {/* 运行键**独占一行、撑满宽度**。
-              原因（实测踩到）：原来它和上面 5 个工具栏键挤在同一行（ml-auto 顶右），
-              那行内容 ~240px，而卡片内宽只有 ~174px（200 卡宽 - px-3×2 - 边框）——
-              溢出 66px，运行键撑出卡片右边缘压到右边的节点卡上，就是用户看到的
-              "组件叠加一起了"。主操作单独一行既修了溢出，也更像个启动键。 */}
-          <button
-            type="button"
-            disabled={running}
-            onClick={(e) => {
-              e.stopPropagation();
-              onRun?.();
-            }}
-            className="df-ctl mt-1.5 w-full justify-center font-medium text-white disabled:opacity-45"
-            style={{ background: "var(--color-accent)" }}
-            title={`开始执行这条流程（Enter）· 共 ${layout.layers.flat().length} 步，怎么跑由连线决定`}
-          >
-            {/* 不再报"单个/串行/并行"这类分型 —— 只有一条流程；
-                按钮上给**步数**（用户真正关心的），怎么执行由连线推导 */}
-            {running ? "运行中…" : `▸ 运行${layout.layers.flat().length > 1 ? ` · ${layout.layers.flat().length} 步` : ""}`}
-          </button>
-          <div className="mt-1 text-[12px]" style={{ color: "var(--color-muted)" }}>
+          {/* 运行键已移到卡头右上角（方案 C）；这里只留一句键盘提示 */}
+          <div className="mt-1 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
             Enter 运行 · Shift+Enter 换行
           </div>
         </div>
