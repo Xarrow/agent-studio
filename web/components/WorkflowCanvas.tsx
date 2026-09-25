@@ -2026,8 +2026,12 @@ export function WorkflowCanvas({
                   触屏没有悬停，这条只是加分项，功能一个都没少（⋯ 里都有）。 */}
               {!frozen && (
                 <div
+                  /* ⚠️ **不跟鼠标**：只在选中这个节点 / 打开它的详情时显示。
+                     第一版写成 group-hover:flex —— 鼠标扫过节点它就冒出来、移开又消失，
+                     看起来一直在闪（用户反馈"操作还是不流畅自然"）。
+                     悬停自动弹 = 视觉噪音；选中是明确意图，也不多花动作。 */
                   className={`absolute -top-8 left-0 z-20 items-center gap-0.5 rounded-[8px] border px-1 py-0.5 shadow-md ${
-                    isSel || detailNid === n.nid ? "flex" : "hidden group-hover:flex"
+                    isSel || detailNid === n.nid ? "flex" : "hidden"
                   }`}
                   style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
                   onClick={(e) => e.stopPropagation()}
