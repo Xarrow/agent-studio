@@ -719,7 +719,16 @@ export function PlaygroundConsole() {
 
   /* 配置页签的内容 —— 它属于 Console 的状态（selNode / 助手编辑），所以不搬进画布，
      而是作为插槽传给画布那个"唯一的右栏"。以前它是并排的第二个右栏。 */
-  const configPanel = selNode ? (
+  /* **右侧抽屉已取消**（用户两次明确："不用右侧固定面板"／"为什么在 playground 上还需要让用户配置 agent？"）
+     —— 原来点节点会从右边推出一栏 w-[300px]（这一步做什么/上游/下游/产出/主控/看这个助手的设置/删除），
+     既是右侧栏、又只有头部一个「收起」（点外面不关）。现在信息各归其位，不再占一栏：
+       · 这一步的详情（职责/模型/能力/完整产出）→ 点节点时**贴节点**的浮层（点外面即关 ✓）
+       · 上游/下游/顺序关系                     → 连线上本来就标着（串行/并行/+上下文/+记忆 ✓）
+       · 删除/上移/下移/复制                     → 节点卡上方操作条（常驻可见 ✓）
+       · 助手**本体**（模型/提示词/权限/记忆）    → Agents 页（Playground 只管编排，不管助手定义 ✓）
+     `selected` 状态保留 —— patchGraph 还用它算"这次改动影响哪些步骤要重置"。 */
+  const configPanel = null;
+  const __unusedConfigPanel = selNode ? (
     <div className="flex min-h-0 flex-1 flex-col">
 
           <aside

@@ -852,6 +852,10 @@ export function WorkflowCanvas({
    *  但也不该让用户先点右上角 ⋯ 再在菜单里找 —— 所以把"确认"这一步**就地**做在按钮上。 */
   const [delArm, setDelArm] = useState<string | null>(null);
 
+  /** 浮层"点外面就关"用的 ref —— 见下面 document 级监听的说明。 */
+  const detailPanelRef = useRef<HTMLDivElement | null>(null);
+  const pickPanelRef = useRef<HTMLDivElement | null>(null);
+
   const [configInternal, setConfigInternal] = useState<string | null>(null);
   /** 受控优先：Console 能直接指定"给哪个节点看助手设置"，不传就用内部状态 */
   const configNid = configNidProp !== undefined ? configNidProp : configInternal;
@@ -912,6 +916,43 @@ export function WorkflowCanvas({
   /** 选助手气泡：null=关；mode=add（加在末尾）| swap（换掉某一步）。
       气泡**贴着触发点**出现，不居中、不盖画布（用户明确要求"不遮画布"）。 */
   const [picking, setPicking] = useState<{ mode: "add" | "swap"; nid?: string } | null>(null);
+
+  /** **浮层"点外面就关"——用 document 级指针监听，不用 fixed 遮罩。**
+   *
+   *  为什么（这是一个真 bug 的根因，用户两次追问）：
+   *  画布缩放是用 CSS `transform: scale()` 实现的（见下面的缩放层），而
+   *  **transform 会给内部所有 `fixed` 元素重建"包含块"** ——
+   *  于是 `fixed inset-0` 的透明遮罩**不再覆盖整个视口**，只盖住画布内容那一块 ✗。
+   *  用户在画布外面（顶栏 / 发令区 / 页面空白 / 侧栏）点，遮罩收不到 →
+   *  "鼠标都不在焦点上了，卡片还不消失 / 用户怎么关闭弹出的卡片" ✓（用户原话）。
+   *
+   *  改成监听 document：点在浮层外面就关，**完全不受 transform 影响**；
+   *  而且不用再往 DOM 里塞一层覆盖全屏的透明层（浮层多的时候也不打架）。
+   *  点在"节点 / 操作条"上时跳过 —— 那是展开浮层的触发者，交给它自己 toggle。
+   */
+  useEffect(() => {
+    const onDown = (e: PointerEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      if (target.closest("[data-nid], [data-nodetoolbar]")) return; // 触发者自己处理
+      if (detailNid) {
+        const pane = detailPanelRef.current;
+        if (!pane || !pane.contains(target)) onDetail?.(null);
+        return;
+      }
+      if (configNid) {
+        const pane = detailPanelRef.current;
+        if (!pane || !pane.contains(target)) setConfigNid(null);
+        return;
+      }
+      if (picking) {
+        const pane = pickPanelRef.current;
+        if (!pane || !pane.contains(target)) setPicking(null);
+      }
+    };
+    document.addEventListener("pointerdown", onDown);
+    return () => document.removeEventListener("pointerdown", onDown);
+  }, [detailNid, configNid, picking, onDetail]);
 
   /** 删除"上膛"4 秒后自动复位（不让按钮一直悬在红色待确认状态） */
   useEffect(() => {
@@ -1588,9 +1629,10 @@ export function WorkflowCanvas({
             return (
               <>
                 {/* 点空白处收起（全站一致，不用原生弹窗） */}
-                <div className="fixed inset-0 z-30" onClick={() => setPicking(null)} />
-                <div
-                  className="absolute z-40 flex w-[300px] flex-col rounded-[10px] border p-1"
+                    <div
+                  ref={pickPanelRef}
+                data-float="pick"
+                className="absolute z-40 flex w-[300px] flex-col rounded-[10px] border p-1"
                   style={{
                     left: at.x,
                     top: at.y,
@@ -1641,6 +1683,9 @@ export function WorkflowCanvas({
               产出（完整 Markdown，自带滚动）
             为什么贴在节点旁而不是开右侧栏：控件（信息）归属其对象 ——
             你点的是这一步，答案就该出现在这一步旁边。 */}
+        {/* 点浮层外面任何地方 → 关（和「选助手」气泡同一套约定）。
+            用户反馈："鼠标都不在焦点上了，卡片还不消失？用户怎么关闭弹出的卡片？"
+            —— 之前只有「选助手」有这层遮罩，详情浮层/助手设置/节点配置面板都没有 ✗ */}
         {detailNid &&
           (() => {
             const n = graph.nodes.find((x) => x.nid === detailNid);
@@ -1666,6 +1711,8 @@ export function WorkflowCanvas({
             const blurb = agent ? blurbOf(agent) : "";
             return (
               <div
+                ref={detailPanelRef}
+                data-float="detail"
                 className="absolute z-30 flex flex-col overflow-hidden rounded-[12px] border shadow-lg"
                 style={{
                   transform: `translate(${left}px, ${top}px)`,
@@ -2111,15 +2158,11 @@ export function WorkflowCanvas({
                   >
                     换助手
                   </button>
-                  <button
-                    type="button"
-                    title="看这个助手的设置（模型 / 能力 / 工作目录）"
-                    onClick={() => { onSelect(n.nid); onDetail?.(null); }}
-                    className="rounded-[5px] px-1.5 py-0.5 text-[11.5px] hover:bg-[var(--color-surface-2)]"
-                    style={{ color: "var(--color-muted)" }}
-                  >
-                    配置
-                  </button>
+                  {/* **「配置」已移除**（用户质问："为什么在 playground 上还需要让用户配置 agent？"）
+                      理由：Playground 的职责是**编排放什么助手、按什么顺序跑**；
+                      助手**本体**（模型 / 提示词 / 工具 / 权限 / 记忆）归 Agents 页。
+                      在画布上放开这个口子，会让用户以为"跑之前得先配助手"✗ ——
+                      正确的路径是"选一个现成的助手 → 直接跑"✓。要改助手就去 Agents 页。 */}
                   {(() => {
                     const pred = graph.edges.find((e) => e.to === n.nid)?.from ?? null;
                     const succ = graph.edges.find((e) => e.from === n.nid)?.to ?? null;
