@@ -490,7 +490,14 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 onChange={(e) => patch({ name: e.target.value })}
                 onBlur={() => {
                   const next = (def.name ?? "").trim();
-                  if (!next || next === agent?.name) return;   // 没改 / 清空 → 不动
+                  if (!next) return;   // 清空 → 不动（不允许无名）
+                  // **只有"两处都已经等于它"才算真没改**。
+                  // 之前只跟顶层 agent.name 比 ✗ —— 而历史数据里顶层名与 def.name 可能不一致
+                  // （用户那个助手：顶层「测试agent」 vs 内部「火山-AS测试agent」），
+                  // 于是"把输入框改成顶层名"会被误判成"没改"直接 return →
+                  // 输入框又读回旧值 → 用户看到的就是"名称改不了" ✗（用户反馈原话）。
+                  // 现在：只要与**任一**不同，就写回两者（顶层 name 与 def.name 始终一致）。
+                  if (next === agent?.name && next === agent?.definition?.name) return;
                   void saveNameOnly(next);
                 }}
               />

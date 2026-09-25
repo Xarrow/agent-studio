@@ -952,10 +952,11 @@ export function WorkflowCanvas({
         closeAllFloats();
       }, 240);
     };
-    const onOut = (e: Event) => {
-      const t = e.target as HTMLElement | null;
-      if (t && t.matches && t.matches("[data-nid], [data-float], [data-nodetoolbar]")) schedule();
-    };
+    /** **任何**鼠标移开都要重新判断一次 —— 之前只认 [data-nid]/[data-float]/[data-nodetoolbar]，
+     *  于是"从连线上移开"根本不触发检查 → 连线中点弹出的选择器卡片一直留着 ✗
+     *  （用户原话："为什么线条的卡片不会消失？？？？"）
+     *  检查本身很轻（推迟 240ms 且只查 :hover），放宽触发条件是安全的。 */
+    const onOut = () => schedule();
 
     document.addEventListener("pointerdown", onDown);
     document.addEventListener("mouseout", onOut, true);
@@ -1828,39 +1829,9 @@ export function WorkflowCanvas({
           );
         })}
 
-        {/* 每个节点右侧一个小 ＋：**就地往后接一步**。
-            原来只有流程末尾一个「＋ 加一步」—— 步骤一多它就滑出视口
-            （实测 4 步后 x=1396 > 视口右缘 1280），最常用的"再加一个"反而够不到。
-            控件跟着它作用的对象走：想接在谁后面，就点谁右边的 ＋。 */}
-        {!frozen &&
-          graph.nodes.map((n) => {
-            const at = layout.pos[n.nid];
-            if (!at) return null;
-            return (
-              <button
-                key={`plus-${n.nid}`}
-                type="button"
-                onClick={(ev) => {
-                  ev.stopPropagation();
-                  setInsertAfter(n.nid);
-                  setPicking({ mode: "add" });
-                }}
-                title="在这一步后面加一个助手"
-                className="absolute grid place-items-center rounded-full border text-[13px] leading-none transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
-                style={{
-                  left: at.x + layout.NW + 7,
-                  top: at.y + 12,
-                  width: 22,
-                  height: 22,
-                  background: "var(--color-surface)",
-                  borderColor: "var(--color-border)",
-                  color: "var(--color-muted)",
-                }}
-              >
-                ＋
-              </button>
-            );
-          })}
+        {/* **每个节点右侧的小 ＋ 已移除**（用户："移除「加一步」"→"修改，测试，验证"）。
+            加步骤属于**编辑动作**，不该常驻在画布上占地方。
+            现在往流程里加步骤：卡片操作条的「⧉ 复制一步」+「换助手」，或空画布用三个模板起步。 */}
 
         {/* **「＋ 加一步」已移除**（用户要求："移除「加一步」"）。
             加一步不必是一个常驻在画布上的大方块 —— 它会一直占着画布最右端一块地方；
@@ -2050,9 +2021,10 @@ export function WorkflowCanvas({
               }}
               onClick={(e) => {
                 e.stopPropagation();
-                // 点节点 = 选中它（点亮上下游链路 + 让它的产出/过程显示在卡上）。
-                // 信息默认就在卡上，不再开右侧抽屉 —— 用户明确要求过。
-                onDetail?.(detailNid === n.nid ? null : n.nid);
+                // **点卡片 = 只选中**（点亮上下游链路），**不弹任何东西**。
+                // 用户："为什么一点击 agent 卡片就会弹出" —— 卡片本身不该是"打开弹层"的开关；
+                // 要看这一步的详情，点卡片上方操作条里的「详情」（显式意图、位置就在卡上）。
+                onSelect?.(n.nid);
               }}
               /* 悬停卡已停用（用户定过"画布上禁止悬停自动出现的东西"）：
                  鼠标扫过就冒出来的浮层既闪又难关；要看某一步，点它就有。 */
@@ -2122,6 +2094,7 @@ export function WorkflowCanvas({
                        ② 第二版改成"选中才显示" → 不闪了，但用户得先点一下才看得到操作 ✗
                        ③ 现在：**一直挂在节点上方**（不用悬停、不用点击），选中时底色加重做反馈 ✓
                      三个动作都是非破坏性的（详情 / 换助手 / 配置），常驻不会误伤。 */
+                  data-nodetoolbar
                   className={`absolute -top-8 left-0 z-20 flex max-w-[264px] flex-wrap items-center gap-0.5 rounded-[8px] border px-1 py-0.5 shadow-sm transition-colors ${
                     isSel || detailNid === n.nid ? "" : "opacity-80 hover:opacity-100"
                   }`}
