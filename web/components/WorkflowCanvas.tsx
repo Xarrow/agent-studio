@@ -689,11 +689,16 @@ export function WorkflowCanvas({
           stroke="transparent"
           strokeWidth={18}
           style={{ pointerEvents: "stroke", cursor: "pointer" }}
+          data-edge-trigger
           onMouseEnter={() => setHoverEdge(key)}
           onMouseLeave={() => setHoverEdge((x) => (x === key ? null : x))}
           onClick={(ev) => {
             ev.stopPropagation();
+            // 点连线：先把**别的浮层**都关掉，再切换这条线的卡片（避免叠着好几张 ✗）
             onSelect(null);
+            onDetail?.(null);
+            setPicking(null);
+            setPeek(null);
             setEdgeSel(active ? null : { from: e.from, to: e.to });
           }}
         />
@@ -928,13 +933,22 @@ export function WorkflowCanvas({
     onDetail?.(null);
     setPicking(null);
     setPeek(null);
+    // ⚠️ 这里原来漏了 **连线卡片**（edgeSel）✗ ——
+    // 用户点一下连线会弹出一张"串行接力 / 并行 / 共享上下文…"的卡片，
+    // 但它不在关闭名单里，于是点别处、鼠标移开都关不掉（用户连问三次"线条的卡片不消失"）。
+    setEdgeSel(null);
+    // ⚠️ 还有"连线中点那个 ＋"弹出的「插到这两步中间」卡片（insertAt）✗ 之前也没关过：
+    //    点开之后除了再点一次那个 ＋，没有任何办法关掉 —— 就是用户说的"线条的卡片不消失"。
+    setInsertAt(null);
+    setDelArm(null);       // 卡片上"确认删除？"的上膛态，点别处也应该复位
   }, [onDetail]);
 
   useEffect(() => {
     const onDown = (e: PointerEvent) => {
       const t = e.target as HTMLElement | null;
       if (!t) return;
-      if (t.closest("[data-nid], [data-nodetoolbar]")) return; // 触发者自己 toggle
+      // 触发者自己 toggle（节点卡 / 操作条 / 连线热区都各自处理关闭+切换）
+      if (t.closest("[data-nid], [data-nodetoolbar], [data-edge-trigger]")) return;
       if (t.closest("[data-float]")) return;                   // 点在浮层里，别关
       closeAllFloats();
     };
@@ -981,11 +995,8 @@ export function WorkflowCanvas({
       if (e.key !== "Escape") return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
-      let hit = false;
-      setNodeMenu((v) => {
-        if (v) hit = true;
-        return null;
-      });
+      closeAllFloats();     // 详情 / 选助手 / 悬停卡 / 连线卡 / 插入卡 一起收
+      setNodeMenu(null);
       if (picking) {
         hit = true;
         setPicking(null);
@@ -994,7 +1005,7 @@ export function WorkflowCanvas({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onDetail, picking]);
+  }, [closeAllFloats]);
   /** 跑完把结论**带到眼前** —— 而不是给一个"看最后一步 →"的跳转键。
       结论在流程最右端（横向布局下常常在视口外），跑完正是用户最想看它的时刻，
       所以自动滑过去。只在"运行中 → 结束"那一次触发，不打扰正在看别处的人。 */
@@ -1269,6 +1280,7 @@ export function WorkflowCanvas({
               });
             return (
               <div
+                data-float="edge"
                 className="absolute z-20 w-[264px] rounded-[10px] border p-2.5"
                 style={{
                   left: Math.max(8, mid.x - 132),
@@ -1898,6 +1910,7 @@ export function WorkflowCanvas({
         {/* 插一步的选择器：点了连线上那个 ＋ 才出现 —— 列出助手，选中就插到这两步中间 */}
         {insertAt && edgeMids[insertAt] && (
           <div
+            data-float="insert"
             className="absolute z-40 w-[196px] rounded-[10px] border p-1"
             style={{
               left: Math.min(edgeMids[insertAt].x - 98, layout.w - 210),
@@ -2024,7 +2037,12 @@ export function WorkflowCanvas({
                 // **点卡片 = 只选中**（点亮上下游链路），**不弹任何东西**。
                 // 用户："为什么一点击 agent 卡片就会弹出" —— 卡片本身不该是"打开弹层"的开关；
                 // 要看这一步的详情，点卡片上方操作条里的「详情」（显式意图、位置就在卡上）。
+                // 同时把**别的卡片**关掉（连线卡 / 选助手 / 悬停卡 / 详情），避免叠着 ✗。
                 onSelect?.(n.nid);
+                onDetail?.(null);
+                setEdgeSel(null);
+                setPicking(null);
+                setPeek(null);
               }}
               /* 悬停卡已停用（用户定过"画布上禁止悬停自动出现的东西"）：
                  鼠标扫过就冒出来的浮层既闪又难关；要看某一步，点它就有。 */
