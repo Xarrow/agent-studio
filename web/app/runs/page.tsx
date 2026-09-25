@@ -226,12 +226,12 @@ export default function RunsPage() {
     <div className="p-4 md:p-6 lg:p-7 max-w-[1400px]">
       <header className="mb-4">
         <h1 className="text-[22px] font-semibold tracking-tight flex items-center gap-1.5">
-          <Hint text="每一次调用的完整流水：在 LLM 配置里的裸模型测试、助手试跑、正式对话、多 Agent 编排，都在这一条时间线上。点任意一行即可在原地看详情。">
+          <Hint text="每一次调用的完整流水：在 LLM 配置里的裸模型测试、助手试跑、正式对话、多条流程的执行，都在这一条时间线上。点任意一行即可在原地看详情。">
             运行记录
           </Hint>
         </h1>
         <p className="text-[13px] text-[var(--color-muted)] mt-1">
-          所有调用流水 —— LLM 测试、助手试跑、对话、编排，一处看完。
+          所有调用流水 —— LLM 测试、助手试跑、流程执行，一处看完。
           <span className="text-[11.5px]"> 共 {total} 条</span>
         </p>
       </header>

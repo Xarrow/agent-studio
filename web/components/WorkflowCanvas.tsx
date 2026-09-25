@@ -201,7 +201,6 @@ type Props = {
   onRun?: () => void;
   running?: boolean;
   /** 当前会跑什么模式（显示在运行键上） */
-  derived?: string;
   /** 结论卡点开时定位到哪一步（最后一步） */
   lastNid?: string | null;
   /** 右栏页签：过程（这次跑了什么）/ 配置（这个助手怎么配）。
@@ -278,7 +277,6 @@ export function WorkflowCanvas({
   onTaskValue,
   onRun,
   running = false,
-  derived = "",
   panelTab = "process",
   onPanelTab,
   configSlot = null,
@@ -1113,16 +1111,19 @@ export function WorkflowCanvas({
         {empty && (
           <div className="absolute inset-0 flex items-center justify-center p-6">
             <div className="max-w-[430px]">
-              <h2 className="text-[15px] font-semibold">这里有三种开始方式</h2>
+              {/* 不再说"三种开始方式"—— 只有一种东西：一条流程。
+                  1 个助手是流程，5 个助手也是流程；怎么跑由连线决定，用户不用先选类型。 */}
+              <h2 className="text-[15px] font-semibold">加一个助手，就开始</h2>
               <p className="mt-1 text-[13px]" style={{ color: "var(--color-muted)" }}>
-                一路摆下去就是一条流水线；摆两个谁也不连，就是并行两条线。
+                点下面的「＋ 加一步」选助手；想接几步就接几步。一路连下去是接力，谁也不连是各跑各的 ——
+                都一样，都是一条流程。
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 {(
                   [
-                    ["single", "只跟一个助手聊"],
-                    ["serial", "串行：三个接力"],
-                    ["fan", "并行：一个任务分几路"],
+                    ["single", "一个助手，先试试"],
+                    ["serial", "三个助手接力"],
+                    ["fan", "一个任务分几路跑"],
                   ] as const
                 ).map(([k, label]) => (
                   <button
@@ -1288,9 +1289,11 @@ export function WorkflowCanvas({
             }}
             className="df-ctl mt-1.5 w-full justify-center font-medium text-white disabled:opacity-45"
             style={{ background: "var(--color-accent)" }}
-            title={`按 ${derived || "自动"} 方式执行（Enter）`}
+            title={`开始执行这条流程（Enter）· 共 ${layout.layers.flat().length} 步，怎么跑由连线决定`}
           >
-            {running ? "运行中…" : `▸ 运行 · ${derived || "自动"}`}
+            {/* 不再报"单个/串行/并行"这类分型 —— 只有一条流程；
+                按钮上给**步数**（用户真正关心的），怎么执行由连线推导 */}
+            {running ? "运行中…" : `▸ 运行${layout.layers.flat().length > 1 ? ` · ${layout.layers.flat().length} 步` : ""}`}
           </button>
           <div className="mt-1 text-[12px]" style={{ color: "var(--color-muted)" }}>
             Enter 运行 · Shift+Enter 换行

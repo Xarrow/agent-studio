@@ -36,14 +36,6 @@ import type {
 
 /** 顶栏可选的执行方式（"" = 自动判断） */
 /** 执行方式：标签只留最短的词（长解释放 title，不占界面） */
-const MODE_OPTIONS: [string, string][] = [
-  ["", "自动"],
-  ["single", "单个助手"],
-  ["serial", "串行接力"],
-  ["parallel", "并行"],
-  ["master_worker", "主从（拆任务 + 汇总）"],
-  ["dag", "分层（按依赖）"],
-];
 
 /** 对话窗口里每条的状态用词（与画布同一套口径） */
 /** 记住"上次在编哪份设计稿 / 上次的任务原文" —— 页面切走再回来要接得上。
@@ -88,7 +80,6 @@ export function PlaygroundConsole() {
   const [wf, setWf] = useState<Workflow | null>(null);
   const [graph, setGraph] = useState<WorkflowGraph>({ nodes: [], edges: [] });
   const [name, setName] = useState("未命名编排");
-  const [modeOverride, setModeOverride] = useState("");
   const [dirty, setDirty] = useState(false);
 
   const [selected, setSelected] = useState<string | null>(null);
@@ -169,7 +160,6 @@ export function PlaygroundConsole() {
     setWf(w);
     setName(w.name);
     setGraph(w.graph);
-    setModeOverride(w.mode_override ?? "");
     setDirty(false);
     setSelected(null);
     setRunStates({});
@@ -419,7 +409,6 @@ export function PlaygroundConsole() {
       const body = {
         name: name.trim() || "未命名编排",
         graph,
-        mode_override: modeOverride || null,
       };
       const saved = wf ? await api.updateWorkflow(wf.id, body) : await api.createWorkflow(body);
       setWf(saved);
@@ -450,7 +439,6 @@ export function PlaygroundConsole() {
     setWf(null);                       // 没有 id → 下次保存走"新建"
     setName("未命名编排");
     setGraph({ nodes: [], edges: [] });
-    setModeOverride("");
     setDirty(true);
     setOrcId(null);
     setDetail(null);
@@ -464,7 +452,6 @@ export function PlaygroundConsole() {
       const created = await api.createWorkflow({
         name: `${name.trim() || "未命名编排"} 副本`,
         graph,
-        mode_override: modeOverride || null,
       });
       setList((prev) => [created, ...prev.filter((x) => x.id !== created.id)].slice(0, 30));
       loadWorkflow(created);
@@ -642,7 +629,7 @@ export function PlaygroundConsole() {
         : text;
       const started = await api.runWorkflow(saved.id, { task: withFiles });
       setOrcId(started.orchestration_id);
-      fb.success(`已开始：${started.mode_label} · ${started.step_count} 步`);
+      fb.success(`已开始 · ${started.step_count} 步`);
       subscribe(started.orchestration_id);
     } catch (e) {
       setRunning(false);
@@ -681,7 +668,6 @@ export function PlaygroundConsole() {
   const selNode = graph.nodes.find((n) => n.nid === selected) ?? null;
   const selAgent = agents.find((a) => a.id === selNode?.agent_id);
   const derived = wf?.derived_mode ?? (graph.nodes.length > 1 ? "待保存" : "single");
-  const derivedHint = wf?.derived_hint ?? "保存后由服务端按连线判断";
 
   /** 画布两端的卡要用：这次的任务原文、最后一步落在哪个节点 */
   const shownTask = (detail?.input as { text?: string } | undefined)?.text || task;
@@ -967,31 +953,6 @@ export function PlaygroundConsole() {
                 复制为副本
               </button>
               <div className="my-1 border-t" style={{ borderColor: "var(--color-border)" }} />
-              <div className="flex items-center gap-2 px-2 py-1.5">
-                <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
-                  执行方式
-                </span>
-                <select
-                  value={modeOverride}
-                  onChange={(e) => {
-                    setModeOverride(e.target.value);
-                    setDirty(true);
-                  }}
-                  className="ml-auto rounded-[6px] border px-1.5 py-1 text-[12px]"
-                  style={{
-                    borderColor: "var(--color-border)",
-                    background: "var(--color-surface)",
-                    color: "var(--color-muted)",
-                  }}
-                  title={`由连线推导：现在会跑 ${derived}（${derivedHint}）`}
-                >
-                  {MODE_OPTIONS.map(([v, label]) => (
-                    <option key={v} value={v}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </div>
               {wf && (
                 <button
                   type="button"
@@ -1066,7 +1027,7 @@ export function PlaygroundConsole() {
             }}
             onRun={() => void run()}
             running={running}
-            derived={derived}
+
             outputs={outputs}
             hitl={hitl ? { nid: hitl.nid, payload: hitl.payload } : null}
             onHitl={(a) => void hitlAction(a)}
