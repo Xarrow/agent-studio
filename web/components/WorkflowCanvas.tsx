@@ -1572,6 +1572,12 @@ export function WorkflowCanvas({
           {/* 发令区头部（方案 C）：左=这次要做什么、右=**运行键**。
               主操作放在第一眼的位置，不再像之前那样独占整行、把卡片撑得很笨重。 */}
           <div className="flex items-center gap-2">
+            <span
+              className="shrink-0 rounded-full px-1.5 py-[1px] text-[11px] font-semibold"
+              style={{ background: STEP_STYLE.input.bg, color: STEP_STYLE.input.color, border: `1px solid ${STEP_STYLE.input.border}` }}
+            >
+              {STEP_STYLE.input.icon} 输入
+            </span>
             <span className="text-[12.5px] font-semibold" style={{ color: "var(--color-muted)" }}>
               这次要做什么
             </span>
@@ -1882,25 +1888,57 @@ export function WorkflowCanvas({
                   </div>
                 </div>
 
-                {lv && lv.events.length > 0 && (
-                  <div className="flex max-h-[210px] flex-col gap-[3px] overflow-auto border-b px-2.5 py-2" style={{ borderColor: "var(--color-border)" }}>
-                    {tailOf(lv.events, 60).map((l, i) => {
-                      const sty = STEP_STYLE[l.kind];   // 与卡片上的分色同源
-                      return (
-                        <div key={`d${i}`} className="flex items-start gap-1.5 rounded-[6px] px-1.5 py-[3px]" style={{ background: sty.bg, border: `1px solid ${sty.border}` }}>
-                          <span className="shrink-0 text-[10px]" style={{ color: sty.color }}>
-                            {sty.icon}
-                          </span>
-                          <span className="whitespace-pre-wrap break-words text-[11.5px] leading-[1.6]">{l.text}</span>
-                        </div>
-                      );
-                    })}
+{/* ── 这一步的完整执行详情：**输入 / 思考 / 调用 / 回复 四段分色** ───────────────
+                   用户："点击 agent 可以查看执行的详情，input，think，call，response 完整的详情通过不同颜色区分"
+                   为什么分段分色：这四件事性质完全不同 —— "它收到的"不等于"它想的"，"它想的"不等于"它做的"，
+                   混成一段文字根本读不出来；分色之后扫一眼就知道它卡在哪一步。
+                   数据来自运行时无关的统一事件流（trace）→ 实时执行和历史回放**都能看到** ✓ */}
+                {lv ? (
+                  <div className="flex flex-col gap-1.5 overflow-auto px-2.5 py-2" style={{ maxHeight: 320 }}>
+                    <DetailSection kind="input" label="输入">
+                      {String(lv.input ?? "").trim() ? (
+                        <span className="whitespace-pre-wrap break-words">{clip(lv.input, 700)}</span>
+                      ) : (
+                        <span style={{ color: "var(--color-muted)" }}>（这一步没有单独记录输入）</span>
+                      )}
+                    </DetailSection>
+                    <DetailSection kind="think" label="思考">
+                      {String(lv.thinking ?? "").trim() ? (
+                        <span className="whitespace-pre-wrap break-words">{clip(lv.thinking, 900)}</span>
+                      ) : (
+                        <span style={{ color: "var(--color-muted)" }}>（没有思考内容）</span>
+                      )}
+                    </DetailSection>
+                    <DetailSection kind="tool" label="调用">
+                      {lv.tools.length ? (
+                        lv.tools.map((t, i) => (
+                          <div key={i} className={i ? "mt-1.5" : ""}>
+                            <span className="font-medium">{t.name}</span>
+                            {t.args.trim() && <span style={{ color: "var(--color-muted)" }}> {clip(t.args, 100)}</span>}
+                            {t.result.trim() && (
+                              <div className="mt-[2px] whitespace-pre-wrap break-words" style={{ color: STEP_STYLE.tool_response.color }}>
+                                {STEP_STYLE.tool_response.icon} {clip(t.result, 260)}
+                              </div>
+                            )}
+                          </div>
+                        ))
+                      ) : (
+                        <span style={{ color: "var(--color-muted)" }}>（没有调用工具）</span>
+                      )}
+                    </DetailSection>
+                    <DetailSection kind="output" label="回复">
+                      {(out || String(lv.output ?? "")).trim() ? (
+                        <Markdown text={out || String(lv.output ?? "")} />
+                      ) : (
+                        <span style={{ color: "var(--color-muted)" }}>{st === "run" ? "正在执行，产出会出现在这里…" : "还没有产出"}</span>
+                      )}
+                    </DetailSection>
                   </div>
-                )}
-
-                {out ? (
-                  <div className="overflow-auto px-3 py-2 text-[12px] leading-[1.7]">
-                    <Markdown text={out} />
+                ) : out ? (
+                  <div className="overflow-auto px-2.5 py-2">
+                    <DetailSection kind="output" label="回复">
+                      <Markdown text={out} />
+                    </DetailSection>
                   </div>
                 ) : (
                   <div className="px-3 py-3 text-[12px]" style={{ color: "var(--color-muted)" }}>
@@ -1970,8 +2008,14 @@ export function WorkflowCanvas({
               >
                 ✓
               </span>
+              <span
+                className="shrink-0 rounded-full px-1.5 py-[1px] text-[11px] font-semibold"
+                style={{ background: STEP_STYLE.output.bg, color: STEP_STYLE.output.color, border: `1px solid ${STEP_STYLE.output.border}` }}
+              >
+                {STEP_STYLE.output.icon} 输出
+              </span>
               <span className="text-[12px] font-semibold" style={{ color: "var(--color-accent)" }}>
-                结论
+                这次执行合起来的结论
               </span>
               {lastNid && (
                 <button
@@ -2780,6 +2824,32 @@ function tailOf(evts: NodeLiveInfo["events"], max = 3): { kind: StepKind; text: 
   else if (think.trim()) lines.push({ kind: "think", text: one(think) });
 
   return lines.slice(-max);
+}
+
+/** 详情里的一片：**输入 / 思考 / 调用 / 回复** 各一段、各一色。
+ *
+ *  用户："点击 agent 可以查看执行的详情，input，think，call，response 完整的详情通过不同颜色区分"。
+ *  配色复用全站 STEP_STYLE（输入蓝 / 思考紫 / 调用橙 / 工具输出青 / 回复绿 / 出错红），
+ *  和 Runs 页、日志里的分色同一套 —— 同一个概念全站同色 ✓ */
+/** 压成一行并截断（详情里的小块文字用；超长就截 + 省略号） */
+function clip(v: unknown, n: number): string {
+  const t = String(v ?? "").replace(/\s+/g, " ").trim();
+  return t.length > n ? `${t.slice(0, n)}…` : t;
+}
+
+function DetailSection({ kind, label, children }: { kind: StepKind; label: string; children: React.ReactNode }) {
+  const st = STEP_STYLE[kind];
+  return (
+    <div className="rounded-[8px] border" style={{ borderColor: st.border, background: st.bg }}>
+      <div className="flex items-center gap-1.5 px-2 py-[3px] text-[11px] font-semibold" style={{ color: st.color }}>
+        <span className="text-[10px] leading-none">{st.icon}</span>
+        {label}
+      </div>
+      <div className="px-2 pb-[6px] text-[11.5px] leading-[1.65]" style={{ color: "var(--color-text)" }}>
+        {children}
+      </div>
+    </div>
+  );
 }
 
 /** 抽屉里的小节标题 */

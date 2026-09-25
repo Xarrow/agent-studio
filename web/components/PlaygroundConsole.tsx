@@ -196,6 +196,19 @@ export function PlaygroundConsole() {
         const [ags, wfs] = await Promise.all([api.agents(), api.workflows(30)]);
         setAgents(ags);
         setList(wfs);
+        // 深链：/playground?wf=<id> 直接载入某条流程（「管理」页的「打开到画布」用这个）。
+        // 注意要放在"清空上次记忆"之前 —— 载入本身就是"这次要编辑它"，不能被清掉。
+        const wfId = new URLSearchParams(window.location.search).get("wf");
+        if (wfId) {
+          try {
+            const w = await api.workflow(wfId);
+            if (w) loadWorkflow(w);
+          } catch {
+            /* 载不到就留空白画布 */
+          }
+          window.history.replaceState(null, "", window.location.pathname);
+          return;
+        }
         // **打开就是一张干净的空白流程** —— 这是刻意的产品决定。
         //
         // 早前（09-22）这里会"记住上次在编哪份 + 把最近一次执行整段回放上来"，

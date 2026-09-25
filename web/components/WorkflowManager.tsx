@@ -22,6 +22,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type { Agent, Workflow } from "@/lib/types";
+import { RunsPanel } from "@/components/RunsPanel";
 
 type Orc = {
   id: string;
@@ -71,6 +72,7 @@ export function WorkflowManager({
   onDeleted,
   onReplay,
   onRenamed,
+  variant = "overlay",
 }: {
   open: boolean;
   currentId?: string | null;
@@ -82,7 +84,11 @@ export function WorkflowManager({
   onDeleted: () => void;
   onReplay: (orcId: string) => void;
   onRenamed?: (w: Workflow) => void;
+  /** overlay = Playground 里的浮层（默认）；page = 整页（/runs 「管理」页），无遮罩、无 ✕、Esc 不关 */
+  variant?: "overlay" | "page";
 }) {
+  /** 左列置顶的伪条目「全部运行记录」—— 选中它右侧就是原来 Runs 页那张表 */
+  const ALL = "__all__";
   const [list, setList] = useState<Workflow[]>([]);
   const [sel, setSel] = useState<string | null>(null);
   const [runs, setRuns] = useState<Orc[]>([]);
@@ -97,7 +103,7 @@ export function WorkflowManager({
       const d = (await api.workflows()) as unknown as Workflow[] | { items?: Workflow[] };
       const items = Array.isArray(d) ? d : (d.items ?? []);
       setList(items);
-      setSel((cur) => cur ?? items[0]?.id ?? null);
+      setSel((cur) => cur ?? (variant === "page" ? ALL : items[0]?.id ?? null));
     } finally {
       setLoading(false);
     }
@@ -108,7 +114,7 @@ export function WorkflowManager({
   }, [open, loadList]);
 
   useEffect(() => {
-    if (!open || !sel) {
+    if (!open || !sel || sel === ALL) {   // 选中「全部运行记录」时不需要这条流程的执行
       setRuns([]);
       return;
     }
@@ -124,14 +130,15 @@ export function WorkflowManager({
     };
   }, [open, sel]);
 
+
   useEffect(() => {
-    if (!open) return;
+    if (!open || variant === "page") return;   // 整页模式 Esc 不该关掉页面
     const esc = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", esc);
     return () => window.removeEventListener("keydown", esc);
-  }, [open, onClose]);
+  }, [open, onClose, variant]);
 
   if (!open) return null;
   const cur = list.find((w) => w.id === sel) ?? null;
@@ -171,16 +178,27 @@ export function WorkflowManager({
   const chain = chainOf(cur);
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col" style={{ background: "rgba(16,20,26,.28)" }}>
+    <div
+      className={variant === "page" ? "flex min-h-0 flex-col" : "fixed inset-0 z-50 flex flex-col"}
+      style={variant === "page" ? undefined : { background: "rgba(16,20,26,.28)" }}
+    >
       <div
-        className="m-auto flex h-[86vh] w-[min(1080px,94vw)] flex-col overflow-hidden rounded-[14px] border shadow-2xl"
+        className={
+          variant === "page"
+            ? "flex h-[calc(100vh-116px)] min-h-[520px] w-full flex-col overflow-hidden rounded-[14px] border"
+            : "m-auto flex h-[86vh] w-[min(1080px,94vw)] flex-col overflow-hidden rounded-[14px] border shadow-2xl"
+        }
         style={{ background: "var(--color-surface)", borderColor: "var(--color-border)" }}
       >
         {/* 头部 */}
         <div className="flex items-center gap-3 border-b px-4 py-3" style={{ borderColor: "var(--color-border)" }}>
-          <span className="text-[14.5px] font-semibold">流程管理</span>
+          <span className="text-[14.5px] font-semibold">
+            {variant === "page" ? "管理" : "流程管理"}
+          </span>
           <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
-            共 {list.length} 份 · 选中这份跑过 {curRuns} 次
+            {sel === ALL
+              ? `共 ${list.length} 份流程 —— 左边的流程 + 右边的运行记录，一处管完`
+              : `共 ${list.length} 份 · 选中这份跑过 ${curRuns} 次`}
           </span>
           <div className="ml-auto flex items-center gap-1.5">
             <button
@@ -261,6 +279,7 @@ export function WorkflowManager({
                 </button>
               </>
             )}
+            {variant !== "page" && (
             <button
               type="button"
               onClick={onClose}
@@ -270,6 +289,7 @@ export function WorkflowManager({
             >
               ✕
             </button>
+            )}
           </div>
         </div>
 
@@ -286,6 +306,27 @@ export function WorkflowManager({
                 还没有流程。点右上「＋ 新建」，或回画布点一个起步模板。
               </div>
             )}
+            {/* 置顶：全部运行记录（原 Runs 页那张表）—— 与各条流程**并列选择**，不做 tab 切换 */}
+            <button
+              type="button"
+              onClick={() => setSel(ALL)}
+              className="flex w-full flex-col gap-0.5 border-b px-3 py-2 text-left hover:bg-[var(--color-surface-2)]"
+              style={{
+                borderColor: "var(--color-border)",
+                background: sel === ALL ? "color-mix(in srgb, var(--color-accent) 7%, transparent)" : undefined,
+              }}
+            >
+              <span
+                className="flex items-center gap-1.5 text-[13px] font-medium"
+                style={{ color: sel === ALL ? "var(--color-accent)" : undefined }}
+              >
+                <span className="shrink-0 text-[12px] opacity-70">▤</span>
+                <span className="min-w-0 flex-1 truncate">全部运行记录</span>
+              </span>
+              <span className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                LLM 测试 · 助手试跑 · 流程执行，全在一张表
+              </span>
+            </button>
             {list.map((w) => {
               const n = (w.graph?.nodes ?? []).length;
               const on = w.id === sel;
@@ -317,8 +358,14 @@ export function WorkflowManager({
             })}
           </div>
 
-          {/* 右：**这条流程长什么样（骨架）** + 每次执行一张卡 */}
+          {/* 右：选中「全部运行记录」→ 原 Runs 页那张表；选中某条流程 → 骨架 + 每次执行一张卡 */}
           <div className="min-w-0 flex-1 overflow-auto">
+            {sel === ALL ? (
+              <div className="p-4">
+                <RunsPanel />
+              </div>
+            ) : (
+              <>
             {/* 骨架段：即使一次都没跑过，右边也有内容 —— 之前只写"跑过几次"，
                 没跑过就是一片空白，用户看成了"点开流程显示不全"。
                 这里把流程本身摊开：几步、每步是谁、怎么连的（与画布同一套编号 + 助手名）。 */}
@@ -464,6 +511,8 @@ export function WorkflowManager({
                   );
                 })}
               </div>
+            )}
+              </>
             )}
           </div>
         </div>
