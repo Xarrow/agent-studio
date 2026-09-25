@@ -537,6 +537,25 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 maxLength={140}
               />
             </div>
+            {/* 流程里的角色（用户："agent 分类定义 Orchestrator —— 分析任务，管理上下文，
+                验证结果，归纳总结能力，可以放在最开始 agent 和 最后的 agent"）。
+                枚举值用**选择器**（不让用户手打）＋ option 里写通俗解释，不出现第二个术语。 */}
+            <div>
+              <label
+                className="label flex items-center gap-1.5"
+                title="决定它在流程里扮演什么角色。干活：做完自己这一步就交给下一个。编排者：对整条流程负责 —— 先把目标分析清楚、管好上下文，最后验证结果并归纳总结（适合放在流程的最开始或最后）。"
+              >
+                流程里的角色
+              </label>
+              <select
+                className="input"
+                value={def.role ?? "worker"}
+                onChange={(e) => patch({ role: e.target.value as "worker" | "orchestrator" })}
+              >
+                <option value="worker">干活（默认）—— 做完这一步，交给下一个</option>
+                <option value="orchestrator">编排者 —— 分析任务 / 管理上下文 / 验证结果 / 归纳总结</option>
+              </select>
+            </div>
             <div>
               <label className="label">System Prompt</label>
               <textarea

@@ -2247,6 +2247,12 @@ export function WorkflowCanvas({
                     : "color-mix(in srgb, var(--color-border) 92%, var(--color-muted))";
           const isTarget = (hoverNid ?? dropTarget) === n.nid;
           const stepNo = layout.layers.findIndex((ids) => ids.includes(n.nid)) + 1;
+            // 编排者的位置引导：价值在"先分析 / 后归纳"，放中间通常不是本意 ——
+            // 只在明显放错时给一句轻提示（不弹窗、不挡操作）
+            const orcMisplaced =
+              agentOf(n.agent_id)?.definition?.role === "orchestrator" &&
+              !((layout.layers[0] ?? []).includes(n.nid) ||
+                (layout.layers[layout.layers.length - 1] ?? []).includes(n.nid));
           const out = outputs[n.nid];
           return (
             <div
@@ -2493,17 +2499,40 @@ export function WorkflowCanvas({
                 >
                   {stepNo}
                 </span>
-                <span
-                  className="shrink-0 rounded-full px-1.5 py-[1px] text-[10.5px]"
-                  style={{
-                    border: "1px solid var(--color-border)",
-                    color: "var(--color-muted)",
-                    background: "var(--color-surface)",
-                  }}
-                  title="这一步用哪个助手（卡片类型：助手卡）"
-                >
-                  助手
-                </span>
+                {agentOf(n.agent_id)?.definition?.role === "orchestrator" ? (
+                  <span
+                    className="shrink-0 rounded-full px-1.5 py-[1px] text-[10.5px] font-medium"
+                    style={{
+                      border: `1px solid ${STEP_STYLE.think.border}`,
+                      color: STEP_STYLE.think.color,
+                      background: STEP_STYLE.think.bg,
+                    }}
+                    title="编排者：分析任务 → 管理上下文 → 验证结果 → 归纳总结（适合放在流程首节点或末节点）"
+                  >
+                    ✦ 编排者
+                    {orcMisplaced && (
+                      <span
+                        className="ml-1 rounded-full px-1 py-0 text-[10px] font-normal"
+                        style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)" }}
+                        title="编排者通常放在流程的**最开始**（先分析任务、管好上下文再交下去）或**最后**（收齐产出做验证与归纳）"
+                      >
+                        建议放首/末
+                      </span>
+                    )}
+                  </span>
+                ) : (
+                  <span
+                    className="shrink-0 rounded-full px-1.5 py-[1px] text-[10.5px]"
+                    style={{
+                      border: "1px solid var(--color-border)",
+                      color: "var(--color-muted)",
+                      background: "var(--color-surface)",
+                    }}
+                    title="这一步用哪个助手（卡片类型：助手卡）"
+                  >
+                    助手
+                  </span>
+                )}
                 {master === n.nid && (
                   <span
                     className="shrink-0 text-[12px] leading-none"
