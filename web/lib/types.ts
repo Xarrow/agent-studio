@@ -517,6 +517,8 @@ export interface WorkflowNode {
   y?: number;
   /** 卡片宽度：画布上拖右边缘调过才有值（同样跟着流程保存，跨会话保留） */
   w?: number;
+  /** 卡片高度：拖右下角调过才有值；不填 = 由内容决定 */
+  h?: number;
 }
 
 export interface WorkflowEdge {

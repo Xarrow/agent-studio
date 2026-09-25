@@ -279,6 +279,9 @@ function liveLabel(kind: string, text: string): string {
 
 /** 两端卡片的"伪节点 id" —— 拖拽/调宽复用同一套机制（节点用 n1/n2…，两端卡用这两个） */
 const CARD_IN = "__input__";
+/** 卡片高度上下限（拖右下角调高时用）—— 太小看不清、太大一屏放不下 */
+const H_MIN = 90;
+const H_MAX = 900;
 const CARD_OUT = "__output__";
 
 /** 取"用户摆过的"数值：是有限数字才用，否则回退自动值 */
@@ -488,7 +491,11 @@ export function WorkflowCanvas({
     }
     /** 纵向（手机）三块统一用实测列宽 */
     const CW = colW;
-    const hOf = (nid: string) => heights[nid] || 104;
+    /** 这一格的高度：用户拖右下角调过就用它，否则用实测高度（内容驱动） */
+    const hOf = (nid: string) => {
+      const node = graph.nodes.find((x) => x.nid === nid);
+      return numOr(node?.h, heights[nid] || 104);
+    };
     const pos: Record<string, { x: number; y: number }> = {};
     let maxX = 0;
     let maxY = 0;
@@ -1185,31 +1192,44 @@ export function WorkflowCanvas({
    *  "拖右缘调宽"同理。这里在拖/缩结束时记一个时间戳，卡片和连线的 click 在窗口期内直接忽略。 */
   const suppressClickRef = useRef(0);
   const SUPPRESS_MS = 400;
-  const [resize, setResize] = useState<{ nid: string; sx: number; sw: number; w: number } | null>(null);
-  const startResize = (e: React.PointerEvent, nid: string) => {
+  const [resize, setResize] = useState<{ nid: string; sx: number; sy: number; sw: number; sh: number; w: number; h: number; corner: boolean } | null>(null);
+  /** 开始拖尺寸。corner=true 表示抓的是**右下角**（宽高一起改），false 是右缘（只改宽） */
+  const startResize = (e: React.PointerEvent, nid: string, corner = false) => {
     if (frozen || narrow) return;            // 只读回放 / 手机上不给拖（手机是一列铺满）
     e.preventDefault();
     e.stopPropagation();                     // 别触发"点卡片=选中"与节点拖动
     const start = nid === CARD_IN ? layout.CARD_W : nid === CARD_OUT ? layout.CONC_W : (layout.W[nid] ?? layout.NW);
-    setResize({ nid, sx: e.clientX, sw: start, w: start });
+    const cardEl = (e.currentTarget as HTMLElement).parentElement;
+    const startH = cardEl?.offsetHeight ?? (heights[nid] || 104);
+    setResize({ nid, sx: e.clientX, sy: e.clientY, sw: start, sh: startH, w: start, h: startH, corner });
   };
   useEffect(() => {
     if (!resize) return;
     const onMove = (ev: PointerEvent) => {
       const z = zoomRef.current || 1;        // 画布可缩放：屏幕位移 ÷ zoom 才是图内宽度
       const w = Math.round(Math.max(layout.W_MIN, Math.min(layout.W_MAX, resize.sw + (ev.clientX - resize.sx) / z)));
-      setResize((r) => (r ? { ...r, w } : r));
+      // 抓右下角时高度也跟手（右缘那条只改宽，不动高 —— 高度默认由内容决定更自然）
+      const h = resize.corner
+        ? Math.round(Math.max(H_MIN, Math.min(H_MAX, resize.sh + (ev.clientY - resize.sy) / z)))
+        : resize.h;
+      setResize((r) => (r ? { ...r, w, h } : r));
     };
     const onUp = () => {
       setResize((r) => {
-        if (r && Math.abs(r.w - r.sw) >= 8) {
-          suppressClickRef.current = Date.now() + SUPPRESS_MS;   // 拖宽过 = 不是点击，别弹详情
+        if (!r) return null;
+        const changedW = Math.abs(r.w - r.sw) >= 8;
+        const changedH = r.corner && Math.abs(r.h - r.sh) >= 8;
+        if (changedW || changedH) {
+          suppressClickRef.current = Date.now() + SUPPRESS_MS;   // 拖过 = 不是点击，别弹详情
+          const patch: { w?: number; h?: number } = {};
+          if (changedW) patch.w = r.w;
+          if (changedH) patch.h = r.h;
           if (r.nid === CARD_IN || r.nid === CARD_OUT) {
             const key = r.nid === CARD_IN ? "input_card" : "output_card";
             const prev = r.nid === CARD_IN ? graph.input_card : graph.output_card;
-            onChange({ ...graph, [key]: { ...(prev ?? {}), w: r.w } });
+            onChange({ ...graph, [key]: { ...(prev ?? {}), ...patch } });
           } else {
-            onChange({ ...graph, nodes: graph.nodes.map((n) => (n.nid === r.nid ? { ...n, w: r.w } : n)) });
+            onChange({ ...graph, nodes: graph.nodes.map((n) => (n.nid === r.nid ? { ...n, ...patch } : n)) });
           }
         }
         return null;
@@ -1591,6 +1611,8 @@ export function WorkflowCanvas({
             transform: `translate(${layout.taskAt.x}px, ${layout.taskAt.y}px)`,
             // 拖宽时跟手；否则用图里存的（拖过就用拖过的宽）
             width: resize?.nid === CARD_IN ? resize.w : layout.CARD_W,
+            height: resize?.nid === CARD_IN ? resize.h : (numOr(graph.input_card?.h, 0) || undefined),
+            overflow: resize?.nid === CARD_IN || graph.input_card?.h ? "hidden" : undefined,
             // 与节点卡**视觉分层**：发令区是"起点"，给一点强调底色 + 左侧 3px 色条
             // （用 inset box-shadow 画色条，零额外 DOM）
             background: "color-mix(in srgb, var(--color-accent) 4%, var(--color-surface))",
@@ -1602,6 +1624,9 @@ export function WorkflowCanvas({
           {/* 拖宽把手（与节点卡同一套） */}
           {!frozen && !narrow && (
             <ResizeGrip id={CARD_IN} active={resize?.nid === CARD_IN} onDown={(e) => startResize(e, CARD_IN)} />
+          )}
+          {!frozen && !narrow && (
+            <ResizeCorner id={CARD_IN} active={resize?.nid === CARD_IN && resize.corner} onDown={(e) => startResize(e, CARD_IN, true)} />
           )}
           {/* 发令区头部（方案 C）：左=这次要做什么、右=**运行键**。
               主操作放在第一眼的位置，不再像之前那样独占整行、把卡片撑得很笨重。
@@ -2035,6 +2060,8 @@ export function WorkflowCanvas({
               transform: `translate(${layout.concAt.x}px, ${layout.concAt.y}px)`,
               // 拖宽时跟手；否则用图里存的
               width: resize?.nid === CARD_OUT ? resize.w : layout.CONC_W,
+              height: resize?.nid === CARD_OUT ? resize.h : (numOr(graph.output_card?.h, 0) || undefined),
+              overflow: resize?.nid === CARD_OUT || graph.output_card?.h ? "hidden" : undefined,
               maxHeight: 460,
               background: "color-mix(in srgb, var(--color-accent) 5%, var(--color-surface))",
               borderColor: "color-mix(in srgb, var(--color-accent) 40%, var(--color-border))",
@@ -2044,6 +2071,9 @@ export function WorkflowCanvas({
             {/* 拖宽把手（与节点卡同一套） */}
             {!frozen && !narrow && (
               <ResizeGrip id={CARD_OUT} active={resize?.nid === CARD_OUT} onDown={(e) => startResize(e, CARD_OUT)} />
+            )}
+            {!frozen && !narrow && (
+              <ResizeCorner id={CARD_OUT} active={resize?.nid === CARD_OUT && resize.corner} onDown={(e) => startResize(e, CARD_OUT, true)} />
             )}
             <div
               data-draghead
@@ -2257,6 +2287,9 @@ export function WorkflowCanvas({
                 transform: `translate(${p.x}px, ${p.y}px)`,
                 // 宽度：正在拖这张卡时用实时值（跟手），否则用图里存的（拖过就用拖过的宽）
                 width: resize?.nid === n.nid ? resize.w : layout.W[n.nid] ?? layout.NW,
+                // 高度：拖过右下角就用调过的（不设 = 由内容决定，不会留白）
+                height: resize?.nid === n.nid ? resize.h : (numOr(n.h, 0) || undefined),
+                overflow: resize?.nid === n.nid || n.h ? "hidden" : undefined,
                 background: "var(--color-surface)",
                 borderColor: isTarget ? "var(--color-accent)" : isSel ? "var(--color-accent)" : meta.border,
                 borderStyle: isTarget ? "dashed" : st === "stale" ? "dashed" : "solid",
@@ -2306,6 +2339,9 @@ export function WorkflowCanvas({
                   表现就是"拖了没反应" —— 用户反馈：为什么手动拖拽修改不了尺寸。 */}
               {!frozen && !narrow && (
                 <ResizeGrip id={n.nid} active={resize?.nid === n.nid} onDown={(e) => startResize(e, n.nid)} />
+              )}
+              {!frozen && !narrow && (
+                <ResizeCorner id={n.nid} active={resize?.nid === n.nid && resize.corner} onDown={(e) => startResize(e, n.nid, true)} />
               )}
               {!frozen && (
                 <div
@@ -2882,6 +2918,37 @@ function clip(v: unknown, n: number): string {
  *    · 命中区 20px（左右各 10px）+ 可见把手 4px×44px（原来 3px 细线 + 只 7px 在卡内 → 抓不住）
  *    · **touch-action: none** —— 触屏/触控板上不加它，浏览器会把拖拽当滚动并取消 pointer 事件，
  *      表现就是"拖了没反应"（用户反馈："为什么手动拖拽修改不了尺寸"） */
+/** 卡片**右下角**的双手柄：宽和高一起调。
+ *
+ *  与右缘那条分工明确 —— 右缘只改宽（高度默认由内容决定更自然），角落才是"整张卡大小"。
+ *  用户要求："卡片的高度也支持调整"。touch-action:none 同样必须有（触屏否则拖不动）。 */
+function ResizeCorner({ id, active, onDown }: { id: string; active: boolean; onDown: (e: React.PointerEvent) => void }) {
+  return (
+    <div
+      data-node-resize-corner={id}
+      onPointerDown={onDown}
+      onClick={(e) => e.stopPropagation()}
+      title="拖动我，调整这张卡的宽和高"
+      className="group/corner absolute z-30"
+      style={{ right: -8, bottom: -8, width: 24, height: 24, cursor: "nwse-resize", touchAction: "none" }}
+    >
+      <span
+        className="absolute transition-opacity group-hover/corner:opacity-100"
+        style={{
+          right: 10,
+          bottom: 10,
+          width: 9,
+          height: 9,
+          borderRight: `2px solid ${active ? "var(--color-accent)" : "var(--color-muted)"}`,
+          borderBottom: `2px solid ${active ? "var(--color-accent)" : "var(--color-muted)"}`,
+          borderBottomRightRadius: 3,
+          opacity: active ? 1 : 0.55,
+        }}
+      />
+    </div>
+  );
+}
+
 function ResizeGrip({ id, active, onDown }: { id: string; active: boolean; onDown: (e: React.PointerEvent) => void }) {
   return (
     <div
