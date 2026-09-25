@@ -93,11 +93,10 @@ export function PlaygroundConsole() {
 
   const [selected, setSelected] = useState<string | null>(null);
   const [draggingAgentId, setDragging] = useState<string | null>(null);
-  /** 「选择助手」下拉（手机上拖拽手势不可靠：手指一动就从"点选"变成"拖拽"，
-   *  所以给出下拉框这条确定性路径 —— 点选 = 一定能加进去） */
-  const [agentPick, setAgentPick] = useState(false);
   /** 任务卡上的附件（图片/文件）。上传后即落盘，运行时装进任务交给助手去读。 */
   const [attachments, setAttachments] = useState<UploadItem[]>([]);
+  /** 工具 id → 名字。选助手时要把"它手里有什么家伙"显示成**名字**，不是"8 个"。 */
+  const [toolNames, setToolNames] = useState<Record<string, string>>({});
   /** 拖拽时跟着手指/鼠标的小卡片（用 position:fixed，不受画布滚动影响） */
   const [ghost, setGhost] = useState<{ x: number; y: number; name: string } | null>(null);
   /** 指针正悬停在哪个节点上（画布据此预览"会插到它后面"） */
@@ -579,6 +578,13 @@ export function PlaygroundConsole() {
     setOutputs(outs);
   }, [detail, graph]);
 
+  useEffect(() => {
+    void api
+      .tools()
+      .then((list) => setToolNames(Object.fromEntries(list.map((t) => [t.id, t.name]))))
+      .catch(() => setToolNames({}));
+  }, []);
+
   /** 上传附件：逐个传（一个失败不影响别的，失败原因指名道姓报给用户） */
   const attachFiles = async (files: File[]) => {
     for (const f of files) {
@@ -976,64 +982,6 @@ export function PlaygroundConsole() {
 
       {/* ══ 主体：助手栏 / 画布 / 节点详情 ══ */}
       <div className="pg-split flex min-h-0 flex-1">
-        {/* 选助手（原来挂在左侧助手栏的标题行里 —— 那个栏已移除）：
-            改成**居中弹层**，与全站其他弹层一致，不弹浏览器原生框。
-            加进来的助手接在流程末尾 —— 与画布上「＋ 加一步」的语义一致。 */}
-        {agentPick && (
-          <>
-            <div
-              className="fixed inset-0 z-[60]"
-              style={{ background: "rgba(16,24,40,.26)" }}
-              onClick={() => setAgentPick(false)}
-            />
-            <div
-              className="fixed left-1/2 top-1/2 z-[61] flex max-h-[70vh] w-[330px] -translate-x-1/2 -translate-y-1/2 flex-col rounded-[12px] border p-2"
-              style={{
-                background: "var(--color-surface)",
-                borderColor: "var(--color-border)",
-                boxShadow: "0 18px 48px rgba(16,24,40,.22)",
-              }}
-            >
-              <div className="flex items-center justify-between px-1.5 pb-1.5 pt-1">
-                <span className="text-[13px] font-semibold">加一个助手进来</span>
-                <button
-                  type="button"
-                  onClick={() => setAgentPick(false)}
-                  className="px-1.5 text-[var(--color-muted)] hover:text-[var(--color-err)]"
-                  title="关闭"
-                >
-                  ✕
-                </button>
-              </div>
-              <div className="min-h-0 flex-1 overflow-auto">
-                {agents.map((a) => (
-                  <button
-                    key={a.id}
-                    type="button"
-                    className="df-menu-item hover:bg-[var(--color-surface-2)]"
-                    onClick={() => {
-                      setAgentPick(false);
-                      dropAgent(a.id, null);
-                    }}
-                  >
-                    <span
-                      className="grid h-[24px] w-[24px] shrink-0 place-items-center rounded-[6px] border text-[12px] font-semibold"
-                      style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
-                    >
-                      {a.name.slice(0, 1)}
-                    </span>
-                    <span className="min-w-0 flex-1 text-left">
-                      <span className="block truncate">{a.name}</span>
-                      <span className="block truncate text-[12px]" style={{ color: "var(--color-muted)" }}>
-                        {a.definition?.model?.name ?? ""}
-                      </span>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </>
-        )}
 
         <div className="min-w-0 flex-1">
           <WorkflowCanvas
@@ -1060,7 +1008,14 @@ export function PlaygroundConsole() {
             attachments={attachments}
             onAttach={(files) => void attachFiles(files)}
             onDetach={detachFile}
-            onAddStep={() => setAgentPick(true)}
+            toolNames={toolNames}
+            onAddStep={(agentId) => dropAgent(agentId, null)}
+            onSwapAgent={(nid, agentId) => {
+              // 换助手 = 改这一步的 agent_id。这一步和它**下游**的产出都作废，
+              // 所以一并重置运行态（下游的输出是上游产物推出来的，不能留着骗人）。
+              const next = { ...graph, nodes: graph.nodes.map((x) => (x.nid === nid ? { ...x, agent_id: agentId } : x)) };
+              patchGraph(next, { resetRun: downstreamOf(nid, next) });
+            }}
             onTaskValue={(v) => {
               setTask(v);
               if (typeof window !== "undefined") window.localStorage.setItem(LAST_TASK_KEY, v);

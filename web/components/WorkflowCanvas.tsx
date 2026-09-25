@@ -31,6 +31,56 @@ const STATE_LABEL: Record<NodeState, string> = {
   stale: "需重跑",
 };
 
+/* ── 选助手的三个小工具（都是纯函数，零依赖）─────────────────────────────
+   为什么要有"一句话职责"：选助手时用户真正要判断的是"它擅长什么"，
+   而 description 现在普遍是空的 —— 但 system_prompt 其实写着各自干嘛。
+   所以：description 优先，空了就取 system_prompt 的第一句（并去掉"你是一个…"这种套话）。 */
+function blurbOf(a: Agent): string {
+  const d = (a.description ?? "").trim();
+  if (d) return d;
+  const raw = (a.definition?.system_prompt ?? "").trim().replace(/\s+/g, " ");
+  if (!raw) return "";
+  // 去掉开头的套话（"你是一个 xxx agent，" / "你是助手。"），留下实质那句
+  const stripped = raw.replace(/^(你是一个|你是一位|你是)[^，,。.;；]{0,24}[，,。.;；]\s*/, "");
+  const first = (stripped || raw).split(/[。\n!?；;]/)[0] || stripped || raw;
+  const t = first.trim().replace(/^[，,、]\s*/, "");
+  return t.length > 52 ? t.slice(0, 52) + "…" : t;
+}
+
+/** 能力信号：给**名字**，不给"8 个"——名字才能让人判断，数字只让人感觉多 */
+function skillsOf(a: Agent, toolNames: Record<string, string>): string[] {
+  const out: string[] = [];
+  for (const t of a.definition?.tools ?? []) {
+    if (t.enabled === false) continue;
+    const n = toolNames[t.ref];
+    if (n) out.push(n);
+  }
+  return out.slice(0, 4);
+}
+
+/** 推荐打分：任务文本 vs 助手的名字/职责/提示词/工具名。
+ *  中文没有空格，用**二元组**做近似（零依赖下够用）；英文按下划线词整词匹配（权重更高）。 */
+function recScore(a: Agent, task: string, toolNames: Record<string, string>): number {
+  const t = (task || "").trim();
+  if (t.length < 2) return 0;
+  const hay = (
+    a.name +
+    " " +
+    (a.description ?? "") +
+    " " +
+    (a.definition?.system_prompt ?? "") +
+    " " +
+    (a.definition?.tools ?? []).map((x) => toolNames[x.ref] ?? "").join(" ")
+  ).toLowerCase();
+  let score = 0;
+  for (const w of t.toLowerCase().match(/[a-z_][a-z0-9_]{2,}/g) ?? []) if (hay.includes(w)) score += 3;
+  for (let i = 0; i < t.length - 1; i++) {
+    const bg = t.slice(i, i + 2);
+    if (/^[\u4e00-\u9fa5]{2}$/.test(bg) && hay.includes(bg)) score += 1;
+  }
+  return score;
+}
+
 const META: Record<NodeState, { dot: string; text: string; border: string }> = {
   idle: { dot: "var(--color-border)", text: "var(--color-muted)", border: "var(--color-border)" },
   wait: { dot: "var(--color-border)", text: "var(--color-muted)", border: "var(--color-border)" },
@@ -143,8 +193,11 @@ type Props = {
   attachments?: UploadItem[];
   onAttach?: (files: File[]) => void;
   onDetach?: (id: string) => void;
-  /** 画布上的「＋ 加一步」—— 点它由上层弹出助手选择（加在流程末尾） */
-  onAddStep?: () => void;
+  /** 工具 id → 名字（能力信号要显示名字，后端存的是 id 引用） */
+  toolNames?: Record<string, string>;
+  /** 选好助手：mode="add" 加到流程末尾；mode="swap" 换掉某个节点 */
+  onAddStep?: (agentId: string) => void;
+  onSwapAgent?: (nid: string, agentId: string) => void;
   onRun?: () => void;
   running?: boolean;
   /** 当前会跑什么模式（显示在运行键上） */
@@ -220,6 +273,8 @@ export function WorkflowCanvas({
   onAttach,
   onDetach,
   onAddStep,
+  onSwapAgent,
+  toolNames = {},
   onTaskValue,
   onRun,
   running = false,
@@ -768,6 +823,9 @@ export function WorkflowCanvas({
    *  内容变化时一直生效，而不是只在某个"编辑态"里。 */
   const taskBoxRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  /** 选助手气泡：null=关；mode=add（加在末尾）| swap（换掉某一步）。
+      气泡**贴着触发点**出现，不居中、不盖画布（用户明确要求"不遮画布"）。 */
+  const [picking, setPicking] = useState<{ mode: "add" | "swap"; nid?: string } | null>(null);
   const growTask = () => {
     const el = taskBoxRef.current;
     if (!el) return;
@@ -1179,6 +1237,109 @@ export function WorkflowCanvas({
           </div>
         </div>
 
+        {/* 选助手气泡：**贴着触发点**冒出（大布局不遮画布 —— 用户明确要求）。
+            内容按"先摆依据再让人选"排：一句话职责 + 能力名字 + 模型，
+            有任务文本时先给「★ 推荐」（中文二元组近似匹配，零依赖）。 */}
+        {picking &&
+          (() => {
+            const ranked = agents
+              .map((a) => ({ a, s: recScore(a, taskValue, toolNames) }))
+              .sort((x, y) => y.s - x.s);
+            const rec = ranked.filter((r) => r.s > 0).slice(0, 3);
+            const rest = ranked.filter((r) => !rec.includes(r));
+            const node = picking.nid ? layout.pos[picking.nid] : null;
+            const at =
+              picking.mode === "add"
+                ? { x: layout.addAt.x, y: layout.addAt.y + 50 }
+                : { x: (node?.x ?? 0) + layout.NW + 10, y: node?.y ?? 0 };
+            const row = ({ a, s: sc }: { a: Agent; s: number }) => (
+              <button
+                key={a.id}
+                type="button"
+                onClick={() => {
+                  const mode = picking.mode;
+                  const nid = picking.nid;
+                  setPicking(null);
+                  if (mode === "add") onAddStep?.(a.id);
+                  else if (nid) onSwapAgent?.(nid, a.id);
+                }}
+                className="flex w-full items-start gap-2 rounded-[6px] px-2 py-1.5 text-left hover:bg-[var(--color-surface-2)]"
+              >
+                <span
+                  className="mt-0.5 grid h-[24px] w-[24px] shrink-0 place-items-center rounded-[6px] border text-[12px] font-semibold"
+                  style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
+                >
+                  {a.name.slice(0, 1)}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-baseline gap-1.5">
+                    <span className="truncate text-[12.5px] font-medium">{a.name}</span>
+                    {sc > 0 && (
+                      <span className="shrink-0 text-[11px]" style={{ color: "var(--color-accent)" }}>
+                        ★
+                      </span>
+                    )}
+                  </span>
+                  {blurbOf(a) && (
+                    <span className="mt-0.5 block text-[11.5px] leading-snug" style={{ color: "var(--color-muted)" }}>
+                      {blurbOf(a)}
+                    </span>
+                  )}
+                  <span className="mt-0.5 block truncate text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                    {[a.definition?.model?.name, ...skillsOf(a, toolNames)].filter(Boolean).join(" · ") || "（未配模型）"}
+                  </span>
+                </span>
+              </button>
+            );
+            return (
+              <>
+                {/* 点空白处收起（全站一致，不用原生弹窗） */}
+                <div className="fixed inset-0 z-30" onClick={() => setPicking(null)} />
+                <div
+                  className="absolute z-40 flex w-[300px] flex-col rounded-[10px] border p-1"
+                  style={{
+                    left: at.x,
+                    top: at.y,
+                    maxHeight: 400,
+                    background: "var(--color-surface)",
+                    borderColor: "var(--color-border)",
+                    boxShadow: "0 12px 32px rgba(16,24,40,.16)",
+                  }}
+                >
+                  <div className="px-2 pb-1 pt-1.5 text-[12px]" style={{ color: "var(--color-muted)" }}>
+                    {picking.mode === "add" ? "下一步由谁做？" : "这一步换成谁？"}
+                  </div>
+                  <div className="min-h-0 flex-1 overflow-auto">
+                    {rec.length > 0 && (
+                      <>
+                        <div className="px-2 pb-1 text-[11.5px]" style={{ color: "var(--color-accent)" }}>
+                          ★ 推荐（按当前任务匹配）
+                        </div>
+                        {rec.map(row)}
+                        <div className="my-1 border-t" style={{ borderColor: "var(--color-border)" }} />
+                        <div className="px-2 pb-1 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                          全部助手
+                        </div>
+                      </>
+                    )}
+                    {rest.map(row)}
+                    {!agents.length && (
+                      <div className="px-2 py-2 text-[12px]" style={{ color: "var(--color-muted)" }}>
+                        还没有助手，先去「Agents」建一个。
+                      </div>
+                    )}
+                  </div>
+                  <div
+                    className="border-t px-2 py-1.5 text-[11.5px]"
+                    style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
+                  >
+                    想新建助手？去「Agents」页
+                  </div>
+                </div>
+              </>
+            );
+          })()}
+
         {/* 「＋ 加一步」—— 属于**流程本身**，所以画在流程末尾，而不是塞进顶栏或侧栏
             （控件归属其对象：你加的是"这一步"，不是"顶栏的一个功能"）。
             它替代了原来的左侧助手栏：那个栏占了 208px 宽，只为放"可拖的助手列表"，
@@ -1186,7 +1347,7 @@ export function WorkflowCanvas({
         {!frozen && (
           <button
             type="button"
-            onClick={() => onAddStep?.()}
+            onClick={() => setPicking({ mode: "add" })}
             title="在流程末尾再加一个助手"
             className="absolute flex items-center justify-center gap-1.5 rounded-[10px] border border-dashed text-[12px] hover:bg-[var(--color-surface-2)]"
             style={{
@@ -1548,7 +1709,20 @@ export function WorkflowCanvas({
                   >
                     配置这个助手
                   </button>
-                  {!frozen && (
+                                              {!frozen && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setNodeMenu(null);
+                                  setPicking({ mode: "swap", nid: n.nid });
+                                }}
+                                className="df-menu-item hover:bg-[var(--color-surface-2)]"
+                                title="换掉这一步用的助手（这一步和它后面的产出会重置）"
+                              >
+                                换成别的助手…
+                              </button>
+                            )}
+{!frozen && (
                     <>
                       {(() => {
                         const pred = graph.edges.find((e) => e.to === n.nid)?.from ?? null;
