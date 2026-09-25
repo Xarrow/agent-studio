@@ -68,3 +68,6 @@ data/uploads.config.json
 
 # agent 跑工具时在工作目录里生成的测试产物（不进版本库）
 hello_world.py
+
+# 长会话交接快照（工作文档，不进版本库）
+HANDOFF.md
