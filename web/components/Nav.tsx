@@ -41,6 +41,12 @@ const USE_ITEMS: Item[] = [
 /** 配置 —— 一次性设置的地方 */
 const SETUP_ITEMS: Item[] = [
   {
+    href: "/runs",
+    label: "管理",
+    icon: "▶",
+    tip: "流程管理 + 全部运行记录：全部流程、每次执行、点步骤看这一步的执行详情（Playground 顶栏「流程」也能就地打开它）",
+  },
+  {
     href: "/agents",
     label: "Agents",
     icon: "▲",
