@@ -20,7 +20,7 @@ import React from "react";
 function inline(text: string, keyBase: string): React.ReactNode[] {
   const out: React.ReactNode[] = [];
   // 一次扫描，按优先级匹配三种标记
-  const re = /(\*\*[^*]+\*\*)|(`[^`]+`)|(\[[^\]]+\]\([^)]+\))/g;
+  const re = /(\*\*[^*]+\*\*)|(`[^`]+`)|(\[[^\]]+\]\([^)]+\))|(\$\S(?:[^$\n]*\S)?\$)/g;
   let last = 0;
   let m: RegExpExecArray | null;
   let i = 0;
@@ -44,6 +44,9 @@ function inline(text: string, keyBase: string): React.ReactNode[] {
           {tok.slice(1, -1)}
         </code>,
       );
+    } else if (tok.startsWith("$")) {
+      // 行内公式：$x^2$ / $rac{a}{b}$
+      out.push(<TexInline key={key} tex={tok.slice(1, -1)} />);
     } else {
       const mm = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(tok);
       out.push(
@@ -62,6 +65,210 @@ function inline(text: string, keyBase: string): React.ReactNode[] {
   }
   if (last < text.length) out.push(text.slice(last));
   return out;
+}
+
+
+/* ── 轻量 TeX 子集渲染（零依赖）──────────────────────────────────────────
+   为什么自己做：公式是"要读的内容"，引 KaTeX 是整套依赖 + 字体文件，与本产品
+   零依赖/自持的取向冲突；而实际会出现的公式就那几类：分数、上下标、希腊字母、
+   求和/积分、根号、关系符。所以只实现这些。
+   遇到不认识的命令**原样显示**（宁可显示 \foo，也不要渲染错或整块白掉）。
+   实现路子：TeX 串 → 节点树 → span + inline-flex 排（分数 = 上下两行 + 一条横线），
+   不用 canvas/svg、不加载字体。 */
+
+const TEX_SYM: Record<string, string> = {
+  // 希腊字母
+  alpha: "α", beta: "β", gamma: "γ", delta: "δ", epsilon: "ε", varepsilon: "ε",
+  zeta: "ζ", eta: "η", theta: "θ", iota: "ι", kappa: "κ", lambda: "λ", mu: "μ",
+  nu: "ν", xi: "ξ", pi: "π", rho: "ρ", sigma: "σ", tau: "τ", upsilon: "υ",
+  phi: "φ", chi: "χ", psi: "ψ", omega: "ω",
+  Gamma: "Γ", Delta: "Δ", Theta: "Θ", Lambda: "Λ", Xi: "Ξ", Pi: "Π",
+  Sigma: "Σ", Phi: "Φ", Psi: "Ψ", Omega: "Ω",
+  // 算符 / 关系
+  times: "×", cdot: "·", div: "÷", pm: "±", mp: "∓",
+  le: "≤", leq: "≤", ge: "≥", geq: "≥", ne: "≠", neq: "≠", approx: "≈", equiv: "≡",
+  in: "∈", notin: "∉", subset: "⊂", subseteq: "⊆", cup: "∪", cap: "∩",
+  to: "→", rightarrow: "→", Rightarrow: "⇒", leftrightarrow: "↔", mapsto: "↦",
+  infty: "∞", partial: "∂", nabla: "∇", forall: "∀", exists: "∃",
+  sum: "∑", prod: "∏", int: "∫", oint: "∮", sqrt: "√",
+  cdotp: "·", ldots: "…", dots: "…", cdots: "⋯",
+  quad: " ", qquad: "  ", ", ": " ", ";": " ", " ": " ",
+  "%": "%", "#": "#", "{": "{", "}": "}", "_": "_", "&": "&", "$": "$",
+};
+
+type MNode =
+  | { k: "t"; v: string }
+  | { k: "grp"; a: MNode[] }
+  | { k: "frac"; a: MNode[]; b: MNode[] }
+  | { k: "sqrt"; a: MNode[] }
+  | { k: "sup"; base: MNode[]; sup: MNode[] }
+  | { k: "sub"; base: MNode[]; sub: MNode[] }
+  | { k: "supsub"; base: MNode[]; sup: MNode[]; sub: MNode[] };
+
+/** 把一根 TeX 串解析成节点树。认不出的命令按字面文本（宁可显示 \foo，不要白掉）。 */
+function texParse(src: string): MNode[] {
+  let i = 0;
+  const peek = () => src[i];
+
+  /** 取一个"组"：{...} 递归；否则取单字符（x^2 里的 2） */
+  const group = (): MNode[] => {
+    if (peek() === "{") {
+      i++;
+      const out = seq(true);
+      if (peek() === "}") i++;
+      return out;
+    }
+    if (i >= src.length) return [];
+    return [{ k: "t", v: src[i++] }];
+  };
+
+  /** 取一个基元（一个 MNode） */
+  const atom = (): MNode => {
+    const c = peek();
+    if (c === "{") return { k: "grp", a: group() };
+    if (c === "\\") {
+      i++;
+      let name = "";
+      while (i < src.length && /[a-zA-Z]/.test(src[i])) name += src[i++];
+      if (!name) {
+        const ch = src[i++] ?? "";
+        return { k: "t", v: TEX_SYM[ch] ?? ch };
+      }
+      if (name === "frac") return { k: "frac", a: group(), b: group() };
+      if (name === "sqrt") return { k: "sqrt", a: group() };
+      if (name === "text" || name === "mathrm" || name === "operatorname") {
+        return { k: "t", v: plain(group()) }; // 这些里面的字符按字面
+      }
+      return { k: "t", v: TEX_SYM[name] ?? "\\" + name };
+    }
+    i++;
+    return { k: "t", v: c ?? "" };
+  };
+
+  /** 一串基元；遇到 } 就停（若在组里） */
+  const seq = (inGroup: boolean): MNode[] => {
+    const out: MNode[] = [];
+    while (i < src.length) {
+      if (inGroup && peek() === "}") break;
+      const base = atom();
+      // 基元后面可能挂上下标（可以同时有 ^ 和 _，顺序随意）
+      let sup: MNode[] | null = null;
+      let sub: MNode[] | null = null;
+      while (peek() === "^" || peek() === "_") {
+        const isSup = peek() === "^";
+        i++;
+        const arg = group();
+        if (isSup) sup = arg;
+        else sub = arg;
+      }
+      if (sup && sub) out.push({ k: "supsub", base: [base], sup, sub });
+      else if (sup) out.push({ k: "sup", base: [base], sup });
+      else if (sub) out.push({ k: "sub", base: [base], sub });
+      else out.push(base);
+    }
+    return out;
+  };
+
+  /** 把节点树摊回纯文本（\text{} 用） */
+  const plain = (nodes: MNode[]): string =>
+    nodes
+      .map((n) => {
+        switch (n.k) {
+          case "t": return n.v;
+          case "grp": return plain(n.a);
+          case "frac": return `${plain(n.a)}/${plain(n.b)}`;
+          case "sqrt": return `√${plain(n.a)}`;
+          case "sup": return `${plain(n.base)}^${plain(n.sup)}`;
+          case "sub": return `${plain(n.base)}_${plain(n.sub)}`;
+          case "supsub": return `${plain(n.base)}^${plain(n.sup)}_${plain(n.sub)}`;
+        }
+      })
+      .join("");
+
+  return seq(false);
+}
+
+
+/** 渲染上面解析出来的节点树。分数 = 上下两行 + 一条横线（inline-flex 排）；
+ *  上下标用原生 sup/sub。整体用衬线斜体，接近数学排版的样子，但不加载任何字体。 */
+function renderTex(nodes: MNode[], kb: string): React.ReactNode[] {
+  return nodes.map((n, idx) => {
+    const key = `${kb}-${idx}`;
+    switch (n.k) {
+      case "t":
+        return <React.Fragment key={key}>{n.v}</React.Fragment>;
+      case "grp":
+        return <React.Fragment key={key}>{renderTex(n.a, key)}</React.Fragment>;
+      case "frac":
+        return (
+          <span
+            key={key}
+            className="inline-flex flex-col items-center align-middle"
+            style={{ verticalAlign: "-0.45em", margin: "0 2px" }}
+          >
+            <span className="px-1" style={{ paddingBottom: 1, lineHeight: 1.15 }}>
+              {renderTex(n.a, key + "a")}
+            </span>
+            <span className="w-full" style={{ height: 1, background: "currentColor" }} />
+            <span className="px-1" style={{ paddingTop: 1, lineHeight: 1.15 }}>
+              {renderTex(n.b, key + "b")}
+            </span>
+          </span>
+        );
+      case "sqrt":
+        return (
+          <span key={key}>
+            <span style={{ opacity: 0.85 }}>√</span>
+            <span style={{ borderTop: "1px solid currentColor", paddingTop: 1 }}>{renderTex(n.a, key)}</span>
+          </span>
+        );
+      case "sup":
+        return (
+          <span key={key}>
+            {renderTex(n.base, key + "b")}
+            <sup style={{ fontSize: "0.72em" }}>{renderTex(n.sup, key + "s")}</sup>
+          </span>
+        );
+      case "sub":
+        return (
+          <span key={key}>
+            {renderTex(n.base, key + "b")}
+            <sub style={{ fontSize: "0.72em" }}>{renderTex(n.sub, key + "s")}</sub>
+          </span>
+        );
+      case "supsub":
+        return (
+          <span key={key}>
+            {renderTex(n.base, key + "b")}
+            <sub style={{ fontSize: "0.72em" }}>{renderTex(n.sub, key + "s")}</sub>
+            <sup style={{ fontSize: "0.72em" }}>{renderTex(n.sup, key + "p")}</sup>
+          </span>
+        );
+    }
+  });
+}
+
+const TEX_STYLE: React.CSSProperties = {
+  fontStyle: "italic",
+  fontFamily: "ui-serif, Cambria, 'Times New Roman', serif",
+};
+
+/** 行内公式 $...$ */
+function TexInline({ tex }: { tex: string }) {
+  return (
+    <span className="whitespace-nowrap" style={TEX_STYLE}>
+      {renderTex(texParse(tex), "mi")}
+    </span>
+  );
+}
+
+/** 块级公式 $$...$$ —— 居中独占一行（公式宽了就横向滚动，不撑破卡片） */
+function TexBlock({ tex }: { tex: string }) {
+  return (
+    <div className="my-2 overflow-x-auto text-center" style={{ ...TEX_STYLE, fontSize: "1.06em" }}>
+      {renderTex(texParse(tex), "mb")}
+    </div>
+  );
 }
 
 export default function Markdown({ text }: { text: string }) {
@@ -91,6 +298,24 @@ export default function Markdown({ text }: { text: string }) {
           <code>{buf.join("\n")}</code>
         </pre>,
       );
+      continue;
+    }
+
+    // 块级公式 $$...$$（可跨行）—— 放在标题/表格之前，避免 $$ 里的 | # 被误判
+    if (line.trimStart().startsWith("$$")) {
+      const buf: string[] = [];
+      const rest = line.trimStart().slice(2);
+      const inlineEnd = rest.indexOf("$$");
+      if (inlineEnd >= 0) {
+        buf.push(rest.slice(0, inlineEnd));
+      } else {
+        buf.push(rest);
+        i++;
+        while (i < lines.length && !lines[i].includes("$$")) buf.push(lines[i++]);
+        if (i < lines.length) buf.push(lines[i].split("$$")[0]);
+      }
+      i++;
+      blocks.push(<TexBlock key={`b${k++}`} tex={buf.join(" ").trim()} />);
       continue;
     }
 
