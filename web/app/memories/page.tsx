@@ -204,16 +204,141 @@ export default function MemoriesPage() {
         </p>
       </header>
 
-      {/* 统计 */}
-      {stats && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-          <StatCard label="在用" value={stats.active} accent="var(--color-accent)" />
-          <StatCard label="待确认" value={stats.candidate} accent="var(--color-warn)" />
-          <StatCard label="已停用" value={stats.archived} accent="var(--color-muted)" />
-          <StatCard label="被用过（总次数）" value={stats.total_hits} accent="var(--color-ok)" />
-        </div>
-      )}
+      {/* 两栏：左栏=筛选 + 新增（sticky 常驻），主区=待确认 + 记忆卡片
+          —— 原来是一根从上到下的大长条，新增表单夹在候选区和筛选行中间，
+            内容又横跨 1200px（13px 字跑满屏，长文本很难读）。 */}
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+        <aside className="flex w-full shrink-0 flex-col gap-3.5 lg:sticky lg:top-5 lg:w-[280px]">
+          {/* 状态：点一下即筛，计数就在旁边（原来是 4 张只读统计卡 + 一条下拉） */}
+          {stats && (
+            <div className="card p-2">
+              {(
+                [
+                  ["", "全部", stats.active + stats.candidate + stats.archived, "var(--color-muted)"],
+                  ["candidate", "待确认", stats.candidate, "var(--color-warn)"],
+                  ["active", "在用", stats.active, "var(--color-accent)"],
+                  ["archived", "已停用", stats.archived, "var(--color-muted)"],
+                ] as const
+              ).map(([v, label, cnt, color]) => {
+                const on = status === v;
+                return (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => setStatus(v)}
+                    className="flex w-full items-center justify-between rounded-[6px] px-2.5 py-1.5 text-[12.5px] hover:bg-[var(--color-surface-2)]"
+                    style={
+                      on
+                        ? {
+                            background: "color-mix(in srgb, var(--color-accent) 10%, transparent)",
+                            color: "var(--color-accent)",
+                            fontWeight: 500,
+                          }
+                        : undefined
+                    }
+                  >
+                    <span>{label}</span>
+                    <span className="mono" style={{ color: on ? "var(--color-accent)" : color }}>
+                      {cnt}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
+      {/* 新建 */}
+      <div className="card p-4">
+        <h2 className="text-[14px] font-medium mb-3">新增记忆</h2>
+        <textarea
+          className="input mono text-[12.5px]"
+          rows={2}
+          placeholder="例如：用户偏好中文回复，不要 emoji。"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+        />
+        {/* 默认「所有 Agent 都能用」，所以只需要写内容 + 点保存。
+            类型和范围属于进阶选项，收进「更多选项」里，不占视线。 */}
+        <div className="flex gap-2 mt-3 flex-wrap items-center">
+          <button className="btn btn-primary" disabled={busy || !draft.trim()} onClick={() => void create()}>
+            保存
+          </button>
+          <button
+            className="text-[12.5px] text-[var(--color-muted)] hover:text-[var(--color-text)]"
+            onClick={() => setShowMore((v) => !v)}
+          >
+            {showMore ? "▾" : "▸"} 更多选项
+          </button>
+        </div>
+
+        {showMore && (
+          <div className="flex gap-2 mt-3 flex-wrap items-center pl-3 border-l-2 border-[var(--color-border)]">
+            <div>
+              <label className="label">类型</label>
+              <select className="input w-36" value={draftKind} onChange={(e) => setDraftKind(e.target.value)}>
+                {Object.entries(KIND_LABEL).map(([v, label]) => (
+                  <option key={v} value={v}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label">归给谁</label>
+              <select
+                className="input w-48"
+                value={draftOwner}
+                onChange={(e) => setDraftOwner(e.target.value)}
+              >
+                <option value="__global__">所有助手共用</option>
+                {agents.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name} 专有
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+      </div>
+
+
+          {/* 筛选：归属 / 类型 / 搜索（"状态"已挪到上面的状态列表，点一下就筛） */}
+          <div className="card flex flex-col gap-2.5 p-3">
+            <div className="text-[12px] font-medium" style={{ color: "var(--color-muted)" }}>筛选</div>
+        <select className="input w-full" value={agentId} onChange={(e) => setAgentId(e.target.value)}>
+          <option value="">全部 Agent</option>
+          {agents.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name}
+            </option>
+          ))}
+        </select>
+        <select className="input w-28" value={kind} onChange={(e) => setKind(e.target.value)}>
+          <option value="">全部类型</option>
+          {Object.entries(KIND_LABEL).map(([v, label]) => (
+            <option key={v} value={v}>
+              {label}
+            </option>
+          ))}
+        </select>
+        <input
+          className="input flex-1 min-w-[180px]"
+          placeholder="搜索内容…（回车）"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void load();
+          }}
+        />
+        <button className="btn" onClick={() => void load()}>
+          刷新
+        </button>
+          </div>
+
+        </aside>
+
+        <div className="flex min-w-0 flex-1 flex-col gap-4">
       {/* 候选区 —— 自动沉淀的待确认项 */}
       {candidates.length > 0 && (
         <div
@@ -289,98 +414,6 @@ export default function MemoriesPage() {
         </div>
       )}
 
-      {/* 新建 */}
-      <div className="card p-4 mb-5">
-        <h2 className="text-[14px] font-medium mb-3">新增记忆</h2>
-        <textarea
-          className="input mono text-[12.5px]"
-          rows={2}
-          placeholder="例如：用户偏好中文回复，不要 emoji。"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-        />
-        {/* 默认「所有 Agent 都能用」，所以只需要写内容 + 点保存。
-            类型和范围属于进阶选项，收进「更多选项」里，不占视线。 */}
-        <div className="flex gap-2 mt-3 flex-wrap items-center">
-          <button className="btn btn-primary" disabled={busy || !draft.trim()} onClick={() => void create()}>
-            保存
-          </button>
-          <button
-            className="text-[12.5px] text-[var(--color-muted)] hover:text-[var(--color-text)]"
-            onClick={() => setShowMore((v) => !v)}
-          >
-            {showMore ? "▾" : "▸"} 更多选项
-          </button>
-        </div>
-
-        {showMore && (
-          <div className="flex gap-2 mt-3 flex-wrap items-center pl-3 border-l-2 border-[var(--color-border)]">
-            <div>
-              <label className="label">类型</label>
-              <select className="input w-36" value={draftKind} onChange={(e) => setDraftKind(e.target.value)}>
-                {Object.entries(KIND_LABEL).map(([v, label]) => (
-                  <option key={v} value={v}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="label">归给谁</label>
-              <select
-                className="input w-48"
-                value={draftOwner}
-                onChange={(e) => setDraftOwner(e.target.value)}
-              >
-                <option value="__global__">所有助手共用</option>
-                {agents.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name} 专有
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* 筛选 */}
-      <div className="flex gap-2 mb-4 flex-wrap items-center">
-        <select className="input w-48" value={agentId} onChange={(e) => setAgentId(e.target.value)}>
-          <option value="">全部 Agent</option>
-          {agents.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-            </option>
-          ))}
-        </select>
-        <select className="input w-32" value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="">全部状态</option>
-          <option value="active">在用</option>
-          <option value="candidate">候选</option>
-          <option value="archived">已停用</option>
-        </select>
-        <select className="input w-28" value={kind} onChange={(e) => setKind(e.target.value)}>
-          <option value="">全部类型</option>
-          {Object.entries(KIND_LABEL).map(([v, label]) => (
-            <option key={v} value={v}>
-              {label}
-            </option>
-          ))}
-        </select>
-        <input
-          className="input flex-1 min-w-[180px]"
-          placeholder="搜索内容…（回车）"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") void load();
-          }}
-        />
-        <button className="btn" onClick={() => void load()}>
-          刷新
-        </button>
-      </div>
 
       {/* 列表 */}
       <div className="card overflow-x-auto">
@@ -397,7 +430,7 @@ export default function MemoriesPage() {
              改卡片后 —— 内容默认**全展开**；**状态用卡片外观**表达
              （待确认 = 橙色左边条 + 确认/丢弃 常驻；生效中 = 蓝色条；
                已停用 = 灰条 + 整体压暗）；**类型用颜色徽章**（另一条视觉通道，不与状态色打架）。 */
-          <div className="flex flex-col gap-2">
+          <div className="flex max-w-[780px] flex-col gap-2">
             {items
               /* 看「全部」时，待确认的由上面的候选区负责（那里有批量选中），
                  这里就不再重复显示一遍；筛到具体状态时才由卡片流负责。 */
@@ -498,6 +531,9 @@ export default function MemoriesPage() {
         )}
       </div>
 
+        </div>
+      </div>
+
       <p className="text-[11.5px] text-[var(--color-muted)] mt-3">
         相关设置在每个 Agent 的「记忆」面板里。
         长期没被用到的记忆会自动降低优先级。
@@ -521,16 +557,6 @@ export default function MemoriesPage() {
   );
 }
 
-function StatCard({ label, value, accent }: { label: string; value: number; accent: string }) {
-  return (
-    <div className="card p-3.5">
-      <div className="text-[11.5px] text-[var(--color-muted)]">{label}</div>
-      <div className="text-[20px] font-semibold mt-1" style={{ color: accent }}>
-        {value}
-      </div>
-    </div>
-  );
-}
 
 function KindTag({ kind }: { kind: string }) {
   const color = KIND_COLOR[kind] ?? "var(--color-muted)";
