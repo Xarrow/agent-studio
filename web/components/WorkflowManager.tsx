@@ -228,7 +228,9 @@ export function WorkflowManager({
           </span>
           <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
             {sel === ALL
-              ? `共 ${list.length} 份流程 —— 左边的流程 + 右边的运行记录，一处管完`
+              ? variant === "page"
+                ? "LLM 测试 / 助手试跑 / 流程执行 —— 全在一张表里，按类型、状态、助手筛"
+                : `共 ${list.length} 份流程 —— 左边流程 / 右边运行记录，一处管完`
               : `共 ${list.length} 份 · 选中这份跑过 ${curRuns} 次`}
           </span>
           <div className="ml-auto flex items-center gap-1.5">
@@ -326,6 +328,10 @@ export function WorkflowManager({
 
         <div className="flex min-h-0 flex-1">
           {/* 左：流程列表 */}
+          {/* 左列（流程列表）—— **只在浮层里出现**。管理页（variant=page）不渲染它：
+              用户：在管理页面中，workflow 日志只是其中一个类型，不需要单独 workflow 分一列
+              → 管理页 = 原来 Runs 那张表铺满，workflow 只是类型筛选里的一个值 ✓ */}
+          {variant !== "page" && (
           <div className="w-[280px] shrink-0 overflow-auto border-r" style={{ borderColor: "var(--color-border)" }}>
             {loading && (
               <div className="px-3 py-3 text-[12.5px]" style={{ color: "var(--color-muted)" }}>
@@ -388,6 +394,7 @@ export function WorkflowManager({
               );
             })}
           </div>
+          )}
 
           {/* 右：选中「全部运行记录」→ 原 Runs 页那张表；选中某条流程 → 骨架 + 每次执行一张卡 */}
           <div className="min-w-0 flex-1 overflow-auto">
