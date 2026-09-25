@@ -91,9 +91,25 @@ SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSe
 
 
 async def get_session() -> AsyncIterator[AsyncSession]:
-    """FastAPI 依赖：每请求一个会话。"""
-    async with SessionLocal() as session:
+    """FastAPI 依赖：每请求一个会话。
+
+    客户端在请求中途断开时（切换页面、关掉标签、请求超时被取消），
+    这个 async generator 会被 athrow 掉 —— 此刻底层连接可能已经释放，
+    直接退出会抛 "no active connection"，再被 asyncio 记成
+    "Task exception was never retrieved"，在日志里刷出一片吓人的红
+    （实测：一个被取消的请求留下 21 行 traceback，而**没有任何请求失败**）。
+
+    所以这里显式收尾：正常返回也好、被取消也好，都关掉会话，
+    且**不让取消路径上的异常外泄** —— 取消是客户端的正常行为，服务端不该留痕迹。
+    """
+    session = SessionLocal()
+    try:
         yield session
+    finally:
+        try:
+            await session.close()
+        except Exception:  # noqa: BLE001 — 收尾阶段的异常不影响任何请求结果
+            pass
 
 
 # --------------------------------------------------------------------------- #
