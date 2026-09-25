@@ -408,6 +408,14 @@ export function WorkflowCanvas({
     const pos: Record<string, { x: number; y: number }> = {};
     let maxX = 0;
     let maxY = 0;
+    /** 用户拖过的节点用它自己的坐标（存在图里）；没拖过的按拓扑排。
+        手机（纵向）不看坐标 —— 窄屏是一列到底，硬塞自由坐标只会互相压。 */
+    const manualOf = (nid: string) => {
+      const n = graph.nodes.find((x) => x.nid === nid);
+      return !narrow && n && typeof n.x === "number" && typeof n.y === "number"
+        ? { x: n.x, y: n.y }
+        : null;
+    };
     if (narrow) {
       // ── 纵向流水线（手机）：任务 → 各步 → 结论，一列到底
       // 兜底 240：实测任务卡高 211，宁可多留白，也不要节点压在卡上
@@ -424,8 +432,10 @@ export function WorkflowCanvas({
       layers.forEach((ids, ci) => {
         let y = PAD;
         ids.forEach((nid) => {
-          pos[nid] = { x: PAD + W_TASK + GAP_X + ci * (W_NODE + GAP_X), y };
+          // 拖过就用它自己的位置；没拖过按列排（第几层 × 层宽）
+          pos[nid] = manualOf(nid) ?? { x: PAD + W_TASK + GAP_X + ci * (W_NODE + GAP_X), y };
           y += hOf(nid) + GAP_Y;
+          // maxX 要把"被拖到很右边的节点"也算进去，否则结论卡会叠上去
           maxX = Math.max(maxX, pos[nid].x + W_NODE + PAD);
         });
         maxY = Math.max(maxY, y);
@@ -826,6 +836,56 @@ export function WorkflowCanvas({
   /** 选助手气泡：null=关；mode=add（加在末尾）| swap（换掉某一步）。
       气泡**贴着触发点**出现，不居中、不盖画布（用户明确要求"不遮画布"）。 */
   const [picking, setPicking] = useState<{ mode: "add" | "swap"; nid?: string } | null>(null);
+  /** 拖动节点：按下记起点与原始坐标 → 移动只改**临时**位置（不写图，拖动才连续）
+      → 抬手**才**写进图（onChange）。位移 < 4px 视为"点"，交给 onClick 选中它。 */
+  const [drag, setDrag] = useState<{
+    nid: string;
+    sx: number;
+    sy: number;
+    ox: number;
+    oy: number;
+    dx: number;
+    dy: number;
+    moved: boolean;
+  } | null>(null);
+
+  const startDrag = (e: React.PointerEvent, nid: string) => {
+    if (frozen) return;
+    if ((e.target as HTMLElement).closest("button")) return; // 卡头上有按钮（⋯），别抢它的点击
+    const at = layout.pos[nid];
+    if (!at) return;
+    e.preventDefault();
+    setDrag({ nid, sx: e.clientX, sy: e.clientY, ox: at.x, oy: at.y, dx: 0, dy: 0, moved: false });
+  };
+
+  useEffect(() => {
+    if (!drag) return;
+    const onMove = (e: PointerEvent) => {
+      const dx = e.clientX - drag.sx;
+      const dy = e.clientY - drag.sy;
+      if (!drag.moved && Math.abs(dx) + Math.abs(dy) < 4) return; // 还在"点"的范围里
+      setDrag((d) => (d ? { ...d, dx, dy, moved: true } : d));
+    };
+    const onUp = () => {
+      setDrag((d) => {
+        if (d?.moved) {
+          const nx = Math.round(d.ox + d.dx);
+          const ny = Math.round(d.oy + d.dy);
+          onChange({
+            ...graph,
+            nodes: graph.nodes.map((x) => (x.nid === d.nid ? { ...x, x: nx, y: ny } : x)),
+          });
+        }
+        return null;
+      });
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+  }, [drag, graph, onChange]);
   const growTask = () => {
     const el = taskBoxRef.current;
     if (!el) return;
@@ -1511,7 +1571,9 @@ export function WorkflowCanvas({
 
         {graph.nodes.map((n) => {
           const a = agentOf(n.agent_id);
-          const p = layout.pos[n.nid] ?? { x: 0, y: 0 };
+          // 拖动中的节点用**实时**位置（预览），其余用布局算出来的位置
+          const p =
+            drag?.nid === n.nid ? { x: drag.ox + drag.dx, y: drag.oy + drag.dy } : (layout.pos[n.nid] ?? { x: 0, y: 0 });
           const st = (runStates[n.nid] ?? "idle") as NodeState;
           const meta = META[st] ?? META.idle;
           /** 本轮有没有任何一步在"跑/等你确认" —— 用来给未轮到的步骤压暗（进度一眼可见） */
@@ -1539,6 +1601,11 @@ export function WorkflowCanvas({
               }}
               onMouseEnter={() => peekIn(n.nid)}
               onMouseLeave={() => peekOut()}
+              /* 拖动只从**卡头**开始（正文要能选字、能滚动） */
+              onPointerDown={(e) => {
+                const head = (e.target as HTMLElement).closest("[data-draghead]");
+                if (head) startDrag(e, n.nid);
+              }}
               className={`wf-node group absolute rounded-[15px] border shadow-xs hover:shadow-lg ${
                 lv && st === "run" ? "node-run" : st === "ask" ? "node-ask" : ""
               } ${
@@ -1568,7 +1635,11 @@ export function WorkflowCanvas({
               }}
             >
               <div
-                className="flex items-center gap-2 border-b px-3 pt-3 pb-2"
+                /* data-draghead：拖动的把手只在这里 —— 正文要能选字、能滚动，不能被拖动抢走 */
+                data-draghead
+                className={`flex items-center gap-2 border-b px-3 pt-3 pb-2 ${
+                  drag?.nid === n.nid ? "cursor-grabbing" : "cursor-grab"
+                }`}
                 style={{ borderColor: "var(--color-border)" }}
               >
                 {/* 节点上只留三样：**序号、名字、一行摘要**。

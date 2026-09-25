@@ -512,6 +512,9 @@ export type EdgeRel = "serial" | "parallel" | "context" | "memory";
 export interface WorkflowNode {
   nid: string;
   agent_id: string;
+  /** 画布坐标：不填 = 按拓扑自动排版；用户拖过就有值（"一键整理"会清空） */
+  x?: number;
+  y?: number;
 }
 
 export interface WorkflowEdge {

@@ -786,10 +786,16 @@ class OrchestrationDetail(OrchestrationRead):
 # 编排设计稿（Workflow）—— Playground 画布上保存下来的那张图
 # --------------------------------------------------------------------------- #
 class WorkflowNode(BaseModel):
-    """画布上的一个节点：一个助手 + 它的位置（位置不入库，由布局算）。"""
+    """画布上的一个节点：一个助手 + 它在画布上的位置。
+
+    位置（x/y）**可选**：不填 = 由前端按拓扑自动排版（"一键整理"就是把它们清空）；
+    用户拖过某个节点，它就会带上坐标存进来 —— 这样"我摆的位置"能跨会话保留。
+    """
 
     nid: str
     agent_id: str
+    x: float | None = None
+    y: float | None = None
 
 
 class WorkflowEdge(BaseModel):

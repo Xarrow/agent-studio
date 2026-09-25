@@ -585,6 +585,14 @@ export function PlaygroundConsole() {
       .catch(() => setToolNames({}));
   }, []);
 
+  /** 有没有被手动拖过的节点（有坐标）。没有就完全不显示「整理」—— 不占视线 */
+  const hasManual = graph.nodes.some((n) => typeof n.x === "number" || typeof n.y === "number");
+  /** 一键整理：把手工坐标清掉，回到按连线自动排版。清掉后 hasManual 变 false，按钮自己消失 */
+  const tidyLayout = () => {
+    const next = { ...graph, nodes: graph.nodes.map((n) => ({ nid: n.nid, agent_id: n.agent_id })) };
+    patchGraph(next);
+  };
+
   /** 上传附件：逐个传（一个失败不影响别的，失败原因指名道姓报给用户） */
   const attachFiles = async (files: File[]) => {
     for (const f of files) {
@@ -852,6 +860,17 @@ export function PlaygroundConsole() {
               style={{ background: "var(--color-warn)" }}
               title="有未保存的改动"
             />
+          )}
+          {hasManual && (
+            <button
+              type="button"
+              onClick={tidyLayout}
+              className="df-ctl-sm shrink-0 justify-center hover:bg-[var(--color-surface-2)]"
+              style={{ color: "var(--color-muted)", border: "1px solid var(--color-border)" }}
+              title="按连线重新自动排版（会在保存时一起生效）"
+            >
+              整理
+            </button>
           )}
           <button
             type="button"
