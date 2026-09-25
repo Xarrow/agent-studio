@@ -3,20 +3,25 @@
 /**
  * 流程管理浮层 —— 在 Playground 里就地打开，不跳页。
  *
- * 左边：全部流程（名字 · 几步 · 跑过几次 · 最近一次什么时候）
- * 右边：选中这份的**执行链路** —— 它跑过的每一次（时间 · 状态 · 任务 · 几步 · 耗时）
- *       点某一次 = 就地回放（复用 Playground 的历史回放，人不用离开这个页面）
- * 动作：打开到画布 / 重命名 / 复制 / 删除
+ * 布局（左选流程 / 右看它跑过的每一次）：
+ *   左：全部流程（名字 · 几步 · 跑过几次 · 最近更新）
+ *   右：**每次执行一张卡** —— 而不是一张干巴巴的表格。
+ *       每张卡讲清三件事：
+ *         ① 这次的结果：状态胶囊 · 什么时候 · 耗时 · 几步
+ *         ② 这次让它做什么：任务文本
+ *         ③ **这条流程这次走了哪几步**：芯片链（与画布上的编号/助手名同序同名）
+ *         + 「就地回放」→ 复用 Playground 的历史回放，人不用离开页面
  *
- * 两个刻意的设计：
- *  1. 动作放在头部的动作条上，不塞进每一行 —— 列表行只负责"选"这一件事
- *  2. 删除沿用全站规矩：菜单内两步确认（第一次点变红并要求再点一次，4 秒内有效），
- *     不用浏览器原生 confirm（用户明令禁止）
+ * 为什么从表格改成卡片：用户的原话是"历史执行**在流程上**显示有问题"。
+ * 表格把每次执行压成一行数字，看不出"这条流程是怎么走的"；卡片把
+ * 流程本身（几步、谁在第几步）摊开在每一次执行上，一眼能对上画布。
+ *
+ * 动作条在头部：新建 / 重命名 / 复制 / 删除（两步确认，禁原生弹窗）/ 打开到画布。
  */
 
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import type { Workflow } from "@/lib/types";
+import type { Agent, Workflow } from "@/lib/types";
 
 type Orc = {
   id: string;
@@ -28,7 +33,7 @@ type Orc = {
   step_count?: number;
 };
 
-/** 相对时间：刚刚 / N 分钟前 / N 小时前 / N 天前 / 日期 */
+/** 相对时间 */
 function ago(ts?: number): string {
   if (!ts) return "—";
   const d = Date.now() - ts;
@@ -39,7 +44,7 @@ function ago(ts?: number): string {
   return new Date(ts).toLocaleDateString("zh-CN");
 }
 
-/** 耗时：1.2s / 34s / 2m10s */
+/** 耗时 */
 function took(a?: number, b?: number | null): string {
   if (!a || !b) return "—";
   const s = Math.max(0, Math.round((b - a) / 1000));
@@ -58,21 +63,25 @@ const STATUS: Record<string, { text: string; color: string }> = {
 export function WorkflowManager({
   open,
   currentId,
+  agents,
   onClose,
   onOpenWorkflow,
   onNew,
   onDuplicate,
   onDeleted,
   onReplay,
+  onRenamed,
 }: {
   open: boolean;
   currentId?: string | null;
+  agents: Agent[];
   onClose: () => void;
   onOpenWorkflow: (w: Workflow) => void;
   onNew: () => void;
   onDuplicate: (w: Workflow) => void;
   onDeleted: () => void;
   onReplay: (orcId: string) => void;
+  onRenamed?: (w: Workflow) => void;
 }) {
   const [list, setList] = useState<Workflow[]>([]);
   const [sel, setSel] = useState<string | null>(null);
@@ -94,7 +103,6 @@ export function WorkflowManager({
     }
   }, []);
 
-  // 打开时拉列表；每次选择变化拉这一份的执行链路
   useEffect(() => {
     if (open) void loadList();
   }, [open, loadList]);
@@ -129,6 +137,39 @@ export function WorkflowManager({
   const cur = list.find((w) => w.id === sel) ?? null;
   const curRuns = runs.length;
 
+  /** 这条流程的步骤顺序（与画布同一套编号/名字）：给"每次执行走了哪几步"用 */
+  const chainOf = (w: Workflow | null) => {
+    const nodes = w?.graph?.nodes ?? [];
+    const edges = w?.graph?.edges ?? [];
+    // 拓扑序：从没有入边的节点开始（与画布 layers 的直觉一致）
+    const indeg = new Map<string, number>();
+    nodes.forEach((n) => indeg.set(n.nid, 0));
+    edges.forEach((e) => indeg.set(e.to, (indeg.get(e.to) ?? 0) + 1));
+    const out: typeof nodes = [];
+    const seen = new Set<string>();
+    const queue = nodes.filter((n) => (indeg.get(n.nid) ?? 0) === 0);
+    while (queue.length) {
+      const n = queue.shift()!;
+      if (seen.has(n.nid)) continue;
+      seen.add(n.nid);
+      out.push(n);
+      edges.filter((e) => e.from === n.nid).forEach((e) => {
+        const t = nodes.find((x) => x.nid === e.to);
+        if (t && !seen.has(t.nid)) queue.push(t);
+      });
+    }
+    nodes.forEach((n) => {
+      if (!seen.has(n.nid)) out.push(n);
+    });
+    return out.map((n, i) => ({
+      no: i + 1,
+      nid: n.nid,
+      name: agents.find((a) => a.id === n.agent_id)?.name ?? "助手",
+    }));
+  };
+
+  const chain = chainOf(cur);
+
   return (
     <div className="fixed inset-0 z-50 flex flex-col" style={{ background: "rgba(16,20,26,.28)" }}>
       <div
@@ -160,9 +201,12 @@ export function WorkflowManager({
                       setRenaming(true);
                     } else if (nameDraft.trim()) {
                       void (async () => {
-                        await api.updateWorkflow(cur.id, { name: nameDraft.trim() } as never);
+                        const saved = (await api.updateWorkflow(cur.id, {
+                          name: nameDraft.trim(),
+                        } as never)) as unknown as Workflow;
                         setRenaming(false);
                         await loadList();
+                        onRenamed?.(saved ?? { ...cur, name: nameDraft.trim() });
                       })();
                     }
                   }}
@@ -231,8 +275,12 @@ export function WorkflowManager({
 
         <div className="flex min-h-0 flex-1">
           {/* 左：流程列表 */}
-          <div className="w-[300px] shrink-0 overflow-auto border-r" style={{ borderColor: "var(--color-border)" }}>
-            {loading && <div className="px-3 py-3 text-[12.5px]" style={{ color: "var(--color-muted)" }}>读取中…</div>}
+          <div className="w-[280px] shrink-0 overflow-auto border-r" style={{ borderColor: "var(--color-border)" }}>
+            {loading && (
+              <div className="px-3 py-3 text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+                读取中…
+              </div>
+            )}
             {!loading && list.length === 0 && (
               <div className="px-3 py-4 text-[12.5px]" style={{ color: "var(--color-muted)" }}>
                 还没有流程。点右上「＋ 新建」，或回画布点一个起步模板。
@@ -250,6 +298,7 @@ export function WorkflowManager({
                   style={{
                     borderColor: "var(--color-border)",
                     background: on ? "color-mix(in srgb, var(--color-accent) 7%, transparent)" : undefined,
+                    boxShadow: on ? "inset 2px 0 0 var(--color-accent)" : undefined,
                   }}
                 >
                   <div className="flex items-center gap-2">
@@ -268,68 +317,109 @@ export function WorkflowManager({
             })}
           </div>
 
-          {/* 右：这份流程的执行链路 */}
+          {/* 右：每次执行一张卡（含"这次走了哪几步"） */}
           <div className="min-w-0 flex-1 overflow-auto">
             {renaming && cur && (
               <div className="flex items-center gap-2 border-b px-4 py-2" style={{ borderColor: "var(--color-border)" }}>
-                <span className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>新名字</span>
+                <span className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+                  新名字
+                </span>
                 <input
                   autoFocus
                   value={nameDraft}
                   onChange={(e) => setNameDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                  }}
                   className="df-ctl h-[30px] flex-1 rounded-[8px] border px-2 text-[12.5px]"
                   style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
                 />
               </div>
             )}
-            {!cur && <div className="px-4 py-4 text-[12.5px]" style={{ color: "var(--color-muted)" }}>左边选一份流程，这里显示它跑过的每一次。</div>}
+            {!cur && (
+              <div className="px-4 py-4 text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+                左边选一份流程，这里显示它跑过的每一次。
+              </div>
+            )}
             {cur && curRuns === 0 && (
               <div className="px-4 py-4 text-[12.5px]" style={{ color: "var(--color-muted)" }}>
                 这份流程还没跑过。打开到画布写个任务就能跑。
               </div>
             )}
-            {curRuns > 0 && (
-              <table className="w-full border-collapse text-[12.5px]">
-                <thead>
-                  <tr style={{ color: "var(--color-muted)" }}>
-                    {["时间", "状态", "这次的任务", "步数", "耗时", ""].map((h) => (
-                      <th key={h} className="border-b px-3 py-2 text-left font-normal" style={{ borderColor: "var(--color-border)" }}>
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {runs.map((o) => {
-                    const st = STATUS[o.status ?? ""] ?? { text: o.status ?? "—", color: "var(--color-muted)" };
-                    return (
-                      <tr key={o.id} className="hover:bg-[var(--color-surface-2)]">
-                        <td className="border-b px-3 py-2" style={{ borderColor: "var(--color-border)" }}>{ago(o.started_at)}</td>
-                        <td className="border-b px-3 py-2" style={{ borderColor: "var(--color-border)" }}>
-                          <span className="rounded-full px-1.5 py-[1px]" style={{ color: st.color, background: `color-mix(in srgb, ${st.color} 12%, transparent)` }}>
-                            {st.text}
-                          </span>
-                        </td>
-                        <td className="max-w-[380px] truncate border-b px-3 py-2" style={{ borderColor: "var(--color-border)" }} title={o.task ?? ""}>
-                          {o.task || "（无任务文本）"}
-                        </td>
-                        <td className="border-b px-3 py-2 tabular-nums" style={{ borderColor: "var(--color-border)" }}>{o.step_count ?? "—"}</td>
-                        <td className="border-b px-3 py-2 tabular-nums" style={{ borderColor: "var(--color-border)" }}>{took(o.started_at, o.ended_at)}</td>
-                        <td className="border-b px-3 py-2" style={{ borderColor: "var(--color-border)" }}>
-                          <button
-                            type="button"
-                            onClick={() => onReplay(o.id)}
-                            className="rounded-[6px] border px-2 py-0.5 text-[12px] hover:bg-[var(--color-surface-2)]"
-                            style={{ borderColor: "var(--color-border)", color: "var(--color-accent)" }}
-                          >
-                            就地回放
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            {cur && curRuns > 0 && (
+              <div className="flex flex-col gap-2.5 p-3">
+                {runs.map((o) => {
+                  const st = STATUS[o.status ?? ""] ?? { text: o.status ?? "—", color: "var(--color-muted)" };
+                  return (
+                    <div
+                      key={o.id}
+                      className="rounded-[10px] border px-3 py-2.5"
+                      style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+                    >
+                      {/* ① 结果一行 */}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className="rounded-full px-2 py-[1px] text-[11.5px]"
+                          style={{ color: st.color, background: `color-mix(in srgb, ${st.color} 12%, transparent)` }}
+                        >
+                          {st.text}
+                        </span>
+                        <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+                          {ago(o.started_at)} · 耗时 {took(o.started_at, o.ended_at)} · 走了 {o.step_count ?? chain.length} 步
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => onReplay(o.id)}
+                          className="ml-auto rounded-[7px] border px-2.5 py-1 text-[12px] hover:bg-[var(--color-surface-2)]"
+                          style={{ borderColor: "var(--color-border)", color: "var(--color-accent)" }}
+                        >
+                          就地回放
+                        </button>
+                      </div>
+
+                      {/* ② 这次让它做什么 */}
+                      <div className="mt-1.5 text-[12.5px] leading-[1.6]" title={o.task ?? ""}>
+                        {o.task || <span style={{ color: "var(--color-muted)" }}>（无任务文本）</span>}
+                      </div>
+
+                      {/* ③ 这次走了哪几步 —— 和画布同一套编号与名字 */}
+                      {chain.length > 0 && (
+                        <div className="mt-2 flex flex-wrap items-center gap-1">
+                          {chain.map((c, i) => {
+                            // 只跑了一部分（step_count < 链长）时，后面的标灰：一眼看出"走到哪停的"
+                            const reached = i < (o.step_count ?? chain.length);
+                            return (
+                              <span key={c.nid} className="flex items-center gap-1">
+                                {i > 0 && (
+                                  <span style={{ color: "var(--color-border)" }} className="px-0.5 text-[11px]">
+                                    →
+                                  </span>
+                                )}
+                                <span
+                                  className="flex items-center gap-1 rounded-full border px-1.5 py-[1px] text-[11px]"
+                                  style={{
+                                    borderColor: reached
+                                      ? "color-mix(in srgb, var(--color-accent) 40%, var(--color-border))"
+                                      : "var(--color-border)",
+                                    color: reached ? "var(--color-accent)" : "var(--color-muted)",
+                                    background: reached
+                                      ? "color-mix(in srgb, var(--color-accent) 7%, transparent)"
+                                      : undefined,
+                                  }}
+                                  title={`第 ${c.no} 步 · ${c.name}`}
+                                >
+                                  <span className="tabular-nums opacity-70">{c.no}</span>
+                                  {c.name}
+                                </span>
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </div>
         </div>

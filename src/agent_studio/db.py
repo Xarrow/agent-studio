@@ -17,6 +17,7 @@ import logging
 from collections.abc import AsyncIterator
 
 from sqlalchemy import event, inspect
+from sqlalchemy.pool import NullPool
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -69,6 +70,14 @@ def build_engine(cfg: dbconfig.DbSettings) -> AsyncEngine:
         pool_pre_ping=cfg.driver != "sqlite",
         # 网络库给个连接池上限，避免把对方连接数打满
         **({} if cfg.driver == "sqlite" else {"pool_size": 5, "max_overflow": 10}),
+        # SQLite：**不池化**（NullPool）。
+        # 本地文件库建一条连接只要几十微秒，池化的收益极小；而"池 + aiosqlite"会带来
+        # "连接被垃圾回收时仍在使用"那一类噪音 —— 实测日志里出现过
+        #   sqlalchemy "Exception terminating connection" +
+        #   asyncio "Task was destroyed but it is pending"
+        # （早于任何外部改库，属既有抖动）。NullPool 让每个会话用一条新连接，
+        # 这类问题从根上消失；pragma / WAL 逻辑不受影响（下面照旧 attach）。
+        poolclass=NullPool if cfg.driver == "sqlite" else None,
     )
     if cfg.driver == "sqlite":
         _attach_sqlite_pragmas(engine)

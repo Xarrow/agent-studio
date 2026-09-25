@@ -253,6 +253,28 @@ const ORDER_META: Record<string, { short: string; dash?: string }> = {
   serial: { short: "串行" },
   parallel: { short: "并行", dash: "2 5" },
 };
+
+/** 运行中状态行的**人话**短语：不再直接贴原始事件文本（长句在窄卡里会被截得看不懂）。
+ *  按阶段给动词，尽量把工具名带出来 —— 一眼知道"现在到底在干嘛"。 */
+function liveLabel(kind: string, text: string): string {
+  const tool = (text.match(/[a-z][a-z0-9]*_[a-z0-9_]+/i) ?? [])[0];
+  switch (kind) {
+    case "input":
+      return "收到任务…";
+    case "think":
+      return "正在思考…";
+    case "tool":
+      return tool ? `正在调用 ${tool}` : "正在调用工具…";
+    case "tool_out":
+      return tool ? `${tool} 已返回，正在整理…` : "已拿到结果，正在整理…";
+    case "answer":
+    case "out":
+      return "正在回答…";
+    default:
+      return text.length > 26 ? `${text.slice(0, 26)}…` : text;
+  }
+}
+
 export function WorkflowCanvas({
   agents,
   graph,
@@ -1478,10 +1500,14 @@ export function WorkflowCanvas({
             const out = outputs[n.nid] ?? "";
             const lv = live?.[n.nid];
             const stepNo = layout.layers.findIndex((ids) => ids.includes(n.nid)) + 1;
-            const BW = 384;
+            // 宽度按可用空间收敛：桌面 384；窄屏（手机）取列宽 - 8，永不超出屏幕。
+            // 位置：桌面贴节点右侧（贴右边界就翻到左侧）；窄屏**放到节点下方**并左对齐
+            // —— 手机只有 ~375px 宽，横着放必然溢出屏幕（这是我在窄屏上要确认的那条）。
+            const BW = narrow ? Math.max(240, colW - 8) : 384;
             const toRight = at.x + layout.NW + 14;
             const flip = toRight + BW > layout.w - 6;
-            const left = flip ? Math.max(6, at.x - BW - 14) : toRight;
+            const left = narrow ? Math.max(4, at.x) : flip ? Math.max(6, at.x - BW - 14) : toRight;
+            const top = narrow ? at.y + (heights[n.nid] ?? 220) + 10 : at.y;
             const statusText =
               st === "run" ? "执行中" : st === "ask" ? "等你确认" : st === "ok" ? "完成" : st === "err" ? "出错" : st === "stale" ? "已失效" : "还没跑";
             const statusColor =
@@ -1491,9 +1517,9 @@ export function WorkflowCanvas({
               <div
                 className="absolute z-30 flex flex-col overflow-hidden rounded-[12px] border shadow-lg"
                 style={{
-                  transform: `translate(${left}px, ${at.y}px)`,
+                  transform: `translate(${left}px, ${top}px)`,
                   width: BW,
-                  maxHeight: 470,
+                  maxHeight: narrow ? "62vh" : 470,
                   background: "var(--color-surface)",
                   borderColor: "var(--color-border)",
                 }}
@@ -1945,8 +1971,17 @@ export function WorkflowCanvas({
                     <span className="live-dot shrink-0 text-[12px]" style={{ color: "var(--color-accent)" }}>
                       ●
                     </span>
-                    <span className="text-[12px] font-semibold" style={{ color: "var(--color-accent)" }}>
-                      正在执行
+                    {/* 直接说**在做什么** —— 不再是泛泛的"正在执行"。
+                        取最新一条动作行：思考→"…思考"，工具→"…调用 X"。
+                        颜色跟着那条的**阶段色**走，与下面的过程行同源（同一动作一个颜色）。 */}
+                    <span
+                      className="min-w-0 flex-1 truncate text-[12px] font-semibold"
+                      style={{ color: tailOf(lv.events, 1)[0] ? STEP_STYLE[tailOf(lv.events, 1)[0].kind].color : "var(--color-accent)" }}
+                      title={tailOf(lv.events, 1)[0]?.text ?? ""}
+                    >
+                      {tailOf(lv.events, 1)[0]
+                        ? liveLabel(tailOf(lv.events, 1)[0].kind, tailOf(lv.events, 1)[0].text)
+                        : "正在准备…"}
                     </span>
                     <span className="ml-auto text-[12px] font-medium" style={{ color: "var(--color-accent)" }}>
                       {lv.elapsedMs == null
@@ -1961,7 +1996,15 @@ export function WorkflowCanvas({
                       保证"同一动作到处一个颜色"。
                       容器用 flex-col-reverse + max-h：**最新的那条永远在视野里**（不用写一行滚动 JS），
                       旧的重力往下堆，超出就滚动查看 —— 看过程不需要任何操作。 */}
-                  <div className="flex max-h-[196px] flex-col-reverse gap-[3px] overflow-auto px-2.5 pb-2 pt-1.5">
+                  <details open className="group">
+                    <summary
+                      className="flex cursor-pointer list-none items-center gap-1 px-2.5 py-1 text-[11.5px] select-none"
+                      style={{ color: "var(--color-muted)" }}
+                    >
+                      <span className="inline-block transition-transform group-open:rotate-90">▸</span>
+                      过程 · {lv.events.length} 步
+                    </summary>
+                  <div className="flex max-h-[150px] flex-col-reverse gap-[3px] overflow-auto px-2.5 pb-2 pt-0.5">
                     {tailOf(lv.events, 12).map((l, i) => {
                       const sty = STEP_STYLE[l.kind];
                       return (
@@ -1980,6 +2023,7 @@ export function WorkflowCanvas({
                       );
                     })}
                   </div>
+                  </details>
                 </>
               )}
 

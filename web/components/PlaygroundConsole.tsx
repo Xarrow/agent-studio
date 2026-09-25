@@ -409,11 +409,14 @@ export function PlaygroundConsole() {
   /* ── 存 ─────────────────────────────────────────────────────────────── */
   const save = async (silent = false): Promise<Workflow | null> => {
     try {
-      const body = {
-        name: name.trim() || "未命名编排",
-        graph,
-      };
-      const saved = wf ? await api.updateWorkflow(wf.id, body) : await api.createWorkflow(body);
+      // 保存的职责边界（这是"名字编辑不了"的根因修复）：
+      //   更新已有编排时**不提交 name** —— 名字只由「重命名」这一条路改。
+      //   原来每次都带本地 name，而管理浮层改名后本地状态是旧的，
+      //   下一次改图触发自动保存就把旧名字写了回去（实测复现）。
+      //   新建时才需要 name。后端 WorkflowUpdate 全字段可选，支持只提交 graph。
+      const saved = wf
+        ? await api.updateWorkflow(wf.id, { graph })
+        : await api.createWorkflow({ name: name.trim() || "未命名编排", graph });
       setWf(saved);
       setDirty(false);
       setList((prev) => [saved, ...prev.filter((x) => x.id !== saved.id)].slice(0, 30));
@@ -845,6 +848,7 @@ export function PlaygroundConsole() {
                 if (e.key === "Enter" || e.key === "Escape") {
                   e.preventDefault();
                   setRenaming(false);
+                  if (e.key === "Enter") void save(true);   // 改标题直接生效
                 }
               }}
               onBlur={() => setRenaming(false)}
@@ -1020,10 +1024,20 @@ export function PlaygroundConsole() {
           <WorkflowManager
         open={manager}
         currentId={wf?.id ?? null}
+        // 每次执行的“走了哪几步”要显示助手名 —— 与画布同一套名字
+        agents={agents}
         onClose={() => setManager(false)}
         onOpenWorkflow={(w) => loadWorkflow(w)}
         onNew={() => newWorkflow()}
         onDuplicate={() => void duplicateWorkflow()}
+        onRenamed={(w) => {
+          // 浮层里改了名 → 顶栏和列表同步；本地 name 也跟上，避免出现"两个真相"
+          setList((prev) => prev.map((x) => (x.id === w.id ? w : x)));
+          if (wf && w.id === wf.id) {
+            setWf(w);
+            setName(w.name);
+          }
+        }}
         onDeleted={() => {
           // 管理浮层删完会自己刷新；画布这边把「流程列表」也重新拉一次，
           // 免得切流程时看到已经删掉的名字
