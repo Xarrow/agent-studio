@@ -351,6 +351,34 @@ export function WorkflowCanvas({
   const [ghost, setGhost] = useState<string | null>(null);
   /** 窄屏：层改纵向排列（手机上横向滚动看不全一张图） */
   const [narrow, setNarrow] = useState(false);
+  /** 缩放：对齐 Dify 的 postionControls —— 25%~200%，加"适应画布"。
+   *  实现用 CSS transform（零依赖）：内容层整体 scale，外面再包一层按缩放后尺寸占位的容器，
+   *  这样滚动条范围也跟着缩放走。 */
+  const [zoom, setZoom] = useState(1);
+  const zoomRef = useRef(1);
+  zoomRef.current = zoom;
+  const ZOOM_MIN = 0.25;
+  const ZOOM_MAX = 2;
+  /** 用**函数式更新**：连续点 ＋/－ 时每次读到的都是最新值。
+   *  （原来写 setZoom(计算好的值)，快速点击会都读同一个旧 zoom，三下只生效一下 —— 实测。
+   *   顺带支持传增量函数，调用处直接 zoomStep(+/-0.1)。） */
+  const zoomTo = (z: number | ((prev: number) => number)) =>
+    setZoom((prev) => {
+      const next = typeof z === "function" ? z(prev) : z;
+      return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(next * 100) / 100));
+    });
+  const zoomStep = (d: number) => zoomTo((prev) => prev + d);
+  /** 适应画布：让整张图（含留白）刚好放进视口 */
+  const fitView = () => {
+    const stage = stageRef.current;
+    if (!stage || !layout.w || !layout.h) return;
+    const z = Math.min((stage.clientWidth - 24) / layout.w, (stage.clientHeight - 24) / layout.h, 1);
+    zoomTo(z);
+    requestAnimationFrame(() => {
+      stage.scrollLeft = (layout.w * z - stage.clientWidth) / 2;
+      stage.scrollTop = (layout.h * z - stage.clientHeight) / 2;
+    });
+  };
   /** 任务卡的实测高度 —— 窄屏排布要按它让位。
    *  为什么不能写死：任务卡现在是"输入框常驻"，高度随内容变（原来 96 够，现在不够，
    *  写死会让节点压在任务卡上）。用 ResizeObserver 跟着量。 */
@@ -385,7 +413,9 @@ export function WorkflowCanvas({
     const el = taskCardRef.current;
     if (!el) return;
     const measure = () => {
-      const h = Math.round(el.getBoundingClientRect().height);
+      // 用 offsetHeight 而不是 getBoundingClientRect：画布有缩放时后者会返回缩放后的值，
+    // 布局就会按错误的尺寸排（offsetHeight 不受 transform 影响）。
+    const h = Math.round(el.offsetHeight);
       setTaskH((prev) => (Math.abs(prev - h) > 1 ? h : prev));
     };
     measure();
@@ -553,8 +583,10 @@ export function WorkflowCanvas({
       if (!rect || !p) return;
       const x1 = p.x + layout.NW;
       const y1 = p.y + (heights[from] || 104) / 2;
-      const mx = ev.clientX - rect.left + (stageRef.current?.scrollLeft ?? 0);
-      const my = ev.clientY - rect.top + (stageRef.current?.scrollTop ?? 0);
+      // 画布可能被缩放：屏幕上量的位移要除以 zoom 才是图内坐标
+      const z = zoomRef.current || 1;
+      const mx = (ev.clientX - rect.left) / z + (stageRef.current?.scrollLeft ?? 0) / z;
+      const my = (ev.clientY - rect.top) / z + (stageRef.current?.scrollTop ?? 0) / z;
       const dx = Math.max(30, (mx - x1) * 0.5);
       setGhost(`M${x1},${y1} C${x1 + dx},${y1} ${mx - dx},${my} ${mx},${my}`);
       const el = (ev.target as HTMLElement)?.closest?.("[data-nid]") as HTMLElement | null;
@@ -1006,6 +1038,28 @@ export function WorkflowCanvas({
        抽屉**在画布这一层**，不是页面下方、也不是弹窗 —— 点节点内容就在旁边出现，
        视线不用离开对象；收起后画布自动恢复全宽。 */
     <div className="relative flex h-full min-h-0 w-full">
+    {/* 缩放控件（对齐 Dify postionControls：左下角「－ 百分比 ＋」，点百分比出档位 + 适应画布）。
+        放在 stage **外面** —— stage 是 overflow-auto，放里面会跟着内容滚走。 */}
+    {!frozen && (
+      <div className="absolute bottom-3 left-3 z-30 flex items-center gap-0.5 rounded-[8px] border px-1 py-0.5 shadow-sm" style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}>
+        <button type="button" title="缩小" onClick={() => zoomStep(-0.1)} className="px-1.5 py-0.5 text-[13px] leading-none hover:bg-[var(--color-surface-2)]" style={{ color: "var(--color-muted)" }}>−</button>
+        <div className="group relative">
+          <button type="button" className="min-w-[46px] rounded-[5px] px-1 py-0.5 text-[11.5px] tabular-nums hover:bg-[var(--color-surface-2)]" title="选择缩放档位 / 适应画布">
+            {Math.round(zoom * 100)}%
+          </button>
+          <div className="pointer-events-none absolute bottom-full left-0 mb-1 hidden flex-col rounded-[8px] border py-1 shadow-lg group-hover:pointer-events-auto group-hover:flex" style={{ borderColor: "var(--color-border)", background: "var(--color-surface)", minWidth: 96 }}>
+            {[2, 1, 0.75, 0.5, 0.25].map((z) => (
+              <button key={z} type="button" onClick={() => zoomTo(z)} className="px-3 py-1 text-left text-[12px] hover:bg-[var(--color-surface-2)]">
+                {Math.round(z * 100)}%
+              </button>
+            ))}
+            <div className="my-1 border-t" style={{ borderColor: "var(--color-border)" }} />
+            <button type="button" onClick={fitView} className="px-3 py-1 text-left text-[12px] hover:bg-[var(--color-surface-2)]">适应画布</button>
+          </div>
+        </div>
+        <button type="button" title="放大" onClick={() => zoomStep(+0.1)} className="px-1.5 py-0.5 text-[13px] leading-none hover:bg-[var(--color-surface-2)]" style={{ color: "var(--color-muted)" }}>＋</button>
+      </div>
+    )}
     <div
       ref={stageRef}
       data-canvas-drop="1"
@@ -1014,6 +1068,11 @@ export function WorkflowCanvas({
           onSelect(null);
           setEdgeSel(null);
         }
+      }}
+      onWheel={(e) => {
+        if (!(e.ctrlKey || e.metaKey)) return;
+        e.preventDefault();
+        zoomStep(-Math.sign(e.deltaY) * 0.1);
       }}
       className="relative h-full min-w-0 flex-1 overflow-auto"
       style={{
@@ -1029,7 +1088,15 @@ export function WorkflowCanvas({
         {/* 用 auto margin 居中，而不是 justify-center ——
             内容比画布宽时（任务卡+节点+结论约 1000px > 864px），justify-center 会**两头都裁**，
             实测把任务卡和结论卡同时切掉了。auto margin 有空间时居中、超出时从左边开始，不裁。 */}
-        <div className="relative m-auto shrink-0" style={{ width: layout.w, height: layout.h }}>
+        {/* 外层按**缩放后**的尺寸占位（滚动条范围对），内层整体 scale（内容对） */}
+        <div
+          className="relative m-auto shrink-0"
+          style={{ width: layout.w * zoom, height: layout.h * zoom }}
+        >
+        <div
+          className="relative"
+          style={{ width: layout.w, height: layout.h, transform: `scale(${zoom})`, transformOrigin: "0 0" }}
+        >
           {/* 流水线连接线：纵向流的筋。必须挂在这个 position:relative 的居中框里 ——
               挂外层会以整个舞台为基准，线就画到空白处去了（上一版就是这么错的）。 */}
           {layout.links.map((l, i) => (
@@ -2429,6 +2496,7 @@ export function WorkflowCanvas({
             </div>
           </div>
         )}
+        </div>
         </div>
         </div>
       </div>
