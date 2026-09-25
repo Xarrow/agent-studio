@@ -259,6 +259,9 @@ function NewAgentDialog({
   const [model, setModel] = useState("");
   const [credRef, setCredRef] = useState("");
   const [prompt, setPrompt] = useState("");
+  /** 一句话职责 —— 会出现在选助手的地方（Playground 的「＋ 加一步」气泡）。
+      默认跟预设走（预设的 desc 就是一句现成的职责），可改 —— 用户不用为一个字段多想。 */
+  const [desc, setDesc] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -294,6 +297,9 @@ function NewAgentDialog({
     try {
       await api.createAgent({
         name: name.trim(),
+        // 一句话职责必带：没手填就用预设的（预设的 desc 本来就是一句职责）——
+        // 这样"新建的助手"天然就有可展示的职责，不用回头补。
+        description: (desc.trim() || preset?.desc || "").slice(0, 140) || undefined,
         definition: {
           runtime,
           name: name.trim(),
@@ -357,7 +363,10 @@ function NewAgentDialog({
                     type="button"
                     onClick={() => {
                       setPresetKey(p.key);
-                      if (p.key !== "custom") setPrompt(p.prompt);
+                      if (p.key !== "custom") {
+                        setPrompt(p.prompt);
+                        setDesc(p.desc); // 一句话职责跟预设走（用户可改，不用自己编）
+                      }
                     }}
                     className={`text-left rounded-md p-3 transition-colors border ${
                       on
@@ -374,6 +383,24 @@ function NewAgentDialog({
                   </button>
                 );
               })}
+            </div>
+
+            {/* 一句话职责：不在"三个问题"里 —— 选预设时自动带出来，想改才改。
+                它决定了用户在选助手时能不能一眼认出这个助手。 */}
+            <div className="mt-3">
+              <label className="label flex items-center gap-1.5" title="这句话会出现在 Playground 选助手的地方，帮你一眼认出它">
+                一句话职责
+                <span className="text-[11.5px] font-normal" style={{ color: "var(--color-muted)" }}>
+                  （选助手时会显示，已按预设自动填好）
+                </span>
+              </label>
+              <input
+                className="input"
+                value={desc}
+                onChange={(e) => setDesc(e.target.value)}
+                placeholder="例如：查服务状态；帮你写代码、找 bug"
+                maxLength={60}
+              />
             </div>
 
             {/* 自定义时才让人写「角色设定」 */}

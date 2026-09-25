@@ -79,6 +79,9 @@ export function AgentDetail({
    * 改了配置界面毫无变化，切走就悄悄丢了，而且试跑用的是**旧版本**却毫无提示。
    */
   const [savedSnap, setSavedSnap] = useState<string>("");
+  /** 一句话职责（agent.description）—— 它会显示在 Playground 的选助手气泡里。
+      跟 def 分开存（它不属于 definition），但**必须一起参与"未保存"判断**。 */
+  const [desc, setDesc] = useState<string>("");
   /**
    * 这个助手不存在（被删了 / id 写错）。
    *
@@ -124,7 +127,8 @@ export function AgentDetail({
       ]);
       setAgent(a);
       setDef(a.definition);
-      setSavedSnap(JSON.stringify(a.definition));
+      setSavedSnap(snap(a.definition, a.description ?? ""));
+      setDesc(a.description ?? "");
       setProviders(p);
       setCreds(c);
       setTools(t);
@@ -198,7 +202,8 @@ export function AgentDetail({
    * 渲染期求值的，如果 dirty 声明在后面，这里会撞上 TDZ
    * （Cannot access 'dirty' before initialization）→ 整页白掉。
    */
-  const dirty = def !== null && savedSnap !== "" && JSON.stringify(def) !== savedSnap;
+  const snap = (d: AgentDefinition, s: string) => JSON.stringify(d) + "|" + s;
+const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
 
   /**
    * 有未保存改动时，关页面/刷新给个提示（不然改了半天一刷新全没）。
@@ -277,10 +282,10 @@ export function AgentDetail({
     setSaving(true);
     setMsg(null);
     try {
-      const updated = await api.updateAgent(agentId, { definition: def });
+      const updated = await api.updateAgent(agentId, { definition: def, description: desc.trim() || undefined });
       setAgent(updated);
       setDef(updated.definition);
-      setSavedSnap(JSON.stringify(updated.definition));
+      setSavedSnap(snap(updated.definition, updated.description ?? ""));
       setMsg(`已保存（v${updated.version}）`);
       setTimeout(() => setMsg(null), 2500);
     } catch (e) {
@@ -450,6 +455,21 @@ export function AgentDetail({
                 className="input"
                 value={def.name}
                 onChange={(e) => patch({ name: e.target.value })}
+              />
+            </div>
+            <div>
+              <label
+                className="label flex items-center gap-1.5"
+                title="这句话会出现在 Playground 选助手的地方，帮你一眼认出这个助手；留空则自动取 System Prompt 的第一句"
+              >
+                一句话职责
+              </label>
+              <input
+                className="input"
+                value={desc}
+                onChange={(e) => setDesc(e.target.value)}
+                placeholder="例如：查服务状态；帮你写代码、找 bug（留空则自动取提示词首句）"
+                maxLength={140}
               />
             </div>
             <div>
