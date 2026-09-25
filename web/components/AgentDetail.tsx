@@ -277,6 +277,24 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
 
   const patch = (p: Partial<AgentDefinition>) => setDef({ ...def, ...p });
 
+  /** 只改名字的轻量保存：失焦时调用。
+   *  同时写顶层 name 与 def.name（历史数据里这两个可能已经不一致，保存一次就统一）。 */
+  const saveNameOnly = async (next: string) => {
+    try {
+      const updated = await api.updateAgent(agentId, {
+        name: next,
+        definition: { ...(def as AgentDefinition), name: next },
+      });
+      setAgent(updated);
+      setDef(updated.definition);
+      setSavedSnap(snap(updated.definition, updated.description ?? ""));
+      setMsg("名称已保存");
+      setTimeout(() => setMsg(null), 2000);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  };
+
 
   const save = async () => {
     setSaving(true);
@@ -461,10 +479,20 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
             <h2 className="text-[14px] font-medium">基础</h2>
             <div>
               <label className="label">名称</label>
+              {/* 名称：**失焦就自动保存**。
+                  为什么（这是"名称改不了"的真因）：改完输入框后必须手动点「保存改动」，
+                  而用户改完常常直接切走/返回列表 → 改动没提交 → 回来还是旧名 ✗
+                  Playground 那边是"改停 1.2s 自动存"，两边心智要一致：
+                  名称与一句话职责这类**单字段**改动，失焦即落库，不用再找保存键。 */}
               <input
                 className="input"
                 value={def.name}
                 onChange={(e) => patch({ name: e.target.value })}
+                onBlur={() => {
+                  const next = (def.name ?? "").trim();
+                  if (!next || next === agent?.name) return;   // 没改 / 清空 → 不动
+                  void saveNameOnly(next);
+                }}
               />
             </div>
             <div>

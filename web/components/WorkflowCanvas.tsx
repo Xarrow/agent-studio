@@ -2063,14 +2063,21 @@ export function WorkflowCanvas({
                   触屏没有悬停，这条只是加分项，功能一个都没少（⋯ 里都有）。 */}
               {!frozen && (
                 <div
-                  /* ⚠️ **不跟鼠标**：只在选中这个节点 / 打开它的详情时显示。
-                     第一版写成 group-hover:flex —— 鼠标扫过节点它就冒出来、移开又消失，
-                     看起来一直在闪（用户反馈"操作还是不流畅自然"）。
-                     悬停自动弹 = 视觉噪音；选中是明确意图，也不多花动作。 */
-                  className={`absolute -top-8 left-0 z-20 items-center gap-0.5 rounded-[8px] border px-1 py-0.5 shadow-md ${
-                    isSel || detailNid === n.nid ? "flex" : "hidden"
+                  /* **常驻显示**（用户要求："agent 上的操作直接在 agent 上方提示出来，不要再让用户点击"）。
+                     演进过程值得记一笔：
+                       ① 第一版 group-hover:flex → 鼠标扫过就冒出来又消失，像在闪 ✗
+                       ② 第二版改成"选中才显示" → 不闪了，但用户得先点一下才看得到操作 ✗
+                       ③ 现在：**一直挂在节点上方**（不用悬停、不用点击），选中时底色加重做反馈 ✓
+                     三个动作都是非破坏性的（详情 / 换助手 / 配置），常驻不会误伤。 */
+                  className={`absolute -top-8 left-0 z-20 flex items-center gap-0.5 rounded-[8px] border px-1 py-0.5 shadow-sm transition-colors ${
+                    isSel || detailNid === n.nid ? "" : "opacity-80 hover:opacity-100"
                   }`}
-                  style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+                  style={{
+                    borderColor: "var(--color-border)",
+                    background: isSel || detailNid === n.nid
+                      ? "var(--color-surface)"
+                      : "color-mix(in srgb, var(--color-surface) 92%, var(--color-surface-2))",
+                  }}
                   onClick={(e) => e.stopPropagation()}
                 >
                   <button
