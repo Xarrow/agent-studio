@@ -223,7 +223,15 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
 
+  /** 最新 def 的快照：名称自动保存是**异步**的，不能拿旧闭包里的 def 覆盖别的字段。 */
+  const defRef = useRef(def);
+  defRef.current = def;
+
+  /** 名称自动落库的定时器：改完停 900ms 存一次（不依赖是否触发失焦）。 */
+  const nameTimer = useRef<number | null>(null);
+
   if (!def || !agent) {
+
     if (notFound) {
       return (
         <div className="p-4 md:p-6 lg:p-7 max-w-lg">
@@ -283,7 +291,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
     try {
       const updated = await api.updateAgent(agentId, {
         name: next,
-        definition: { ...(def as AgentDefinition), name: next },
+        definition: { ...((defRef.current ?? def) as AgentDefinition), name: next },
       });
       setAgent(updated);
       setDef(updated.definition);
@@ -487,7 +495,19 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
               <input
                 className="input"
                 value={def.name}
-                onChange={(e) => patch({ name: e.target.value })}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  patch({ name: v });
+                  // **改完停 900ms 自动落库** —— 不再依赖"用户恰好点到别处触发失焦"。
+                  // 用户反复反馈"名称还是不能修改"：改完直接点「← Agents」返回 / 切标签页时，
+                  // 失焦那一下的请求不保证落地 → 回来还是旧名 ✗。
+                  // 与 Playground 的「改停 1.2s 自动存」同一套心智（用户要求过两边一致）。
+                  if (nameTimer.current) window.clearTimeout(nameTimer.current);
+                  const next = v.trim();
+                  if (next && !(next === agent?.name && next === agent?.definition?.name)) {
+                    nameTimer.current = window.setTimeout(() => { void saveNameOnly(next); }, 900);
+                  }
+                }}
                 onBlur={() => {
                   const next = (def.name ?? "").trim();
                   if (!next) return;   // 清空 → 不动（不允许无名）
