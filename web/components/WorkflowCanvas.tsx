@@ -1044,6 +1044,41 @@ export function WorkflowCanvas({
           {ghost && (
             <path d={ghost} fill="none" stroke="var(--color-accent)" strokeWidth={1.6} strokeDasharray="5 4" />
           )}
+          {/* **任务卡 → 第一个节点**这一根线：对着 Dify 截图比对时发现我们缺了它
+              （Dify 的 Start 与第一个节点之间是连着的 —— 流程从"要做什么"就开始，
+              而不是断在任务卡那里）。画法/线宽/终点方条与其它连线同源，颜色随首个节点状态。 */}
+          {!frozen &&
+            graph.nodes.length > 0 &&
+            (() => {
+              const firstIds = layout.layers[0] ?? [];
+              if (!firstIds.length) return null;
+              const f = layout.pos[firstIds[0]];
+              if (!f) return null;
+              const st0 = runStates[firstIds[0]];
+              const live0 = st0 === "run";
+              const done0 = st0 === "ok";
+              const y0 = layout.taskAt.y + (taskH || 240) / 2;
+              const y1 = f.y + (heights[firstIds[0]] ?? 120) / 2;
+              const x0 = layout.taskAt.x + layout.CARD_W;
+              const x1 = f.x - 3;
+              const midX = (x0 + x1) / 2;
+              const stroke0 = live0
+                ? "var(--color-accent)"
+                : done0
+                  ? "color-mix(in srgb, var(--color-ok) 55%, #D0D5DD)"
+                  : "#D0D5DD";
+              return (
+                <>
+                  <path
+                    d={`M ${x0} ${y0} C ${midX} ${y0}, ${midX} ${y1}, ${x1} ${y1}`}
+                    fill="none"
+                    stroke={stroke0}
+                    strokeWidth={2}
+                  />
+                  <rect x={x1 - 2} y={y1 - 4} width={2} height={8} fill={live0 ? "var(--color-accent)" : "#2970FF"} />
+                </>
+              );
+            })()}
           {edgesSvg}
         </svg>
 
@@ -1835,6 +1870,17 @@ export function WorkflowCanvas({
           });
           const lv = live?.[n.nid];
           const isSel = selected === n.nid;
+          // 手柄颜色随节点状态（对齐 Dify：常态灰 / 运行蓝 / 成功绿 / 失败红）
+          const handleTint =
+            st === "run"
+              ? "var(--color-accent)"
+              : st === "ok"
+                ? "var(--color-ok)"
+                : st === "err"
+                  ? "var(--color-err)"
+                  : st === "ask"
+                    ? "var(--color-warn)"
+                    : "color-mix(in srgb, var(--color-border) 92%, var(--color-muted))";
           const isTarget = (hoverNid ?? dropTarget) === n.nid;
           const stepNo = layout.layers.findIndex((ids) => ids.includes(n.nid)) + 1;
           const out = outputs[n.nid];
@@ -1886,6 +1932,25 @@ export function WorkflowCanvas({
                 cursor: frozen ? "default" : "grab",
               }}
             >
+              {/* 连接点（手柄）：对齐 Dify 的 node-handle —— 节点两侧的小竖条。
+                  这是 Dify 图里最显眼的识别特征之一：常态灰、运行中蓝、成功绿、失败红。
+                  我们的流程是**横向**的，所以把 Dify 的"上下两点"转成"左右两点"：
+                  左=入（谁交给我），右=出（我交给谁）。pointer-events-none，纯样式，
+                  不抢正文的点击选中（连线仍由画布自动生成）。 */}
+              {!frozen && (
+                <>
+                  <span
+                    aria-hidden
+                    className="pointer-events-none absolute z-10"
+                    style={{ left: -7, top: "50%", transform: "translateY(-50%)", width: 3, height: 14, borderRadius: 2, background: handleTint }}
+                  />
+                  <span
+                    aria-hidden
+                    className="pointer-events-none absolute z-10"
+                    style={{ right: -7, top: "50%", transform: "translateY(-50%)", width: 3, height: 14, borderRadius: 2, background: handleTint }}
+                  />
+                </>
+              )}
               <div
                 /* data-draghead：拖动的把手只在这里 —— 正文要能选字、能滚动，不能被拖动抢走 */
                 data-draghead
