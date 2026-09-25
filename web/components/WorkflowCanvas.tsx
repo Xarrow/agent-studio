@@ -277,6 +277,15 @@ function liveLabel(kind: string, text: string): string {
   }
 }
 
+/** 两端卡片的"伪节点 id" —— 拖拽/调宽复用同一套机制（节点用 n1/n2…，两端卡用这两个） */
+const CARD_IN = "__input__";
+const CARD_OUT = "__output__";
+
+/** 取"用户摆过的"数值：是有限数字才用，否则回退自动值 */
+function numOr(v: unknown, fallback: number): number {
+  return typeof v === "number" && Number.isFinite(v) ? v : fallback;
+}
+
 export function WorkflowCanvas({
   agents,
   graph,
@@ -470,7 +479,7 @@ export function WorkflowCanvas({
     /** 列 x = 前面各层**最宽那张**累加 —— 拖宽某张卡时后面的列自动让位（不会压上去） */
     const colX: number[] = [];
     {
-      let x = PAD + W_TASK + GAP_X;
+      let x = PAD + (narrow ? colW : Math.max(W_MIN, Math.min(W_MAX, numOr(graph.input_card?.w, W_TASK)))) + GAP_X;
       layers.forEach((ids, ci) => {
         colX[ci] = x;
         const maxW = Math.max(W_NODE, ...ids.map((id) => wMap[id] ?? W_NODE));
@@ -528,14 +537,21 @@ export function WorkflowCanvas({
     const addAt = narrow
       ? { x: PAD, y: maxY + 2 }
       : { x: maxX + GAP_X, y: lastY + 8 };
-    const taskAt = narrow ? { x: PAD, y: PAD } : { x: PAD, y: firstY };
+    // 两端卡：用户拖过就用它的坐标（手机纵向不看坐标，硬塞会互相压 ✗）
+    const taskAt = narrow
+      ? { x: PAD, y: PAD }
+      : graph.input_card && numOr(graph.input_card.x, NaN) === graph.input_card.x
+        ? { x: numOr(graph.input_card.x, PAD), y: numOr(graph.input_card.y, firstY) }
+        : { x: PAD, y: firstY };
     const concAt = narrow
       ? { x: PAD, y: addAt.y + 46 }
-      : { x: maxX + GAP_X, y: lastY };   // 「＋ 加一步」移除后，结论卡直接跟在末列后面（不留空位）
+      : graph.output_card && numOr(graph.output_card.x, NaN) === graph.output_card.x
+        ? { x: numOr(graph.output_card.x, maxX + GAP_X), y: numOr(graph.output_card.y, lastY) }
+        : { x: maxX + GAP_X, y: lastY };   // 「＋ 加一步」移除后，结论卡直接跟在末列后面（不留空位）
     /** 三块的实际宽度（窄屏=列宽；宽屏=各自的固定宽）—— 渲染只读这三个值 */
-    const CARD_W = narrow ? CW : W_TASK;
+    const CARD_W = narrow ? CW : Math.max(W_MIN, Math.min(W_MAX, numOr(graph.input_card?.w, W_TASK)));
     const NW = narrow ? CW : W_NODE;
-    const CONC_W = narrow ? CW : W_CONC;
+    const CONC_W = narrow ? CW : Math.max(W_MIN, Math.min(W_MAX, numOr(graph.output_card?.w, W_CONC)));
     let w = Math.max(maxX, 320);
     let h = Math.max(maxY, 260);
     if (narrow) {
@@ -562,7 +578,7 @@ export function WorkflowCanvas({
       }
     }
     return { pos, w, h, layers, taskAt, concat: concAt, concAt, addAt, ADD_W, CARD_W, NW, CONC_W, CW, links, W: wMap, W_MIN, W_MAX };
-  }, [graph.nodes, graph.edges, heights, colW, narrow, taskText, finalText, taskH]);
+  }, [graph.nodes, graph.edges, graph.input_card, graph.output_card, heights, colW, narrow, taskText, finalText, taskH]);
 
   /* 高度变化要在**绘制前**同步进布局，否则连线会先画在旧位置上再跳一下 */
   useLayoutEffect(() => {
@@ -1115,7 +1131,7 @@ export function WorkflowCanvas({
   const startDrag = (e: React.PointerEvent, nid: string) => {
     if (frozen) return;
     if ((e.target as HTMLElement).closest("button")) return; // 卡头上有按钮（⋯），别抢它的点击
-    const at = layout.pos[nid];
+    const at = nid === CARD_IN ? layout.taskAt : nid === CARD_OUT ? layout.concAt : layout.pos[nid];
     if (!at) return;
     e.preventDefault();
     setDrag({ nid, sx: e.clientX, sy: e.clientY, ox: at.x, oy: at.y, dx: 0, dy: 0, moved: false });
@@ -1135,10 +1151,17 @@ export function WorkflowCanvas({
           suppressClickRef.current = Date.now() + SUPPRESS_MS;   // 拖过 = 不是点击，别弹详情
           const nx = Math.round(d.ox + d.dx);
           const ny = Math.round(d.oy + d.dy);
-          onChange({
-            ...graph,
-            nodes: graph.nodes.map((x) => (x.nid === d.nid ? { ...x, x: nx, y: ny } : x)),
-          });
+          if (d.nid === CARD_IN || d.nid === CARD_OUT) {
+            // 两端卡：坐标存在图上的 input_card / output_card（和节点一样跨会话保留）
+            const key = d.nid === CARD_IN ? "input_card" : "output_card";
+            const prev = d.nid === CARD_IN ? graph.input_card : graph.output_card;
+            onChange({ ...graph, [key]: { ...(prev ?? {}), x: nx, y: ny } });
+          } else {
+            onChange({
+              ...graph,
+              nodes: graph.nodes.map((x) => (x.nid === d.nid ? { ...x, x: nx, y: ny } : x)),
+            });
+          }
         }
         return null;
       });
@@ -1167,7 +1190,7 @@ export function WorkflowCanvas({
     if (frozen || narrow) return;            // 只读回放 / 手机上不给拖（手机是一列铺满）
     e.preventDefault();
     e.stopPropagation();                     // 别触发"点卡片=选中"与节点拖动
-    const start = layout.W[nid] ?? layout.NW;
+    const start = nid === CARD_IN ? layout.CARD_W : nid === CARD_OUT ? layout.CONC_W : (layout.W[nid] ?? layout.NW);
     setResize({ nid, sx: e.clientX, sw: start, w: start });
   };
   useEffect(() => {
@@ -1181,7 +1204,13 @@ export function WorkflowCanvas({
       setResize((r) => {
         if (r && Math.abs(r.w - r.sw) >= 8) {
           suppressClickRef.current = Date.now() + SUPPRESS_MS;   // 拖宽过 = 不是点击，别弹详情
-          onChange({ ...graph, nodes: graph.nodes.map((n) => (n.nid === r.nid ? { ...n, w: r.w } : n)) });
+          if (r.nid === CARD_IN || r.nid === CARD_OUT) {
+            const key = r.nid === CARD_IN ? "input_card" : "output_card";
+            const prev = r.nid === CARD_IN ? graph.input_card : graph.output_card;
+            onChange({ ...graph, [key]: { ...(prev ?? {}), w: r.w } });
+          } else {
+            onChange({ ...graph, nodes: graph.nodes.map((n) => (n.nid === r.nid ? { ...n, w: r.w } : n)) });
+          }
         }
         return null;
       });
@@ -1192,7 +1221,7 @@ export function WorkflowCanvas({
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
-  }, [resize, graph, onChange, layout.W, layout.NW, layout.W_MIN, layout.W_MAX]);
+  }, [resize, graph, onChange, layout.W, layout.NW, layout.CARD_W, layout.CONC_W, layout.W_MIN, layout.W_MAX]);
   const growTask = () => {
     const el = taskBoxRef.current;
     if (!el) return;
@@ -1560,7 +1589,8 @@ export function WorkflowCanvas({
             // （实测空状态下两者重叠、标题被压掉一半）。加进第一个助手后它自然出现。
             display: empty ? "none" : undefined,
             transform: `translate(${layout.taskAt.x}px, ${layout.taskAt.y}px)`,
-            width: layout.CARD_W,
+            // 拖宽时跟手；否则用图里存的（拖过就用拖过的宽）
+            width: resize?.nid === CARD_IN ? resize.w : layout.CARD_W,
             // 与节点卡**视觉分层**：发令区是"起点"，给一点强调底色 + 左侧 3px 色条
             // （用 inset box-shadow 画色条，零额外 DOM）
             background: "color-mix(in srgb, var(--color-accent) 4%, var(--color-surface))",
@@ -1569,9 +1599,18 @@ export function WorkflowCanvas({
           }}
           onClick={(e) => e.stopPropagation()}
         >
+          {/* 拖宽把手（与节点卡同一套） */}
+          {!frozen && !narrow && (
+            <ResizeGrip id={CARD_IN} active={resize?.nid === CARD_IN} onDown={(e) => startResize(e, CARD_IN)} />
+          )}
           {/* 发令区头部（方案 C）：左=这次要做什么、右=**运行键**。
-              主操作放在第一眼的位置，不再像之前那样独占整行、把卡片撑得很笨重。 */}
-          <div className="flex items-center gap-2">
+              主操作放在第一眼的位置，不再像之前那样独占整行、把卡片撑得很笨重。
+              头部也是**这一整张卡的拖动把手**（正文要能选字/滚动，不能被拖动抢走） */}
+          <div
+            data-draghead
+            onPointerDown={(e) => startDrag(e, CARD_IN)}
+            className={`flex items-center gap-2 ${drag?.nid === CARD_IN ? "cursor-grabbing" : "cursor-grab"}`}
+          >
             <span
               className="shrink-0 rounded-full px-1.5 py-[1px] text-[11px] font-semibold"
               style={{ background: STEP_STYLE.input.bg, color: STEP_STYLE.input.color, border: `1px solid ${STEP_STYLE.input.border}` }}
@@ -1994,14 +2033,23 @@ export function WorkflowCanvas({
             className="absolute flex flex-col rounded-[10px] border"
             style={{
               transform: `translate(${layout.concAt.x}px, ${layout.concAt.y}px)`,
-              width: layout.CONC_W,
+              // 拖宽时跟手；否则用图里存的
+              width: resize?.nid === CARD_OUT ? resize.w : layout.CONC_W,
               maxHeight: 460,
               background: "color-mix(in srgb, var(--color-accent) 5%, var(--color-surface))",
               borderColor: "color-mix(in srgb, var(--color-accent) 40%, var(--color-border))",
             }}
             title="这次执行合起来的结论"
           >
-            <div className="flex items-center gap-2 border-b px-2.5 py-1.5" style={{ borderColor: "color-mix(in srgb, var(--color-accent) 24%, var(--color-border))" }}>
+            {/* 拖宽把手（与节点卡同一套） */}
+            {!frozen && !narrow && (
+              <ResizeGrip id={CARD_OUT} active={resize?.nid === CARD_OUT} onDown={(e) => startResize(e, CARD_OUT)} />
+            )}
+            <div
+              data-draghead
+              onPointerDown={(e) => startDrag(e, CARD_OUT)}
+              className={`flex items-center gap-2 border-b px-2.5 py-1.5 ${drag?.nid === CARD_OUT ? "cursor-grabbing" : "cursor-grab"}`}
+              style={{ borderColor: "color-mix(in srgb, var(--color-accent) 24%, var(--color-border))" }}>
               <span
                 className="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full text-[12px] text-white"
                 style={{ background: "var(--color-accent)" }}
@@ -2257,27 +2305,7 @@ export function WorkflowCanvas({
                   触屏/触控板上没设 touch-action 时，浏览器会把拖拽当滚动并**取消 pointer 事件**，
                   表现就是"拖了没反应" —— 用户反馈：为什么手动拖拽修改不了尺寸。 */}
               {!frozen && !narrow && (
-                <div
-                  data-node-resize={n.nid}
-                  onPointerDown={(e) => startResize(e, n.nid)}
-                  onClick={(e) => e.stopPropagation()}
-                  title="拖动我，调整这一步卡片的宽度"
-                  className="group/resize absolute top-0 z-30 flex h-full cursor-col-resize items-center justify-center"
-                  style={{ right: -10, width: 20, touchAction: "none" }}
-                >
-                  <span
-                    className="rounded-full transition-opacity group-hover/resize:opacity-100"
-                    style={{
-                      width: 4,
-                      height: 44,
-                      opacity: resize?.nid === n.nid ? 1 : 0.55,
-                      background:
-                        resize?.nid === n.nid
-                          ? "var(--color-accent)"
-                          : "color-mix(in srgb, var(--color-border) 55%, var(--color-muted))",
-                    }}
-                  />
-                </div>
+                <ResizeGrip id={n.nid} active={resize?.nid === n.nid} onDown={(e) => startResize(e, n.nid)} />
               )}
               {!frozen && (
                 <div
@@ -2428,6 +2456,17 @@ export function WorkflowCanvas({
                   title={`第 ${stepNo} 步`}
                 >
                   {stepNo}
+                </span>
+                <span
+                  className="shrink-0 rounded-full px-1.5 py-[1px] text-[10.5px]"
+                  style={{
+                    border: "1px solid var(--color-border)",
+                    color: "var(--color-muted)",
+                    background: "var(--color-surface)",
+                  }}
+                  title="这一步用哪个助手（卡片类型：助手卡）"
+                >
+                  助手
                 </span>
                 {master === n.nid && (
                   <span
@@ -2835,6 +2874,37 @@ function tailOf(evts: NodeLiveInfo["events"], max = 3): { kind: StepKind; text: 
 function clip(v: unknown, n: number): string {
   const t = String(v ?? "").replace(/\s+/g, " ").trim();
   return t.length > n ? `${t.slice(0, n)}…` : t;
+}
+
+/** 卡片右缘的拖宽把手 —— **节点卡 / 输入卡 / 输出卡共用一套**（行为必须一致）。
+ *
+ *  两个关键点（都是用户实测踩出来的）：
+ *    · 命中区 20px（左右各 10px）+ 可见把手 4px×44px（原来 3px 细线 + 只 7px 在卡内 → 抓不住）
+ *    · **touch-action: none** —— 触屏/触控板上不加它，浏览器会把拖拽当滚动并取消 pointer 事件，
+ *      表现就是"拖了没反应"（用户反馈："为什么手动拖拽修改不了尺寸"） */
+function ResizeGrip({ id, active, onDown }: { id: string; active: boolean; onDown: (e: React.PointerEvent) => void }) {
+  return (
+    <div
+      data-node-resize={id}
+      onPointerDown={onDown}
+      onClick={(e) => e.stopPropagation()}
+      title="拖动我，调整这张卡的宽度"
+      className="group/resize absolute top-0 z-30 flex h-full cursor-col-resize items-center justify-center"
+      style={{ right: -10, width: 20, touchAction: "none" }}
+    >
+      <span
+        className="rounded-full transition-opacity group-hover/resize:opacity-100"
+        style={{
+          width: 4,
+          height: 44,
+          opacity: active ? 1 : 0.55,
+          background: active
+            ? "var(--color-accent)"
+            : "color-mix(in srgb, var(--color-border) 55%, var(--color-muted))",
+        }}
+      />
+    </div>
+  );
 }
 
 function DetailSection({ kind, label, children }: { kind: StepKind; label: string; children: React.ReactNode }) {

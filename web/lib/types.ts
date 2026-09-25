@@ -536,11 +536,23 @@ export interface WorkflowEdge {
   rel?: EdgeRel;
 }
 
+/** 画布两端卡片（输入卡 / 输出卡）的版面 —— 与节点一样跟着流程保存，不填 = 自动排版 */
+export interface CardBox {
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+}
+
 export interface WorkflowGraph {
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
   /** 主从里的"主"；不填 = 按连线自动判断 */
   master_nid?: string | null;
+  /** 输入卡（发令区）位置/宽度；用户拖过或调过才有值 */
+  input_card?: CardBox;
+  /** 输出卡（结论）位置/宽度；同上 */
+  output_card?: CardBox;
 }
 
 export interface Workflow {

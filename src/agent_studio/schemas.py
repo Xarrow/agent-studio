@@ -827,6 +827,20 @@ class WorkflowEdge(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class CardBox(BaseModel):
+    """画布两端卡片（输入卡 / 输出卡）的版面。
+
+    为什么和节点分开：节点（助手）是"流程的一部分"，而两端的卡是"画布的框"——
+    但它们同属"用户摆的版面"，所以和节点一样存进图里，跨会话保留。
+    不填 = 按拓扑自动排版（用户没动过就一直是自动的）。
+    """
+
+    x: float | None = None
+    y: float | None = None
+    w: float | None = None
+    h: float | None = None
+
+
 class WorkflowGraph(BaseModel):
     """整张图。前后端只有这一个格式。"""
 
@@ -834,6 +848,10 @@ class WorkflowGraph(BaseModel):
     edges: list[WorkflowEdge] = Field(default_factory=list)
     #: 主从里的"主"；不填 = 按连线自动判断
     master_nid: str | None = None
+    #: 输入卡（发令区）的位置/宽度；用户拖过或调过才有值
+    input_card: CardBox | None = None
+    #: 输出卡（结论）的位置/宽度；同上
+    output_card: CardBox | None = None
 
 
 class WorkflowCreate(BaseModel):
