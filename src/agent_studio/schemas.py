@@ -19,6 +19,19 @@ class ModelSpec(BaseModel):
     provider: str = "deepseek"
     name: str = "deepseek-v4-flash"
     params: dict[str, Any] = Field(default_factory=dict)   # temperature / max_tokens ...
+
+    @field_validator("provider")
+    @classmethod
+    def _canon_provider(cls, v: str) -> str:
+        """收敛 provider 写法：中文显示名 / 别称 / 大小写 → 规范 slug。
+
+        用户界面上看到的是显示名（"火山引擎（豆包）"），提交上来若原样落库，
+        运行时会报 "不支持的 provider" ✗ —— 用户照着界面填的却报错，是我们界面的问题。
+        在这里统一收敛，所有入口（Agent 定义 / 凭据 / 测试运行）一次性生效。
+        """
+        from agent_studio.providers import canonical_provider
+
+        return canonical_provider(v)
     credential_ref: str | None = None                     # Secret.id
     api_key: str | None = Field(default=None, exclude=True)  # 仅创建/测试时传入
     base_url: str | None = None

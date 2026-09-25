@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 
@@ -132,3 +133,54 @@ def get_provider(name: str) -> ProviderMeta | None:
 
 def list_providers() -> list[ProviderMeta]:
     return list(PROVIDERS.values())
+
+
+# --------------------------------------------------------------------------- #
+# provider 写法的**收敛**（用户可见名 → 规范 slug）
+# --------------------------------------------------------------------------- #
+#: 为什么需要：页面上给用户看的是**中文显示名**（"火山引擎（豆包）"），
+#: 而运行层只认规范 slug（volcengine）。一旦显示名原样落库，
+#: 执行时会报 "不支持的 provider: 火山引擎（豆包）" ✗ —— 用户照着界面填的却报错，
+#: 这是**我们自己的界面造成的错**，不该由用户承担。
+#: 所以：所有入口（Agent 定义 / 凭据 / 测试）统一走 canonical_provider 收敛。
+_ALIASES: dict[str, str] = {}
+for _meta in PROVIDERS.values():
+    _ALIASES[_meta.name.lower()] = _meta.name
+    _ALIASES[_meta.display_name.lower()] = _meta.name
+
+#: 常见别称（含 AgentsScope / 各大厂习惯写法）
+_ALIASES.update(
+    {
+        "claude": "anthropic",
+        "kimi": "moonshot",
+        "grok": "xai",
+        "google": "gemini",
+        "qwen": "dashscope",
+        "doubao": "volcengine",
+        "火山": "volcengine",
+        "豆包": "volcengine",
+        "方舟": "volcengine",
+        "通义千问": "dashscope",
+        "阿里云百炼": "dashscope",
+        "百炼": "dashscope",
+    }
+)
+
+
+def canonical_provider(value: str) -> str:
+    """把 provider 的任意写法收敛成规范 slug；认不出来就原样返回（不吞错）。"""
+    v = (value or "").strip()
+    if not v:
+        return v
+    key = v.lower()
+    if key in _ALIASES:
+        return _ALIASES[key]
+    # 中文显示名常带括号后缀（"火山引擎（豆包）"）→ 去掉括号再试
+    stripped = re.sub(r"[（(].*?[)）]", "", key).strip()
+    if stripped in _ALIASES:
+        return _ALIASES[stripped]
+    # 最后：包含关系兜底（"火山引擎" ⊂ 别名表）
+    for alias, slug in _ALIASES.items():
+        if alias and alias in key:
+            return slug
+    return v
