@@ -2197,22 +2197,28 @@ export function WorkflowCanvas({
                   用户定过"破坏性操作要两步确认"，不放悬停条上误点。
                   触屏没有悬停，这条只是加分项，功能一个都没少（⋯ 里都有）。 */}
               {/* 拖右边缘调这张卡的宽度（触屏也能拖：命中区 14px） */}
+              {/* 拖右缘调宽：命中区 20px（10px 落在卡内）+ **看得见**的把手 + touch-action:none。
+                  触屏/触控板上没设 touch-action 时，浏览器会把拖拽当滚动并**取消 pointer 事件**，
+                  表现就是"拖了没反应" —— 用户反馈：为什么手动拖拽修改不了尺寸。 */}
               {!frozen && !narrow && (
                 <div
                   data-node-resize={n.nid}
                   onPointerDown={(e) => startResize(e, n.nid)}
                   onClick={(e) => e.stopPropagation()}
-                  title="拖动调整这一步卡片的宽度"
-                  className="absolute top-0 z-30 flex h-full cursor-col-resize items-center justify-end"
-                  style={{ right: -7, width: 14 }}
+                  title="拖动我，调整这一步卡片的宽度"
+                  className="group/resize absolute top-0 z-30 flex h-full cursor-col-resize items-center justify-center"
+                  style={{ right: -10, width: 20, touchAction: "none" }}
                 >
                   <span
-                    className="rounded-full"
+                    className="rounded-full transition-opacity group-hover/resize:opacity-100"
                     style={{
-                      width: 3, height: 34,
-                      background: resize?.nid === n.nid
-                        ? "var(--color-accent)"
-                        : "color-mix(in srgb, var(--color-border) 70%, var(--color-muted))",
+                      width: 4,
+                      height: 44,
+                      opacity: resize?.nid === n.nid ? 1 : 0.55,
+                      background:
+                        resize?.nid === n.nid
+                          ? "var(--color-accent)"
+                          : "color-mix(in srgb, var(--color-border) 55%, var(--color-muted))",
                     }}
                   />
                 </div>
