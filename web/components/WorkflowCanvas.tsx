@@ -929,6 +929,9 @@ export function WorkflowCanvas({
    *  而 transform 会给内部 fixed 元素重建包含块 → 遮罩盖不满视口 ✗（上一版的 bug 就是这个）。
    *  document 级监听不受 transform 影响，也不用往 DOM 塞全屏透明层。
    */
+  /** 指针最后位置：失焦判定不能靠 :hover（会失真），要靠它 + elementFromPoint */
+  const lastPt = useRef<{ x: number; y: number } | null>(null);
+
   const closeAllFloats = useCallback(() => {
     onDetail?.(null);
     setPicking(null);
@@ -960,9 +963,19 @@ export function WorkflowCanvas({
       if (timer) window.clearTimeout(timer);
       timer = window.setTimeout(() => {
         timer = null;
-        if (document.querySelector("[data-float]:hover")) return;
-        if (document.querySelector("[data-nid]:hover")) return;
-        if (document.querySelector("[data-nodetoolbar]:hover")) return;
+        // ⚠️ 原来这里用 `:hover` 判断 ✗ —— 这就是"线条的卡片失焦不消失"的真因：
+        //    `:hover` 依赖浏览器悬停态，指针一移开/画布重排就失真，实测 mouseout 后永远不关；
+        //    而且它无法被可靠验证（脚本派发的事件不产生 :hover）。
+        //   elementFromPoint 直接回答"指针现在在哪、底下是什么" —— 确定、可测。
+        // 指针位置优先取 mouseout/pointermove 记下的坐标；
+        // **判不出来时按"已失焦"处理**（关），而不是像以前那样 return 不关 ✗
+        const pt = lastPt.current;
+        const el = pt ? (document.elementFromPoint(pt.x, pt.y) as HTMLElement | null) : null;
+        if (el) {
+          if (el.closest("[data-float]")) return;                    // 指针在浮层里 → 留
+          if (el.closest("[data-nid], [data-nodetoolbar]")) return;  // 在节点卡/操作条上 → 留
+          if (el.closest("[data-edge-trigger]")) return;             // 在连线热区上 → 留
+        }
         closeAllFloats();
       }, 240);
     };
@@ -970,13 +983,28 @@ export function WorkflowCanvas({
      *  于是"从连线上移开"根本不触发检查 → 连线中点弹出的选择器卡片一直留着 ✗
      *  （用户原话："为什么线条的卡片不会消失？？？？"）
      *  检查本身很轻（推迟 240ms 且只查 :hover），放宽触发条件是安全的。 */
-    const onOut = () => schedule();
+    const onOut = (e: MouseEvent) => {
+      // mouseout 自带指针坐标 —— 用它，不依赖"之前有没有 pointermove"（那正是上一版的致命前提 ✗）
+      if (typeof e.clientX === "number" && typeof e.clientY === "number") {
+        lastPt.current = { x: e.clientX, y: e.clientY };
+      }
+      // 如果移入的目标本身就在某个浮层/节点/操作条/连线里 → 不算失焦，留
+      const to = e.relatedTarget as HTMLElement | null;
+      if (to && typeof to.closest === "function" &&
+          to.closest("[data-float], [data-nid], [data-nodetoolbar], [data-edge-trigger]")) return;
+      schedule();
+    };
 
+    const onMove = (e: PointerEvent) => {
+      lastPt.current = { x: e.clientX, y: e.clientY };
+    };
     document.addEventListener("pointerdown", onDown);
     document.addEventListener("mouseout", onOut, true);
+    document.addEventListener("pointermove", onMove, { passive: true } as AddEventListenerOptions);
     return () => {
       document.removeEventListener("pointerdown", onDown);
       document.removeEventListener("mouseout", onOut, true);
+      document.removeEventListener("pointermove", onMove);
       if (timer) window.clearTimeout(timer);
     };
   }, [closeAllFloats]);
@@ -997,11 +1025,6 @@ export function WorkflowCanvas({
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
       closeAllFloats();     // 详情 / 选助手 / 悬停卡 / 连线卡 / 插入卡 一起收
       setNodeMenu(null);
-      if (picking) {
-        hit = true;
-        setPicking(null);
-      }
-      if (hit) onDetail?.(null);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -1291,8 +1314,21 @@ export function WorkflowCanvas({
                 }}
                 onClick={(ev) => ev.stopPropagation()}
               >
-                <div className="mb-2 text-[12px]" style={{ color: "var(--color-muted)" }}>
-                  {nameOf(e.from)} → {nameOf(e.to)}：这两个怎么配合？
+                <div className="mb-2 flex items-start justify-between gap-2">
+                  <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+                    {nameOf(e.from)} → {nameOf(e.to)}：这两个怎么配合？
+                  </div>
+                  {/* 关闭（连线卡片）：此前这张卡**没有任何关闭键** ✗ */}
+                  <button
+                    type="button"
+                    aria-label="关闭"
+                    title="关闭"
+                    onClick={() => setEdgeSel(null)}
+                    className="-mr-1 -mt-1 grid h-5 w-5 shrink-0 place-items-center rounded-[5px] text-[13px] leading-none hover:bg-[var(--color-surface-2)]"
+                    style={{ color: "var(--color-muted)" }}
+                  >
+                    ✕
+                  </button>
                 </div>
 
                 {/* ① 顺序：二选一 */}
