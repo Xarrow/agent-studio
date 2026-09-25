@@ -1,74 +1,29 @@
 "use client";
 
 /**
- * 「管理」页 —— **全部流程 + 全部运行记录合并在一处**（用户要求：
- * "管理全部流程和 runs 页面功能合并"）。
+ * /runs 旧路径 → 直接进 Playground 的「流程管理」。
  *
- * 为什么合并
- * ----------
- * 原来这是两个入口：Runs 页看执行记录，Playground 顶栏「流程」浮层管理流程 ——
- * 而"这条流程跑过几次、那次是怎么走的"本来就是一回事，分成两处就得来回跳 ✗。
- *
- * 现在：左边一处选择
- *   · 「全部运行记录」（置顶）→ 右侧是原来 Runs 页那张表（类型筛选/搜索/批量删除/清理/清空 + 详情弹框）
- *   · 某条流程              → 右侧是它的骨架 + 每次执行一张卡（含「就地回放」）
- * 头部动作（新建/重命名/复制/删除/打开到画布）作用于"当前选中的那条流程"。
- *
- * 同一份组件（WorkflowManager）在 Playground 顶栏「流程」里以浮层形态复用 ——
- * 一处能力、两个入口，不写两遍。
+ * 为什么改（用户问："管理功能为什么和其他类型分割？"）
+ * ------------------------------------------------
+ * 流程管理 + 运行记录本来是**画布这件事的一部分** —— 它被做成了一个独立的导航"类型"，
+ * 于是同一件事有了两个入口（Playground 顶栏「流程」+ 导航「管理」）✗。
+ * 按"能合并的入口就合并、能就地就不跳页"的准则：只保留 **Playground 内的那一处**
+ * （顶栏「流程」→ 全部流程 + 每次执行 + 点步骤看这一步的执行详情 + 全部运行记录），
+ * 这个旧 URL 保留为重定向，老链接不失效 ✓。
+ * 需要整页形态时把 WorkflowManager 的 variant 传 "page" 即可（组件仍支持，一行的事）。
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { api } from "@/lib/api";
-import type { Agent, Workflow } from "@/lib/types";
-import { WorkflowManager } from "@/components/WorkflowManager";
 
-export default function ManagePage() {
+export default function RunsRedirect() {
   const router = useRouter();
-  const [agents, setAgents] = useState<Agent[]>([]);
-  /** 变更后让面板重挂载一次 = 重新拉列表（面板内部自己加载，不暴露 reload） */
-  const [tick, setTick] = useState(0);
-  const reload = useCallback(() => setTick((t) => t + 1), []);
-
   useEffect(() => {
-    void (async () => {
-      try {
-        setAgents(await api.agents());
-      } catch {
-        /* 拉不到就用空列表，面板里显示"助手"占位 */
-      }
-    })();
-  }, []);
-
+    router.replace("/playground?manage=1");
+  }, [router]);
   return (
-    <div className="p-4 md:p-6 lg:p-7">
-      <WorkflowManager
-        key={tick}
-        open
-        variant="page"
-        agents={agents}
-        onClose={() => {}}
-        onOpenWorkflow={(w: Workflow) => router.push(`/playground?wf=${w.id}`)}
-        onNew={() => router.push("/playground")}
-        onDuplicate={(w: Workflow) =>
-          void (async () => {
-            try {
-              await api.createWorkflow({
-                name: `${w.name || "未命名编排"} 副本`,
-                description: w.description ?? "",
-                graph: w.graph,
-              });
-              reload();
-            } catch {
-              /* 失败就留在原页，列表不刷新 */
-            }
-          })()
-        }
-        onDeleted={reload}
-        onRenamed={reload}
-        onReplay={(orcId: string) => router.push(`/playground?history=${orcId}`)}
-      />
+    <div className="p-6 text-[13px]" style={{ color: "var(--color-muted)" }}>
+      正在打开流程管理…
     </div>
   );
 }

@@ -23,6 +23,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type { Agent, Workflow } from "@/lib/types";
 import { RunsPanel } from "@/components/RunsPanel";
+import { STEP_STYLE, eventsToSteps, type Step } from "@/components/ui/run-timeline";
 
 type Orc = {
   id: string;
@@ -94,6 +95,36 @@ export function WorkflowManager({
   const [runs, setRuns] = useState<Orc[]>([]);
   const [loading, setLoading] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
+  /** 就地展开的某一步执行详情（用户："agent 节点执行详情展示"——
+   *  流程管理里原来只画了"走了哪几步"，点它没有任何反应 ✗，现在点开就地看这一步的
+   *  输入/思考/调用/回复（与画布上点 agent 卡同一套分色，不跳页） */
+  const [openStep, setOpenStep] = useState<string | null>(null);
+  const [stepDetail, setStepDetail] = useState<{ loading: boolean; steps: Step[]; note?: string } | null>(null);
+  const showStep = useCallback(async (orcId: string, idx: number) => {
+    const key = `${orcId}:${idx}`;
+    if (openStep === key) {
+      setOpenStep(null);
+      setStepDetail(null);
+      return;
+    }
+    if (!orcId) return;                 // 这份流程还没跑过 → 没有可展开的执行
+    setOpenStep(key);
+    setStepDetail({ loading: true, steps: [] });
+    try {
+      const d = (await api.orchestration(orcId)) as unknown as {
+        steps?: { run_id: string; input_text?: string; agent_name?: string }[];
+      };
+      const st = (d.steps ?? [])[idx];
+      if (!st?.run_id) {
+        setStepDetail({ loading: false, steps: [], note: "这一步没有独立的执行记录" });
+        return;
+      }
+      const evts = await api.runEvents(st.run_id);
+      setStepDetail({ loading: false, steps: eventsToSteps(evts, st.input_text ?? "") });
+    } catch (e) {
+      setStepDetail({ loading: false, steps: [], note: e instanceof Error ? e.message : String(e) });
+    }
+  }, [openStep, runs]);   // runs 必须在依赖里 —— 否则回调捕获首次渲染的空数组，runs[0] 永远为空 ✗
   const [renaming, setRenaming] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
 
@@ -388,24 +419,72 @@ export function WorkflowManager({
                             →
                           </span>
                         )}
-                        <span
-                          className="flex items-center gap-1.5 rounded-full border px-2 py-[2px] text-[11.5px]"
+                        <button
+                          type="button"
+                          onClick={() => void showStep(runs[0]?.id ?? "", i)}
+                          className="flex items-center gap-1.5 rounded-full border px-2 py-[2px] text-[11.5px] hover:brightness-[.97]"
                           style={{
                             borderColor: "color-mix(in srgb, var(--color-accent) 34%, var(--color-border))",
-                            background: "color-mix(in srgb, var(--color-accent) 6%, transparent)",
+                            background:
+                              openStep === `${runs[0]?.id ?? ""}:${i}`
+                                ? "color-mix(in srgb, var(--color-accent) 16%, transparent)"
+                                : "color-mix(in srgb, var(--color-accent) 6%, transparent)",
                             color: "var(--color-accent)",
                           }}
-                          title={`第 ${c.no} 步 · ${c.name}`}
+                          title={runs.length ? `第 ${c.no} 步 · ${c.name} —— 点开看这一步的执行详情` : `第 ${c.no} 步 · ${c.name}（这份流程还没跑过）`}
                         >
                           <span className="tabular-nums opacity-70">{c.no}</span>
                           {c.name}
-                        </span>
+                        </button>
                       </span>
                     ))}
                   </div>
                 ) : (
                   <div className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
                     这份流程还没有助手。打开到画布，点节点右边的 ＋ 起步。
+                  </div>
+                )}
+                {/* 就地展开：这一步的 输入/思考/调用/回复（与画布点 agent 卡同一套分色） */}
+                {openStep && openStep.startsWith(`${runs[0]?.id ?? ""}:`) && stepDetail && (
+                  <div className="mt-2 rounded-[8px] border" style={{ borderColor: "var(--color-border)" }}>
+                    <div className="flex items-center gap-2 border-b px-2 py-1" style={{ borderColor: "var(--color-border)" }}>
+                      <span className="text-[11.5px] font-medium" style={{ color: "var(--color-muted)" }}>
+                        这一步的执行详情
+                      </span>
+                      <button
+                        type="button"
+                        className="ml-auto text-[11.5px]"
+                        style={{ color: "var(--color-muted)" }}
+                        onClick={() => { setOpenStep(null); setStepDetail(null); }}
+                      >
+                        收起
+                      </button>
+                    </div>
+                    {stepDetail.loading ? (
+                      <div className="px-2 py-2 text-[12px]" style={{ color: "var(--color-muted)" }}>读取中…</div>
+                    ) : stepDetail.note ? (
+                      <div className="px-2 py-2 text-[12px]" style={{ color: "var(--color-muted)" }}>{stepDetail.note}</div>
+                    ) : (
+                      <div className="flex flex-col gap-1.5 px-2 py-2">
+                        {stepDetail.steps.map((st, k) => {
+                          const sty = STEP_STYLE[st.kind];
+                          return (
+                            <div key={k} className="rounded-[8px] border" style={{ borderColor: sty.border, background: sty.bg }}>
+                              <div className="flex items-center gap-1.5 px-2 py-[3px] text-[11px] font-semibold" style={{ color: sty.color }}>
+                                <span className="text-[10px] leading-none">{sty.icon}</span>
+                                {st.label}
+                              </div>
+                              <div className="max-h-[220px] overflow-auto whitespace-pre-wrap break-words px-2 pb-[6px] text-[11.5px] leading-[1.65]">
+                                {st.body}
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {stepDetail.steps.length === 0 && (
+                          <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>这一步没有留下事件</div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
