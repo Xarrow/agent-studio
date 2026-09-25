@@ -457,7 +457,7 @@ export function PlaygroundConsole() {
     setDetail(null);
     setDetailNid(null);
     setWfMenu(false);
-    fb.info("新编排", "拖一个助手进来就能开搭；保存时会新建一份，不覆盖原来的");
+    fb.info("新编排", "点「＋ 加一步」加一个助手就能开搭；保存时会新建一份，不覆盖原来的");
   };
 
   const duplicateWorkflow = async () => {
@@ -598,7 +598,7 @@ export function PlaygroundConsole() {
   const run = async () => {
     const text = task.trim();
     if (!text) return fb.error("还差一步", "先写一句任务，助手才知道要干什么");
-    if (!graph.nodes.length) return fb.error("画布是空的", "从左边拖一个助手进来");
+    if (!graph.nodes.length) return fb.error("画布是空的", "点画布上的「＋ 加一步」选一个助手");
     setRunning(true);
     setRunStates(Object.fromEntries(graph.nodes.map((n) => [n.nid, "wait" as NodeState])));
     setOutputs({});
@@ -911,14 +911,6 @@ export function PlaygroundConsole() {
               </button>
               <button
                 type="button"
-                onClick={newWorkflow}
-                className="w-full rounded-[6px] px-2 py-1.5 text-left text-[12.5px] hover:bg-[var(--color-surface-2)]"
-                style={{ color: confirmNew ? "var(--color-warn)" : undefined }}
-              >
-                {confirmNew ? "有未保存改动 —— 再点一下丢弃并新建" : "新建空白编排"}
-              </button>
-              <button
-                type="button"
                 onClick={() => void duplicateWorkflow()}
                 className="w-full rounded-[6px] px-2 py-1.5 text-left text-[12.5px] hover:bg-[var(--color-surface-2)]"
               >
@@ -984,45 +976,36 @@ export function PlaygroundConsole() {
 
       {/* ══ 主体：助手栏 / 画布 / 节点详情 ══ */}
       <div className="pg-split flex min-h-0 flex-1">
-        <aside
-          className={`pg-rail flex w-[208px] shrink-0 flex-col border-r transition-opacity ${
-            running ? "opacity-40" : ""
-          }`}
-          style={{ borderColor: "var(--color-border)", background: "var(--color-surface)", position: "relative" }}
-          title={running ? "运行中不能改结构 —— 跑完再拖" : undefined}
-        >
-          <div
-            className="pg-rail-title flex items-center justify-between px-3.5 pt-3 pb-2 text-[12px] font-semibold"
-            style={{ color: "var(--color-muted)" }}
-            title="拖到空白处 = 新开一条；拖到某个助手上 = 接在它后面；点一下 = 直接加一条。"
-          >
-            <span>助手</span>
-            <button
-              type="button"
-              disabled={running}
-              onClick={(e) => {
-                e.stopPropagation();
-                setAgentPick((v) => !v);
+        {/* 选助手（原来挂在左侧助手栏的标题行里 —— 那个栏已移除）：
+            改成**居中弹层**，与全站其他弹层一致，不弹浏览器原生框。
+            加进来的助手接在流程末尾 —— 与画布上「＋ 加一步」的语义一致。 */}
+        {agentPick && (
+          <>
+            <div
+              className="fixed inset-0 z-[60]"
+              style={{ background: "rgba(16,24,40,.26)" }}
+              onClick={() => setAgentPick(false)}
+            />
+            <div
+              className="fixed left-1/2 top-1/2 z-[61] flex max-h-[70vh] w-[330px] -translate-x-1/2 -translate-y-1/2 flex-col rounded-[12px] border p-2"
+              style={{
+                background: "var(--color-surface)",
+                borderColor: "var(--color-border)",
+                boxShadow: "0 18px 48px rgba(16,24,40,.22)",
               }}
-              className="pg-rail-pick df-ctl-sm hover:bg-[var(--color-surface-2)] disabled:opacity-45"
-              style={{ color: "var(--color-accent)", border: "1px solid var(--color-border)" }}
-              title="从列表里选一个助手，加到流程末尾（手机上比拖拽可靠）"
             >
-              选择助手 ▾
-            </button>
-          </div>
-          {agentPick && (
-            <>
-              {/* 点空白处收起（与全站弹层一致，不用原生弹窗） */}
-              <div className="fixed inset-0 z-30" onClick={() => setAgentPick(false)} />
-              <div
-                className="df-menu absolute left-2 top-[46px] z-40 max-h-[60vh] w-[228px] overflow-auto border"
-                style={{
-                  background: "var(--color-surface)",
-                  borderColor: "var(--color-border)",
-                  boxShadow: "0 8px 24px rgba(16, 24, 40, 0.14)",
-                }}
-              >
+              <div className="flex items-center justify-between px-1.5 pb-1.5 pt-1">
+                <span className="text-[13px] font-semibold">加一个助手进来</span>
+                <button
+                  type="button"
+                  onClick={() => setAgentPick(false)}
+                  className="px-1.5 text-[var(--color-muted)] hover:text-[var(--color-err)]"
+                  title="关闭"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="min-h-0 flex-1 overflow-auto">
                 {agents.map((a) => (
                   <button
                     key={a.id}
@@ -1047,50 +1030,10 @@ export function PlaygroundConsole() {
                     </span>
                   </button>
                 ))}
-                {!agents.length && (
-                  <div className="px-3 py-2 text-[12px]" style={{ color: "var(--color-muted)" }}>
-                    还没有助手，先去 Agents 建一个。
-                  </div>
-                )}
               </div>
-            </>
-          )}
-          <div className="pg-rail-list flex min-h-0 flex-1 flex-col gap-1.5 overflow-auto px-2.5 pb-3">
-            {agents.map((a) => (
-              <div
-                key={a.id}
-                onPointerDown={(e) => startAgentDrag(e, a.id, a.name)}
-                // touchAction:none —— 手指按在这张卡上时不要让它变成页面滚动，
-                // 否则 pointermove 会被浏览器截走，拖拽在手机上就废了
-                className="pg-rail-card flex cursor-grab touch-none items-center gap-2 rounded-[8px] border px-2.5 py-2 active:cursor-grabbing"
-                style={{
-                  borderColor: draggingAgentId === a.id ? "var(--color-accent)" : "var(--color-border)",
-                  background: "var(--color-surface)",
-                  opacity: running ? 0.5 : 1,
-                }}
-                title={`${a.name} · ${a.definition?.system_prompt?.slice(0, 40) ?? ""}`}
-              >
-                <span
-                  className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-[7px] border text-[12px] font-semibold"
-                  style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)", color: "var(--color-muted)" }}
-                >
-                  {a.name.slice(0, 1)}
-                </span>
-                <span className="min-w-0">
-                  <span className="block truncate text-[13px] font-medium">{a.name}</span>
-                  <span className="block truncate text-[12px]" style={{ color: "var(--color-muted)" }}>
-                    {a.definition?.model?.name ?? ""}
-                  </span>
-                </span>
-              </div>
-            ))}
-            {!agents.length && (
-              <div className="px-2 text-[12px]" style={{ color: "var(--color-muted)" }}>
-                还没有助手，先去 <a href="/agents" className="underline">Agents</a> 建一个。
-              </div>
-            )}
-          </div>
-        </aside>
+            </div>
+          </>
+        )}
 
         <div className="min-w-0 flex-1">
           <WorkflowCanvas
@@ -1117,6 +1060,7 @@ export function PlaygroundConsole() {
             attachments={attachments}
             onAttach={(files) => void attachFiles(files)}
             onDetach={detachFile}
+            onAddStep={() => setAgentPick(true)}
             onTaskValue={(v) => {
               setTask(v);
               if (typeof window !== "undefined") window.localStorage.setItem(LAST_TASK_KEY, v);

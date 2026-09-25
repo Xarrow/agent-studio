@@ -143,6 +143,8 @@ type Props = {
   attachments?: UploadItem[];
   onAttach?: (files: File[]) => void;
   onDetach?: (id: string) => void;
+  /** 画布上的「＋ 加一步」—— 点它由上层弹出助手选择（加在流程末尾） */
+  onAddStep?: () => void;
   onRun?: () => void;
   running?: boolean;
   /** 当前会跑什么模式（显示在运行键上） */
@@ -217,6 +219,7 @@ export function WorkflowCanvas({
   attachments = [],
   onAttach,
   onDetach,
+  onAddStep,
   onTaskValue,
   onRun,
   running = false,
@@ -378,8 +381,17 @@ export function WorkflowCanvas({
     const lastIds = layers[layers.length - 1] ?? [];
     const firstY = firstIds.length ? (pos[firstIds[0]]?.y ?? PAD) : PAD;
     const lastY = lastIds.length ? (pos[lastIds[0]]?.y ?? PAD) : PAD;
+    /** 「＋ 加一步」的位置 —— 它属于**流程本身**（接在最后一步后面），
+     *  所以画在画布上、紧挨着最后一步，而不是塞进顶栏或侧栏。
+     *  横向：末列右侧、结论卡之前；纵向：最后一个节点下方、结论之前。 */
+    const ADD_W = 132;
+    const addAt = narrow
+      ? { x: PAD, y: maxY + 2 }
+      : { x: maxX + GAP_X, y: lastY + 8 };
     const taskAt = narrow ? { x: PAD, y: PAD } : { x: PAD, y: firstY };
-    const concAt = narrow ? { x: PAD, y: maxY + 10 } : { x: maxX + GAP_X, y: lastY };
+    const concAt = narrow
+      ? { x: PAD, y: addAt.y + 46 }
+      : { x: addAt.x + ADD_W + GAP_X, y: lastY };
     /** 三块的实际宽度（窄屏=列宽；宽屏=各自的固定宽）—— 渲染只读这三个值 */
     const CARD_W = narrow ? CW : W_TASK;
     const NW = narrow ? CW : W_NODE;
@@ -409,7 +421,7 @@ export function WorkflowCanvas({
         if (y2 - y1 > 6) links.push({ x: PAD + CW / 2, y1: y1 + 3, y2: y2 - 3 });
       }
     }
-    return { pos, w, h, layers, taskAt, concat: concAt, concAt, CARD_W, NW, CONC_W, CW, links };
+    return { pos, w, h, layers, taskAt, concat: concAt, concAt, addAt, ADD_W, CARD_W, NW, CONC_W, CW, links };
   }, [graph.nodes, graph.edges, heights, colW, narrow, taskText, finalText, taskH]);
 
   /* 高度变化要在**绘制前**同步进布局，否则连线会先画在旧位置上再跳一下 */
@@ -1166,6 +1178,29 @@ export function WorkflowCanvas({
             Enter 运行 · Shift+Enter 换行
           </div>
         </div>
+
+        {/* 「＋ 加一步」—— 属于**流程本身**，所以画在流程末尾，而不是塞进顶栏或侧栏
+            （控件归属其对象：你加的是"这一步"，不是"顶栏的一个功能"）。
+            它替代了原来的左侧助手栏：那个栏占了 208px 宽，只为放"可拖的助手列表"，
+            横向布局下这 208px 正是最值钱的地方。 */}
+        {!frozen && (
+          <button
+            type="button"
+            onClick={() => onAddStep?.()}
+            title="在流程末尾再加一个助手"
+            className="absolute flex items-center justify-center gap-1.5 rounded-[10px] border border-dashed text-[12px] hover:bg-[var(--color-surface-2)]"
+            style={{
+              transform: `translate(${layout.addAt.x}px, ${layout.addAt.y}px)`,
+              width: layout.ADD_W,
+              height: 44,
+              borderColor: "var(--color-border)",
+              color: "var(--color-accent)",
+              background: "var(--color-surface)",
+            }}
+          >
+            ＋ 加一步
+          </button>
+        )}
 
         {finalText.trim() && (
           <div
