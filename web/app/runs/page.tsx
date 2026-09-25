@@ -402,7 +402,7 @@ export default function RunsPage() {
                       {/* 编排执行额外给个「以流程查看」：直接进 Playground 的历史回放，
                           用画布看那次的图 —— 而不是在这里弹一个五页签的日志框 */}
                       {it.kind === "playground" && it.orchestration_id && (
-                        <a
+                        <Link
                           href={`/playground?history=${it.orchestration_id}`}
                           onClick={(e) => e.stopPropagation()}
                           className="ml-1.5 whitespace-nowrap text-[11px] underline decoration-dotted"
@@ -410,7 +410,7 @@ export default function RunsPage() {
                           title="用画布看这次执行（哪一步在跑、跑成什么样）"
                         >
                           以流程查看
-                        </a>
+                        </Link>
                       )}
                     </td>
                     <td className="px-3 py-2.5">
