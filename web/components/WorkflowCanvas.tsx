@@ -511,7 +511,7 @@ export function WorkflowCanvas({
     const taskAt = narrow ? { x: PAD, y: PAD } : { x: PAD, y: firstY };
     const concAt = narrow
       ? { x: PAD, y: addAt.y + 46 }
-      : { x: addAt.x + ADD_W + GAP_X, y: lastY };
+      : { x: maxX + GAP_X, y: lastY };   // 「＋ 加一步」移除后，结论卡直接跟在末列后面（不留空位）
     /** 三块的实际宽度（窄屏=列宽；宽屏=各自的固定宽）—— 渲染只读这三个值 */
     const CARD_W = narrow ? CW : W_TASK;
     const NW = narrow ? CW : W_NODE;
@@ -1862,24 +1862,10 @@ export function WorkflowCanvas({
             );
           })}
 
-        {!frozen && !empty && (
-          <button
-            type="button"
-            onClick={() => setPicking({ mode: "add" })}
-            title="在流程末尾再加一个助手"
-            className="absolute flex items-center justify-center gap-1.5 rounded-[10px] border border-dashed text-[12px] hover:bg-[var(--color-surface-2)]"
-            style={{
-              transform: `translate(${layout.addAt.x}px, ${layout.addAt.y}px)`,
-              width: layout.ADD_W,
-              height: 44,
-              borderColor: "var(--color-border)",
-              color: "var(--color-accent)",
-              background: "var(--color-surface)",
-            }}
-          >
-            ＋ 加一步
-          </button>
-        )}
+        {/* **「＋ 加一步」已移除**（用户要求："移除「加一步」"）。
+            加一步不必是一个常驻在画布上的大方块 —— 它会一直占着画布最右端一块地方；
+            要往后接一步，用**每个节点右侧那个小 ＋**（就地插在它后面，语义更准），
+            或者在已有步骤上用「⧉ 复制一步」。 */}
 
         {finalText.trim() && (
           <div
