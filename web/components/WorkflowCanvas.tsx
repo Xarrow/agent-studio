@@ -453,10 +453,30 @@ export function WorkflowCanvas({
     const PAD = 10;
     /** 横向卡宽：节点对齐 Dify 的 NODE_WIDTH 240；任务是"要写"的、结论是"要读"的 */
     const W_TASK = 320;   // 方案 C：发令区加宽到与结论卡同级（节点卡 240）
-    const W_NODE = 240;
+    const W_NODE = 320;   // 用户："调整下 agent 尺寸"（240 时产出挤成 4~5 行）
     const W_CONC = 320;
     const GAP_X = 56;   // 层间距（Dify X_OFFSET 60 的量级）
     const GAP_Y = 39;   // 同层节点间距（Dify Y_OFFSET 39）
+    /** 卡片宽度**可拖拉调整**（用户："可以在画布上通过拖拉调整卡片的尺寸"）：
+     *  每张卡自己的宽度存在节点上（n.w），没调过就用默认 W_NODE；
+     *  上下限保证"不会窄到看不清、也不会宽到把整列撑爆"。 */
+    const W_MIN = 240;
+    const W_MAX = 720;
+    const wMap: Record<string, number> = {};
+    graph.nodes.forEach((n) => {
+      const raw = typeof n.w === "number" ? n.w : W_NODE;
+      wMap[n.nid] = narrow ? colW : Math.max(W_MIN, Math.min(W_MAX, raw));
+    });
+    /** 列 x = 前面各层**最宽那张**累加 —— 拖宽某张卡时后面的列自动让位（不会压上去） */
+    const colX: number[] = [];
+    {
+      let x = PAD + W_TASK + GAP_X;
+      layers.forEach((ids, ci) => {
+        colX[ci] = x;
+        const maxW = Math.max(W_NODE, ...ids.map((id) => wMap[id] ?? W_NODE));
+        x += maxW + GAP_X;
+      });
+    }
     /** 纵向（手机）三块统一用实测列宽 */
     const CW = colW;
     const hOf = (nid: string) => heights[nid] || 104;
@@ -488,10 +508,10 @@ export function WorkflowCanvas({
         let y = PAD;
         ids.forEach((nid) => {
           // 拖过就用它自己的位置；没拖过按列排（第几层 × 层宽）
-          pos[nid] = manualOf(nid) ?? { x: PAD + W_TASK + GAP_X + ci * (W_NODE + GAP_X), y };
+          pos[nid] = manualOf(nid) ?? { x: colX[ci] ?? PAD + W_TASK + GAP_X, y };
           y += hOf(nid) + GAP_Y;
           // maxX 要把"被拖到很右边的节点"也算进去，否则结论卡会叠上去
-          maxX = Math.max(maxX, pos[nid].x + W_NODE + PAD);
+          maxX = Math.max(maxX, pos[nid].x + (wMap[nid] ?? W_NODE) + PAD);
         });
         maxY = Math.max(maxY, y);
       });
@@ -541,7 +561,7 @@ export function WorkflowCanvas({
         if (y2 - y1 > 6) links.push({ x: PAD + CW / 2, y1: y1 + 3, y2: y2 - 3 });
       }
     }
-    return { pos, w, h, layers, taskAt, concat: concAt, concAt, addAt, ADD_W, CARD_W, NW, CONC_W, CW, links };
+    return { pos, w, h, layers, taskAt, concat: concAt, concAt, addAt, ADD_W, CARD_W, NW, CONC_W, CW, links, W: wMap, W_MIN, W_MAX };
   }, [graph.nodes, graph.edges, heights, colW, narrow, taskText, finalText, taskH]);
 
   /* 高度变化要在**绘制前**同步进布局，否则连线会先画在旧位置上再跳一下 */
@@ -586,7 +606,7 @@ export function WorkflowCanvas({
       const rect = stageRef.current?.getBoundingClientRect();
       const p = layout.pos[from];
       if (!rect || !p) return;
-      const x1 = p.x + layout.NW;
+      const x1 = p.x + (layout.W[from] ?? layout.NW);
       const y1 = p.y + (heights[from] || 104) / 2;
       // 画布可能被缩放：屏幕上量的位移要除以 zoom 才是图内坐标
       const z = zoomRef.current || 1;
@@ -657,7 +677,7 @@ export function WorkflowCanvas({
       edgeMids[key] = { x: x1, y: (y1 + y2) / 2 };
     } else {
       // 横向（桌面）：从 A 右侧中间 → B 左侧中间，贝塞尔往右走
-      const x1 = a.x + layout.NW;
+      const x1 = a.x + (layout.W[e.from] ?? layout.NW);
       const y1 = a.y + (heights[e.from] || 104) / 2;
       const x2 = b.x;
       const y2 = b.y + (heights[e.to] || 104) / 2;
@@ -1128,6 +1148,41 @@ export function WorkflowCanvas({
       window.removeEventListener("pointerup", onUp);
     };
   }, [drag, graph, onChange]);
+
+  /* ── 拖卡片右边缘调宽度 ──────────────────────────────────────────────
+     用户："用户可以在画布上通过拖拉调整卡片的尺寸"
+     宽度存在节点上（graph.nodes[].w）→ 跟着流程一起保存，跨会话保留。
+     拖动过程用本地 state 实时跟手；松手才写回图，避免每移动 1px 就标脏存一次。 */
+  const [resize, setResize] = useState<{ nid: string; sx: number; sw: number; w: number } | null>(null);
+  const startResize = (e: React.PointerEvent, nid: string) => {
+    if (frozen || narrow) return;            // 只读回放 / 手机上不给拖（手机是一列铺满）
+    e.preventDefault();
+    e.stopPropagation();                     // 别触发"点卡片=选中"与节点拖动
+    const start = layout.W[nid] ?? layout.NW;
+    setResize({ nid, sx: e.clientX, sw: start, w: start });
+  };
+  useEffect(() => {
+    if (!resize) return;
+    const onMove = (ev: PointerEvent) => {
+      const z = zoomRef.current || 1;        // 画布可缩放：屏幕位移 ÷ zoom 才是图内宽度
+      const w = Math.round(Math.max(layout.W_MIN, Math.min(layout.W_MAX, resize.sw + (ev.clientX - resize.sx) / z)));
+      setResize((r) => (r ? { ...r, w } : r));
+    };
+    const onUp = () => {
+      setResize((r) => {
+        if (r && Math.abs(r.w - r.sw) >= 8) {
+          onChange({ ...graph, nodes: graph.nodes.map((n) => (n.nid === r.nid ? { ...n, w: r.w } : n)) });
+        }
+        return null;
+      });
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+  }, [resize, graph, onChange, layout.W, layout.NW, layout.W_MIN, layout.W_MAX]);
   const growTask = () => {
     const el = taskBoxRef.current;
     if (!el) return;
@@ -1637,10 +1692,10 @@ export function WorkflowCanvas({
             const insNode = insertAfter ? layout.pos[insertAfter] : null;
             const at =
               insNode
-                ? { x: insNode.x + layout.NW + 10, y: insNode.y }
+                ? { x: insNode.x + (layout.W[insertAfter as string] ?? layout.NW) + 10, y: insNode.y }
                 : picking.mode === "add"
                   ? { x: layout.addAt.x, y: layout.addAt.y + 50 }
-                  : { x: (node?.x ?? 0) + layout.NW + 10, y: node?.y ?? 0 };
+                  : { x: (node?.x ?? 0) + ((picking.nid ? layout.W[picking.nid] : undefined) ?? layout.NW) + 10, y: node?.y ?? 0 };
             const row = ({ a, s: sc }: { a: Agent; s: number }) => (
               <button
                 key={a.id}
@@ -1757,7 +1812,7 @@ export function WorkflowCanvas({
             // 位置：桌面贴节点右侧（贴右边界就翻到左侧）；窄屏**放到节点下方**并左对齐
             // —— 手机只有 ~375px 宽，横着放必然溢出屏幕（这是我在窄屏上要确认的那条）。
             const BW = narrow ? Math.max(240, colW - 8) : 384;
-            const toRight = at.x + layout.NW + 14;
+            const toRight = at.x + (layout.W[n.nid] ?? layout.NW) + 14;
             const flip = toRight + BW > layout.w - 6;
             const left = narrow ? Math.max(4, at.x) : flip ? Math.max(6, at.x - BW - 14) : toRight;
             const top = narrow ? at.y + (heights[n.nid] ?? 220) + 10 : at.y;
@@ -2016,7 +2071,7 @@ export function WorkflowCanvas({
             }
             const l = last[0];
             if (l && finalText.trim()) {
-              const x1 = layout.pos[l].x + layout.NW;
+              const x1 = layout.pos[l].x + (layout.W[l] ?? layout.NW);
               const y1 = yOf(l);
               lines.push(
                 <path
@@ -2070,12 +2125,12 @@ export function WorkflowCanvas({
               }}
               onClick={(e) => {
                 e.stopPropagation();
-                // **点卡片 = 只选中**（点亮上下游链路），**不弹任何东西**。
-                // 用户："为什么一点击 agent 卡片就会弹出" —— 卡片本身不该是"打开弹层"的开关；
-                // 要看这一步的详情，点卡片上方操作条里的「详情」（显式意图、位置就在卡上）。
-                // 同时把**别的卡片**关掉（连线卡 / 选助手 / 悬停卡 / 详情），避免叠着 ✗。
+                // **点卡片 = 选中 + 打开这一步的详情**。
+                // 用户："执行后 agent 点击没有显示详情" —— 卡片就是这一步的载体，
+                // 点它就该看到这一步的输入/输出/过程（详情浮层贴在这张卡上）。
+                // 再点一次 = 收起（切换）；别的浮层先关掉，避免叠着 ✗。
                 onSelect?.(n.nid);
-                onDetail?.(null);
+                onDetail?.(detailNid === n.nid ? null : n.nid);
                 setEdgeSel(null);
                 setPicking(null);
                 setPeek(null);
@@ -2096,7 +2151,8 @@ export function WorkflowCanvas({
               }`}
               style={{
                 transform: `translate(${p.x}px, ${p.y}px)`,
-                width: layout.NW,
+                // 宽度：正在拖这张卡时用实时值（跟手），否则用图里存的（拖过就用拖过的宽）
+                width: resize?.nid === n.nid ? resize.w : layout.W[n.nid] ?? layout.NW,
                 background: "var(--color-surface)",
                 borderColor: isTarget ? "var(--color-accent)" : isSel ? "var(--color-accent)" : meta.border,
                 borderStyle: isTarget ? "dashed" : st === "stale" ? "dashed" : "solid",
@@ -2140,6 +2196,27 @@ export function WorkflowCanvas({
                   破坏性的（移除这一步、清空下游）仍然留在 ⋯ 菜单里：
                   用户定过"破坏性操作要两步确认"，不放悬停条上误点。
                   触屏没有悬停，这条只是加分项，功能一个都没少（⋯ 里都有）。 */}
+              {/* 拖右边缘调这张卡的宽度（触屏也能拖：命中区 14px） */}
+              {!frozen && !narrow && (
+                <div
+                  data-node-resize={n.nid}
+                  onPointerDown={(e) => startResize(e, n.nid)}
+                  onClick={(e) => e.stopPropagation()}
+                  title="拖动调整这一步卡片的宽度"
+                  className="absolute top-0 z-30 flex h-full cursor-col-resize items-center justify-end"
+                  style={{ right: -7, width: 14 }}
+                >
+                  <span
+                    className="rounded-full"
+                    style={{
+                      width: 3, height: 34,
+                      background: resize?.nid === n.nid
+                        ? "var(--color-accent)"
+                        : "color-mix(in srgb, var(--color-border) 70%, var(--color-muted))",
+                    }}
+                  />
+                </div>
+              )}
               {!frozen && (
                 <div
                   /* **常驻显示**（用户要求："agent 上的操作直接在 agent 上方提示出来，不要再让用户点击"）。

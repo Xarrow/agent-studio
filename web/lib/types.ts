@@ -515,6 +515,8 @@ export interface WorkflowNode {
   /** 画布坐标：不填 = 按拓扑自动排版；用户拖过就有值（"一键整理"会清空） */
   x?: number;
   y?: number;
+  /** 卡片宽度：画布上拖右边缘调过才有值（同样跟着流程保存，跨会话保留） */
+  w?: number;
 }
 
 export interface WorkflowEdge {

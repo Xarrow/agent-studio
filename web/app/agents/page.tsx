@@ -58,6 +58,9 @@ export default function AgentsPage() {
   const [err, setErr] = useState<string | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  /** 列表里就地改名：非 null = 正在改这个助手的名字（用户反馈"看不到修改名称的入口"） */
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [nameDraft, setNameDraft] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -91,6 +94,32 @@ export default function AgentsPage() {
       await load();
     } catch (e) {
       fb.error("复制 Agent 失败", e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /** 列表里**就地改名**。
+   *
+   *  为什么加（用户："为什么还是看不到修改 agent 名称的入口"）
+   *  --------------------------------------------------------
+   *  之前只能进详情页改，而且名字就是普通输入框、没有任何提示 —— 等于"没有入口" ✗。
+   *  这里在每张卡片上给一个明确的「改名」：点了名字变输入框，回车或点到别处即保存，Esc 取消。
+   *  同时写顶层 name 与 definition.name（这两个历史数据里可能不一致，写一次就统一）。 */
+  const rename = async (a: Agent) => {
+    const next = nameDraft.trim();
+    setRenaming(null);
+    if (!next || next === a.name) return;
+    setBusy(a.id);
+    try {
+      await api.updateAgent(a.id, {
+        name: next,
+        definition: { ...(a.definition ?? {}), name: next } as Agent["definition"],
+      });
+      fb.success("名字改好了", next);
+      await load();
+    } catch (e) {
+      fb.error("改名失败", e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(null);
     }
@@ -165,13 +194,30 @@ export default function AgentsPage() {
           {agents.map((a) => (
             <div key={a.id} className="card p-4 flex flex-col">
               <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <Link
-                    href={`/agents/${a.id}`}
-                    className="font-medium text-[14.5px] hover:text-[var(--color-accent)] truncate block"
-                  >
-                    {a.name}
-                  </Link>
+                <div className="min-w-0 flex-1">
+                  {renaming === a.id ? (
+                    <input
+                      autoFocus
+                      value={nameDraft}
+                      onChange={(e) => setNameDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") void rename(a);
+                        if (e.key === "Escape") setRenaming(null);
+                      }}
+                      onBlur={() => void rename(a)}
+                      /* 点开就全选：直接打字即覆盖，不用先删 */
+                      onFocus={(e) => e.currentTarget.select()}
+                      className="input text-[14px]"
+                      placeholder="给它起个名字"
+                    />
+                  ) : (
+                    <Link
+                      href={`/agents/${a.id}`}
+                      className="font-medium text-[14.5px] hover:text-[var(--color-accent)] truncate block"
+                    >
+                      {a.name}
+                    </Link>
+                  )}
                   <div className="text-[11.5px] text-[var(--color-muted)] mono mt-0.5">
                     {a.slug} · v{a.version} · {a.id}
                   </div>
@@ -213,6 +259,17 @@ export default function AgentsPage() {
                 <Link href={`/agents/${a.id}`} className="btn text-[12.5px]">
                   设置
                 </Link>
+                <button
+                  className="btn text-[12.5px]"
+                  disabled={busy === a.id}
+                  onClick={() => {
+                    setRenaming(a.id);
+                    setNameDraft(a.name);
+                  }}
+                  title="就地改名：回车保存，Esc 取消"
+                >
+                  改名
+                </button>
                 <button
                   className="btn text-[12.5px]"
                   disabled={busy === a.id}

@@ -796,6 +796,9 @@ class WorkflowNode(BaseModel):
     agent_id: str
     x: float | None = None
     y: float | None = None
+    #: 卡片宽度（画布上拖右边缘调过才有值）—— 和 x/y 一样属于"用户摆的版面"，
+    #: 存进图里就能跨会话保留；不填 = 用前端的默认宽。
+    w: float | None = None
 
 
 class WorkflowEdge(BaseModel):
