@@ -132,24 +132,20 @@ export function PlaygroundConsole() {
         const [ags, wfs] = await Promise.all([api.agents(), api.workflows(30)]);
         setAgents(ags);
         setList(wfs);
-        // 上次在编哪一份就回到哪一份（找不到才退回最近改动的那份）
-        const remembered =
-          typeof window !== "undefined" ? window.localStorage.getItem(LAST_WF_KEY) : null;
-        const target = wfs.find((w) => w.id === remembered) ?? wfs[0];
-        // 上次输入框里的任务也还回去（没跑过的话，这就是他刚写了一半的东西）
-        const rememberedTask =
-          typeof window !== "undefined" ? window.localStorage.getItem(LAST_TASK_KEY) : null;
-        if (rememberedTask) setTask(rememberedTask);
-        if (target) {
-          loadWorkflow(target);
-          // 顺手把这份设计稿**最近一次执行**带出来 —— 一进来就能看到上次每个助手
-          // 干了什么（思考/工具/输出），不用先跑一遍才有东西看。
-          const lastRuns = await api.workflowRuns(target.id, 1).catch(() => []);
-          const last = lastRuns[0];
-          if (last?.id) {
-            setOrcId(last.id);          // 列表里的 id 就是编排 id
-            subscribe(last.id);
-          }
+        // **打开就是一张干净的空白流程** —— 这是刻意的产品决定。
+        //
+        // 早前（09-22）这里会"记住上次在编哪份 + 把最近一次执行整段回放上来"，
+        // 那是当时的要求（刷新后什么都看不到）。但用户 09-25 反馈
+        // "为什么默认打开会显示之前的任务" —— 一进来就是一堆上一次的产出和结论，
+        // 跟"我要开始干一件事"的心智冲突；而且现在有「流程管理」浮层和顶栏 ⌄ 菜单，
+        // 上次的东西一点就在，不需要默认强行还原。
+        //
+        // 所以：不自动载入任何流程、不自动回放、任务框留空。
+        // 想接着上次干 → 顶栏名字旁 ⌄ 里的"最近流程"，或「管理全部流程…」。
+        // 旧的 localStorage 记忆也不再写（clean 一下，避免留着半截状态）。
+        if (typeof window !== "undefined") {
+          window.localStorage.removeItem(LAST_WF_KEY);
+          window.localStorage.removeItem(LAST_TASK_KEY);
         }
       } catch {
         /* 初次进来拉不到就留空画布，不打断 */
