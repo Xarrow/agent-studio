@@ -357,7 +357,6 @@ export default function RunsPage() {
                 <th className="text-left px-3 py-2.5 font-medium w-24">类型</th>
                 <th className="text-left px-3 py-2.5 font-medium">主体</th>
                 <th className="text-left px-3 py-2.5 font-medium w-24">状态</th>
-                <th className="text-right px-3 py-2.5 font-medium w-20">耗时</th>
                 <th className="text-right px-3 py-2.5 font-medium w-28">Tokens</th>
                 <th className="text-left px-3 py-2.5 font-medium">摘要</th>
               </tr>
@@ -416,20 +415,20 @@ export default function RunsPage() {
                     </td>
                     <td className="px-3 py-2.5">
                       <div className="truncate max-w-[240px]">{it.title}</div>
-                      {it.model && it.kind !== "llm_test" && (
-                        <div className="text-[11px] text-[var(--color-muted)] truncate mono">
-                          {it.model}
-                        </div>
-                      )}
+                      {/* 耗时**不再单占一列**（用户："耗时不需要单独输出，
+                          应该在输入、输出的每项中提示，不用太割裂显示"）。
+                          它属于这条记录本身，就跟名字 / 模型同处一格，小灰字。 */}
+                      <div className="text-[11px] text-[var(--color-muted)] truncate">
+                        {it.model && it.kind !== "llm_test" ? <span className="mono">{it.model}</span> : null}
+                        {it.model && it.kind !== "llm_test" && it.duration_ms != null ? " · " : null}
+                        {it.duration_ms != null ? fmt.ms(it.duration_ms) : null}
+                      </div>
                     </td>
                     <td className="px-3 py-2.5">
                       <span className="mono" style={{ color: STATUS_STYLE[it.status] ?? "" }}>
                         {live && "● "}
                         {it.status}
                       </span>
-                    </td>
-                    <td className="px-3 py-2.5 text-right text-[var(--color-muted)] whitespace-nowrap">
-                      {it.duration_ms != null ? fmt.ms(it.duration_ms) : "—"}
                     </td>
                     <td className="px-3 py-2.5 text-right text-[var(--color-muted)] whitespace-nowrap">
                       {it.tokens_in || it.tokens_out ? `${it.tokens_in}/${it.tokens_out}` : "—"}

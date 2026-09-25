@@ -910,37 +910,61 @@ export function WorkflowCanvas({
       气泡**贴着触发点**出现，不居中、不盖画布（用户明确要求"不遮画布"）。 */
   const [picking, setPicking] = useState<{ mode: "add" | "swap"; nid?: string } | null>(null);
 
-  /** **浮层"点外面就关"——用 document 级指针监听，不用 fixed 遮罩。**
+  /** **画布浮层的统一契约**（用户："卡片显示如果鼠标失焦后应该消失／
+   *  多个 tab 点击会重复叠加，这是 bug／为什么线条点击显示串行时，卡片不会消失了？"）
    *
-   *  为什么（这是一个真 bug 的根因，用户两次追问）：
-   *  画布缩放是用 CSS `transform: scale()` 实现的（见下面的缩放层），而
-   *  **transform 会给内部所有 `fixed` 元素重建"包含块"** ——
-   *  于是 `fixed inset-0` 的透明遮罩**不再覆盖整个视口**，只盖住画布内容那一块 ✗。
-   *  用户在画布外面（顶栏 / 发令区 / 页面空白 / 侧栏）点，遮罩收不到 →
-   *  "鼠标都不在焦点上了，卡片还不消失 / 用户怎么关闭弹出的卡片" ✓（用户原话）。
+   *  之前每个浮层各关各的（详情 / 选助手 / 连线 / 悬停卡），于是：
+   *    · 连续点几个节点 → 旧的没关、新的又开 = **叠加** ✗
+   *    · 鼠标一停就走（比如停在连线上）→ 卡片却留着 ✗（用户说的"失焦不消失"）
+   *  现在收口成一个"管家"，两条规则对所有浮层生效：
+   *    ① **点浮层外面任何地方 → 全部关闭**（物理上不可能叠加）
+   *    ② **鼠标离开（既不在触发节点上、也不在浮层里）→ 全部关闭** = "失焦就消失"
    *
-   *  改成监听 document：点在浮层外面就关，**完全不受 transform 影响**；
-   *  而且不用再往 DOM 里塞一层覆盖全屏的透明层（浮层多的时候也不打架）。
-   *  点在"节点 / 操作条"上时跳过 —— 那是展开浮层的触发者，交给它自己 toggle。
+   *  为什么不用 `fixed inset-0` 透明遮罩：画布缩放用了 CSS transform，
+   *  而 transform 会给内部 fixed 元素重建包含块 → 遮罩盖不满视口 ✗（上一版的 bug 就是这个）。
+   *  document 级监听不受 transform 影响，也不用往 DOM 塞全屏透明层。
    */
+  const closeAllFloats = useCallback(() => {
+    onDetail?.(null);
+    setPicking(null);
+    setPeek(null);
+  }, [onDetail]);
+
   useEffect(() => {
     const onDown = (e: PointerEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (!target) return;
-      if (target.closest("[data-nid], [data-nodetoolbar]")) return; // 触发者自己处理
-      if (detailNid) {
-        const pane = detailPanelRef.current;
-        if (!pane || !pane.contains(target)) onDetail?.(null);
-        return;
-      }
-      if (picking) {
-        const pane = pickPanelRef.current;
-        if (!pane || !pane.contains(target)) setPicking(null);
-      }
+      const t = e.target as HTMLElement | null;
+      if (!t) return;
+      if (t.closest("[data-nid], [data-nodetoolbar]")) return; // 触发者自己 toggle
+      if (t.closest("[data-float]")) return;                   // 点在浮层里，别关
+      closeAllFloats();
     };
+
+    /** 失焦检查：延迟 240ms 再看一眼（给"从节点移进浮层"留时间），
+     *  届时鼠标既不在浮层里、也不在节点上 → 关。 */
+    let timer: number | null = null;
+    const schedule = () => {
+      if (timer) window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        timer = null;
+        if (document.querySelector("[data-float]:hover")) return;
+        if (document.querySelector("[data-nid]:hover")) return;
+        if (document.querySelector("[data-nodetoolbar]:hover")) return;
+        closeAllFloats();
+      }, 240);
+    };
+    const onOut = (e: Event) => {
+      const t = e.target as HTMLElement | null;
+      if (t && t.matches && t.matches("[data-nid], [data-float], [data-nodetoolbar]")) schedule();
+    };
+
     document.addEventListener("pointerdown", onDown);
-    return () => document.removeEventListener("pointerdown", onDown);
-  }, [detailNid, picking, onDetail]);
+    document.addEventListener("mouseout", onOut, true);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("mouseout", onOut, true);
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [closeAllFloats]);
 
   /** 删除"上膛"4 秒后自动复位（不让按钮一直悬在红色待确认状态） */
   useEffect(() => {
