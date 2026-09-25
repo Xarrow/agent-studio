@@ -16,6 +16,14 @@ import { ModelPicker } from "@/components/ModelPicker";
  */
 const PRESETS = [
   {
+    key: "orchestrator",
+    icon: "✦",
+    label: "编排、统筹",
+    desc: "对整条流程负责：分析任务、管理上下文、验证结果、归纳总结",
+    prompt:
+      "你负责统筹与把关，而不是只做完手里这一小步：先把目标分析清楚并明确交付标准；把上游产出整理成结构化上下文；对结果做核验（缺项/矛盾/未做）；最后给出结论性交付并列出待确认项与风险。",
+  },
+  {
     key: "code",
     icon: "💻",
     label: "写代码、查错",
@@ -481,6 +489,9 @@ function NewAgentDialog({
                     type="button"
                     onClick={() => {
                       setPresetKey(p.key);
+                      // 分类与角色是**正交**的两个维度，所以不合并成一道题；
+                      // 但选了「编排、统筹」这类，角色跟着预选上，省一次点击（③ 仍可改）
+                      setNewRole(p.key === "orchestrator" ? "orchestrator" : "worker");
                       if (p.key !== "custom") {
                         setPrompt(p.prompt);
                         setDesc(p.desc); // 一句话职责跟预设走（用户可改，不用自己编）
