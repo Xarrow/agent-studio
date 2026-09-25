@@ -314,6 +314,10 @@ function NewAgentDialog({
 }) {
   const [name, setName] = useState("");
   const [presetKey, setPresetKey] = useState<string | null>(null);
+  /** 它在流程里扮演什么角色 —— 枚举用**选择**，不问不填。
+   *  编排者（Orchestrator）自带四项职责：分析任务 / 管理上下文 / 验证结果 / 归纳总结；
+   *  在这里就能定下来，省掉"先建一个普通助手、再回详情页改成编排者"那一步。 */
+  const [newRole, setNewRole] = useState<"worker" | "orchestrator">("worker");
   const [runtime, setRuntime] = useState(runtimes[0]?.name ?? "agentscope");
   const [provider, setProvider] = useState("");
   const [model, setModel] = useState("");
@@ -388,6 +392,7 @@ function NewAgentDialog({
         definition: {
           runtime,
           name: name.trim(),
+          role: newRole,
           system_prompt: prompt.trim() || "你是一个乐于助人的助手。",
           model: {
             provider,
@@ -460,6 +465,7 @@ function NewAgentDialog({
             />
           </div>
 
+
           {/* ② 做什么 —— 选一个预设，自动带上「角色设定」 */}
           <div>
             <label className="label flex items-center gap-1.5">
@@ -497,6 +503,46 @@ function NewAgentDialog({
               })}
             </div>
 
+          {/* ③ 角色 —— 枚举就两个，做成"选一张卡"，不让人打字（用户："让用户选择而不是输入"） */}
+          <div>
+            <label
+              className="label flex items-center gap-1.5"
+              title="干活：做完自己这一步就交给下一个。编排者：对整条流程负责 —— 先把目标分析清楚、管好上下文，最后验证结果并归纳总结；适合放在流程的最开始或最后。"
+            >
+              <span className="text-[var(--color-accent)] font-semibold">③</span>
+              它在流程里扮演什么角色？
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              {([
+                { v: "worker" as const, t: "干活", d: "做完这一步，交给下一个" },
+                { v: "orchestrator" as const, t: "编排者", d: "分析任务 / 管上下文 / 验结果 / 归纳" },
+              ]).map((o) => {
+                const on = newRole === o.v;
+                return (
+                  <button
+                    key={o.v}
+                    type="button"
+                    onClick={() => setNewRole(o.v)}
+                    className="rounded-[10px] border px-3 py-2 text-left"
+                    style={{
+                      borderColor: on ? "var(--color-accent)" : "var(--color-border)",
+                      background: on ? "color-mix(in srgb, var(--color-accent) 6%, transparent)" : "var(--color-surface)",
+                    }}
+                  >
+                    <div className="text-[13px] font-medium" style={{ color: on ? "var(--color-accent)" : undefined }}>
+                      {o.t}
+                    </div>
+                    <div className="mt-0.5 text-[11.5px] text-[var(--color-muted)]">{o.d}</div>
+                  </button>
+                );
+              })}
+            </div>
+            {newRole === "orchestrator" && (
+              <div className="mt-1.5 text-[11.5px] text-[var(--color-muted)]">
+                建好之后可以在它的详情页看到并修改**编排者的职责定义**。
+              </div>
+            )}
+          </div>
             {/* 一句话职责：不在"三个问题"里 —— 选预设时自动带出来，想改才改。
                 它决定了用户在选助手时能不能一眼认出这个助手。 */}
             <div className="mt-3">
@@ -540,7 +586,7 @@ function NewAgentDialog({
           {/* ③ 用哪个 AI —— 自动选好推荐项，不用懂 Provider/模型/密钥 */}
           <div>
             <label className="label flex items-center gap-1.5">
-              <span className="text-[var(--color-accent)] font-semibold">③</span>
+              <span className="text-[var(--color-accent)] font-semibold">④</span>
               <Hint text="不同服务商的 AI 有不同脾气和价格。已经替你选好了推荐项，不用改。">
                 用哪个 AI
               </Hint>
