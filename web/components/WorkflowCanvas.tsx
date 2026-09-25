@@ -846,6 +846,12 @@ export function WorkflowCanvas({
    *  （用户反馈"点击后弹出不会消失"，根子在"点了没有正经回应"）。
    *  现在：就地给一份**只读的助手设置摘要**，底部一个「打开完整设置 →」
    *  （要改再去 Agents 页，是全流程里唯一一次跳页，且是明确意图）。 */
+  /** 卡片上「删除」的两步确认：第一次点只是"上膛"（按钮变红问"确认删除？"），
+   *  4 秒内再点才真的删；超时自动复位。
+   *  为什么这样做：破坏性动作不能一点就删 ✗（用户定过的规矩），
+   *  但也不该让用户先点右上角 ⋯ 再在菜单里找 —— 所以把"确认"这一步**就地**做在按钮上。 */
+  const [delArm, setDelArm] = useState<string | null>(null);
+
   const [configInternal, setConfigInternal] = useState<string | null>(null);
   /** 受控优先：Console 能直接指定"给哪个节点看助手设置"，不传就用内部状态 */
   const configNid = configNidProp !== undefined ? configNidProp : configInternal;
@@ -906,6 +912,13 @@ export function WorkflowCanvas({
   /** 选助手气泡：null=关；mode=add（加在末尾）| swap（换掉某一步）。
       气泡**贴着触发点**出现，不居中、不盖画布（用户明确要求"不遮画布"）。 */
   const [picking, setPicking] = useState<{ mode: "add" | "swap"; nid?: string } | null>(null);
+
+  /** 删除"上膛"4 秒后自动复位（不让按钮一直悬在红色待确认状态） */
+  useEffect(() => {
+    if (!delArm) return;
+    const t = window.setTimeout(() => setDelArm(null), 4000);
+    return () => window.clearTimeout(t);
+  }, [delArm]);
 
   /** Esc：收起画布上"浮出来的东西"（助手设置浮层 / 详情浮层 / 节点菜单）。
       统一一个键收口，用户不用去猜"刚才弹出来的怎么关"。 */
@@ -2106,6 +2119,33 @@ export function WorkflowCanvas({
                     style={{ color: "var(--color-muted)" }}
                   >
                     配置
+                  </button>
+                  {/* **删除**（用户要求：这类功能直接放卡片上，不用点右上角 ⋯）。
+                      破坏性，所以做成"点两下"：第一下变红并问"确认删除？"（4 秒内有效），
+                      第二下才真删 —— 符合"破坏性操作两步确认"的既定规矩。 */}
+                  <button
+                    type="button"
+                    title={delArm === n.nid ? "再点一次就删掉这一步" : "把这一步从流程里去掉"}
+                    onClick={() => {
+                      if (delArm === n.nid) {
+                        setDelArm(null);
+                        onChange({
+                          ...graph,
+                          nodes: graph.nodes.filter((x) => x.nid !== n.nid),
+                          edges: graph.edges.filter((x) => x.from !== n.nid && x.to !== n.nid),
+                        });
+                      } else {
+                        setDelArm(n.nid);
+                      }
+                    }}
+                    className="rounded-[5px] px-1.5 py-0.5 text-[11.5px] font-medium"
+                    style={
+                      delArm === n.nid
+                        ? { background: "var(--color-err)", color: "#fff" }
+                        : { color: "var(--color-err)" }
+                    }
+                  >
+                    {delArm === n.nid ? "确认删除？" : "删除"}
                   </button>
                 </div>
               )}
