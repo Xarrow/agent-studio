@@ -289,3 +289,15 @@ async def list_agent_runs(
         }
         for r in rows
     ]
+
+
+@router.get("/orchestrator/brief")
+async def orchestrator_brief() -> dict[str, str]:
+    """编排者（Orchestrator）职责的**平台内置定义**。
+
+    为什么要这个接口：Agents 页要把"这个分类到底要求它做什么"显示给用户看
+    （并且允许按助手覆盖）—— 文案只存在后端一份，前端不复制，改口径只改一处。
+    """
+    from agent_studio.orchestrator.service import ORCHESTRATOR_BRIEF
+
+    return {"brief": ORCHESTRATOR_BRIEF, "role": "orchestrator", "abilities": "分析任务|管理上下文|验证结果|归纳总结"}

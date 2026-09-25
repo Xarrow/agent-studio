@@ -83,6 +83,11 @@ class AgentDefinition(BaseModel):
     #:   orchestrator  = **编排者**：分析任务 → 管理上下文 → 验证结果 → 归纳总结
     #:     适合放在流程的**首节点**（先把目标拆清楚再交下去）或**末节点**（收齐结果做验证与归纳）。
     role: str = "worker"
+    #: **编排者的职责定义**（只在 role=orchestrator 时生效）。
+    #: 留空 = 用平台内置的那份（分析任务 → 管理上下文 → 验证结果 → 归纳总结）；
+    #: 想改口径就在这里覆盖 —— 用户："Orchestrator Agent 为什么没有定义？"
+    #: → 定义必须**看得见、改得动**，不能只藏在运行时的注入里。
+    orchestrator_brief: str = ""
     system_prompt: str = "You are a helpful assistant."
     model: ModelSpec = Field(default_factory=ModelSpec)
     tools: list[ToolRef] = Field(default_factory=list)

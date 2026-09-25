@@ -461,7 +461,9 @@ class Orchestrator:
             # 编排者：把四项职责（分析任务/管理上下文/验证结果/归纳总结）作为交代注入。
             # 放在 system_prompt 最前面 —— 它是"身份"，不是"任务补充"。
             if definition.role == "orchestrator":
-                definition.system_prompt = f"{ORCHESTRATOR_BRIEF}\n\n---\n\n{definition.system_prompt}"
+                # 用这份助手自己的职责定义（在 Agents 页可改）；没写就用平台内置那份
+                brief = (definition.orchestrator_brief or "").strip() or ORCHESTRATOR_BRIEF
+                definition.system_prompt = f"{brief}\n\n---\n\n{definition.system_prompt}"
             run = Run(
                 agent_id=agent.id,
                 agent_version=agent.version,

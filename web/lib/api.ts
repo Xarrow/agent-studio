@@ -217,6 +217,8 @@ const put = <T>(p: string, body?: unknown) =>
 const del = <T = void,>(p: string) => request<T>(p, { method: "DELETE" });
 
 export const api = {
+  /** 编排者的**平台内置职责定义**（Agents 页展示用；文案只存在后端一份，不复制） */
+  orchestratorBrief: () => request<{ brief: string; abilities: string }>("/api/agents/orchestrator/brief"),
   /* ── MCP 服务器（注册 / 探测 / 绑定）────────────────────────────────── */
   mcpServers: (limit = 100) => request<McpServer[]>(`/api/mcp?limit=${limit}`),
   createMcpServer: (body: McpServerInput) => post<McpServer>("/api/mcp", body),

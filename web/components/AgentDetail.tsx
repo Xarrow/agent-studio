@@ -82,6 +82,9 @@ export function AgentDetail({
   /** 一句话职责（agent.description）—— 它会显示在 Playground 的选助手气泡里。
       跟 def 分开存（它不属于 definition），但**必须一起参与"未保存"判断**。 */
   const [desc, setDesc] = useState<string>("");
+  /** 编排者职责的**平台内置定义**（只读，来自后端）—— 用户问"Orchestrator Agent 为什么没有定义？"
+   *  → 定义必须看得见：这里拉出来当占位与对照，用户改了就用他自己的那份。 */
+  const [briefDefault, setBriefDefault] = useState<string>("");
   /**
    * 这个助手不存在（被删了 / id 写错）。
    *
@@ -145,6 +148,7 @@ export function AgentDetail({
   }, [agentId]);
 
   useEffect(() => {
+    void api.orchestratorBrief().then((r) => setBriefDefault(r.brief)).catch(() => {});
     void load();
   }, [load]);
 
@@ -555,6 +559,37 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 <option value="worker">干活（默认）—— 做完这一步，交给下一个</option>
                 <option value="orchestrator">编排者 —— 分析任务 / 管理上下文 / 验证结果 / 归纳总结</option>
               </select>
+              {def.role === "orchestrator" && (
+                <div className="mt-2 rounded-[8px] border p-2.5" style={{ borderColor: "var(--color-border)" }}>
+                  <div className="text-[12px] leading-[1.6]" style={{ color: "var(--color-muted)" }}>
+                    选「编排者」后，这个助手**自带四项职责**：分析任务 → 管理上下文 → 验证结果 → 归纳总结。
+                    下面是它运行时会拿到的**定义**（可以按这个助手改；留空就用平台默认那份）。
+                  </div>
+                  <textarea
+                    className="input mono mt-2"
+                    rows={8}
+                    style={{ fontSize: 12, lineHeight: 1.7 }}
+                    value={def.orchestrator_brief ?? ""}
+                    placeholder={briefDefault || "（正在读取平台默认定义…）"}
+                    onChange={(e) => patch({ orchestrator_brief: e.target.value })}
+                  />
+                  <div className="mt-1.5 flex items-center gap-2">
+                    <span className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                      {def.orchestrator_brief ? "正在使用：这个助手自己的定义" : "正在使用：平台默认定义（占位文字就是它）"}
+                    </span>
+                    {def.orchestrator_brief ? (
+                      <button
+                        type="button"
+                        className="text-[11.5px] underline"
+                        style={{ color: "var(--color-accent)" }}
+                        onClick={() => patch({ orchestrator_brief: "" })}
+                      >
+                        恢复平台默认
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              )}
             </div>
             <div>
               <label className="label">System Prompt</label>

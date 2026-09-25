@@ -216,6 +216,9 @@ export default function AgentsPage() {
                       className="font-medium text-[14.5px] hover:text-[var(--color-accent)] truncate block"
                     >
                       {a.name}
+                      {a.definition?.role === "orchestrator" && (
+                        <span className="shrink-0 rounded-full border px-1.5 py-[1px] text-[10.5px]" style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }} title="编排者：分析任务 → 管理上下文 → 验证结果 → 归纳总结">✦ 编排者</span>
+                      )}
                     </Link>
                   )}
                   <div className="text-[11.5px] text-[var(--color-muted)] mono mt-0.5">

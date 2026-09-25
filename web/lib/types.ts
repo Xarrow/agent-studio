@@ -64,6 +64,8 @@ export interface AgentDefinition {
   name: string;
   /** 这个助手在流程里的分类：worker（默认）| orchestrator（编排者） */
   role?: "worker" | "orchestrator";
+  /** 编排者职责定义（留空 = 用平台内置那份）；只有 role=orchestrator 时生效 */
+  orchestrator_brief?: string;
   system_prompt: string;
   model: ModelSpec;
   tools: ToolRef[];
