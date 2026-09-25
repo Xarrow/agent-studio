@@ -2326,7 +2326,12 @@ export function WorkflowCanvas({
         {/* 悬停卡（浮层）—— 鼠标停在节点上就地看它在干什么。
             为什么用 fixed：画布容器有固定高度，卡片挂在节点里会被下边缘裁掉
             （只露出第一行）。浮层不受裁剪，下方不够会自动翻到节点上方。 */}
-        {peek && peekLive && (
+        {/* 悬停卡：**已经点开详情时不弹**（用户反馈"点击 agent 会弹出两个页面"）。
+    成因：节点卡上 onClick（出详情浮层）与 onMouseEnter（350ms 后出这个悬停卡）是两个
+    独立事件；点节点时鼠标必然在它上面，于是详情浮层刚出来、悬停卡又叠一个。
+    两者信息本来就重叠（都是"这一步在干什么"），所以约定：
+    **同一时刻只留一个面板** —— 要看别的节点就点它（详情跟着切换），逻辑一致、也好解释。 */}
+        {peek && peekLive && !(detailNid && peek.nid === detailNid) && !detailNid && (
           <div
             onMouseEnter={() => peekIn(peek.nid, 0)}
             onMouseLeave={() => peekOut(120)}

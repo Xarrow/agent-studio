@@ -65,3 +65,6 @@ web/.next-old-*
 # 用户上传的附件（跟 data/studio.db 一样属于本地数据，不进库）
 data/uploads/
 data/uploads.config.json
+
+# agent 跑工具时在工作目录里生成的测试产物（不进版本库）
+hello_world.py
