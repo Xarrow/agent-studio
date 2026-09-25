@@ -2082,7 +2082,7 @@ export function WorkflowCanvas({
                        ② 第二版改成"选中才显示" → 不闪了，但用户得先点一下才看得到操作 ✗
                        ③ 现在：**一直挂在节点上方**（不用悬停、不用点击），选中时底色加重做反馈 ✓
                      三个动作都是非破坏性的（详情 / 换助手 / 配置），常驻不会误伤。 */
-                  className={`absolute -top-8 left-0 z-20 flex items-center gap-0.5 rounded-[8px] border px-1 py-0.5 shadow-sm transition-colors ${
+                  className={`absolute -top-8 left-0 z-20 flex max-w-[264px] flex-wrap items-center gap-0.5 rounded-[8px] border px-1 py-0.5 shadow-sm transition-colors ${
                     isSel || detailNid === n.nid ? "" : "opacity-80 hover:opacity-100"
                   }`}
                   style={{
@@ -2120,6 +2120,57 @@ export function WorkflowCanvas({
                   >
                     配置
                   </button>
+                  {(() => {
+                    const pred = graph.edges.find((e) => e.to === n.nid)?.from ?? null;
+                    const succ = graph.edges.find((e) => e.from === n.nid)?.to ?? null;
+                    return (
+                      <>
+                        {/* 上移 / 下移：**方向即语义**（在链上往前/往后挪一位）——
+                            所以用箭头而不是"上移一位"三个字（字太占地方）。 */}
+                        <button
+                          type="button"
+                          disabled={!pred || frozen}
+                          title="在链上往前挪一位"
+                          onClick={() => moveStep(n.nid, -1)}
+                          className="rounded-[5px] px-1 py-0.5 text-[12px] hover:bg-[var(--color-surface-2)] disabled:opacity-30"
+                          style={{ color: "var(--color-muted)" }}
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!succ || frozen}
+                          title="在链上往后挪一位"
+                          onClick={() => moveStep(n.nid, 1)}
+                          className="rounded-[5px] px-1 py-0.5 text-[12px] hover:bg-[var(--color-surface-2)] disabled:opacity-30"
+                          style={{ color: "var(--color-muted)" }}
+                        >
+                          ↓
+                        </button>
+                        {/* 在它后面复制一步（同一个助手）：省得再选一次 */}
+                        <button
+                          type="button"
+                          disabled={frozen}
+                          title="在它后面复制一步（同一个助手）"
+                          onClick={() => {
+                            const used = new Set(graph.nodes.map((x) => x.nid));
+                            let k = graph.nodes.length + 1;
+                            while (used.has(`n${k}`)) k++;
+                            const nid = `n${k}`;
+                            onChange({
+                              ...graph,
+                              nodes: [...graph.nodes, { nid, agent_id: n.agent_id }],
+                              edges: [...graph.edges, { from: n.nid, to: nid }],
+                            });
+                          }}
+                          className="rounded-[5px] px-1 py-0.5 text-[12px] hover:bg-[var(--color-surface-2)] disabled:opacity-30"
+                          style={{ color: "var(--color-muted)" }}
+                        >
+                          ⧉
+                        </button>
+                      </>
+                    );
+                  })()}
                   {/* **删除**（用户要求：这类功能直接放卡片上，不用点右上角 ⋯）。
                       破坏性，所以做成"点两下"：第一下变红并问"确认删除？"（4 秒内有效），
                       第二下才真删 —— 符合"破坏性操作两步确认"的既定规矩。 */}
@@ -2193,29 +2244,9 @@ export function WorkflowCanvas({
                   style={{ background: meta.dot }}
                   title={STATE_LABEL[st]}
                 />
-                <div
-                  className={`flex shrink-0 items-center gap-1 transition-opacity ${
-                    isSel || detailNid === n.nid ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-                  }`}
-                >
-                  {/* 节点操作收进一个 ⋯ 菜单 —— 原来 ⚙ 和 ✕ 并排常驻：
-                      ① 两个小按钮挤在卡头，且 ✕ 太容易误点；
-                      ② 手机上没有悬停，常驻按钮反而占位。
-                      ⋯ 是个通用约定（触屏也能点），点开才列出动作。 */}
-                  <button
-                    type="button"
-                    title="这一步的操作"
-                    aria-label="这一步的操作"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setNodeMenu(nodeMenu === n.nid ? null : n.nid);
-                    }}
-                    className="pg-more df-ctl-icon shrink-0 border hover:opacity-100"
-                    style={{ color: "var(--color-muted)" }}
-                  >
-                    ⋯
-                  </button>
-                </div>
+                {/* **⋯ 按钮已移除**（用户两次要求："不需要点击右上角三个点"）。
+                    它原来挂在卡头右侧、还是"鼠标划过才出现"（opacity-0 group-hover:opacity-100），
+                    用户划过去它就冒出来 ✗。现在节点动作全部在卡上方的操作条里。 */}
               </div>
 
               {/* 实时尾巴：正在跑的时候给 2~3 行（最近一次工具调用 + 当前思考/输出），
@@ -2295,115 +2326,9 @@ export function WorkflowCanvas({
                   可见圆点是上一轮我自己加的，跟 Dify 不一致，这里改回。
                   点击范围仍在（左右各一块 16px 热区，见下方 · 悬停显示提示） */}
 
-              {/* ⋯ 菜单：配置 / 复制 / 删除 —— 点开才出现，触屏可用 */}
-              {nodeMenu === n.nid && (
-                <div
-                  className="df-menu absolute right-1 top-[34px] z-40 w-[152px] overflow-hidden border"
-                  style={{
-                    background: "var(--color-surface)",
-                    borderColor: "var(--color-border)",
-                    boxShadow: "0 10px 28px rgba(20,24,31,.16)",
-                  }}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setNodeMenu(null);
-                      onSelect(n.nid);
-                      onDetail?.(null);
-                    }}
-                    className="df-menu-item hover:bg-[var(--color-surface-2)]"
-                  >
-                    配置这个助手
-                  </button>
-                                              {!frozen && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setNodeMenu(null);
-                                  setPicking({ mode: "swap", nid: n.nid });
-                                }}
-                                className="df-menu-item hover:bg-[var(--color-surface-2)]"
-                                title="换掉这一步用的助手（这一步和它后面的产出会重置）"
-                              >
-                                换成别的助手…
-                              </button>
-                            )}
-{!frozen && (
-                    <>
-                      {(() => {
-                        const pred = graph.edges.find((e) => e.to === n.nid)?.from ?? null;
-                        const succ = graph.edges.find((e) => e.from === n.nid)?.to ?? null;
-                        return (
-                          <>
-                            <button
-                              type="button"
-                              disabled={!pred}
-                              onClick={() => {
-                                setNodeMenu(null);
-                                moveStep(n.nid, -1);
-                              }}
-                              className="df-menu-item hover:bg-[var(--color-surface-2)] disabled:opacity-35"
-                            >
-                              上移一位
-                            </button>
-                            <button
-                              type="button"
-                              disabled={!succ}
-                              onClick={() => {
-                                setNodeMenu(null);
-                                moveStep(n.nid, 1);
-                              }}
-                              className="df-menu-item hover:bg-[var(--color-surface-2)] disabled:opacity-35"
-                            >
-                              下移一位
-                            </button>
-                          </>
-                        );
-                      })()}
-                    </>
-                  )}
-                  {!frozen && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        // 复制这一步：在它后面接一个同名助手（不用再拖一次）
-                        setNodeMenu(null);
-                        const used = new Set(graph.nodes.map((x) => x.nid));
-                        let k = graph.nodes.length + 1;
-                        while (used.has(`n${k}`)) k++;
-                        const nid = `n${k}`;
-                        onChange({
-                          ...graph,
-                          nodes: [...graph.nodes, { nid, agent_id: n.agent_id }],
-                          edges: [...graph.edges, { from: n.nid, to: nid }],
-                        });
-                      }}
-                      className="df-menu-item hover:bg-[var(--color-surface-2)]"
-                    >
-                      在它后面复制一步
-                    </button>
-                  )}
-                  {!frozen && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setNodeMenu(null);
-                        onChange({
-                          ...graph,
-                          nodes: graph.nodes.filter((x) => x.nid !== n.nid),
-                          edges: graph.edges.filter((x) => x.from !== n.nid && x.to !== n.nid),
-                        });
-                      }}
-                      className="df-menu-item hover:bg-[var(--color-surface-2)]"
-                      style={{ color: "var(--color-err)" }}
-                    >
-                      删除这一步
-                    </button>
-                  )}
-                </div>
-              )}
+                            {/* ⋯ 菜单**整体移除**（用户两次要求）。它原来装着 配置这个助手 /
+                  换成别的助手 / 上移一位 / 下移一位 / 在它后面复制一步 / 删除这一步 ——
+                  现在这些动作**全部**在卡上方的操作条里，就地一点就有。 */}
 
               {/* ── 卡体：参考 Dify 的 block body ──────────────────────────
                   运行中 → 分色动作行（思考紫/工具橙/工具输出青/输出绿）
