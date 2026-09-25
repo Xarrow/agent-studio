@@ -2018,6 +2018,49 @@ export function WorkflowCanvas({
                   />
                 </>
               )}
+              {/* **悬停工具条**（对齐 Dify 的节点悬浮操作条）：
+                  鼠标移到节点上（或它被选中时）从卡片顶部浮出一条小工具条，
+                  放**最常用的三个、且都非破坏性**的动作 —— 看详情 / 换助手 / 配置。
+                  破坏性的（移除这一步、清空下游）仍然留在 ⋯ 菜单里：
+                  用户定过"破坏性操作要两步确认"，不放悬停条上误点。
+                  触屏没有悬停，这条只是加分项，功能一个都没少（⋯ 里都有）。 */}
+              {!frozen && (
+                <div
+                  className={`absolute -top-8 left-0 z-20 items-center gap-0.5 rounded-[8px] border px-1 py-0.5 shadow-md ${
+                    isSel || detailNid === n.nid ? "flex" : "hidden group-hover:flex"
+                  }`}
+                  style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    title="看这一步的详情"
+                    onClick={() => onDetail?.(detailNid === n.nid ? null : n.nid)}
+                    className="rounded-[5px] px-1.5 py-0.5 text-[11.5px] hover:bg-[var(--color-surface-2)]"
+                    style={{ color: "var(--color-muted)" }}
+                  >
+                    详情
+                  </button>
+                  <button
+                    type="button"
+                    title="换掉这一步用的助手（这一步和它后面的产出会重置）"
+                    onClick={() => setPicking({ mode: "swap", nid: n.nid })}
+                    className="rounded-[5px] px-1.5 py-0.5 text-[11.5px] hover:bg-[var(--color-surface-2)]"
+                    style={{ color: "var(--color-muted)" }}
+                  >
+                    换助手
+                  </button>
+                  <button
+                    type="button"
+                    title="配置这个助手"
+                    onClick={() => onSelect(n.nid)}
+                    className="rounded-[5px] px-1.5 py-0.5 text-[11.5px] hover:bg-[var(--color-surface-2)]"
+                    style={{ color: "var(--color-muted)" }}
+                  >
+                    配置
+                  </button>
+                </div>
+              )}
               <div
                 /* data-draghead：拖动的把手只在这里 —— 正文要能选字、能滚动，不能被拖动抢走 */
                 data-draghead
