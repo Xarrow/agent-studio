@@ -15,7 +15,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
-import type { DbDriver, DbDriverInfo, DbStatus, DbTestResult } from "@/lib/types";
+import type { DbDriver, DbDriverInfo, DbStatus, DbTestResult , UploadConfigRead } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
 
 /** 表单字段（SQLite 只用 path，其余是网络库的连接参数） */
@@ -53,6 +53,12 @@ export default function EnvironmentPage() {
   const [test, setTest] = useState<DbTestResult | null>(null);
   const [busy, setBusy] = useState<"test" | "switch" | null>(null);
   const [switching, setSwitching] = useState(false);
+  /* 上传目录（Playground 任务卡的附件存这里）—— 跟数据库配置互不相干，单独一块。
+     后端已带"可写探测"：改完立刻告诉你这个目录到底能不能用，不用等上传失败才发现。 */
+  const [upDir, setUpDir] = useState("");
+  const [upCfg, setUpCfg] = useState<UploadConfigRead | null>(null);
+  const [upDirty, setUpDirty] = useState(false);
+  const [upBusy, setUpBusy] = useState(false);
   const pollRef = useRef<number | null>(null);
 
   /* ------------------------------ 载入 ------------------------------ */
@@ -78,6 +84,32 @@ export default function EnvironmentPage() {
       setLoading(false);
     }
   }, [fb]);
+
+  /* 上传目录：单独拉一次，失败不影响页面主流程（它只是个可选项） */
+  useEffect(() => {
+    void api
+      .uploadConfig()
+      .then((c) => {
+        setUpCfg(c);
+        setUpDir(c.is_default ? "" : c.dir);
+      })
+      .catch(() => setUpCfg(null));
+  }, []);
+
+  const saveUploadDir = async (dir: string) => {
+    setUpBusy(true);
+    try {
+      const c = await api.setUploadConfig(dir);
+      setUpCfg(c);
+      setUpDir(c.is_default ? "" : c.dir);
+      setUpDirty(false);
+      fb.success("已保存上传目录", c.dir);
+    } catch (e) {
+      fb.error("这个目录不能用", e instanceof Error ? e.message : String(e));
+    } finally {
+      setUpBusy(false);
+    }
+  };
 
   useEffect(() => {
     void load();
@@ -495,6 +527,51 @@ export default function EnvironmentPage() {
             </span>
           )}
         </div>
+      </section>
+
+      {/* ── 上传目录 ─────────────────────────────────────────── */}
+      <section className="card p-4 mb-4">
+        <h2 className="text-[14px] font-medium mb-1">上传目录</h2>
+        <p className="text-[12.5px] text-[var(--color-muted)] mb-3">
+          Playground 任务卡上传的图片/文件存到这个目录；留空 = 用默认目录
+          {upCfg && <span className="mono"> （{upCfg.default_dir}）</span>}。
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            className="input mono min-w-[260px] flex-1"
+            value={upDir}
+            onChange={(e) => {
+              setUpDir(e.target.value);
+              setUpDirty(true);
+            }}
+            placeholder="留空 = 默认目录"
+            title="填绝对路径，例如 /srv/agent-uploads"
+          />
+          <button
+            className="btn"
+            disabled={upBusy || !upDirty}
+            onClick={() => void saveUploadDir(upDir.trim())}
+          >
+            {upBusy ? "保存中…" : "保存"}
+          </button>
+          <button
+            className="btn"
+            disabled={upBusy || !upCfg || upCfg.is_default}
+            onClick={() => void saveUploadDir("")}
+            title="回到默认目录（data/uploads）"
+          >
+            用默认
+          </button>
+        </div>
+        {upCfg && (
+          <p
+            className="mt-2 text-[12px]"
+            style={{ color: upCfg.writable ? "var(--color-ok)" : "var(--color-err)" }}
+          >
+            {upCfg.writable ? "✓ 目录可用（已存在且可写）" : `✗ 不可写：${upCfg.error || "未知原因"}`}
+            {upCfg.is_default ? " · 当前用默认目录" : ""}
+          </p>
+        )}
       </section>
 
       {/* ── 说明 ─────────────────────────────────────────────── */}
