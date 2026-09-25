@@ -1461,6 +1461,110 @@ export function WorkflowCanvas({
             );
           })()}
 
+        {/* 点某个节点 → **就地展开这一步的详情**（贴着节点，不跳页、不盖住整块画布）。
+            内容按"先看结论再看过程"排：
+              谁在做（名字 + 一句话职责）：用了什么模型 · 现在的状态
+              完整过程（分阶段分色：思考/工具/工具输出/…，与卡片上一致）
+              产出（完整 Markdown，自带滚动）
+            为什么贴在节点旁而不是开右侧栏：控件（信息）归属其对象 ——
+            你点的是这一步，答案就该出现在这一步旁边。 */}
+        {detailNid &&
+          (() => {
+            const n = graph.nodes.find((x) => x.nid === detailNid);
+            const at = n ? layout.pos[n.nid] : null;
+            if (!n || !at) return null;
+            const agent = agents.find((a) => a.id === n.agent_id);
+            const st = runStates[n.nid] ?? "idle";
+            const out = outputs[n.nid] ?? "";
+            const lv = live?.[n.nid];
+            const stepNo = layout.layers.findIndex((ids) => ids.includes(n.nid)) + 1;
+            const BW = 384;
+            const toRight = at.x + layout.NW + 14;
+            const flip = toRight + BW > layout.w - 6;
+            const left = flip ? Math.max(6, at.x - BW - 14) : toRight;
+            const statusText =
+              st === "run" ? "执行中" : st === "ask" ? "等你确认" : st === "ok" ? "完成" : st === "err" ? "出错" : st === "stale" ? "已失效" : "还没跑";
+            const statusColor =
+              st === "run" ? "var(--color-accent)" : st === "ask" ? "var(--color-warn)" : st === "ok" ? "var(--color-ok)" : st === "err" ? "var(--color-err)" : "var(--color-muted)";
+            const blurb = agent ? blurbOf(agent) : "";
+            return (
+              <div
+                className="absolute z-30 flex flex-col overflow-hidden rounded-[12px] border shadow-lg"
+                style={{
+                  transform: `translate(${left}px, ${at.y}px)`,
+                  width: BW,
+                  maxHeight: 470,
+                  background: "var(--color-surface)",
+                  borderColor: "var(--color-border)",
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center gap-2 border-b px-3 py-2" style={{ borderColor: "var(--color-border)" }}>
+                  <span className="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full text-[10.5px] tabular-nums" style={{ background: "var(--color-surface-2)", color: "var(--color-muted)" }}>
+                    {stepNo}
+                  </span>
+                  <span className="truncate text-[13px] font-medium">{agent?.name ?? "助手"}</span>
+                  <span className="shrink-0 rounded-full px-1.5 py-[1px] text-[10.5px]" style={{ color: statusColor, background: `color-mix(in srgb, ${statusColor} 12%, transparent)` }}>
+                    {statusText}
+                  </span>
+                  <button
+                    type="button"
+                    title="收起详情"
+                    className="ml-auto shrink-0 rounded-[6px] px-1.5 py-[1px] text-[13px] leading-none hover:bg-[var(--color-surface-2)]"
+                    style={{ color: "var(--color-muted)" }}
+                    onClick={(e) => { e.stopPropagation(); onDetail?.(null); }}
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="border-b px-3 py-2" style={{ borderColor: "var(--color-border)" }}>
+                  <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+                    {blurb || "（这个助手还没写一句话职责）"}
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]" style={{ color: "var(--color-muted)" }}>
+                    {agent?.definition?.model?.name && (
+                      <span className="rounded-full border px-1.5 py-[1px]" style={{ borderColor: "var(--color-border)" }}>
+                        {agent.definition.model.name}
+                      </span>
+                    )}
+                    {(agent ? skillsOf(agent, toolNames) : []).slice(0, 4).map((t) => (
+                      <span key={t} className="rounded-full border px-1.5 py-[1px]" style={{ borderColor: "var(--color-border)" }}>
+                        {t}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                {lv && lv.events.length > 0 && (
+                  <div className="flex max-h-[210px] flex-col gap-[3px] overflow-auto border-b px-2.5 py-2" style={{ borderColor: "var(--color-border)" }}>
+                    {tailOf(lv.events, 60).map((l, i) => {
+                      const sty = STEP_STYLE[l.kind];   // 与卡片上的分色同源
+                      return (
+                        <div key={`d${i}`} className="flex items-start gap-1.5 rounded-[6px] px-1.5 py-[3px]" style={{ background: sty.bg, border: `1px solid ${sty.border}` }}>
+                          <span className="shrink-0 text-[10px]" style={{ color: sty.color }}>
+                            {sty.icon}
+                          </span>
+                          <span className="whitespace-pre-wrap break-words text-[11.5px] leading-[1.6]">{l.text}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {out ? (
+                  <div className="overflow-auto px-3 py-2 text-[12px] leading-[1.7]">
+                    <Markdown text={out} />
+                  </div>
+                ) : (
+                  <div className="px-3 py-3 text-[12px]" style={{ color: "var(--color-muted)" }}>
+                    {st === "run" ? "正在执行，产出会出现在这里…" : "这一步还没有产出。"}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
         {/* 「＋ 加一步」—— 属于**流程本身**，所以画在流程末尾，而不是塞进顶栏或侧栏
             （控件归属其对象：你加的是"这一步"，不是"顶栏的一个功能"）。
             它替代了原来的左侧助手栏：那个栏占了 208px 宽，只为放"可拖的助手列表"，
