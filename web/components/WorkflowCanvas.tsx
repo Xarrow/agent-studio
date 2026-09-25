@@ -834,6 +834,35 @@ export function WorkflowCanvas({
   /** 选助手气泡：null=关；mode=add（加在末尾）| swap（换掉某一步）。
       气泡**贴着触发点**出现，不居中、不盖画布（用户明确要求"不遮画布"）。 */
   const [picking, setPicking] = useState<{ mode: "add" | "swap"; nid?: string } | null>(null);
+  /** 跑完把结论**带到眼前** —— 而不是给一个"看最后一步 →"的跳转键。
+      结论在流程最右端（横向布局下常常在视口外），跑完正是用户最想看它的时刻，
+      所以自动滑过去。只在"运行中 → 结束"那一次触发，不打扰正在看别处的人。 */
+  const wasRunning = useRef(false);
+  useEffect(() => {
+    if (!(wasRunning.current && !running)) {
+      wasRunning.current = running;
+      return;
+    }
+    wasRunning.current = running;
+    // 跑完把结论**带到眼前**（而不是给一个"看最后一步 →"的跳转键）。
+    // 为什么重申三次：结论卡是跑完才出现的，它落位会把内容撑宽 ——
+    // 单次 smooth 滚动会被随后的重排打断（实测停在 227，结论仍在视口外；
+    // 手动重申目标才能到 634）。所以按 0 / 450 / 1000ms 重申，最后收敛到右端。
+    const go = () => {
+      const el = stageRef.current;
+      if (!el) return;
+      const max = el.scrollWidth - el.clientWidth;
+      if (max > 0 && el.scrollLeft < max - 4) el.scrollTo({ left: max, behavior: "smooth" });
+    };
+    go();
+    const t1 = setTimeout(go, 450);
+    const t2 = setTimeout(go, 1000);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [running]);
+
   /** 拖动节点：按下记起点与原始坐标 → 移动只改**临时**位置（不写图，拖动才连续）
       → 抬手**才**写进图（onChange）。位移 < 4px 视为"点"，交给 onClick 选中它。 */
   const [drag, setDrag] = useState<{
@@ -846,6 +875,26 @@ export function WorkflowCanvas({
     dy: number;
     moved: boolean;
   } | null>(null);
+
+  /** 「在这一步后面加」的目标 —— 点某个节点右侧的 ＋ 时记下来；
+      不设时「＋ 加一步」= 接在流程末尾（原行为）。 */
+  const [insertAfter, setInsertAfter] = useState<string | null>(null);
+
+  /** 就地插入一步：新节点插在指定节点**之后**，原后继接到新节点后面
+      （像在文本里插入一个字那样顺，而不是只能往末尾接）。 */
+  const insertAfterStep = (nid: string, agentId: string) => {
+    const newNid = `n${Math.random().toString(36).slice(2, 6)}`;
+    const outs = graph.edges.filter((e) => e.from === nid);
+    onChange({
+      ...graph,
+      nodes: [...graph.nodes, { nid: newNid, agent_id: agentId }],
+      edges: [
+        ...graph.edges.filter((e) => e.from !== nid),
+        { from: nid, to: newNid, order: "serial" as const },
+        ...outs.map((e) => ({ ...e, from: newNid })),
+      ],
+    });
+  };
 
   const startDrag = (e: React.PointerEvent, nid: string) => {
     if (frozen) return;
@@ -1311,10 +1360,13 @@ export function WorkflowCanvas({
             const rec = ranked.filter((r) => r.s > 0).slice(0, 3);
             const rest = ranked.filter((r) => !rec.includes(r));
             const node = picking.nid ? layout.pos[picking.nid] : null;
+            const insNode = insertAfter ? layout.pos[insertAfter] : null;
             const at =
-              picking.mode === "add"
-                ? { x: layout.addAt.x, y: layout.addAt.y + 50 }
-                : { x: (node?.x ?? 0) + layout.NW + 10, y: node?.y ?? 0 };
+              insNode
+                ? { x: insNode.x + layout.NW + 10, y: insNode.y }
+                : picking.mode === "add"
+                  ? { x: layout.addAt.x, y: layout.addAt.y + 50 }
+                  : { x: (node?.x ?? 0) + layout.NW + 10, y: node?.y ?? 0 };
             const row = ({ a, s: sc }: { a: Agent; s: number }) => (
               <button
                 key={a.id}
@@ -1323,8 +1375,11 @@ export function WorkflowCanvas({
                   const mode = picking.mode;
                   const nid = picking.nid;
                   setPicking(null);
-                  if (mode === "add") onAddStep?.(a.id);
-                  else if (nid) onSwapAgent?.(nid, a.id);
+                  if (mode === "add") {
+                    if (insertAfter) insertAfterStep(insertAfter, a.id);
+                    else onAddStep?.(a.id);
+                    setInsertAfter(null);
+                  } else if (nid) onSwapAgent?.(nid, a.id);
                 }}
                 className="flex w-full items-start gap-2 rounded-[6px] px-2 py-1.5 text-left hover:bg-[var(--color-surface-2)]"
               >
@@ -1407,6 +1462,67 @@ export function WorkflowCanvas({
             （控件归属其对象：你加的是"这一步"，不是"顶栏的一个功能"）。
             它替代了原来的左侧助手栏：那个栏占了 208px 宽，只为放"可拖的助手列表"，
             横向布局下这 208px 正是最值钱的地方。 */}
+        {/* 连线上的**关系词**：串行 / 并行 · +上下文 · +记忆。
+            这些东西原来只活在"点开那条线"的面板里 —— 全页最值钱的信息最不可见，
+            读一条已有流程要一根根去摸。现在常显在线上（小、灰、不抢视线）。 */}
+        {graph.edges.map((e) => {
+          const mid = edgeMids[`${e.from}->${e.to}`];
+          if (!mid) return null;
+          const parts = [e.order === "parallel" ? "并行" : "串行"];
+          if (e.share_context) parts.push("+上下文");
+          if (e.share_memory) parts.push("+记忆");
+          const plain = !e.share_context && !e.share_memory;
+          return (
+            <span
+              key={`el-${e.from}-${e.to}`}
+              className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 rounded-full border px-1.5 py-[1px] text-[10.5px] leading-[1.5]"
+              style={{
+                left: mid.x,
+                top: mid.y,
+                background: "var(--color-surface)",
+                borderColor: plain ? "var(--color-border)" : "color-mix(in srgb, var(--color-accent) 45%, transparent)",
+                color: plain ? "var(--color-muted)" : "var(--color-accent)",
+              }}
+            >
+              {parts.join(" · ")}
+            </span>
+          );
+        })}
+
+        {/* 每个节点右侧一个小 ＋：**就地往后接一步**。
+            原来只有流程末尾一个「＋ 加一步」—— 步骤一多它就滑出视口
+            （实测 4 步后 x=1396 > 视口右缘 1280），最常用的"再加一个"反而够不到。
+            控件跟着它作用的对象走：想接在谁后面，就点谁右边的 ＋。 */}
+        {!frozen &&
+          graph.nodes.map((n) => {
+            const at = layout.pos[n.nid];
+            if (!at) return null;
+            return (
+              <button
+                key={`plus-${n.nid}`}
+                type="button"
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  setInsertAfter(n.nid);
+                  setPicking({ mode: "add" });
+                }}
+                title="在这一步后面加一个助手"
+                className="absolute grid place-items-center rounded-full border text-[13px] leading-none transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+                style={{
+                  left: at.x + layout.NW + 7,
+                  top: at.y + 12,
+                  width: 22,
+                  height: 22,
+                  background: "var(--color-surface)",
+                  borderColor: "var(--color-border)",
+                  color: "var(--color-muted)",
+                }}
+              >
+                ＋
+              </button>
+            );
+          })}
+
         {!frozen && (
           <button
             type="button"

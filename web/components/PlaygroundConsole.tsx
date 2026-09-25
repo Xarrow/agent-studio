@@ -582,6 +582,20 @@ export function PlaygroundConsole() {
     return { total, done, step: Math.min(done + 1, Math.max(total, 1)), who };
   })();
 
+  /** 自动保存：改动停下 1.2s 就存。
+      商业产品的默认行为 —— 用户不该记得"保存"这回事（原来的手动保存是个断点：
+      改完没点就切流程/刷新，改动就没了）。
+      安全边界：① 加载页面时用的是 setGraph（不会置 dirty），所以不会误存；
+                ② 运行中不存，避免和运行中的图快照打架。 */
+  useEffect(() => {
+    if (!dirty || running) return;
+    const t = setTimeout(() => {
+      void save(true);
+    }, 1200);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirty, graph, name, running]);
+
   /** 有没有被手动拖过的节点（有坐标）。没有就完全不显示「整理」—— 不占视线 */
   const hasManual = graph.nodes.some((n) => typeof n.x === "number" || typeof n.y === "number");
   /** 一键整理：把手工坐标清掉，回到按连线自动排版。清掉后 hasManual 变 false，按钮自己消失 */
