@@ -2102,8 +2102,17 @@ export function WorkflowCanvas({
                   跑完   → 产出（markdown 全文，默认展开）
                   没跑过 → 这个助手是干什么的一句话（不再是空卡） */}
               {st === "ok" && lv?.output?.trim() && (
+                /* 产出区**限高 + 自带滚动** —— 卡片的尺寸必须稳定。
+                   模型产出动辄几千字（报告/表格/清单），原来全展开会把这一张卡撑成整屏，
+                   同一流程里几张卡尺寸天差地别（用户明确要求"注意 agent 的样式和尺寸"）。
+                   完整产出点这张卡看（详情浮层里是全文）。 */
                 <div className="node-body px-3 pb-2">
-                  <Markdown text={lv.output} />
+                  <div className="max-h-[170px] overflow-auto rounded-[8px] pr-1">
+                    <Markdown text={lv.output} />
+                  </div>
+                  <div className="mt-1.5 text-[11px]" style={{ color: "var(--color-muted)" }}>
+                    点这张卡看完整产出 →
+                  </div>
                 </div>
               )}
               {!lv && !out && (

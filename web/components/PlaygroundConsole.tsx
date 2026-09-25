@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Markdown from "./Markdown";
 import { useFeedback } from "@/components/ui/feedback";
+import { WorkflowManager } from "@/components/WorkflowManager";
 import { WorkflowCanvas, flattenLayers, type NodeState } from "@/components/WorkflowCanvas";
 import {
   buildNodeLive,
@@ -114,6 +115,8 @@ export function PlaygroundConsole() {
 
   /** 顶栏那个「名字 ⌄」的小菜单（切换最近编排 / 保存改动都收在这里） */
   const [wfMenu, setWfMenu] = useState(false);
+  /** 流程管理浮层（Playground 内就地打开，不跳页） */
+  const [manager, setManager] = useState(false);
   /** 重命名态：名字**默认是入口**（点开=切换/新建/保存），只有点了「重命名」才变输入框 */
   const [renaming, setRenaming] = useState(false);
 
@@ -922,6 +925,17 @@ export function PlaygroundConsole() {
                 type="button"
                 onClick={() => {
                   setWfMenu(false);
+                  setManager(true);
+                }}
+                className="w-full rounded-[6px] px-2 py-1.5 text-left text-[12.5px] hover:bg-[var(--color-surface-2)]"
+              >
+                管理全部流程…
+              </button>
+              <div className="my-1 border-t" style={{ borderColor: "var(--color-border)" }} />
+              <button
+                type="button"
+                onClick={() => {
+                  setWfMenu(false);
                   setRenaming(true);
                 }}
                 className="w-full rounded-[6px] px-2 py-1.5 text-left text-[12.5px] hover:bg-[var(--color-surface-2)]"
@@ -1003,7 +1017,28 @@ export function PlaygroundConsole() {
       <div className="pg-split flex min-h-0 flex-1">
 
         <div className="min-w-0 flex-1">
-          <WorkflowCanvas
+          <WorkflowManager
+        open={manager}
+        currentId={wf?.id ?? null}
+        onClose={() => setManager(false)}
+        onOpenWorkflow={(w) => loadWorkflow(w)}
+        onNew={() => newWorkflow()}
+        onDuplicate={() => void duplicateWorkflow()}
+        onDeleted={() => {
+          // 管理浮层删完会自己刷新；画布这边把「流程列表」也重新拉一次，
+          // 免得切流程时看到已经删掉的名字
+          void (async () => {
+            const wfs = (await api.workflows(30)) as unknown as Workflow[];
+            setList(wfs);
+          })();
+        }}
+        onReplay={(orcId) => {
+          setManager(false);
+          void loadHistory(orcId);
+        }}
+      />
+
+      <WorkflowCanvas
             agents={agents}
             graph={graph}
             onChange={(next) => patchGraph(next, { resetRun: downstreamOf(selected ?? "", next) })}
