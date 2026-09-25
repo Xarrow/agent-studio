@@ -1041,20 +1041,13 @@ export function WorkflowCanvas({
     growTask();
   }, [taskValue]);
 
-  /** 点开某个节点时把它滚进视野。
-   *  现在没有右侧抽屉了（内容默认显示在卡上），但如果节点多了、画布横向溢出，
-   *  选中的节点仍可能落在视口外 —— 点了没反应最劝退，所以这条留着。
-   *  没有溢出时它是空操作（need 不会大于 scrollLeft）。 */
-  useEffect(() => {
-    const stage = stageRef.current;
-    if (!stage || !detailNid || narrow) return;
-    const at = layout.pos[detailNid];
-    if (!at) return;
-    // 按**最右边的内容**算（结论卡常常比节点更靠右）—— 差一点就会少露 60px
-    const rightEdge = Math.max(at.x + layout.NW, layout.concAt.x + layout.CONC_W) + 4;
-    const need = rightEdge - stage.clientWidth;
-    if (need > stage.scrollLeft) stage.scrollTo({ left: need, behavior: "smooth" });
-  }, [detailNid, layout]);
+  /** ⚠️ **点节点不再自动滚动画布**（用户两次反馈"点了画面自己动，不自然"）。
+   *
+   *  原来这条是把"选中节点所在的那一列 + 结论卡"一起算成 rightEdge，然后 smooth 滚过去 ——
+   *  实测后果：点一下节点，整个画布横向滚到最右，连最左边的发令区都被滚出视野，
+   *  用户看到的是"我点了个节点，画面整个跑掉了"（截图已确认）。
+   *  节点本来就在视野里才点得到，不需要帮用户滚；要横向看，用户自己拖/滚就行。
+   *  （"跑完把结论带到眼前"是**另一条** effect，保留 —— 那是执行结束后主动报结果，意图不同。） */
 
   /** 把结论卡滚进视野 —— 结论是这次执行最该看到的东西，不该藏在右边要人手动拖过去。
    *  写成**幂等**（"没滚到位就滚"），不用"只滚一次"的守卫：

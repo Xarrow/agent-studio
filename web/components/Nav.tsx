@@ -161,10 +161,6 @@ export function Nav() {
               </button>
             </div>
             <nav className="p-2 flex-1">
-              <Link href="/" className={rowCls(pathname === "/")} title="总览：接着上次继续，或建个新助手">
-                <span className="w-4 text-center text-[12px]">◆</span>
-                <span>概览</span>
-              </Link>
               {groupLabel("使用")}
               {USE_ITEMS.map((l) => (
                 <Link key={l.href} href={l.href} className={rowCls(isActive(l.href))} title={l.tip}>
@@ -186,16 +182,7 @@ export function Nav() {
 
       {/* ── 平板：图标条 ───────────────────────────────────── */}
       <aside className="hidden md:flex lg:hidden w-14 shrink-0 border-r border-[var(--color-border)] bg-[var(--color-surface)] flex-col items-center py-3 gap-1">
-        <Link
-          href="/"
-          title="概览"
-          className={`w-11 h-11 flex items-center justify-center rounded-md text-[15px] ${
-            pathname === "/" ? "text-[var(--color-accent)] bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)]" : "hover:bg-[var(--color-surface-2)]"
-          }`}
-        >
-          ◆
-        </Link>
-        <div className="w-6 border-t border-[var(--color-border)] my-1" />
+        {/* 概览页已移除（用户要求）—— 平板图标条上那一条也一起去掉 */}
         {USE_ITEMS.map((l) => (
           <Link
             key={l.href}
@@ -239,15 +226,6 @@ export function Nav() {
         </div>
 
         <nav className="p-2 flex-1 overflow-auto">
-          <Link
-            href="/"
-            className={rowCls(pathname === "/")}
-            title="总览：接着上次继续，或建个新助手"
-          >
-            <span className="w-4 text-center text-[12px]">◆</span>
-            <span>概览</span>
-          </Link>
-
           {groupLabel("使用")}
           {USE_ITEMS.map((l) => (
             <Link key={l.href} href={l.href} className={rowCls(isActive(l.href))} title={l.tip}>

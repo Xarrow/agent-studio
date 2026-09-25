@@ -282,7 +282,17 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
     setSaving(true);
     setMsg(null);
     try {
-      const updated = await api.updateAgent(agentId, { definition: def, description: desc.trim() || undefined });
+      // **顶层 name 必须一起提交** —— 名字输入框改的是 def.name，
+      // 而列表 / 画布节点 / 顶栏显示的都是**顶层** agent.name；
+      // 之前只提交 definition，顶层 name 永远不更新 →
+      // 用户改完名字保存"没反应"（与 workflow 改名失效同一类问题：一个字段两个真相）。
+      // 这里让两者始终一致：以 def.name 为准，空则保留原名。
+      const nextName = (def.name ?? "").trim() || agent?.name;
+      const updated = await api.updateAgent(agentId, {
+        name: nextName,
+        definition: def,
+        description: desc.trim() || undefined,
+      });
       setAgent(updated);
       setDef(updated.definition);
       setSavedSnap(snap(updated.definition, updated.description ?? ""));
