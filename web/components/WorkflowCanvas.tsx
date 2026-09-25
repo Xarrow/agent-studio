@@ -856,13 +856,6 @@ export function WorkflowCanvas({
   const detailPanelRef = useRef<HTMLDivElement | null>(null);
   const pickPanelRef = useRef<HTMLDivElement | null>(null);
 
-  const [configInternal, setConfigInternal] = useState<string | null>(null);
-  /** 受控优先：Console 能直接指定"给哪个节点看助手设置"，不传就用内部状态 */
-  const configNid = configNidProp !== undefined ? configNidProp : configInternal;
-  const setConfigNid = (v: string | null) => {
-    setConfigInternal(v);
-    onConfigNid?.(v);
-  };
 
   /** 鼠标悬在哪条连线上（悬停时加粗，告诉用户"这条线是可点的"） */
 
@@ -940,11 +933,6 @@ export function WorkflowCanvas({
         if (!pane || !pane.contains(target)) onDetail?.(null);
         return;
       }
-      if (configNid) {
-        const pane = detailPanelRef.current;
-        if (!pane || !pane.contains(target)) setConfigNid(null);
-        return;
-      }
       if (picking) {
         const pane = pickPanelRef.current;
         if (!pane || !pane.contains(target)) setPicking(null);
@@ -952,7 +940,7 @@ export function WorkflowCanvas({
     };
     document.addEventListener("pointerdown", onDown);
     return () => document.removeEventListener("pointerdown", onDown);
-  }, [detailNid, configNid, picking, onDetail]);
+  }, [detailNid, picking, onDetail]);
 
   /** 删除"上膛"4 秒后自动复位（不让按钮一直悬在红色待确认状态） */
   useEffect(() => {
@@ -969,10 +957,6 @@ export function WorkflowCanvas({
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
       let hit = false;
-      if (configNid) {
-        hit = true;
-        setConfigNid(null);
-      }
       setNodeMenu((v) => {
         if (v) hit = true;
         return null;
@@ -985,7 +969,7 @@ export function WorkflowCanvas({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onDetail, picking, configNid]);
+  }, [onDetail, picking]);
   /** 跑完把结论**带到眼前** —— 而不是给一个"看最后一步 →"的跳转键。
       结论在流程最右端（横向布局下常常在视口外），跑完正是用户最想看它的时刻，
       所以自动滑过去。只在"运行中 → 结束"那一次触发，不打扰正在看别处的人。 */
@@ -2059,10 +2043,9 @@ export function WorkflowCanvas({
                 // 点节点 = 选中它（点亮上下游链路 + 让它的产出/过程显示在卡上）。
                 // 信息默认就在卡上，不再开右侧抽屉 —— 用户明确要求过。
                 onDetail?.(detailNid === n.nid ? null : n.nid);
-                        setConfigNid(null);
               }}
-              onMouseEnter={() => peekIn(n.nid)}
-              onMouseLeave={() => peekOut()}
+              /* 悬停卡已停用（用户定过"画布上禁止悬停自动出现的东西"）：
+                 鼠标扫过就冒出来的浮层既闪又难关；要看某一步，点它就有。 */
               /* 拖动只从**卡头**开始（正文要能选字、能滚动） */
               onPointerDown={(e) => {
                 const head = (e.target as HTMLElement).closest("[data-draghead]");
@@ -2498,110 +2481,11 @@ export function WorkflowCanvas({
     独立事件；点节点时鼠标必然在它上面，于是详情浮层刚出来、悬停卡又叠一个。
     两者信息本来就重叠（都是"这一步在干什么"），所以约定：
     **同一时刻只留一个面板** —— 要看别的节点就点它（详情跟着切换），逻辑一致、也好解释。 */}
-        {/* 「配置这个助手」→ **就地在画布上**给一份助手设置（只读摘要）。
-            之前这个动作只"选中节点"，点了没反应 = 空承诺（用户反馈"弹出不会消失"的根子）。
-            这里把设置摊开：一句话职责 / 模型 / 运行时 / 工作目录 / 上限 / 能力清单，
-            底部「打开完整设置 →」是**唯一**的跳页处，且是明确意图，不是被迫切页。 */}
-        {configNid &&
-          (() => {
-            const n = graph.nodes.find((x) => x.nid === configNid);
-            const at = n ? layout.pos[n.nid] : null;
-            const agent = n ? agents.find((a) => a.id === n.agent_id) : null;
-            if (!n || !at || !agent) return null;
-            const def = agent.definition;
-            const caps = skillsOf(agent, toolNames) as unknown as string[];
-            const BW = narrow ? Math.max(240, colW - 8) : 340;
-            const toRight = at.x + layout.NW + 14;
-            const flip = toRight + BW > layout.w - 6;
-            const left = narrow ? Math.max(4, at.x) : flip ? Math.max(6, at.x - BW - 14) : toRight;
-            const top = narrow ? at.y + (heights[n.nid] ?? 220) + 10 : at.y;
-            const rows: [string, string][] = [
-              ["模型", `${def.model?.provider ?? "—"} · ${def.model?.name ?? "—"}`],
-              ["运行时", def.runtime ?? "—"],
-              ["工作目录", def.workspace ? `${def.workspace}（沙箱内）` : "平台共用目录"],
-              [
-                "上限",
-                `${
-                  def.limits?.max_iters === -1 ? "不限轮数" : `最多 ${def.limits?.max_iters ?? "—"} 轮`
-                } · 超时 ${def.limits?.timeout_s ?? "—"}s`,
-              ],
-            ];
-            return (
-              <div
-                className="absolute z-30 flex flex-col rounded-[12px] border shadow-lg"
-                style={{
-                  transform: `translate(${left}px, ${top}px)`,
-                  width: BW,
-                  maxHeight: narrow ? "62vh" : 460,
-                  background: "var(--color-surface)",
-                  borderColor: "var(--color-border)",
-                }}
-              >
-                <div className="flex items-center gap-2 border-b px-3 py-2" style={{ borderColor: "var(--color-border)" }}>
-                  <span className="min-w-0 truncate text-[13px] font-medium">{agent.name}</span>
-                  <span
-                    className="shrink-0 rounded-full px-1.5 py-[1px] text-[10.5px]"
-                    style={{ color: "var(--color-accent)", background: "color-mix(in srgb, var(--color-accent) 12%, transparent)" }}
-                  >
-                    助手设置
-                  </span>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setConfigNid(null);
-                    }}
-                    className="ml-auto shrink-0 rounded-[5px] px-1.5 text-[13px] leading-none hover:bg-[var(--color-surface-2)]"
-                    style={{ color: "var(--color-muted)" }}
-                    title="收起"
-                  >
-                    ✕
-                  </button>
-                </div>
-                <div className="min-h-0 flex-1 overflow-auto px-3 py-2">
-                  {agent.description?.trim() ? (
-                    <p className="mb-2 text-[12.5px] leading-[1.6]" style={{ color: "var(--color-muted)" }}>
-                      {agent.description}
-                    </p>
-                  ) : null}
-                  <dl className="flex flex-col gap-1.5">
-                    {rows.map(([k, v]) => (
-                      <div key={k} className="flex items-start gap-2">
-                        <dt className="w-[62px] shrink-0 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
-                          {k}
-                        </dt>
-                        <dd className="min-w-0 flex-1 break-words text-[12px]">{v}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                  {Array.isArray(caps) && caps.length > 0 && (
-                    <div className="mt-2.5">
-                      <div className="mb-1 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
-                        能力（{caps.length}）
-                      </div>
-                      <div className="flex flex-wrap gap-1">
-                        {caps.map((c, i) => (
-                          <span
-                            key={i}
-                            className="rounded-full border px-1.5 py-[1px] text-[11px]"
-                            style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
-                          >
-                            {c}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-                <div className="border-t px-3 py-2" style={{ borderColor: "var(--color-border)" }}>
-                  <a href={`/agents/${agent.id}`} className="text-[12.5px] hover:underline" style={{ color: "var(--color-accent)" }}>
-                    打开完整设置 →
-                  </a>
-                </div>
-              </div>
-            );
-          })()}
-
+        {/* **「助手设置」浮层已移除** —— 用户质问："为什么在 playground 上还需要让用户配置 agent？"
+            画布负责的是**编排流程**（用哪个助手、按什么顺序跑）；助手**本体**
+            （模型 / 提示词 / 工具 / 权限 / 工作目录）是 Agents 页的职责。
+            在画布上放开这个口子，会让用户以为"跑之前得先把助手配好"✗ ——
+            正确路径是"**选一个现成的助手 → 直接跑**"。要改助手本体，去 Agents 页。 */}
         {peek && peekLive && !(detailNid && peek.nid === detailNid) && !detailNid && (
           <div
             onMouseEnter={() => peekIn(peek.nid, 0)}
