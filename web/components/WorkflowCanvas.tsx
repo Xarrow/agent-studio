@@ -621,6 +621,7 @@ export function WorkflowCanvas({
     const up = (ev: PointerEvent) => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      suppressClickRef.current = Date.now() + SUPPRESS_MS;   // 拉过一次连线，落点节点别弹详情
       setGhost(null);
       const el = (ev.target as HTMLElement)?.closest?.("[data-nid]") as HTMLElement | null;
       const to = el?.dataset.nid ?? null;
@@ -1131,6 +1132,7 @@ export function WorkflowCanvas({
     const onUp = () => {
       setDrag((d) => {
         if (d?.moved) {
+          suppressClickRef.current = Date.now() + SUPPRESS_MS;   // 拖过 = 不是点击，别弹详情
           const nx = Math.round(d.ox + d.dx);
           const ny = Math.round(d.oy + d.dy);
           onChange({
@@ -1153,6 +1155,13 @@ export function WorkflowCanvas({
      用户："用户可以在画布上通过拖拉调整卡片的尺寸"
      宽度存在节点上（graph.nodes[].w）→ 跟着流程一起保存，跨会话保留。
      拖动过程用本地 state 实时跟手；松手才写回图，避免每移动 1px 就标脏存一次。 */
+  /** 拖动结束后的"补 click"抑制（用户："注意拖拽不要触发弹框"）。
+   *
+   *  浏览器规则：pointerdown + 位移 + pointerup，只要按下与松开落在**同一个元素**上，
+   *  后面还会补一个 click ✗ —— 于是"把卡片拖到别处"会被卡片当成"点了它"→ 弹出详情 ✗，
+   *  "拖右缘调宽"同理。这里在拖/缩结束时记一个时间戳，卡片和连线的 click 在窗口期内直接忽略。 */
+  const suppressClickRef = useRef(0);
+  const SUPPRESS_MS = 400;
   const [resize, setResize] = useState<{ nid: string; sx: number; sw: number; w: number } | null>(null);
   const startResize = (e: React.PointerEvent, nid: string) => {
     if (frozen || narrow) return;            // 只读回放 / 手机上不给拖（手机是一列铺满）
@@ -1171,6 +1180,7 @@ export function WorkflowCanvas({
     const onUp = () => {
       setResize((r) => {
         if (r && Math.abs(r.w - r.sw) >= 8) {
+          suppressClickRef.current = Date.now() + SUPPRESS_MS;   // 拖宽过 = 不是点击，别弹详情
           onChange({ ...graph, nodes: graph.nodes.map((n) => (n.nid === r.nid ? { ...n, w: r.w } : n)) });
         }
         return null;
@@ -2125,6 +2135,8 @@ export function WorkflowCanvas({
               }}
               onClick={(e) => {
                 e.stopPropagation();
+                // 刚拖过（移动卡片 / 拉连线 / 调宽度）→ 这次 click 是浏览器补的，不是"点它"
+                if (Date.now() < suppressClickRef.current) return;
                 // **点卡片 = 选中 + 打开这一步的详情**。
                 // 用户："执行后 agent 点击没有显示详情" —— 卡片就是这一步的载体，
                 // 点它就该看到这一步的输入/输出/过程（详情浮层贴在这张卡上）。
