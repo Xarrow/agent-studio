@@ -585,6 +585,16 @@ export function PlaygroundConsole() {
       .catch(() => setToolNames({}));
   }, []);
 
+  /** 运行中进度：第 x/y 步 + 正在跑的是谁。只在跑的时候出现（不占常驻视线） */
+  const runProgress = (() => {
+    if (!running) return null;
+    const total = graph.nodes.length;
+    const done = graph.nodes.filter((n) => ["ok", "err", "stale"].includes(runStates[n.nid] ?? "")).length;
+    const active = graph.nodes.find((n) => ["run", "ask"].includes(runStates[n.nid] ?? ""));
+    const who = active ? agents.find((a) => a.id === active.agent_id)?.name : "";
+    return { total, done, step: Math.min(done + 1, Math.max(total, 1)), who };
+  })();
+
   /** 有没有被手动拖过的节点（有坐标）。没有就完全不显示「整理」—— 不占视线 */
   const hasManual = graph.nodes.some((n) => typeof n.x === "number" || typeof n.y === "number");
   /** 一键整理：把手工坐标清掉，回到按连线自动排版。清掉后 hasManual 变 false，按钮自己消失 */
@@ -860,6 +870,21 @@ export function PlaygroundConsole() {
               style={{ background: "var(--color-warn)" }}
               title="有未保存的改动"
             />
+          )}
+          {runProgress && (
+            <span
+              className="flex shrink-0 items-center gap-1.5 text-[12px] font-medium"
+              style={{ color: "var(--color-accent)" }}
+              title="正在执行：跑完的步骤会变绿，没轮到的压暗"
+            >
+              <i className="live-dot" />
+              第 {runProgress.step}/{runProgress.total} 步
+              {runProgress.who && (
+                <span className="font-normal" style={{ color: "var(--color-muted)" }}>
+                  {runProgress.who}
+                </span>
+              )}
+            </span>
           )}
           {hasManual && (
             <button

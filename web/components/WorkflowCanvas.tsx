@@ -1730,10 +1730,13 @@ export function WorkflowCanvas({
                           : `${(lv.elapsedMs / 1000).toFixed(1)}s`}
                     </span>
                   </div>
-                  {/* 尾巴：不同动作不同颜色（思考紫 / 工具橙 / 工具输出青 / 输出绿）——
-                      配色直接复用全站那套 STEP_STYLE，保证"同一动作到处一个颜色" */}
-                  <div className="flex flex-col gap-[3px] px-2.5 pb-2 pt-1.5">
-                    {tailOf(lv.events).map((l, i) => {
+                  {/* 执行详情**自动展开**：不再只留 3 条尾巴，而是把这一轮的动作都给出来。
+                      配色复用全站 STEP_STYLE（思考紫 / 工具橙 / 工具输出青 / 输出绿），
+                      保证"同一动作到处一个颜色"。
+                      容器用 flex-col-reverse + max-h：**最新的那条永远在视野里**（不用写一行滚动 JS），
+                      旧的重力往下堆，超出就滚动查看 —— 看过程不需要任何操作。 */}
+                  <div className="flex max-h-[196px] flex-col-reverse gap-[3px] overflow-auto px-2.5 pb-2 pt-1.5">
+                    {tailOf(lv.events, 12).map((l, i) => {
                       const sty = STEP_STYLE[l.kind];
                       return (
                         <div
