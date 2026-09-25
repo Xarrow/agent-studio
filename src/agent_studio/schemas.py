@@ -65,6 +65,11 @@ class AgentDefinition(BaseModel):
 
     runtime: str = "agentscope"
     name: str
+    #: 这个助手在流程里的**分类**：
+    #:   worker（默认）= 干活的，按收到的任务做完就交出去
+    #:   orchestrator  = **编排者**：分析任务 → 管理上下文 → 验证结果 → 归纳总结
+    #:     适合放在流程的**首节点**（先把目标拆清楚再交下去）或**末节点**（收齐结果做验证与归纳）。
+    role: str = "worker"
     system_prompt: str = "You are a helpful assistant."
     model: ModelSpec = Field(default_factory=ModelSpec)
     tools: list[ToolRef] = Field(default_factory=list)

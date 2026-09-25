@@ -62,6 +62,8 @@ export interface Limits {
 export interface AgentDefinition {
   runtime: string;
   name: string;
+  /** 这个助手在流程里的分类：worker（默认）| orchestrator（编排者） */
+  role?: "worker" | "orchestrator";
   system_prompt: string;
   model: ModelSpec;
   tools: ToolRef[];

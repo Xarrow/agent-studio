@@ -39,6 +39,29 @@ from ..schemas import AgentDefinition
 
 logger = logging.getLogger(__name__)
 
+#: **编排者（Orchestrator）的固定交代** —— 用户给的四项能力。
+#:
+#: 什么时候用：把某个助手的分类设成 orchestrator（Agent 定义里的 role），
+#: 它适合放在流程的**首节点**（先把目标分析清楚、管好上下文再交下去）
+#: 或**末节点**（收齐各步产出，做验证与归纳总结）。
+#:
+#: 为什么在这里拼：``_start_step`` 是所有执行模式（single / serial / parallel / dag / 主从）
+#: 唯一的汇合点 —— 在这里注入一次，所有模式都一致，且会写进 run 的
+#: ``definition_snapshot``（所以"到底给它什么交代"是可追溯、可复查的 ✓）。
+ORCHESTRATOR_BRIEF = """你是这条流程的**编排者**，对整条流程的结果负责（而不是只做完手里这一小步）：
+
+1) **分析任务** —— 先把用户的目标拆清楚：这一步要产出什么、下游需要什么、判断标准是什么；
+   目标含糊就把它收敛成可执行的一条，不要笼统复述。
+2) **管理上下文** —— 只保留与目标相关的事实，把上游与自己的产出整理成**结构化**的上下文；
+   无关信息丢掉，冲突的信息明确指出。
+3) **验证结果** —— 对拿到的产出做核验：有没有缺项、有没有自相矛盾、有没有声称做了但其实没做的；
+   验证结论要写出来（通过/不通过 + 依据）。
+4) **归纳总结** —— 给出结论性交付：先给结论，再给依据与关键证据；最后明确列出
+   **待确认项 / 风险 / 建议的下一步**。
+
+输出要求：条理清晰、可直接交付；不确定的地方明确标注"不确定"，不要编造。"""
+
+
 #: 单个子步骤最长等多久（秒）。够跑完一次带工具的多轮推理。
 STEP_TIMEOUT_S = 900
 
@@ -435,6 +458,10 @@ class Orchestrator:
                 raise OrchestratorError(f"助手不存在: {agent_id}")
 
             definition = AgentDefinition.model_validate(agent.definition)
+            # 编排者：把四项职责（分析任务/管理上下文/验证结果/归纳总结）作为交代注入。
+            # 放在 system_prompt 最前面 —— 它是"身份"，不是"任务补充"。
+            if definition.role == "orchestrator":
+                definition.system_prompt = f"{ORCHESTRATOR_BRIEF}\n\n---\n\n{definition.system_prompt}"
             run = Run(
                 agent_id=agent.id,
                 agent_version=agent.version,
