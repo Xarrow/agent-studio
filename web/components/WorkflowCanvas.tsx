@@ -18,154 +18,36 @@ import Markdown from "./Markdown";
 import type { NodeLiveInfo } from "@/components/StepExecPanel";
 import { STEP_STYLE, type StepKind } from "@/components/ui/run-timeline";
 import type { Agent, UploadItem, WorkflowEdge, WorkflowGraph, WorkflowNode } from "@/lib/types";
+import {
+  depEdges,
+  detectMaster,
+  edgeOrder,
+  flattenLayers,
+  isDep,
+  sharesContext,
+  sharesMemory,
+  topoLayers,
+} from "@/lib/canvas/graph";
+import {
+  blurbOf,
+  clip,
+  hitlText,
+  liveLabel,
+  numOr,
+  recScore,
+  skillsOf,
+  tailOf,
+} from "@/lib/canvas/agent-text";
 
-export type NodeState = "idle" | "wait" | "run" | "ok" | "err" | "ask" | "stale";
+import { Block, DetailSection, META, ResizeCorner, ResizeGrip, STATE_LABEL, type NodeState } from "@/components/canvas/parts";
 
-const STATE_LABEL: Record<NodeState, string> = {
-  idle: "待运行",
-  wait: "等待",
-  run: "运行中",
-  ok: "完成",
-  err: "失败",
-  ask: "需你确认",
-  stale: "需重跑",
-};
+export type { NodeState };
 
 /* ── 选助手的三个小工具（都是纯函数，零依赖）─────────────────────────────
    为什么要有"一句话职责"：选助手时用户真正要判断的是"它擅长什么"，
    而 description 现在普遍是空的 —— 但 system_prompt 其实写着各自干嘛。
    所以：description 优先，空了就取 system_prompt 的第一句（并去掉"你是一个…"这种套话）。 */
-function blurbOf(a: Agent): string {
-  const d = (a.description ?? "").trim();
-  if (d) return d;
-  const raw = (a.definition?.system_prompt ?? "").trim().replace(/\s+/g, " ");
-  if (!raw) return "";
-  // 去掉开头的套话（"你是一个 xxx agent，" / "你是助手。"），留下实质那句
-  const stripped = raw.replace(/^(你是一个|你是一位|你是)[^，,。.;；]{0,24}[，,。.;；]\s*/, "");
-  const first = (stripped || raw).split(/[。\n!?；;]/)[0] || stripped || raw;
-  const t = first.trim().replace(/^[，,、]\s*/, "");
-  return t.length > 52 ? t.slice(0, 52) + "…" : t;
-}
 
-/** 能力信号：给**名字**，不给"8 个"——名字才能让人判断，数字只让人感觉多 */
-function skillsOf(a: Agent, toolNames: Record<string, string>): string[] {
-  const out: string[] = [];
-  for (const t of a.definition?.tools ?? []) {
-    if (t.enabled === false) continue;
-    const n = toolNames[t.ref];
-    if (n) out.push(n);
-  }
-  return out.slice(0, 4);
-}
-
-/** 推荐打分：任务文本 vs 助手的名字/职责/提示词/工具名。
- *  中文没有空格，用**二元组**做近似（零依赖下够用）；英文按下划线词整词匹配（权重更高）。 */
-function recScore(a: Agent, task: string, toolNames: Record<string, string>): number {
-  const t = (task || "").trim();
-  if (t.length < 2) return 0;
-  const hay = (
-    a.name +
-    " " +
-    (a.description ?? "") +
-    " " +
-    (a.definition?.system_prompt ?? "") +
-    " " +
-    (a.definition?.tools ?? []).map((x) => toolNames[x.ref] ?? "").join(" ")
-  ).toLowerCase();
-  let score = 0;
-  for (const w of t.toLowerCase().match(/[a-z_][a-z0-9_]{2,}/g) ?? []) if (hay.includes(w)) score += 3;
-  for (let i = 0; i < t.length - 1; i++) {
-    const bg = t.slice(i, i + 2);
-    if (/^[\u4e00-\u9fa5]{2}$/.test(bg) && hay.includes(bg)) score += 1;
-  }
-  return score;
-}
-
-const META: Record<NodeState, { dot: string; text: string; border: string }> = {
-  idle: { dot: "var(--color-border)", text: "var(--color-muted)", border: "var(--color-border)" },
-  wait: { dot: "var(--color-border)", text: "var(--color-muted)", border: "var(--color-border)" },
-  run: { dot: "var(--color-accent)", text: "var(--color-accent)", border: "var(--color-accent)" },
-  // Dify 的状态边框是**纯实线色**（border-state-success-solid / destructive-solid），
-  // 不是掺了边框色的淡版 —— 之前掺淡是"看着柔和"，但跟 Dify 不一致，改回纯色。
-  ok: { dot: "var(--color-ok)", text: "var(--color-ok)", border: "var(--color-ok)" },
-  err: { dot: "var(--color-err)", text: "var(--color-err)", border: "var(--color-err)" },
-  ask: { dot: "var(--color-warn)", text: "var(--color-warn)", border: "var(--color-warn)" },
-  stale: { dot: "var(--color-muted)", text: "var(--color-muted)", border: "var(--color-border)" },
-};
-
-/**
- * 这条连线算不算"依赖"？
- *
- * **并行线不算** —— 它画出来是为了表达"这两个同时跑"，不是"后一个等前一个"。
- * 分层算法据此忽略它，两者才会真的并发；否则界面上写着并行、实际却串着跑。
- */
-export function edgeOrder(e: WorkflowEdge): "serial" | "parallel" {
-  if (e.order === "parallel") return "parallel";
-  if (e.rel === "parallel") return "parallel"; // 旧数据
-  return "serial";
-}
-
-export function sharesContext(e: WorkflowEdge): boolean {
-  return !!e.share_context || e.rel === "context";
-}
-
-export function sharesMemory(e: WorkflowEdge): boolean {
-  return !!e.share_memory || e.rel === "memory";
-}
-
-/** 只有"串行"才构成依赖；并行线表达的是"同时跑"，不参与排序 */
-export function isDep(e: WorkflowEdge): boolean {
-  return edgeOrder(e) !== "parallel";
-}
-
-export function depEdges(edges: WorkflowEdge[]): WorkflowEdge[] {
-  return edges.filter(isDep);
-}
-
-/** 拓扑分层：与后端 orchestrator/graph.py 的 topo_layers 同一套判据（最长路径）。
- *  两边必须一致 —— 否则"界面显示的步骤"和"实际执行顺序"会对不上。 */
-export function topoLayers(nodes: WorkflowNode[], edges: WorkflowEdge[]): string[][] {
-  const layer: Record<string, number> = {};
-  nodes.forEach((n) => (layer[n.nid] = 0));
-  const deps = depEdges(edges);
-  for (let i = 0; i < nodes.length + 2; i++) {
-    let changed = false;
-    for (const e of deps) {
-      const cand = (layer[e.from] ?? 0) + 1;
-      if ((layer[e.to] ?? 0) < cand) {
-        layer[e.to] = cand;
-        changed = true;
-      }
-    }
-    if (!changed) break;
-  }
-  const buckets: Record<number, string[]> = {};
-  for (const [nid, lv] of Object.entries(layer)) (buckets[lv] ||= []).push(nid);
-  return Object.keys(buckets)
-    .map(Number)
-    .sort((a, b) => a - b)
-    .map((k) => buckets[k]);
-}
-
-/** 展平整层顺序 —— 用来把"第 i 个子 run"映射回节点（与后端 order_index 对齐） */
-export function flattenLayers(nodes: WorkflowNode[], edges: WorkflowEdge[]): string[] {
-  return topoLayers(nodes, edges).flat();
-}
-
-/** 主从里的"主"：扇出的源头；没有明显扇出就取唯一源头 */
-export function detectMaster(nodes: WorkflowNode[], edges: WorkflowEdge[]): string | null {
-  if (!nodes.length) return null;
-  const out: Record<string, number> = {};
-  const ind: Record<string, number> = {};
-  nodes.forEach((n) => ((out[n.nid] = 0), (ind[n.nid] = 0)));
-  depEdges(edges).forEach((e) => {
-    out[e.from] = (out[e.from] ?? 0) + 1;
-    ind[e.to] = (ind[e.to] ?? 0) + 1;
-  });
-  const fan = nodes.filter((n) => out[n.nid] > 1).map((n) => n.nid);
-  if (fan.length) return nodes.find((n) => ind[n.nid] === 0 && fan.includes(n.nid))?.nid ?? fan[0];
-  return nodes.find((n) => ind[n.nid] === 0)?.nid ?? nodes[0].nid;
-}
 
 type Props = {
   agents: Agent[];
@@ -258,26 +140,6 @@ const ORDER_META: Record<string, { short: string; dash?: string }> = {
   parallel: { short: "并行", dash: "2 5" },
 };
 
-/** 运行中状态行的**人话**短语：不再直接贴原始事件文本（长句在窄卡里会被截得看不懂）。
- *  按阶段给动词，尽量把工具名带出来 —— 一眼知道"现在到底在干嘛"。 */
-function liveLabel(kind: string, text: string): string {
-  const tool = (text.match(/[a-z][a-z0-9]*_[a-z0-9_]+/i) ?? [])[0];
-  switch (kind) {
-    case "input":
-      return "收到任务…";
-    case "think":
-      return "正在思考…";
-    case "tool":
-      return tool ? `正在调用 ${tool}` : "正在调用工具…";
-    case "tool_out":
-      return tool ? `${tool} 已返回，正在整理…` : "已拿到结果，正在整理…";
-    case "answer":
-    case "out":
-      return "正在回答…";
-    default:
-      return text.length > 26 ? `${text.slice(0, 26)}…` : text;
-  }
-}
 
 /** 两端卡片的"伪节点 id" —— 拖拽/调宽复用同一套机制（节点用 n1/n2…，两端卡用这两个） */
 const CARD_IN = "__input__";
@@ -286,10 +148,6 @@ const H_MIN = 90;
 const H_MAX = 900;
 const CARD_OUT = "__output__";
 
-/** 取"用户摆过的"数值：是有限数字才用，否则回退自动值 */
-function numOr(v: unknown, fallback: number): number {
-  return typeof v === "number" && Number.isFinite(v) ? v : fallback;
-}
 
 export function WorkflowCanvas({
   agents,
@@ -3532,183 +3390,4 @@ export function WorkflowCanvas({
   );
 }
 
-/** 节点上的「实时尾巴」：从最近的事件里挑 2~3 行，说清"它此刻正在干什么"。
- *
- *  为什么需要它：老版节点把整段产出贴在卡上（太吵，被砍掉了）；砍完只剩一行摘要
- *  （`⟳ 2.3s 思考中…`）—— 于是执行中**看不见过程**（用户原话）。
- *  这里取中间：**跑的时候给尾巴（最近一次工具调用 + 当前思考/输出），跑完只留一行摘要**。
- *  事件是流式的 delta（每次几个字），所以按"末尾连续同类型"回卷累积，才拼得出完整一句。 */
-function tailOf(evts: NodeLiveInfo["events"], max = 3): { kind: StepKind; text: string }[] {
-  type Ev = { type?: string; payload?: Record<string, unknown> };
-  const list = evts as unknown as Ev[];
-  const str = (v: unknown) => (typeof v === "string" ? v : "");
-  /** 单行化 + 截断（保留**尾部**：正在发生的东西在末尾） */
-  const one = (t: string, n = 52) => {
-    const x = t.replace(/\s+/g, " ").trim();
-    return x.length > n ? `…${x.slice(-n)}` : x;
-  };
 
-  const lines: { kind: StepKind; text: string }[] = [];
-
-  // ① 最近一次工具调用（入参 + 返回）—— 分两类颜色：发出是"工具"，回来是"工具输出"
-  let lastToolAt = -1;
-  for (let i = list.length - 1; i >= 0; i--) {
-    if (list[i].type === "tool_call_start" || list[i].type === "tool_exec_start") {
-      lastToolAt = i;
-      break;
-    }
-  }
-  if (lastToolAt >= 0) {
-    const name = str(list[lastToolAt].payload?.tool_call_name);
-    let args = "";
-    let result = "";
-    for (let i = lastToolAt; i < list.length; i++) {
-      if (list[i].type === "tool_call_args") args += str(list[i].payload?.delta);
-      else if (list[i].type === "tool_result_delta") result += str(list[i].payload?.delta);
-    }
-    if (name) lines.push({ kind: "tool", text: `${name} ${one(args, 32)}` });
-    if (result.trim()) {
-      const firstLine = result.split("\n").find((x) => x.trim()) ?? result;
-      lines.push({ kind: "tool_response", text: one(firstLine) });
-    }
-  }
-
-  // ② 当前正在说的：输出优先，没有就显示思考（两类颜色不同）
-  const runOf = (type: string) => {
-    let acc = "";
-    for (let i = list.length - 1; i >= 0; i--) {
-      if (list[i].type === type) acc = str(list[i].payload?.delta) + acc;
-      else if (acc) break;
-    }
-    return acc;
-  };
-  const out = runOf("text_delta");
-  const think = runOf("thinking_delta");
-  if (out.trim()) lines.push({ kind: "output", text: one(out) });
-  else if (think.trim()) lines.push({ kind: "think", text: one(think) });
-
-  return lines.slice(-max);
-}
-
-/** 详情里的一片：**输入 / 思考 / 调用 / 回复** 各一段、各一色。
- *
- *  用户："点击 agent 可以查看执行的详情，input，think，call，response 完整的详情通过不同颜色区分"。
- *  配色复用全站 STEP_STYLE（输入蓝 / 思考紫 / 调用橙 / 工具输出青 / 回复绿 / 出错红），
- *  和 Runs 页、日志里的分色同一套 —— 同一个概念全站同色 ✓ */
-/** 压成一行并截断（详情里的小块文字用；超长就截 + 省略号） */
-function clip(v: unknown, n: number): string {
-  const t = String(v ?? "").replace(/\s+/g, " ").trim();
-  return t.length > n ? `${t.slice(0, n)}…` : t;
-}
-
-/** 卡片右缘的拖宽把手 —— **节点卡 / 输入卡 / 输出卡共用一套**（行为必须一致）。
- *
- *  两个关键点（都是用户实测踩出来的）：
- *    · 命中区 20px（左右各 10px）+ 可见把手 4px×44px（原来 3px 细线 + 只 7px 在卡内 → 抓不住）
- *    · **touch-action: none** —— 触屏/触控板上不加它，浏览器会把拖拽当滚动并取消 pointer 事件，
- *      表现就是"拖了没反应"（用户反馈："为什么手动拖拽修改不了尺寸"） */
-/** 卡片**右下角**的双手柄：宽和高一起调。
- *
- *  与右缘那条分工明确 —— 右缘只改宽（高度默认由内容决定更自然），角落才是"整张卡大小"。
- *  用户要求："卡片的高度也支持调整"。touch-action:none 同样必须有（触屏否则拖不动）。 */
-function ResizeCorner({ id, active, onDown }: { id: string; active: boolean; onDown: (e: React.PointerEvent) => void }) {
-  return (
-    <div
-      data-node-resize-corner={id}
-      onPointerDown={onDown}
-      onClick={(e) => e.stopPropagation()}
-      title="拖动我，调整这张卡的宽和高"
-      className="group/corner absolute z-30"
-      style={{ right: -8, bottom: -8, width: 24, height: 24, cursor: "nwse-resize", touchAction: "none" }}
-    >
-      <span
-        className="absolute transition-opacity group-hover/corner:opacity-100"
-        style={{
-          right: 10,
-          bottom: 10,
-          width: 9,
-          height: 9,
-          borderRight: `2px solid ${active ? "var(--color-accent)" : "var(--color-muted)"}`,
-          borderBottom: `2px solid ${active ? "var(--color-accent)" : "var(--color-muted)"}`,
-          borderBottomRightRadius: 3,
-          opacity: active ? 1 : 0.55,
-        }}
-      />
-    </div>
-  );
-}
-
-function ResizeGrip({ id, active, onDown }: { id: string; active: boolean; onDown: (e: React.PointerEvent) => void }) {
-  return (
-    <div
-      data-node-resize={id}
-      onPointerDown={onDown}
-      onClick={(e) => e.stopPropagation()}
-      title="拖动我，调整这张卡的宽度"
-      className="group/resize absolute top-0 z-30 flex h-full cursor-col-resize items-center justify-center"
-      style={{ right: -10, width: 20, touchAction: "none" }}
-    >
-      <span
-        className="rounded-full transition-opacity group-hover/resize:opacity-100"
-        style={{
-          width: 4,
-          height: 44,
-          opacity: active ? 1 : 0.55,
-          background: active
-            ? "var(--color-accent)"
-            : "color-mix(in srgb, var(--color-border) 55%, var(--color-muted))",
-        }}
-      />
-    </div>
-  );
-}
-
-function DetailSection({ kind, label, children }: { kind: StepKind; label: string; children: React.ReactNode }) {
-  const st = STEP_STYLE[kind];
-  return (
-    <div className="rounded-[8px] border" style={{ borderColor: st.border, background: st.bg }}>
-      <div className="flex items-center gap-1.5 px-2 py-[3px] text-[11px] font-semibold" style={{ color: st.color }}>
-        <span className="text-[10px] leading-none">{st.icon}</span>
-        {label}
-      </div>
-      <div className="px-2 pb-[6px] text-[11.5px] leading-[1.65]" style={{ color: "var(--color-text)" }}>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-/** 抽屉里的小节标题 */
-function Block({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="mb-3">
-      <div
-        className="mb-1 text-[12px] font-semibold"
-        style={{ color: "var(--color-muted)" }}
-      >
-        {title}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-/** 把待确认的调用说人话：input 可能是对象，也可能是 JSON 字符串（AgentScope 两种都给） */
-export function hitlText(payload: Record<string, unknown> | null | undefined): string {
-  const calls = (payload?.tool_calls as { name?: string; input?: unknown }[] | undefined) ?? [];
-  if (!calls.length) return "（等待确认）";
-  const c = calls[0];
-  let input: Record<string, unknown> | null = null;
-  if (c.input && typeof c.input === "object") input = c.input as Record<string, unknown>;
-  else if (typeof c.input === "string") {
-    try {
-      const parsed = JSON.parse(c.input) as unknown;
-      if (parsed && typeof parsed === "object") input = parsed as Record<string, unknown>;
-    } catch {
-      /* 不是 JSON 就原样显示 */
-    }
-  }
-  if (!input) return `${c.name ?? "工具"} ${String(c.input ?? "").slice(0, 120)}`;
-  const key = ["command", "file_path", "path", "url", "query"].find((k) => typeof input![k] === "string");
-  return key ? `${c.name} · ${key}: ${String(input[key])}` : `${c.name} ${JSON.stringify(input).slice(0, 120)}`;
-}
