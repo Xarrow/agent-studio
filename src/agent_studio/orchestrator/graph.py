@@ -127,6 +127,9 @@ def normalise(graph: Graph | None) -> tuple[list[dict[str, Any]], list[dict[str,
             fb = (n or {}).get("fanout_budget")
             if isinstance(fb, int) and not isinstance(fb, bool) and fb > 0:
                 item["fanout_budget"] = fb
+            fw = str((n or {}).get("fanout_workspace") or "").strip()
+            if fw:
+                item["fanout_workspace"] = fw
         nodes.append(item)
 
     ids = {n["nid"] for n in nodes}

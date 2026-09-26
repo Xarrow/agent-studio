@@ -125,6 +125,21 @@ def item_prompt(item: str, index: int, total: int) -> str:
 # --------------------------------------------------------------------------- #
 # 内核：分派
 # --------------------------------------------------------------------------- #
+def _isolated_snapshot(snapshot: dict[str, Any], parent_run: Run, index: int) -> dict[str, Any]:
+    """给第 i 路一份"工作目录换成自己"的定义快照。
+
+    为什么需要它：分派出去的每一路都是**真并行**的实例，若共用同一个工作目录，
+    同时写同名文件就是互相覆盖（"分几路跑"最典型的用法恰恰是各自产出各自的文件）。
+    命名：``<原目录名或 fanout>-<父执行号后 6 位>-<第几路>`` —— **单层名字**，
+    满足 ``resolve_work_dir`` 对 workspace 的校验（不允许路径分隔符 / ``..``）。
+    """
+    snap = dict(snapshot)
+    base = str(snap.get("workspace") or "").strip().strip("/") or "fanout"
+    suffix = str(parent_run.id)[-6:]
+    snap["workspace"] = f"{base}-{suffix}-{index + 1}"
+    return snap
+
+
 async def dispatch(
     *,
     parent_run: Run,
@@ -134,9 +149,14 @@ async def dispatch(
     max_items: int | None = None,
     wait_s: float | None = None,
     budget_tokens: int | None = None,
+    isolate_workspace: bool = False,
     db_factory: Any = SessionLocal,
 ) -> dict[str, Any]:
-    """建 N 条子 run → 交给调度队列（受并发闸）→ 等齐 → 汇总。"""
+    """建 N 条子 run → 交给调度队列（受并发闸）→ 等齐 → 汇总。
+
+    ``isolate_workspace=True`` 时每一路拿到**自己的工作目录**（并行实例同时写文件不会互相覆盖）。
+    默认 False = 都用助手的那个目录（能互相看到产物，也是历史行为）。
+    """
     from .runner import run_service
     from .schemas import AgentDefinition
 
@@ -170,7 +190,11 @@ async def dispatch(
                 runtime=definition_snapshot.get("runtime") or parent_run.runtime,
                 status="pending",
                 input={"text": item_prompt(item, i, len(picked))},
-                definition_snapshot=definition_snapshot,
+                definition_snapshot=(
+                    _isolated_snapshot(definition_snapshot, parent_run, i)
+                    if isolate_workspace
+                    else definition_snapshot
+                ),
                 started_at=now_ms(),
                 # 归属：同一个节点、第几路、谁发起的
                 node_id=parent_run.node_id if parent_run.node_id else None,
@@ -198,9 +222,15 @@ async def dispatch(
         logger.info("分派：%d 项全部已有成功记录，直接复用", len(done))
     else:
         # ── 起：走统一的调度队列（并发闸在那层，超出排队而不是失败）─────
-        definition = AgentDefinition.model_validate(definition_snapshot)
         for c in created:
-            await run_service.start(c.id, definition, (c.input or {}).get("text") or "")
+            # ⚠️ 每一路必须用它**自己**的定义快照 —— 用共享的那份就等于把分派目录隔离
+            # 白配了（库里记着隔离目录、实际却写进共享目录；实测踩到：库里是
+            # fanout-xxxx-1，磁盘上根本没建这个目录）。
+            await run_service.start(
+                c.id,
+                AgentDefinition.model_validate(c.definition_snapshot or definition_snapshot),
+                (c.input or {}).get("text") or "",
+            )
 
     # ── 等齐 + 预算监控 ──────────────────────────────────────────────────
     # 预算按**真花掉的** token 掐（不做跑前预估 —— 估出来的数是编的）：
@@ -295,6 +325,12 @@ async def dispatch(
         if x["status"] in WAITING
     ]
     return {
+        "isolated": bool(isolate_workspace),
+        "workspaces": (
+            [f"{_isolated_snapshot(dict(definition_snapshot), parent_run, i)['workspace']}" for i in range(len(picked))]
+            if isolate_workspace
+            else []
+        ),
         "waiting": waiting_items,
         # 合计（**只作展示**：不写进这一步的顶层 usage，否则全局用量统计会重复计一次）
         "usage": {"tokens_in": tok_in, "tokens_out": tok_out, "llm_calls": calls},
@@ -351,6 +387,14 @@ def render_summary(result: dict[str, Any]) -> str:
     ]
     if result.get("truncated"):
         lines.append(f"注意：项数超过上限，只处理了前 {result['capped_at']} 项（其余未处理）")
+    if result.get("isolated"):
+        dirs = result.get("workspaces") or []
+        lines.append(
+            "（这几路各自用**独立的工作目录**，产出不会互相覆盖："
+            + "、".join(dirs[:5])
+            + ("…" if len(dirs) > 5 else "")
+            + "）"
+        )
     if result.get("waiting"):
         who = "、".join(f"第 {x['index'] + 1} 项" for x in result["waiting"])
         lines.append(
@@ -460,6 +504,7 @@ async def handle_tool_call(**kwargs: Any) -> str:
     result = await dispatch(
         parent_run=parent,
         agent_id=target_agent_id or agent_id,
+        isolate_workspace=bool(kwargs.get("isolate")),
         definition_snapshot=snap,
         items=items,
         max_items=kwargs.get("max_items"),
@@ -502,6 +547,13 @@ TOOL_SCHEMA: dict[str, Any] = {
         "budget_tokens": {
             "type": "integer",
             "description": "这一批最多花多少 token（可选，默认不限）。超了会停下还没开始的那几路并如实上报",
+        },
+        "isolate": {
+            "type": "boolean",
+            "description": (
+                "true = 每一路用**自己独立的工作目录**（各自产出的文件不会互相覆盖）；"
+                "默认 false = 都用你自己的目录"
+            ),
         },
         "agent": {
             "type": "string",

@@ -138,6 +138,7 @@ def _fanout_of(step: dict[str, Any]) -> dict[str, Any] | None:
         "agent": agent,
         "wait_s": (step or {}).get("wait_timeout_s"),
         "budget": (step or {}).get("fanout_budget"),
+        "workspace": (step or {}).get("fanout_workspace"),
     }
 
 
@@ -648,6 +649,7 @@ class Orchestrator:
                 parent_run=fresh,
                 agent_id=target_id,
                 definition_snapshot=child_snapshot,
+                isolate_workspace=str(fanout.get("workspace") or "").strip() == "isolate",
                 items=items,
                 max_items=fanout.get("max"),
                 wait_s=fanout.get("wait_s"),

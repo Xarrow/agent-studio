@@ -646,6 +646,8 @@ export interface WorkflowNode {
   fanout_budget?: number;
   /** 派给谁：空 = 本节点的助手；填 agent_id = 分派给那个助手干活（编排者派给通用助手） */
   fanout_agent?: string;
+  /** 分派出去的那几路用什么工作目录：不填/"share" = 同一个；"isolate" = 每路一个独立目录 */
+  fanout_workspace?: string;
 }
 
 export interface WorkflowEdge {

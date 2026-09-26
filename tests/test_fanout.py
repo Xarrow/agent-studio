@@ -329,9 +329,26 @@ def test_fanout_of_helper_shape():
         "agent": None,
         "wait_s": None,
         "budget": None,
+        "workspace": None,
     }
-    got = _fanout_of({"fanout": "list", "fanout_max": 10, "wait_timeout_s": 600, "fanout_agent": "ag_x", "fanout_budget": 20000})
-    assert got == {"mode": "list", "max": 10, "agent": "ag_x", "wait_s": 600, "budget": 20000}
+    got = _fanout_of(
+        {
+            "fanout": "list",
+            "fanout_max": 10,
+            "wait_timeout_s": 600,
+            "fanout_agent": "ag_x",
+            "fanout_budget": 20000,
+            "fanout_workspace": "isolate",
+        }
+    )
+    assert got == {
+        "mode": "list",
+        "max": 10,
+        "agent": "ag_x",
+        "wait_s": 600,
+        "budget": 20000,
+        "workspace": "isolate",
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -1075,3 +1092,193 @@ async def test_step_records_how_long_it_may_wait_for_children(client):
     async with SessionLocal() as s:
         row = await s.get(Run, box["run_id"])
         assert (row.input or {}).get("fanout_wait_s") == 900, row.input
+
+
+# --------------------------------------------------------------------------- #
+# 15. 分派目录隔离：并行实例各写各的文件，不互相覆盖
+# --------------------------------------------------------------------------- #
+def test_isolated_snapshot_names_are_single_level_and_distinct():
+    from agent_studio.fanout import _isolated_snapshot
+
+    class _P:
+        id = "run_abcdef123456"
+
+    base = {"name": "通用助手", "workspace": "reports"}
+    a = _isolated_snapshot(base, _P(), 0)["workspace"]
+    b = _isolated_snapshot(base, _P(), 1)["workspace"]
+    assert a != b and a.endswith("-1") and b.endswith("-2")
+    # 必须是**单层名字**：resolve_work_dir 只认平台沙箱下的子目录名
+    assert "/" not in a and ".." not in a
+    assert a.startswith("reports-") and "3456" in a, a
+    # 原快照不能被改（同一份快照要复用给别的路）
+    assert base["workspace"] == "reports"
+    # 没配工作目录的助手 → 落到 fanout- 前缀，同样是单层
+    assert _isolated_snapshot({"name": "x"}, _P(), 0)["workspace"].startswith("fanout-")
+
+
+async def test_isolated_fanout_gives_every_item_its_own_workspace(client):
+    from agent_studio.config import settings
+    from agent_studio.db import SessionLocal
+    from agent_studio.models import Run
+    from agent_studio.runtimes import register_runtime
+
+    register_runtime(SpanRuntime())
+    settings.max_concurrent_runs = 0
+    owner = await _agent_with_stub(client)
+    d = await _run_orchestration_with_pump(
+        client,
+        {
+            "mode": "single",
+            "steps": [
+                {
+                    "agent_id": owner,
+                    "carry_prev": False,
+                    "nid": "n1",
+                    "fanout": "list",
+                    "fanout_max": 3,
+                    "fanout_workspace": "isolate",
+                }
+            ],
+            "task": "- 甲\n- 乙\n- 丙",
+        },
+    )
+    assert d["status"] == "ok", d
+    kids = sorted(
+        [s for s in d["steps"] if s.get("parent_run_id")], key=lambda x: x.get("item_index") or 0
+    )
+    assert len(kids) == 3
+    async with SessionLocal() as s:
+        spaces = []
+        for k in kids:
+            row = await s.get(Run, k["run_id"])
+            spaces.append((row.definition_snapshot or {}).get("workspace") or "")
+    assert len(set(spaces)) == 3, f"每一路的工作目录必须互不相同：{spaces}"
+    assert all(sp and "/" not in sp for sp in spaces), spaces
+
+
+async def test_shared_workspace_stays_the_default(client):
+    """不配就是老行为（同一目录），不能悄悄改掉既有语义。"""
+    from agent_studio.config import settings
+    from agent_studio.db import SessionLocal
+    from agent_studio.models import Run
+    from agent_studio.runtimes import register_runtime
+
+    register_runtime(SpanRuntime())
+    settings.max_concurrent_runs = 0
+    owner = await _agent_with_stub(client)
+    d = await _run_orchestration_with_pump(
+        client,
+        {
+            "mode": "single",
+            "steps": [
+                {"agent_id": owner, "carry_prev": False, "nid": "n1", "fanout": "list", "fanout_max": 2}
+            ],
+            "task": "- 甲\n- 乙",
+        },
+    )
+    assert d["status"] == "ok", d
+    kids = [s for s in d["steps"] if s.get("parent_run_id")]
+    async with SessionLocal() as s:
+        spaces = [(await s.get(Run, k["run_id"])).definition_snapshot.get("workspace") for k in kids]
+    assert len(set(spaces)) == 1, f"默认应当是共享目录：{spaces}"
+
+
+def test_spec_keeps_workspace_mode_too():
+    """白名单第 4 次：新节点字段必须活着到 spec（这次是分派目录）。"""
+    from agent_studio.api.workflows import graph_to_spec
+    from agent_studio.schemas import WorkflowGraph
+
+    graph = WorkflowGraph.model_validate(
+        {
+            "nodes": [
+                {
+                    "nid": "n1",
+                    "agent_id": "ag_x",
+                    "fanout": "list",
+                    "fanout_max": 2,
+                    "fanout_workspace": "isolate",
+                }
+            ],
+            "edges": [],
+        }
+    )
+    step = graph_to_spec(graph, "single", "t")["steps"][0]
+    assert step.get("fanout_workspace") == "isolate", step
+
+
+async def test_workflow_api_persists_every_fanout_field(client):
+    """画布存进去的**每一个**分派字段都必须能读回来。
+
+    为什么要一条这种"蠢"测试：pydantic 会**静默丢掉**没在模型里声明的字段，
+    而这个坑在本项目已经踩了四次（wait_timeout_s → fanout → fanout_agent → fanout_workspace）。
+    逐字段点名断言，比"我以为加上了"可靠。
+    """
+    agent_id = await _agent_with_stub(client)
+    fields = {
+        "fanout": "list",
+        "fanout_max": 3,
+        "fanout_agent": agent_id,
+        "fanout_budget": 5000,
+        "fanout_workspace": "isolate",
+        "wait_timeout_s": 900,
+    }
+    made = await client.post(
+        "/api/workflows",
+        json={
+            "name": uniq("字段探针"),
+            "graph": {"nodes": [{"nid": "n1", "agent_id": agent_id, **fields}], "edges": []},
+        },
+    )
+    assert made.status_code == 201, made.text
+    wid = made.json()["id"]
+    got = (await client.get(f"/api/workflows/{wid}")).json()["graph"]["nodes"][0]
+    for key, want in fields.items():
+        assert got.get(key) == want, f"字段 {key} 被丢掉了（拿到 {got.get(key)!r}）：{got}"
+    # 而且必须能一路带到 spec（画布 → 执行）
+    from agent_studio.api.workflows import graph_to_spec
+    from agent_studio.schemas import WorkflowGraph
+
+    spec = graph_to_spec(WorkflowGraph.model_validate({"nodes": [{"nid": "n1", "agent_id": agent_id, **fields}], "edges": []}), "single", "t")
+    step = spec["steps"][0]
+    for key, want in fields.items():
+        assert step.get(key) == want, f"字段 {key} 没带到 spec：{step}"
+
+
+async def test_each_item_runs_with_its_own_definition_snapshot(client, monkeypatch):
+    """每一路交给运行时的定义必须是**它自己**那份（否则目录隔离/目标助手全白配）。"""
+    from agent_studio.config import settings
+    from agent_studio.db import SessionLocal
+    from agent_studio.runner import run_service as rs
+    from agent_studio.runtimes import register_runtime
+
+    register_runtime(SpanRuntime())
+    settings.max_concurrent_runs = 0
+    owner = await _agent_with_stub(client)
+    seen: list[str] = []
+    orig = rs.start
+
+    async def _spy(run_id, definition, run_input):  # noqa: ANN001
+        seen.append(str(getattr(definition, "workspace", "") or ""))
+        return await orig(run_id, definition, run_input)
+
+    monkeypatch.setattr(rs, "start", _spy)
+    d = await _run_orchestration_with_pump(
+        client,
+        {
+            "mode": "single",
+            "steps": [
+                {
+                    "agent_id": owner,
+                    "carry_prev": False,
+                    "nid": "n1",
+                    "fanout": "list",
+                    "fanout_max": 3,
+                    "fanout_workspace": "isolate",
+                }
+            ],
+            "task": "- 甲\n- 乙\n- 丙",
+        },
+    )
+    assert d["status"] == "ok", d
+    assert len(seen) == 3 and len(set(seen)) == 3, f"每路必须拿到自己的工作目录：{seen}"
+    assert all(seen), seen

@@ -813,6 +813,8 @@ class OrchestrationStep(BaseModel):
     fanout_max: int | None = None
     #: 这一步最多花多少 token（0/不填 = 不限）
     fanout_budget: int | None = None
+    #: 分派出去的那几路用什么工作目录：``share``（默认，同一个）/ ``isolate``（每路一个独立目录）
+    fanout_workspace: str | None = None
     #: 派给谁：空 = 本槽位的助手；填 agent_id = 分派给那个助手干活
     fanout_agent: str | None = None
 
@@ -923,6 +925,8 @@ class WorkflowNode(BaseModel):
     #: 分派这一步最多花多少 token（0/不填 = 不限）。超了就停下，剩下的标「超出预算未跑」——
     #: 不做跑前预估（估出来的数是编的），只按**真花掉的**掐。
     fanout_budget: int | None = None
+    #: 分派出去的那几路用什么工作目录：``share``（默认，同一个）/ ``isolate``（每路一个独立目录）
+    fanout_workspace: str | None = None
 
 
 class WorkflowEdge(BaseModel):

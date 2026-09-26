@@ -73,6 +73,9 @@ def _wait_of(node: dict[str, Any]) -> dict[str, Any]:
         fb = (node or {}).get("fanout_budget")
         if isinstance(fb, int) and not isinstance(fb, bool) and fb > 0:
             out["fanout_budget"] = fb
+        fw = str((node or {}).get("fanout_workspace") or "").strip()
+        if fw:
+            out["fanout_workspace"] = fw
     return out
 
 
