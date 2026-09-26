@@ -229,6 +229,10 @@ export function WorkflowCanvas({
     };
   }, [workflowId, turnsProp]);
   const turns = turnsProp ?? turnsSelf;
+
+/** 轮次列表只显示**用户自己那句话** ✓ —— 多轮会把"此前的对话"拼在 task 后面，
+ *  不切掉的话列表里会拖出一长串上下文（显示噪声 ✗，存储不受影响 ✓）*/
+const taskOnly = (t: string | null | undefined) => String(t || "").split("—— 此前的对话")[0].split("\n")[0].trim();
   const [heights, setHeights] = useState<Record<string, number>>({});
   /**
    * 鼠标悬停在哪个节点上（= 就地看它在干什么）。
@@ -2322,7 +2326,7 @@ export function WorkflowCanvas({
             <details className="mt-2 rounded-[10px] border px-2 py-1.5" style={{ borderColor: "var(--color-border)" }}>
               <summary className="flex cursor-pointer items-center gap-2 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
                 <span className="shrink-0 font-semibold">共 {turns.length} 轮</span>
-                <span className="truncate">最近：{clip(turns[0]?.task || "（空任务）", 32)}</span>
+                <span className="truncate">最近：{clip(taskOnly(turns[0]?.task) || "（空任务）", 32)}</span>
                 <span className="ml-auto shrink-0 text-[10.5px]">看历史</span>
               </summary>
               <div className="mt-1.5 flex flex-col gap-1">
@@ -2339,7 +2343,7 @@ export function WorkflowCanvas({
                       <span className="shrink-0 font-medium tabular-nums" style={{ color: "var(--color-muted)" }}>
                         第 {turns.length - i} 轮
                       </span>
-                      <span className="truncate" title={t.task || ""}>{clip(t.task || "（空任务）", 46)}</span>
+                      <span className="truncate" title={taskOnly(t.task)}>{clip(taskOnly(t.task) || "（空任务）", 46)}</span>
                       <span className="ml-auto shrink-0 text-[10.5px] tabular-nums" style={{ color: "var(--color-muted)" }}>
                         {t.step_count ? `${t.step_count} 步` : ""}
                       </span>
