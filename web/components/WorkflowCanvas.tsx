@@ -1540,6 +1540,45 @@ export function WorkflowCanvas({
     setFocusNid(null);
   }, [graph, onChange, onSelect]);
 
+  /**
+   * **小地图**（零依赖自研 ✓）：把整张图等比缩进 120×80 的小框，
+   * 点/拖小框 = 把视口挪过去（大图里"我在哪儿、那边有什么"一眼就有）。
+   * 节点少于 3 个时不显示 —— 两张卡要什么导航 ✗（克制的常驻：够用才出现 ✓）
+   */
+  const mini = (() => {
+    const cw = layout.w || 1;
+    const ch = layout.h || 1;
+    const k = Math.min(120 / cw, 80 / ch);
+    const boxes = graph.nodes
+      .map((n) => {
+        const at = layout.pos[n.nid];
+        if (!at) return null;
+        return {
+          nid: n.nid,
+          x: at.x * k,
+          y: at.y * k,
+          w: Math.max(3, (layout.W[n.nid] ?? layout.NW) * k),
+          h: Math.max(3, (numOr(n.h, 0) || 96) * k),
+        };
+      })
+      .filter((b): b is { nid: string; x: number; y: number; w: number; h: number } => b !== null);
+    return { k, w: Math.max(40, cw * k), h: Math.max(30, ch * k), boxes };
+  })();
+
+  const miniJump = (e: React.PointerEvent<HTMLDivElement>) => {
+    const el = stageRef.current;
+    const box = e.currentTarget.getBoundingClientRect();
+    if (!el) return;
+    // 小地图坐标 → 内容坐标 → 舞台滚动位置（让点中的地方落到视口中央 ✓）
+    const cx = (e.clientX - box.left) / mini.k;
+    const cy = (e.clientY - box.top) / mini.k;
+    el.scrollTo({
+      left: Math.max(0, cx * zoom - el.clientWidth / 2),
+      top: Math.max(0, cy * zoom - el.clientHeight / 2),
+      behavior: "smooth",
+    });
+  };
+
   useEffect(() => {
     if (!drag?.moved) {
       setGuides((g) => (g.v.length || g.h.length ? { v: [], h: [] } : g));
@@ -1796,6 +1835,24 @@ export function WorkflowCanvas({
             background: "rgba(21, 94, 239, 0.05)",
           }}
         />
+      )}
+      {/* 小地图（零依赖自研）：≥3 个节点才出现；点/拖 = 把视口挪过去 ✓ */}
+      {graph.nodes.length >= 3 && (
+        <div
+          className="absolute bottom-14 right-3 z-30 overflow-hidden rounded-[8px] border shadow-sm"
+          style={{ width: mini.w, height: mini.h, borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+          onPointerDown={(e) => { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); miniJump(e); }}
+          onPointerMove={(e) => { if (e.buttons === 1) miniJump(e); }}
+          title="小地图：点或拖这里，把视口挪过去"
+        >
+          {mini.boxes.map((b) => (
+            <div
+              key={`mini-${b.nid}`}
+              className="absolute rounded-[2px]"
+              style={{ left: b.x, top: b.y, width: b.w, height: b.h, background: "color-mix(in srgb, var(--color-accent) 34%, transparent)" }}
+            />
+          ))}
+        </div>
       )}
       {/* 对齐辅助线（只提示、不吸磁 ✓）：拖动中与其他卡片对齐时出现的 1px 蓝线 */}
       {guides.v.map((gx, i) => (
