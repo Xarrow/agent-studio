@@ -10,6 +10,7 @@ from . import (
     memories,
     openai_compat,
     orchestrations,
+    prices,
     runs,
     runtimes,
     sessions,
@@ -26,6 +27,7 @@ api_router.include_router(agents.router)        # /api/agents
 api_router.include_router(tools.router)         # /api/tools
 api_router.include_router(skills.router)        # /api/skills
 api_router.include_router(runs.router)          # /api/runs
+api_router.include_router(prices.router)        # /api/prices（单价：用量 → 金额）
 api_router.include_router(sessions.router)      # /api/sessions（多轮会话）
 api_router.include_router(mcp.router)          # /api/mcp（MCP 服务器注册与探测）
 api_router.include_router(memories.router)      # /api/memories（长期记忆）

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, fmt } from "@/lib/api";
 import type { Credential, CredentialTestResult, Provider } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
+import { PriceBook } from "@/components/PriceBook";
 import { Hint, HINTS } from "@/components/ui/hint";
 import { CredentialChatDialog } from "@/components/CredentialChatDialog";
 
@@ -319,6 +320,10 @@ export default function CredentialsPage() {
           })}
         </div>
       )}
+
+      {/* 单价：把"用了多少 token"变成"花了多少钱"。放在密钥下面 ——
+          它的输入是密钥连着的那些模型，用户的动线是"配好 key → 顺手把单价填了"。 */}
+      <PriceBook />
 
       <section>
         <h2 className="text-[15px] font-medium mb-3">支持的 Provider</h2>

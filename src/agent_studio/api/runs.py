@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import SessionLocal, get_session
 from ..models import Agent, LlmCall, ModelTest, Run, RunEvent, ToolCall, now_ms
+from ..pricing import cost_of, currency_of, load_prices, price_key, tokens_of
 from ..runner import run_service
 from ..runner.service import resolve_api_key
 from ..schemas import (
@@ -379,6 +380,9 @@ async def activity_timeline(
     """
     # 助手名映射（列表里要显示"哪次是哪个助手跑的"）
     agents = {a.id: a.name for a in (await session.execute(select(Agent))).scalars()}
+    # 单价与币种：一次读出来，循环里直接用（别在 for 里查库）
+    prices = await load_prices(session)
+    currency = await currency_of(session)
 
     runs = list(
         (await session.execute(select(Run).order_by(Run.started_at.desc()).limit(1000)))
@@ -397,6 +401,12 @@ async def activity_timeline(
         out = r.output if isinstance(r.output, dict) else {}
         dur = (r.ended_at - r.started_at) if (r.ended_at and r.started_at) else None
         usage = r.usage if isinstance(r.usage, dict) else {}
+        model_name = (r.definition_snapshot or {}).get("model", {}).get("name")
+        # ⚠️ 取 token 一律走 pricing.tokens_of：它同时认平台的 tokens_in/out 与
+        #    provider 的 prompt/completion_tokens 两套键名。
+        #    之前这里只认后者 → 平台自己采的数一个都取不到 → 记录页 Tokens 列**整列「—」**
+        #    （数据一直在库里，只是没被读出来）。这就是那个 bug 的根因。
+        tin, tout = tokens_of(usage)
         items.append(
             ActivityItem(
                 kind=_run_kind(r),  # type: ignore[arg-type]
@@ -410,11 +420,12 @@ async def activity_timeline(
                     f"多轮第 {r.turn_index} 轮" if r.turn_index else None
                 ),
                 agent_id=r.agent_id,
-                model=(r.definition_snapshot or {}).get("model", {}).get("name"),
-                tokens_in=int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0),
-                tokens_out=int(
-                    usage.get("completion_tokens") or usage.get("output_tokens") or 0
-                ),
+                model=model_name,
+                tokens_in=tin,
+                tokens_out=tout,
+                #: 金额（没填单价 = None → 界面显示「—」，不假装 0 元）
+                cost=cost_of(model_name, tin, tout, prices),
+                currency=currency,
                 summary=(_text_of(r.input) or _text_of(out))[:120] or None,
                 error=r.error,
             )
@@ -437,6 +448,8 @@ async def activity_timeline(
                 model=t.model,
                 tokens_in=t.tokens_in,
                 tokens_out=t.tokens_out,
+                cost=cost_of(t.model, t.tokens_in, t.tokens_out, prices),
+                currency=currency,
                 summary=(first_user or t.reply or "")[:120] or None,
                 error=t.error,
             )
@@ -467,6 +480,99 @@ async def activity_timeline(
         ]
 
     return ActivityList(items=items[:limit], counts=counts)
+
+
+@router.get("/usage", response_model=dict)
+async def usage_summary(
+    days: int = Query(7, ge=1, le=90, description="统计最近多少天"),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """**用了多少、花了多少** —— 今日 / 近 N 天 / 按模型 / 按天，一次答完。
+
+    为什么要专门一个端点（而不是让用户自己在列表里加）
+    --------------------------------------------------
+    用户问的是"这个月花了多少、花在哪"，而列表一次只显示几百条还是分页的 ——
+    算不出合计、看不出趋势。这里把三个问题一次答完：
+      · 今天用了多少、花了多少（today）
+      · 近 N 天合计（period）
+      · 按模型拆（by_model）· 按天拆（daily，界面画趋势）
+      · 哪些模型还**没填单价**（unpriced）—— 不说这个，合计就是骗人的
+
+    口径与 ``pricing`` 一致：没填单价的模型金额记 ``None``，合计里**不当作 0**
+    （它只统计填了单价的那部分），并且单独报出 ``unpriced_count``。
+    """
+    import time as _time
+
+    now = now_ms()
+    day_ms = 24 * 3600 * 1000
+    since = now - days * day_ms
+    today_key = _time.strftime("%Y-%m-%d", _time.localtime(now / 1000))
+
+    prices = await load_prices(session)
+    currency = await currency_of(session)
+
+    def blank() -> dict[str, Any]:
+        # cost 起点是 None 而不是 0.0：**一次都没算过钱**时必须是「—」，
+        # 显示成 0 就成了"这些调用免费" —— 那是在撒谎（见 pricing.py 的口径）。
+        return {"calls": 0, "tokens_in": 0, "tokens_out": 0, "cost": None, "unpriced": 0}
+
+    def add(box: dict[str, Any], model: str | None, tin: int, tout: int) -> None:
+        c = cost_of(model, tin, tout, prices)
+        box["calls"] += 1
+        box["tokens_in"] += tin
+        box["tokens_out"] += tout
+        if c is None:
+            box["unpriced"] += 1
+        else:
+            box["cost"] = round((box["cost"] or 0.0) + c, 6)
+
+    daily: dict[str, dict[str, Any]] = {}
+    per_model: dict[str, dict[str, Any]] = {}
+    period = blank()
+    today = blank()
+
+    def take(model, tin, tout, at):
+        day = _time.strftime("%Y-%m-%d", _time.localtime((at or now) / 1000))
+        d = daily.setdefault(day, {**blank(), "day": day})
+        add(d, model, tin, tout)
+        key = price_key(model) or "(未知模型)"
+        m = per_model.setdefault(key, {**blank(), "model": (model or "(未知模型)"), "priced": price_key(model) in prices})
+        add(m, model, tin, tout)
+        add(period, model, tin, tout)
+        if day == today_key:
+            add(today, model, tin, tout)
+
+    for r in (
+        await session.execute(select(Run).where(Run.started_at >= since))
+    ).scalars():
+        usage = r.usage if isinstance(r.usage, dict) else {}
+        tin, tout = tokens_of(usage)
+        if tin or tout:
+            take((r.definition_snapshot or {}).get("model", {}).get("name"), tin, tout, r.started_at)
+
+    for t in (
+        await session.execute(select(ModelTest).where(ModelTest.started_at >= since))
+    ).scalars():
+        if t.tokens_in or t.tokens_out:
+            take(t.model, t.tokens_in, t.tokens_out, t.started_at)
+
+    # 按天补齐（没有调用的那天也要出现，否则趋势图画出来是"跳"的）
+    series = []
+    for i in range(days - 1, -1, -1):
+        day = _time.strftime("%Y-%m-%d", _time.localtime((now - i * day_ms) / 1000))
+        series.append(daily.get(day) or {**blank(), "day": day})
+
+    rows = sorted(per_model.values(), key=lambda r: (-(r["cost"] or 0), -r["tokens_in"] - r["tokens_out"]))
+    return {
+        "currency": currency,
+        "days": days,
+        "today": today,
+        "period": period,
+        "daily": series,
+        "by_model": rows,
+        #: 用了 token 但没填单价的模型 —— 界面据此提示"补上才算得准"
+        "unpriced": [r["model"] for r in rows if not r["priced"]],
+    }
 
 
 @router.get("/model-tests/{test_id}", response_model=ModelTestRead)

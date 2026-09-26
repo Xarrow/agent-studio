@@ -313,6 +313,10 @@ class ActivityItem(BaseModel):
     model: str | None = None
     tokens_in: int = 0
     tokens_out: int = 0
+    #: 这次调用折算的金额；``None`` = 这个模型**还没填单价**（界面显示「—」，
+    #: 不能显示 0 —— "免费"和"不知道"是两件事）
+    cost: float | None = None
+    currency: str = "¥"
     #: 一句话摘要（输入的前几十字），列表里就能看出"这条是什么"
     summary: str | None = None
     error: str | None = None

@@ -1,6 +1,7 @@
 /** 后端 API 客户端（类型化 fetch 封装）。 */
 
 import type {
+  UsageBucket,
   ActivityList,
   Agent,
   AgentDefinition,
@@ -446,6 +447,36 @@ export const api = {
    * 统一的「运行记录」时间线：助手执行（对话/试跑/编排）+ LLM 对话测试。
    * 一次请求拿全，前端不用为了看另一类再切页面。
    */
+  // ── 单价（用量 → 金额）────────────────────────────────────────────────
+  prices: () =>
+    request<{
+      currency: string;
+      items: {
+        model: string;
+        in_per_mtok: number;
+        out_per_mtok: number;
+        calls: number;
+        tokens_in: number;
+        tokens_out: number;
+        priced: boolean;
+      }[];
+      /** 用过但还没填单价的模型 —— 界面据此提示「补上才算得准」 */
+      unpriced: string[];
+    }>("/api/prices"),
+  savePrices: (body: { currency?: string; items: { model: string; in_per_mtok: number; out_per_mtok: number }[] }) =>
+    put<{ saved: number; cleared: number }>("/api/prices", body),
+  // ── 用量与花费汇总 ───────────────────────────────────────────────────
+  usage: (days = 7) =>
+    request<{
+      currency: string;
+      days: number;
+      today: UsageBucket;
+      period: UsageBucket;
+      daily: (UsageBucket & { day: string })[];
+      by_model: (UsageBucket & { model: string; priced: boolean })[];
+      unpriced: string[];
+    }>(`/api/runs/usage?days=${days}`),
+
   runTimeline: (params?: {
     kind?: string;
     status?: string;
@@ -672,6 +703,27 @@ export const api = {
 
 /** 格式化辅助 */
 export const fmt = {
+  /** 大数压缩：3695 → 3.7k（表格里不占地方，但量级一眼看得出） */
+  num(v: number | null | undefined): string {
+    const n = Number(v || 0);
+    if (!n) return "0";
+    if (n < 1000) return String(n);
+    if (n < 1000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k`;
+    return `${(n / 1_000_000).toFixed(1)}M`;
+  },
+  /**
+   * 金额。``null`` = **这个模型还没填单价**，显示「—」而不是 0 ——
+   * "免费"和"不知道"是两件事（详见后端 pricing.py）。
+   * 小额多给几位小数：Agent 单次调用常常只有几分钱，四舍五入成 0.00 就等于看不见。
+   */
+  money(v: number | null | undefined, currency = "¥"): string {
+    if (v === null || v === undefined) return "—";
+    const n = Math.abs(v);
+    if (n === 0) return `${currency}0`;
+    if (n < 0.01) return `${currency}${v.toFixed(4)}`;
+    if (n < 1) return `${currency}${v.toFixed(3)}`;
+    return `${currency}${v.toFixed(2)}`;
+  },
   ms(v: number | null | undefined): string {
     if (v === null || v === undefined) return "—";
     if (v < 1000) return `${v}ms`;

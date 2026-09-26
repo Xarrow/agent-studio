@@ -54,6 +54,24 @@ const KIND_TABS: { key: string; label: string }[] = [
 const LIVE = ["running", "pending", "waiting_hitl"];
 
 /**
+ * 状态的中文说法。
+ *
+ * 为什么必须翻：全站中文界面里蹦出一个 `ok`，用户第一反应是"这产品没做完"。
+ * 值本身不变（接口、筛选都用英文原值），只在**显示**这一层翻译。
+ */
+const STATUS_LABEL: Record<string, string> = {
+  ok: "完成",
+  error: "失败",
+  running: "运行中",
+  pending: "排队中",
+  aborted: "已中断",
+  waiting_hitl: "等待确认",
+};
+
+/** 用量汇总（今日 / 近 7 天）—— 类型直接取自接口，不手抄一份 */
+type Usage = Awaited<ReturnType<typeof api.usage>>;
+
+/**
  * 「全部运行记录」面板 —— 就是原来 Runs 页那张表（类型筛选 / 搜索 / 批量删除 / 按时间清理 / 清空 + 详情弹框）。
  *
  * 为什么抽出来：用户要求「管理全部流程 和 runs 页面功能合并」——
@@ -74,11 +92,14 @@ export function RunsPanel() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState<ActivityItem | null>(null);
+  /** 用了多少 / 花了多少（今日 + 近 7 天）—— 与列表同一个请求里取，不额外等一轮 */
+  const [usage, setUsage] = useState<Usage | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [tl, a] = await Promise.all([
+      const [u, tl, a] = await Promise.all([
+        api.usage(7),
         api.runTimeline({
           kind: kind === "all" ? undefined : kind,
           status: status || undefined,
@@ -88,6 +109,7 @@ export function RunsPanel() {
         }),
         api.agents(),
       ]);
+      setUsage(u);
       setItems(tl.items);
       setCounts(tl.counts);
       setAgents(a);
@@ -232,6 +254,50 @@ export function RunsPanel() {
 
   return (
     <>
+        {/* ── 用量与花费：**放最上面**。用户的第一个问题就是它 ────────────
+            「今天跑了多少次、用了多少 token、花了多少钱」，不用自己数列表。
+            没填单价的模型在这里点名提示 —— 不提示的话，合计就是在骗人。 */}
+        {usage && (
+          <div
+            className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-1.5 rounded-[10px] border px-3.5 py-2 text-[12.5px]"
+            style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+          >
+            {(
+              [
+                ["今日", usage.today],
+                [`近 ${usage.days} 天`, usage.period],
+              ] as const
+            ).map(([label, b]) => (
+              <span key={label} className="whitespace-nowrap">
+                <span style={{ color: "var(--color-muted)" }}>{label} </span>
+                <b>{b.calls}</b>
+                <span style={{ color: "var(--color-muted)" }}> 次 · </span>
+                {fmt.num(b.tokens_in + b.tokens_out)}
+                <span style={{ color: "var(--color-muted)" }}> tokens · </span>
+                <b style={{ color: b.cost ? "var(--color-text)" : "var(--color-muted)" }}>
+                  {fmt.money(b.cost, usage.currency)}
+                </b>
+                {b.unpriced > 0 && (
+                  <span title={`其中 ${b.unpriced} 次调用的模型还没填单价，没有计入金额`}>
+                    {" "}
+                    <span style={{ color: "var(--color-warn)" }}>（{b.unpriced} 次未计价）</span>
+                  </span>
+                )}
+              </span>
+            ))}
+            {usage.unpriced.length > 0 && (
+              <Link
+                href="/credentials#prices"
+                className="whitespace-nowrap underline decoration-dotted"
+                style={{ color: "var(--color-accent)" }}
+                title={`这些模型还没填单价：${usage.unpriced.join("、")} —— 填了才算得准`}
+              >
+                {usage.unpriced.length} 个模型没填单价 · 去填
+              </Link>
+            )}
+          </div>
+        )}
+
         {/* ── 类型筛选：带计数，一眼看出各有多少 ─────────────────── */}
         <div className="flex gap-1 mb-3 overflow-x-auto pb-0.5">
           {KIND_TABS.map((t) => {
@@ -342,6 +408,7 @@ export function RunsPanel() {
                   <th className="text-left px-3 py-2.5 font-medium">主体</th>
                   <th className="text-left px-3 py-2.5 font-medium w-24">状态</th>
                   <th className="text-right px-3 py-2.5 font-medium w-28">Tokens</th>
+                  <th className="text-right px-3 py-2.5 font-medium w-24">金额</th>
                   <th className="text-left px-3 py-2.5 font-medium">摘要</th>
                 </tr>
               </thead>
@@ -365,12 +432,15 @@ export function RunsPanel() {
                         )}
                       </td>
                       <td className="px-3 py-2.5 text-[var(--color-muted)] whitespace-nowrap">
-                        {new Date(it.at).toLocaleString([], {
+                        {/* 固定 zh-CN + 24 小时制：之前不传 locale，中文界面里
+                            会冒出 "06:34:55 AM" —— 数字格式也是产品的一部分（用户会看出来）。 */}
+                        {new Date(it.at).toLocaleString("zh-CN", {
                           month: "2-digit",
                           day: "2-digit",
                           hour: "2-digit",
                           minute: "2-digit",
                           second: "2-digit",
+                          hour12: false,
                         })}
                       </td>
                       <td className="px-3 py-2.5">
@@ -409,13 +479,42 @@ export function RunsPanel() {
                         </div>
                       </td>
                       <td className="px-3 py-2.5">
-                        <span className="mono" style={{ color: STATUS_STYLE[it.status] ?? "" }}>
+                        <span
+                          className="whitespace-nowrap"
+                          title={`状态值：${it.status}`}
+                          style={{ color: STATUS_STYLE[it.status] ?? "" }}
+                        >
                           {live && "● "}
-                          {it.status}
+                          {STATUS_LABEL[it.status] ?? it.status}
                         </span>
                       </td>
-                      <td className="px-3 py-2.5 text-right text-[var(--color-muted)] whitespace-nowrap">
-                        {it.tokens_in || it.tokens_out ? `${it.tokens_in}/${it.tokens_out}` : "—"}
+                      <td
+                        className="px-3 py-2.5 text-right whitespace-nowrap"
+                        style={{ color: "var(--color-muted)" }}
+                        title={`输入 ${it.tokens_in} · 输出 ${it.tokens_out}`}
+                      >
+                        {it.tokens_in || it.tokens_out ? (
+                          <>
+                            <span style={{ color: "var(--color-text)" }}>{fmt.num(it.tokens_in)}</span>
+                            <span> / {fmt.num(it.tokens_out)}</span>
+                          </>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                        <span
+                          title={
+                            it.cost == null
+                              ? it.model
+                                ? `${it.model} 还没填单价 —— 去「LLM 配置 → 单价」填两个数就会显示金额`
+                                : "这条没有模型信息，算不出金额"
+                              : "按「LLM 配置 → 单价」里的价格折算"
+                          }
+                          style={{ color: it.cost == null ? "var(--color-muted)" : "var(--color-text)" }}
+                        >
+                          {fmt.money(it.cost, it.currency ?? "¥")}
+                        </span>
                       </td>
                       <td className="px-3 py-2.5 text-[var(--color-muted)]">
                         <div className="truncate max-w-[320px]">

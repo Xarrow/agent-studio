@@ -12,7 +12,7 @@ import time
 import uuid
 from typing import Any
 
-from sqlalchemy import BigInteger, Boolean, JSON, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, Float, JSON, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -575,4 +575,40 @@ class McpServer(Base):
     last_probe_at: Mapped[int] = mapped_column(BigInteger, default=0)
     last_probe_error: Mapped[str] = mapped_column(String(600), default="")
     created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+    updated_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+
+# --------------------------------------------------------------------------- #
+# 单价（算钱用）
+# --------------------------------------------------------------------------- #
+class ModelPrice(Base):
+    """模型单价 —— 用量 → 金额的唯一依据。
+
+    为什么要用户自己填：各家的价格/折扣/汇率都不一样，平台内置一份价目表
+    只会**很快过期**，还会让人以为"它算的数是对的"。所以：界面把用过的模型列出来，
+    用户填两个数（输入 / 输出，每百万 token），之后所有金额都按它算。
+    没填的模型**不算钱**（界面显示「—」），而不是假装 0 元。
+    """
+
+    __tablename__ = "model_price"
+
+    #: 模型名（唯一键）—— 按**小写去空格**归一，避免 "DeepSeek-V3" 与 "deepseek-v3" 各存一条
+    model: Mapped[str] = mapped_column(String(128), primary_key=True)
+    #: 每百万输入 token 的金额
+    in_per_mtok: Mapped[float] = mapped_column(Float, default=0.0)
+    #: 每百万输出 token 的金额
+    out_per_mtok: Mapped[float] = mapped_column(Float, default=0.0)
+    updated_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+
+
+class AppSetting(Base):
+    """平台级小配置（键值对）：能被界面改、改完立刻生效、跟数据一起备份。
+
+    刻意做得很小 —— 它装的是**平台自己的偏好**（如「单价用哪个币种」），
+    不装业务数据（助手/流程/凭据都有自己的表）。
+    """
+
+    __tablename__ = "app_setting"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[Any] = mapped_column(JSON, default=None)
     updated_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)

@@ -204,8 +204,26 @@ export interface ActivityItem {
   model: string | null;
   tokens_in: number;
   tokens_out: number;
+  /** 这次调用折算的金额；**null = 这个模型还没填单价**（界面显示「—」，不当 0 元） */
+  cost?: number | null;
+  currency?: string;
   summary: string | null;
   error: string | null;
+}
+
+/**
+ * 用量与花费的一格 —— 「今日 / 近 N 天 / 某一天 / 某个模型」用的是同一个形状。
+ *
+ * ``cost`` 为 ``null`` 表示这一格里**一次都没有能算钱的调用**（模型没填单价）：
+ * 界面必须显示「—」，不能显示 0（"免费"和"不知道"是两件事）。
+ * ``unpriced`` = 这一格里有几次调用算不出钱，界面据此提示"补单价才算得准"。
+ */
+export interface UsageBucket {
+  calls: number;
+  tokens_in: number;
+  tokens_out: number;
+  cost: number | null;
+  unpriced: number;
 }
 
 export interface ActivityList {
