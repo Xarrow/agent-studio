@@ -1522,7 +1522,13 @@ export function WorkflowCanvas({
   const setFanoutCfg = useCallback(
     (
       nid: string,
-      patch: { fanout?: string; fanout_max?: number; fanout_budget?: number; fanout_agent?: string },
+      patch: {
+        fanout?: string;
+        fanout_max?: number;
+        fanout_budget?: number;
+        fanout_agent?: string;
+        fanout_workspace?: string;
+      },
     ) => {
       onChange({
         ...graph,
@@ -1530,7 +1536,7 @@ export function WorkflowCanvas({
           if (n.nid !== nid) return n;
           if (patch.fanout === "") {
             // 关掉分派：这几个字段一起摘掉（不留在图里当垃圾）
-            const { fanout: _f, fanout_max: _m, fanout_budget: _b, fanout_agent: _a, ...rest } = n;
+            const { fanout: _f, fanout_max: _m, fanout_budget: _b, fanout_agent: _a, fanout_workspace: _w, ...rest } = n;
             return rest;
           }
           return { ...n, ...patch };
@@ -1845,6 +1851,23 @@ export function WorkflowCanvas({
                     <option value="list">按上游清单</option>
                   </select>
                 </div>
+                {(graph.nodes.find((n) => n.nid === nid)?.fanout ?? "") === "list" && (
+                  /* **分派目录**：并行实例同时写文件时会不会互相覆盖 —— 默认共享（各路的产出在同一个目录里，
+                     彼此看得见），要"各写各的"就选每路独立。 */
+                  <div className="flex items-center gap-2 px-3 py-1.5">
+                    <span className="flex-1" style={{ color: "var(--color-muted)" }}>分派目录</span>
+                    <select
+                      value={graph.nodes.find((n) => n.nid === nid)?.fanout_workspace ?? "share"}
+                      onChange={(e) => setFanoutCfg(nid, { fanout_workspace: e.target.value })}
+                      title="这几路的文件写哪儿：共享 = 都写到本助手的目录（互相看得见）；每路独立 = 各自一个目录，各写各的不会互相覆盖"
+                      className="rounded-[5px] border px-1 py-0.5 text-[12px] max-w-[130px]"
+                      style={{ borderColor: "var(--color-border)", background: "var(--color-surface)", color: "var(--color-text)" }}
+                    >
+                      <option value="share">共享</option>
+                      <option value="isolate">每路独立</option>
+                    </select>
+                  </div>
+                )}
                 {(graph.nodes.find((n) => n.nid === nid)?.fanout ?? "") === "list" && (
                   <div className="flex items-center gap-2 px-3 py-1.5">
                     <span className="flex-1" style={{ color: "var(--color-muted)" }}>最多花多少</span>
@@ -2494,7 +2517,16 @@ export function WorkflowCanvas({
             const toRight = at.x + (layout.W[n.nid] ?? layout.NW) + 14;
             const flip = toRight + BW > layout.w - 6;
             const left = narrow ? Math.max(4, at.x) : flip ? Math.max(6, at.x - BW - 14) : toRight;
-            const top = narrow ? at.y + (heights[n.nid] ?? 220) + 10 : at.y;
+            // **垂直方向同样要收敛** ✗ —— 原来桌面端 top 直接取 at.y：
+            // 节点靠下时，470px 高的面板会一路越过画布内容底边，视觉上就是"盖住/压住下面的东西"。
+            // 现在按"从上边缘算起的可用高度"取 min：真放不下就**变矮**（面板自身可滚 ✓），
+            // 而不是探出画布、压到别的卡上 ✓
+            const panelH = narrow
+              ? null
+              : Math.max(240, Math.min(470, layout.h - at.y - 8));
+            const top = narrow
+              ? at.y + (heights[n.nid] ?? 220) + 10
+              : Math.max(6, at.y);
             const statusText =
               st === "run" ? "执行中" : st === "ask" ? "等你确认" : st === "ok" ? "完成" : st === "err" ? "出错" : st === "stale" ? "已失效" : "还没跑";
             const statusColor =
@@ -2508,7 +2540,7 @@ export function WorkflowCanvas({
                 style={{
                   transform: `translate(${left}px, ${top}px)`,
                   width: BW,
-                  maxHeight: narrow ? "62vh" : 470,
+                  maxHeight: panelH ?? "62vh",
                   background: "var(--color-surface)",
                   borderColor: "var(--color-border)",
                 }}
