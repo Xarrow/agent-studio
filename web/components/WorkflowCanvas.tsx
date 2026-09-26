@@ -2716,17 +2716,31 @@ export function WorkflowCanvas({
                   </div>
                 )}
 
-                  <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]" style={{ color: "var(--color-muted)" }}>
+                  // 「模型」与「工具」**分两行、各带标签** —— 模型名混在工具名里是语义错误 ✗（用户："没有任何设计"）
+                  <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]" style={{ color: "var(--color-muted)" }}>
                     {agent?.definition?.model?.name && (
-                      <span className="rounded-full border px-1.5 py-[1px]" style={{ borderColor: "var(--color-border)" }}>
-                        {agent.definition.model.name}
-                      </span>
+                      <>
+                        <span className="shrink-0">模型</span>
+                        <span className="mono rounded-full border px-1.5 py-[1px]" style={{ borderColor: "var(--color-border)" }}>
+                          {agent.definition.model.name}
+                        </span>
+                      </>
                     )}
-                    {(agent ? skillsOf(agent, toolNames) : []).slice(0, 4).map((t) => (
-                      <span key={t} className="rounded-full border px-1.5 py-[1px]" style={{ borderColor: "var(--color-border)" }}>
-                        {t}
-                      </span>
-                    ))}
+                    {(() => {
+                      const ts2 = agent ? skillsOf(agent, toolNames) : [];
+                      if (!ts2.length) return null;
+                      return (
+                        <>
+                          <span className={agent?.definition?.model?.name ? "ml-2 shrink-0" : "shrink-0"}>工具</span>
+                          {ts2.slice(0, 4).map((t) => (
+                            <span key={t} className="rounded-full border px-1.5 py-[1px]" style={{ borderColor: "var(--color-border)" }}>
+                              {t}
+                            </span>
+                          ))}
+                          {ts2.length > 4 && <span>+{ts2.length - 4}</span>}
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
 
