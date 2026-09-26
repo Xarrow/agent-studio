@@ -547,6 +547,8 @@ export const api = {
       period: UsageBucket;
       daily: (UsageBucket & { day: string })[];
       by_model: (UsageBucket & { model: string; priced: boolean })[];
+      /** 成功率统计（近 N 天）—— 统计带"一眼读"用 */
+      stats: { runs: number; ok: number; failed: number; success_rate: number | null };
       unpriced: string[];
     }>(`/api/runs/usage?days=${days}`),
 

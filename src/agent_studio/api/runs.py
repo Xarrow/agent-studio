@@ -447,6 +447,19 @@ def _text_of(blob: Any) -> str:
     return ""
 
 
+def _first_user_line(blob: Any) -> str:
+    """摘要只取**用户自己那句话**（首行）。
+
+    多轮会把「—— 此前的对话（共 N 轮…）」整段拼在 input 后面（PlaygroundConsole
+    的上下文注入），直接 [:120] 会把列表摘要变成一坨对话记录 ✗。
+    与画布 taskOnly 同语义：遇到上下文分隔线或换行即止。
+    """
+    text = _text_of(blob)
+    for sep in ("—— 此前的对话", "\n"):
+        text = text.split(sep)[0]
+    return text.strip()
+
+
 # ── 「运行记录」时间线（分页版）────────────────────────────────────────────
 #
 # 为什么要重写（原来差在哪）
@@ -632,7 +645,7 @@ async def activity_timeline(
                 cost=cost_of(model_name, tin, tout, prices),
                 currency=currency,
                 trigger=(r.origin if r.origin in ("schedule", "webhook") else None),
-                summary=(_text_of(r.input) or _text_of(out))[:120] or None,
+                summary=_first_user_line(r.input)[:120] or _text_of(out)[:120] or None,
                 error=r.error,
             )
         )
@@ -842,6 +855,21 @@ async def usage_summary(
         series.append(daily.get(day) or {**blank(), "day": day})
 
     rows = sorted(per_model.values(), key=lambda r: (-(r["cost"] or 0), -r["tokens_in"] - r["tokens_out"]))
+    # 成功率：同口径按 Run 表直接数（ModelTest 也有状态，一并算 —— 统计带要"一眼读"）
+    ok_n = err_n = run_n = 0
+    for r in (await session.execute(select(Run).where(Run.started_at >= since))).scalars():
+        run_n += 1
+        if r.status == "ok":
+            ok_n += 1
+        elif r.status in ("error", "aborted"):
+            err_n += 1
+    for t in (await session.execute(select(ModelTest).where(ModelTest.started_at >= since))).scalars():
+        run_n += 1
+        if t.status == "ok":
+            ok_n += 1
+        elif t.status in ("error", "aborted"):
+            err_n += 1
+    rate = round(ok_n / run_n * 100) if run_n else None
     return {
         "currency": currency,
         "days": days,
@@ -849,6 +877,7 @@ async def usage_summary(
         "period": period,
         "daily": series,
         "by_model": rows,
+        "stats": {"runs": run_n, "ok": ok_n, "failed": err_n, "success_rate": rate},
         #: 用了 token 但没填单价的模型 —— 界面据此提示"补上才算得准"
         "unpriced": [r["model"] for r in rows if not r["priced"]],
     }
