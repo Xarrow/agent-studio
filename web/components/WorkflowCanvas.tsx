@@ -1514,6 +1514,22 @@ export function WorkflowCanvas({
     [graph, onChange, onSelect],
   );
 
+  /**
+   * **自动整理**（对齐 Dify 的 Mod+O organize —— shortcuts/definitions.ts）。
+   *
+   * 实现很轻：布局引擎本来就按**流程结构**算位置 ✓，手工存下来的 x/y 只是覆盖它。
+   * 所以"整理"= 把这些覆盖**清掉**，让位置重新按结构流动（不引入第二套布局逻辑 ✓）。
+   */
+  const autoOrganize = useCallback(() => {
+    onChange({
+      ...graph,
+      nodes: graph.nodes.map((n) => ({ ...n, x: undefined, y: undefined })),
+    });
+    setGroup([]);
+    onSelect(null);
+    setFocusNid(null);
+  }, [graph, onChange, onSelect]);
+
   /** 删掉一个节点（连带它的连线）—— 卡片上的「删除」和键盘 Delete 共用这一条路径 ✓ */
   const deleteNode = useCallback(
     (nid: string) => {
@@ -1577,7 +1593,8 @@ export function WorkflowCanvas({
       //  —— shortcuts/definitions.ts:111-141。上一轮我写成 Mod+1=100% ✗，这次照源码改 ✓）
       // 注意：Shift+1 的 e.key 是 "!" ✗（键盘布局差异）→ 必须用 e.code（物理键）判数字 ✓
       const digit = e.code.startsWith("Digit") ? e.code.slice(5) : /^[0-9]$/.test(e.key) ? e.key : "";
-      if (e.key.toLowerCase() === "z") { e.preventDefault(); if (e.shiftKey) doRedo(); else doUndo(); }
+      if (e.key.toLowerCase() === "o") { e.preventDefault(); autoOrganize(); }
+      else if (e.key.toLowerCase() === "z") { e.preventDefault(); if (e.shiftKey) doRedo(); else doUndo(); }
       else if (e.key.toLowerCase() === "y") { e.preventDefault(); doRedo(); }
       else if (e.key.toLowerCase() === "d" && selected) { e.preventDefault(); duplicateNode(selected); }
       // 复制/粘贴：只在"确实有选中的节点"时接管，否则让浏览器做正常文本复制 ✗（不抢）
@@ -1592,7 +1609,7 @@ export function WorkflowCanvas({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onSelect, fitView, zoomTo, zoomStep, selected, group, graph, onChange, deleteNode, deleteMany, duplicateNode, copySel, pasteClip, doUndo, doRedo]);
+  }, [onSelect, fitView, zoomTo, zoomStep, selected, group, graph, onChange, deleteNode, deleteMany, duplicateNode, copySel, pasteClip, doUndo, doRedo, autoOrganize]);
 
 
   const growTask = () => {
@@ -1701,6 +1718,16 @@ export function WorkflowCanvas({
         backgroundSize: `${14 * zoom}px ${14 * zoom}px`,
       }}
     >
+      {/* 自动整理：触屏没有 ⌘O ✗，所以给一个能点的入口（左下角，和右下角缩放错开）✓ */}
+      <button
+        type="button"
+        onClick={autoOrganize}
+        title="自动整理：把手工挪过的位置清掉，回到按流程结构排布的版式（⌘O / Ctrl+O）"
+        className="absolute bottom-3 left-3 z-30 rounded-[8px] border px-2 py-1 text-[12.5px] shadow-sm"
+        style={{ borderColor: "var(--color-border)", background: "var(--color-surface)", color: "var(--color-muted)" }}
+      >
+        ⌗ 整理
+      </button>
       {/* **多选操作条**：选到 ≥2 步时出现（触屏没有 Delete 键，这是手机上"一起删"的入口 ✓）。
           长按卡片 0.5s = 加入多选（手指版的框选 ✓）；桌面用框选或 Shift 都不需要它常驻 ✓ */}
       {group.length >= 2 && (
