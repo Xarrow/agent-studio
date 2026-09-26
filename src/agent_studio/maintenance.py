@@ -221,3 +221,61 @@ async def storage_stats(session: AsyncSession) -> dict[str, Any]:
         "preview_bytes": int(settings.event_preview_bytes),
         "enabled": bool(settings.event_compact_enabled),
     }
+
+# --------------------------------------------------------------------------- #
+# 数据库每日副本
+# --------------------------------------------------------------------------- #
+#: 保留几份（够回退即可；留太多会把磁盘吃满，反而更危险）
+DB_KEEP = 3
+
+
+def db_backups(db_path: str) -> list[str]:
+    """已有的每日副本，按时间从新到旧（只认我们自己造的那个命名）。"""
+    from pathlib import Path
+
+    p = Path(db_path)
+    if not p.parent.exists():
+        return []
+    hits = [str(x) for x in p.parent.glob(f"{p.name}.daily-*") if x.is_file()]
+    return sorted(hits, reverse=True)
+
+
+def prune_db_backups(db_path: str, keep: int = DB_KEEP) -> list[str]:
+    """只留最近 ``keep`` 份，返回被删掉的（**只删我们自己按命名造的副本**）。"""
+    import os
+
+    old = db_backups(db_path)[keep:]
+    for path in old:
+        try:
+            os.remove(path)
+        except OSError:  # pragma: no cover - 删不掉不该让备份流程失败
+            pass
+    return old
+
+
+def backup_db(db_path: str, keep: int = DB_KEEP) -> str | None:
+    """给数据库留一份副本（活库也安全：走 SQLite 的 backup API，不是拷文件）。
+
+    为什么不用 ``cp``：库在 WAL 模式下运行时拷文件，可能拿到**半写状态**的副本 ——
+    真要回退时才发现副本是坏的，那比没有更糟。
+    """
+    import sqlite3
+    import time as _time
+    from pathlib import Path
+
+    src_path = Path(db_path)
+    if not src_path.exists():
+        return None
+    stamp = _time.strftime("%Y%m%d-%H%M%S")
+    target = src_path.with_name(f"{src_path.name}.daily-{stamp}")
+    source = sqlite3.connect(f"file:{src_path}?mode=ro", uri=True)
+    try:
+        dest = sqlite3.connect(str(target))
+        try:
+            source.backup(dest)
+        finally:
+            dest.close()
+    finally:
+        source.close()
+    prune_db_backups(db_path, keep)
+    return str(target)

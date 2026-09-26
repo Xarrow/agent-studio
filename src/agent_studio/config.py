@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     event_preview_bytes: int = 4096
     #: 是否允许自动归档（关掉就只有手动整理）
     event_compact_enabled: bool = True
+
+    #: 数据库每日副本（并入调度循环；只留最近几份）
+    db_backup_enabled: bool = True
+    db_backup_interval_s: int = 24 * 3600
     #: 自动归档的最小间隔（秒）—— 并进已有的调度 tick，不新建脚本/cron
     event_compact_interval_s: int = 3600
     max_tool_output_bytes: int = 64 * 1024        # 工具结果截断上限

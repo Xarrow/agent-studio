@@ -54,3 +54,16 @@ async def run_compact(
     await set_setting(session, "events_compact_last_at", now_ms())
     await session.commit()
     return {"ok": True, **stats}
+
+@router.post("/backup-db", response_model=dict)
+async def backup_db_now() -> dict[str, Any]:
+    """**立刻留一份数据库副本**（做危险操作前点一下；平时每天自动留一份）。
+
+    为什么要给用户这个按钮：自托管的平台上，库就是唯一真相，
+    "改之前先留一份"应该是**一键**的事，而不是让人去终端里敲命令。
+    """
+    from ..config import settings
+    from ..maintenance import backup_db
+
+    made = backup_db(str(settings.db_path))
+    return {"ok": bool(made), "path": made}

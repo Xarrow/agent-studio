@@ -199,6 +199,13 @@ async def loop() -> None:
         except Exception:  # noqa: BLE001
             # 归档失败**不影响**自动运行 —— 它只是省空间，不该拖垮调度
             logger.exception("事件归档这一轮出错（继续下一轮）")
+        try:
+            await _maybe_backup_db()
+        except asyncio.CancelledError:  # 服务在退出
+            raise
+        except Exception:  # noqa: BLE001
+            # 备份失败同样不该拖垮调度（但要留下日志 —— 备份坏了必须有人知道）
+            logger.exception("数据库备份这一轮出错（继续下一轮）")
         await asyncio.sleep(TICK_SECONDS)
 
 
@@ -230,6 +237,33 @@ async def _maybe_compact() -> None:
                 stats["runs_archived"], stats["rows_removed"],
                 stats["bytes_before"], stats["bytes_after"],
             )
+
+
+async def _maybe_backup_db() -> None:
+    """数据库每日副本：并进**已有**调度循环（与事件归档同一套路，不新建脚本/cron）。
+
+    为什么需要它（血泪）：库是自托管平台的**唯一真相**（助手/流程/执行记录/记忆都在里面），
+    而副本一直是**手工**造的（谁想起来了才 `cp` 一份）—— 那些手工副本还都堆在 data/ 里
+    没有轮转，既容易被误清、又没人保证它是最新的。
+    """
+    from .config import settings
+
+    if not settings.db_backup_enabled:
+        return
+    interval = max(int(settings.db_backup_interval_s), 3600)
+    async with SessionLocal() as session:
+        from .settings_store import get_setting, set_setting
+
+        last = int(await get_setting(session, "db_backup_last_at", 0) or 0)
+        if now_ms() - last < interval * 1000:
+            return
+        from .maintenance import backup_db
+
+        made = backup_db(settings.db_path)
+        await set_setting(session, "db_backup_last_at", now_ms())
+        await session.commit()
+        if made:
+            logger.info("数据库副本已留：%s", made)
 
 
 def describe(mode: str | None, at: str | None, weekdays: str | None) -> str:
