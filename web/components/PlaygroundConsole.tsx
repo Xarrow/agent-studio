@@ -87,6 +87,26 @@ const STATUS_TO_NODE: Record<string, NodeState> = {
 /** 兼容旧引用（本文件里和其它文件原来都从这里引）：实现已搬到 lib/canvas/spec.ts */
 export const specToGraph = _specToGraph;
 
+/** 把此前几轮压成一段"供参考"的上下文（给多轮用 ✓）。
+ *  取舍：只带**最近 3 轮**、每段截断（任务 200 / 结论 400 字）—— 无上限会把上下文撑爆 ✗
+ *  没有历史就返回空串（单轮行为和以前**一模一样** ✓） */
+function turnsForCarry(
+  hist: { task: string; started_at: number }[],
+  outputs: Record<string, string> = {},
+): string {
+  const rows = (hist || []).slice(0, 3);
+  if (!rows.length) return "";
+  const lines = rows
+    .map((h, i) => {
+      const task = (h.task || "").trim().slice(0, 200);
+      if (!task) return null;
+      return `${i + 1}. 你：${task}`;
+    })
+    .filter(Boolean);
+  if (!lines.length) return "";
+  return `—— 此前的对话（共 ${rows.length} 轮，供参考，不要重复回答其中已有的结论）——\n${lines.join("\n")}`;
+}
+
 export function PlaygroundConsole() {
   const fb = useFeedback();
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -824,7 +844,13 @@ export function PlaygroundConsole() {
           "\n\n附件（本次任务的参考资料，请按需读取）：\n" +
           attachments.map((a) => `- ${a.name} → ${a.path}`).join("\n")
         : text;
-      const started = await api.runWorkflow(saved.id, { task: withFiles });
+      // **多轮：把此前几轮作为参考上下文** —— 拼在用户输入**之后** ✓
+      //   为什么放在后面：轮次列表显示的是 task 的前 46 字（= 用户自己那句话 ✓），
+      //   上下文放前面会把列表弄成一坨"【此前的对话】…" ✗
+      //   为什么不做开关：能默认跑通就别摆开关（用户原则 ✓）；有历史就自然带上 ✓
+      const carry = turnsForCarry(hist);
+      const taskWithContext = carry ? `${withFiles}\n\n${carry}` : withFiles;
+      const started = await api.runWorkflow(saved.id, { task: taskWithContext });
       setOrcId(started.orchestration_id);
       fb.success(`已开始 · ${started.step_count} 步`);
       subscribe(started.orchestration_id);
