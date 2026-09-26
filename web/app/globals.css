@@ -589,3 +589,16 @@ body {
 
 /* 助手详情页：Skills 列表「只看已选」时隐藏未选项（CSS 隐藏，不动 JSX 结构 ✓） */
 [data-hide-off="1"] .sk-off { display: none; }
+
+/* 点开节点详情时：给画布一层**极淡的压暗**，让浮层一眼是"主位" ✓
+   —— 浮层贴着节点，紧凑图里必然会压住旁边那张卡 ✗（右/左/下/图边距五处都试过，实测全相交 ✓，
+   这是"浮层"这种呈现方式决定的）。压暗只解决"视觉上谁主谁次"，不改任何布局、不挡操作 ✓
+   pointer-events:none → 点击照常穿透（关浮层仍走既有的"点画布空白即关" ✓） */
+[data-canvas-stage][data-dim="1"]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(16, 24, 40, 0.06);
+  pointer-events: none;
+  z-index: 25;
+}

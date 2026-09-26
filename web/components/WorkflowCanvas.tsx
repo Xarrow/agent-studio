@@ -1705,6 +1705,7 @@ export function WorkflowCanvas({
         if (!el.closest("[data-nid],button,input,textarea,select,[data-canvas-zoom-box],a")) zoomStep(+0.1);
       }}
       data-canvas-stage="1"
+      data-dim={detailNid ? "1" : undefined}
       className="relative h-full min-w-0 flex-1 overflow-auto"
       style={{
         touchAction: "pan-x pan-y",   // 触屏：空白处单指滚动交给原生（手感顺），双指缩放我们自己处理
