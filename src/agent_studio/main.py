@@ -41,6 +41,16 @@ async def lifespan(_app: FastAPI):
     discover_runtimes()
     runtimes = [rt.name for rt in list_runtimes()]
     logger.info("Agent Studio 启动 | db=%s | runtimes=%s", settings.db_path, runtimes)
+    # 安全红线：没配主密钥 = 密钥等于没加密（源码里那把默认钥匙是公开的）。
+    # 这里**大声说出来**，而不是安静地继续跑 —— 否则没人会去配。
+    from .security.crypto import master_key
+
+    if not master_key():
+        logger.warning(
+            "⚠️  未设置 STUDIO_MASTER_KEY —— 密钥加密用的是**公开的默认钥匙**，"
+            "拿到库文件的人可以解开全部 LLM key。请设置环境变量；"
+            "已有密文的迁移见 scripts/rotate_master_key.py"
+        )
     # **自动运行**（无人值守）：进程内一个 20 秒的 tick，不引调度库、不起第二个服务。
     # 它比任何一次执行都更该耐活 —— 挂了就再也没有"自动跑"（见 scheduler.loop）。
     scheduler = asyncio.create_task(scheduler_loop())
