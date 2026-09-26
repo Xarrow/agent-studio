@@ -1362,11 +1362,20 @@ async def test_isolated_items_do_not_clobber_each_others_files(client):
 
         name = "span-test-runtime"
 
+        async def compile(self, definition, **ctx):  # noqa: ANN001
+            # 真实的 work_dir 是 runner 通过 compile(..., work_dir=...) 注入的
+            self.work_dir = str(ctx.get("work_dir") or "")
+            return await super().compile(definition, **ctx)
+
         def run(self, agent, run_input):  # noqa: ANN001
             wd = Path(str(getattr(self, "work_dir", "") or "."))
             wd.mkdir(parents=True, exist_ok=True)
-            text = str((run_input or {}).get("text") or "")
-            (wd / "result.md").write_text(text[:30], encoding="utf-8")
+            text = (
+                run_input
+                if isinstance(run_input, str)
+                else str((run_input or {}).get("text") or "")
+            )
+            (wd / "result.md").write_text(str(text)[:30], encoding="utf-8")
             return super().run(agent, run_input)
 
     register_runtime(WritingRuntime())
