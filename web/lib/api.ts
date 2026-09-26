@@ -556,6 +556,12 @@ export const api = {
   /** 跑一次：返回 orchestration_id，用它订阅现成的编排流 */
   runWorkflow: (id: string, body: { task: string; timeout_s?: number }) =>
     post<WorkflowRunResult>(`/api/workflows/${id}/run`, body),
+  /** **只跑这一步**（单步运行）：后端只裁成单节点执行，**不落任何 workflow**（脏数据红线） */
+  runNode: (wfId: string, nid: string, body: { task: string }) =>
+    post<{ orchestration_id: string; mode: string; nid: string; step_count: number }>(
+      `/api/workflows/${wfId}/run-node?nid=${encodeURIComponent(nid)}`,
+      body,
+    ),
   workflowRuns: (id: string, limit = 20) =>
     request<WorkflowRunBrief[]>(`/api/workflows/${id}/runs?limit=${limit}`),
 

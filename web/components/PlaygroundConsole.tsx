@@ -734,6 +734,27 @@ export function PlaygroundConsole() {
     }
   };
 
+  /** **只跑这一步**：不新建流程（脏数据红线），只在内存里裁成单节点跑这一条 */
+  const runNode = async (nid: string) => {
+    const text = task.trim();
+    if (!text) return fb.error("还差一步", "先写一句任务，这一步才知道要干什么");
+    const saved = dirty || !wf ? await save(true) : wf;
+    if (!saved) return;
+    setRunning(true);
+    setRunStates({ [nid]: "wait" as NodeState });
+    setOutputs({});
+    setHitl(null);
+    try {
+      const started = await api.runNode(saved.id, nid, { task: text });
+      setOrcId(started.orchestration_id);
+      fb.success("已单独跑这一步");
+      subscribe(started.orchestration_id);
+    } catch (e) {
+      setRunning(false);
+      fb.error("单步发起失败", e instanceof Error ? e.message : String(e));
+    }
+  };
+
   const hitlAction = async (action: "allow" | "allow_all" | "deny") => {
     if (!hitl) return;
     try {
@@ -1197,6 +1218,7 @@ export function PlaygroundConsole() {
               if (typeof window !== "undefined") window.localStorage.setItem(LAST_TASK_KEY, v);
             }}
             onRun={() => void run()}
+            onRunNode={(nid) => void runNode(nid)}
             running={running}
 
             outputs={outputs}

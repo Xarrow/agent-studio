@@ -201,6 +201,8 @@ type Props = {
   onAddStep?: (agentId: string) => void;
   onSwapAgent?: (nid: string, agentId: string) => void;
   onRun?: () => void;
+  /** **只跑这一步**（单步运行）：交给父组件发一条只含该节点的编排 */
+  onRunNode?: (nid: string) => void;
   running?: boolean;
   /** 当前会跑什么模式（显示在运行键上） */
   /** 结论卡点开时定位到哪一步（最后一步） */
@@ -315,6 +317,7 @@ export function WorkflowCanvas({
   toolNames = {},
   onTaskValue,
   onRun,
+  onRunNode,
   running = false,
   panelTab = "process",
   onPanelTab,
@@ -1817,6 +1820,7 @@ export function WorkflowCanvas({
                   {focusNid === nid ? "取消聚焦" : "只看这一步"}
                 </button>
                 <button type="button" className={row} onClick={() => { copySel(nid); setNodeMenu(null); }}>复制这一步</button>
+                <button type="button" className={row} onClick={() => { onRunNode?.(nid); setNodeMenu(null); }}>只跑这一步</button>
                 <button type="button" className={row} onClick={() => { duplicateNode(nid); setNodeMenu(null); }}>再制一份</button>
                 <button type="button" className={row} onClick={() => { setPicking({ mode: "swap", nid }); setNodeMenu(null); }}>换成别的助手</button>
                 <button type="button" className={row} onClick={() => { if (delArm === nid) deleteNode(nid); else setDelArm(nid); setNodeMenu(null); }}

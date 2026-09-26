@@ -250,6 +250,53 @@ async def delete_workflow(wf_id: str, session: AsyncSession = Depends(get_sessio
 # --------------------------------------------------------------------------- #
 # 跑
 # --------------------------------------------------------------------------- #
+@router.post("/{wf_id}/run-node", response_model=dict)
+async def run_node(
+    wf_id: str,
+    nid: str,
+    payload: WorkflowRunRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """**只跑这一步** —— 单独执行流程里的某个节点（对齐 Dify 的单步运行）。
+
+    刻意**不新建 workflow** ✗：单步试跑只是"看一眼这一步在这条任务下会怎么答"，
+    为此往用户的流程列表里塞一条临时数据就是脏数据 ✗（用户对数据很在意）。
+    所以这里只在内存里把图裁成"只含这一个节点"，其余（观测 / 回放 / 分页）全部复用现成通道 ✓
+    """
+    wf = await _get_or_404(session, wf_id)
+    task = (payload.task or "").strip()
+    if not task:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "任务描述不能为空")
+    full = WorkflowGraph.model_validate(wf.graph or {})
+    node = next((n for n in full.nodes if n.nid == nid), None)
+    if node is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "这一步不在流程里（可能已被删）")
+
+    one = WorkflowGraph.model_validate({"nodes": [node.model_dump()], "edges": []})
+    await _assert_agents(session, one)
+
+    spec = graph_to_spec(one, "dag", task)
+    if payload.timeout_s:
+        spec["timeout_s"] = payload.timeout_s
+
+    orc = Orchestration(
+        name=f"{wf.name} · 只跑一步 · {task[:20]}",
+        workflow_id=wf.id,
+        mode=spec["mode"],
+        worker_mode=spec.get("worker_mode"),
+        spec=spec,
+        input={"text": task},
+        status="pending",
+        started_at=now_ms(),
+    )
+    session.add(orc)
+    await session.commit()
+    await session.refresh(orc)
+
+    asyncio.create_task(orchestrator.run(orc.id, spec))
+    return {"orchestration_id": orc.id, "mode": spec["mode"], "nid": nid, "step_count": 1}
+
+
 @router.post("/{wf_id}/run", response_model=dict)
 async def run_workflow(
     wf_id: str,
