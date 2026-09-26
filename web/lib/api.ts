@@ -247,6 +247,7 @@ export const api = {
       `/api/credentials${provider ? `?provider=${provider}` : ""}`,
     ),
   createCredential: (body: {
+    default_model?: string | null;
     name: string;
     provider: string;
     api_key: string;
@@ -290,6 +291,7 @@ export const api = {
   credentialModels: (id: string) =>
     request<CredentialModelsResult>(`/api/credentials/${id}/models`),
   probeCredential: (body: {
+    default_model?: string | null;
     name: string;
     provider: string;
     api_key: string;

@@ -366,6 +366,8 @@ function NewCredentialDialog({
   const [name, setName] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
+  /** 新增时也可手填默认模型 ✓ */
+  const [model, setModel] = useState("");
   const [tested, setTested] = useState<CredentialTestResult | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -384,6 +386,7 @@ function NewCredentialDialog({
           provider,
           api_key: apiKey,
           base_url: effectiveBase || null,
+          default_model: model.trim() || null,
         }),
       );
     } catch (e) {
@@ -406,6 +409,7 @@ function NewCredentialDialog({
         provider,
         api_key: apiKey,
         base_url: effectiveBase || null,
+        default_model: model.trim() || null,
       });
       onCreated();
     } catch (e) {
@@ -481,6 +485,29 @@ function NewCredentialDialog({
               placeholder={meta?.default_base_url || ""}
               disabled={meta?.allows_base_url === false}
             />
+          </div>
+
+          <div>
+            <label className="label">默认模型（可手填）</label>
+            <div className="flex gap-2 items-stretch">
+              <input
+                className="input mono min-w-0 flex-1"
+                placeholder="例如 deepseek-v4-flash —— 服务商没有模型清单时手填 ✓"
+                value={model}
+                onChange={(e) => {
+                  setModel(e.target.value);
+                  setTested(null);
+                }}
+              />
+              <button
+                className="btn shrink-0"
+                disabled={busy}
+                title="按这个模型名发一次极小调用，确认能不能真用"
+                onClick={() => void doTest()}
+              >
+                {busy ? "测试中…" : "测试"}
+              </button>
+            </div>
           </div>
 
           {tested && (

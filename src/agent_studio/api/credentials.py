@@ -119,6 +119,7 @@ async def create_credential(
         provider=provider,
         base_url=base_url,
         ciphertext=encrypt(payload.api_key.strip()),
+        default_model=(payload.default_model or "").strip(),
     )
     session.add(row)
     await session.commit()
@@ -594,7 +595,8 @@ async def probe_inline(payload: CredentialCreate) -> CredentialTestResult:
     if meta is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"不支持的 provider: {payload.provider}")
 
-    model_name = meta.models[0] if meta.models else ""
+    # 用户手填的模型优先（服务商没有清单时这是唯一被测的模型 ✓）；没填就退回 provider 推荐的首个
+    model_name = (payload.default_model or "").strip() or (meta.models[0] if meta.models else "")
     ok, models, error, latency = await _probe(
         provider, payload.api_key.strip(), payload.base_url or meta.default_base_url, model_name
     )

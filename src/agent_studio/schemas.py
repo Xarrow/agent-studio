@@ -538,6 +538,8 @@ class CredentialCreate(BaseModel):
     provider: str
     api_key: str = ""
     base_url: str | None = None
+    # 新增时就能指定默认模型（有些服务商没有 /models 清单，只能手填 ✓）
+    default_model: str | None = None
 
 
 class CredentialUpdate(BaseModel):
