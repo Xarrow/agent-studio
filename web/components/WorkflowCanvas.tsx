@@ -1285,6 +1285,20 @@ export function WorkflowCanvas({
   }, []);
 
 
+  /** 删掉一个节点（连带它的连线）—— 卡片上的「删除」和键盘 Delete 共用这一条路径 ✓ */
+  const deleteNode = useCallback(
+    (nid: string) => {
+      onChange({
+        ...graph,
+        nodes: graph.nodes.filter((x) => x.nid !== nid),
+        edges: graph.edges.filter((x) => x.from !== nid && x.to !== nid),
+      });
+      onSelect(null);
+      setDelArm(null);
+    },
+    [graph, onChange, onSelect],
+  );
+
   /**
    * **画布键位**（对齐 Dify：dify-ref/web/app/components/workflow/shortcuts/definitions.ts）。
    *
@@ -1305,15 +1319,43 @@ export function WorkflowCanvas({
         setZoomMenu(false);
         return;
       }
+      // 删除（Dify 键位表：Delete / Backspace —— shortcuts/definitions.ts:49-55）
+      if ((e.key === "Delete" || e.key === "Backspace") && selected) {
+        e.preventDefault();
+        deleteNode(selected);
+        return;
+      }
+      // 方向键移动选中节点（Dify：±5，Shift 时 ±20 —— utils/keyboard-movement.ts:7-16）
+      const step = e.shiftKey ? 20 : 5;
+      const deltas: Record<string, [number, number]> = {
+        ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step],
+      };
+      const d = deltas[e.key];
+      if (d && selected) {
+        e.preventDefault();
+        onChange({
+          ...graph,
+          nodes: graph.nodes.map((x) =>
+            x.nid === selected ? { ...x, x: (x.x ?? 0) + d[0], y: (x.y ?? 0) + d[1] } : x,
+          ),
+        });
+        return;
+      }
       if (!(e.metaKey || e.ctrlKey)) return;
-      if (e.key === "0") { e.preventDefault(); fitView(); }
-      else if (e.key === "1") { e.preventDefault(); zoomTo(1); }
+      // 缩放/视图（**按 Dify 实际键位**改过：Mod+1=适应视图 · Shift+1=100% · Shift+5=50%
+      //  —— shortcuts/definitions.ts:111-141。上一轮我写成 Mod+1=100% ✗，这次照源码改 ✓）
+      // 注意：Shift+1 的 e.key 是 "!" ✗（键盘布局差异）→ 必须用 e.code（物理键）判数字 ✓
+      const digit = e.code.startsWith("Digit") ? e.code.slice(5) : /^[0-9]$/.test(e.key) ? e.key : "";
+      if (digit === "1" && e.shiftKey) { e.preventDefault(); zoomTo(1); }
+      else if (digit === "5" && e.shiftKey) { e.preventDefault(); zoomTo(0.5); }
+      else if (digit === "1") { e.preventDefault(); fitView(); }
+      else if (digit === "0") { e.preventDefault(); fitView(); }
       else if (e.key === "=" || e.key === "+") { e.preventDefault(); zoomStep(+0.1); }
       else if (e.key === "-" || e.key === "_") { e.preventDefault(); zoomStep(-0.1); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onSelect, fitView, zoomTo, zoomStep]);
+  }, [onSelect, fitView, zoomTo, zoomStep, selected, graph, onChange, deleteNode]);
 
 
   const growTask = () => {
@@ -1397,6 +1439,13 @@ export function WorkflowCanvas({
         e.preventDefault();
         zoomStep(-Math.sign(e.deltaY) * 0.1);
       }}
+      // 双击空白 = 放大一档（Dify: zoomOnDoubleClick=true —— index.tsx:810）。
+      // 只有点在**画布自身**上才缩放；点在卡片/控件上不抢它们的行为 ✗
+      onDoubleClick={(e) => {
+        // "空白"= 不在卡片/控件/连线上的任何位置（画布里有居中容器包着，只认 currentTarget 太严 ✗）
+        const el = e.target as HTMLElement;
+        if (!el.closest("[data-nid],button,input,textarea,select,[data-canvas-zoom-box],a")) zoomStep(+0.1);
+      }}
       data-canvas-stage="1"
       className="relative h-full min-w-0 flex-1 overflow-auto"
       style={{
@@ -1405,7 +1454,9 @@ export function WorkflowCanvas({
         // 点阵对齐 Dify（nodes/loop/node.tsx: <Background gap={[14,14]} size={2} />）：
         // 点是 2px、间距 14px；我们原来是 1.2px / 20px，显得又稀又小。
         backgroundImage: "radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--color-border) 85%, transparent) 2px, transparent 0)",
-        backgroundSize: "14px 14px",
+        // 间距跟着缩放走（Dify 的 Background gap 也随 zoom 变）——让点阵始终对齐卡片网格；
+        // 点本身大小不变（2px），这样缩小时不会糊成一片 ✓
+        backgroundSize: `${14 * zoom}px ${14 * zoom}px`,
       }}
     >
               {/* 居中：内容比视口小时整体居中（不然挤在左上角像没做完）；比视口大时照旧滚动 */}
@@ -2536,16 +2587,8 @@ export function WorkflowCanvas({
                     type="button"
                     title={delArm === n.nid ? "再点一次就删掉这一步" : "把这一步从流程里去掉"}
                     onClick={() => {
-                      if (delArm === n.nid) {
-                        setDelArm(null);
-                        onChange({
-                          ...graph,
-                          nodes: graph.nodes.filter((x) => x.nid !== n.nid),
-                          edges: graph.edges.filter((x) => x.from !== n.nid && x.to !== n.nid),
-                        });
-                      } else {
-                        setDelArm(n.nid);
-                      }
+                      if (delArm === n.nid) deleteNode(n.nid);
+                      else setDelArm(n.nid);
                     }}
                     className="rounded-[5px] px-1.5 py-0.5 text-[11.5px] font-medium"
                     style={
@@ -2830,7 +2873,7 @@ export function WorkflowCanvas({
                 title="入口"
               />
               <span
-                className="absolute top-1/2 right-[-7px] h-[13px] w-[13px] -translate-y-1/2 cursor-crosshair rounded-full border-2"
+                className="before:absolute before:-inset-4 before:content-[''] absolute top-1/2 right-[-7px] h-[13px] w-[13px] -translate-y-1/2 cursor-crosshair rounded-full border-2"
                 style={{ background: "var(--color-surface)", borderColor: "var(--color-border)" }}
                 title="从这里拖到另一个助手 = 接在它后面"
                 onPointerDown={(e) => startLink(e, n.nid)}
