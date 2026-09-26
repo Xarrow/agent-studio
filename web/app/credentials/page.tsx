@@ -285,29 +285,6 @@ export default function CredentialsPage() {
                     >
                       {testing === c.id ? "测试中…" : "测试连接"}
                     </button>
-                    {/* **手填模型测试** ✓ —— 有些服务商（如火山引擎方舟的 Agent Plan key）
-                        根本没有 /models 清单，探测不出任何模型；这种时候只能自己填一个名字去测 ✗
-                        （后端 /test 本来就支持带 model ✓，所以这里只是把路露出来 ✓） */}
-                    <div className="flex items-center gap-1.5">
-                      <input
-                        className="input mono w-[190px] text-[12px]"
-                        placeholder={c.default_model || "手填模型名"}
-                        title="服务商没有模型清单时，填一个模型名直接测"
-                        value={typedModel[c.id] ?? ""}
-                        onChange={(e) => setTypedModel({ ...typedModel, [c.id]: e.target.value })}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" && (typedModel[c.id] || "").trim()) void test(c.id, (typedModel[c.id] || "").trim());
-                        }}
-                      />
-                      <button
-                        className="btn"
-                        disabled={testing === c.id || !(typedModel[c.id] || "").trim()}
-                        title="按这个模型名发一次极小调用，验证能不能真用"
-                        onClick={() => void test(c.id, (typedModel[c.id] || "").trim())}
-                      >
-                        {testing === c.id ? "测试中…" : "测这个模型"}
-                      </button>
-                    </div>
                     <button className="btn text-[var(--color-err)]" onClick={() => remove(c)}>
                       删除
                     </button>
@@ -603,6 +580,25 @@ function EditCredentialDialog({
     }
   };
 
+  /** 按**手填**的模型名做一次真实连通性测试（后端 /test 支持带 model ✓，max_tokens=1 ✓ 几乎不花钱） */
+  const testModel = async () => {
+    if (!model.trim()) return;
+    setBusy(true);
+    setProbeNote("测试中…");
+    try {
+      const r = await api.testCredential(credential.id, model.trim());
+      setProbeNote(
+        r.ok
+          ? `✓ 这个模型能用 · 延迟 ${fmt.ms(r.latency_ms)}${r.model ? ` · ${r.model}` : ""}`
+          : `✗ 用不了：${r.error ?? "未知错误"}`,
+      );
+    } catch (e) {
+      setProbeNote(`✗ 测试失败：${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const doTest = async () => {
     setBusy(true);
     setErr(null);
@@ -711,16 +707,28 @@ function EditCredentialDialog({
           <div className="pt-1 border-t border-[var(--color-border)]">
             <label className="label mt-3">默认模型</label>
             <div className="flex gap-2 items-stretch">
-              {/* 只读展示：模型不能手填，必须从探测出来的清单里点选 */}
-              <div className="input mono flex-1 flex items-center min-h-[38px]">
-                {model ? (
-                  <span className="text-[var(--color-text)]">{model}</span>
-                ) : (
-                  <span className="text-[var(--color-muted)]">未选择</span>
-                )}
-              </div>
+              {/* 模型**可以手填**（用户要求：编辑配置里手动添加模型 → 测试 → 保存 ✓）
+                  探测只是"能选就不填"的便利 ✓ —— 有些服务商（如火山引擎方舟的 Agent Plan key）
+                  根本没有 /models 清单，探测不出来，只能手填 ✓ */}
+              <input
+                className="input mono min-w-0 flex-1"
+                placeholder="手填模型名，或点右侧探测后从下方选"
+                value={model}
+                onChange={(e) => {
+                  setModel(e.target.value);
+                  setProbeNote(null);
+                }}
+              />
               <button className="btn shrink-0" disabled={probing} onClick={probeModels}>
                 {probing ? "探测中…" : "探测可用模型"}
+              </button>
+              <button
+                className="btn shrink-0"
+                disabled={!model.trim() || busy}
+                title="按这个模型名发一次极小调用，验证能不能真用（不发对话、几乎不花钱）"
+                onClick={() => void testModel()}
+              >
+                测试
               </button>
               {model && (
                 <button
