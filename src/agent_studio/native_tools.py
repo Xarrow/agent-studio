@@ -116,7 +116,7 @@ async def _web_search(query: str, max_results: int = 8) -> str:
     return "✗ 搜索不可达（DuckDuckGo 与 Bing 都失败了）—— 服务器可能无法直连外网搜索"
 
 
-async def _search_ddg(query: str) -> str | None:
+async def _search_ddg(query: str, max_results: int = 8) -> str | None:
     """DDG HTML 版。None = 不可用（让上层降级），str = 成功或已定性的失败。"""
     import httpx
 
@@ -143,7 +143,7 @@ async def _search_ddg(query: str) -> str | None:
     return _format_results(results[:max_results])
 
 
-async def _search_bing(query: str) -> str | None:
+async def _search_bing(query: str, max_results: int = 8) -> str | None:
     """Bing 国内版（cn.bing.com 直连可用，实测）。"""
     import httpx
 
@@ -202,6 +202,28 @@ def _parse_ddg(html: str) -> list[tuple[str, str, str]]:
             from urllib.parse import unquote
 
             url = unquote(rm.group(1))
+        if title:
+            out.append((title, snippet, url))
+    return out
+
+
+_BING_RE = re.compile(
+    r'<li class="b_algo".*?<h2[^>]*><a[^>]+href="([^"]+)"[^>]*>(.*?)</a>.*?'
+    r'<p class="b_lineclamp[^"]*"[^>]*>(.*?)</p>',
+    re.DOTALL,
+)
+
+
+def _parse_bing(html: str) -> list[tuple[str, str, str]]:
+    """从 Bing 结果页解析（标题, 摘要, 链接）。解析失败返回空表。"""
+    out = []
+    for m in _BING_RE.finditer(html):
+        url, title, snippet = m.group(1), m.group(2), m.group(3)
+        title = _TAG_STRIP_RE.sub("", title).strip()
+        snippet = (
+            snippet.replace("&ensp;", " ").replace("&#0183;", "·").replace("&nbsp;", " ")
+        )
+        snippet = _TAG_STRIP_RE.sub("", snippet).strip()
         if title:
             out.append((title, snippet, url))
     return out

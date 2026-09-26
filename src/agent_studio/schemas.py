@@ -237,6 +237,17 @@ class SkillImportRequest(BaseModel):
     name: str | None = None            # inline 时的名字
 
 
+class SkillUpdateRequest(BaseModel):
+    """页面自定义编辑 —— 全部可选，只改给的字段。
+
+    正文是唯一真相：name/description 若不给，从 content 的 frontmatter 重新解析。
+    """
+
+    name: str | None = None
+    description: str | None = None
+    content: str | None = None
+
+
 class SkillRead(BaseModel):
     id: str
     name: str

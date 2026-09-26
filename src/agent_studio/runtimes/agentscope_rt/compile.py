@@ -264,6 +264,11 @@ def build_tools(specs: list[ToolSpec]) -> list[Any]:
                 tools.append(build_http_tool(spec))
             elif spec.kind == "fork":
                 tools.append(build_fanout_tool(spec))
+            elif spec.kind == "native":
+                # 平台原生内核工具（fetch/web_search/python）—— 实现在 native_tools.py
+                from ...native_tools import build_native_tool
+
+                tools.append(build_native_tool(spec.name))
             else:
                 logger.warning("跳过暂不支持的工具类型: %s (%s)", spec.kind, spec.name)
         except Exception as exc:

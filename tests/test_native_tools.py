@@ -9,6 +9,7 @@ from agent_studio.native_tools import (
     _fetch,
     _html_to_text,
     _is_private_host,
+    _parse_bing,
     _parse_ddg,
     _web_search,
 )
@@ -57,6 +58,22 @@ def test_parse_ddg():
     assert out[0][0] == "第一篇"
     assert out[0][2] == "https://example.com/a"
     assert _parse_ddg("<html>空页面</html>") == []
+
+
+def test_parse_bing():
+    """Bing 结果页解析（b_algo/h2/b_lineclamp 结构，实测抓包）。"""
+    html = """
+    <li class="b_algo" data-id iid="SERP.1"><h2><a href="https://example.com/x"
+      h="ID=SERP">第一篇 <b>加粗</b></a></h2><p class="b_lineclamp4">摘要一&ensp;&#0183;&ensp;细节</p></li>
+    <li class="b_algo" data-id iid="SERP.2"><h2><a href="https://example.com/y">第二篇</a></h2>
+      <p class="b_lineclamp2">摘要二</p></li>
+    """
+    out = _parse_bing(html)
+    assert len(out) == 2
+    assert out[0][0] == "第一篇 加粗"
+    assert out[0][2] == "https://example.com/x"
+    assert "·" in out[0][1]
+    assert _parse_bing("<html>空</html>") == []
 
 
 def test_web_search_invalid():

@@ -48,6 +48,15 @@ async def lifespan(_app: FastAPI):
     if _made:
         logger.info("版本历史：为 %d 个已有对象补了起点快照", _made)
 
+    # 内置工具先入库（运行时内置 + 平台原生 fetch/web_search/python）——
+    # 必须在 ensure_default_agents **之前**：默认助手要按名字挂工具，库里没有就挂不上。
+    from .api.tools import sync_builtins
+
+    async with SessionLocal() as _s:
+        _sync = await sync_builtins(runtime="agentscope", session=_s)
+    if _sync.get("created"):
+        logger.info("工具同步：新建 %s 个内置工具", _sync["created"])
+
     # 开局就有"能干活的两个角色"：编排者（开始/拆分/汇总）+ 通用助手（干活）。
     # 幂等：已存在就不动（用户可能改过提示词/模型）；只在缺的时候补，并保证编排者挂着分派工具。
     from .defaults import ensure_default_agents

@@ -217,16 +217,29 @@ async def ensure_default_agents(session: Any) -> dict[str, Any]:
             if n not in want:
                 continue
             tid = tools.get(n)
-            if tid and tid not in have_ids:
+            if not tid:
+                continue
+            # definition 里没有引用就补（即使 AgentTool 行已在——两处可能脱节，见深拷贝修复前的实测）。
+            # 老数据的 tools 项可能只有 ref 没有 name —— 双键判断，避免重复挂。
+            d = None
+            def_tools = (row_.definition or {}).get("tools") or []
+            in_def = any(t.get("name") == n or t.get("ref") == tid for t in def_tools)
+            if not in_def:
+                import copy as _copy
+
+                d = _copy.deepcopy(row_.definition or {})
+                d.setdefault("tools", [])
+                d["tools"].append({"ref": tid, "name": n, "enabled": True})
+                row_.definition = d
+            # AgentTool 行也补（前端保存/权限判断两处读）
+            if tid not in have_ids:
                 session.add(AgentTool(agent_id=row_.id, tool_id=tid))
+                have_ids.add(tid)
                 attached_native += 1
                 logger.info("已给「%s」补挂内核工具 %s（升级前建的，缺这个）", agent_name, n)
-                # definition.tools 同步补引用（前端读的是 definition）
-                d = row_.definition or {}
-                d.setdefault("tools", [])
-                if not any(t.get("name") == n for t in d["tools"]):
-                    d["tools"].append({"ref": tid, "name": n, "enabled": True})
-                row_.definition = d
+            elif d is not None:
+                row_.updated_at = now_ms()
+                logger.info("已给「%s」的 definition 补上内核工具引用 %s", agent_name, n)
     await session.commit()
     return {
         "created": created,
