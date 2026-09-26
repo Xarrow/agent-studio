@@ -128,6 +128,43 @@ def normalise(graph: Graph | None) -> tuple[list[dict[str, str]], list[dict[str,
     return nodes, edges
 
 
+def back_edges(nodes: list[dict[str, str]], edges: list[dict[str, str]]) -> list[dict[str, str]]:
+    """**回边**：合上环的那条依赖边（DFS 的"灰节点"判定）。
+
+    用户："应该是把结果返回给最初的 Orchestrator 验证总结，而不是新的 Orchestrator"。
+    画布上就是：编排者 → 各 worker → 再回到**同一个编排者**（一个环）。
+    纯 DAG 分层遇到它会靠"次数兜底"收敛 ✗，编排者被排到最后一层 —— 开头那次"分派"就没了 ✗。
+    所以单独识别出来当**收口**用：
+      · 分层忽略回边 → 编排者回第一层，先跑一次（分析任务 + 分派）✓
+      · 各层跑完后，回边指向的节点再跑**一次收口**（验证结果 + 归纳总结）✓
+    为什么用 DFS 灰节点而不是"互相可达"：互相可达会把**环上的每条边**都判成回边 ✗
+    （实测：o→w1、w1→o 互相可达 → 连正常的 o→w1 也被断掉，整张图塌成一层）。
+    灰节点只断"合上环"的那条，方向判断准确 ✓。
+    """
+    deps = dep_edges(edges)
+    adj: dict[str, list[dict[str, str]]] = {}
+    for e in deps:
+        adj.setdefault(e["from"], []).append(e)
+    state: dict[str, int] = {}          # 0/缺省=未访问 1=在栈上(灰) 2=已完成(黑)
+    back: list[dict[str, str]] = []
+
+    def dfs(nid: str) -> None:
+        state[nid] = 1
+        for e in adj.get(nid, []):
+            t = e["to"]
+            st = state.get(t, 0)
+            if st == 1:                 # 指向栈上的祖先 = 环在这里合上
+                back.append(e)
+            elif st == 0:
+                dfs(t)
+        state[nid] = 2
+
+    for n in nodes:
+        if state.get(n["nid"], 0) == 0:
+            dfs(n["nid"])
+    return back
+
+
 def topo_layers(nodes: list[dict[str, str]], edges: list[dict[str, str]]) -> list[list[str]]:
     """按**最长路径**分层：第 N 层 = 必须等第 N-1 层都跑完的那些节点。
 
@@ -135,7 +172,10 @@ def topo_layers(nodes: list[dict[str, str]], edges: list[dict[str, str]]) -> lis
     否则它拿不到完整的输入。层内节点彼此无依赖，可以并发。
     """
     layer = {n["nid"]: 0 for n in nodes}
-    deps = dep_edges(edges)  # 并行线不参与排序，否则"并行"会被排成"等它"
+    # 并行线不参与排序；**回边**也不参与（它是"收口"，引擎会在最后单独跑一次）——
+    # 否则环会把"开头分派"的那次挤压掉 ✗
+    _back = {(e["from"], e["to"]) for e in back_edges(nodes, edges)}
+    deps = [e for e in dep_edges(edges) if (e["from"], e["to"]) not in _back]
     for _ in range(len(nodes) + 2):  # 有环时收敛不了，用次数兜底
         changed = False
         for e in deps:

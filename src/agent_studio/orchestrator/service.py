@@ -211,7 +211,7 @@ class Orchestrator:
         await self._finish(
             orc_id,
             status=self._status_of(done),
-            output={"content": "\n\n".join(parts)},
+            output={"content": _last or "\n\n".join(parts)},
             runs=done,
         )
 
@@ -229,7 +229,7 @@ class Orchestrator:
         某一路失败**不中断**：其它分支照跑，失败的进 partial —— 与 serial 的取舍一致
         （拿到大部分结果，比一个错误提示有用）。
         """
-        from .graph import is_dependency, shares_context, shares_memory, topo_layers
+        from .graph import back_edges, is_dependency, shares_context, shares_memory, topo_layers
 
         task = self._task(spec)
         nodes: list[dict[str, Any]] = list(spec.get("nodes") or [])
@@ -311,6 +311,40 @@ class Orchestrator:
                                 continue
                             await self._deposit_memory(res, by_nid[other]["agent_id"], t)
             order += len(layer)
+
+        # ── 收口：把结果交回**最初的编排者**再跑一次 ────────────────────────
+        # 用户："应该是把结果返回给最初的 Orchestrator 验证总结，而不是新的 Orchestrator"。
+        # 画布上画成 编排者 → 各 worker → 回到同一个编排者（一个环）；分层时回边已被忽略，
+        # 所以编排者**已经先跑过一次**（分析任务 + 分派），这里让它拿着**所有 worker 的产出**
+        # 再跑一次收口（验证结果 + 归纳总结）——这一次的产出就是整个编排的最终结果 ✓
+        _last: str | None = None
+        _backs = back_edges(nodes, edges)
+        if _backs:
+            _by_target: dict[str, list[str]] = {}
+            for e in _backs:
+                _by_target.setdefault(e["to"], []).append(e["from"])
+            for _t, _srcs in _by_target.items():
+                if _t not in by_nid:
+                    continue
+                _chunks = [
+                    f"【{self._agent_name_of(run_of[s])}】\n{outputs[s]}"
+                    for s in _srcs
+                    if s in outputs and s in run_of
+                ]
+                _payload = (
+                    f"{task}\n\n---\n"
+                    f"以下是这条流程里各位助手的产出（请按你的职责验证并归纳总结）：\n"
+                    + ("\n\n".join(_chunks) or "（各位助手都没有产出）")
+                )
+                _node = by_nid[_t]
+                _run = await self._start_step(orc_id, _node["agent_id"], "worker", order, _payload)
+                _done = await self._await(_run.id, _node.get("wait_timeout_s"))
+                done.append(_done)
+                run_of[_t] = _done
+                if _done.status == "ok" and (t2 := self._text(_done)):
+                    outputs[_t] = t2
+                    _last = t2
+            order += 1
 
         # 最终结果 = **汇点**（没有下游的那些）的产出，按助手名分段
         outs = {e["from"] for e in edges if is_dependency(e)}
