@@ -448,6 +448,22 @@ export const api = {
    * 统一的「运行记录」时间线：助手执行（对话/试跑/编排）+ LLM 对话测试。
    * 一次请求拿全，前端不用为了看另一类再切页面。
    */
+  // ── 备份与迁移（数据带走）──────────────────────────────────────────────
+  /** 导出全部（助手/流程/单价/记忆）—— **包里不含任何密钥** */
+  exportBundle: () =>
+    request<{
+      kind: string;
+      version: number;
+      exported_at: number;
+      note: string;
+      agents: { id: string; name: string; definition: Record<string, unknown>; tools: string[]; skills: string[] }[];
+      workflows: { name: string; description: string; graph: WorkflowGraph; mode_override: string | null; auto: Record<string, unknown> }[];
+      prices: { currency: string; items: { model: string; in_per_mtok: number; out_per_mtok: number }[] };
+      memories?: unknown[];
+    }>("/api/export"),
+  /** 导入一个导出包（**只新增、不覆盖**） */
+  importBundle: (bundle: Record<string, unknown>) => post<Record<string, unknown>>("/api/import", { bundle }),
+
   // ── 自动运行（无人值守）：定时 + 外部触发 ──────────────────────────────
   /** 读自动运行设置（首次打开时后端会顺手生成一把触发凭证） */
   workflowAuto: (id: string) => request<WorkflowAuto>(`/api/workflows/${id}/auto`),

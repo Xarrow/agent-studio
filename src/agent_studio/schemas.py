@@ -892,6 +892,33 @@ class WorkflowGraph(BaseModel):
     output_card: CardBox | None = None
 
 
+class ImportRequest(BaseModel):
+    """导入一个导出包。
+
+    ``bundle`` 就是 ``GET /api/export`` 的原样输出（直接贴进来即可）。
+    刻意用**宽松的 dict** 而不是严格模型：导出包会跨版本（新版本多字段、老版本少字段），
+    严格校验的结果是"老包永远导不进来" —— 导入侧自己做兼容更划算。
+    """
+
+    bundle: dict[str, Any] = Field(default_factory=dict)
+
+
+class ImportResult(BaseModel):
+    """导入结果 —— 关键是"如实"：对不上的工具/Skill/节点都列出来，不静默丢。"""
+
+    ok: bool = True
+    detail: str = ""
+    agents: list[dict[str, Any]] = Field(default_factory=list)
+    workflows: list[dict[str, Any]] = Field(default_factory=list)
+    memories: int = 0
+    prices: int = 0
+    #: 包里提到、本机没有的工具（名字）—— 用户据此去「工具」页补
+    missing_tools: list[str] = Field(default_factory=list)
+    missing_skills: list[str] = Field(default_factory=list)
+    #: 流程里找不到对应助手的节点（保留原 id，流程能用但要人工修）
+    unfixed_nodes: list[str] = Field(default_factory=list)
+
+
 class AutoRunIn(BaseModel):
     """自动运行的设置（整份提交 —— 界面上就是一个对话框）。
 

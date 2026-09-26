@@ -17,6 +17,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import type { DbDriver, DbDriverInfo, DbStatus, DbTestResult , UploadConfigRead } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
+import { BackupRestore } from "@/components/BackupRestore";
 
 /** 表单字段（SQLite 只用 path，其余是网络库的连接参数） */
 type Form = {
@@ -573,6 +574,10 @@ export default function EnvironmentPage() {
           </p>
         )}
       </section>
+
+      {/* 备份与迁移：数据能带走。放在"数据存哪"下面 —— 同一件事的两面：
+          存在哪 / 怎么拿走。 */}
+      <BackupRestore />
 
       {/* ── 说明 ─────────────────────────────────────────────── */}
       <section className="card p-4">
