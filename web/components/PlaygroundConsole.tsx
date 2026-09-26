@@ -1017,8 +1017,9 @@ export function PlaygroundConsole() {
             现在：**名字本身就是入口**（点开=菜单），**新建独立成一键**（一步可达），
             重命名收进菜单（点了才变输入框），未保存小点挂在名字旁。 */}
         <div className="relative flex items-center gap-1.5">
+          {/* 术语统一：全站都叫「流程」（这里原来写「工作流」✗ —— 同一件东西两个名字） */}
           <span className="shrink-0 text-[12px]" style={{ color: "var(--color-muted)" }}>
-            工作流
+            流程
           </span>
           {renaming ? (
             <input
