@@ -374,6 +374,9 @@ export function WorkflowCanvas({
   const [zoom, setZoom] = useState(1);
   /** 缩放菜单是否展开 —— 触屏没有 hover，只能点开（用户：playground 移动端不流畅） */
   const [zoomMenu, setZoomMenu] = useState(false);
+  /** 框选矩形（视口坐标）＋ 选中的一组（对齐 Dify 指针模式：拖空白=框选，部分相交即选中） */
+  const [box, setBox] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  const [group, setGroup] = useState<string[]>([]);
   const zoomRef = useRef(1);
   zoomRef.current = zoom;
   const ZOOM_MIN = 0.25;
@@ -1308,6 +1311,70 @@ export function WorkflowCanvas({
     [graph, onChange, onSelect],
   );
 
+  /**
+   * **框选 / 多选**（对齐 Dify 指针模式：拖空白 = 框选）。
+   * 前两次都卡在"move 只来 1 次"✗；这次 down 时 setPointerCapture 把后续事件收进舞台 + window 兜底 ✓
+   */
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    let dragging = false;
+    let cur = { x0: 0, y0: 0, x1: 0, y1: 0 };
+    const w = window as unknown as Record<string, unknown>;
+    const hits = (b: { x0: number; y0: number; x1: number; y1: number }) => {
+      const l = Math.min(b.x0, b.x1), r = Math.max(b.x0, b.x1);
+      const t = Math.min(b.y0, b.y1), bt = Math.max(b.y0, b.y1);
+      const out: string[] = [];
+      document.querySelectorAll("[data-nid]").forEach((node) => {
+        const q = node.getBoundingClientRect();
+        if (q.left < r && q.right > l && q.top < bt && q.bottom > t) {
+          const nid = node.getAttribute("data-nid");
+          if (nid) out.push(nid);
+        }
+      });
+      return out;
+    };
+    const onDown = (e: PointerEvent) => {
+      if (e.pointerType === "touch" || e.button !== 0) return;
+      const t = e.target as HTMLElement;
+      if (t.closest("[data-nid],button,input,textarea,select,a,[data-canvas-zoom-box],path,g")) return;
+      dragging = true;
+      cur = { x0: e.clientX, y0: e.clientY, x1: e.clientX, y1: e.clientY };
+      try { el.setPointerCapture(e.pointerId); } catch { /* 不支持就靠 window 兜底 */ }
+      setBox({ ...cur });
+      setGroup([]);
+      w.__boxDbg = "down";
+    };
+    const onMove = (e: PointerEvent) => {
+      if (!dragging) return;
+      cur = { ...cur, x1: e.clientX, y1: e.clientY };
+      setBox({ ...cur });
+      const g = hits(cur);
+      setGroup(g);
+      w.__boxDbg = "move:" + g.length;
+    };
+    const onUp = () => {
+      if (!dragging) return;
+      dragging = false;
+      setBox(null);
+      w.__boxDbg = "up";
+    };
+    el.addEventListener("pointerdown", onDown);
+    el.addEventListener("pointermove", onMove);
+    el.addEventListener("pointerup", onUp);
+    el.addEventListener("pointercancel", onUp);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return () => {
+      el.removeEventListener("pointerdown", onDown);
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerup", onUp);
+      el.removeEventListener("pointercancel", onUp);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+  }, []);
+
   /** 删掉一个节点（连带它的连线）—— 卡片上的「删除」和键盘 Delete 共用这一条路径 ✓ */
   const deleteNode = useCallback(
     (nid: string) => {
@@ -1343,9 +1410,18 @@ export function WorkflowCanvas({
         return;
       }
       // 删除（Dify 键位表：Delete / Backspace —— shortcuts/definitions.ts:49-55）
-      if ((e.key === "Delete" || e.key === "Backspace") && selected) {
+      if ((e.key === "Delete" || e.key === "Backspace") && (group.length || selected)) {
         e.preventDefault();
-        deleteNode(selected);
+        // **一次原子改图**：不能循环调 deleteNode —— 每次都用同一个旧 graph，会互相覆盖 ✗
+        // （实测：3 个一组删完只剩 2 个，就是这个原因）
+        const ids = group.length ? group : [selected as string];
+        onChange({
+          ...graph,
+          nodes: graph.nodes.filter((x) => !ids.includes(x.nid)),
+          edges: graph.edges.filter((x) => !ids.includes(x.from) && !ids.includes(x.to)),
+        });
+        setGroup([]);
+        onSelect(null);
         return;
       }
       // 方向键移动选中节点（Dify：±5，Shift 时 ±20 —— utils/keyboard-movement.ts:7-16）
@@ -1354,12 +1430,13 @@ export function WorkflowCanvas({
         ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step],
       };
       const d = deltas[e.key];
-      if (d && selected) {
+      const moveSet = group.length ? group : selected ? [selected] : [];
+      if (d && moveSet.length) {
         e.preventDefault();
         onChange({
           ...graph,
           nodes: graph.nodes.map((x) =>
-            x.nid === selected ? { ...x, x: (x.x ?? 0) + d[0], y: (x.y ?? 0) + d[1] } : x,
+            moveSet.includes(x.nid) ? { ...x, x: (x.x ?? 0) + d[0], y: (x.y ?? 0) + d[1] } : x,
           ),
         });
         return;
@@ -1379,7 +1456,7 @@ export function WorkflowCanvas({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onSelect, fitView, zoomTo, zoomStep, selected, graph, onChange, deleteNode, duplicateNode]);
+  }, [onSelect, fitView, zoomTo, zoomStep, selected, group, graph, onChange, deleteNode, duplicateNode]);
 
 
   const growTask = () => {
@@ -1456,6 +1533,7 @@ export function WorkflowCanvas({
           onSelect(null);
           setEdgeSel(null);
           setZoomMenu(false);
+          setGroup([]);
         }
       }}
       onWheel={(e) => {
@@ -1486,6 +1564,20 @@ export function WorkflowCanvas({
         backgroundSize: `${14 * zoom}px ${14 * zoom}px`,
       }}
     >
+      {/* 框选矩形（视口坐标；配色照 Dify style.css:21-30） */}
+      {box && (
+        <div
+          className="pointer-events-none fixed z-[60] rounded-[2px]"
+          style={{
+            left: Math.min(box.x0, box.x1),
+            top: Math.min(box.y0, box.y1),
+            width: Math.abs(box.x1 - box.x0),
+            height: Math.abs(box.y1 - box.y0),
+            border: "1px solid #528bff",
+            background: "rgba(21, 94, 239, 0.05)",
+          }}
+        />
+      )}
               {/* 居中：内容比视口小时整体居中（不然挤在左上角像没做完）；比视口大时照旧滚动 */}
         <div className="flex min-h-full min-w-full p-1">
         {/* 用 auto margin 居中，而不是 justify-center ——
@@ -2397,7 +2489,7 @@ export function WorkflowCanvas({
             return st2 === "run" || st2 === "ask";
           });
           const lv = live?.[n.nid];
-          const isSel = selected === n.nid;
+          const isSel = selected === n.nid || group.includes(n.nid);
           // 手柄颜色随节点状态（对齐 Dify：常态灰 / 运行蓝 / 成功绿 / 失败红）
           const handleTint =
             st === "run"
