@@ -27,10 +27,11 @@ export type PermRule = { tool: string; pattern?: string; behavior: "allow" | "de
 export type PermConf = { mode?: string; allow?: Omit<PermRule, "behavior">[]; deny?: Omit<PermRule, "behavior">[]; ask?: Omit<PermRule, "behavior">[] };
 
 /** 模式：值 / 名字 / 一句话说清后果 */
-const MODES: { value: string; label: string; desc: string; warn?: string }[] = [
+const MODES: { value: string; label: string; result: string; desc: string; warn?: string }[] = [
   {
     value: "accept_edits",
     label: "允许改工作目录内的文件（推荐）",
+    result: "能改这个目录里的文件；只读命令任何档位都放行",
     desc: "工作目录内的文件读写、以及 mkdir / cp / mv / rm 这类目录操作，路径都在工作目录内时直接执行。只读命令（ls / cat / pwd / git status…）任何档位都自动放行。",
     // 这一档最容易误解成"命令也不问了" —— 实测过：路径在工作目录外（比如 /tmp）就会停下，
     // 用户看到的现象是"权限明明调过，怎么还每次都弹"。所以这里把边界写死，别让人靠猜。
@@ -39,23 +40,27 @@ const MODES: { value: string; label: string; desc: string; warn?: string }[] = [
   {
     value: "explore",
     label: "只读：能看不能改",
+    result: "能看，不能改",
     desc: "允许 Read / Grep / Glob 等只读操作；任何修改一律拒绝。",
   },
   {
     value: "dont_ask",
     label: "需要确认的一律拒绝（不卡住）",
+    result: "要问的一律拒绝（无人值守友好）",
     desc: "把「要问一句」的操作直接判为拒绝。适合无人值守。",
     warn: "助手会因权限不足而放弃某些操作，表现为「做不了」，而不是卡住。",
   },
   {
     value: "default",
     label: "严格：每个操作都要确认",
+    result: "每个操作都停下来问一下",
     desc: "AgentScope 的原生默认，最保守。",
     warn: "最保守：每个操作都会停下来问。停下来时对话/试跑/编排里会出现「允许 / 拒绝」，点一下才继续 —— 所以它不会卡死，只是需要你盯着。想省事就换成上面几档。",
   },
   {
     value: "bypass",
     label: "全部放行（危险）",
+    result: "什么都不问（危险，只在沙箱里用）",
     desc: "跳过所有权限检查，只保留你显式写的拒绝规则。",
     warn: "连删除文件、改 ~/.bashrc 这类危险操作也不再拦。**少数安全兜底仍会问**（动态展开 $(...)、删系统目录、改敏感配置文件）—— 这类是防手滑的最后一道，任何档位都拦不掉。只在沙箱/容器里用。",
   },
@@ -123,7 +128,12 @@ export function PermissionScope({
       </select>
 
       {meta && (
-        <p className="text-[11.5px] text-[var(--color-muted)] mt-1.5">{meta.desc}</p>
+        <p className="mt-1.5 text-[12px]" style={{ color: "var(--color-text)" }}>
+          {meta.result}
+        </p>
+      )}
+      {meta && (
+        <p className="text-[11.5px] text-[var(--color-muted)] mt-0.5">{meta.desc}</p>
       )}
       {meta?.warn && (
         <p
