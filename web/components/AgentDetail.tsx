@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, fmt, STATUS_STYLE } from "@/lib/api";
 import type {
@@ -26,6 +26,22 @@ import { Hint } from "@/components/ui/hint";
 import { ModelPicker } from "@/components/ModelPicker";
 import { RunPanel } from "@/components/AgentRunPanel";
 import { useFeedback } from "@/components/ui/feedback";
+
+/** 可折叠分段：**段头常驻 + 一句状态摘要**，内容按需展开 —— 一屏看一段 ✓
+    用户准绳「操作更少、看到更多」：折叠不是藏起来，摘要一直在段头上 ✓ */
+function Fold({ title, summary, defaultOpen = false, children }: { title: string; summary?: ReactNode; defaultOpen?: boolean; children: ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <section className="card mb-4 overflow-hidden">
+      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center gap-2 px-4 py-3 text-left">
+        <span className="text-[14px] font-medium">{title}</span>
+        {summary && <span className="truncate text-[12px]" style={{ color: "var(--color-muted)" }}>{summary}</span>}
+        <span className="ml-auto shrink-0 text-[12px]" style={{ color: "var(--color-accent)" }}>{open ? "收起" : "展开"}</span>
+      </button>
+      {open && <div className="border-t px-4 py-3" style={{ borderColor: "var(--color-border)" }}>{children}</div>}
+    </section>
+  );
+}
 
 /** 执行观测的三种视图：给人看 / 给开发者看 / 原始数据 */
 type ViewMode = "chat" | "table" | "raw";
@@ -854,7 +870,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
             )}
           </section>
 
-          <section className="card p-4">
+          <Fold title="工具" summary={`${def.tools.length} 已选 / ${tools.length} 可用`}>
             <div className="mb-3 flex items-center gap-2">
               <h2 className="text-[14px] font-medium">
                 工具（{def.tools.length} 已选 / {tools.length} 可用）
@@ -956,7 +972,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 })}
               </div>
             )}
-          </section>
+          </Fold>
 
           <section className="card p-4">
             <h2 className="text-[14px] font-medium mb-3">
