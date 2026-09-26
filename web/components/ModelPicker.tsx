@@ -147,7 +147,7 @@ export function ModelPicker({
           )}
         </div>
         <p className="text-[11.5px] text-[var(--color-muted)] mt-1.5">
-          手动填写 —— 适合探测不到的服务商（如方舟的接入点 ID）。
+          手动填写 —— 服务商探测不到（如方舟的接入点 ID）或**清单里没有你要的模型**时，都直接填 ✓
         </p>
       </div>
     );
