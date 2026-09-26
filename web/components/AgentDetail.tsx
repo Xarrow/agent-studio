@@ -665,9 +665,8 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
             </div>
           </section>
 
-          <section className="card p-4 space-y-3.5">
+          <Fold title="运行时与模型">
             <div className="flex items-center justify-between">
-              <h2 className="text-[14px] font-medium">运行时与模型</h2>
               {caps && <span className="tag">{caps.display_name}</span>}
             </div>
 
@@ -816,7 +815,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 }
               />
             </div>
-          </section>
+          </Fold>
 
           {/* MCP：挂哪几台外部工具服务（在「工具 → MCP」里注册与探测） */}
           <Fold
