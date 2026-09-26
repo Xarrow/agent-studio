@@ -5,6 +5,8 @@ import { api, fmt } from "@/lib/api";
 import type { Tool } from "@/lib/types";
 import { SkillsPanel } from "@/components/SkillsPanel";
 import { McpPanel } from "@/components/McpPanel";
+import { ToolTestForm } from "@/components/ToolTestForm";
+import { urlParams } from "@/lib/tool-params";
 import { useFeedback } from "@/components/ui/feedback";
 
 export default function ToolsPage() {
@@ -16,7 +18,6 @@ export default function ToolsPage() {
   const [editing, setEditing] = useState<Tool | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [testOut, setTestOut] = useState<Record<string, string>>({});
-  const [argsInput, setArgsInput] = useState<Record<string, string>>({});
   const [kindFilter, setKindFilter] = useState("");
   /** 这一页管三件事：工具 / Skills /（以后的）MCP —— 页签切换，不跳页 */
   const [tab, setTab] = useState<"tools" | "skills" | "mcp">("tools");
@@ -56,59 +57,11 @@ export default function ToolsPage() {
     }
   };
 
-  const test = async (t: Tool) => {
-    // 内置工具需要参数（file_path / pattern 等），按签名提示用户填写
-    const argSpec =
-      (t.impl?.args as { name: string; required: boolean; type: string }[]) ?? [];
-    let args: Record<string, unknown> = {};
+  /** 试运行：参数表单就地展开在卡片里（ToolTestForm 从签名自动生成），
+      不再弹 fb.prompt 让用户手写 JSON */
+  const [testing, setTesting] = useState<Tool | null>(null);
 
-    if (argSpec.length > 0) {
-      const hint = argSpec
-        .map((a) => `${a.name}${a.required ? "（必填）" : `（${a.type}，可空）`}`)
-        .join(", ");
-      const raw = await fb.prompt({
-        title: `${t.name} · 试跑参数`,
-        description: `参数签名：${hint}`,
-        multiline: true,
-        placeholder: '{\n  "file_path": "demo.txt"\n}',
-        defaultValue: argsInput[t.id] ?? "{}",
-        hint: "只读工具会真实执行（限制在工作目录内）；写/执行类工具为避免任意代码执行会被跳过。",
-        validate: (v) => {
-          if (!v.trim()) return "请填写参数（至少 {} ）";
-          try {
-            JSON.parse(v);
-            return null;
-          } catch (e) {
-            return `JSON 不合法：${e instanceof Error ? e.message : String(e)}`;
-          }
-        },
-        confirmText: "试运行",
-      });
-      if (raw === null) return;
-      setArgsInput((p) => ({ ...p, [t.id]: raw }));
-      args = JSON.parse(raw || "{}");
-    }
-
-    setTestOut((p) => ({ ...p, [t.id]: "测试中…" }));
-    try {
-      const r = await api.testTool(t.id, args);
-      if (r.skipped) {
-        setTestOut((p) => ({ ...p, [t.id]: `⏸ 已跳过\n${r.reason ?? ""}` }));
-      } else if (r.ok) {
-        setTestOut((p) => ({
-          ...p,
-          [t.id]: `✓ ${r.note ?? "正常"} · ${fmt.ms(r.duration_ms)} · ${fmt.bytes(r.result_size)}\n${r.result_preview ?? ""}`,
-        }));
-      } else {
-        setTestOut((p) => ({
-          ...p,
-          [t.id]: `✗ ${r.error ?? "失败"}${r.hint ? `\n${r.hint}` : ""}`,
-        }));
-      }
-    } catch (e) {
-      setTestOut((p) => ({ ...p, [t.id]: `✗ ${e instanceof Error ? e.message : e}` }));
-    }
-  };
+  const testOut2 = (t: Tool, out: string) => setTestOut((p) => ({ ...p, [t.id]: out }));
 
   const remove = async (t: Tool) => {
     const ok = await fb.confirm({
@@ -314,11 +267,11 @@ export default function ToolsPage() {
                     title={
                       t.flags?.platform_ok === false
                         ? String(t.flags?.platform_note ?? "")
-                        : ""
+                        : "参数表单按签名自动生成"
                     }
-                    onClick={() => test(t)}
+                    onClick={() => setTesting(testing?.id === t.id ? null : t)}
                   >
-                    试运行
+                    {testing?.id === t.id ? "收起" : "试运行"}
                   </button>
                   {t.kind !== "builtin" && (
                     <button
@@ -330,7 +283,15 @@ export default function ToolsPage() {
                   )}
                 </div>
               </div>
-              {testOut[t.id] && (
+              {testing?.id === t.id && (
+                <ToolTestForm tool={t} onDone={(out) => testOut2(t, out)} />
+              )}
+              {testOut[t.id] && testing?.id !== t.id && (
+                <pre className="mt-3 pt-3 border-t border-[var(--color-border)] text-[11.5px] whitespace-pre-wrap break-all text-[var(--color-muted)] max-h-40 overflow-auto">
+                  {testOut[t.id]}
+                </pre>
+              )}
+              {testing?.id === t.id && testOut[t.id] && (
                 <pre className="mt-3 pt-3 border-t border-[var(--color-border)] text-[11.5px] whitespace-pre-wrap break-all text-[var(--color-muted)] max-h-40 overflow-auto">
                   {testOut[t.id]}
                 </pre>
@@ -446,13 +407,41 @@ function NewToolDialog({
             </div>
           </div>
           <div>
-            <label className="label">参数（逗号分隔，如 city, date）</label>
+            <label className="label">参数（从 URL 占位符自动解析，可补充）</label>
             <input
               className="input mono"
               value={params}
               onChange={(e) => setParams(e.target.value)}
-              placeholder="city"
+              placeholder="（写了 {{city}} 之类占位符会自动出现在这里）"
             />
+            {urlParams(url).length > 0 && (
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px]" style={{ color: "var(--color-muted)" }}>
+                  URL 里的占位符：
+                </span>
+                {urlParams(url).map((p) => (
+                  <span key={p} className="tag mono">
+                    {p}
+                    {params.split(",").map((s) => s.trim()).includes(p) ? "" : " ·未在参数里"}
+                  </span>
+                ))}
+                {!urlParams(url).every((p) => params.split(",").map((s) => s.trim()).includes(p)) && (
+                  <button
+                    type="button"
+                    className="text-[11.5px] underline"
+                    style={{ color: "var(--color-accent)" }}
+                    onClick={() => {
+                      const cur = params.split(",").map((s) => s.trim()).filter(Boolean);
+                      const merged = [...cur];
+                      for (const p of urlParams(url)) if (!merged.includes(p)) merged.push(p);
+                      setParams(merged.join(", "));
+                    }}
+                  >
+                    补齐
+                  </button>
+                )}
+              </div>
+            )}
           </div>
           <label className="flex items-center gap-2 text-[12.5px]">
             <input

@@ -210,6 +210,7 @@ async def sync_builtins(
     }
 
 
+@router.post("/{tool_id}/test")
 async def test_tool(
     tool_id: str, payload: ToolTestRequest, session: AsyncSession = Depends(get_session)
 ) -> dict:

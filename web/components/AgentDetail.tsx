@@ -57,6 +57,7 @@ type ViewMode = "chat" | "table" | "raw";
  * 回来还得重新找回对话。配置和使用是同一件事的两半，不该互相打断。
  */
 import { AgentEvalPanel } from "@/components/AgentEvalPanel";
+import { CapabilityPicker } from "@/components/CapabilityPicker";
 
 export function AgentDetail({
   agentId,
@@ -82,10 +83,6 @@ export function AgentDetail({
   const [saving, setSaving] = useState(false);
   /** 空状态里的「同步内置工具」用 —— 就地完成，不跳页 */
   const [syncing, setSyncing] = useState(false);
-  /** 工具列表默认**只看已选**（详情页最占屏的就是这一列 ✗）；要看全部再展开 ✓ */
-  const [showAllTools, setShowAllTools] = useState(false);
-  /** Skills 列表默认只看已选（与工具同款；插在**容器内部**、不动 JSX 结构 ✓） */
-  const [showAllSkills, setShowAllSkills] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   /**
@@ -510,8 +507,11 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
       </section>
 
 
-      {/* ── 定义 ──────────────────────────────────────────────── */}
-      <div id="sec-define" className="grid gap-4 grid-cols-1 lg:grid-cols-2 scroll-mt-14">
+      {/* ── 基础配置 ─────────────────────────────────────────────
+          布局定稿（用户要求以商业产品/UX 视角重排）：
+          **单列、按心智模型排序** —— 一个 agent = 基础配置 + 能力（工具/MCP/Skill）+ 记忆运行。
+          原来是 2 列 grid 塞 5 个不等高 Fold，视觉错落且顺序对不上心智模型 ✗。 */}
+      <div id="sec-define" className="grid gap-4 grid-cols-1 scroll-mt-14">
           <section className="card p-4 space-y-3.5">
             <h2 className="text-[14px] font-medium">基础</h2>
             <div>
@@ -819,86 +819,17 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
             </div>
           </Fold>
 
-          {/* MCP：挂哪几台外部工具服务（在「工具 → MCP」里注册与探测） */}
+          {/* ── 能力：工具 + MCP + Skills 一个选择器 ──────────────────
+              用户心智是「这个助手会什么」一件事，原来三个 Fold 三套交互 ✗
+              （AgentScope 的 Toolkit 也是同一只手管 tool/MCP/Skill）。 */}
           <Fold
-            title="MCP 工具"
-            summary={`${(def.mcp_servers ?? []).length} 已选 / ${mcpServers.length} 已注册`}
+            title="能力（工具 · MCP · Skills）"
+            summary={`${def.tools.length + (def.mcp_servers ?? []).length + def.skills.length} 已选 / ${tools.length + mcpServers.length + skills.length} 可用`}
           >
-            <h2 className="text-[14px] font-medium mb-3 flex items-center gap-1.5">
-              <Hint text="MCP 是一套标准协议：别人写好的工具服务，用这个协议接进来就能给助手用。挂上之后，它有哪些工具由服务器说了算（平台负责探测）。">
-                MCP 工具
-              </Hint>
-              （{(def.mcp_servers ?? []).length} 已选 / {mcpServers.length} 已注册）
-            </h2>
-            {mcpServers.length === 0 ? (
-              <p className="text-[12.5px] text-[var(--color-muted)]">
-                还没有注册 MCP 服务器。去{" "}
-                <a href="/tools" className="underline" style={{ color: "var(--color-accent)" }}>
-                  工具 → MCP
-                </a>{" "}
-                注册一台（本地的 npx 服务或远端地址都行）。
-              </p>
-            ) : (
-              <div className="flex flex-col gap-2">
-                {mcpServers.map((m) => {
-                  const on = (def.mcp_servers ?? []).includes(m.id);
-                  return (
-                    <label
-                      key={m.id}
-                      className="flex cursor-pointer items-start gap-2.5 rounded-[8px] border p-2.5"
-                      style={{
-                        borderColor: on ? "var(--color-accent)" : "var(--color-border)",
-                        background: on
-                          ? "color-mix(in srgb, var(--color-accent) 5%, transparent)"
-                          : "transparent",
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        className="mt-0.5"
-                        checked={on}
-                        onChange={() => toggleMcp(m.id)}
-                      />
-                      <span className="min-w-0">
-                        <span className="block text-[13px] font-medium">{m.name}</span>
-                        <span className="block text-[11.5px]" style={{ color: "var(--color-muted)" }}>
-                          {!m.enabled
-                            ? "已停用（挂上也不会加载）"
-                            : m.last_probe_ok
-                              ? `${m.tools.length} 个工具`
-                              : "还没探测成功，去工具页点「重新探测」"}
-                        </span>
-                      </span>
-                    </label>
-                  );
-                })}
-              </div>
-            )}
-          </Fold>
-
-          <Fold title="工具" summary={`${def.tools.length} 已选 / ${tools.length} 可用`}>
-            <div className="mb-3 flex items-center gap-2">
-              <h2 className="text-[14px] font-medium">
-                工具（{def.tools.length} 已选 / {tools.length} 可用）
-              </h2>
-              {tools.length > 0 && (
-                <button
-                  type="button"
-                  className="ml-auto text-[12px] hover:underline"
-                  style={{ color: "var(--color-accent)" }}
-                  onClick={() => setShowAllTools((v) => !v)}
-                >
-                  {showAllTools ? "只看已选" : `显示全部 ${tools.length} 个`}
-                </button>
-              )}
-            </div>
-            {tools.length === 0 ? (
-              // 空状态里直接给"最常见的那一步"：不必为了同步内置工具跳去工具页
-              // 再跳回来（回来还得重新找到这个助手）。创建自定义工具是另一件事，
-              // 保留为次要链接。
+            {tools.length === 0 && skills.length === 0 && mcpServers.length === 0 ? (
               <div className="space-y-2.5">
                 <p className="text-[12.5px] text-[var(--color-muted)]">
-                  还没有工具。先把内置工具同步进来就能用了。
+                  还没有能力可选。先把内置工具同步进来（不用跳页）。
                 </p>
                 <div className="flex items-center gap-2 flex-wrap">
                   <button
@@ -908,136 +839,23 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                   >
                     {syncing ? "同步中…" : "同步内置工具"}
                   </button>
-                  <Link
-                    href="/tools"
-                    className="text-[12px] text-[var(--color-muted)] hover:underline"
-                  >
-                    或创建自定义 HTTP 工具 →
+                  <Link href="/tools" className="text-[12px] text-[var(--color-muted)] hover:underline">
+                    去工具页创建自定义工具 / 注册 MCP / 导入 Skill →
                   </Link>
                 </div>
               </div>
             ) : (
-              <div className="space-y-1.5 max-h-72 overflow-auto">
-                {!showAllTools && def.tools.length === 0 && (
-                  <p className="px-2 py-1.5 text-[12.5px]" style={{ color: "var(--color-muted)" }}>
-                    还没勾选任何工具 —— 点右上「显示全部 {tools.length} 个」挑几个。
-                  </p>
-                )}
-                {(showAllTools ? tools : tools.filter((t) => def.tools.some((x) => x.ref === t.id))).map((t) => {
-                  const on = def.tools.some((x) => x.ref === t.id);
-                  // 平台不适用的工具（如 Linux 上的 PowerShell）：置灰 + 禁止勾选
-                  const platformOk = t.flags?.platform_ok !== false;
-                  const note = t.flags?.platform_note;
-                  return (
-                    <label
-                      key={t.id}
-                      title={platformOk ? undefined : String(note ?? "")}
-                      className={`flex items-start gap-2.5 p-2 rounded-md ${
-                        platformOk
-                          ? "hover:bg-[var(--color-surface-2)] cursor-pointer"
-                          : "opacity-60 cursor-not-allowed"
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={on}
-                        disabled={!platformOk}
-                        onChange={() => toggleTool(t.id)}
-                        className="mt-0.5 accent-[var(--color-accent)]"
-                      />
-                      <span className="min-w-0">
-                        <span
-                          className={`text-[13px] mono ${platformOk ? "" : "line-through"}`}
-                        >
-                          {t.name}
-                        </span>
-                        <span className="tag ml-2">{t.kind}</span>
-                        {!platformOk && (
-                          <span className="tag ml-1.5 text-[var(--color-err)]">
-                            当前平台不可用
-                          </span>
-                        )}
-                        {Boolean(t.flags?.dangerous) && platformOk && (
-                          <span className="tag ml-1.5 text-[var(--color-warn)]">
-                            写/执行
-                          </span>
-                        )}
-                        {t.description && (
-                          <span className="block text-[11.5px] text-[var(--color-muted)] mt-0.5">
-                            {t.description}
-                          </span>
-                        )}
-                        {!platformOk && typeof note === "string" && (
-                          <span className="block text-[11px] text-[var(--color-err)] mt-0.5">
-                            {note}
-                          </span>
-                        )}
-                      </span>
-                    </label>
-                  );
-                })}
-              </div>
-            )}
-          </Fold>
-
-          <Fold
-            title="Skills"
-            summary={`${def.skills.length} 已选 / ${skills.length} 可用`}
-          >
-            {skills.length === 0 ? (
-              // Skill 必须填导入来源（Git / URL / 本地路径），是个完整表单 ——
-              // 留在它自己的页面比塞进弹框更清楚，所以这里只做引导。
-              <p className="text-[12.5px] text-[var(--color-muted)]">
-                还没有 Skill。Skill 需要填导入来源（Git 仓库 / URL / 本地路径），去{" "}
-                <Link href="/skills" className="text-[var(--color-accent)]">Skills</Link> 页导入。
-              </p>
-            ) : (
-              <div
-                className="space-y-1.5 max-h-72 overflow-auto"
-                data-hide-off={!showAllSkills && def.skills.length > 0 ? "1" : undefined}
-              >
-                {/* 开关放在容器**内部第一行** —— 不引入兄弟节点，JSX 结构零改动 ✓
-                    （上一版插在容器外面 → 括号里出现两个元素 → TS2657 ✗） */}
-                <div className="mb-1.5 flex items-center gap-2 text-[12px]">
-                  <span style={{ color: "var(--color-muted)" }}>
-                    {showAllSkills ? "全部" : "已选"} {showAllSkills ? skills.length : def.skills.length} 个
-                  </span>
-                  {skills.length > 0 && (
-                    <button
-                      type="button"
-                      className="ml-auto hover:underline"
-                      style={{ color: "var(--color-accent)" }}
-                      onClick={() => setShowAllSkills((v) => !v)}
-                    >
-                      {showAllSkills ? "只看已选" : `显示全部 ${skills.length} 个`}
-                    </button>
-                  )}
-                </div>
-                {skills.map((s) => {
-                  const on = def.skills.some((x) => x.ref === s.id);
-                  return (
-                    <label
-                      key={s.id}
-                      className={`flex items-start gap-2.5 p-2 rounded-md hover:bg-[var(--color-surface-2)] cursor-pointer ${on ? "" : "sk-off"}`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={on}
-                        onChange={() => toggleSkill(s.id)}
-                        className="mt-0.5 accent-[var(--color-accent)]"
-                      />
-                      <span className="min-w-0">
-                        <span className="text-[13px]">{s.name}</span>
-                        {s.description && (
-                          <span className="block text-[11.5px] text-[var(--color-muted)] mt-0.5 line-clamp-2">
-                            {s.description}
-                          </span>
-                        )}
-                      </span>
-                    </label>
-                  );
-                })}
-              </div>
+              <CapabilityPicker
+                tools={tools}
+                skills={skills}
+                mcpServers={mcpServers}
+                selectedToolIds={def.tools.map((t) => t.ref)}
+                selectedSkillIds={def.skills.map((s) => s.ref)}
+                selectedMcpIds={def.mcp_servers ?? []}
+                onToggleTool={toggleTool}
+                onToggleSkill={toggleSkill}
+                onToggleMcp={toggleMcp}
+              />
             )}
           </Fold>
         </div>
