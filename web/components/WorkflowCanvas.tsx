@@ -896,7 +896,10 @@ export function WorkflowCanvas({
   };
 
   /** 节点右上角 ⋯ 菜单当前开着的是哪一个 */
-  const [nodeMenu, setNodeMenu] = useState<string | null>(null);
+  /** 节点菜单（对齐 Dify 的右键菜单）——**右键（桌面）与卡上「⋯」（触屏）打开同一个** ✓
+   *  注：这个状态原来只有 Esc 置空、从不渲染（残留死代码 ✗），这里改造复用 ✓
+   *  长按不开菜单 —— 长按保留给"加入多选"（触屏唯一的多选入口 ✓） */
+  const [nodeMenu, setNodeMenu] = useState<{ nid: string; x: number; y: number } | null>(null);
   /** 「配置这个助手」点开后**就地在画布上**弹出的助手设置浮层。
    *  之前这个动作只把节点选中、什么都不打开 —— 点了没反应等于空承诺
    *  （用户反馈"点击后弹出不会消失"，根子在"点了没有正经回应"）。
@@ -1472,8 +1475,8 @@ export function WorkflowCanvas({
     edges: { from: string; to: string; order?: "serial" | "parallel"; share_context?: boolean; share_memory?: boolean }[];
   } | null>(null);
 
-  const copySel = useCallback(() => {
-    const ids = group.length ? group : selected ? [selected] : [];
+  const copySel = useCallback((only?: string) => {
+    const ids = only ? [only] : group.length ? group : selected ? [selected] : [];
     if (!ids.length) return;
     clipRef.current = {
       nodes: graph.nodes.filter((n) => ids.includes(n.nid)),
@@ -1762,6 +1765,33 @@ export function WorkflowCanvas({
             background: "rgba(21, 94, 239, 0.05)",
           }}
         />
+      )}
+      {/* 节点菜单：右键 / 卡上「⋯」都开它；破坏性操作仍走**两步确认**（删 → 先"待删"再点一次）✓ */}
+      {nodeMenu && (
+        <div
+          className="fixed z-[80] min-w-[132px] overflow-hidden rounded-[8px] border py-1 text-[12.5px] shadow-lg"
+          style={{ left: Math.min(nodeMenu.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 150), top: nodeMenu.y, borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {(() => {
+            const nid = nodeMenu.nid;
+            const row = "flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-[color-mix(in_srgb,var(--color-accent)_7%,transparent)]";
+            return (
+              <>
+                <button type="button" className={row} onClick={() => { setFocusNid(focusNid === nid ? null : nid); setNodeMenu(null); }}>
+                  {focusNid === nid ? "取消聚焦" : "只看这一步"}
+                </button>
+                <button type="button" className={row} onClick={() => { copySel(nid); setNodeMenu(null); }}>复制这一步</button>
+                <button type="button" className={row} onClick={() => { duplicateNode(nid); setNodeMenu(null); }}>再制一份</button>
+                <button type="button" className={row} onClick={() => { setPicking({ mode: "swap", nid }); setNodeMenu(null); }}>换成别的助手</button>
+                <button type="button" className={row} onClick={() => { if (delArm === nid) deleteNode(nid); else setDelArm(nid); setNodeMenu(null); }}
+                  style={{ color: delArm === nid ? "var(--color-err)" : undefined }}>
+                  {delArm === nid ? "再点一次删除" : "删除这一步"}
+                </button>
+              </>
+            );
+          })()}
+        </div>
       )}
               {/* 居中：内容比视口小时整体居中（不然挤在左上角像没做完）；比视口大时照旧滚动 */}
         <div className="flex min-h-full min-w-full p-1">
@@ -2725,6 +2755,11 @@ export function WorkflowCanvas({
                 const head = (e.target as HTMLElement).closest("[data-draghead]");
                 if (head) startDrag(e, n.nid);
               }}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                onSelect?.(n.nid);
+                setNodeMenu({ nid: n.nid, x: e.clientX, y: e.clientY });
+              }}
               className={`touch-none wf-node wf-node-in group absolute rounded-[15px] border shadow-xs hover:shadow-lg ${
                 lv && st === "run" ? "node-run" : st === "ask" ? "node-ask" : ""
               } ${
@@ -2899,6 +2934,18 @@ export function WorkflowCanvas({
                   {/* **删除**（用户要求：这类功能直接放卡片上，不用点右上角 ⋯）。
                       破坏性，所以做成"点两下"：第一下变红并问"确认删除？"（4 秒内有效），
                       第二下才真删 —— 符合"破坏性操作两步确认"的既定规矩。 */}
+                  <button
+                    type="button"
+                    title="更多（复制 / 再制 / 换助手 / 删除…）"
+                    onClick={(e) => {
+                      const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                      setNodeMenu({ nid: n.nid, x: r.left + r.width / 2, y: r.bottom + 6 });
+                    }}
+                    className="rounded-[5px] px-1.5 py-0.5 text-[11.5px] font-medium"
+                    style={{ color: "var(--color-muted)" }}
+                  >
+                    ⋯
+                  </button>
                   <button
                     type="button"
                     title={focusNid === n.nid ? "取消聚焦" : "只看这一步：把其他步骤压暗"}
