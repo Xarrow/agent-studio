@@ -177,6 +177,7 @@ export function WorkflowCanvas({
   configNid: configNidProp,
   onConfigNid,
   onRetryRun,
+  onRefill,
   onDetail,
   taskText = "",
   finalText = "",

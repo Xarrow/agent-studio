@@ -188,7 +188,10 @@ async def dispatch(
                 )
             ).scalars()
         )
-        done = {int(r.item_index): r for r in existing if r.status in TERMINAL}
+        # ⚠️ 只有**成功**的项才算"已完成、可复用" —— 失败/被中止的项必须重新跑，
+        # 否则「补齐失败的那几路」点了等于没点（现场实测：容器重跑 53s 后，
+        # 失败那一项原封不动，因为它也被当成了"已完成"）。终态 ≠ 成功。
+        done = {int(r.item_index): r for r in existing if r.status == "ok"}
 
         created: list[Run] = []
         for i, item in enumerate(picked):

@@ -608,6 +608,67 @@ class Orchestrator:
         await run_service.start(run.id, definition, payload)
         return run
 
+    async def refill_fanout(self, run_id: str) -> dict[str, Any]:
+        """**补齐失败的那几路**：重新按清单分派这一步，已成功的项由内核复用。
+
+        为什么不能走普通「重跑这条执行」
+        ------------------------------
+        容器那条 run 的重跑只会把**助手本体再跑一遍**（走的是普通执行路径，根本不会重新分派）——
+        现场实测：点了「补齐失败的那几路」，容器跑了 53 秒，失败那一项原封不动。
+        分派的执行逻辑在**编排层**（``_run_fanout``），所以补跑也必须回到这一层。
+
+        幂等靠内核：``dispatch`` 按 (父执行, 第几路) 复用**成功**的项（终态 ≠ 成功 ——
+        失败/中止的项会重跑，这正是"补齐"要的语义）。
+        """
+        from sqlalchemy import select
+
+        from ..models import Orchestration
+
+        async with SessionLocal() as session:
+            run = await session.get(Run, run_id)
+            if run is None:
+                raise LookupError(f"找不到这条执行：{run_id}")
+            if run.status in ("pending", "running", "waiting_hitl"):
+                raise RuntimeError(f"这条执行还没结束（{run.status}），先等它跑完")
+            # 已经在补的路还没跑完 → 不再派一次（否则重复点会并发出两条，
+            # 既重复扣费、又让"这一步"的状态说不清：实测点快了就出现两条同序号的子执行）
+            busy = list(
+                (
+                    await session.execute(
+                        select(Run).where(
+                            Run.parent_run_id == run_id,
+                            Run.status.in_(("pending", "running")),
+                        )
+                    )
+                ).scalars()
+            )
+            if busy:
+                raise RuntimeError(f"这一步还有 {len(busy)} 路在跑，等它们跑完再补齐")
+            spec: dict[str, Any] = {}
+            if run.orchestration_id:
+                orc = await session.get(Orchestration, run.orchestration_id)
+                spec = dict((orc.spec if orc else None) or {})
+            node_id = run.node_id
+
+        step = None
+        if node_id:
+            step = next(
+                (x for x in (spec.get("steps") or []) if x.get("nid") == node_id), None
+            )
+        fanout = _fanout_of(step) if step else None
+        if not fanout or str(fanout.get("mode") or "").strip() != "list":
+            raise ValueError("这一步不是「按清单分派」，没有可补齐的几路")
+
+        payload = str((run.input or {}).get("text") or "")
+        await self._run_fanout(run, fanout, payload)
+
+        async with SessionLocal() as session:
+            fresh = await session.get(Run, run_id)
+            return {
+                "run_id": run_id,
+                "status": fresh.status if fresh is not None else "unknown",
+            }
+
     async def _run_fanout(self, run: Run, fanout: dict[str, Any], payload: str) -> None:
         """把这一步按「上游清单」分派出去；解析不出清单就如实退化成单实例。"""
         from ..fanout import dispatch, parse_items

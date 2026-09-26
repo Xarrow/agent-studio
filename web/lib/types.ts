@@ -449,6 +449,8 @@ export interface FanoutItem {
   /** 这一路用了多少 token（成本可见：花在哪一路一眼看得出） */
   tokensIn?: number;
   tokensOut?: number;
+  /** 这一路挂在哪个"分派容器"下 —— 点「补齐失败的几路」时对它重跑（幂等：已成功的不会重跑） */
+  containerRunId?: string;
 }
 
 export interface OrchestrationStepRead {

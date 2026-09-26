@@ -565,6 +565,9 @@ export const api = {
   abortRun: (id: string) => post<{ aborted: boolean }>(`/api/runs/abort/${id}`),
   /** **重跑这一条执行**：记录原地重来（归属不变）——分派的某一项失败时只重跑那一路 */
   rerunRun: (id: string) => post<Run>(`/api/runs/${id}/rerun`, {}),
+  /** 补齐失败的那几路（分派这一步重跑；已成功的路不会重跑） */
+  refillFanout: (id: string) =>
+    post<{ run_id: string; status: string }>(`/api/runs/${id}/refill`, {}),
   resumeRun: (
     id: string,
     body: { confirm: boolean; reason?: string; payload?: unknown },

@@ -389,6 +389,21 @@ export function PlaygroundConsole() {
     }
   };
 
+  /** 补齐失败的那几路（走编排层的"重新分派"，不是把助手本体再跑一遍） */
+  const refillFanout = async (runId: string) => {
+    try {
+      await api.refillFanout(runId);
+      fb.success("正在补齐失败的那几路", "已成功的那几路不会重跑（不重复扣费）");
+      const id = viewing ?? detail?.id;
+      if (id) {
+        const d = (await api.orchestration(id)) as unknown as OrchestrationDetail;
+        setDetail(d);
+      }
+    } catch (e) {
+      fb.error("补齐失败", e instanceof Error ? e.message : String(e));
+    }
+  };
+
   const loadHistory = async (orcId: string) => {
     try {
       // 记住进入历史前的编辑态（退出时原样还原，不丢正在编的东西）
@@ -659,6 +674,7 @@ export function PlaygroundConsole() {
           input: s.input_text ?? "",
           output: s.output_text ?? "",
           runId: s.run_id,
+          containerRunId: s.parent_run_id ?? undefined,
           tokensIn: Number((s.usage as Record<string, unknown> | undefined)?.tokens_in ?? 0) || 0,
           tokensOut: Number((s.usage as Record<string, unknown> | undefined)?.tokens_out ?? 0) || 0,
         });
@@ -1263,6 +1279,7 @@ export function PlaygroundConsole() {
               setDetailNid(nid);
             }}
             onRetryRun={(runId) => void retryRun(runId)}
+            onRefill={(runId) => void refillFanout(runId)}
             taskText={shownTask}
             finalText={finalText}
             lastNid={lastNid}

@@ -292,6 +292,25 @@ async def abort_run(run_id: str, session: AsyncSession = Depends(get_session)) -
     return {"aborted": ok}
 
 
+@router.post("/{run_id}/refill")
+async def refill_fanout_run(run_id: str) -> dict[str, Any]:
+    """**补齐失败的那几路**（分派这一步重跑：已成功的复用，只补非 ok 的项）。
+
+    与 ``/{run_id}/rerun`` 的分工：那个是"把这条执行重跑一遍"（分派出去的**某一路**失败时用它）；
+    这个是"这一步的清单再派一次"（多路失败时一次补齐，不重复扣费）。
+    """
+    from ..orchestrator.service import Orchestrator
+
+    try:
+        return await Orchestrator().refill_fanout(run_id)
+    except LookupError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+
+
 @router.post("/{run_id}/rerun", response_model=RunRead)
 async def rerun_run(run_id: str, session: AsyncSession = Depends(get_session)) -> RunRead:
     """**重跑这一条执行**（就地重来一次，不新建记录）。

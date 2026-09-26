@@ -1411,3 +1411,101 @@ async def test_isolated_items_do_not_clobber_each_others_files(client):
             assert p.exists(), f"第 {k['item_index'] + 1} 路没在自己的目录里写出文件：{p}"
             contents.append(p.read_text(encoding="utf-8"))
     assert len(contents) == 2 and len(set(contents)) == 2, f"两份产物必须各有内容：{contents}"
+
+
+async def test_rerun_refills_only_the_failed_items(client):
+    """容器重跑：**成功的项复用、失败/中止的项必须重跑**（终态 ≠ 成功）。
+
+    现场踩到：把失败项也当成"已完成"跳过 → 「补齐失败的那几路」点了等于没点
+    （真机：容器重跑 53s 后，失败那一项原封不动）。
+    """
+    from agent_studio.config import settings
+    from agent_studio.db import SessionLocal
+    from agent_studio.models import Run
+    from agent_studio.runtimes import register_runtime
+
+    register_runtime(SpanRuntime())
+    settings.max_concurrent_runs = 0
+    owner = await _agent_with_stub(client)
+    spec = {
+        "mode": "single",
+        "steps": [{"agent_id": owner, "carry_prev": False, "nid": "n1", "fanout": "list", "fanout_max": 3}],
+        "task": "- 甲\n- 乙\n- 丙",
+    }
+    d1 = await _run_orchestration_with_pump(client, spec)
+    assert d1["status"] == "ok", d1
+    cont = [s for s in d1["steps"] if not s.get("parent_run_id")][0]["run_id"]
+    kids1 = {s["item_index"]: s["run_id"] for s in d1["steps"] if s.get("parent_run_id")}
+    assert len(kids1) == 3
+
+    # 把第 2 项弄成失败（真跑里的失败/中止都走这条语义）
+    async with SessionLocal() as s:
+        row = await s.get(Run, kids1[1])
+        row.status = "error"
+        row.error = "模拟失败"
+        await s.commit()
+
+    # 重跑"这一步"（等价于点「补齐失败的那几路」）
+    cont_row = await client.get(f"/api/runs/{cont}")
+    assert cont_row.status_code == 200
+    # 走**补齐**这条路（容器普通重跑只会把助手本体再跑一遍，不会重新分派）。
+    # ⚠️ 补齐接口内部会 await 分派（等子执行）→ **必须并发地泵分发器**，
+    #    否则两边互相等 = 死锁（实测：pytest 直接挂住）。
+    fill = asyncio.create_task(client.post(f"/api/runs/{cont}/refill"))
+    guard = 0
+    while not fill.done() and guard < 900:
+        await dispatcher.tick()
+        await asyncio.sleep(0.02)
+        guard += 1
+    assert fill.done(), "补齐接口没在预期时间里返回"
+    resp = await fill
+    assert resp.status_code == 200, resp.text
+    st = resp.json()["status"]
+    assert st == "ok", f"补齐后这一步应当 ok，实际 {st}"
+
+    async with SessionLocal() as s:
+        rows = list(
+            (await s.execute(select(Run).where(Run.parent_run_id == cont))).scalars()
+        )
+    by_idx: dict[int, list[Run]] = {}
+    for r in rows:
+        by_idx.setdefault(int(r.item_index or 0), []).append(r)
+    # ① 成功那两项：还是原来那条执行（没被重跑、没重复扣费）
+    assert [r.id for r in by_idx[0]] == [kids1[0]], "成功项不该被重跑"
+    assert [r.id for r in by_idx[2]] == [kids1[2]], "成功项不该被重跑"
+    # ② 失败那一项：**又跑了一次**（新起一条），并且现在成功了
+    assert len(by_idx[1]) == 2, f"失败项必须被补跑：{by_idx[1]}"
+    assert by_idx[1][-1].status == "ok", by_idx[1][-1].status
+
+
+async def test_refill_refuses_while_a_child_is_still_running(client):
+    """还有几路在跑时不许再补一次 —— 重复点会并发出两条同序号的子执行（重复扣费）。"""
+    from agent_studio.config import settings
+    from agent_studio.db import SessionLocal
+    from agent_studio.models import Run
+    from agent_studio.runtimes import register_runtime
+
+    register_runtime(SpanRuntime())
+    settings.max_concurrent_runs = 0
+    owner = await _agent_with_stub(client)
+    d = await _run_orchestration_with_pump(
+        client,
+        {
+            "mode": "single",
+            "steps": [
+                {"agent_id": owner, "carry_prev": False, "nid": "n1", "fanout": "list", "fanout_max": 2}
+            ],
+            "task": "- 甲\n- 乙",
+        },
+    )
+    cont = [s for s in d["steps"] if not s.get("parent_run_id")][0]["run_id"]
+    kids = [s for s in d["steps"] if s.get("parent_run_id")]
+    # 把一路改回"在跑"（模拟：补跑正在进行）
+    async with SessionLocal() as s:
+        row = await s.get(Run, kids[0]["run_id"])
+        row.status = "running"
+        row.ended_at = None
+        await s.commit()
+    r = await client.post(f"/api/runs/{cont}/refill")
+    assert r.status_code == 409, r.text
+    assert "在跑" in r.text
