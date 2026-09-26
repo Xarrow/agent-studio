@@ -425,48 +425,50 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
         </div>
       )}
 
-      {/* ── 概览：一屏之内回答"这个助手现在是什么状态" ──────────────
-          以前要看这些得在三个 tab 之间来回切；现在一眼扫完。 */}
+      {/* ── 概览：**一行**说清"这个助手现在是什么状态" ───────────────────
+          原来这里是**四块等宽格子**（模型 / 工具 / Skills / 记忆），每块三行（标题 + 值 + 小注）
+          —— 一屏最贵的位置用四格回答四个数字 ✗，而下面「工具」「Skills」「记忆」各有完整章节
+          → 同一条信息被显示了两次 ✗（用户准绳：操作更少、看到更多）
+          改成一行副标题：值在前、口径在后（`工具 7/12` 的"已选/可用"一眼就懂 ✓），
+          要细看就去各自那一节 ✓ */}
       <section className="card p-4 mb-4">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div>
-            <div className="text-[11.5px] text-[var(--color-muted)]">模型</div>
-            <div className="text-[13.5px] mono mt-0.5 break-all">
-              {def.model.name || "—"}
-            </div>
-            <div className="text-[11px] text-[var(--color-muted)] mt-0.5">
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px]">
+          <span className="flex items-center gap-1.5">
+            <span className="text-[11.5px] text-[var(--color-muted)]">模型</span>
+            <span className="mono break-all">{def.model.name || "—"}</span>
+            <span className="text-[11.5px] text-[var(--color-muted)]">
               {providers.find((x) => x.name === def.model.provider)?.display_name ??
                 def.model.provider}
               {usedCred ? ` · ${usedCred.name}` : " · 用环境变量密钥"}
-            </div>
-          </div>
-          <div>
-            <div className="text-[11.5px] text-[var(--color-muted)]">工具</div>
-            <div className="text-[13.5px] mt-0.5">{def.tools.length} 个已选</div>
-            <div className="text-[11px] text-[var(--color-muted)] mt-0.5">
-              共 {tools.length} 个可用
-            </div>
-          </div>
-          <div>
-            <div className="text-[11.5px] text-[var(--color-muted)]">Skills</div>
-            <div className="text-[13.5px] mt-0.5">{def.skills.length} 个已选</div>
-            <div className="text-[11px] text-[var(--color-muted)] mt-0.5">
-              共 {skills.length} 个可用
-            </div>
-          </div>
-          <div>
-            <div className="text-[11.5px] text-[var(--color-muted)]">记忆</div>
-            <div className="text-[13.5px] mt-0.5">
+            </span>
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="text-[11.5px] text-[var(--color-muted)]">工具</span>
+            <span className="mono">
+              {def.tools.length}
+              <span className="text-[var(--color-muted)]">/{tools.length}</span>
+            </span>
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="text-[11.5px] text-[var(--color-muted)]">Skills</span>
+            <span className="mono">
+              {def.skills.length}
+              <span className="text-[var(--color-muted)]">/{skills.length}</span>
+            </span>
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="text-[11.5px] text-[var(--color-muted)]">记忆</span>
+            <span className="mono">
               {ov.memoryOwn === null || ov.memoryShared === null
                 ? "…"
                 : `${ov.memoryOwn + ov.memoryShared} 条`}
-            </div>
-            <div className="text-[11px] text-[var(--color-muted)] mt-0.5">
-              {ov.memoryOwn === null
-                ? ""
-                : `自己的 ${ov.memoryOwn} · 共用 ${ov.memoryShared}`}
-            </div>
-          </div>
+            </span>
+            {ov.memoryOwn !== null && (
+              <span className="text-[11.5px] text-[var(--color-muted)]">
+                自己的 {ov.memoryOwn} · 共用 {ov.memoryShared}
+              </span>
+            )}
+          </span>
         </div>
         {ov.lastRun && (
           <div className="mt-3 pt-3 border-t border-[var(--color-border)] text-[12px] text-[var(--color-muted)]">
