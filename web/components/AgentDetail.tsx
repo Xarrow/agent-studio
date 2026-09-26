@@ -249,8 +249,8 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
               <a className="btn btn-primary" href="/agents">
                 去助手列表
               </a>
-              <a className="btn" href="/chat">
-                去对话
+              <a className="btn" href="/agents">
+                回 Agents 列表
               </a>
             </div>
           </div>

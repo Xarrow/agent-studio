@@ -260,14 +260,13 @@ export default function AgentsPage() {
                 <span>更新 {fmt.relative(a.updated_at)}</span>
               </div>
 
-              {/* 主操作是「聊天」（用它），次操作是「设置」（改它）——
-                  合在一个「编辑 / 试跑」里会让"使用"这条最短路径断掉 */}
+              {/* 卡上动作：设置（主）+ ⋯（次级）—— 原来还有「聊天」，已按用户要求移除 ✓ */}
               <div className="flex flex-wrap gap-2 mt-4 pt-3 border-t border-[var(--color-border)]">
-                <Link
-                  href={`/chat?agent=${a.id}`}
-                  className="btn btn-primary flex-1 text-center text-[12.5px]"
-                >
-                  聊天
+                {/* **聊天入口已移除**（用户："移除 Agents 上聊天的功能"）——
+                    Agents 页只负责"配好这个助手"；要用它请去 Playground 把它放进流程（用起来 = 编排的一部分）。
+                    卡上仍留一个明确的主操作：设置（名字本身也是入口 ✓），次级动作全在 ⋯ 里 ✓ */}
+                <Link href={`/agents/${a.id}`} className="btn btn-primary flex-1 text-center text-[12.5px]">
+                  设置
                 </Link>
                 {/* 卡上只留**一个**主操作（聊天 = 用它）+ 一个「⋯」（设置 / 改名 / 复制 / 删除）
                     —— 原来 5 个动作平铺：`设置` 与"点名字进设置"重复，4 个次级动作把主操作挤小了 ✗
