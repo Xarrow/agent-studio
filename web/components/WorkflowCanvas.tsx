@@ -377,6 +377,8 @@ export function WorkflowCanvas({
   /** 框选矩形（视口坐标）＋ 选中的一组（对齐 Dify 指针模式：拖空白=框选，部分相交即选中） */
   const [box, setBox] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const [group, setGroup] = useState<string[]>([]);
+  /** 聚焦某一步：其余节点压暗（对齐 Dify 的 dim-other-nodes ✓）。看长流程时"我在看哪一步"不迷路 ✓ */
+  const [focusNid, setFocusNid] = useState<string | null>(null);
   const zoomRef = useRef(1);
   zoomRef.current = zoom;
   const ZOOM_MIN = 0.25;
@@ -1544,6 +1546,7 @@ export function WorkflowCanvas({
       if (e.key === "Escape") {
         onSelect(null);
         setZoomMenu(false);
+        setFocusNid(null);
         return;
       }
       // 删除（Dify 键位表：Delete / Backspace —— shortcuts/definitions.ts:49-55）
@@ -1667,6 +1670,7 @@ export function WorkflowCanvas({
           setEdgeSel(null);
           setZoomMenu(false);
           setGroup([]);
+          setFocusNid(null);
         }
       }}
       onWheel={(e) => {
@@ -2644,6 +2648,8 @@ export function WorkflowCanvas({
           });
           const lv = live?.[n.nid];
           const isSel = selected === n.nid || group.includes(n.nid);
+          // 聚焦：不是这一张就压暗（透明度而不是隐藏 —— 还能看到上下游关系 ✓）
+          const dimmed = focusNid !== null && focusNid !== n.nid;
           // 手柄颜色随节点状态（对齐 Dify：常态灰 / 运行蓝 / 成功绿 / 失败红）
           const handleTint =
             st === "run"
@@ -2700,6 +2706,9 @@ export function WorkflowCanvas({
                 anyActive && (st === "idle" || st === "wait") ? "node-dim" : ""
               }`}
               style={{
+                // 聚焦：不是这一张就压暗（透明度而不是隐藏 —— 还能看到上下游关系 ✓）
+                opacity: dimmed ? 0.35 : 1,
+                transition: "opacity .15s",
                 transform: `translate(${p.x}px, ${p.y}px)`,
                 // 宽度：正在拖这张卡时用实时值（跟手），否则用图里存的（拖过就用拖过的宽）
                 width: resize?.nid === n.nid ? resize.w : layout.W[n.nid] ?? layout.NW,
@@ -2856,6 +2865,15 @@ export function WorkflowCanvas({
                   {/* **删除**（用户要求：这类功能直接放卡片上，不用点右上角 ⋯）。
                       破坏性，所以做成"点两下"：第一下变红并问"确认删除？"（4 秒内有效），
                       第二下才真删 —— 符合"破坏性操作两步确认"的既定规矩。 */}
+                  <button
+                    type="button"
+                    title={focusNid === n.nid ? "取消聚焦" : "只看这一步：把其他步骤压暗"}
+                    onClick={() => setFocusNid(focusNid === n.nid ? null : n.nid)}
+                    className="rounded-[5px] px-1.5 py-0.5 text-[11.5px] font-medium"
+                    style={{ color: focusNid === n.nid ? "var(--color-accent)" : "var(--color-muted)" }}
+                  >
+                    {focusNid === n.nid ? "取消聚焦" : "聚焦"}
+                  </button>
                   <button
                     type="button"
                     title={delArm === n.nid ? "再点一次就删掉这一步" : "把这一步从流程里去掉"}
