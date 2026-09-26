@@ -207,6 +207,8 @@ export interface ActivityItem {
   /** 这次调用折算的金额；**null = 这个模型还没填单价**（界面显示「—」，不当 0 元） */
   cost?: number | null;
   currency?: string;
+  /** 自动运行才有：schedule（定时） / webhook（外部调用）—— 界面打小标用 */
+  trigger?: string | null;
   summary: string | null;
   error: string | null;
 }
@@ -218,6 +220,28 @@ export interface ActivityItem {
  * 界面必须显示「—」，不能显示 0（"免费"和"不知道"是两件事）。
  * ``unpriced`` = 这一格里有几次调用算不出钱，界面据此提示"补单价才算得准"。
  */
+/**
+ * 自动运行（无人值守）的配置 —— 界面上那个「自动运行」对话框就是它。
+ *
+ * ``mode`` 是**枚举**（"" 不定时 / hourly / daily / weekly），不是 cron 表达式：
+ * 用户该选、不该填。``problems`` 是后端算出来的"这样配跑不起来"的原因
+ * （例如没写默认任务）—— 界面照原样提示，不自己推。
+ */
+export interface WorkflowAuto {
+  mode: string;
+  at: string;
+  weekdays: string;
+  default_task: string;
+  /** 人话版本，如「每天 09:00」「每周 周一、周三 08:00」（界面直接显示它） */
+  describe: string;
+  next_run_at: number | null;
+  last_run_at: number | null;
+  last_run_source: string;
+  /** 外部触发地址（相对路径；完整 URL 由前端按当前访问地址拼） */
+  hook_path: string;
+  problems: string[];
+}
+
 export interface UsageBucket {
   calls: number;
   tokens_in: number;

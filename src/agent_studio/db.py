@@ -188,6 +188,15 @@ _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("orchestration", "workflow_id", "workflow_id VARCHAR(32)"),
     # 凭据的默认模型（LLM 配置页可探测后选择 / 手动填写）
     ("secret", "default_model", "default_model VARCHAR(128)"),
+    # 自动运行（无人值守）：默认任务 + 定时三件套 + 排期与外部触发凭证
+    ("workflow", "default_task", "default_task TEXT"),
+    ("workflow", "schedule_mode", "schedule_mode VARCHAR(16)"),
+    ("workflow", "schedule_at", "schedule_at VARCHAR(8)"),
+    ("workflow", "schedule_weekdays", "schedule_weekdays VARCHAR(16)"),
+    ("workflow", "next_run_at", "next_run_at BIGINT"),
+    ("workflow", "last_run_at", "last_run_at BIGINT"),
+    ("workflow", "last_run_source", "last_run_source VARCHAR(16)"),
+    ("workflow", "trigger_token", "trigger_token VARCHAR(64)"),
 )
 
 

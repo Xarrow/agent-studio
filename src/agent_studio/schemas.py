@@ -317,6 +317,9 @@ class ActivityItem(BaseModel):
     #: 不能显示 0 —— "免费"和"不知道"是两件事）
     cost: float | None = None
     currency: str = "¥"
+    #: 自动运行才有：``schedule``（定时） / ``webhook``（外部调用）——
+    #: 界面据此给这条记录打上「定时」/「外部」小标，一眼分出哪些不是我点的
+    trigger: str | None = None
     #: 一句话摘要（输入的前几十字），列表里就能看出"这条是什么"
     summary: str | None = None
     error: str | None = None
@@ -887,6 +890,19 @@ class WorkflowGraph(BaseModel):
     input_card: CardBox | None = None
     #: 输出卡（结论）的位置/宽度；同上
     output_card: CardBox | None = None
+
+
+class AutoRunIn(BaseModel):
+    """自动运行的设置（整份提交 —— 界面上就是一个对话框）。
+
+    ``mode`` 用**枚举**而不是 cron：用户该选、不该填（cron 是"第二个术语"，
+    写错了还看不出来）。留空 = 不定时。
+    """
+
+    mode: str = ""
+    at: str = "09:00"
+    weekdays: str = ""
+    default_task: str = ""
 
 
 class WorkflowCreate(BaseModel):

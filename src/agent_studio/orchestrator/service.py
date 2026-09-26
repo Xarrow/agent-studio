@@ -28,6 +28,7 @@ AgentScope、不碰事件流。所以：
 from __future__ import annotations
 
 import asyncio
+from contextvars import ContextVar
 import json
 import logging
 import re
@@ -102,6 +103,15 @@ _SUMMARY_PROMPT = """你是一个任务协调者。用户交给整个团队的�
 """
 
 
+#: 这次编排是**谁发起的**（playground / schedule / webhook）→ 写进 run.origin，
+#: 运行记录里才分得清"我点的"和"它自己跑的 / 别的系统调起来的"。
+#:
+#: 为什么用 contextvar 而不是实例属性：``_start_step`` 拿不到 spec，
+#: 而 Orchestrator 是**共享单例** —— 挂实例属性会被并发执行的另一次编排覆盖。
+#: contextvar 按 asyncio task 隔离，天然正确。
+_RUN_ORIGIN: ContextVar[str] = ContextVar("orchestration_origin", default="playground")
+
+
 class Orchestrator:
     """编排执行器。无状态（所有状态都在库里），可以随处实例化。"""
 
@@ -124,6 +134,8 @@ class Orchestrator:
             await self._finish(orc_id, "error", error=f"未知编排模式: {mode}")
             return
 
+        # 谁发起的这次编排（画布 / 定时 / 外部调用）—— 后续 _start_step 建的每条 run 都带上它
+        _RUN_ORIGIN.set(spec.get("origin") or "playground")
         try:
             await self._patch(orc_id, status="running")
             await handler(orc_id, spec)
@@ -523,8 +535,9 @@ class Orchestrator:
                 orchestration_id=orc_id,
                 orch_role=role,
                 order_index=order,
-                # 编排发起的执行 —— 在「运行记录」里归为 playground 类
-                origin="playground",
+                # 谁发起的这次执行：画布点运行 = playground；定时 = schedule；
+                # 外部调用 = webhook（运行记录据此标出"它自己跑的"）
+                origin=_RUN_ORIGIN.get(),
             )
             session.add(run)
             await session.commit()

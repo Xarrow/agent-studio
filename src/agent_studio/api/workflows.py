@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_session
 from ..models import Agent, Orchestration, Workflow, now_ms
+from ..schemas import AutoRunIn
 from ..orchestrator.graph import (
     MODE_LABEL_CN,
     derive_mode,
@@ -273,6 +274,95 @@ async def delete_workflow(wf_id: str, session: AsyncSession = Depends(get_sessio
 # --------------------------------------------------------------------------- #
 # 跑
 # --------------------------------------------------------------------------- #
+
+# --------------------------------------------------------------------------- #
+# 自动运行（无人值守）：定时 + 外部触发
+# --------------------------------------------------------------------------- #
+def _new_token() -> str:
+    """每条流程自己的触发凭证（外部系统拿它发起执行，等价于一把专属 key）。"""
+    import secrets
+
+    return secrets.token_hex(16)
+
+
+def _auto_payload(wf: Workflow) -> dict[str, Any]:
+    """自动运行的当前配置（界面直接用，不自己拼）。"""
+    from ..scheduler import SCHEDULE_MODES, describe
+
+    mode = (wf.schedule_mode or "").strip()
+    problems: list[str] = []
+    if mode in SCHEDULE_MODES and not (wf.default_task or "").strip():
+        problems.append("没写「默认任务」—— 定时不会真的跑（它不知道该拿什么任务去跑）")
+    if mode in SCHEDULE_MODES and not len(WorkflowGraph.model_validate(wf.graph or {}).nodes):
+        problems.append("画布上还没有助手")
+    return {
+        "mode": mode if mode in SCHEDULE_MODES else "",
+        "at": wf.schedule_at or "09:00",
+        "weekdays": wf.schedule_weekdays or "",
+        "default_task": wf.default_task or "",
+        "describe": describe(wf.schedule_mode, wf.schedule_at, wf.schedule_weekdays),
+        "next_run_at": wf.next_run_at,
+        "last_run_at": wf.last_run_at,
+        "last_run_source": wf.last_run_source or "",
+        # 相对路径 —— 完整 URL 由前端按当前访问地址拼（内网/公网/tailnet 各不相同）
+        "hook_path": f"/api/hooks/{wf.trigger_token}" if wf.trigger_token else "",
+        "problems": problems,
+    }
+
+
+@router.get("/{wf_id}/auto", response_model=dict)
+async def read_auto(wf_id: str, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """读自动运行配置。
+
+    顺带做一件事：**没有触发凭证就生成一把并落库**（首次打开就能看到外部触发地址，
+    不然用户得先"保存一次"才拿到 URL —— 那个多余的动作没有必要）。
+    """
+    wf = await _get_or_404(session, wf_id)
+    if not wf.trigger_token:
+        wf.trigger_token = _new_token()
+        await session.commit()
+        await session.refresh(wf)
+    return _auto_payload(wf)
+
+
+@router.put("/{wf_id}/auto", response_model=dict)
+async def write_auto(
+    wf_id: str, payload: AutoRunIn, session: AsyncSession = Depends(get_session)
+) -> dict[str, Any]:
+    """存自动运行配置，并**立刻把下一次运行时间排好**（用户马上能看到"下次 09:00"）。"""
+    from ..scheduler import SCHEDULE_MODES, compute_next
+
+    wf = await _get_or_404(session, wf_id)
+    mode = (payload.mode or "").strip().lower()
+    if mode and mode not in SCHEDULE_MODES:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"不支持的定时方式：{payload.mode}（只能是 {'/'.join(SCHEDULE_MODES)} 或留空=不定时）",
+        )
+    if not wf.trigger_token:
+        wf.trigger_token = _new_token()
+    wf.schedule_mode = mode
+    wf.schedule_at = (payload.at or "09:00").strip()[:5]
+    wf.schedule_weekdays = (payload.weekdays or "").strip()[:16]
+    wf.default_task = (payload.default_task or "").strip()
+    wf.next_run_at = compute_next(mode, wf.schedule_at, wf.schedule_weekdays)
+    wf.updated_at = now_ms()
+    await session.commit()
+    await session.refresh(wf)
+    return _auto_payload(wf)
+
+
+@router.post("/{wf_id}/auto/rotate", response_model=dict)
+async def rotate_trigger_token(
+    wf_id: str, session: AsyncSession = Depends(get_session)
+) -> dict[str, Any]:
+    """换一把新的触发凭证（旧地址立即失效）—— 怀疑泄漏或不想让人再用时点它。"""
+    wf = await _get_or_404(session, wf_id)
+    wf.trigger_token = _new_token()
+    await session.commit()
+    await session.refresh(wf)
+    return _auto_payload(wf)
+
 @router.post("/{wf_id}/run-node", response_model=dict)
 async def run_node(
     wf_id: str,
@@ -320,19 +410,22 @@ async def run_node(
     return {"orchestration_id": orc.id, "mode": spec["mode"], "nid": nid, "step_count": 1}
 
 
-@router.post("/{wf_id}/run", response_model=dict)
-async def run_workflow(
-    wf_id: str,
-    payload: WorkflowRunRequest,
-    session: AsyncSession = Depends(get_session),
-) -> dict[str, Any]:
-    """用这份设计稿发起一次执行。
+async def start_run_for_workflow(
+    session: AsyncSession,
+    wf: Workflow,
+    task: str,
+    *,
+    timeout_s: int | None = None,
+    origin: str = "playground",
+    name_suffix: str = "",
+) -> tuple[str, dict[str, Any]]:
+    """**发起一次执行**（画布上的运行、定时、外部触发共用这一段）。
 
-    返回 ``orchestration_id``：前端拿它去订阅
-    ``/api/orchestrations/stream/{id}``（观测、分色过程、断线回放全都复用现成的）。
+    为什么抽出来：三条入口做的事完全一样（图 → spec → 建编排 → 交给编排器），
+    各写一遍的结果一定是"某天只改了两处，第三处悄悄不一样"。
+    返回 ``(orchestration_id, spec)``，调用方按自己的需要组装响应。
     """
-    wf = await _get_or_404(session, wf_id)
-    task = (payload.task or "").strip()
+    task = (task or "").strip()
     if not task:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "任务描述不能为空")
 
@@ -344,11 +437,14 @@ async def run_workflow(
     if mode not in VALID_MODES:
         mode = "dag"
     spec = graph_to_spec(graph, mode, task)
-    if payload.timeout_s:
-        spec["timeout_s"] = payload.timeout_s
+    if timeout_s:
+        spec["timeout_s"] = timeout_s
+    # 这次执行是**谁发起**的（playground / schedule / webhook）——
+    # 记进 run.origin，运行记录里才分得清"我点的"和"它自己跑的"
+    spec["origin"] = origin
 
     orc = Orchestration(
-        name=f"{wf.name} · {task[:24]}",
+        name=f"{wf.name}{name_suffix} · {task[:24]}",
         workflow_id=wf.id,
         mode=spec["mode"],
         worker_mode=spec.get("worker_mode"),
@@ -362,10 +458,28 @@ async def run_workflow(
     await session.refresh(orc)
 
     asyncio.create_task(orchestrator.run(orc.id, spec))
+    return orc.id, spec
 
+
+@router.post("/{wf_id}/run", response_model=dict)
+async def run_workflow(
+    wf_id: str,
+    payload: WorkflowRunRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """用这份设计稿发起一次执行。
+
+    返回 ``orchestration_id``：前端拿它去订阅
+    ``/api/orchestrations/stream/{id}``（观测、分色过程、断线回放全都复用现成的）。
+    """
+    wf = await _get_or_404(session, wf_id)
+    orc_id, spec = await start_run_for_workflow(
+        session, wf, payload.task or "", timeout_s=payload.timeout_s
+    )
+    task = (payload.task or "").strip()
     steps = spec.get("steps") or spec.get("nodes") or []
     return {
-        "orchestration_id": orc.id,
+        "orchestration_id": orc_id,
         "mode": spec["mode"],
         "mode_label": MODE_LABEL_CN.get(spec["mode"], spec["mode"]),
         "step_count": len(steps),

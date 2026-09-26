@@ -19,6 +19,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Markdown from "./Markdown";
 import { useFeedback } from "@/components/ui/feedback";
 import { WorkflowManager } from "@/components/WorkflowManager";
+import { AutoRunDialog } from "@/components/AutoRunDialog";
 import { WorkflowCanvas, flattenLayers, type NodeState } from "@/components/WorkflowCanvas";
 import {
   buildNodeLive,
@@ -32,6 +33,7 @@ import type {
   OrchestrationDetail,
   OrchestrationStepRead,
   Workflow,
+  WorkflowAuto,
   WorkflowEdge,
   WorkflowGraph,
   WorkflowNode,
@@ -169,6 +171,11 @@ export function PlaygroundConsole() {
 
   /** 顶栏那个「名字 ⌄」的小菜单（切换最近编排 / 保存改动都收在这里） */
   const [wfMenu, setWfMenu] = useState(false);
+  /** 「自动运行」对话框：定时 / 外部触发 / 默认任务 */
+  const [autoOpen, setAutoOpen] = useState(false);
+  /** 当前流程的自动运行情况（顶栏那颗键上直接显示"每天 09:00"，不藏着） */
+  const [autoInfo, setAutoInfo] = useState<WorkflowAuto | null>(null);
+
   /** 流程管理浮层（Playground 内就地打开，不跳页） */
   const [manager, setManager] = useState(false);
   /** 画布上的"助手设置浮层"在看哪个节点 —— 由 Console 指定，
@@ -181,6 +188,20 @@ export function PlaygroundConsole() {
   const [detailNid, setDetailNid] = useState<string | null>(null);
   const esRef = useRef<EventSource | null>(null);
   const nidRef = useRef(1);
+
+  /** 当前流程的自动运行设置 —— 换流程就重新读（顶栏那颗键要显示真实状态） */
+  const loadAuto = useCallback(async (id: string) => {
+    try {
+      setAutoInfo(await api.workflowAuto(id));
+    } catch {
+      setAutoInfo(null); // 读不到就当没开（顶栏显示"自动跑"，点开才知道原因）
+    }
+  }, []);
+
+  useEffect(() => {
+    if (wf?.id) void loadAuto(wf.id);
+    else setAutoInfo(null);
+  }, [wf?.id, loadAuto]);
 
   /* ── 载入助手 + 最近的设计稿 ─────────────────────────────────────────── */
   useEffect(() => {
@@ -936,7 +957,7 @@ export function PlaygroundConsole() {
             · 名字旁边的小箭头 = 切换最近编排 + 保存改动（脏了名字角上有个橙点）
             · 执行方式收进运行按钮旁的小选择器，当前会跑什么模式写在运行按钮上 */}
       <div
-        className="pg-topbar flex items-center gap-3 border-b px-4 py-2.5"
+        className="pg-topbar flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b px-4 py-2.5"
         style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
       >
         <h1 className="shrink-0 text-[15.5px] font-semibold tracking-tight">Playground</h1>
@@ -952,6 +973,34 @@ export function PlaygroundConsole() {
           title="流程管理：全部流程 + 每份的执行链路"
         >
           流程
+        </button>
+
+        {/* **自动运行**（无人值守）：让这条流程按点自己跑，或者被别的系统调起来。
+            开没开**直接写在键上**（「自动跑 · 每天 09:00」）—— 不藏进菜单里。 */}
+        <button
+          type="button"
+          onClick={() => {
+            void (async () => {
+              if (dirty || !wf) await save(true); // 自动运行挂在**已保存的流程**上
+              setAutoOpen(true);
+            })();
+          }}
+          className="shrink-0 rounded-[8px] border px-2.5 py-1.5 text-[12.5px] hover:bg-[var(--color-surface-2)]"
+          style={{
+            borderColor: autoInfo?.mode ? "var(--color-accent)" : "var(--color-border)",
+            color: autoInfo?.mode ? "var(--color-accent)" : "var(--color-muted)",
+          }}
+          title={
+            autoInfo?.mode
+              ? `自动运行已开启：${autoInfo.describe}${
+                  autoInfo.next_run_at ? ` · 下次 ${new Date(autoInfo.next_run_at).toLocaleString("zh-CN", { hour12: false })}` : ""
+                }`
+              : "自动运行：按点自己跑，或被别的系统调起来"
+          }
+        >
+          自动跑
+          {autoInfo?.mode ? <span className="ml-1 hidden sm:inline">· {autoInfo.describe}</span> : null}
+          {autoInfo?.mode ? <span className="ml-1 sm:hidden">●</span> : null}
         </button>
 
         {/* 工作流入口（重做过）：
@@ -1312,6 +1361,16 @@ export function PlaygroundConsole() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* 自动运行对话框（定时 / 外部触发 / 默认任务）—— 自研浮层，不用原生弹窗 */}
+      {autoOpen && wf && (
+        <AutoRunDialog
+          wfId={wf.id}
+          wfName={wf.name}
+          onClose={() => setAutoOpen(false)}
+          onSaved={() => void loadAuto(wf.id)}
+        />
       )}
 
       {/* 只读回放横幅：明确告诉用户"你现在看的是历史，不是正在编的图" */}

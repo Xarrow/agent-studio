@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import logging
 import os
@@ -21,6 +22,7 @@ from .api import api_router
 from .config import settings
 from .db import init_db
 from .runner.service import reap_orphan_runs
+from .scheduler import loop as scheduler_loop
 from .runtimes import discover_runtimes, list_runtimes
 
 logging.basicConfig(
@@ -39,8 +41,14 @@ async def lifespan(_app: FastAPI):
     discover_runtimes()
     runtimes = [rt.name for rt in list_runtimes()]
     logger.info("Agent Studio 启动 | db=%s | runtimes=%s", settings.db_path, runtimes)
-    yield
-    logger.info("Agent Studio 关闭")
+    # **自动运行**（无人值守）：进程内一个 20 秒的 tick，不引调度库、不起第二个服务。
+    # 它比任何一次执行都更该耐活 —— 挂了就再也没有"自动跑"（见 scheduler.loop）。
+    scheduler = asyncio.create_task(scheduler_loop())
+    try:
+        yield
+    finally:
+        scheduler.cancel()
+        logger.info("Agent Studio 关闭")
 
 
 app = FastAPI(
@@ -71,6 +79,12 @@ ACCESS_TOKEN = os.getenv("STUDIO_ACCESS_TOKEN", "").strip()
 
 #: 无需口令的路径（健康检查 + 文档，便于监控与排障）
 AUTH_EXEMPT = {"/api/health", "/docs", "/openapi.json", "/redoc"}
+
+#: 免口令的**路径前缀**。
+#: 目前只有一个：外部触发 ``/api/hooks/{token}`` —— 凭证就在路径里，
+#: 而调用方（监控/告警/第三方平台）往往只能配一个 URL，塞不进 header。
+#: 口令再叠一层的结果是"所有这类调用都调不通"，所以这里只认 token。
+AUTH_EXEMPT_PREFIXES = ("/api/hooks/",)
 
 #: 隧道对端（= cloudflared 所在机器）。换机/多台可用环境变量覆盖。
 TUNNEL_PEERS = {
@@ -103,7 +117,7 @@ async def require_access_token(request: "Request", call_next):
         return await call_next(request)          # 未配置 = 不启用
     if request.method == "OPTIONS":
         return await call_next(request)          # 跨域预检必须放行，否则浏览器一律报 CORS
-    if request.url.path in AUTH_EXEMPT:
+    if request.url.path in AUTH_EXEMPT or request.url.path.startswith(AUTH_EXEMPT_PREFIXES):
         return await call_next(request)
 
     peer = request.client.host if request.client else ""

@@ -2,6 +2,7 @@
 
 import type {
   UsageBucket,
+  WorkflowAuto,
   ActivityList,
   Agent,
   AgentDefinition,
@@ -447,6 +448,18 @@ export const api = {
    * 统一的「运行记录」时间线：助手执行（对话/试跑/编排）+ LLM 对话测试。
    * 一次请求拿全，前端不用为了看另一类再切页面。
    */
+  // ── 自动运行（无人值守）：定时 + 外部触发 ──────────────────────────────
+  /** 读自动运行设置（首次打开时后端会顺手生成一把触发凭证） */
+  workflowAuto: (id: string) => request<WorkflowAuto>(`/api/workflows/${id}/auto`),
+  /** 存自动运行设置（整份提交；后端会立刻把"下次运行时间"排好） */
+  saveWorkflowAuto: (
+    id: string,
+    body: { mode: string; at: string; weekdays: string; default_task: string },
+  ) => put<WorkflowAuto>(`/api/workflows/${id}/auto`, body),
+  /** 换一把新的触发凭证（旧的立即失效） */
+  rotateWorkflowTrigger: (id: string) =>
+    post<WorkflowAuto>(`/api/workflows/${id}/auto/rotate`, {}),
+
   // ── 单价（用量 → 金额）────────────────────────────────────────────────
   prices: () =>
     request<{

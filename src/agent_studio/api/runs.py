@@ -426,6 +426,8 @@ async def activity_timeline(
                 #: 金额（没填单价 = None → 界面显示「—」，不假装 0 元）
                 cost=cost_of(model_name, tin, tout, prices),
                 currency=currency,
+                # 定时 / 外部触发发起的执行要标出来（不是用户点的）
+                trigger=(r.origin if r.origin in ("schedule", "webhook") else None),
                 summary=(_text_of(r.input) or _text_of(out))[:120] or None,
                 error=r.error,
             )

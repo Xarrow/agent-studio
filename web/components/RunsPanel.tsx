@@ -453,6 +453,24 @@ export function RunsPanel() {
                         >
                           {KIND_LABEL[it.kind]}
                         </span>
+                        {/* 自动运行的记录要标出来 —— 用户看记录时最想分清
+                            "哪些是我点的、哪些是它自己跑的 / 别的系统调起来的" */}
+                        {it.trigger && (
+                          <span
+                            className="ml-1.5 whitespace-nowrap rounded px-1.5 py-0.5 text-[11px]"
+                            style={{
+                              background: "color-mix(in srgb, var(--color-warn) 14%, transparent)",
+                              color: "var(--color-warn)",
+                            }}
+                            title={
+                              it.trigger === "schedule"
+                                ? "定时自动发起的执行（不是人点的）"
+                                : "外部系统调用触发地址发起的执行"
+                            }
+                          >
+                            {it.trigger === "schedule" ? "定时" : "外部"}
+                          </span>
+                        )}
                         {/* 编排执行额外给个「以流程查看」：直接进 Playground 的历史回放，
                             用画布看那次的图 —— 而不是在这里弹一个五页签的日志框 */}
                         {it.kind === "playground" && it.orchestration_id && (

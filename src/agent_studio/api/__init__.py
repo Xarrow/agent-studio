@@ -6,6 +6,7 @@ from . import (
     agents,
     credentials,
     database,
+    hooks,
     mcp,
     memories,
     openai_compat,
@@ -34,6 +35,7 @@ api_router.include_router(memories.router)      # /api/memories（长期记忆�
 api_router.include_router(memories.agent_router)  # /api/agents/{id}/memories + memory-policy
 api_router.include_router(orchestrations.router)  # /api/orchestrations（一次多助手协作的执行记录）
 api_router.include_router(workflows.router)      # /api/workflows（Playground 画布上保存的编排设计稿）
+api_router.include_router(hooks.router)          # /api/hooks/{token}（外部触发：让别的系统也能跑一条流程）
 api_router.include_router(uploads.router)       # /api/uploads（任务卡的上传附件）
 api_router.include_router(database.router)        # /api/database（环境配置：切换持久化驱动）
 

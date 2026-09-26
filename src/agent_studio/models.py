@@ -542,6 +542,26 @@ class Workflow(Base):
     updated_at: Mapped[int] = mapped_column(Integer, default=now_ms, index=True)
     created_at: Mapped[int] = mapped_column(Integer, default=now_ms)
 
+    # ── 自动运行（无人值守）──────────────────────────────────────────────
+    # 为什么这些字段长在 workflow 上：定时/外部触发是**这条流程**的属性
+    # （哪条流程、什么节奏、拿什么任务去跑），不是平台属性。
+    #: 每次自己跑时用的任务描述 —— 定时/外部触发都靠它（空 = 不跑，界面会提示去填）
+    default_task: Mapped[str] = mapped_column(Text, default="")
+    #: 定时方式："" 不定时 | hourly 每小时 | daily 每天 | weekly 每周
+    #: **刻意用枚举而不是 cron 表达式**：用户该选，不该填（见 scheduler.py）
+    schedule_mode: Mapped[str] = mapped_column(String(16), default="")
+    #: 每天/每周在几点几分跑（HH:MM）
+    schedule_at: Mapped[str] = mapped_column(String(8), default="09:00")
+    #: 每周哪几天（"1,3,5"，1=周一…7=周日）
+    schedule_weekdays: Mapped[str] = mapped_column(String(16), default="")
+    #: 下一次该跑的时刻（毫秒）；NULL = 还没排（调度器会算好写回来）
+    next_run_at: Mapped[int | None] = mapped_column(BigInteger, default=None)
+    #: 上一次自动跑的时刻 / 是谁触发的（schedule / webhook）
+    last_run_at: Mapped[int | None] = mapped_column(BigInteger, default=None)
+    last_run_source: Mapped[str] = mapped_column(String(16), default="")
+    #: 外部触发用的凭证（这条流程自己的 key）—— 外部系统拿它 POST 一下就发起一次执行
+    trigger_token: Mapped[str] = mapped_column(String(64), default="")
+
 
 class McpServer(Base):
     """一个 MCP 服务器（注册表条目）。
