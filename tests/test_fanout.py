@@ -280,3 +280,136 @@ async def test_fork_tool_blocked_at_depth_one(monkeypatch):
     from agent_studio.runner.ctx import clear_run_ctx
 
     clear_run_ctx()
+
+
+# --------------------------------------------------------------------------- #
+# 5. 节点入口：画布上配的"按上游清单分派"必须一路活到执行层
+#    （wait_timeout_s 当年就是在 normalise 被丢掉、界面设了等于没设 —— 同一个坑）
+# --------------------------------------------------------------------------- #
+def test_normalise_keeps_fanout_config():
+    from agent_studio.orchestrator.graph import normalise
+    from agent_studio.schemas import WorkflowGraph
+
+    graph = WorkflowGraph.model_validate(
+        {
+            "nodes": [
+                {"nid": "n1", "agent_id": "a1", "fanout": "list", "fanout_max": 3},
+                {"nid": "n2", "agent_id": "a2"},
+            ],
+            "edges": [{"from": "n1", "to": "n2"}],
+        }
+    )
+    nodes, _edges = normalise(graph.model_dump(by_alias=True))
+    assert nodes[0]["fanout"] == "list" and nodes[0]["fanout_max"] == 3
+    assert "fanout" not in nodes[1], "没配的节点不该被塞字段"
+
+
+def test_spec_carries_fanout_to_execution_layer():
+    from agent_studio.api.workflows import graph_to_spec
+    from agent_studio.schemas import WorkflowGraph
+
+    graph = WorkflowGraph.model_validate(
+        {"nodes": [{"nid": "n1", "agent_id": "a1", "fanout": "list", "fanout_max": 5}], "edges": []}
+    )
+    spec = graph_to_spec(graph, "single", "把这 5 项都办了")
+    assert spec["steps"][0]["fanout"] == "list"
+    assert spec["steps"][0]["fanout_max"] == 5
+    assert spec["steps"][0]["nid"] == "n1"
+
+
+def test_fanout_of_helper_shape():
+    from agent_studio.orchestrator.service import _fanout_of
+
+    assert _fanout_of({}) is None
+    assert _fanout_of({"fanout": "list"}) == {"mode": "list", "max": None, "agent": None, "wait_s": None}
+    got = _fanout_of({"fanout": "list", "fanout_max": 10, "wait_timeout_s": 600, "fanout_agent": "ag_x"})
+    assert got == {"mode": "list", "max": 10, "agent": "ag_x", "wait_s": 600}
+
+
+# --------------------------------------------------------------------------- #
+# 6. 编排路径的护栏（这两条合起来，正是这次现场踩到的那个失误）
+#    ——"分派分支插进 _start_step 时把常规路径的启动切掉了"
+# --------------------------------------------------------------------------- #
+async def _run_orchestration_with_pump(client, payload: dict) -> dict:
+    """发起编排 + 手动泵分发器，等它跑完，返回详情。"""
+    created = (await client.post("/api/orchestrations", json=payload)).json()
+    oid = created["id"]
+    task = asyncio.create_task(_poll_orc(client, oid))
+    guard = 0
+    while not task.done() and guard < 900:
+        await dispatcher.tick()
+        await asyncio.sleep(0.02)
+        guard += 1
+    assert task.done(), "编排没有在预期时间内结束"
+    return await task
+
+
+async def _poll_orc(client, oid: str) -> dict:
+    for _ in range(400):
+        d = (await client.get(f"/api/orchestrations/{oid}")).json()
+        if d["status"] not in ("pending", "running"):
+            return d
+        await asyncio.sleep(0.05)
+    return (await client.get(f"/api/orchestrations/{oid}")).json()
+
+
+async def _agent_with_stub(client):
+    return (await client.post(
+        "/api/agents",
+        json={
+            "name": uniq("编排护栏"),
+            "definition": {
+                "runtime": SpanRuntime.name,
+                "name": "编排护栏",
+                "system_prompt": "p",
+                "model": {"provider": "deepseek", "name": "deepseek-v4-flash"},
+                "tools": [],
+                "skills": [],
+                "limits": {"max_iters": 1, "timeout_s": 30},
+            },
+        },
+    )).json()["id"]
+
+
+async def test_plain_step_still_runs(client):
+    """没配分派的普通一步**必须照常启动** —— 这条守的是"改了 _start_step 别把常规路径切掉"。"""
+    from agent_studio.config import settings
+    from agent_studio.runtimes import register_runtime
+
+    register_runtime(SpanRuntime())
+    settings.max_concurrent_runs = 0
+    aid = await _agent_with_stub(client)
+
+    d = await _run_orchestration_with_pump(
+        client, {"mode": "single", "steps": [{"agent_id": aid, "carry_prev": False}], "task": "随便做点什么"}
+    )
+    assert d["status"] == "ok", d
+    assert d["steps"] and d["steps"][0]["status"] == "ok", d["steps"]
+
+
+async def test_node_fanout_runs_one_instance_per_item(client):
+    """节点上配了"按上游清单分派"→ 上游那一串清单每项一条独立执行（真跑）。"""
+    from agent_studio.config import settings
+    from agent_studio.runtimes import register_runtime
+
+    register_runtime(SpanRuntime())
+    settings.max_concurrent_runs = 0
+    aid = await _agent_with_stub(client)
+
+    d = await _run_orchestration_with_pump(
+        client,
+        {
+            "mode": "single",
+            "steps": [{"agent_id": aid, "carry_prev": False, "nid": "n1", "fanout": "list", "fanout_max": 5}],
+            "task": "\n".join(f"- 第 {i} 项" for i in range(1, 4)),
+        },
+    )
+    assert d["status"] == "ok", d
+    steps = d["steps"]
+    kids = [s for s in steps if s.get("parent_run_id")]
+    box = [s for s in steps if not s.get("parent_run_id")]
+    assert len(kids) == 3, f"三项清单应该派 3 路，实际 {len(kids)}"
+    assert len(box) == 1 and box[0]["status"] == "ok"
+    assert sorted(s["item_index"] for s in kids) == [0, 1, 2]
+    assert all(s["node_id"] == "n1" for s in steps if s.get("node_id"))
+    assert "## 第 1 项" in box[0]["output_text"], "合并产出要按项分节（下游编排者据此验证）"

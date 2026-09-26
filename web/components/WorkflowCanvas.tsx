@@ -17,7 +17,14 @@ import Markdown from "./Markdown";
 
 import type { NodeLiveInfo } from "@/components/StepExecPanel";
 import { STEP_STYLE, type StepKind } from "@/components/ui/run-timeline";
-import type { Agent, UploadItem, WorkflowEdge, WorkflowGraph, WorkflowNode } from "@/lib/types";
+import type {
+  Agent,
+  FanoutItem,
+  UploadItem,
+  WorkflowEdge,
+  WorkflowGraph,
+  WorkflowNode,
+} from "@/lib/types";
 import {
   depEdges,
   detectMaster,
@@ -57,8 +64,8 @@ type Props = {
   onSelect: (nid: string | null) => void;
   /** 这次执行的节点状态（nid → 状态）；空对象 = 还没跑过 */
   runStates: Record<string, NodeState>;
-  /** 分派进度（nid → 几路/成了/败了）。有它就说明这一步这次分派了多条执行 */
-  fanout?: Record<string, { total: number; done: number; failed: number }>;
+  /** 分派结果（nid → 那几路）。有它就说明这一步这次分派了多条执行 */
+  fanout?: Record<string, FanoutItem[]>;
   /** 各节点本轮产出，直接显示在卡片上 */
   outputs: Record<string, string>;
   /** 各节点**实时摘要**（正在干什么/耗时/思考/工具/输出）—— 悬停卡、节点角标、右侧抽屉共用 */
@@ -685,6 +692,10 @@ export function WorkflowCanvas({
 
   /** 被选中的那个节点 → 它的**上游/下游链路**（选中时点亮，看清这条链怎么串的）
    *  现在只高亮自己，看不出依赖关系；Dify 选中节点会把整条依赖链着色。 */
+  /** 分派：哪张卡的分派列表被展开（默认只露前 3 路） */
+  const [fanOpen, setFanOpen] = useState<Record<string, boolean>>({});
+  /** 分派：哪一路正在就地展开看输入/输出（runId） */
+  const [fanItem, setFanItem] = useState<string | null>(null);
   const chainRoot = detailNid ?? null;
   const chain = (() => {
     if (!chainRoot) return null;
@@ -1497,6 +1508,31 @@ export function WorkflowCanvas({
   );
 
   /**
+   * **分派多路**：把上游产出的清单里**每一项**交给这个助手的**一个实例**并行处理。
+   *
+   * 为什么要做成节点上的一个属性、而不是"在画布上摆 5 个节点"：
+   * 摆 5 个节点会让图爆炸、改一处要改 5 处；而"同一件事做 N 遍"本质是可枚举的配置。
+   * 默认**不分派**（不配就是原来的单实例行为，老流程零影响）。
+   */
+  const setFanoutCfg = useCallback(
+    (nid: string, patch: { fanout?: string; fanout_max?: number }) => {
+      onChange({
+        ...graph,
+        nodes: graph.nodes.map((n) => {
+          if (n.nid !== nid) return n;
+          if (patch.fanout === "") {
+            // 关掉分派：把两个字段都摘掉（不留在图里当垃圾）
+            const { fanout: _f, fanout_max: _m, ...rest } = n;
+            return rest;
+          }
+          return { ...n, ...patch };
+        }),
+      });
+    },
+    [graph, onChange],
+  );
+
+  /**
    * **画布键位**（对齐 Dify：dify-ref/web/app/components/workflow/shortcuts/definitions.ts）。
    *
    * Dify 的键位表：Delete/Backspace 删选中、Mod+C/V 复制粘贴、Mod+D 复制、
@@ -1783,6 +1819,42 @@ export function WorkflowCanvas({
                     <option value="-1">不限</option>
                   </select>
                 </div>
+                {/* **分派多路**（枚举下拉，不让手打 ✓）：把上游清单每项交给一个实例并行处理。
+                    放在「最长等多久」下面 —— 它俩是同一类"这一步怎么跑"的旋钮。 */}
+                <div
+                  className="flex items-center gap-2 border-t px-3 py-1.5"
+                  style={{ borderColor: "var(--color-border)" }}
+                >
+                  <span className="flex-1" style={{ color: "var(--color-muted)" }}>分派多路</span>
+                  <select
+                    value={graph.nodes.find((n) => n.nid === nid)?.fanout ?? ""}
+                    onChange={(e) => setFanoutCfg(nid, { fanout: e.target.value, fanout_max: e.target.value ? (graph.nodes.find((n) => n.nid === nid)?.fanout_max ?? 5) : undefined })}
+                    title="把上游产出的清单里每一项，交给这个助手的一个实例并行处理（每项一条独立执行）"
+                    className="rounded-[5px] border px-1 py-0.5 text-[12px]"
+                    style={{ borderColor: "var(--color-border)", background: "var(--color-surface)", color: "var(--color-text)" }}
+                  >
+                    <option value="">不分派</option>
+                    <option value="list">按上游清单</option>
+                  </select>
+                </div>
+                {(graph.nodes.find((n) => n.nid === nid)?.fanout ?? "") === "list" && (
+                  <div className="flex items-center gap-2 px-3 py-1.5">
+                    <span className="flex-1" style={{ color: "var(--color-muted)" }}>最多几路</span>
+                    <select
+                      value={String(graph.nodes.find((n) => n.nid === nid)?.fanout_max ?? 5)}
+                      onChange={(e) => setFanoutCfg(nid, { fanout: "list", fanout_max: Number(e.target.value) })}
+                      title="最多分几路；超出的项不处理（会在执行记录里说明已截断）"
+                      className="rounded-[5px] border px-1 py-0.5 text-[12px]"
+                      style={{ borderColor: "var(--color-border)", background: "var(--color-surface)", color: "var(--color-text)" }}
+                    >
+                      <option value="2">2 路</option>
+                      <option value="3">3 路</option>
+                      <option value="5">5 路</option>
+                      <option value="10">10 路</option>
+                      <option value="20">20 路</option>
+                    </select>
+                  </div>
+                )}
                 <button type="button" className={row} onClick={() => { duplicateNode(nid); setNodeMenu(null); }}>再制一份</button>
                 <button type="button" className={row} onClick={() => { setPicking({ mode: "swap", nid }); setNodeMenu(null); }}>换成别的助手</button>
                 <button type="button" className={row} onClick={() => { if (delArm === nid) deleteNode(nid); else setDelArm(nid); setNodeMenu(null); }}
@@ -2401,6 +2473,68 @@ export function WorkflowCanvas({
                   <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>
                     {blurb || "（这个助手还没写一句话职责）"}
                   </div>
+                {/* ── 分派：按项看 ──────────────────────────────────────────
+                    这一步如果分派过多路，抽屉里就按「第 N 项」逐条列出来，
+                    点哪一条就地展开它的输入/输出（**不做 tab、不做页内跳转** ——
+                    每一条都在原位展开，符合"就地展开、不跳页"）。 */}
+                {(fanout?.[n.nid]?.length ?? 0) > 0 && (
+                  <div className="border-b px-3 py-2" style={{ borderColor: "var(--color-border)" }}>
+                    <div className="mb-1 text-[12px] font-semibold" style={{ color: "var(--color-muted)" }}>
+                      分派出去的 {fanout![n.nid].length} 路
+                      <span className="ml-1 font-normal">（点某一路就地看它的输入/输出）</span>
+                    </div>
+                    <div className="max-h-[220px] overflow-auto pr-1">
+                      {fanout![n.nid].map((it) => {
+                        const open = fanItem === it.runId;
+                        const tint =
+                          it.status === "ok" ? "var(--color-ok)" : it.status === "error" || it.status === "aborted" ? "var(--color-err)" : "var(--color-accent)";
+                        return (
+                          <div key={it.runId} className="mb-1 rounded-[7px] border" style={{ borderColor: "var(--color-border)" }}>
+                            <button
+                              type="button"
+                              className="flex w-full items-center gap-1.5 px-2 py-[5px] text-left"
+                              onClick={() => setFanItem(open ? null : it.runId)}
+                            >
+                              <span className="shrink-0 text-[11px]" style={{ color: tint }}>
+                                {it.status === "ok" ? "✓" : it.status === "error" || it.status === "aborted" ? "✕" : "◌"}
+                              </span>
+                              <span className="min-w-0 flex-1 truncate text-[12px]">{it.label}</span>
+                              {it.durationMs ? (
+                                <span className="shrink-0 text-[10.5px] tabular-nums" style={{ color: "var(--color-muted)" }}>
+                                  {(it.durationMs / 1000).toFixed(1)}s
+                                </span>
+                              ) : null}
+                              <span className="shrink-0 text-[11px]" style={{ color: "var(--color-muted)" }}>
+                                {open ? "收起" : "展开"}
+                              </span>
+                            </button>
+                            {open && (
+                              <div className="border-t px-2 py-1.5" style={{ borderColor: "var(--color-border)" }}>
+                                {it.input && (
+                                  <>
+                                    <div className="text-[11px] font-semibold" style={{ color: "var(--color-muted)" }}>
+                                      它的输入
+                                    </div>
+                                    <div className="mb-1.5 max-h-[90px] overflow-auto whitespace-pre-wrap break-words text-[11.5px] leading-[1.55]">
+                                      {it.input}
+                                    </div>
+                                  </>
+                                )}
+                                <div className="text-[11px] font-semibold" style={{ color: "var(--color-muted)" }}>
+                                  它的产出
+                                </div>
+                                <div className="max-h-[160px] overflow-auto whitespace-pre-wrap break-words text-[11.5px] leading-[1.55]">
+                                  {it.output || "（这一路没有产出）"}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                   <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]" style={{ color: "var(--color-muted)" }}>
                     {agent?.definition?.model?.name && (
                       <span className="rounded-full border px-1.5 py-[1px]" style={{ borderColor: "var(--color-border)" }}>
@@ -3004,14 +3138,29 @@ export function WorkflowCanvas({
                 {/* **分派徽标**：这一步这次分了几路、跑到第几路。
                     常驻显示（不 hover、不需要点）—— 用户要求过「信息默认可见」，
                     而且跑多路时最要紧的就是「还剩几路」这一个数字。 */}
+                {n.fanout === "list" && !(fanout?.[n.nid]?.length ?? 0) && (
+                  /* 配置了但还没跑：也要看得见（信息默认可见，不藏在菜单里） */
+                  <span
+                    className="shrink-0 rounded-full px-1.5 py-[1px] text-[10.5px] font-medium"
+                    style={{
+                      border: "1px solid color-mix(in srgb, var(--color-accent) 34%, transparent)",
+                      color: "var(--color-accent)",
+                      background: "color-mix(in srgb, var(--color-accent) 10%, transparent)",
+                    }}
+                    title={`这一步会把上游清单里每一项交给这个助手的一个实例并行处理（最多 ${n.fanout_max ?? 5} 路）`}
+                  >
+                    按清单 · ≤{n.fanout_max ?? 5}
+                  </span>
+                )}
                 {(() => {
-                  const f = fanout?.[n.nid];
-                  if (!f) return null;
-                  const finished = f.done + f.failed;
-                  const color = f.failed ? "var(--color-err)" : f.done === f.total ? "var(--color-ok)" : "var(--color-accent)";
-                  const label = f.failed
-                    ? `${f.done}/${f.total} · ${f.failed} 失败`
-                    : `${finished}/${f.total}`;
+                  const list = fanout?.[n.nid];
+                  if (!list?.length) return null;
+                  const total = list.length;
+                  const done = list.filter((x) => x.status === "ok").length;
+                  const failed = list.filter((x) => x.status === "error" || x.status === "aborted").length;
+                  const finished = done + failed;
+                  const color = failed ? "var(--color-err)" : done === total ? "var(--color-ok)" : "var(--color-accent)";
+                  const label = failed ? `${done}/${total} · ${failed} 失败` : `${finished}/${total}`;
                   return (
                     <span
                       className="shrink-0 rounded-full px-1.5 py-[1px] text-[10.5px] font-medium tabular-nums"
@@ -3020,7 +3169,7 @@ export function WorkflowCanvas({
                         color,
                         background: `color-mix(in srgb, ${color} 10%, transparent)`,
                       }}
-                      title={`这一步分派了 ${f.total} 路并行处理：已完成 ${finished}，失败 ${f.failed}`}
+                      title={`这一步分派了 ${total} 路并行处理：已完成 ${finished}，失败 ${failed}`}
                     >
                       {label}
                     </span>
@@ -3200,6 +3349,70 @@ export function WorkflowCanvas({
                   </div>
                 </div>
               )}
+              {/* ── 分派出去的每一路，就叠在这张卡下面 ─────────────────────
+                  为什么就地叠在卡里、而不是另开一个页面/右侧栏：
+                  「这一步分了几路、每一路干了什么」是这张卡自己的信息，控件与内容都该归属它
+                  （用户定的「控件归属其对象」「不跳页、就地展开」）。
+                  默认只露前三路（信息默认可见），超过三路给一个「还有 N 路」——
+                  要全部展开点一下就行（触屏也能点，不是 hover）。 */}
+              {(fanout?.[n.nid]?.length ?? 0) > 0 &&
+                (() => {
+                  const list = fanout![n.nid];
+                  const done = list.filter((x) => x.status === "ok").length;
+                  const failed = list.filter((x) => x.status === "error" || x.status === "aborted").length;
+                  const expanded = !!fanOpen[n.nid];
+                  const shown = expanded ? list : list.slice(0, 3);
+                  const tint = (s: string) =>
+                    s === "ok" ? "var(--color-ok)" : s === "error" || s === "aborted" ? "var(--color-err)" : "var(--color-accent)";
+                  return (
+                    <div className="border-t px-3 pb-2 pt-1.5" style={{ borderColor: "var(--color-border)" }}>
+                      <div className="mb-1 flex items-center gap-1.5 text-[11px]" style={{ color: "var(--color-muted)" }}>
+                        <span>分派 {list.length} 路</span>
+                        <span>·</span>
+                        <span style={{ color: "var(--color-ok)" }}>{done} 完成</span>
+                        {failed > 0 && <span style={{ color: "var(--color-err)" }}>· {failed} 失败</span>}
+                        {list.length > 3 && (
+                          <button
+                            type="button"
+                            className="ml-auto rounded-[5px] px-1.5 py-[1px] hover:bg-[var(--color-surface-2)]"
+                            style={{ color: "var(--color-accent)" }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setFanOpen((m) => ({ ...m, [n.nid]: !expanded }));
+                            }}
+                          >
+                            {expanded ? "收起" : `还有 ${list.length - 3} 路`}
+                          </button>
+                        )}
+                      </div>
+                      {shown.map((it) => (
+                        <button
+                          key={it.runId}
+                          type="button"
+                          title={`${it.label}（点它看这一路的输入/输出）`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setFanItem(fanItem === it.runId ? null : it.runId);
+                            onSelect?.(n.nid);
+                            onDetail?.(n.nid);
+                          }}
+                          className="flex w-full items-center gap-1.5 rounded-[6px] px-1.5 py-[3px] text-left hover:bg-[var(--color-surface-2)]"
+                        >
+                          <span className="shrink-0 text-[11px]" style={{ color: tint(it.status) }}>
+                            {it.status === "ok" ? "✓" : it.status === "error" || it.status === "aborted" ? "✕" : "◌"}
+                          </span>
+                          <span className="min-w-0 flex-1 truncate text-[11.5px]">{it.label}</span>
+                          {it.durationMs ? (
+                            <span className="shrink-0 text-[10.5px] tabular-nums" style={{ color: "var(--color-muted)" }}>
+                              {(it.durationMs / 1000).toFixed(1)}s
+                            </span>
+                          ) : null}
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })()}
+
               {!lv && !out && (
                 /* 没跑过：显示"模型 · 这助手干什么" —— 不是一句灰字，而是让人一眼
                    知道这张卡的用途（Dify 的 block 也有这么一行副标题） */

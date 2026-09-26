@@ -772,6 +772,14 @@ class OrchestrationStep(BaseModel):
     #: **串行模式下才有意义**：这一步要不要接收上一步的产出。
     #: 由用户在编排界面上逐个勾选；第一步会被忽略。
     carry_prev: bool = False
+    #: 画布节点 id（界面按它精确回贴执行状态；直接调编排接口时可以不带）
+    nid: str | None = None
+    #: 这一跳最多等多久（秒）：不填=平台默认，-1=不限
+    wait_timeout_s: int | None = None
+    #: **分派多路**：`"list"` = 把上游产出的清单每项交给这个助手的一个实例并行处理
+    fanout: str | None = None
+    #: 最多几路（默认 5，内核硬上限 20）
+    fanout_max: int | None = None
 
 
 class OrchestrationCreate(BaseModel):
@@ -867,6 +875,16 @@ class WorkflowNode(BaseModel):
     #: 为什么放节点上：编排者"等其他人跑完再验证总结"时，等待上限属于**那个等待的人**；
     #: 上游自己跑太久则由上游节点的值兜住，两边都设得住，才不会出现"卡住不动"的流程。
     wait_timeout_s: int | None = None
+
+    #: **分派多路**：`"list"` = 把**上游产出的清单**里每一项，交给这个助手的一个实例
+    #: 并行处理（每项一条独立执行）。不填 = 不分派（原来的单实例行为）。
+    #: ⚠️ 这三个字段必须在这里声明 —— pydantic 默认丢弃未声明的字段，
+    #: 少了它前端配了也会在图里"消失"（wait_timeout_s 当年就是这么坑的）。
+    fanout: str | None = None
+    #: 最多几路（2/3/5/10/20，默认 5）；内核另有硬上限兜底（MAX_ITEMS_HARD=20）
+    fanout_max: int | None = None
+    #: 分派给**别的助手**（不填 = 本节点这个助手；P1 用，先留字段）
+    fanout_agent: str | None = None
 
 
 class WorkflowEdge(BaseModel):

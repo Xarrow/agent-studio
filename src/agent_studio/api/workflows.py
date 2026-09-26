@@ -58,6 +58,16 @@ def _wait_of(node: dict[str, Any]) -> dict[str, Any]:
     v = (node or {}).get("wait_timeout_s")
     if isinstance(v, int) and not isinstance(v, bool):
         out["wait_timeout_s"] = v
+    # 分派配置（按上游清单每项一路）—— 与 wait_timeout_s 同理，必须全链路带上
+    fm = str((node or {}).get("fanout") or "").strip()
+    if fm:
+        out["fanout"] = fm
+        fmax = (node or {}).get("fanout_max")
+        if isinstance(fmax, int) and not isinstance(fmax, bool) and fmax > 0:
+            out["fanout_max"] = fmax
+        fagent = str((node or {}).get("fanout_agent") or "").strip()
+        if fagent:
+            out["fanout_agent"] = fagent
     return out
 
 

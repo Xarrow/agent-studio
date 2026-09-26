@@ -415,6 +415,17 @@ export interface OrchStep {
 }
 
 /** 编排下的一个子步骤（后端返回，就是一条 Run 的摘要） */
+/** 分派出来的一路（fan-out 的一个实例）—— 画布就地叠卡、抽屉按项看、徽标计数都用它 */
+export interface FanoutItem {
+  index: number;
+  label: string;
+  status: string;
+  durationMs: number | null;
+  input: string;
+  output: string;
+  runId: string;
+}
+
 export interface OrchestrationStepRead {
   run_id: string;
   agent_id: string;
@@ -597,6 +608,15 @@ export interface WorkflowNode {
    * 上游自己跑太久则由上游节点的值兜住 —— 两边都设得住，才不会出现卡住不动的流程。
    */
   wait_timeout_s?: number | null;
+  /**
+   * **分派多路**：`"list"` = 把**上游产出的清单**里每一项，交给这个助手的一个实例
+   * 并行处理（每项一条独立执行，可单独看/单独重跑）。不填 = 不分派（原来的单实例行为）。
+   * 为什么是节点属性而不是"画布上摆 N 个节点"：摆 N 个节点会让图爆炸、改一处要改 N 处；
+   * 而"同一件事做 N 遍"本质是可枚举的配置。
+   */
+  fanout?: string;
+  /** 最多几路（枚举 2/3/5/10/20，默认 5）；超出的项不处理并在执行记录里说明 */
+  fanout_max?: number;
 }
 
 export interface WorkflowEdge {

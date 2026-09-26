@@ -112,6 +112,23 @@ _SUMMARY_PROMPT = """你是一个任务协调者。用户交给整个团队的�
 _RUN_ORIGIN: ContextVar[str] = ContextVar("orchestration_origin", default="playground")
 
 
+def _fanout_of(step: dict[str, Any]) -> dict[str, Any] | None:
+    """把节点上的「分派」配置整理成内核要的形状；没配 = None（按单实例跑）。
+
+    语义：``fanout="list"`` = 把**上游产出的清单**每项交给这个助手的一个实例并行处理。
+    等待上限沿用节点上那个「最长等多久」（同一件事：这一步最多等多久）。
+    """
+    mode = str((step or {}).get("fanout") or "").strip()
+    if mode != "list":
+        return None
+    return {
+        "mode": mode,
+        "max": (step or {}).get("fanout_max"),
+        "agent": (step or {}).get("fanout_agent"),
+        "wait_s": (step or {}).get("wait_timeout_s"),
+    }
+
+
 class Orchestrator:
     """编排执行器。无状态（所有状态都在库里），可以随处实例化。"""
 
@@ -154,7 +171,7 @@ class Orchestrator:
         steps = self._steps(spec)
         task = self._task(spec)
 
-        run = await self._start_step(orc_id, steps[0]["agent_id"], "worker", 0, task, node_id=steps[0].get("nid"))
+        run = await self._start_step(orc_id, steps[0]["agent_id"], "worker", 0, task, node_id=steps[0].get("nid"), fanout=_fanout_of(steps[0]))
         done = await self._await(run.id, (steps[0] or {}).get("wait_timeout_s"))
 
         await self._finish(
@@ -179,7 +196,7 @@ class Orchestrator:
         for i, step in enumerate(steps):
             carry = bool(step.get("carry_prev"))
             payload = self._compose(task, prev_text if carry else None, i)
-            run = await self._start_step(orc_id, step["agent_id"], "worker", i, payload, node_id=step.get("nid"))
+            run = await self._start_step(orc_id, step["agent_id"], "worker", i, payload, node_id=step.get("nid"), fanout=_fanout_of(step))
             r = await self._await(run.id, step.get("wait_timeout_s"))
             done.append(r)
             # 只有成功且有内容才更新"上一步产出"，失败的输出传下去没意义
@@ -200,7 +217,7 @@ class Orchestrator:
 
         # 先把所有 Run 建好并启动，让它们真正并发
         runs = [
-            await self._start_step(orc_id, step["agent_id"], "worker", i, task, node_id=step.get("nid"))
+            await self._start_step(orc_id, step["agent_id"], "worker", i, task, node_id=step.get("nid"), fanout=_fanout_of(step))
             for i, step in enumerate(steps)
         ]
         # return_exceptions=True：一个挂了不能拖垮其余
@@ -297,7 +314,7 @@ class Orchestrator:
                 payload = self._compose(task, prev, idx)
                 inputs[nid] = payload
                 node = by_nid[nid]
-                run = await self._start_step(orc_id, node["agent_id"], "worker", idx, payload, node_id=node.get("nid") or nid)
+                run = await self._start_step(orc_id, node["agent_id"], "worker", idx, payload, node_id=node.get("nid") or nid, fanout=_fanout_of(node))
                 # 这一跳最多等多久：用节点上设的（画布上给"等上游"的那个节点设）——
                 # 用户："Orchestrator 需要等待其他 agent 执行完再验证总结，但需要设置超时时间"
                 return await self._await(run.id, node.get("wait_timeout_s"))
@@ -350,7 +367,7 @@ class Orchestrator:
                     + ("\n\n".join(_chunks) or "（各位助手都没有产出）")
                 )
                 _node = by_nid[_t]
-                _run = await self._start_step(orc_id, _node["agent_id"], "worker", order, _payload, node_id=_node.get("nid") or _t)
+                _run = await self._start_step(orc_id, _node["agent_id"], "worker", order, _payload, node_id=_node.get("nid") or _t, fanout=_fanout_of(_node))
                 _done = await self._await(_run.id, _node.get("wait_timeout_s"))
                 done.append(_done)
                 run_of[_t] = _done
@@ -448,7 +465,7 @@ class Orchestrator:
             prev: str | None = None
             for i, step in enumerate(steps):
                 payload = self._compose_worker(subtasks[i], prev, i)
-                r = await self._start_step(orc_id, step["agent_id"], "worker", i + 1, payload, node_id=step.get("nid"))
+                r = await self._start_step(orc_id, step["agent_id"], "worker", i + 1, payload, node_id=step.get("nid"), fanout=_fanout_of(step))
                 d = await self._await(r.id, step.get("wait_timeout_s"))
                 worker_runs.append(d)
                 if d.status == "ok" and (t := self._text(d)):
@@ -456,7 +473,7 @@ class Orchestrator:
         else:
             runs = [
                 await self._start_step(
-                    orc_id, step["agent_id"], "worker", i + 1, subtasks[i], node_id=step.get("nid")
+                    orc_id, step["agent_id"], "worker", i + 1, subtasks[i], node_id=step.get("nid"), fanout=_fanout_of(step)
                 )
                 for i, step in enumerate(steps)
             ]
@@ -502,6 +519,7 @@ class Orchestrator:
         order: int,
         payload: str,
         node_id: str | None = None,
+        fanout: dict[str, Any] | None = None,
     ) -> Run:
         """建一条 run 记录并启动它。
 
@@ -546,8 +564,65 @@ class Orchestrator:
             await session.commit()
             await session.refresh(run)
 
+        # ── 这一步配了「分派」：把上游清单每项交给这个助手的**一个实例**并行处理 ──
+        # 这里**不执行这个助手本身**，而是拿这条 run 当"分派容器"：
+        #   解析清单 → 建 N 条子执行（挂在同一个节点下）→ 等齐 → 把 N 份产出合并成
+        #   这一步的产出交下游（下游如果是编排者，就是它来验证总结 ✓ 与既定语义一致）。
+        if fanout and str(fanout.get("mode") or "").strip() == "list":
+            await self._run_fanout(run, fanout, payload)
+            return run
+
+        # 常规路径：启动这一跳（分派那条路自己会起 N 个子执行，不走这里）
         await run_service.start(run.id, definition, payload)
         return run
+
+    async def _run_fanout(self, run: Run, fanout: dict[str, Any], payload: str) -> None:
+        """把这一步按「上游清单」分派出去；解析不出清单就如实退化成单实例。"""
+        from ..fanout import dispatch, parse_items
+
+        items = parse_items(payload)
+        if not items:
+            # 退化成普通单实例：不清空、不报错，跑就对了；但要留下原因
+            logger.info("编排 %s：节点 %s 配了分派，但上游不是清单 → 按单实例执行", run.orchestration_id, run.node_id)
+            from ..runner import run_service
+            from ..schemas import AgentDefinition
+
+            definition = AgentDefinition.model_validate(run.definition_snapshot or {})
+            await run_service.start(run.id, definition, payload)
+            return
+
+        async with SessionLocal() as session:
+            fresh = await session.get(Run, run.id)
+            if fresh is None:  # pragma: no cover
+                return
+            result = await dispatch(
+                parent_run=fresh,
+                agent_id=str(fanout.get("agent") or run.agent_id),
+                definition_snapshot=dict(run.definition_snapshot or {}),
+                items=items,
+                max_items=fanout.get("max"),
+                wait_s=fanout.get("wait_s"),
+            )
+            # 合并产出：把 N 份产出按项拼成可读清单交下游（下游多是编排者，由它验证总结）
+            merged = "\n\n".join(
+                f"## {it['label']}\n{it['summary']}" for it in result.get("items") or []
+            )
+            fresh.status = "ok" if result.get("succeeded") else "error"
+            fresh.output = {"content": merged}
+            fresh.usage = {
+                **(fresh.usage or {}),
+                "fanout": {
+                    "total": result.get("total"),
+                    "succeeded": result.get("succeeded"),
+                    "failed": [x.get("index") for x in (result.get("failed") or [])],
+                    "truncated": result.get("truncated"),
+                    "timed_out": result.get("timed_out"),
+                },
+            }
+            fresh.ended_at = now_ms()
+            if not result.get("succeeded"):
+                fresh.error = "分派出来的每一路都失败了"
+            await session.commit()
 
     async def _await(self, run_id: str, wait_s: int | None = None) -> Run:
         """等这一步跑完 —— ``wait_s`` = **这一跳的等待上限**（None=平台默认，-1=一直等）。

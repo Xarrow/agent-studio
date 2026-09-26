@@ -30,6 +30,7 @@ import {
 } from "@/components/StepExecPanel";
 import { api } from "@/lib/api";
 import type {
+  FanoutItem,
   Agent,
   EdgeOrder,
   OrchestrationDetail,
@@ -110,8 +111,8 @@ export function PlaygroundConsole() {
   const [orcId, setOrcId] = useState<string | null>(null);
   const [detail, setDetail] = useState<OrchestrationDetail | null>(null);
   const [runStates, setRunStates] = useState<Record<string, NodeState>>({});
-  /** 分派进度：节点 nid → 这条路跑了几条 / 成了几条 / 败了几条（画布上显示「3/5」） */
-  const [fanout, setFanout] = useState<Record<string, { total: number; done: number; failed: number }>>({});
+  /** 分派结果：节点 nid → 那几路各自的结果（画布上就地叠卡、抽屉里按项看、徽标算 3/5） */
+  const [fanout, setFanout] = useState<Record<string, FanoutItem[]>>({});
   const [outputs, setOutputs] = useState<Record<string, string>>({});
   const [hitl, setHitl] = useState<{ nid: string; runId: string; payload: Record<string, unknown> | null } | null>(null);
   /** 每个子步骤的 trace —— **一份数据两处用**（画布上的节点摘要 + 下方详情），
@@ -618,8 +619,8 @@ export function PlaygroundConsole() {
     const states: Record<string, NodeState> = {};
     const outs: Record<string, string> = {};
     const used = new Set<string>();
-    /** 分派计数：节点 nid → 这一路跑了几条、成了几条（画布上显示「3/5」） */
-    const fanoutBox = new Map<string, { total: number; done: number; failed: number }>();
+    /** 分派明细：节点 nid → 那几路（画布上就地叠卡） */
+    const fanoutItems: Record<string, FanoutItem[]> = {};
     for (const s of steps) {
       // 精确匹配优先（同一助手多节点/多实例时，只有它能贴对）
       const exact = s.node_id ? graph.nodes.find((n) => n.nid === s.node_id) : undefined;
@@ -627,12 +628,19 @@ export function PlaygroundConsole() {
       if (!hit) continue;
       used.add(hit.nid);
       if (s.parent_run_id) {
-        // 分派出来的实例：状态不覆盖节点本身，而是累加到节点的「几路完成」计数上
-        const box = fanoutBox.get(hit.nid) ?? { total: 0, done: 0, failed: 0 };
-        box.total += 1;
-        if (s.status === "ok") box.done += 1;
-        else if (["error", "aborted"].includes(s.status)) box.failed += 1;
-        fanoutBox.set(hit.nid, box);
+        // 分派出来的实例：**不覆盖节点本身的状态**（节点反映的是"分派这一步"），
+        // 而是收进该节点的分派列表 —— 画布就地叠卡、抽屉按项看。
+        const arr = (fanoutItems[hit.nid] ??= []);
+        const idx = s.item_index ?? arr.length;
+        arr.push({
+          index: idx,
+          label: s.item_label || `第 ${idx + 1} 项`,
+          status: s.status,
+          durationMs: s.ended_at && s.started_at ? s.ended_at - s.started_at : null,
+          input: s.input_text ?? "",
+          output: s.output_text ?? "",
+          runId: s.run_id,
+        });
         continue;
       }
       states[hit.nid] = STATUS_TO_NODE[s.status] ?? "wait";
@@ -640,8 +648,12 @@ export function PlaygroundConsole() {
     }
     setRunStates(states);
     setOutputs(outs);
-    // 分派进度（同一节点多条执行）—— 画布据此在节点上显示「3/5」之类
-    setFanout(Object.fromEntries(fanoutBox));
+    // 分派明细（同一节点多条执行）—— 画布据此显示「3/5」徽标 + 就地叠卡
+    setFanout(
+      Object.fromEntries(
+        Object.entries(fanoutItems).map(([k, v]) => [k, [...v].sort((a, b) => a.index - b.index)]),
+      ),
+    );
   }, [detail, graph]);
 
   useEffect(() => {

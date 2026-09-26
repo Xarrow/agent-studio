@@ -110,6 +110,18 @@ def normalise(graph: Graph | None) -> tuple[list[dict[str, Any]], list[dict[str,
         wt = (n or {}).get("wait_timeout_s")
         if isinstance(wt, int) and not isinstance(wt, bool):
             item["wait_timeout_s"] = wt
+        # **分派**（一个助手 → 多个实例并行处理一份清单）也必须跟着节点走到底：
+        # 同一个白名单陷阱，wait_timeout_s 当年就是在这里被丢掉、界面设了等于没设。
+        # fanout="list" = 按上游产出的清单每项一路。
+        fm = str((n or {}).get("fanout") or "").strip()
+        if fm:
+            item["fanout"] = fm
+            fmax = (n or {}).get("fanout_max")
+            if isinstance(fmax, int) and not isinstance(fmax, bool) and fmax > 0:
+                item["fanout_max"] = fmax
+            fagent = str((n or {}).get("fanout_agent") or "").strip()
+            if fagent:
+                item["fanout_agent"] = fagent
         nodes.append(item)
 
     ids = {n["nid"] for n in nodes}
