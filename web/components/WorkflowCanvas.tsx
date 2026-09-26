@@ -1520,14 +1520,17 @@ export function WorkflowCanvas({
    * 默认**不分派**（不配就是原来的单实例行为，老流程零影响）。
    */
   const setFanoutCfg = useCallback(
-    (nid: string, patch: { fanout?: string; fanout_max?: number; fanout_budget?: number }) => {
+    (
+      nid: string,
+      patch: { fanout?: string; fanout_max?: number; fanout_budget?: number; fanout_agent?: string },
+    ) => {
       onChange({
         ...graph,
         nodes: graph.nodes.map((n) => {
           if (n.nid !== nid) return n;
           if (patch.fanout === "") {
-            // 关掉分派：把两个字段都摘掉（不留在图里当垃圾）
-            const { fanout: _f, fanout_max: _m, ...rest } = n;
+            // 关掉分派：这几个字段一起摘掉（不留在图里当垃圾）
+            const { fanout: _f, fanout_max: _m, fanout_budget: _b, fanout_agent: _a, ...rest } = n;
             return rest;
           }
           return { ...n, ...patch };
@@ -1863,6 +1866,30 @@ export function WorkflowCanvas({
                       <option value="5000">5 千</option>
                       <option value="20000">2 万</option>
                       <option value="100000">10 万</option>
+                    </select>
+                  </div>
+                )}
+                {(graph.nodes.find((n) => n.nid === nid)?.fanout ?? "") === "list" && (
+                  /* **派给谁**：默认本助手（同一助手多实例）；也可以派给别的助手 ——
+                     典型用法：编排者开始并把活派给「通用助手」多路并行，最后自己验证汇总。 */
+                  <div className="flex items-center gap-2 px-3 py-1.5">
+                    <span className="flex-1" style={{ color: "var(--color-muted)" }}>派给谁</span>
+                    <select
+                      value={graph.nodes.find((n) => n.nid === nid)?.fanout_agent ?? ""}
+                      onChange={(e) =>
+                        setFanoutCfg(nid, {
+                          fanout: "list",
+                          fanout_agent: e.target.value || undefined,
+                        })
+                      }
+                      title="这些子任务交给谁干：默认本节点的助手（同一助手多实例）；也可以派给别的助手"
+                      className="rounded-[5px] border px-1 py-0.5 text-[12px] max-w-[130px]"
+                      style={{ borderColor: "var(--color-border)", background: "var(--color-surface)", color: "var(--color-text)" }}
+                    >
+                      <option value="">本助手</option>
+                      {agents.map((a) => (
+                        <option key={a.id} value={a.id}>{a.name}</option>
+                      ))}
                     </select>
                   </div>
                 )}
@@ -2529,6 +2556,11 @@ export function WorkflowCanvas({
                                 {it.status === "ok" ? "✓" : it.status === "error" || it.status === "aborted" ? "✕" : "◌"}
                               </span>
                               <span className="min-w-0 flex-1 truncate text-[12px]">{it.label}</span>
+                              {it.status === "waiting_hitl" && (
+                                <span className="shrink-0 text-[10.5px]" style={{ color: "var(--color-warn)" }}>
+                                  等你确认
+                                </span>
+                              )}
                               {(it.tokensIn ?? 0) + (it.tokensOut ?? 0) > 0 && (
                                 <span className="shrink-0 text-[10.5px] tabular-nums" style={{ color: "var(--color-muted)" }}>
                                   {(it.tokensIn ?? 0) + (it.tokensOut ?? 0)} token
@@ -3431,6 +3463,11 @@ export function WorkflowCanvas({
                         <span style={{ color: "var(--color-ok)" }}>{done} 完成</span>
                         {failed > 0 && <span style={{ color: "var(--color-err)" }}>· {failed} 失败</span>}
                         {(() => {
+                          // 「等你确认」要单独说 —— 这不是失败也不是在跑，是**要人做点什么**
+                          const waiting = list.filter((x) => x.status === "waiting_hitl").length;
+                          return waiting ? <span style={{ color: "var(--color-warn)" }}>· {waiting} 等你确认</span> : null;
+                        })()}
+                        {(() => {
                           // 合计 token：各路相加（"这一次分派一共烧了多少"，不用点开也算得出）
                           const tk = list.reduce((a, x) => a + (x.tokensIn ?? 0) + (x.tokensOut ?? 0), 0);
                           return tk ? <span>· 合计 {tk >= 1000 ? `${(tk / 1000).toFixed(1)}k` : tk} token</span> : null;
@@ -3466,7 +3503,11 @@ export function WorkflowCanvas({
                             {it.status === "ok" ? "✓" : it.status === "error" || it.status === "aborted" ? "✕" : "◌"}
                           </span>
                           <span className="min-w-0 flex-1 truncate text-[11.5px]">{it.label}</span>
-                          {it.durationMs ? (
+                          {it.status === "waiting_hitl" ? (
+                            <span className="shrink-0 text-[10.5px]" style={{ color: "var(--color-warn)" }}>
+                              等你确认
+                            </span>
+                          ) : it.durationMs ? (
                             <span className="shrink-0 text-[10.5px] tabular-nums" style={{ color: "var(--color-muted)" }}>
                               {(it.durationMs / 1000).toFixed(1)}s
                             </span>

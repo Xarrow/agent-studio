@@ -112,6 +112,13 @@ _SUMMARY_PROMPT = """你是一个任务协调者。用户交给整个团队的�
 _RUN_ORIGIN: ContextVar[str] = ContextVar("orchestration_origin", default="playground")
 
 
+def _not_fork_tool(ref: Any) -> bool:
+    """定义快照里的 tool ref 不是"分派"工具（子实例不允许再分派 —— 深度 1）。"""
+    if isinstance(ref, dict):
+        return str(ref.get("name") or ref.get("ref") or "") != "fork"
+    return str(ref or "") != "fork"
+
+
 def _fanout_of(step: dict[str, Any]) -> dict[str, Any] | None:
     """把节点上的「分派」配置整理成内核要的形状；没配 = None（按单实例跑）。
 
@@ -592,14 +599,32 @@ class Orchestrator:
             await run_service.start(run.id, definition, payload)
             return
 
+        # 派给**别的助手**时，子实例要跑的是那个助手 → 定义快照也得换成它的。
+        # （原来这里固定用本节点的快照 = 拿错提示词/模型/工具；"派给谁"这个能力会因此失真）
+        target_id = str(fanout.get("agent") or run.agent_id)
+        child_snapshot = dict(run.definition_snapshot or {})
+        if target_id != run.agent_id:
+            async with SessionLocal() as _s:
+                from ..models import Agent as _Agent
+
+                _t = await _s.get(_Agent, target_id)
+                if _t is not None:
+                    child_snapshot = dict(_t.definition or {})
+                else:
+                    logger.warning("分派目标助手不存在：%s → 退回本节点的助手", target_id)
+                    target_id = run.agent_id
+        child_snapshot["tools"] = [
+            t for t in (child_snapshot.get("tools") or []) if _not_fork_tool(t)
+        ]
+
         async with SessionLocal() as session:
             fresh = await session.get(Run, run.id)
             if fresh is None:  # pragma: no cover
                 return
             result = await dispatch(
                 parent_run=fresh,
-                agent_id=str(fanout.get("agent") or run.agent_id),
-                definition_snapshot=dict(run.definition_snapshot or {}),
+                agent_id=target_id,
+                definition_snapshot=child_snapshot,
                 items=items,
                 max_items=fanout.get("max"),
                 wait_s=fanout.get("wait_s"),
@@ -609,7 +634,12 @@ class Orchestrator:
             merged = "\n\n".join(
                 f"## {it['label']}\n{it['summary']}" for it in result.get("items") or []
             )
-            fresh.status = "ok" if result.get("succeeded") else "error"
+            # 有路在等人工确认 → 这一步标「等你确认」（画布/记录上直接看得见要人做什么），
+            # 而不是假装跑完了，也不是硬等到超时。确认完再重跑这一步即可收拢（幂等）。
+            if result.get("waiting"):
+                fresh.status = "waiting_hitl"
+            else:
+                fresh.status = "ok" if result.get("succeeded") else "error"
             fresh.output = {"content": merged}
             fresh.usage = {
                 **(fresh.usage or {}),
@@ -619,6 +649,7 @@ class Orchestrator:
                     "failed": [x.get("index") for x in (result.get("failed") or [])],
                     "truncated": result.get("truncated"),
                     "timed_out": result.get("timed_out"),
+                    "waiting": [x.get("index") for x in (result.get("waiting") or [])],
                     # 各路合计（展示用）：花在哪一路、这一步一共烧了多少，一眼看得见
                     "tokens_in": (result.get("usage") or {}).get("tokens_in"),
                     "tokens_out": (result.get("usage") or {}).get("tokens_out"),
@@ -626,8 +657,11 @@ class Orchestrator:
                 },
             }
             fresh.ended_at = now_ms()
-            if not result.get("succeeded"):
+            if not result.get("succeeded") and not result.get("waiting"):
                 fresh.error = "分派出来的每一路都失败了"
+            elif result.get("waiting"):
+                who = "、".join(f"第 {x['index'] + 1} 项" for x in result["waiting"])
+                fresh.error = f"{who} 在等你确认（去「管理」确认后那一路会自己跑完）"
             await session.commit()
 
     async def _await(self, run_id: str, wait_s: int | None = None) -> Run:

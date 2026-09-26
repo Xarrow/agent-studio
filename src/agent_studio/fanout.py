@@ -43,6 +43,10 @@ DEFAULT_WAIT_S = 900.0
 SUMMARY_CHARS = 80
 POLL_SECONDS = 0.5
 TERMINAL = ("ok", "error", "aborted")
+#: 「在等人点头」的状态 —— 它不是失败，但也**不能傻等**：
+#: 人什么时候点确认是未知的，等着只会把这一步拖到「最长等多久」超时，
+#: 而超时报告会把原因说成"跑太久"（误导）。所以一发现就**立即收尾并如实上报**。
+WAITING = ("waiting_hitl",)
 
 
 # --------------------------------------------------------------------------- #
@@ -204,6 +208,8 @@ async def dispatch(
     # 正在跑的不打断（半途掐断反而更浪费），停下的如实标原因，之后可单独重跑。
     timed_out = False
     budget_hit = False
+    #: 在等人工确认的那几路（发现就收尾，不傻等到超时）
+    waiting: list[str] = []
     while True:
         async with db_factory() as session:
             rows = list((await session.execute(select(Run).where(Run.id.in_(ids)))).scalars())
@@ -243,6 +249,13 @@ async def dispatch(
                     budget_hit = True
         if all(r.status in TERMINAL for r in rows):
             break
+        # 某一路在等人点头 → 立即收尾：人什么时候点是未知的，傻等只会把这一步拖到
+        # 「最长等多久」超时，而超时报告会把原因说成"跑太久"（误导）。
+        _waiting_now = [r.id for r in rows if r.status in WAITING]
+        if _waiting_now:
+            waiting = _waiting_now
+            logger.info("分派：有 %d 路在等人工确认，先收尾（确认后那一路会自己跑完）", len(_waiting_now))
+            break
         if time.monotonic() > deadline:
             timed_out = True
             break
@@ -276,7 +289,13 @@ async def dispatch(
             }
         )
     ok_n = sum(1 for x in out_items if x["status"] == "ok")
+    waiting_items = [
+        {"index": x["index"], "label": x["label"], "run_id": x["run_id"]}
+        for x in out_items
+        if x["status"] in WAITING
+    ]
     return {
+        "waiting": waiting_items,
         # 合计（**只作展示**：不写进这一步的顶层 usage，否则全局用量统计会重复计一次）
         "usage": {"tokens_in": tok_in, "tokens_out": tok_out, "llm_calls": calls},
         "ok": ok_n > 0,
@@ -332,6 +351,12 @@ def render_summary(result: dict[str, Any]) -> str:
     ]
     if result.get("truncated"):
         lines.append(f"注意：项数超过上限，只处理了前 {result['capped_at']} 项（其余未处理）")
+    if result.get("waiting"):
+        who = "、".join(f"第 {x['index'] + 1} 项" for x in result["waiting"])
+        lines.append(
+            f"注意：{who} 正在**等你确认**（它要用的工具需要你点头）—— "
+            "去「管理」确认后那一路会自己跑完，然后重跑这一步就能把它并进来（已成功的不会重跑）"
+        )
     if result.get("budget_stopped"):
         lines.append(
             f"注意：已花超过预算（{result.get('budget_tokens')} token），"
@@ -378,6 +403,9 @@ async def handle_tool_call(**kwargs: Any) -> str:
     ctx = current_run_ctx()
     run_id = ctx.get("run_id")
     agent_id = ctx.get("agent_id")
+    # 派给谁：默认自己；填了别的助手名字就用它（编排者派活给通用助手走这条）
+    target_name = str(kwargs.get("agent") or "").strip()
+    target_agent_id = agent_id
     if not run_id or not agent_id:
         # 不在执行上下文里（例如被别处直接调用）——明确拒绝，而不是建出无主的执行
         return "分派失败：当前不在一次执行上下文中（fork 只能由正在运行的助手调用）。"
@@ -390,13 +418,31 @@ async def handle_tool_call(**kwargs: Any) -> str:
         parent = await session.get(Run, run_id)
         if parent is None:
             return f"分派失败：找不到当前执行记录 {run_id}。"
-        snap = dict(parent.definition_snapshot or {})
+        if target_name:
+            from sqlalchemy import select as _select
+
+            from .models import Agent as _Agent
+
+            pick = (
+                await session.execute(_select(_Agent).where(_Agent.name == target_name))
+            ).scalars().first()
+            if pick is None:
+                names = [
+                    a.name for a in (await session.execute(_select(_Agent))).scalars()
+                ]
+                return f"分派失败：没有叫「{target_name}」的助手（现有：{'、'.join(names)}）"
+            target_agent_id = pick.id
+            # 子实例要跑的是**那个助手**，所以定义快照也得是它自己的
+            # （用父执行的快照去跑另一个助手 = 拿错提示词/模型/工具）
+            snap = dict(pick.definition or {})
+        else:
+            snap = dict(parent.definition_snapshot or {})
         # 子实例去掉分派工具（双保险：load_tools 那层也会按深度过滤）
         snap["tools"] = [t for t in (snap.get("tools") or []) if _tool_name(t) != "fork"]
 
     result = await dispatch(
         parent_run=parent,
-        agent_id=agent_id,
+        agent_id=target_agent_id or agent_id,
         definition_snapshot=snap,
         items=items,
         max_items=kwargs.get("max_items"),
@@ -439,6 +485,13 @@ TOOL_SCHEMA: dict[str, Any] = {
         "budget_tokens": {
             "type": "integer",
             "description": "这一批最多花多少 token（可选，默认不限）。超了会停下还没开始的那几路并如实上报",
+        },
+        "agent": {
+            "type": "string",
+            "description": (
+                "用**哪个助手**去跑这些子任务（填助手名字，可选）。"
+                "不填 = 用你自己。编排者派活给别人（例如"通用助手"）时填这里"
+            ),
         },
     },
     "required": ["tasks"],

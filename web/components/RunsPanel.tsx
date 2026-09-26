@@ -622,6 +622,10 @@ export function RunsPanel() {
                             >
                               分派 {it.fanout.total} 路 · {it.fanout.ok} 成功
                               {it.fanout.failed ? ` · ${it.fanout.failed} 失败` : ""}
+                              {(() => {
+                                const w = it.fanout.items.filter((x) => x.status === "waiting_hitl").length;
+                                return w ? ` · ${w} 等你确认` : "";
+                              })()}
                               {fanoutOpen.has(it.id) ? " ▾" : " ▸"}
                             </button>
                           )}
@@ -661,6 +665,11 @@ export function RunsPanel() {
                                   {f.status === "ok" ? "✓" : f.status === "error" || f.status === "aborted" ? "✕" : "◌"}
                                 </span>
                                 <span className="min-w-0 flex-1 truncate">{f.label || `第 ${f.index + 1} 项`}</span>
+                                {f.status === "waiting_hitl" && (
+                                  <span className="shrink-0" style={{ color: "var(--color-warn)" }}>
+                                    等你确认
+                                  </span>
+                                )}
                                 {f.tokens_in + f.tokens_out > 0 && (
                                   <span className="shrink-0 tabular-nums" style={{ color: "var(--color-muted)" }}>
                                     {fmt.num(f.tokens_in + f.tokens_out)} token

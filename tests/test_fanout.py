@@ -13,6 +13,8 @@ from __future__ import annotations
 import asyncio
 import uuid
 
+from sqlalchemy import select
+
 import pytest
 
 from agent_studio import fanout
@@ -617,3 +619,62 @@ async def test_no_budget_means_all_items_run(client):
     )
     assert result["budget_stopped"] == 0
     assert result["succeeded"] == 3
+
+
+# --------------------------------------------------------------------------- #
+# 11. 某一路在等人工确认：**不傻等**（否则会被「最长等多久」拖成"超时"，原因还说错）
+# --------------------------------------------------------------------------- #
+async def test_waiting_item_ends_the_step_instead_of_burning_the_timeout(client):
+    from agent_studio.config import settings
+    from agent_studio.models import Run
+    from agent_studio.runtimes import register_runtime
+
+    register_runtime(SlowSpanRuntime())
+    settings.max_concurrent_runs = 0
+    aid = await _agent_with_stub(client)
+    parent = await _parent_run(aid, node_id="n1")
+
+    async def _flip_one_to_waiting(created_ids: list[str]) -> None:
+        """把最后一路改成"等你确认"（模拟它挂上了需要点头的工具）。"""
+        await asyncio.sleep(0.35)
+        async with SessionLocal() as s:
+            row = await s.get(Run, created_ids[-1])
+            if row is not None and row.status not in ("ok", "error", "aborted"):
+                row.status = "waiting_hitl"
+                await s.commit()
+
+    task = asyncio.create_task(
+        fanout.dispatch(
+            parent_run=parent,
+            agent_id=aid,
+            definition_snapshot=dict(parent.definition_snapshot or {}),
+            items=["甲", "乙", "丙"],
+            wait_s=600,  # 故意给一个很大的等待上限：不该等到它
+            db_factory=SessionLocal,
+        )
+    )
+    guard = 0
+    while not task.done() and guard < 2000:
+        await dispatcher.tick()
+        # 第一次 tick 之后把最后一路翻成等待确认
+        if guard == 6:
+            async with SessionLocal() as s:
+                rows = list(
+                    (
+                        await s.execute(
+                            select(Run).where(Run.parent_run_id == parent.id)
+                        )
+                    ).scalars()
+                )
+            if rows:
+                asyncio.create_task(_flip_one_to_waiting([r.id for r in rows]))
+        await asyncio.sleep(0.02)
+        guard += 1
+    assert task.done(), "发现有人等确认就该收尾，不该耗到超时"
+    result = await task
+    waited_for = 0.02 * guard
+    assert waited_for < 60, f"等太久了（{waited_for:.1f}s）：应该在发现 waiting_hitl 后立刻收尾"
+    assert result["waiting"], "要如实报出哪几路在等确认"
+    assert result["timed_out"] is False, "这不是超时，不该报成超时"
+    text = fanout.render_summary(result)
+    assert "等你确认" in text and "管理" in text, text
