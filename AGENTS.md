@@ -85,3 +85,14 @@ FastAPI + SQLite（后端 `src/agent_studio/`）+ Next.js（前端 `web/`）。
 6. **provider 写法**：界面给用户看的是显示名（「火山引擎（豆包）」），运行层只认 slug（`volcengine`）。
    所有入口都经过 `providers.canonical_provider()` 收敛 —— 新增入口也走它。
 7. `git commit -m` 带引号会被截断 → 用 `-F <file>`；`write_file` 拒写 `/etc/systemd/system/`。
+8. **图上的值 ≠ 执行层的值**（2026-09-26 实测，代价：功能静默不生效）：
+   `normalise()` 只保留 `nid/agent_id`，`graph_to_spec()` 之前的所有节点字段都会被丢掉 ——
+   「节点字段要影响执行」的链路是三段：`schemas → normalise/graph_to_spec → service 消费点`，
+   必须逐段 grep 到底，并配一条**护栏测试**（`tests/test_wait_timeout.py`：值保留 + 脏值丢弃 + 各模式都带上）。
+   完成判据：**界面改一个值 → 落库回读 → 真跑一次 → 该次执行的 spec 里看得到它**。
+   另外 `GET /api/orchestrations` 的**列表**不回 spec，要看 spec 得打详情接口。
+9. **`absolute bottom-*` 的浮动控件在手机上会掉出屏幕**（2026-09-26 实测）：
+   flex 项的 `min-height` 默认 `auto`(=min-content)，内容比行高时它不肯缩 → 整列被撑高 →
+   右下角缩放键 / 左下角「整理」落到 y=898（视口 844）且页面不可滚 = **够不到**。
+   画布那一列必须有 `min-h-0`（`min-h-0 min-w-0 flex-1`），让内部 `overflow-auto` 自己滚。
+   **横向溢出为 0 ≠ 移动端没问题** —— 浮动控件要在 390×844 真机视口量 `rect.bottom ≤ innerHeight`。
