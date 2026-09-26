@@ -1285,6 +1285,37 @@ export function WorkflowCanvas({
   }, []);
 
 
+  /**
+   * **画布键位**（对齐 Dify：dify-ref/web/app/components/workflow/shortcuts/definitions.ts）。
+   *
+   * Dify 的键位表：Delete/Backspace 删选中、Mod+C/V 复制粘贴、Mod+D 复制、
+   * Mod+Z/Mod+Shift+Z 撤销重做、Mod+0/1/2 缩放档位、Mod+=/- 放大缩小…
+   * 我们这里先落**视图类**那几个（都在本组件里就能做，零风险 ✓）；删除/复制/撤销
+   * 要接父组件的流程结构，等 Dify 对照分析出来后一起做 ✓
+   *
+   * 为什么不接管输入框里的按键：用户在任务卡/名字里打字时，Esc 和 Mod+Z 该归输入框 ✗
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      const tag = (t?.tagName || "").toLowerCase();
+      if (tag === "input" || tag === "textarea" || t?.isContentEditable) return;
+      if (e.key === "Escape") {
+        onSelect(null);
+        setZoomMenu(false);
+        return;
+      }
+      if (!(e.metaKey || e.ctrlKey)) return;
+      if (e.key === "0") { e.preventDefault(); fitView(); }
+      else if (e.key === "1") { e.preventDefault(); zoomTo(1); }
+      else if (e.key === "=" || e.key === "+") { e.preventDefault(); zoomStep(+0.1); }
+      else if (e.key === "-" || e.key === "_") { e.preventDefault(); zoomStep(-0.1); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onSelect, fitView, zoomTo, zoomStep]);
+
+
   const growTask = () => {
     const el = taskBoxRef.current;
     if (!el) return;
