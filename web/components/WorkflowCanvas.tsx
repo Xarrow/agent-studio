@@ -2527,7 +2527,8 @@ export function WorkflowCanvas({
             // 手机：全宽、占屏 88%（≈740px）· 桌面：居中、880 宽、占屏 72%
             // 关：点遮罩 / 点 ✕（都不跳页 ✓ 仍在本页就地 ✓）
             const BW = narrow ? "100%" : Math.min(880, Math.max(720, layout.w - 64));
-            const panelH = narrow ? "88vh" : Math.max(560, Math.min(760, layout.h - 40));
+            // fixed 锚视口 → 顶部不会再被页面标题栏挡住（上一版 88vh absolute 就被挡了 ✗）
+            const panelH = narrow ? "76vh" : Math.max(560, Math.min(760, layout.h - 40));
             const statusText =
               st === "run" ? "执行中" : st === "ask" ? "等你确认" : st === "ok" ? "完成" : st === "err" ? "出错" : st === "stale" ? "已失效" : "还没跑";
             const statusColor =
@@ -2537,7 +2538,7 @@ export function WorkflowCanvas({
               <div
                 ref={detailPanelRef}
                 data-float="detail"
-                className="absolute z-30 flex flex-col overflow-hidden rounded-[12px] border shadow-lg"
+                className="fixed z-50 flex flex-col overflow-hidden border shadow-2xl"
                 style={{
                   // 底部抽屉：贴画布底、水平居中（手机全宽）
                   left: narrow ? 0 : "50%",
@@ -2716,7 +2717,6 @@ export function WorkflowCanvas({
                   </div>
                 )}
 
-                  // 「模型」与「工具」**分两行、各带标签** —— 模型名混在工具名里是语义错误 ✗（用户："没有任何设计"）
                   <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]" style={{ color: "var(--color-muted)" }}>
                     {agent?.definition?.model?.name && (
                       <>
