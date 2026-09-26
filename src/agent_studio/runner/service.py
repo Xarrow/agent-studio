@@ -43,6 +43,7 @@ from ..runtimes import get_runtime
 from ..runtimes.base import HitlResponse, TurnContext, UnifiedEvent
 from ..schemas import AgentDefinition, MemoryPolicyRead, ToolSpec
 from ..security.crypto import decrypt
+from .gate import GateTimeout, backoff_s, gate, is_transient
 from .metrics import MetricsCollector
 
 logger = logging.getLogger(__name__)
@@ -369,11 +370,21 @@ class RunService:
         context: TurnContext | None = None
         api_key: str | None = None
 
+        #: 并发闸的槽位拿没拿到（finally 里据此决定要不要还）
+        _gated = False
         try:
             async with SessionLocal() as session:
                 run = await session.get(Run, run_id)
                 if run is None:  # pragma: no cover
                     return
+                # **并发闸**：同时跑太多会把 provider key 打到限流，用户看到的却是"这一步失败"。
+                # 拿不到槽位就在**这里等**（run 状态还是 pending，界面上显示「排队中」），
+                # 等到超过 run_gate_wait_s 才失败，并说清是"排队太久"而不是模型不行。
+                if settings.max_concurrent_runs > 0:
+                    _waited = await gate.acquire(run_id, settings.run_gate_wait_s)
+                    _gated = True
+                    if _waited > 1:
+                        logger.info("执行 %s 排队 %.1fs 后拿到槽位", run_id, _waited)
                 tools = await load_tools(session, run.agent_id)
                 api_key, cred_base_url = await resolve_credential(definition, session)
                 # 凭据上的 base_url 必须补进定义 —— 否则 compile / 压缩 / 提炼
@@ -392,34 +403,59 @@ class RunService:
                 run.status = "running"
                 await session.commit()
 
-            compiled = await runtime.compile(
-                definition,
-                api_key=api_key,
-                tools=tools,
-                agent_id=run.agent_id,
-                work_dir=str(resolve_work_dir(definition)),
-                context=context,
-            )
+            # ── 重试：429 / 5xx / 连接断 / provider 侧读超时，都是「等一下就好」的事 ——
+            #    不该让这一步直接报废（用户看到的会是「模型不行」，其实是我们在限流里）。
+            #    **用户自己设的执行超时不在重试之列**（is_transient 会拒掉）：
+            #    那是用户的上限，重试只会让它更慢，还会掩盖真正的问题。
+            for _attempt in range(1, settings.run_retry_max + 2):
+                try:
+                    compiled = await runtime.compile(
+                        definition,
+                        api_key=api_key,
+                        tools=tools,
+                        agent_id=run.agent_id,
+                        work_dir=str(resolve_work_dir(definition)),
+                        context=context,
+                    )
 
-            timeout = definition.limits.timeout_s or settings.default_timeout_s
+                    timeout = definition.limits.timeout_s or settings.default_timeout_s
 
-            async def consume() -> None:
-                nonlocal seq, status, hitl_payload
-                async for ev in runtime.run(compiled, run_input):
-                    ev = ev.model_copy(update={"run_id": run_id, "seq": seq})
-                    seq += 1
-                    collector.on_event(ev)
-                    await self._persist_event(run_id, ev)
-                    self.bus.publish(run_id, ev.model_dump(mode="json", exclude={"raw"}))
-                    # 注意：**不能**在 run_end 时提前 return —— AgentScope 在
-                    # ReplyEndEvent 之后还会 yield 一个最终 Msg
-                    # （reply_stream(yield_final_msg=True)），提前退出会丢掉它，
-                    # 导致 run.output 为空。让它自然结束即可。
-                    if ev.type == "hitl_request":
-                        status = "waiting_hitl"
-                        hitl_payload = dict(ev.payload)
+                    async def consume() -> None:
+                        nonlocal seq, status, hitl_payload
+                        async for ev in runtime.run(compiled, run_input):
+                            ev = ev.model_copy(update={"run_id": run_id, "seq": seq})
+                            seq += 1
+                            collector.on_event(ev)
+                            await self._persist_event(run_id, ev)
+                            self.bus.publish(run_id, ev.model_dump(mode="json", exclude={"raw"}))
+                            # 注意：**不能**在 run_end 时提前 return —— AgentScope 在
+                            # ReplyEndEvent 之后还会 yield 一个最终 Msg
+                            # （reply_stream(yield_final_msg=True)），提前退出会丢掉它，
+                            # 导致 run.output 为空。让它自然结束即可。
+                            if ev.type == "hitl_request":
+                                status = "waiting_hitl"
+                                hitl_payload = dict(ev.payload)
 
-            await asyncio.wait_for(consume(), timeout=timeout)
+                    await asyncio.wait_for(consume(), timeout=timeout)
+                    break
+                except asyncio.CancelledError:
+                    raise
+                except Exception as _exc:  # noqa: BLE001
+                    if _attempt > settings.run_retry_max or not is_transient(_exc):
+                        raise
+                    collector.retries = _attempt
+                    _wait = backoff_s(_attempt, settings.run_retry_backoff_s)
+                    logger.warning(
+                        "执行 %s 第 %s 次遇到临时错误（%s: %s），%.1fs 后重试",
+                        run_id, _attempt, type(_exc).__name__, _exc, _wait,
+                    )
+                    if compiled is not None:
+                        try:
+                            await runtime.dispose(compiled)
+                        except Exception:  # noqa: BLE001, pragma: no cover
+                            logger.debug("重试前 dispose 失败", exc_info=True)
+                        compiled = None
+                    await asyncio.sleep(_wait)
 
             if status == "waiting_hitl":
                 async with SessionLocal() as session:
@@ -439,10 +475,17 @@ class RunService:
             status, error = "aborted", "用户中断"
         except TimeoutError:
             status, error = "error", f"执行超时（>{definition.limits.timeout_s}s）"
+        except GateTimeout as exc:
+            # 拿不到并发槽位：说清是「排队太久」，别让用户以为是模型不行
+            logger.warning("Run %s 排队超时：%s", run_id, exc)
+            status, error = "error", str(exc)
         except Exception as exc:
             logger.exception("Run %s 失败", run_id)
             status, error = "error", f"{type(exc).__name__}: {exc}"
         finally:
+            # 不管成功失败都要**归还并发槽位**，否则跑几次之后闸就被占死了
+            if _gated:
+                gate.release()
             if compiled is not None:
                 try:
                     await runtime.dispose(compiled)

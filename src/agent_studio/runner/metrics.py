@@ -103,6 +103,8 @@ class MetricsCollector:
         self.default_model = model
 
         self.iteration = 0
+        #: 因为临时错误重试了几次（0 = 一次就过）—— 进 usage，界面上看得见
+        self.retries = 0
         self.llm_calls: list[LlmCallRecord] = []
         self.tool_calls: list[ToolCallRecord] = []
 
@@ -266,6 +268,8 @@ class MetricsCollector:
             "tokens_cache_read": sum(r.tokens_cache_read for r in self.llm_calls),
             "errors": sum(1 for r in self.llm_calls if r.status != "ok")
             + sum(1 for r in self.tool_calls if r.status != "ok"),
+            # 临时错误重试了几次（0 = 一次就过）—— 用户能从记录里看出"这次跑了两遍"
+            "retries": self.retries,
         }
 
     def flush_open(self, ts: int) -> None:

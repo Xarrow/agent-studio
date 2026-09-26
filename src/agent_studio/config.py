@@ -34,6 +34,16 @@ class Settings(BaseSettings):
 
     # 运行约束
     default_timeout_s: int = 300
+    #: **同时最多跑几个执行**（并发闸）。0 = 不限制。
+    #: 为什么要有它：画布同层节点并发 + 多条流程 + 定时触发会一起打在同一个 key 上，
+    #: 没有闸就容易自己把自己限流（用户看到的却是"这一步失败"）。
+    max_concurrent_runs: int = 4
+    #: 执行遇到**临时性错误**（429 / 5xx / 连接断 / provider 侧读超时）最多再试几次
+    run_retry_max: int = 2
+    #: 重试退避基数（秒）：1.5 → 3 → 6（封顶 30）
+    run_retry_backoff_s: float = 1.5
+    #: 排队最多等多久（秒）；超时则明确失败并说明"排队太久"。0 = 一直等
+    run_gate_wait_s: float = 300.0
     max_tool_output_bytes: int = 64 * 1024        # 工具结果截断上限
     llm_payload_limit_bytes: int = 256 * 1024     # LLM 请求/响应入库上限（超出截断）
     stream_flush_interval_ms: int = 100           # SSE 批量推送间隔

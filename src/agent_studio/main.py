@@ -40,7 +40,13 @@ async def lifespan(_app: FastAPI):
     await reap_orphan_runs(boot_ms)
     discover_runtimes()
     runtimes = [rt.name for rt in list_runtimes()]
-    logger.info("Agent Studio 启动 | db=%s | runtimes=%s", settings.db_path, runtimes)
+    logger.info(
+        "Agent Studio 启动 | db=%s | runtimes=%s | 并发上限=%s | 重试=%s",
+        settings.db_path,
+        runtimes,
+        settings.max_concurrent_runs or "不限",
+        settings.run_retry_max,
+    )
     # 安全红线：没配主密钥 = 密钥等于没加密（源码里那把默认钥匙是公开的）。
     # 这里**大声说出来**，而不是安静地继续跑 —— 否则没人会去配。
     from .security.crypto import master_key
