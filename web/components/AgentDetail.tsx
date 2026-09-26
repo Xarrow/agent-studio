@@ -564,10 +564,8 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
               </select>
               {def.role === "orchestrator" && (
                 <div className="mt-2 rounded-[8px] border p-2.5" style={{ borderColor: "var(--color-border)" }}>
-                  <div className="text-[12px] leading-[1.6]" style={{ color: "var(--color-muted)" }}>
-                    选「编排者」后，这个助手**自带四项职责**：分析任务 → 管理上下文 → 验证结果 → 归纳总结。
-                    下面是它运行时会拿到的**定义**（可以按这个助手改；留空就用平台默认那份）。
-                  </div>
+                  {/* 两行解释常驻 ✗ → 收进 ?（内容一字未删 ✓ 只是不再每次都占视觉） */}
+                  <Hint text="选「编排者」后，这个助手自带四项职责：分析任务 → 管理上下文 → 验证结果 → 归纳总结。下面是它运行时会拿到的定义（可以按这个助手改；留空就用平台默认那份）。" />
                   <textarea
                     className="input mono mt-2"
                     rows={8}
@@ -685,7 +683,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
               >
                 <div className="flex items-center gap-1.5">
                   <span className="text-[13px] font-semibold">工作目录</span>
-                  <Hint text="这个助手读写文件、跑命令时落东西的目录。它建在平台沙箱里面，出不了沙箱；下面权限里说的「工作目录内」，指的就是它。" />
+                  <Hint text="这个助手读写文件、跑命令时落东西的目录。它建在平台沙箱里面，出不了沙箱；下面权限里说的「工作目录内」，指的就是它。 只填一个名字（例如 报价调研），不要写路径 —— 写了会被拒绝并退回平台默认。它与下面的权限配合：目录内按权限放行，出目录一律要你点头。" />
                 </div>
                 <input
                   className="input mono mt-2 w-full"
@@ -693,10 +691,11 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                   placeholder="留空 = 用平台共用的那个"
                   onChange={(e) => patch({ workspace: e.target.value })}
                 />
-                <p className="mt-1.5 text-[11.5px] leading-relaxed" style={{ color: "var(--color-muted)" }}>
-                  只填一个名字（例如 <code>报价调研</code>），不要写路径 —— 写了也会被拒绝并退回平台默认。
-                  实际位置：<code>data/work/{def.workspace?.trim() || "…"}</code>
-                  {" "}它与下面的权限配合：<b>目录内</b>按权限放行，<b>出目录</b>一律要你点头。
+                {/* 原来这里是一段三行的解释常驻在表单里 ✗ —— 只有**第一次配**才需要读它，
+                    每次滚动都要重读一遍是浪费。解释搬到旁边那个 ?（点击可开 ✓ 触屏可用 ✓），
+                    只留下**会变的那一段**：实际路径（每改一次名字它就变，必须实时可见 ✓） */}
+                <p className="mt-1 text-[11.5px] mono" style={{ color: "var(--color-muted)" }}>
+                  实际位置：data/work/{def.workspace?.trim() || "…"}
                 </p>
               </div>
 
