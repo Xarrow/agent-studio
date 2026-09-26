@@ -34,6 +34,18 @@ class Settings(BaseSettings):
 
     # 运行约束
     default_timeout_s: int = 300
+
+    # ── LLM 客户端（httpx）网络超时 ──────────────────────────────────────
+    # 为什么必须显式设：不设时用的是 openai SDK 默认 **connect=5s** ✗
+    # 跨境线路（家宽 → 方舟/DeepSeek）一次 TLS 握手超 5s 很常见 ✓
+    # 而 SDK 还会自己重试 + AgentScope 再包一层 → 一次抖动放大成 60~70s 的"零字节"，
+    # 最终报 APITimeoutError（现场：4 轮调用里第 4 轮 68.6s 后失败 ✓）
+    llm_connect_timeout_s: float = 20.0
+    #: 读到第一个字节之后，两次数据之间的最长等待（流式；给足，别掐断长思考 ✓）
+    llm_read_timeout_s: float = 600.0
+    #: SDK 自身重试次数。**建议 0** ✓ —— 平台层已有"上游抖动自动重试"（gate.is_transient）
+    #  两层都重试会成倍放大等待 ✗ 交给平台那一层就够 ✓
+    llm_sdk_retries: int = 0
     #: **同时最多跑几个执行**（并发闸）。0 = 不限制。
     #: 为什么要有它：画布同层节点并发 + 多条流程 + 定时触发会一起打在同一个 key 上，
     #: 没有闸就容易自己把自己限流（用户看到的却是"这一步失败"）。

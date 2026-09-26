@@ -17,6 +17,8 @@ from ...schemas import AgentDefinition, ModelSpec, ToolSpec
 
 logger = logging.getLogger(__name__)
 
+from ...config import settings
+
 #: provider 别名 → AgentScope Credential 类名
 PROVIDER_CREDENTIALS: dict[str, str] = {
     "deepseek": "DeepSeekCredential",
@@ -130,7 +132,26 @@ def build_model(spec: ModelSpec, api_key: str | None):
     kwargs: dict[str, Any] = {"credential": cred, "model": spec.name, "stream": True}
     if params:
         kwargs["parameters"] = params
-    return model_cls(**kwargs)
+
+    # **显式指定网络超时**（不设 = SDK 默认 connect 5s ✗ 跨境太紧，见 config 里的说明 ✓）
+    # 经 AgentScope 的 client_kwargs 透传给 `openai.AsyncClient(...)` ✓
+    # 用 try 兜住：极老的 agentscope 版本不认 client_kwargs 时会退回原行为 ✓
+    try:
+        import httpx
+        kwargs["client_kwargs"] = {
+            "timeout": httpx.Timeout(
+                connect=settings.llm_connect_timeout_s,
+                read=settings.llm_read_timeout_s,
+                write=settings.llm_read_timeout_s,
+                pool=settings.llm_read_timeout_s,
+            ),
+            "max_retries": settings.llm_sdk_retries,
+        }
+        return model_cls(**kwargs)
+    except TypeError:
+        logger.warning("该 AgentScope 版本不支持 client_kwargs，退回默认网络超时（connect 5s）")
+        kwargs.pop("client_kwargs", None)
+        return model_cls(**kwargs)
 
 
 # --------------------------------------------------------------------------- #
