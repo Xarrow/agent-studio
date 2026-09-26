@@ -110,16 +110,26 @@ def item_label(item: str, index: int) -> str:
     return f"第 {index + 1} 项 · {head}" if head else f"第 {index + 1} 项"
 
 
-def item_prompt(item: str, index: int, total: int) -> str:
+def item_prompt(item: str, index: int, total: int, work_dir: str = "") -> str:
     """交给实例的输入。
 
     刻意写得**明确而有限**：只处理这一项、不要替其它项做决定 ——
     否则每路都会试图总结全局，产出互相重复、汇总时噪声很大。
+
+    ``work_dir`` 非空时把"你这一路的目录"写明白：**必须**说，
+    否则模型会自己编绝对路径（实测写 `/result.md`、`/mnt/data/result.md`），
+    越出沙箱 → 权限引擎要求人工确认 → 无人值守的批量分派整步卡在"等你确认"。
     """
-    return (
+    text = (
         f"这是分派给你的第 {index + 1} 项（共 {total} 项），"
         f"只处理这一项，不要处理其它项、也不要总结全局：\n\n{item}"
     )
+    if work_dir:
+        text += (
+            f"\n\n（你这一路的工作目录是 `{work_dir}`。要落文件就用**相对路径**，"
+            "例如 `result.md` —— 它会写在这个目录里；不要用 `/` 开头的绝对路径。）"
+        )
+    return text
 
 
 # --------------------------------------------------------------------------- #
@@ -184,17 +194,24 @@ async def dispatch(
         for i, item in enumerate(picked):
             if i in done:
                 continue
+            child_snapshot = (
+                _isolated_snapshot(definition_snapshot, parent_run, i)
+                if isolate_workspace
+                else definition_snapshot
+            )
+            # 工作目录必须**写进提示词**：不然模型会自己编绝对路径（/result.md），
+            # 越出沙箱就要人工确认 —— 无人值守的分派会整步卡在"等你确认"（实测）。
             child = Run(
                 agent_id=agent_id,
                 agent_version=parent_run.agent_version,
                 runtime=definition_snapshot.get("runtime") or parent_run.runtime,
                 status="pending",
-                input={"text": item_prompt(item, i, len(picked))},
-                definition_snapshot=(
-                    _isolated_snapshot(definition_snapshot, parent_run, i)
-                    if isolate_workspace
-                    else definition_snapshot
-                ),
+                input={
+                    "text": item_prompt(
+                        item, i, len(picked), str(child_snapshot.get("workspace") or "")
+                    )
+                },
+                definition_snapshot=child_snapshot,
                 started_at=now_ms(),
                 # 归属：同一个节点、第几路、谁发起的
                 node_id=parent_run.node_id if parent_run.node_id else None,

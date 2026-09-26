@@ -1282,3 +1282,123 @@ async def test_each_item_runs_with_its_own_definition_snapshot(client, monkeypat
     assert d["status"] == "ok", d
     assert len(seen) == 3 and len(set(seen)) == 3, f"每路必须拿到自己的工作目录：{seen}"
     assert all(seen), seen
+
+
+def test_work_dir_hint_is_told_to_the_model():
+    """把「你的工作目录在哪」写进模型看到的任务文本 —— 写文件要用绝对路径，模型不能靠猜。"""
+    from agent_studio.runner.service import _with_work_dir_hint
+
+    out = _with_work_dir_hint("做点事", "/srv/x/data/work/fanout-abc-1")
+    assert "做点事" in out and "/srv/x/data/work/fanout-abc-1" in out
+    assert "绝对路径" in out
+    # dict 形态（分派子执行的 input）同样要带上
+    out2 = _with_work_dir_hint({"text": "做点事", "fanout_agent": "ag_x"}, "/tmp/w")
+    assert out2["text"].startswith("做点事") and "/tmp/w" in out2["text"]
+    assert out2["fanout_agent"] == "ag_x", "别把别的字段弄丢"
+    # 其它类型原样返回（不炸）
+    assert _with_work_dir_hint(None, "/tmp/w") is None
+
+
+def test_item_prompt_tells_the_instance_where_its_work_dir_is():
+    """每一路必须**被告知**自己的工作目录 —— 否则模型自己编绝对路径（/result.md），
+    越出沙箱就要人工确认，无人值守的分派会整步卡在"等你确认"（实测）。"""
+    from agent_studio.fanout import item_prompt
+
+    plain = item_prompt("甲", 0, 2)
+    assert "工作目录" not in plain, "不隔离时不该多嘴（不改变原行为）"
+    hinted = item_prompt("甲", 0, 2, "fanout-abc-1")
+    assert "fanout-abc-1" in hinted
+    assert "相对路径" in hinted and "/result.md" not in hinted.replace("例如", "")
+
+
+async def test_isolated_children_are_told_their_own_dir(client):
+    from agent_studio.config import settings
+    from agent_studio.db import SessionLocal
+    from agent_studio.models import Run
+    from agent_studio.runtimes import register_runtime
+
+    register_runtime(SpanRuntime())
+    settings.max_concurrent_runs = 0
+    owner = await _agent_with_stub(client)
+    d = await _run_orchestration_with_pump(
+        client,
+        {
+            "mode": "single",
+            "steps": [
+                {
+                    "agent_id": owner,
+                    "carry_prev": False,
+                    "nid": "n1",
+                    "fanout": "list",
+                    "fanout_max": 2,
+                    "fanout_workspace": "isolate",
+                }
+            ],
+            "task": "- 甲\n- 乙",
+        },
+    )
+    assert d["status"] == "ok", d
+    async with SessionLocal() as s:
+        for child in [
+            await s.get(Run, x["run_id"]) for x in d["steps"] if x.get("parent_run_id")
+        ]:
+            ws = (child.definition_snapshot or {}).get("workspace") or ""
+            assert ws and ws in (child.input or {}).get("text", ""), (
+                f"子执行 {child.id} 的提示词里必须写出它自己的目录 {ws!r}"
+            )
+
+
+async def test_isolated_items_do_not_clobber_each_others_files(client):
+    """两路写**同名文件**：隔离模式下两份都在（共享模式会互相覆盖）—— 用真实 work_dir 验。"""
+    from pathlib import Path
+
+    from agent_studio.config import settings
+    from agent_studio.db import SessionLocal
+    from agent_studio.models import Run
+    from agent_studio.runtimes import register_runtime
+
+    class WritingRuntime(SpanRuntime):
+        """跑的时候往**真实工作目录**里写一个同名文件（模拟"各自产出各自的结果"）。"""
+
+        name = "span-test-runtime"
+
+        def run(self, agent, run_input):  # noqa: ANN001
+            wd = Path(str(getattr(self, "work_dir", "") or "."))
+            wd.mkdir(parents=True, exist_ok=True)
+            text = str((run_input or {}).get("text") or "")
+            (wd / "result.md").write_text(text[:30], encoding="utf-8")
+            return super().run(agent, run_input)
+
+    register_runtime(WritingRuntime())
+    settings.max_concurrent_runs = 0
+    owner = await _agent_with_stub(client)
+    d = await _run_orchestration_with_pump(
+        client,
+        {
+            "mode": "single",
+            "steps": [
+                {
+                    "agent_id": owner,
+                    "carry_prev": False,
+                    "nid": "n1",
+                    "fanout": "list",
+                    "fanout_max": 2,
+                    "fanout_workspace": "isolate",
+                }
+            ],
+            "task": "- 甲项\n- 乙项",
+        },
+    )
+    assert d["status"] == "ok", d
+    kids = sorted(
+        [s for s in d["steps"] if s.get("parent_run_id")], key=lambda x: x.get("item_index") or 0
+    )
+    contents = []
+    async with SessionLocal() as s:
+        for k in kids:
+            row = await s.get(Run, k["run_id"])
+            ws = (row.definition_snapshot or {}).get("workspace")
+            p = Path(settings.work_dir) / str(ws) / "result.md"
+            assert p.exists(), f"第 {k['item_index'] + 1} 路没在自己的目录里写出文件：{p}"
+            contents.append(p.read_text(encoding="utf-8"))
+    assert len(contents) == 2 and len(set(contents)) == 2, f"两份产物必须各有内容：{contents}"

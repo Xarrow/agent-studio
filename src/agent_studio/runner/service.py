@@ -418,6 +418,27 @@ def effective_timeout(base_timeout: int, fanout_wait_s: int = 0) -> int:
     return base_timeout
 
 
+def _with_work_dir_hint(run_input: Any, work_dir: Any) -> Any:
+    """把「你的工作目录在哪」明确告诉模型。
+
+    为什么必须显式说（实测踩到）
+    --------------------------
+    平台的写文件工具要求**绝对路径**，而模型并不知道自己的工作目录，于是它自己猜一个
+    （实测它猜了 ``/mnt/data/result.md``）→ 越出权限边界 → 不是"等人确认"就是直接报错。
+    "分几路跑、各写各的文件"这种最典型的用法会因此直接废掉。
+    这句提示进的是**模型看到的任务文本**，不影响编排层记录的原始任务。
+    """
+    hint = (
+        f"\n\n【平台信息】你的工作目录：{work_dir}\n"
+        f"读写文件请用这个目录下的**绝对路径**（例如 {work_dir}/result.md）。"
+    )
+    if isinstance(run_input, str):
+        return run_input + hint
+    if isinstance(run_input, dict) and isinstance(run_input.get("text"), str):
+        return {**run_input, "text": run_input["text"] + hint}
+    return run_input
+
+
 class RunService:
     """执行编排：compile → run → 落库 → 广播。
 
@@ -541,6 +562,9 @@ class RunService:
                 # 凭据上的 base_url 必须补进定义 —— 否则 compile / 压缩 / 提炼
                 # 都会用错端点（火山引擎 plan key 打 /api/v3 会 401）
                 definition = _with_base_url(definition, cred_base_url)
+                # 工作目录两处都要用：编译时告诉运行时（=权限边界），以及**告诉模型**它在哪
+                work_dir = resolve_work_dir(definition)
+                run_input = _with_work_dir_hint(run_input, work_dir)
                 # 组装上下文：短期记忆（会话历史）+ 长期记忆（召回注入）
                 # 注意：这里只产出**平台中立**的 TurnContext，不含任何框架对象
                 policy = await get_policy(session, run.agent_id)
@@ -565,7 +589,7 @@ class RunService:
                         api_key=api_key,
                         tools=tools,
                         agent_id=run.agent_id,
-                        work_dir=str(resolve_work_dir(definition)),
+                        work_dir=str(work_dir),
                         context=context,
                     )
 
