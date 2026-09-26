@@ -95,7 +95,8 @@ export interface Agent {
 
 export interface Tool {
   id: string;
-  kind: "builtin" | "http" | "code";
+  /** builtin=运行时内置；http=自定义 HTTP；code=代码；fork=**平台原生**（助手的"分身"能力） */
+  kind: "builtin" | "http" | "code" | "fork";
   name: string;
   description: string;
   input_schema: Record<string, unknown>;
@@ -424,6 +425,9 @@ export interface FanoutItem {
   input: string;
   output: string;
   runId: string;
+  /** 这一路用了多少 token（成本可见：花在哪一路一眼看得出） */
+  tokensIn?: number;
+  tokensOut?: number;
 }
 
 export interface OrchestrationStepRead {

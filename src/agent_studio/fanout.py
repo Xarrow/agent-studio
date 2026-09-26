@@ -210,8 +210,15 @@ async def dispatch(
         rows = list((await session.execute(select(Run).where(Run.id.in_(ids)))).scalars())
     rows.sort(key=lambda r: int(r.item_index or 0))
     out_items: list[dict[str, Any]] = []
+    tok_in = tok_out = calls = 0
     for r in rows:
         text = _text_of(r.output) or (r.error or "")
+        u = r.usage or {}
+        tin = int(u.get("tokens_in") or u.get("prompt_tokens") or 0)
+        tout = int(u.get("tokens_out") or u.get("completion_tokens") or 0)
+        tok_in += tin
+        tok_out += tout
+        calls += int(u.get("llm_calls") or 0)
         out_items.append(
             {
                 "index": int(r.item_index or 0),
@@ -220,10 +227,14 @@ async def dispatch(
                 "run_id": r.id,
                 "duration_ms": (r.ended_at - r.started_at) if (r.ended_at and r.started_at) else None,
                 "summary": text[:SUMMARY_CHARS],
+                "tokens_in": tin,
+                "tokens_out": tout,
             }
         )
     ok_n = sum(1 for x in out_items if x["status"] == "ok")
     return {
+        # 合计（**只作展示**：不写进这一步的顶层 usage，否则全局用量统计会重复计一次）
+        "usage": {"tokens_in": tok_in, "tokens_out": tok_out, "llm_calls": calls},
         "ok": ok_n > 0,
         "total": len(out_items),
         "succeeded": ok_n,
@@ -270,6 +281,12 @@ def render_summary(result: dict[str, Any]) -> str:
     if result["failed"]:
         bad = "、".join(str(x["index"] + 1) for x in result["failed"])
         lines.append(f"失败项：第 {bad} 项（错误见各自记录，可单独重跑）")
+    u = result.get("usage") or {}
+    if u.get("tokens_in") or u.get("tokens_out"):
+        lines.append(
+            f"各路合计：{len(result['items'])} 路用了 {u.get('tokens_in', 0) + u.get('tokens_out', 0)} token"
+            f"（{u.get('tokens_in', 0)} 入 / {u.get('tokens_out', 0)} 出）"
+        )
     lines.append("每项完整产出都已存档（按 run_id 可查/回放）；需要细节时再读取，不要凭摘要推断全文。")
     return "\n".join(lines)
 

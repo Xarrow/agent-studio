@@ -132,6 +132,9 @@ export default function ToolsPage() {
     builtin: tools.filter((t) => t.kind === "builtin").length,
     http: tools.filter((t) => t.kind === "http").length,
     code: tools.filter((t) => t.kind === "code").length,
+    // 分派是**平台原生**工具（助手因此能把自己的任务拆给多个实例并行处理）——
+    // 不归进"内置/HTTP/代码"里的任何一类，否则用户按分类找会找不到它。
+    fork: tools.filter((t) => t.kind === "fork").length,
   };
 
   return (
@@ -180,6 +183,7 @@ export default function ToolsPage() {
           </p>
           <p className="text-[11.5px] text-[var(--color-muted)] mt-1">
             内置 {counts.builtin} · HTTP {counts.http} · 代码 {counts.code}
+            {counts.fork > 0 ? ` · 分派 ${counts.fork}` : ""}
           </p>
         </div>
         <div className="flex gap-2">
@@ -220,6 +224,9 @@ export default function ToolsPage() {
           ["builtin", "内置"],
           ["http", "HTTP"],
           ["code", "代码"],
+          // 分派是平台给助手的"分身"能力（一个助手 → 多个实例并行）——单独一类，
+          // 否则用户在"内置/HTTP/代码"里翻不到它
+          ["fork", "分派"],
         ].map(([k, label]) => (
           <button
             key={k}

@@ -640,6 +640,8 @@ export function PlaygroundConsole() {
           input: s.input_text ?? "",
           output: s.output_text ?? "",
           runId: s.run_id,
+          tokensIn: Number((s.usage as Record<string, unknown> | undefined)?.tokens_in ?? 0) || 0,
+          tokensOut: Number((s.usage as Record<string, unknown> | undefined)?.tokens_out ?? 0) || 0,
         });
         continue;
       }

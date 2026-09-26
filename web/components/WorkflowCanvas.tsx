@@ -2499,6 +2499,11 @@ export function WorkflowCanvas({
                                 {it.status === "ok" ? "✓" : it.status === "error" || it.status === "aborted" ? "✕" : "◌"}
                               </span>
                               <span className="min-w-0 flex-1 truncate text-[12px]">{it.label}</span>
+                              {(it.tokensIn ?? 0) + (it.tokensOut ?? 0) > 0 && (
+                                <span className="shrink-0 text-[10.5px] tabular-nums" style={{ color: "var(--color-muted)" }}>
+                                  {(it.tokensIn ?? 0) + (it.tokensOut ?? 0)} token
+                                </span>
+                              )}
                               {it.durationMs ? (
                                 <span className="shrink-0 text-[10.5px] tabular-nums" style={{ color: "var(--color-muted)" }}>
                                   {(it.durationMs / 1000).toFixed(1)}s
@@ -3371,6 +3376,11 @@ export function WorkflowCanvas({
                         <span>·</span>
                         <span style={{ color: "var(--color-ok)" }}>{done} 完成</span>
                         {failed > 0 && <span style={{ color: "var(--color-err)" }}>· {failed} 失败</span>}
+                        {(() => {
+                          // 合计 token：各路相加（"这一次分派一共烧了多少"，不用点开也算得出）
+                          const tk = list.reduce((a, x) => a + (x.tokensIn ?? 0) + (x.tokensOut ?? 0), 0);
+                          return tk ? <span>· 合计 {tk >= 1000 ? `${(tk / 1000).toFixed(1)}k` : tk} token</span> : null;
+                        })()}
                         {list.length > 3 && (
                           <button
                             type="button"

@@ -617,6 +617,10 @@ class Orchestrator:
                     "failed": [x.get("index") for x in (result.get("failed") or [])],
                     "truncated": result.get("truncated"),
                     "timed_out": result.get("timed_out"),
+                    # 各路合计（展示用）：花在哪一路、这一步一共烧了多少，一眼看得见
+                    "tokens_in": (result.get("usage") or {}).get("tokens_in"),
+                    "tokens_out": (result.get("usage") or {}).get("tokens_out"),
+                    "llm_calls": (result.get("usage") or {}).get("llm_calls"),
                 },
             }
             fresh.ended_at = now_ms()
