@@ -27,13 +27,57 @@ from typing import Any
 
 from sqlalchemy import select
 
-from .models import Agent, AgentTool, Tool, now_ms
+from .models import Agent, AgentSkill, AgentTool, Skill, Tool, now_ms
 
 logger = logging.getLogger(__name__)
 
 #: 默认助手的名字 —— 用户能在 Agents 页改名，改名后这里不再干扰（按名字判存在）
 ORCHESTRATOR_NAME = "编排者"
 WORKER_NAME = "通用助手"
+
+#: 内置示范 Skill（新平台不该是空的 —— 打开就有两个能用的"做法"可参考可改）。
+#: Skill 是**程序性记忆**：某种任务类型的步骤+坑。清单常驻提示、正文按需加载，
+#: 所以写得具体一点不吃上下文。
+BUILTIN_SKILLS: dict[str, str] = {
+    "web-research": """---
+name: web-research
+description: 查资料并写成简报的步骤：先搜再抓、来源优先、结论在前
+---
+
+# 网络调研简报
+
+适用：用户要你查某个主题/产品/事件并给结论。
+
+1. 先 web_search 拿全景（2-3 个不同角度的关键词各搜一次，别只搜一遍）。
+2. 挑**来源可靠**的前 2-4 条用 fetch 抓原文 —— 官方文档/一手数据 > 媒体转述。
+3. 结论在前：先给答案（一段话），再列依据（每条附来源链接）。
+4. 有数字要交叉核对：两个来源说法不一致时如实指出，别只挑顺眼的。
+
+坑：
+- fetch 被拒（403/内容类型）就换下一条结果，别死磕同一个 URL。
+- 搜索结果是摘要不是原文 —— 引用具体数据前必须 fetch 原文确认。
+""",
+    "data-analysis": """---
+name: data-analysis
+description: 用 python 工具处理数据：先小样本验证、打印中间结果、结论带数字
+---
+
+# 数据处理与分析
+
+适用：算数、统计、清洗数据、批量转换 —— 只要涉及具体数字就别心算。
+
+1. 数据先落盘（write 写进工作目录），代码从文件读 —— 中间结果可复查。
+2. 第一版只跑**前 5 行**（head），确认格式没理解错再跑全量。
+3. 每一步 print 中间结果（行数、列名、合计）—— 错误在早期暴露，不在最后。
+4. 结论必须带具体数字和口径（"共 1,204 行，其中 37 行日期缺失"），
+   不要写"大部分/很多"。
+
+坑：
+- 超时默认 30s：数据大就分批处理，每批打印进度。
+- 中文文件用 encoding="utf-8" 显式指定，别依赖系统默认。
+- 复杂逻辑先写 3 行最小验证（比如排序对不对），再套到全量上。
+""",
+}
 
 ORCHESTRATOR_PROMPT = """你是一条流程的**起点**，负责把用户的目标变成"能被干掉的活"：
 
@@ -60,12 +104,14 @@ WORKER_PROMPT = """你负责把交给你的**这一件事**做扎实、做完。
 """
 
 #: 编排者默认挂的工具（分派是核心，其余是"干活前先看一眼"的只读工具）
-ORCHESTRATOR_TOOLS = ("fork", "read", "glob", "grep")
+ORCHESTRATOR_TOOLS = ("fork", "read", "glob", "grep", "fetch", "web_search")
 #: 通用助手默认挂的工具（干活的那套）。
 #: **刻意不含 bash**：平台的权限引擎对"跑命令"一律要求人工点头（`accept_edits` 只自动放行
 #: **工作目录内**的读写），默认挂上它 = 无人值守的第一步就卡在等确认。
 #: 需要跑命令时自己在 Agents 页加上 —— 那时按平台规矩确认即可。
-WORKER_TOOLS = ("read", "write", "edit", "glob", "grep")
+#: fetch/web_search/python 是平台原生内核工具（见 native_tools.py）：
+#: 查资料、算数据是"通用"助手的底座能力。
+WORKER_TOOLS = ("read", "write", "edit", "glob", "grep", "fetch", "web_search", "python")
 
 
 async def ensure_default_agents(session: Any) -> dict[str, Any]:
@@ -148,5 +194,76 @@ async def ensure_default_agents(session: Any) -> dict[str, Any]:
             attached_fork = True
             logger.info("已给「%s」挂上分派工具（一个任务分几路跑要有起点）", ORCHESTRATOR_NAME)
 
+    # ③ 已存在的默认助手**补挂缺失的内核工具**（fetch/web_search/python）。
+    #    与 fork 同一逻辑：只补缺、不摘用户自己加/减的其它工具。
+    #    升级前建的「通用助手」不知道这三个工具 → 没有它们，查资料/算数据是瘸的。
+    from .native_tools import NATIVE_TOOLS as _NATIVE
+
+    attached_native = 0
+    for agent_name, want in (
+        (ORCHESTRATOR_NAME, ORCHESTRATOR_TOOLS),
+        (WORKER_NAME, WORKER_TOOLS),
+    ):
+        row_ = existing.get(agent_name)
+        if row_ is None:
+            continue
+        have_ids = set(
+            r[0]
+            for r in (
+                await session.execute(select(AgentTool.tool_id).where(AgentTool.agent_id == row_.id))
+            )
+        )
+        for n in _NATIVE:
+            if n not in want:
+                continue
+            tid = tools.get(n)
+            if tid and tid not in have_ids:
+                session.add(AgentTool(agent_id=row_.id, tool_id=tid))
+                attached_native += 1
+                logger.info("已给「%s」补挂内核工具 %s（升级前建的，缺这个）", agent_name, n)
+                # definition.tools 同步补引用（前端读的是 definition）
+                d = row_.definition or {}
+                d.setdefault("tools", [])
+                if not any(t.get("name") == n for t in d["tools"]):
+                    d["tools"].append({"ref": tid, "name": n, "enabled": True})
+                row_.definition = d
     await session.commit()
-    return {"created": created, "attached_fork": attached_fork}
+    return {
+        "created": created,
+        "attached_fork": attached_fork,
+        "attached_native": attached_native,
+    }
+
+
+async def ensure_default_skills(session: Any) -> list[str]:
+    """内置示范 Skill 幂等入库 + 落盘（materialize 到 work_dir/skills 让 loader 读到）。
+
+    幂等规则与 ensure_default_agents 一致：按 name 找，已存在**不动**
+    （用户可能改过正文）—— 但落盘总是重做（库里改了正文要同步到运行时目录）。
+    """
+    from .api.skills import parse_skill_md
+
+    created: list[str] = []
+    for name, content in BUILTIN_SKILLS.items():
+        row = (await session.execute(select(Skill).where(Skill.name == name))).scalar_one_or_none()
+        if row is None:
+            parsed_name, description = parse_skill_md(content, name)
+            row = Skill(
+                name=parsed_name or name,
+                description=description,
+                source={"type": "builtin"},
+                content=content,
+                files={},
+            )
+            session.add(row)
+            created.append(name)
+    await session.commit()
+
+    # 落盘（含已有行 —— 正文的权威在库里，磁盘只是运行时视图）
+    from .config import settings as _settings
+
+    for name, content in BUILTIN_SKILLS.items():
+        target = _settings.work_dir / "skills" / name
+        target.mkdir(parents=True, exist_ok=True)
+        (target / "SKILL.md").write_text(content, encoding="utf-8")
+    return created

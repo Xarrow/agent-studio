@@ -54,12 +54,21 @@ async def lifespan(_app: FastAPI):
 
     async with SessionLocal() as _s:
         _seed = await ensure_default_agents(_s)
-    if _seed["created"] or _seed["attached_fork"]:
+    if _seed["created"] or _seed["attached_fork"] or _seed.get("attached_native"):
         logger.info(
-            "默认助手：新建 %s%s",
+            "默认助手：新建 %s%s%s",
             "、".join(_seed["created"]) or "无",
             "；并给编排者挂上了分派工具" if _seed["attached_fork"] else "",
+            f"；补挂内核工具 {_seed['attached_native']} 个" if _seed.get("attached_native") else "",
         )
+
+    # 内置示范 Skill（web-research / data-analysis）：空库时建、已存在不动。
+    from .defaults import ensure_default_skills
+
+    async with SessionLocal() as _s:
+        _skills = await ensure_default_skills(_s)
+    if _skills:
+        logger.info("内置示范 Skill：新建 %s", "、".join(_skills))
     discover_runtimes()
     runtimes = [rt.name for rt in list_runtimes()]
     logger.info(

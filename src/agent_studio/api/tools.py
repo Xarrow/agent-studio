@@ -196,6 +196,47 @@ async def sync_builtins(
         )
         created += 1
 
+    # ── 平台原生内核工具（fetch / web_search / python）───────────────────────
+    # 参照 Hermes 的内核工具层补齐"通用助手"的手：没有 fetch/web_search，
+    # 查资料类任务是瘸的；没有 python，算数/数据处理只能靠模型心算。
+    # 唯一真相在 native_tools.NATIVE_TOOLS（sync 与 compile 共用）。
+    from ..native_tools import NATIVE_TOOLS
+
+    for name, entry in NATIVE_TOOLS.items():
+        exists = (
+            await session.execute(select(Tool).where(Tool.kind == "native", Tool.name == name))
+        ).scalar_one_or_none()
+        # 参数签名从 schema 生成（试运行表单用）—— 与前端 schemaToFields 同一形状
+        props = entry["schema"].get("properties", {})
+        required = set(entry["schema"].get("required", []))
+        args = [
+            {
+                "name": k,
+                "required": k in required,
+                "type": {"string": "str", "integer": "int"}.get(v.get("type"), "str"),
+            }
+            for k, v in props.items()
+        ]
+        if exists is None:
+            session.add(
+                Tool(
+                    kind="native",
+                    name=name,
+                    description=entry["description"],
+                    input_schema=entry["schema"],
+                    impl={"args": args},
+                    flags=dict(entry["flags"]),
+                )
+            )
+            created += 1
+        else:
+            exists.description = entry["description"]
+            exists.input_schema = entry["schema"]
+            exists.impl = {"args": args}
+            exists.flags = dict(entry["flags"])
+            exists.updated_at = now_ms()
+            updated += 1
+
     await session.commit()
     return {
         "runtime": runtime,
@@ -234,6 +275,62 @@ async def test_tool(
 
     if row.kind == "builtin":
         return await _test_builtin_tool(row, payload.args)
+
+    if row.kind == "native":
+        # 平台原生工具：只读的（fetch/web_search）真跑；python 写类跑但
+        # 落在**服务进程自己的临时工作目录**里 —— 与正式执行同一实现，
+        # 只有目录不同（试跑不属于任何 run，没有 run 工作目录）。
+        from ..native_tools import NATIVE_TOOLS
+
+        entry = NATIVE_TOOLS.get(row.name)
+        if entry is None:
+            return {"ok": False, "error": f"未知平台原生工具: {row.name}"}
+        started = int(time.time() * 1000)
+        try:
+            if row.name == "python":
+                # 试跑不给 run 工作目录 → 在临时目录里执行，产物不落盘污染
+                import asyncio as _aio
+                import tempfile
+                from pathlib import Path
+
+                with tempfile.TemporaryDirectory() as td:
+                    code = str(payload.args.get("code", ""))
+                    script = Path(td) / "_py_tool.py"
+                    script.write_text(code, encoding="utf-8")
+                    try:
+                        p = await _aio.create_subprocess_exec(
+                            "python3",
+                            str(script),
+                            cwd=td,
+                            stdout=_aio.subprocess.PIPE,
+                            stderr=_aio.subprocess.STDOUT,
+                        )
+                        out_b, _ = await _aio.wait_for(p.communicate(), timeout=120)
+                        text = out_b.decode("utf-8", errors="replace")
+                    except Exception as exc:
+                        text = f"✗ {exc}"
+                return {
+                    "ok": True,
+                    "note": "试跑（临时目录）",
+                    "duration_ms": int(time.time() * 1000) - started,
+                    "result_size": len(text.encode("utf-8", errors="replace")),
+                    "result_preview": text[:2000],
+                }
+            result = await entry["fn"](**payload.args)
+            text = str(result)
+            return {
+                "ok": True,
+                "note": "真实执行",
+                "duration_ms": int(time.time() * 1000) - started,
+                "result_size": len(text.encode("utf-8", errors="replace")),
+                "result_preview": text[:2000],
+            }
+        except Exception as exc:
+            return {
+                "ok": False,
+                "error": str(exc),
+                "hint": "参数按签名填写；fetch 不能访问内网地址。",
+            }
 
     if row.kind == "code":
         return {

@@ -203,8 +203,8 @@ class ToolSpec(BaseModel):
     id: str = ""
     name: str
     description: str = ""
-    #: fork = 平台原生工具（执行体是平台自己的函数，不依赖任何运行时的内置清单）
-    kind: Literal["builtin", "http", "code", "fork"] = "http"
+    #: fork/native = 平台原生工具（执行体是平台自己的函数，不依赖任何运行时的内置清单）
+    kind: Literal["builtin", "http", "code", "fork", "native"] = "http"
     input_schema: dict[str, Any] = Field(default_factory=dict)
     impl: dict[str, Any] = Field(default_factory=dict)
     flags: dict[str, Any] = Field(default_factory=dict)
