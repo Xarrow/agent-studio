@@ -2523,17 +2523,11 @@ export function WorkflowCanvas({
             // 宽度：桌面 400（能舒服读正文）；窄屏取列宽 - 8，永不超出屏幕
             // 高度：桌面给**舒适区间 340~560** —— 绝不为"下面放不下"把面板压成一条 ✗
             //      （上一版就是这么干的 ✗ → 实测只有 158px 高、正文根本读不了，用户投诉"太小、没设计" ✗）
-            const BW = narrow ? Math.max(240, colW - 8) : 440;
-            // 桌面：560~760（检视面板就该占屏大部分）· 窄屏由下面的 height 直接给 72vh ✓
-            const panelH = narrow ? null : Math.max(560, Math.min(760, layout.h - 40));
-            // 水平：贴节点右侧；贴右边界就翻到左侧
-            // 垂直：与节点顶对齐；**底边会探出画布就整体上移**（保完整高度 ✓ 宁可盖住上方 ✓）
-            const toRight = at.x + (layout.W[n.nid] ?? layout.NW) + 14;
-            const flip = toRight + BW > layout.w - 6;
-            const left = narrow ? Math.max(4, at.x) : flip ? Math.max(6, at.x - BW - 14) : toRight;
-            const top = narrow
-              ? at.y + (heights[n.nid] ?? 220) + 10
-              : Math.max(6, Math.min(at.y, layout.h - (panelH ?? 400) - 8));
+            // ── **显示方式换成底部抽屉** ✗ —— 贴在节点旁的小浮层在手机上怎么调都嫌小 ✓
+            // 手机：全宽、占屏 88%（≈740px）· 桌面：居中、880 宽、占屏 72%
+            // 关：点遮罩 / 点 ✕（都不跳页 ✓ 仍在本页就地 ✓）
+            const BW = narrow ? "100%" : Math.min(880, Math.max(720, layout.w - 64));
+            const panelH = narrow ? "88vh" : Math.max(560, Math.min(760, layout.h - 40));
             const statusText =
               st === "run" ? "执行中" : st === "ask" ? "等你确认" : st === "ok" ? "完成" : st === "err" ? "出错" : st === "stale" ? "已失效" : "还没跑";
             const statusColor =
@@ -2545,13 +2539,16 @@ export function WorkflowCanvas({
                 data-float="detail"
                 className="absolute z-30 flex flex-col overflow-hidden rounded-[12px] border shadow-lg"
                 style={{
-                  transform: `translate(${left}px, ${top}px)`,
+                  // 底部抽屉：贴画布底、水平居中（手机全宽）
+                  left: narrow ? 0 : "50%",
+                  bottom: 0,
+                  transform: narrow ? undefined : "translateX(-50%)",
                   width: BW,
-                  // **固定高度**（不是只有上限 ✗）—— 检视面板要有稳定尺寸：内容少也不塌成一条 ✓
-                  // 桌面：固定高度 panelH（560~760）；**窄屏（手机）：直接占屏七成** ✗ 别再小
-                  height: panelH ?? "72vh",
-                  minHeight: panelH ?? 420,
-                  maxHeight: panelH ?? "78vh",
+                  height: panelH,
+                  borderTopLeftRadius: 16,
+                  borderTopRightRadius: 16,
+                  borderBottomLeftRadius: 0,
+                  borderBottomRightRadius: 0,
                   background: "var(--color-surface)",
                   borderColor: "var(--color-border)",
                 }}
