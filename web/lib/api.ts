@@ -417,6 +417,8 @@ export const api = {
   skills: () => request<Skill[]>("/api/skills"),
   skill: (id: string) => request<Skill>(`/api/skills/${id}`),
   deleteSkill: (id: string) => del(`/api/skills/${id}`),
+  updateSkill: (id: string, body: { name?: string; description?: string; content?: string }) =>
+    put<Skill>(`/api/skills/${id}`, body),
   importSkill: (body: {
     source: "local" | "url" | "git" | "inline";
     path?: string;

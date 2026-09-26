@@ -23,6 +23,8 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
   const [loading, setLoading] = useState(true);
   const [showImport, setShowImport] = useState(false);
   const [detail, setDetail] = useState<Skill | null>(null);
+  /** 就地编辑的 skill（null = 只读视图） */
+  const [editing, setEditing] = useState<Skill | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -139,11 +141,28 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
                     </div>
                   )}
                 </div>
-                <button className="btn text-[var(--color-err)]" onClick={() => remove(detail)}>
-                  删除
-                </button>
+                <div className="flex gap-2 shrink-0">
+                  <button className="btn" onClick={() => setEditing(detail)}>
+                    编辑
+                  </button>
+                  <button className="btn text-[var(--color-err)]" onClick={() => remove(detail)}>
+                    删除
+                  </button>
+                </div>
               </div>
 
+              {editing?.id === detail.id ? (
+                <SkillEditor
+                  skill={detail}
+                  onCancel={() => setEditing(null)}
+                  onSaved={async (s) => {
+                    setEditing(null);
+                    await load();
+                    setDetail(s);
+                  }}
+                />
+              ) : (
+                <>
               {Object.keys(detail.files ?? {}).length > 0 && (
                 <div className="mb-3">
                   <div className="text-[11.5px] text-[var(--color-muted)] mb-1">附件</div>
@@ -160,6 +179,8 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
               <pre className="text-[11.5px] whitespace-pre-wrap break-all bg-[var(--color-bg)] p-3 rounded-md max-h-[420px] overflow-auto">
                 {detail.content}
               </pre>
+                </>
+              )}
             </>
           ) : (
             <div className="h-full flex items-center justify-center text-[12.5px] text-[var(--color-muted)]">
@@ -340,6 +361,88 @@ function ImportDialog({
             {busy ? "导入中…" : "导入"}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// --------------------------------------------------------------------------- //
+function SkillEditor({
+  skill,
+  onCancel,
+  onSaved,
+}: {
+  skill: Skill;
+  onCancel: () => void;
+  onSaved: (s: Skill) => void | Promise<void>;
+}) {
+  /**
+   * 页面自定义 Skill 编辑器 —— 语法规范就是 SKILL.md 本身：
+   * description（常驻在助手提示里，一行写清"什么时候用我"）+ Markdown 正文（懒加载，按需才读）。
+   * 参照 Claude Code 的机制：description 是路由索引、正文是数据。
+   */
+  const fb = useFeedback();
+  const [content, setContent] = useState(skill.content ?? "");
+  const [busy, setBusy] = useState(false);
+
+  // 从 frontmatter 实时解析 name/description（与后端 parse_skill_md 同规则）
+  const m = content.match(/^---\s*\n([\s\S]*?)\n---\s*\n?/);
+  let fmName = skill.name;
+  let fmDesc = skill.description;
+  if (m) {
+    const nm = m[1].match(/^name:\s*(.+)$/m);
+    const dm = m[1].match(/^description:\s*(.+)$/m);
+    if (nm) fmName = nm[1].trim();
+    if (dm) fmDesc = dm[1].trim();
+  }
+  const hasFrontmatter = Boolean(m);
+  // 常驻成本提示：description 约 1 token/2 字符（中英混合估）
+  const residentTokens = Math.ceil((fmDesc?.length ?? 0) / 2);
+
+  const save = async () => {
+    if (!hasFrontmatter) {
+      fb.error("缺 frontmatter", "开头要有 --- 包住的 name 和 description（照模板改）");
+      return;
+    }
+    setBusy(true);
+    try {
+      const s = await api.updateSkill(skill.id, { content });
+      fb.success(`已保存「${s.name}」`);
+      await onSaved(s);
+    } catch (e) {
+      fb.error("保存失败", e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 text-[11.5px] text-[var(--color-muted)]">
+        <span className="mono">{fmName}</span>
+        <span>·</span>
+        <span>
+          常驻成本 ≈ {residentTokens} tokens（只有 description 进提示，正文用到才读）
+        </span>
+      </div>
+      <textarea
+        className="input mono text-[11.5px] w-full"
+        rows={16}
+        value={content}
+        onChange={(e) => setContent(e.target.value)}
+        spellCheck={false}
+      />
+      <div className="text-[11px] text-[var(--color-muted)]">
+        格式：开头的 <span className="mono">---</span> 里写 name 和 description；正文写给
+        Agent 的步骤、命令、坑。description 写"什么时候用我"，别写目录。
+      </div>
+      <div className="flex gap-2">
+        <button className="btn btn-primary" disabled={busy} onClick={save}>
+          {busy ? "保存中…" : "保存"}
+        </button>
+        <button className="btn" onClick={onCancel}>
+          取消
+        </button>
       </div>
     </div>
   );

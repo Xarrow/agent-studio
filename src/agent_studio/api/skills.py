@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..config import settings
 from ..db import get_session
 from ..models import AgentSkill, Skill, now_ms
-from ..schemas import SkillImportRequest, SkillRead
+from ..schemas import SkillImportRequest, SkillRead, SkillUpdateRequest
 
 router = APIRouter(prefix="/api/skills", tags=["skills"])
 
@@ -74,6 +74,53 @@ async def get_skill(skill_id: str, session: AsyncSession = Depends(get_session))
     row = await session.get(Skill, skill_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Skill 不存在: {skill_id}")
+    return to_read(row)
+
+
+@router.put("/{skill_id}")
+async def update_skill(
+    skill_id: str, payload: SkillUpdateRequest, session: AsyncSession = Depends(get_session)
+) -> SkillRead:
+    """页面自定义编辑：改正文/描述，**保存即落盘**（materialize 同步）。
+
+    语法规范与导入路径一致：SKILL.md（YAML frontmatter 的 name/description + Markdown 正文）。
+    description 是唯一会**常驻**在助手提示里的部分 —— 正文懒加载，写多细都不挤上下文。
+    """
+    row = await session.get(Skill, skill_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Skill 不存在: {skill_id}")
+
+    content = row.content or ""
+    if payload.content is not None:
+        content = payload.content
+    # 从（可能更新过的）正文重新解析 name/description —— 单一真相是 SKILL.md 本身
+    name, description = parse_skill_md(content, row.name)
+    if payload.name is not None:
+        name = payload.name
+    if payload.description is not None:
+        description = payload.description
+
+    row.name = name
+    row.description = description
+    row.content = content
+    source = dict(row.source or {})
+    source["type"] = source.get("type") or "inline"
+    if source["type"] not in ("inline", "builtin", "local", "url", "git"):
+        source["type"] = "inline"
+    row.source = source
+    row.updated_at = now_ms()
+    await session.commit()
+    await session.refresh(row)
+
+    # 保存即落盘（与 materialize 端点同逻辑 —— 页面编辑不该要求用户再点一次"落盘"）
+    target = settings.work_dir / "skills" / row.name
+    target.mkdir(parents=True, exist_ok=True)
+    (target / "SKILL.md").write_text(row.content or "", encoding="utf-8")
+    for rel, text in (row.files or {}).items():
+        f = target / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(text, encoding="utf-8")
+
     return to_read(row)
 
 
