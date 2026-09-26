@@ -1375,6 +1375,40 @@ export function WorkflowCanvas({
     };
   }, []);
 
+  /**
+   * **复制 / 粘贴**（对齐 Dify：Mod+C / Mod+V —— shortcuts/definitions.ts:56-67）。
+   * 内部剪贴板：复制后**切到另一条流程也能粘** ✓（与 Dify 一致）。
+   * 粘贴发新 id、位置错开 +40/+40、把**组内连线**一起带过来（组外连线不带，免得粘出悬空线 ✗）。
+   */
+  const clipRef = useRef<{
+    nodes: WorkflowNode[];
+    edges: { from: string; to: string; order?: "serial" | "parallel"; share_context?: boolean; share_memory?: boolean }[];
+  } | null>(null);
+
+  const copySel = useCallback(() => {
+    const ids = group.length ? group : selected ? [selected] : [];
+    if (!ids.length) return;
+    clipRef.current = {
+      nodes: graph.nodes.filter((n) => ids.includes(n.nid)),
+      edges: graph.edges.filter((e) => ids.includes(e.from) && ids.includes(e.to)),
+    };
+  }, [group, selected, graph]);
+
+  const pasteClip = useCallback(() => {
+    const c = clipRef.current;
+    if (!c || !c.nodes.length) return;
+    const map = new Map<string, string>();
+    const newNodes = c.nodes.map((n) => {
+      const id = `n${Math.random().toString(36).slice(2, 6)}`;
+      map.set(n.nid, id);
+      return { ...n, nid: id, x: (n.x ?? 0) + 40, y: (n.y ?? 0) + 40 };
+    });
+    const newEdges = c.edges.map((e) => ({ ...e, from: map.get(e.from) as string, to: map.get(e.to) as string }));
+    onChange({ ...graph, nodes: [...graph.nodes, ...newNodes], edges: [...graph.edges, ...newEdges] });
+    setGroup(newNodes.map((n) => n.nid));
+    onSelect(newNodes[newNodes.length - 1]?.nid ?? null);
+  }, [graph, onChange, onSelect]);
+
   /** 删掉一个节点（连带它的连线）—— 卡片上的「删除」和键盘 Delete 共用这一条路径 ✓ */
   const deleteNode = useCallback(
     (nid: string) => {
@@ -1447,6 +1481,9 @@ export function WorkflowCanvas({
       // 注意：Shift+1 的 e.key 是 "!" ✗（键盘布局差异）→ 必须用 e.code（物理键）判数字 ✓
       const digit = e.code.startsWith("Digit") ? e.code.slice(5) : /^[0-9]$/.test(e.key) ? e.key : "";
       if (e.key.toLowerCase() === "d" && selected) { e.preventDefault(); duplicateNode(selected); }
+      // 复制/粘贴：只在"确实有选中的节点"时接管，否则让浏览器做正常文本复制 ✗（不抢）
+      else if (e.key.toLowerCase() === "c" && (group.length || selected)) { e.preventDefault(); copySel(); }
+      else if (e.key.toLowerCase() === "v" && clipRef.current?.nodes.length) { e.preventDefault(); pasteClip(); }
       else if (digit === "1" && e.shiftKey) { e.preventDefault(); zoomTo(1); }
       else if (digit === "5" && e.shiftKey) { e.preventDefault(); zoomTo(0.5); }
       else if (digit === "1") { e.preventDefault(); fitView(); }
@@ -1456,7 +1493,7 @@ export function WorkflowCanvas({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onSelect, fitView, zoomTo, zoomStep, selected, group, graph, onChange, deleteNode, duplicateNode]);
+  }, [onSelect, fitView, zoomTo, zoomStep, selected, group, graph, onChange, deleteNode, duplicateNode, copySel, pasteClip]);
 
 
   const growTask = () => {
