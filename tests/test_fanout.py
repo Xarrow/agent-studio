@@ -413,3 +413,88 @@ async def test_node_fanout_runs_one_instance_per_item(client):
     assert sorted(s["item_index"] for s in kids) == [0, 1, 2]
     assert all(s["node_id"] == "n1" for s in steps if s.get("node_id"))
     assert "## 第 1 项" in box[0]["output_text"], "合并产出要按项分节（下游编排者据此验证）"
+
+
+# --------------------------------------------------------------------------- #
+# 7. 重跑：只重跑分派出去的那一路（其它路不动）
+# --------------------------------------------------------------------------- #
+async def test_rerun_one_item_leaves_the_others_alone(client):
+    from agent_studio.config import settings
+    from agent_studio.models import Run
+    from agent_studio.runtimes import register_runtime
+
+    register_runtime(SpanRuntime())
+    settings.max_concurrent_runs = 0
+    aid = await _agent_with_stub(client)
+    parent = await _parent_run(aid, node_id="n1")
+
+    result = await _dispatch_with_pump(
+        parent_run=parent,
+        agent_id=aid,
+        definition_snapshot=dict(parent.definition_snapshot or {}),
+        items=["甲", "乙"],
+        wait_s=20,
+    )
+    assert result["succeeded"] == 2
+    kids = sorted(result["items"], key=lambda x: x["index"])
+    other, bad = kids[0]["run_id"], kids[1]["run_id"]
+
+    # 把第二路改成失败（模拟"这一路挂了"）
+    async with SessionLocal() as s:
+        row = await s.get(Run, bad)
+        row.status = "error"
+        row.error = "模拟失败"
+        row.ended_at = now_ms()
+        await s.commit()
+        before_other = (await s.get(Run, other)).started_at
+
+    r = await client.post(f"/api/runs/{bad}/rerun")
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "pending"
+
+    guard = 0
+    while guard < 400:
+        await dispatcher.tick()
+        await asyncio.sleep(0.02)
+        guard += 1
+        async with SessionLocal() as s:
+            now_status = (await s.get(Run, bad)).status
+        if now_status in ("ok", "error", "aborted"):
+            break
+
+    async with SessionLocal() as s:
+        redone = await s.get(Run, bad)
+        untouched = await s.get(Run, other)
+    assert redone.status == "ok", redone.status
+    assert int((redone.usage or {}).get("reruns") or 0) == 1, "重跑要留痕（这条被重跑过几次）"
+    assert redone.input and "第 2 项" in (redone.input or {}).get("text", ""), "重跑要带原来的输入"
+    assert untouched.started_at == before_other, "别的路不该被动到"
+
+
+async def test_rerun_refuses_while_still_running(client):
+    from agent_studio.models import Run
+
+    aid = await _agent_with_stub(client)
+    parent = await _parent_run(aid, node_id="n1")
+    async with SessionLocal() as s:
+        row = await s.get(Run, parent.id)
+        row.status = "running"
+        await s.commit()
+    r = await client.post(f"/api/runs/{parent.id}/rerun")
+    assert r.status_code == 409
+    assert "还没结束" in r.json()["detail"]
+
+
+# --------------------------------------------------------------------------- #
+# 8. 权限语义：分派工具在权限引擎里按"只读"对待
+#    否则 AgentScope 每次分派前都要人确认：手动跑要点一次同意，
+#    定时/外部触发直接卡死在 waiting_hitl（现场实测踩到过）
+# --------------------------------------------------------------------------- #
+def test_fanout_tool_is_read_only_for_permission_engine():
+    from agent_studio.runtimes.agentscope_rt.compile import build_fanout_tool
+    from agent_studio.schemas import ToolSpec
+
+    spec = ToolSpec(name="fork", description="d", kind="fork", input_schema={"type": "object"})
+    tool = build_fanout_tool(spec)
+    assert getattr(tool, "is_read_only", None) is True, "分派工具必须按只读对待，否则会卡在等确认"
+    assert getattr(tool, "is_concurrency_safe", None) is False, "分派占并发配额，不与其他工具并发"

@@ -92,6 +92,8 @@ type Props = {
   onAddStep?: (agentId: string) => void;
   onSwapAgent?: (nid: string, agentId: string) => void;
   onRun?: () => void;
+  /** **重跑这一条执行**（分派出去的某一项失败时，只重跑那一路） */
+  onRetryRun?: (runId: string) => void;
   /** **只跑这一步**（单步运行）：交给父组件发一条只含该节点的编排 */
   onRunNode?: (nid: string) => void;
   running?: boolean;
@@ -172,6 +174,7 @@ export function WorkflowCanvas({
   /** 助手设置浮层的受控值（Console 点"看这个助手的设置"时传进来；不传则用内部状态） */
   configNid: configNidProp,
   onConfigNid,
+  onRetryRun,
   onDetail,
   taskText = "",
   finalText = "",
@@ -696,6 +699,8 @@ export function WorkflowCanvas({
   const [fanOpen, setFanOpen] = useState<Record<string, boolean>>({});
   /** 分派：哪一路正在就地展开看输入/输出（runId） */
   const [fanItem, setFanItem] = useState<string | null>(null);
+  /** 分派：哪一路的「重跑」已经被点了一下（等第二下确认 —— 重跑要花钱，不做误触） */
+  const [retryArm, setRetryArm] = useState<string | null>(null);
   const chainRoot = detailNid ?? null;
   const chain = (() => {
     if (!chainRoot) return null;
@@ -2490,9 +2495,10 @@ export function WorkflowCanvas({
                           it.status === "ok" ? "var(--color-ok)" : it.status === "error" || it.status === "aborted" ? "var(--color-err)" : "var(--color-accent)";
                         return (
                           <div key={it.runId} className="mb-1 rounded-[7px] border" style={{ borderColor: "var(--color-border)" }}>
+                            <div className="flex items-center gap-1">
                             <button
                               type="button"
-                              className="flex w-full items-center gap-1.5 px-2 py-[5px] text-left"
+                              className="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-[5px] text-left"
                               onClick={() => setFanItem(open ? null : it.runId)}
                             >
                               <span className="shrink-0 text-[11px]" style={{ color: tint }}>
@@ -2513,6 +2519,30 @@ export function WorkflowCanvas({
                                 {open ? "收起" : "展开"}
                               </span>
                             </button>
+                            {/* **重跑这一路**：失败的那一项单独重来，其它路不动。
+                                重跑要花钱 → 与全站一致：第一下变红问一句，第二下才真跑。 */}
+                            {onRetryRun && it.status !== "ok" && (
+                              <button
+                                type="button"
+                                title={retryArm === it.runId ? "再点一次就重跑这一路" : "只重跑这一路（其它路不动）"}
+                                className="shrink-0 rounded-[5px] px-1.5 py-[3px] text-[10.5px]"
+                                style={{
+                                  color: retryArm === it.runId ? "var(--color-err)" : "var(--color-accent)",
+                                  border: `1px solid color-mix(in srgb, ${retryArm === it.runId ? "var(--color-err)" : "var(--color-accent)"} 34%, transparent)`,
+                                }}
+                                onClick={() => {
+                                  if (retryArm === it.runId) {
+                                    setRetryArm(null);
+                                    onRetryRun(it.runId);
+                                  } else {
+                                    setRetryArm(it.runId);
+                                  }
+                                }}
+                              >
+                                {retryArm === it.runId ? "确认重跑？" : "重跑"}
+                              </button>
+                            )}
+                            </div>
                             {open && (
                               <div className="border-t px-2 py-1.5" style={{ borderColor: "var(--color-border)" }}>
                                 {it.input && (

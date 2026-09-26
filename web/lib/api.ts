@@ -561,6 +561,8 @@ export const api = {
   },
   runTrace: (id: string) => request<RunTrace>(`/api/runs/trace/${id}`),
   abortRun: (id: string) => post<{ aborted: boolean }>(`/api/runs/abort/${id}`),
+  /** **重跑这一条执行**：记录原地重来（归属不变）——分派的某一项失败时只重跑那一路 */
+  rerunRun: (id: string) => post<Run>(`/api/runs/${id}/rerun`, {}),
   resumeRun: (
     id: string,
     body: { confirm: boolean; reason?: string; payload?: unknown },

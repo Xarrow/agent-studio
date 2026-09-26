@@ -290,6 +290,53 @@ async def abort_run(run_id: str, session: AsyncSession = Depends(get_session)) -
     return {"aborted": ok}
 
 
+@router.post("/{run_id}/rerun", response_model=RunRead)
+async def rerun_run(run_id: str, session: AsyncSession = Depends(get_session)) -> RunRead:
+    """**重跑这一条执行**（就地重来一次，不新建记录）。
+
+    为什么需要它
+    ------------
+    · 分派出去的一路失败了 → 只想重跑**那一路**。重跑整批既重复扣费，又要把已经
+      做好的项再做一遍（用户要的是"只重跑第 2 项"）。
+    · 分派容器自己也能重跑：内核按 ``(父执行, 第几路)`` **幂等** —— 已成功的项直接复用，
+      只补跑失败或没跑的（见 fanout.dispatch）。
+
+    与「只跑这一步」的分工：那个是"按图的节点"重跑（会新建一条编排）；
+    这个是"按已有的这条记录"重跑（记录原地更新，归属不变：还在同一个节点、同一路）。
+    """
+    run = await _get_or_404(session, run_id)
+    if run.status in ("pending", "running", "waiting_hitl"):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"这条执行还没结束（{run.status}），先等它跑完或先中止再重跑",
+        )
+    definition = AgentDefinition.model_validate(run.definition_snapshot or {})
+    inp = run.input or {}
+    text = inp.get("text") if isinstance(inp, dict) else None
+    if not str(text or "").strip():
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, "这条记录没有留下输入文本，没法重跑"
+        )
+
+    # 就地重来：清掉上一次的结果；**归属不动**（node_id / item_index / parent_run_id 保持），
+    # 所以重跑完它还贴在原来那一格上，画布与记录里不会多出孤儿记录。
+    run.status = "pending"
+    run.output = None
+    run.error = None
+    run.ended_at = None
+    run.started_at = now_ms()
+    usage = dict(run.usage or {})
+    usage["reruns"] = int(usage.get("reruns") or 0) + 1
+    run.usage = usage
+    await session.commit()
+    await session.refresh(run)
+
+    from ..runner import run_service
+
+    await run_service.start(run.id, definition, str(text))
+    return to_read(run)
+
+
 @router.post("/resume/{run_id}")
 async def resume_run(
     run_id: str, payload: HitlResumeRequest, session: AsyncSession = Depends(get_session)

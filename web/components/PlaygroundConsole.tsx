@@ -370,6 +370,25 @@ export function PlaygroundConsole() {
    *  detail 提供每一步的状态/耗时/产出，于是画布、节点上的分色过程、结论卡
    *  全部复用同一套渲染 —— 不需要为"回放"再写一个界面。
    */
+  /** **重跑某一条执行**：分派出去的某一项失败时，只重跑那一路（其它路不动）。
+   *
+   *  为什么不做成"重跑整批"：整批会重复扣费、也会把已完成的项再做一遍。
+   *  后端按 (父执行, 第几路) 幂等 —— 容器整批重跑时，已成功的项会自动跳过。
+   */
+  const retryRun = async (runId: string) => {
+    try {
+      await api.rerunRun(runId);
+      fb.success("已重跑这一路", "只有这一路重来，其它路不动");
+      const id = viewing ?? detail?.id;
+      if (id) {
+        const d = (await api.orchestration(id)) as unknown as OrchestrationDetail;
+        setDetail(d);
+      }
+    } catch (e) {
+      fb.error("重跑失败", e instanceof Error ? e.message : String(e));
+    }
+  };
+
   const loadHistory = async (orcId: string) => {
     try {
       // 记住进入历史前的编辑态（退出时原样还原，不丢正在编的东西）
@@ -1242,6 +1261,7 @@ export function PlaygroundConsole() {
               // 不再往右侧开栏 —— 用户明确要求"移除右边侧边栏，直接在 agent 默认显示"
               setDetailNid(nid);
             }}
+            onRetryRun={(runId) => void retryRun(runId)}
             taskText={shownTask}
             finalText={finalText}
             lastNid={lastNid}
