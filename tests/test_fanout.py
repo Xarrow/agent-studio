@@ -421,6 +421,10 @@ async def test_node_fanout_runs_one_instance_per_item(client):
     assert sorted(s["item_index"] for s in kids) == [0, 1, 2]
     assert all(s["node_id"] == "n1" for s in steps if s.get("node_id"))
     assert "## 第 1 项" in box[0]["output_text"], "合并产出要按项分节（下游编排者据此验证）"
+    # 容器**不能**被当普通执行跑掉（跑了就会是桩运行时的「好」，把合并产出覆盖掉）
+    assert box[0]["output_text"].strip().startswith("## "), (
+        f"容器被真跑了一遍（产出成了模型输出）：{box[0]['output_text'][:60]!r}"
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -678,3 +682,236 @@ async def test_waiting_item_ends_the_step_instead_of_burning_the_timeout(client)
     assert result["timed_out"] is False, "这不是超时，不该报成超时"
     text = fanout.render_summary(result)
     assert "等你确认" in text and "管理" in text, text
+
+
+# --------------------------------------------------------------------------- #
+# 12. 开局就有两个能用的角色（用户原话：一个任务分几路跑，应该由一个编排 agent 开始
+#     → 应用最开始默认初始化"编排 agent"和"通用 agent"）
+# --------------------------------------------------------------------------- #
+async def test_default_agents_are_seeded_and_idempotent(client):
+    """开局就有两个能用的角色；已存在的一个字都不动；编排者缺分派工具就补上。"""
+    from agent_studio.db import SessionLocal
+    from agent_studio.defaults import ORCHESTRATOR_NAME, WORKER_NAME, ensure_default_agents
+    from agent_studio.models import Agent, AgentTool, Tool
+
+    async with SessionLocal() as s:
+        # 工具表里先有「分派」（生产里由「同步内置工具」建好）
+        fork_id = (
+            await s.execute(select(Tool.id).where(Tool.name == "fork"))
+        ).scalar_one_or_none()
+        if fork_id is None:
+            s.add(
+                Tool(
+                    kind="fork",
+                    name="fork",
+                    description="分派",
+                    input_schema={"type": "object"},
+                    impl={},
+                    flags={},
+                )
+            )
+            await s.commit()
+            fork_id = (await s.execute(select(Tool.id).where(Tool.name == "fork"))).scalar_one()
+
+        first = await ensure_default_agents(s)
+        assert ORCHESTRATOR_NAME in first["created"] and WORKER_NAME in first["created"]
+        rows = {a.name: a for a in (await s.execute(select(Agent))).scalars()}
+        assert rows[ORCHESTRATOR_NAME].definition["role"] == "orchestrator"
+        assert rows[WORKER_NAME].definition["role"] == "worker"
+        assert rows[ORCHESTRATOR_NAME].slug and rows[WORKER_NAME].slug, "agent 表要 slug"
+
+        async def _has_fork(agent_id: str) -> bool:
+            return (
+                await s.execute(
+                    select(AgentTool).where(
+                        AgentTool.agent_id == agent_id, AgentTool.tool_id == fork_id
+                    )
+                )
+            ).scalar_one_or_none() is not None
+
+        # 编排者必须能"派"（无论是建的时候带上、还是后面补挂）
+        assert await _has_fork(rows[ORCHESTRATOR_NAME].id) or first["attached_fork"]
+
+        # 幂等：再调一次什么都不该动（用户可能已经改过提示词/模型）
+        defn_before = dict(rows[WORKER_NAME].definition)
+        second = await ensure_default_agents(s)
+        assert second["created"] == [] and second["attached_fork"] is False
+        again = {a.name: a for a in (await s.execute(select(Agent))).scalars()}
+        assert dict(again[WORKER_NAME].definition) == defn_before
+
+
+async def test_existing_orchestrator_without_fork_gets_it_attached(client):
+    """老库里已经有「编排者」但没挂分派工具 → 只补这一个（这就是现在线上那台的情况）。"""
+    from agent_studio.db import SessionLocal
+    from agent_studio.defaults import ORCHESTRATOR_NAME, ensure_default_agents
+    from agent_studio.models import Agent, AgentTool, Tool
+
+    async with SessionLocal() as s:
+        if (
+            await s.execute(select(Tool.id).where(Tool.name == "fork"))
+        ).scalar_one_or_none() is None:
+            s.add(
+                Tool(
+                    kind="fork",
+                    name="fork",
+                    description="分派",
+                    input_schema={"type": "object"},
+                    impl={},
+                    flags={},
+                )
+            )
+        row = Agent(
+            slug="orchestrator-old",
+            name=ORCHESTRATOR_NAME,
+            version=1,
+            definition={
+                "runtime": "agentscope",
+                "name": ORCHESTRATOR_NAME,
+                "role": "orchestrator",
+                "system_prompt": "我自己改过的提示词",
+                "model": {"provider": "deepseek", "name": "deepseek-v4-flash"},
+                "tools": [],
+                "skills": [],
+            },
+            created_at=now_ms(),
+            updated_at=now_ms(),
+        )
+        s.add(row)
+        await s.commit()
+        await s.refresh(row)
+
+        out = await ensure_default_agents(s)
+        assert out["created"] == [] or WORKER_NAME_MARK in out["created"], out
+        assert out["attached_fork"] is True, "老编排者缺分派工具时要补上"
+        # 用户改过的提示词一个字不能动
+        kept = await s.get(Agent, row.id)
+        assert kept.definition["system_prompt"] == "我自己改过的提示词"
+        fork_id = (await s.execute(select(Tool.id).where(Tool.name == "fork"))).scalar_one()
+        assert (
+            await s.execute(
+                select(AgentTool).where(
+                    AgentTool.agent_id == row.id, AgentTool.tool_id == fork_id
+                )
+            )
+        ).scalar_one_or_none() is not None
+
+
+WORKER_NAME_MARK = "通用助手"
+
+
+async def test_default_orchestrator_can_dispatch_to_worker(client):
+    """`fork` 工具带 agent 参数 → 子实例跑的是**那个助手**（编排者派给通用助手）。"""
+    from agent_studio.config import settings
+    from agent_studio.db import SessionLocal
+    from agent_studio.defaults import ORCHESTRATOR_NAME, WORKER_NAME, ensure_default_agents
+    from agent_studio.models import Agent, Run
+    from agent_studio.runner.ctx import set_run_ctx
+    from agent_studio.runtimes import register_runtime
+
+    register_runtime(SpanRuntime())
+    settings.max_concurrent_runs = 0
+    async with SessionLocal() as s:
+        await ensure_default_agents(s)
+        orch = (
+            await s.execute(select(Agent).where(Agent.name == ORCHESTRATOR_NAME))
+        ).scalars().first()
+        worker = (
+            await s.execute(select(Agent).where(Agent.name == WORKER_NAME))
+        ).scalars().first()
+        # 让默认助手跑桩运行时（默认是 agentscope，测试里没有真 key）
+        for a in (orch, worker):
+            d = dict(a.definition)
+            d["runtime"] = SpanRuntime.name
+            a.definition = d
+        await s.commit()
+        orch_id, worker_id = orch.id, worker.id
+        parent = Run(
+            agent_id=orch_id,
+            agent_version=1,
+            runtime=SpanRuntime.name,
+            status="running",
+            input={"text": "把这批活派下去"},
+            definition_snapshot=dict(orch.definition),
+            started_at=now_ms(),
+            node_id="n1",
+        )
+        s.add(parent)
+        await s.commit()
+        await s.refresh(parent)
+
+    # 模型调用 fork 工具时，身份从 contextvar 来（这里手动模拟一次）
+    set_run_ctx(run_id=parent.id, agent_id=orch_id, node_id="n1", depth=0)
+    task = asyncio.create_task(
+        fanout.handle_tool_call(tasks=["甲", "乙"], agent=WORKER_NAME, max_items=2)
+    )
+    guard = 0
+    while not task.done() and guard < 2000:
+        await dispatcher.tick()
+        await asyncio.sleep(0.02)
+        guard += 1
+    text = await task
+    assert "成功 2" in text, text
+
+    async with SessionLocal() as s:
+        kids = list(
+            (
+                await s.execute(select(Run).where(Run.parent_run_id == parent.id))
+            ).scalars()
+        )
+        assert len(kids) == 2
+        assert all(k.agent_id == worker_id for k in kids), "子实例要跑**被派的那个助手**"
+        assert all((k.definition_snapshot or {}).get("name") == WORKER_NAME for k in kids), (
+            "定义快照也必须是目标助手的（否则拿错提示词/模型）"
+        )
+        assert all(
+            "fork" not in [str(t.get("name") or t.get("ref")) for t in (k.definition_snapshot or {}).get("tools") or []]
+            for k in kids
+        ), "深度 1：子实例的清单里不能有分派工具"
+
+
+async def test_node_fanout_to_another_agent_uses_its_snapshot(client):
+    """节点入口的「派给谁」同理：子实例跑目标助手、且用它的定义快照。"""
+    from agent_studio.config import settings
+    from agent_studio.defaults import WORKER_NAME
+    from agent_studio.runtimes import register_runtime
+
+    register_runtime(SpanRuntime())
+    settings.max_concurrent_runs = 0
+    owner = await _agent_with_stub(client)  # 本节点的助手（发起方）
+    target = (await client.post(
+        "/api/agents",
+        json={
+            "name": uniq(WORKER_NAME),
+            "definition": {
+                "runtime": SpanRuntime.name,
+                "name": uniq(WORKER_NAME),
+                "system_prompt": "干活的",
+                "model": {"provider": "deepseek", "name": "deepseek-v4-flash"},
+                "tools": [],
+                "skills": [],
+                "limits": {"max_iters": 1, "timeout_s": 30},
+            },
+        },
+    )).json()
+
+    d = await _run_orchestration_with_pump(
+        client,
+        {
+            "mode": "single",
+            "steps": [
+                {
+                    "agent_id": owner,
+                    "carry_prev": False,
+                    "nid": "n1",
+                    "fanout": "list",
+                    "fanout_max": 3,
+                    "fanout_agent": target["id"],
+                }
+            ],
+            "task": "- 甲\n- 乙",
+        },
+    )
+    assert d["status"] == "ok", d
+    kids = [s for s in d["steps"] if s.get("parent_run_id")]
+    assert len(kids) == 2
+    assert all(k["agent_id"] == target["id"] for k in kids), "子实例要跑被派的那个助手"

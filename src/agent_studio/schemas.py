@@ -813,6 +813,8 @@ class OrchestrationStep(BaseModel):
     fanout_max: int | None = None
     #: 这一步最多花多少 token（0/不填 = 不限）
     fanout_budget: int | None = None
+    #: 派给谁：空 = 本槽位的助手；填 agent_id = 分派给那个助手干活
+    fanout_agent: str | None = None
 
 
 class OrchestrationCreate(BaseModel):

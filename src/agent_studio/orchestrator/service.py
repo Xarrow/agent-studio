@@ -548,11 +548,16 @@ class Orchestrator:
                 # 用这份助手自己的职责定义（在 Agents 页可改）；没写就用平台内置那份
                 brief = (definition.orchestrator_brief or "").strip() or ORCHESTRATOR_BRIEF
                 definition.system_prompt = f"{brief}\n\n---\n\n{definition.system_prompt}"
+            # ⚠️ **分派容器不能建成 `pending`**：分发器有一路是"扫库里所有 pending 的执行"
+            # （重启续跑走那条），于是容器会被当成一条待跑执行**被真跑一遍**，
+            # 把"合并产出"覆盖成模型的回答（间歇性，取决于哪次 tick 撞上）。
+            # 容器的语义是"正在分派/等结果"，所以直接建成 running。
+            _as_fanout = bool(fanout) and str((fanout or {}).get("mode") or "").strip() == "list"
             run = Run(
                 agent_id=agent.id,
                 agent_version=agent.version,
                 runtime=definition.runtime,
-                status="pending",
+                status="running" if _as_fanout else "pending",
                 input={"text": payload},
                 # 冻结定义快照：与 /api/runs 一致，保证这次执行可复现
                 definition_snapshot=definition.model_dump(

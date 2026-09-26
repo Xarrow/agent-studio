@@ -644,6 +644,8 @@ export interface WorkflowNode {
   fanout_max?: number;
   /** 这一步最多花多少 token（不填/0 = 不限）。超了会停下**还没开始**的那几路并如实标出 */
   fanout_budget?: number;
+  /** 派给谁：空 = 本节点的助手；填 agent_id = 分派给那个助手干活（编排者派给通用助手） */
+  fanout_agent?: string;
 }
 
 export interface WorkflowEdge {
