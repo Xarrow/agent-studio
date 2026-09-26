@@ -428,7 +428,12 @@ function NewAgentDialog({
       onClick={requestClose}
     >
       {/* 面板本体：点它不关（否则点输入框就把弹层关掉了） */}
-      <div className="card w-full max-w-lg p-5 my-auto" onClick={(e) => e.stopPropagation()}>
+      {/* 手机上：面板最高 92vh、内容自己滚、**「取消 / 创建」常驻底部** ——
+          否则"创建"被顶到视口外面，手指要先把整个表单滚到底才够得到 ✗（实测过） */}
+      <div
+        className="card w-full max-w-lg p-5 my-auto flex max-h-[92dvh] flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* 头部：标题 + **右上角固定的关闭键** —— 之前只有最底部一个"取消"，
             内容一长就得滚到底才找得到，用户反馈"弹出来关不掉"。 */}
         <div className="mb-4 flex items-start gap-3">
@@ -699,7 +704,11 @@ function NewAgentDialog({
           {err && <div className="text-[12.5px] text-[var(--color-err)]">{err}</div>}
         </div>
 
-        <div className="flex justify-end gap-2 mt-5">
+        {/* 动作条：吸在面板底部（sticky），窗口再小也够得到 */}
+        <div
+          className="sticky bottom-0 -mx-5 mt-5 flex justify-end gap-2 border-t bg-[var(--color-surface)] px-5 pb-1 pt-3"
+          style={{ borderColor: "var(--color-border)" }}
+        >
           <button className="btn" onClick={onClose}>
             取消
           </button>

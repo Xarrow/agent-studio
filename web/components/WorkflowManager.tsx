@@ -216,7 +216,7 @@ export function WorkflowManager({
       <div
         className={
           variant === "page"
-            ? "flex h-[calc(100vh-116px)] min-h-[520px] w-full flex-col overflow-hidden rounded-[14px] border"
+            ? "flex h-[calc(100dvh-150px)] md:h-[calc(100vh-116px)] min-h-[420px] md:min-h-[520px] w-full flex-col overflow-hidden rounded-[14px] md:rounded-[14px] border"
             : "m-auto flex h-[86vh] w-[min(1080px,94vw)] flex-col overflow-hidden rounded-[14px] border shadow-2xl"
         }
         style={{ background: "var(--color-surface)", borderColor: "var(--color-border)" }}
