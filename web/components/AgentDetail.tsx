@@ -64,6 +64,8 @@ export function AgentDetail({
   const [saving, setSaving] = useState(false);
   /** 空状态里的「同步内置工具」用 —— 就地完成，不跳页 */
   const [syncing, setSyncing] = useState(false);
+  /** 工具列表默认**只看已选**（详情页最占屏的就是这一列 ✗）；要看全部再展开 ✓ */
+  const [showAllTools, setShowAllTools] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   /**
@@ -853,9 +855,21 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
           </section>
 
           <section className="card p-4">
-            <h2 className="text-[14px] font-medium mb-3">
-              工具（{def.tools.length} 已选 / {tools.length} 可用）
-            </h2>
+            <div className="mb-3 flex items-center gap-2">
+              <h2 className="text-[14px] font-medium">
+                工具（{def.tools.length} 已选 / {tools.length} 可用）
+              </h2>
+              {tools.length > 0 && (
+                <button
+                  type="button"
+                  className="ml-auto text-[12px] hover:underline"
+                  style={{ color: "var(--color-accent)" }}
+                  onClick={() => setShowAllTools((v) => !v)}
+                >
+                  {showAllTools ? "只看已选" : `显示全部 ${tools.length} 个`}
+                </button>
+              )}
+            </div>
             {tools.length === 0 ? (
               // 空状态里直接给"最常见的那一步"：不必为了同步内置工具跳去工具页
               // 再跳回来（回来还得重新找到这个助手）。创建自定义工具是另一件事，
@@ -882,7 +896,12 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
               </div>
             ) : (
               <div className="space-y-1.5 max-h-72 overflow-auto">
-                {tools.map((t) => {
+                {!showAllTools && def.tools.length === 0 && (
+                  <p className="px-2 py-1.5 text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+                    还没勾选任何工具 —— 点右上「显示全部 {tools.length} 个」挑几个。
+                  </p>
+                )}
+                {(showAllTools ? tools : tools.filter((t) => def.tools.some((x) => x.ref === t.id))).map((t) => {
                   const on = def.tools.some((x) => x.ref === t.id);
                   // 平台不适用的工具（如 Linux 上的 PowerShell）：置灰 + 禁止勾选
                   const platformOk = t.flags?.platform_ok !== false;
