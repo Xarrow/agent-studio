@@ -95,6 +95,22 @@ export function RunsPanel() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState<ActivityItem | null>(null);
+  /** 记录页里展开了"分派明细"的那些行（容器 id）—— 默认收起，点一下就地展开 */
+  const [fanoutOpen, setFanoutOpen] = useState<Set<string>>(new Set());
+  /** 哪一路的「重跑」已经被点了一下（等第二下确认 —— 重跑要花钱，不做误触） */
+  const [retryArm, setRetryArm] = useState<string | null>(null);
+
+  /** **只重跑分派的这一路**（其它路不动）。重跑记录原地更新，归属不变。 */
+  const retryFanoutItem = async (runId: string) => {
+    try {
+      await api.rerunRun(runId);
+      fb.success("已重跑这一路", "只有这一路重来，其它路不动");
+      // 稍等一下再刷，让这条记录先变成 running（否则用户会以为没动）
+      setTimeout(() => void load(), 800);
+    } catch (e) {
+      fb.error("重跑失败", e instanceof Error ? e.message : String(e));
+    }
+  };
   /** 用了多少 / 花了多少（今日 + 近 7 天）—— 与列表同一个请求里取，不额外等一轮 */
   const [usage, setUsage] = useState<Usage | null>(null);
   /** 分页：一页 50 条，「加载更多」往后翻（游标式 —— 翻页时新记录插进来也不会错位） */
@@ -452,7 +468,9 @@ export function RunsPanel() {
               <tbody>
                 {items.map((it) => {
                   const live = LIVE.includes(it.status);
+                  // 一个 item 可能渲染**两行**（主行 + 分派的各路展开行）→ 用 Fragment 包起来
                   return (
+                    <>
                     <tr
                       key={it.id}
                       className="border-t border-[var(--color-border)] hover:bg-[var(--color-surface-2)] cursor-pointer"
@@ -572,15 +590,116 @@ export function RunsPanel() {
                         </span>
                       </td>
                       <td className="px-3 py-2.5 text-[var(--color-muted)]">
-                        <div className="truncate max-w-[320px]">
-                          {it.error ? (
-                            <span className="text-[var(--color-err)]">✗ {it.error}</span>
-                          ) : (
-                            it.summary ?? "—"
+                        <div className="flex items-center gap-2">
+                          <div className="min-w-0 flex-1 truncate max-w-[320px]">
+                            {it.error ? (
+                              <span className="text-[var(--color-err)]">✗ {it.error}</span>
+                            ) : (
+                              it.summary ?? "—"
+                            )}
+                          </div>
+                          {/* **分派**：这一步分了几路。记录页一条 = 一件事，
+                              分出去的每一路不单独占一行（否则同一批把列表刷满），
+                              点这里就地展开 —— 与画布上的叠卡同一套语义。 */}
+                          {it.fanout && (
+                            <button
+                              type="button"
+                              className="shrink-0 rounded-full px-1.5 py-[1px] text-[11px] whitespace-nowrap"
+                              style={{
+                                border: `1px solid color-mix(in srgb, ${it.fanout.failed ? "var(--color-err)" : "var(--color-accent)"} 34%, transparent)`,
+                                color: it.fanout.failed ? "var(--color-err)" : "var(--color-accent)",
+                                background: `color-mix(in srgb, ${it.fanout.failed ? "var(--color-err)" : "var(--color-accent)"} 10%, transparent)`,
+                              }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setFanoutOpen((s) => {
+                                  const next = new Set(s);
+                                  if (next.has(it.id)) next.delete(it.id);
+                                  else next.add(it.id);
+                                  return next;
+                                });
+                              }}
+                            >
+                              分派 {it.fanout.total} 路 · {it.fanout.ok} 成功
+                              {it.fanout.failed ? ` · ${it.fanout.failed} 失败` : ""}
+                              {fanoutOpen.has(it.id) ? " ▾" : " ▸"}
+                            </button>
                           )}
                         </div>
                       </td>
                     </tr>
+                    {it.fanout && fanoutOpen.has(it.id) && (
+                      <tr className="bg-[var(--color-surface-2)]">
+                        <td colSpan={8} className="px-3 pb-3 pt-1">
+                          <div className="mb-1 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                            这一步分派出去的 {it.fanout.total} 路
+                            {it.fanout.tokens_in + it.fanout.tokens_out > 0 &&
+                              ` · 合计 ${fmt.num(it.fanout.tokens_in + it.fanout.tokens_out)} token`}
+                            （每一路都是独立执行，可单独重跑）
+                          </div>
+                          <div className="flex flex-col gap-1">
+                            {it.fanout.items.map((f) => (
+                              <div
+                                key={f.index}
+                                className="flex items-center gap-2 rounded-[6px] border px-2 py-1 text-[12px]"
+                                style={{
+                                  borderColor: "var(--color-border)",
+                                  background: "var(--color-surface)",
+                                }}
+                              >
+                                <span
+                                  className="shrink-0"
+                                  style={{
+                                    color:
+                                      f.status === "ok"
+                                        ? "var(--color-ok)"
+                                        : f.status === "error" || f.status === "aborted"
+                                          ? "var(--color-err)"
+                                          : "var(--color-accent)",
+                                  }}
+                                >
+                                  {f.status === "ok" ? "✓" : f.status === "error" || f.status === "aborted" ? "✕" : "◌"}
+                                </span>
+                                <span className="min-w-0 flex-1 truncate">{f.label || `第 ${f.index + 1} 项`}</span>
+                                {f.tokens_in + f.tokens_out > 0 && (
+                                  <span className="shrink-0 tabular-nums" style={{ color: "var(--color-muted)" }}>
+                                    {fmt.num(f.tokens_in + f.tokens_out)} token
+                                  </span>
+                                )}
+                                {f.duration_ms ? (
+                                  <span className="shrink-0 tabular-nums" style={{ color: "var(--color-muted)" }}>
+                                    {(f.duration_ms / 1000).toFixed(1)}s
+                                  </span>
+                                ) : null}
+                                {f.status !== "ok" && (
+                                  <button
+                                    type="button"
+                                    className="shrink-0 rounded-[5px] px-1.5 py-[1px] text-[11px]"
+                                    style={{
+                                      color: retryArm === f.index + ":" + it.id ? "var(--color-err)" : "var(--color-accent)",
+                                      border: `1px solid color-mix(in srgb, ${retryArm === f.index + ":" + it.id ? "var(--color-err)" : "var(--color-accent)"} 34%, transparent)`,
+                                    }}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const key = f.index + ":" + it.id;
+                                      if (retryArm === key) {
+                                        setRetryArm(null);
+                                        void retryFanoutItem(f.run_id);
+                                      } else {
+                                        setRetryArm(key);
+                                      }
+                                    }}
+                                  >
+                                    {retryArm === f.index + ":" + it.id ? "确认重跑？" : "重跑"}
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </>
                   );
                 })}
               </tbody>

@@ -498,3 +498,38 @@ def test_fanout_tool_is_read_only_for_permission_engine():
     tool = build_fanout_tool(spec)
     assert getattr(tool, "is_read_only", None) is True, "分派工具必须按只读对待，否则会卡在等确认"
     assert getattr(tool, "is_concurrency_safe", None) is False, "分派占并发配额，不与其他工具并发"
+
+
+# --------------------------------------------------------------------------- #
+# 9. 记录页：分派出去的多路**不单独占一条**，收在容器那一行下面
+#    （否则同一批会把列表刷满，用户翻不完也看不出"这几条是一批"）
+# --------------------------------------------------------------------------- #
+async def test_timeline_groups_fanout_under_container(client):
+    from agent_studio.config import settings
+    from agent_studio.runtimes import register_runtime
+
+    register_runtime(SpanRuntime())
+    settings.max_concurrent_runs = 0
+    aid = await _agent_with_stub(client)
+    parent = await _parent_run(aid, node_id="n1")
+    result = await _dispatch_with_pump(
+        parent_run=parent,
+        agent_id=aid,
+        definition_snapshot=dict(parent.definition_snapshot or {}),
+        items=["甲", "乙", "丙"],
+        wait_s=20,
+    )
+    assert result["succeeded"] == 3
+    kid_ids = {x["run_id"] for x in result["items"]}
+
+    d = (await client.get("/api/runs/timeline?limit=50")).json()
+    ids = {x["id"] for x in d["items"]}
+    assert parent.id in ids, "容器那一行要在列表里"
+    assert not (kid_ids & ids), "分派出去的每一路**不该**单独占一条"
+
+    box = next(x for x in d["items"] if x["id"] == parent.id)
+    assert box["fanout"] is not None, "容器行要带上分派摘要"
+    assert box["fanout"]["total"] == 3 and box["fanout"]["ok"] == 3
+    assert [i["index"] for i in box["fanout"]["items"]] == [0, 1, 2]
+    assert all(i["run_id"] for i in box["fanout"]["items"]), "每一路要带执行 id（重跑要用）"
+    assert box["fanout"]["items"][0]["label"].startswith("第 1 项")

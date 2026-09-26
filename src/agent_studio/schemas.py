@@ -283,6 +283,35 @@ class ModelTestRead(BaseModel):
     tokens_out: int = 0
 
 
+class FanoutItemRead(BaseModel):
+    """分派出去的**一路**（在"运行记录"里收在容器那一行下面）。"""
+
+    #: 这一路的执行 id —— 「重跑」按它精确重跑那一路
+    run_id: str = ""
+    index: int = 0
+    label: str = ""
+    status: str = "ok"
+    duration_ms: int | None = None
+    tokens_in: int = 0
+    tokens_out: int = 0
+
+
+class FanoutRead(BaseModel):
+    """一步分派的汇总（记录页据此显示「分派 5 路 · 4 成功 1 失败 · 合计 6.3k token」）。
+
+    为什么要收在容器行里：分派会让"一次执行"变成 N+1 条记录，平铺出来记录页会被
+    同一件事刷屏（用户翻不完，也看不出"这几条其实是一批"）。所以记录页一条 = 一件事，
+    展开才看每一路 —— 与画布上的叠卡是同一套语义。
+    """
+
+    total: int = 0
+    ok: int = 0
+    failed: int = 0
+    tokens_in: int = 0
+    tokens_out: int = 0
+    items: list[FanoutItemRead] = Field(default_factory=list)
+
+
 class ActivityItem(BaseModel):
     """「运行记录」里的一条 —— 把三类调用统一成同一个形状。
 
@@ -314,6 +343,8 @@ class ActivityItem(BaseModel):
     model: str | None = None
     tokens_in: int = 0
     tokens_out: int = 0
+    #: 这一步分派出去的多路（有它就说明这一条是"分派容器"）；见 FanoutRead
+    fanout: FanoutRead | None = None
     #: 这次调用折算的金额；``None`` = 这个模型**还没填单价**（界面显示「—」，
     #: 不能显示 0 —— "免费"和"不知道"是两件事）
     cost: float | None = None

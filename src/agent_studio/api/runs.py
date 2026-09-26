@@ -20,6 +20,8 @@ from ..schemas import (
     ActivityItem,
     ActivityList,
     AgentDefinition,
+    FanoutItemRead,
+    FanoutRead,
     HitlResumeRequest,
     LlmCallRead,
     ModelTestRead,
@@ -498,6 +500,9 @@ def _run_conds(kind, status, agent_id, q, before_at, before_id) -> list:  # noqa
         conds.append(
             or_(Run.started_at < before_at, and_(Run.started_at == before_at, Run.id < before_id))
         )
+    # **分派出去的每一路不单独占一条** —— 它们是同一件事的分身，收在容器那一行下面
+    # （否则记录页被同一批刷屏、翻页也翻不完；画布上是叠卡，这里就应该是"一行 + 展开"）。
+    conds.append(Run.parent_run_id.is_(None))
     return conds
 
 
@@ -641,11 +646,64 @@ async def activity_timeline(
     has_more = len(items) > limit
     items = items[:limit]
 
+    # ── 分派明细：给这一页里的容器行，一次查询把它们的各路取回来 ────────────
+    run_ids = [x.id for x in items if x.kind in ("playground", "preview", "chat")]
+    if run_ids:
+        kids = list(
+            (
+                await session.execute(
+                    select(Run)
+                    .where(Run.parent_run_id.in_(run_ids))
+                    .order_by(Run.item_index.asc())
+                )
+            ).scalars()
+        )
+        by_parent: dict[str, list[Run]] = {}
+        for k in kids:
+            by_parent.setdefault(str(k.parent_run_id), []).append(k)
+        for x in items:
+            rows = by_parent.get(x.id)
+            if not rows:
+                continue
+            tin = tout = 0
+            kids_out: list[FanoutItemRead] = []
+            ok_n = failed_n = 0
+            for k in rows:
+                k_usage = k.usage if isinstance(k.usage, dict) else {}
+                k_in, k_out = tokens_of(k_usage)
+                tin += k_in
+                tout += k_out
+                if k.status == "ok":
+                    ok_n += 1
+                elif k.status in ("error", "aborted"):
+                    failed_n += 1
+                kids_out.append(
+                    FanoutItemRead(
+                        run_id=k.id,
+                        index=int(k.item_index or 0),
+                        label=k.item_label or "",
+                        status=k.status,
+                        duration_ms=(k.ended_at - k.started_at) if (k.ended_at and k.started_at) else None,
+                        tokens_in=k_in,
+                        tokens_out=k_out,
+                    )
+                )
+            x.fanout = FanoutRead(
+                total=len(rows),
+                ok=ok_n,
+                failed=failed_n,
+                tokens_in=tin,
+                tokens_out=tout,
+                items=kids_out,
+            )
+
     # 徽标计数：**不带类型筛选**，这样切换类型时徽标不会跳（原有语义，保持不变）
     counts: dict[str, int] = {}
     for kind_name, cnt in (
         await session.execute(
-            select(_kind_case(Run).label("k"), func.count()).group_by(_kind_case(Run))
+            select(_kind_case(Run).label("k"), func.count())
+            .where(Run.parent_run_id.is_(None))  # 口径与列表一致：不把每一路算成一条
+            .group_by(_kind_case(Run))
         )
     ).all():
         counts[str(kind_name)] = int(cnt)

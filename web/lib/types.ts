@@ -190,6 +190,25 @@ export interface ToolCallRow {
  *
  * kind：chat 对话 / preview 助手试跑 / playground 编排 / llm_test 裸模型测试
  */
+/** 记录页里"这一步分派出去的多路"（容器行上带出来，展开才看每一路） */
+export interface FanoutRead {
+  total: number;
+  ok: number;
+  failed: number;
+  tokens_in: number;
+  tokens_out: number;
+  items: {
+    /** 这一路的执行 id —— 「重跑」按它精确重跑那一路 */
+    run_id: string;
+    index: number;
+    label: string;
+    status: string;
+    duration_ms: number | null;
+    tokens_in: number;
+    tokens_out: number;
+  }[];
+}
+
 export interface ActivityItem {
   kind: "chat" | "preview" | "playground" | "llm_test";
   id: string;
@@ -212,6 +231,8 @@ export interface ActivityItem {
   trigger?: string | null;
   summary: string | null;
   error: string | null;
+  /** 有它就说明这一条是「分派容器」：分出去的多路收在这里 */
+  fanout?: FanoutRead | null;
 }
 
 /**
