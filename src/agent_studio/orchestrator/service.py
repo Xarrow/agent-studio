@@ -143,7 +143,7 @@ class Orchestrator:
         task = self._task(spec)
 
         run = await self._start_step(orc_id, steps[0]["agent_id"], "worker", 0, task)
-        done = await self._await(run.id)
+        done = await self._await(run.id, (steps[0] or {}).get("wait_timeout_s"))
 
         await self._finish(
             orc_id,
@@ -168,7 +168,7 @@ class Orchestrator:
             carry = bool(step.get("carry_prev"))
             payload = self._compose(task, prev_text if carry else None, i)
             run = await self._start_step(orc_id, step["agent_id"], "worker", i, payload)
-            r = await self._await(run.id)
+            r = await self._await(run.id, step.get("wait_timeout_s"))
             done.append(r)
             # 只有成功且有内容才更新"上一步产出"，失败的输出传下去没意义
             if r.status == "ok" and (t := self._text(r)):
@@ -283,8 +283,11 @@ class Orchestrator:
                 prev = "\n\n".join(chunks) or None
                 payload = self._compose(task, prev, idx)
                 inputs[nid] = payload
-                run = await self._start_step(orc_id, by_nid[nid]["agent_id"], "worker", idx, payload)
-                return await self._await(run.id)
+                node = by_nid[nid]
+                run = await self._start_step(orc_id, node["agent_id"], "worker", idx, payload)
+                # 这一跳最多等多久：用节点上设的（画布上给"等上游"的那个节点设）——
+                # 用户："Orchestrator 需要等待其他 agent 执行完再验证总结，但需要设置超时时间"
+                return await self._await(run.id, node.get("wait_timeout_s"))
 
             results = await asyncio.gather(
                 *(run_one(nid, order + i) for i, nid in enumerate(layer)),
@@ -488,19 +491,25 @@ class Orchestrator:
         await run_service.start(run.id, definition, payload)
         return run
 
-    async def _await(self, run_id: str) -> Run:
+    async def _await(self, run_id: str, wait_s: int | None = None) -> Run:
+        """等这一步跑完 —— ``wait_s`` = **这一跳的等待上限**（None=平台默认，-1=一直等）。
+
+        用户："Orchestrator 需要等待其他 agent 执行完再验证总结，但需要设置超时时间"。
+        """
         """等一个子 Run 结束（超时即当失败，不拖住整个编排）。"""
         from ..runner import run_service
 
         try:
-            return await run_service.wait(run_id, timeout=STEP_TIMEOUT_S)
+            # -1 = 不限：给一个足够大的上限（别让一次编排永久挂住）
+            t = STEP_TIMEOUT_S if wait_s is None else (365 * 24 * 3600 if wait_s < 0 else wait_s)
+            return await run_service.wait(run_id, timeout=t)
         except TimeoutError:
             logger.warning("子 Run %s 等待超时", run_id)
             async with SessionLocal() as session:
                 run = await session.get(Run, run_id)
                 if run is not None:
                     run.status = "error"
-                    run.error = f"等待超时（>{STEP_TIMEOUT_S}s）"
+                    run.error = f"等待超时（>{STEP_TIMEOUT_S if wait_s is None else wait_s}s）"
                     await session.commit()
                     return run
             raise
