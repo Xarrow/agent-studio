@@ -186,7 +186,15 @@ def _decrypt_password(token: str) -> str:
     try:
         return decrypt(base64.b64decode(token.encode("ascii")))
     except Exception as exc:  # noqa: BLE001 —— 主密钥变了就解不开，降级为空
-        logger.warning("数据库密码解密失败（主密钥是否变更？）: %s", exc)
+        # 说人话 ✗ —— 原来只有一句"主密钥是否变更？"，看着像出事了 ✓ 其实是：
+        # 这份**数据库切换配置**（JSON 文件）里的密码是用主密钥加密的，主密钥轮换过就解不开 ✓
+        # 降级成空密码继续走 ✓；若当前 driver 是 sqlite（默认）则**根本不读这个密码** ✓
+        # 所以它是"历史配置的提示"，不是故障 —— 文案里直接讲清，免得每次启动都以为崩了 ✓
+        logger.info(
+            "数据库切换配置里的密码解不开（多半是主密钥轮换过）——已按空密码处理；"
+            "当前若用 SQLite 则不受影响，可忽略。原因: %s",
+            exc,
+        )
         return ""
 
 
