@@ -347,7 +347,13 @@ class Orchestrator:
             order += 1
 
         # 最终结果 = **汇点**（没有下游的那些）的产出，按助手名分段
-        outs = {e["from"] for e in edges if is_dependency(e)}
+        # 汇点也要**排除回边** —— 编排者在图上还有出边（指向 worker），
+        # 不排除它就被当成"中间节点"，收口那次的结论反而进不了最终产出 ✗（实测过）
+        outs = {
+            e["from"]
+            for e in edges
+            if is_dependency(e) and (e["from"], e["to"]) not in {(b["from"], b["to"]) for b in _backs}
+        }
         sinks = [n for n in nodes if n["nid"] not in outs]
         parts = [
             f"【{self._agent_name_of(run_of[n['nid']])}】\n{outputs[n['nid']]}"
