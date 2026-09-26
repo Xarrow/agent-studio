@@ -2023,7 +2023,16 @@ export function WorkflowCanvas({
         {graph.edges.map((e) => {
           const mid = edgeMids[`${e.from}->${e.to}`];
           if (!mid) return null;
-          const parts = [e.order === "parallel" ? "并行" : "串行"];
+          // **汇入**：这条线指向的节点还有别的依赖线进来 —— 它的含义不是"接力给下一个"，
+          // 而是"等这几条都跑完，把产出一起交给它"（用户问："多个 agent 处理完交给
+          // Orchestrator 验证、总结时，中间线条应该是串行还是并行？"）。
+          // 引擎里只有**串行线**构成依赖、也只有它把产出交下去（并行线 = 互不等待、不传产出），
+          // 所以这种汇入必须选串行 ✓ —— 但"串行接力"这个词在汇入处会让人以为要排队 ✗，
+          // 于是在**多入边**时改叫「汇入」，一眼看懂是"等齐再交"。
+          const fanIn =
+            e.order !== "parallel" &&
+            graph.edges.filter((x) => x.to === e.to && x.order !== "parallel").length > 1;
+          const parts = [e.order === "parallel" ? "并行" : fanIn ? "汇入" : "串行"];
           if (e.share_context) parts.push("+上下文");
           if (e.share_memory) parts.push("+记忆");
           const plain = !e.share_context && !e.share_memory;
