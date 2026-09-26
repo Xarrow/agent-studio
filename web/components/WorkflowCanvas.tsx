@@ -2797,8 +2797,14 @@ export function WorkflowCanvas({
                     </DetailSection>
                   </div>
                 ) : (
-                  <div className="px-3 py-3 text-[12px]" style={{ color: "var(--color-muted)" }}>
-                    {st === "run" ? "正在执行，产出会出现在这里…" : "这一步还没有产出。"}
+                  <div className="px-3 py-3">
+                    {/* 空态也要设计过：虚线框 + 居中说明 = "结果将会出现在这里"，而不是"界面坏了" ✓ */}
+                    <div
+                      className="rounded-[10px] border border-dashed px-3 py-6 text-center text-[12px]"
+                      style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
+                    >
+                      {st === "run" ? "正在执行，产出会出现在这里…" : "跑完这一步，结果会出现在这里"}
+                    </div>
                   </div>
                 )}
               </div>
