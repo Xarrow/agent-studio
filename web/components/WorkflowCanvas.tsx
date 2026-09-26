@@ -78,6 +78,9 @@ type Props = {
   /** 画布两端的"卡"：左边是你这次交给它们的任务，右边是合起来的结论 ——
    *  画布因此自己讲完一次执行：我让你做什么 → 谁做了什么 → 合起来是什么。 */
   taskText?: string;
+  /** 这个流程跑过的每一次（= 轮次）· 父组件给了就用，没给画布自己拉 ✓ */
+  turns?: TurnBrief[];
+  workflowId?: string | null;
   finalText?: string;
   /** 任务卡就是输入口：文本、改文本、跑（运行键长在流程起点上） */
   taskValue?: string;
@@ -155,6 +158,7 @@ const ORDER_META: Record<string, { short: string; dash?: string }> = {
 
 
 /** 两端卡片的"伪节点 id" —— 拖拽/调宽复用同一套机制（节点用 n1/n2…，两端卡用这两个） */
+type TurnBrief = { id: string; task: string | null; status: string; started_at: number | null; step_count?: number };
 const CARD_IN = "__input__";
 /** 卡片高度上下限（拖右下角调高时用）—— 太小看不清、太大一屏放不下 */
 const H_MIN = 90;
@@ -180,6 +184,8 @@ export function WorkflowCanvas({
   onRefill,
   onDetail,
   taskText = "",
+  turns: turnsProp,
+  workflowId = null,
   finalText = "",
   lastNid = null,
   taskValue = "",
@@ -206,6 +212,23 @@ export function WorkflowCanvas({
 }: Props) {
   const stageRef = useRef<HTMLDivElement>(null);
   const nodeRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  /** 轮次：父组件给了就用（受控 ✓），没给就画布自己按 workflowId 拉 ✓
+   *  原来只吃父组件的 hist，而它只在打开「历史执行」菜单时才拉 → 画布上永远空 ✗ */
+  const [turnsSelf, setTurnsSelf] = useState<TurnBrief[]>([]);
+  useEffect(() => {
+    if (turnsProp || !workflowId) return;
+    let alive = true;
+    void fetch(`/api/workflows/${workflowId}/runs?limit=20`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((j) => {
+        if (alive) setTurnsSelf(Array.isArray(j) ? j : (j?.items ?? []));
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [workflowId, turnsProp]);
+  const turns = turnsProp ?? turnsSelf;
   const [heights, setHeights] = useState<Record<string, number>>({});
   /**
    * 鼠标悬停在哪个节点上（= 就地看它在干什么）。
@@ -2290,6 +2313,42 @@ export function WorkflowCanvas({
               {running ? "运行中…" : `▸ 运行${layout.layers.flat().length > 1 ? ` · ${layout.layers.flat().length} 步` : ""}`}
             </button>
           </div>
+
+          {/* **多轮：不新增卡片** ✗ —— 一轮一张卡跑 10 轮画布就废了 ✓
+              轮次 = 这个流程跑过的每一次（数据来自已有接口，无需改后端 ✓）
+              历史默认折成一行（共 N 轮 + 最近一轮摘要），点开才看列表 ✓ 一屏看全 ✓
+              用 <details> 而非 useState：零状态零 hook 风险、手机原生可点 ✓ */}
+          {turns.length > 0 && (
+            <details className="mt-2 rounded-[10px] border px-2 py-1.5" style={{ borderColor: "var(--color-border)" }}>
+              <summary className="flex cursor-pointer items-center gap-2 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                <span className="shrink-0 font-semibold">共 {turns.length} 轮</span>
+                <span className="truncate">最近：{clip(turns[0]?.task || "（空任务）", 32)}</span>
+                <span className="ml-auto shrink-0 text-[10.5px]">看历史</span>
+              </summary>
+              <div className="mt-1.5 flex flex-col gap-1">
+                {turns.slice(0, 12).map((t, i) => {
+                  const ok = t.status === "ok";
+                  const bad = t.status === "error";
+                  const running1 = t.status === "running" || t.status === "pending";
+                  const tint = ok ? "var(--color-ok)" : bad ? "var(--color-err)" : running1 ? "var(--color-accent)" : "var(--color-muted)";
+                  return (
+                    <div key={t.id} className="flex items-center gap-1.5 text-[11.5px]">
+                      <span className="shrink-0 rounded-full border px-1.5 py-[0.5px] text-[10px]" style={{ color: tint, borderColor: "var(--color-border)" }}>
+                        {ok ? "✓" : bad ? "✗" : running1 ? "◐" : "·"}
+                      </span>
+                      <span className="shrink-0 font-medium tabular-nums" style={{ color: "var(--color-muted)" }}>
+                        第 {turns.length - i} 轮
+                      </span>
+                      <span className="truncate" title={t.task || ""}>{clip(t.task || "（空任务）", 46)}</span>
+                      <span className="ml-auto shrink-0 text-[10.5px] tabular-nums" style={{ color: "var(--color-muted)" }}>
+                        {t.step_count ? `${t.step_count} 步` : ""}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </details>
+          )}
 
           {/* 输入框**默认就在卡上** —— 不"点一下才展开"、不弹窗、不跳页。
               之前是「点击 → 就地放大成 480 的编辑态」，用户明确要求改掉：

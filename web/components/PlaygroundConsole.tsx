@@ -122,6 +122,27 @@ export function PlaygroundConsole() {
   const tracesRef = useRef<Record<string, TraceData>>({});
   /** 历史执行（就地列表）—— 用户明确要求：不跳页，在 Playground 上就能看跑过什么 */
   const [hist, setHist] = useState<{ id: string; status: string; task: string; started_at: number; ended_at: number | null; step_count: number }[]>([]);
+
+  /** 任务卡上的「轮次」用它 ✓ —— 原来只在打开「历史执行」菜单时才拉，画布上永远是空的 ✗。
+   *  改成：流程一变就拉；每次跑完（running 由真变假）再刷一次 ✓（不引 histOpen，避免 TDZ ✗）*/
+  useEffect(() => {
+    if (!wf?.id) {
+      setHist([]);
+      return;
+    }
+    let alive = true;
+    void api
+      .workflowRuns(wf.id)
+      .then((r) => {
+        if (alive) setHist(r as typeof hist);
+      })
+      .catch(() => {
+        if (alive) setHist([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [wf?.id, running]);
   const [histOpen, setHistOpen] = useState(false);
   /** 正在看的那次历史执行（非 null = 只读回放态） */
   const [viewing, setViewing] = useState<string | null>(null);
@@ -1455,6 +1476,8 @@ export function PlaygroundConsole() {
             onRetryRun={(runId) => void retryRun(runId)}
             onRefill={(runId) => void refillFanout(runId)}
             taskText={shownTask}
+            turns={hist}
+            workflowId={wf?.id ?? null}
             finalText={finalText}
             lastNid={lastNid}
             taskValue={task}
