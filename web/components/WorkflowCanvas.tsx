@@ -1403,6 +1403,63 @@ export function WorkflowCanvas({
     };
   }, []);
 
+  // ── 撤销 / 重做（对齐 Dify：Mod+Z / Mod+Shift+Z / Mod+Y —— shortcuts/definitions.ts:74-86）──
+  //
+  // 设计取舍：**历史栈留在画布内部**，不要求父组件改成 reducer ✗。
+  // 画布本来就能看到每次 graph 变化（props 进来），所以自己记账最省事、也最不容易碰坏别的功能 ✓
+  //   · 400ms 内的连续变化**合并成一条**（一次拖动会产生几十次 onChange，不能记几十条 ✗）
+  //   · 上限 50 条 · 有新动作就清空重做栈（标准语义）
+  //   · 撤销/重做自己触发的 onChange **不再入栈**（否则会互相污染 ✗）
+  const undoRef = useRef<(typeof graph)[]>([]);
+  const redoRef = useRef<(typeof graph)[]>([]);
+  const lastSerialRef = useRef("");
+  const lastRecAtRef = useRef(0);
+  const applyingRef = useRef(false);
+
+  useEffect(() => {
+    const serial = JSON.stringify(graph);
+    if (serial === lastSerialRef.current) return;
+    const prevSerial = lastSerialRef.current;
+    lastSerialRef.current = serial;
+    if (!prevSerial) return;                       // 首帧不记
+    if (applyingRef.current) {                     // 这是撤销/重做自己造成的 → 不入栈 ✓
+      applyingRef.current = false;
+      return;
+    }
+    const now = Date.now();
+    if (now - lastRecAtRef.current < 400 && undoRef.current.length) {
+      undoRef.current[undoRef.current.length - 1] = JSON.parse(prevSerial);   // 合并进上一条 ✓
+    } else {
+      undoRef.current.push(JSON.parse(prevSerial));
+      if (undoRef.current.length > 50) undoRef.current.shift();
+    }
+    lastRecAtRef.current = now;
+    redoRef.current = [];                          // 新动作 → 重做栈清空 ✓
+    (window as unknown as Record<string, unknown>).__undoDepth = undoRef.current.length;
+  }, [graph]);
+
+  const doUndo = useCallback(() => {
+    const prev = undoRef.current.pop();
+    if (!prev) return;
+    redoRef.current.push(JSON.parse(JSON.stringify(graph)));
+    applyingRef.current = true;
+    lastSerialRef.current = JSON.stringify(prev);
+    onChange(prev);
+    onSelect(null);
+    setGroup([]);
+    (window as unknown as Record<string, unknown>).__undoDepth = undoRef.current.length;
+  }, [graph, onChange, onSelect]);
+
+  const doRedo = useCallback(() => {
+    const next = redoRef.current.pop();
+    if (!next) return;
+    undoRef.current.push(JSON.parse(JSON.stringify(graph)));
+    applyingRef.current = true;
+    lastSerialRef.current = JSON.stringify(next);
+    onChange(next);
+    (window as unknown as Record<string, unknown>).__undoDepth = undoRef.current.length;
+  }, [graph, onChange]);
+
   /**
    * **复制 / 粘贴**（对齐 Dify：Mod+C / Mod+V —— shortcuts/definitions.ts:56-67）。
    * 内部剪贴板：复制后**切到另一条流程也能粘** ✓（与 Dify 一致）。
@@ -1517,7 +1574,9 @@ export function WorkflowCanvas({
       //  —— shortcuts/definitions.ts:111-141。上一轮我写成 Mod+1=100% ✗，这次照源码改 ✓）
       // 注意：Shift+1 的 e.key 是 "!" ✗（键盘布局差异）→ 必须用 e.code（物理键）判数字 ✓
       const digit = e.code.startsWith("Digit") ? e.code.slice(5) : /^[0-9]$/.test(e.key) ? e.key : "";
-      if (e.key.toLowerCase() === "d" && selected) { e.preventDefault(); duplicateNode(selected); }
+      if (e.key.toLowerCase() === "z") { e.preventDefault(); if (e.shiftKey) doRedo(); else doUndo(); }
+      else if (e.key.toLowerCase() === "y") { e.preventDefault(); doRedo(); }
+      else if (e.key.toLowerCase() === "d" && selected) { e.preventDefault(); duplicateNode(selected); }
       // 复制/粘贴：只在"确实有选中的节点"时接管，否则让浏览器做正常文本复制 ✗（不抢）
       else if (e.key.toLowerCase() === "c" && (group.length || selected)) { e.preventDefault(); copySel(); }
       else if (e.key.toLowerCase() === "v" && clipRef.current?.nodes.length) { e.preventDefault(); pasteClip(); }
@@ -1530,7 +1589,7 @@ export function WorkflowCanvas({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onSelect, fitView, zoomTo, zoomStep, selected, group, graph, onChange, deleteNode, deleteMany, duplicateNode, copySel, pasteClip]);
+  }, [onSelect, fitView, zoomTo, zoomStep, selected, group, graph, onChange, deleteNode, deleteMany, duplicateNode, copySel, pasteClip, doUndo, doRedo]);
 
 
   const growTask = () => {
