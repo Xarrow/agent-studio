@@ -131,6 +131,18 @@ class Run(Base):
     #: 打这个标记是为了**幂等**：反复整理不会重复处理（见 maintenance.compact_events）
     events_archived_at: Mapped[int | None] = mapped_column(BigInteger, default=None)
 
+    # ── 分派（fan-out）维度 ──────────────────────────────────────────────
+    #: 这条执行属于画布上的哪个节点（nid）。**以前没有这一列**，界面上是靠
+    #: 「agent_id 相同 + 还没用过」的顺序猜 —— 同一个助手出现在两个节点时就会贴错，
+    #: 分了多路之后更是必然串味（状态互相覆盖）。有它才能精确匹配。
+    node_id: Mapped[str | None] = mapped_column(String(32), default=None, index=True)
+    #: 第几路（0 起）；NULL = 不是分派出来的实例
+    item_index: Mapped[int | None] = mapped_column(Integer, default=None)
+    #: 那一路叫什么（「第 2 项 · 报销单.pdf」）—— 界面直接显示，不用编号去猜
+    item_label: Mapped[str | None] = mapped_column(String(120), default=None)
+    #: 发起分派的那条执行（子实例指回父）
+    parent_run_id: Mapped[str | None] = mapped_column(String(32), default=None, index=True)
+
     input: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     output: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
     definition_snapshot: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)

@@ -174,6 +174,28 @@ async def sync_builtins(
             exists.impl = impl
             exists.updated_at = now_ms()
             updated += 1
+
+    # ── 平台原生工具（不属于任何运行时的内置清单，由平台自己实现）──────────
+    # 分派：把一份清单交给同一助手的多个实例并行处理。它是**平台层**语义
+    # （见 fanout.py），所以在这里统一登记，而不是等某个运行时去"发现"。
+    from ..fanout import TOOL_DESCRIPTION, TOOL_SCHEMA, tool_flags
+
+    plat = (
+        await session.execute(select(Tool).where(Tool.kind == "fork", Tool.name == "fork"))
+    ).scalar_one_or_none()
+    if plat is None:
+        session.add(
+            Tool(
+                kind="fork",
+                name="fork",
+                description=TOOL_DESCRIPTION,
+                input_schema=TOOL_SCHEMA,
+                impl={},
+                flags=tool_flags(),
+            )
+        )
+        created += 1
+
     await session.commit()
     return {
         "runtime": runtime,
@@ -188,10 +210,6 @@ async def sync_builtins(
     }
 
 
-# --------------------------------------------------------------------------- #
-# 试运行
-# --------------------------------------------------------------------------- #
-@router.post("/{tool_id}/test")
 async def test_tool(
     tool_id: str, payload: ToolTestRequest, session: AsyncSession = Depends(get_session)
 ) -> dict:

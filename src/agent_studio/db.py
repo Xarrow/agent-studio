@@ -188,6 +188,11 @@ _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("orchestration", "workflow_id", "workflow_id VARCHAR(32)"),
     # 事件分层归档标记（NULL = 未归档）—— 幂等的关键
     ("run", "events_archived_at", "events_archived_at BIGINT"),
+    # 分派（fan-out）：节点维度 + 第几路 + 那一路的名字 + 父执行
+    ("run", "node_id", "node_id VARCHAR(32)"),
+    ("run", "item_index", "item_index INTEGER"),
+    ("run", "item_label", "item_label VARCHAR(120)"),
+    ("run", "parent_run_id", "parent_run_id VARCHAR(32)"),
     # 凭据的默认模型（LLM 配置页可探测后选择 / 手动填写）
     ("secret", "default_model", "default_model VARCHAR(128)"),
     # 自动运行（无人值守）：默认任务 + 定时三件套 + 排期与外部触发凭证

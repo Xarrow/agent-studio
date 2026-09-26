@@ -203,7 +203,8 @@ class ToolSpec(BaseModel):
     id: str = ""
     name: str
     description: str = ""
-    kind: Literal["builtin", "http", "code"] = "http"
+    #: fork = 平台原生工具（执行体是平台自己的函数，不依赖任何运行时的内置清单）
+    kind: Literal["builtin", "http", "code", "fork"] = "http"
     input_schema: dict[str, Any] = Field(default_factory=dict)
     impl: dict[str, Any] = Field(default_factory=dict)
     flags: dict[str, Any] = Field(default_factory=dict)
@@ -798,6 +799,12 @@ class OrchestrationStepRead(BaseModel):
     agent_name: str
     role: str | None
     order_index: int | None
+    #: 画布节点 id —— 前端按它**精确**把这一步贴回节点（不再按 agent_id 猜）
+    node_id: str | None = None
+    #: 分派维度：第几路 + 那一路的名字 + 父执行（不是分派出来的就是 NULL）
+    item_index: int | None = None
+    item_label: str | None = None
+    parent_run_id: str | None = None
     status: str
     usage: dict[str, Any] = {}
     error: str | None = None

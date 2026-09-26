@@ -149,6 +149,32 @@ def build_builtin_tool(name: str):
     return cls()
 
 
+def build_fanout_tool(spec: ToolSpec):
+    """平台原生「分派」工具 —— 执行体是**平台自己的** async 函数。
+
+    「权威实现在编排层」的具体体现：运行时只负责把它按 FunctionTool 挂上去，
+    真正的分派逻辑（建子 run / 队列 / 并发闸 / 汇总 / 上限 / 深度）全在 ``fanout.py``，
+    换运行时也照样具备该能力。
+    """
+    from agentscope.tool import FunctionTool
+
+    from ...fanout import handle_tool_call
+
+    return FunctionTool(
+        handle_tool_call,
+        name=spec.name,
+        description=spec.description or spec.name,
+        input_schema=spec.input_schema or {},
+        # **在权限引擎里按"只读"对待**：分派本身不修改任何外部状态 ——
+        # 它只是把任务交给同一助手的其它实例，真正的写操作发生在子实例的工具里、
+        # 由各自的权限策略把关。若按"非只读"处理，AgentScope 会在每次分派前要人确认：
+        # 手动跑要点一次同意，定时/外部触发则直接卡死在 waiting_hitl（实测踩到过）。
+        is_read_only=True,
+        # 分派占并发配额与额度 → 同一次执行里不与其他工具并发
+        is_concurrency_safe=False,
+    )
+
+
 def build_http_tool(spec: ToolSpec):
     """把 HTTP 工具记录编译成 ``FunctionTool``（用户无需写代码）。
 
@@ -215,6 +241,8 @@ def build_tools(specs: list[ToolSpec]) -> list[Any]:
                 tools.append(build_builtin_tool(spec.name))
             elif spec.kind == "http":
                 tools.append(build_http_tool(spec))
+            elif spec.kind == "fork":
+                tools.append(build_fanout_tool(spec))
             else:
                 logger.warning("跳过暂不支持的工具类型: %s (%s)", spec.kind, spec.name)
         except Exception as exc:

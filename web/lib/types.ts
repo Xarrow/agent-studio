@@ -430,6 +430,13 @@ export interface OrchestrationStepRead {
   input_text: string;
   /** 它的产出 */
   output_text: string;
+
+  /** 画布节点 id —— 按它精确贴回节点（不再按 agent_id 猜，多实例会串味） */
+  node_id?: string | null;
+  /** 分派维度：第几路 / 那一路的名字 / 父执行 */
+  item_index?: number | null;
+  item_label?: string | null;
+  parent_run_id?: string | null;
 }
 
 export interface Orchestration {

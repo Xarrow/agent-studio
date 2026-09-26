@@ -44,9 +44,21 @@ VALID_MODES = {"single", "serial", "parallel", "master_worker", "dag"}
 # 图 → 执行 spec
 # --------------------------------------------------------------------------- #
 def _wait_of(node: dict[str, Any]) -> dict[str, Any]:
-    """把节点上的「最多等多久」带进 spec 的那一步（不填 = 不带，执行层用平台默认）。"""
+    """把**节点身份与等待上限**带进 spec 的那一步。
+
+    · ``nid``：画布节点 id —— 执行记录靠它精确回贴到节点上。
+      以前没有它，界面只能按「agent_id 相同 + 还没用过」的顺序猜，同一个助手出现在
+      两个节点就会贴错；分派（一个节点多条执行）之后更是必然串味。
+    · ``wait_timeout_s``：不填 = 不带，执行层用平台默认。
+    """
+    out: dict[str, Any] = {}
+    nid = (node or {}).get("nid")
+    if isinstance(nid, str) and nid:
+        out["nid"] = nid
     v = (node or {}).get("wait_timeout_s")
-    return {"wait_timeout_s": v} if isinstance(v, int) and not isinstance(v, bool) else {}
+    if isinstance(v, int) and not isinstance(v, bool):
+        out["wait_timeout_s"] = v
+    return out
 
 
 def _master_wait(node: dict[str, Any]) -> dict[str, Any]:
@@ -115,7 +127,7 @@ def graph_to_spec(graph: WorkflowGraph, mode: str, task: str) -> dict[str, Any]:
     if not workers or master_nid not in by_nid:
         return {
             "mode": "single",
-            "steps": [{"agent_id": nodes[0]["agent_id"], "carry_prev": False}],
+            "steps": [{"agent_id": nodes[0]["agent_id"], "carry_prev": False, **_wait_of(nodes[0])}],
             "task": task,
         }
     return {
@@ -501,7 +513,9 @@ async def run_workflow(
         "mode": spec["mode"],
         "mode_label": MODE_LABEL_CN.get(spec["mode"], spec["mode"]),
         "step_count": len(steps),
-        "stream_url": f"/api/orchestrations/stream/{orc.id}",
+        # 这里原来写的是 {orc.id}（未定义的名字）→ 每次跑流程都 500。
+        # 正确值是上面那个 orc_id（start_run_for_workflow 的返回）。
+        "stream_url": f"/api/orchestrations/stream/{orc_id}",
     }
 
 

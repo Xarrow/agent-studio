@@ -57,6 +57,8 @@ type Props = {
   onSelect: (nid: string | null) => void;
   /** 这次执行的节点状态（nid → 状态）；空对象 = 还没跑过 */
   runStates: Record<string, NodeState>;
+  /** 分派进度（nid → 几路/成了/败了）。有它就说明这一步这次分派了多条执行 */
+  fanout?: Record<string, { total: number; done: number; failed: number }>;
   /** 各节点本轮产出，直接显示在卡片上 */
   outputs: Record<string, string>;
   /** 各节点**实时摘要**（正在干什么/耗时/思考/工具/输出）—— 悬停卡、节点角标、右侧抽屉共用 */
@@ -155,6 +157,7 @@ export function WorkflowCanvas({
   onChange,
   selected,
   onSelect,
+  fanout,
   runStates,
   outputs,
   live,
@@ -2998,6 +3001,31 @@ export function WorkflowCanvas({
                 >
                   {stepNo}
                 </span>
+                {/* **分派徽标**：这一步这次分了几路、跑到第几路。
+                    常驻显示（不 hover、不需要点）—— 用户要求过「信息默认可见」，
+                    而且跑多路时最要紧的就是「还剩几路」这一个数字。 */}
+                {(() => {
+                  const f = fanout?.[n.nid];
+                  if (!f) return null;
+                  const finished = f.done + f.failed;
+                  const color = f.failed ? "var(--color-err)" : f.done === f.total ? "var(--color-ok)" : "var(--color-accent)";
+                  const label = f.failed
+                    ? `${f.done}/${f.total} · ${f.failed} 失败`
+                    : `${finished}/${f.total}`;
+                  return (
+                    <span
+                      className="shrink-0 rounded-full px-1.5 py-[1px] text-[10.5px] font-medium tabular-nums"
+                      style={{
+                        border: `1px solid color-mix(in srgb, ${color} 34%, transparent)`,
+                        color,
+                        background: `color-mix(in srgb, ${color} 10%, transparent)`,
+                      }}
+                      title={`这一步分派了 ${f.total} 路并行处理：已完成 ${finished}，失败 ${f.failed}`}
+                    >
+                      {label}
+                    </span>
+                  );
+                })()}
                 {agentOf(n.agent_id)?.definition?.role === "orchestrator" ? (
                   <span
                     className="shrink-0 rounded-full px-1.5 py-[1px] text-[10.5px] font-medium"

@@ -154,7 +154,7 @@ class Orchestrator:
         steps = self._steps(spec)
         task = self._task(spec)
 
-        run = await self._start_step(orc_id, steps[0]["agent_id"], "worker", 0, task)
+        run = await self._start_step(orc_id, steps[0]["agent_id"], "worker", 0, task, node_id=steps[0].get("nid"))
         done = await self._await(run.id, (steps[0] or {}).get("wait_timeout_s"))
 
         await self._finish(
@@ -179,7 +179,7 @@ class Orchestrator:
         for i, step in enumerate(steps):
             carry = bool(step.get("carry_prev"))
             payload = self._compose(task, prev_text if carry else None, i)
-            run = await self._start_step(orc_id, step["agent_id"], "worker", i, payload)
+            run = await self._start_step(orc_id, step["agent_id"], "worker", i, payload, node_id=step.get("nid"))
             r = await self._await(run.id, step.get("wait_timeout_s"))
             done.append(r)
             # 只有成功且有内容才更新"上一步产出"，失败的输出传下去没意义
@@ -200,7 +200,7 @@ class Orchestrator:
 
         # 先把所有 Run 建好并启动，让它们真正并发
         runs = [
-            await self._start_step(orc_id, step["agent_id"], "worker", i, task)
+            await self._start_step(orc_id, step["agent_id"], "worker", i, task, node_id=step.get("nid"))
             for i, step in enumerate(steps)
         ]
         # return_exceptions=True：一个挂了不能拖垮其余
@@ -297,7 +297,7 @@ class Orchestrator:
                 payload = self._compose(task, prev, idx)
                 inputs[nid] = payload
                 node = by_nid[nid]
-                run = await self._start_step(orc_id, node["agent_id"], "worker", idx, payload)
+                run = await self._start_step(orc_id, node["agent_id"], "worker", idx, payload, node_id=node.get("nid") or nid)
                 # 这一跳最多等多久：用节点上设的（画布上给"等上游"的那个节点设）——
                 # 用户："Orchestrator 需要等待其他 agent 执行完再验证总结，但需要设置超时时间"
                 return await self._await(run.id, node.get("wait_timeout_s"))
@@ -350,7 +350,7 @@ class Orchestrator:
                     + ("\n\n".join(_chunks) or "（各位助手都没有产出）")
                 )
                 _node = by_nid[_t]
-                _run = await self._start_step(orc_id, _node["agent_id"], "worker", order, _payload)
+                _run = await self._start_step(orc_id, _node["agent_id"], "worker", order, _payload, node_id=_node.get("nid") or _t)
                 _done = await self._await(_run.id, _node.get("wait_timeout_s"))
                 done.append(_done)
                 run_of[_t] = _done
@@ -431,7 +431,7 @@ class Orchestrator:
 
         # ── 第一步：主控拆任务 ────────────────────────────────────────
         plan_payload = _PLAN_PROMPT.format(task=task, n=n)
-        plan_run = await self._start_step(orc_id, master_id, "master", 0, plan_payload)
+        plan_run = await self._start_step(orc_id, master_id, "master", 0, plan_payload, node_id=spec.get("master_nid"))
         plan_done = await self._await(plan_run.id, spec.get("master_wait_timeout_s"))
         done.append(plan_done)
 
@@ -448,7 +448,7 @@ class Orchestrator:
             prev: str | None = None
             for i, step in enumerate(steps):
                 payload = self._compose_worker(subtasks[i], prev, i)
-                r = await self._start_step(orc_id, step["agent_id"], "worker", i + 1, payload)
+                r = await self._start_step(orc_id, step["agent_id"], "worker", i + 1, payload, node_id=step.get("nid"))
                 d = await self._await(r.id, step.get("wait_timeout_s"))
                 worker_runs.append(d)
                 if d.status == "ok" and (t := self._text(d)):
@@ -456,7 +456,7 @@ class Orchestrator:
         else:
             runs = [
                 await self._start_step(
-                    orc_id, step["agent_id"], "worker", i + 1, subtasks[i]
+                    orc_id, step["agent_id"], "worker", i + 1, subtasks[i], node_id=step.get("nid")
                 )
                 for i, step in enumerate(steps)
             ]
@@ -479,7 +479,7 @@ class Orchestrator:
         )
         summary_payload = _SUMMARY_PROMPT.format(task=task, parts=parts or "（各位助手都没有产出）")
         sum_run = await self._start_step(
-            orc_id, master_id, "master", n + 1, summary_payload
+            orc_id, master_id, "master", n + 1, summary_payload, node_id=spec.get("master_nid")
         )
         sum_done = await self._await(sum_run.id, spec.get("master_wait_timeout_s"))
         done.append(sum_done)
@@ -501,6 +501,7 @@ class Orchestrator:
         role: str,
         order: int,
         payload: str,
+        node_id: str | None = None,
     ) -> Run:
         """建一条 run 记录并启动它。
 
@@ -535,6 +536,8 @@ class Orchestrator:
                 orchestration_id=orc_id,
                 orch_role=role,
                 order_index=order,
+                # 画布节点 id（界面按它精确匹配；无则回退到旧启发式）
+                node_id=node_id,
                 # 谁发起的这次执行：画布点运行 = playground；定时 = schedule；
                 # 外部调用 = webhook（运行记录据此标出"它自己跑的"）
                 origin=_RUN_ORIGIN.get(),

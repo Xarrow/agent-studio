@@ -459,7 +459,22 @@ class RunService:
                     _gated = True
                     if _waited > 1:
                         logger.info("执行 %s 排队 %.1fs 后拿到槽位", run_id, _waited)
+                # ── 让工具知道"我在哪次执行的哪个节点上"（分派工具要用）───────
+                # 深度：本 run 是不是分派出来的实例（有父 = 实例 → 深度 1，不再具备分派能力）
+                from .ctx import set_run_ctx
+
+                set_run_ctx(
+                    run_id=run_id,
+                    agent_id=run.agent_id,
+                    node_id=run.node_id,
+                    orchestration_id=run.orchestration_id,
+                    depth=1 if run.parent_run_id else 0,
+                )
+
                 tools = await load_tools(session, run.agent_id)
+                # **深度 1**：分派出来的实例不再具备分派能力（内核兜底，不只靠工具清单）
+                if run.parent_run_id:
+                    tools = [t for t in tools if getattr(t, 'kind', '') != 'fork']
                 api_key, cred_base_url = await resolve_credential(definition, session)
                 # 凭据上的 base_url 必须补进定义 —— 否则 compile / 压缩 / 提炼
                 # 都会用错端点（火山引擎 plan key 打 /api/v3 会 401）
