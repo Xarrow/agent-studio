@@ -2573,8 +2573,15 @@ export function WorkflowCanvas({
                   </button>
                 </div>
 
+                {/* **分区标题** —— 检视面板必须有层级：不分区就成了"一堆裸文字" ✗（用户："没有任何设计"）*/}
                 <div className="border-b px-3 py-2" style={{ borderColor: "var(--color-border)" }}>
-                  <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+                  <div
+                    className="mb-1 text-[10.5px] font-medium uppercase tracking-wider"
+                    style={{ color: "var(--color-muted)" }}
+                  >
+                    这一步在做什么
+                  </div>
+                  <div className="text-[12px]" style={{ color: "var(--color-text)" }}>
                     {blurb || "（这个助手还没写一句话职责）"}
                   </div>
                 {/* ── 分派：按项看 ──────────────────────────────────────────
