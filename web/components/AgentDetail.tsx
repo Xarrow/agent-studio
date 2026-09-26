@@ -82,6 +82,8 @@ export function AgentDetail({
   const [syncing, setSyncing] = useState(false);
   /** 工具列表默认**只看已选**（详情页最占屏的就是这一列 ✗）；要看全部再展开 ✓ */
   const [showAllTools, setShowAllTools] = useState(false);
+  /** Skills 列表默认只看已选（与工具同款；插在**容器内部**、不动 JSX 结构 ✓） */
+  const [showAllSkills, setShowAllSkills] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   /**
@@ -989,13 +991,33 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 <Link href="/skills" className="text-[var(--color-accent)]">Skills</Link> 页导入。
               </p>
             ) : (
-              <div className="space-y-1.5 max-h-72 overflow-auto">
+              <div
+                className="space-y-1.5 max-h-72 overflow-auto"
+                data-hide-off={!showAllSkills && def.skills.length > 0 ? "1" : undefined}
+              >
+                {/* 开关放在容器**内部第一行** —— 不引入兄弟节点，JSX 结构零改动 ✓
+                    （上一版插在容器外面 → 括号里出现两个元素 → TS2657 ✗） */}
+                <div className="mb-1.5 flex items-center gap-2 text-[12px]">
+                  <span style={{ color: "var(--color-muted)" }}>
+                    {showAllSkills ? "全部" : "已选"} {showAllSkills ? skills.length : def.skills.length} 个
+                  </span>
+                  {skills.length > 0 && (
+                    <button
+                      type="button"
+                      className="ml-auto hover:underline"
+                      style={{ color: "var(--color-accent)" }}
+                      onClick={() => setShowAllSkills((v) => !v)}
+                    >
+                      {showAllSkills ? "只看已选" : `显示全部 ${skills.length} 个`}
+                    </button>
+                  )}
+                </div>
                 {skills.map((s) => {
                   const on = def.skills.some((x) => x.ref === s.id);
                   return (
                     <label
                       key={s.id}
-                      className="flex items-start gap-2.5 p-2 rounded-md hover:bg-[var(--color-surface-2)] cursor-pointer"
+                      className={`flex items-start gap-2.5 p-2 rounded-md hover:bg-[var(--color-surface-2)] cursor-pointer ${on ? "" : "sk-off"}`}
                     >
                       <input
                         type="checkbox"

@@ -586,3 +586,6 @@ body {
 
 @keyframes box-in { from { opacity: 0; } to { opacity: 1; } }
 .wf-box-in { animation: box-in .12s ease-out; }
+
+/* 助手详情页：Skills 列表「只看已选」时隐藏未选项（CSS 隐藏，不动 JSX 结构 ✓） */
+[data-hide-off="1"] .sk-off { display: none; }
