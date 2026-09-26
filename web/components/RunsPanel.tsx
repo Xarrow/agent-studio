@@ -307,41 +307,64 @@ export function RunsPanel() {
 
   return (
     <>
-        {/* ── 用量与花费：**放最上面**。用户的第一个问题就是它 ────────────
-            「今天跑了多少次、用了多少 token、花了多少钱」，不用自己数列表。
-            没填单价的模型在这里点名提示 —— 不提示的话，合计就是在骗人。 */}
+        {/* ── 统计卡带：**放最上面**。用户的第一个问题就是它 ────────────
+            「今天跑了多少次、成功率多少、用了多少 token、花了多少钱」——
+            四张卡、数字大、一眼读，不用自己数列表。
+            没填单价的模型在花费卡里点名提示 —— 不提示的话，合计就是在骗人。 */}
         {usage && (
-          <div
-            className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-1.5 rounded-[10px] border px-3.5 py-2 text-[12.5px]"
-            style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
-          >
-            {(
-              [
-                ["今日", usage.today],
-                [`近 ${usage.days} 天`, usage.period],
-              ] as const
-            ).map(([label, b]) => (
-              <span key={label} className="whitespace-nowrap">
-                <span style={{ color: "var(--color-muted)" }}>{label} </span>
-                <b>{b.calls}</b>
-                <span style={{ color: "var(--color-muted)" }}> 次 · </span>
-                {fmt.num(b.tokens_in + b.tokens_out)}
-                <span style={{ color: "var(--color-muted)" }}> tokens · </span>
-                <b style={{ color: b.cost ? "var(--color-text)" : "var(--color-muted)" }}>
-                  {fmt.money(b.cost, usage.currency)}
-                </b>
-                {b.unpriced > 0 && (
-                  <span title={`其中 ${b.unpriced} 次调用的模型还没填单价，没有计入金额`}>
-                    {" "}
-                    <span style={{ color: "var(--color-warn)" }}>（{b.unpriced} 次未计价）</span>
-                  </span>
-                )}
-              </span>
-            ))}
+          <div className="mb-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
+            {(() => {
+              const cards: { label: string; value: string; sub?: string; subColor?: string }[] = [
+                {
+                  label: "今日执行",
+                  value: String(usage.today.calls),
+                  sub: `近 ${usage.days} 天 ${usage.period.calls} 次`,
+                },
+                {
+                  label: "成功率",
+                  value: usage.stats?.success_rate != null ? `${usage.stats.success_rate}%` : "—",
+                  sub:
+                    usage.stats && usage.stats.runs > 0
+                      ? `${usage.stats.ok} 成功 · ${usage.stats.failed} 失败`
+                      : "暂无执行",
+                  subColor: usage.stats && usage.stats.failed > 0 ? "var(--color-err)" : undefined,
+                },
+                {
+                  label: "Token 用量",
+                  value: fmt.num(usage.today.tokens_in + usage.today.tokens_out),
+                  sub: `今日 · 近 ${usage.days} 天 ${fmt.num(usage.period.tokens_in + usage.period.tokens_out)}`,
+                },
+                {
+                  label: "花费",
+                  value: usage.today.cost != null ? fmt.money(usage.today.cost, usage.currency) : "—",
+                  sub:
+                    usage.period.cost != null
+                      ? `近 ${usage.days} 天 ${fmt.money(usage.period.cost, usage.currency)}`
+                      : undefined,
+                },
+              ];
+              return cards.map((c) => (
+                <div
+                  key={c.label}
+                  className="rounded-[10px] border px-3.5 py-2.5"
+                  style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+                >
+                  <div className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                    {c.label}
+                  </div>
+                  <div className="mt-0.5 text-[20px] font-semibold leading-tight tabular-nums">{c.value}</div>
+                  {c.sub && (
+                    <div className="mt-0.5 truncate text-[11px]" style={{ color: c.subColor ?? "var(--color-muted)" }}>
+                      {c.sub}
+                    </div>
+                  )}
+                </div>
+              ));
+            })()}
             {usage.unpriced.length > 0 && (
               <Link
                 href="/credentials#prices"
-                className="whitespace-nowrap underline decoration-dotted"
+                className="col-span-2 whitespace-nowrap self-center underline decoration-dotted lg:col-span-4"
                 style={{ color: "var(--color-accent)" }}
                 title={`这些模型还没填单价：${usage.unpriced.join("、")} —— 填了才算得准`}
               >
@@ -444,7 +467,112 @@ export function RunsPanel() {
               )}
             </div>
           ) : (
-            <table className="w-full min-w-[880px] text-[12.5px]">
+            <>
+            {/* ── 手机（<lg）：卡片流 ──────────────────────────────────
+                8 列表格在 390px 上必然横向滚动（min-w-[880px]），来回拖是在惩罚手指。
+                手机上信息按「一眼要什么」重排：第一行 = 状态 + 类型 + 时间，
+                第二行 = 主体（标题 + 模型），第三行 = 摘要/错误，右下 = token/金额。
+                点卡片开详情 —— 与桌面表格同一动作。 */}
+            <div className="lg:hidden p-2 flex flex-col gap-2">
+              {items.map((it) => {
+                const live = LIVE.includes(it.status);
+                return (
+                  <div
+                    key={it.id}
+                    className="rounded-[10px] border p-2.5"
+                    style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+                    onClick={() => setOpen(it)}
+                    role="button"
+                  >
+                    <div className="flex items-center gap-2 text-[11.5px]">
+                      <span className="font-medium whitespace-nowrap" style={{ color: STATUS_STYLE[it.status] ?? "" }}>
+                        {live && "● "}{STATUS_LABEL[it.status] ?? it.status}
+                      </span>
+                      <span
+                        className="rounded px-1.5 py-px"
+                        style={{ background: "color-mix(in srgb, var(--color-accent) 10%, transparent)", color: "var(--color-accent)" }}
+                      >
+                        {KIND_LABEL[it.kind]}
+                      </span>
+                      {it.trigger && (
+                        <span className="rounded px-1.5 py-px" style={{ background: "color-mix(in srgb, var(--color-warn) 14%, transparent)", color: "var(--color-warn)" }}>
+                          {it.trigger === "schedule" ? "定时" : "外部"}
+                        </span>
+                      )}
+                      <span className="ml-auto tabular-nums" style={{ color: "var(--color-muted)" }}>
+                        {new Date(it.at).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false })}
+                      </span>
+                    </div>
+                    <div className="mt-1.5 text-[13px] font-medium truncate">{it.title}</div>
+                    {(it.model || it.duration_ms != null) && it.kind !== "llm_test" && (
+                      <div className="mt-0.5 text-[11px] truncate" style={{ color: "var(--color-muted)" }}>
+                        {it.model && <span className="mono">{it.model}</span>}
+                        {it.model && it.duration_ms != null ? " · " : ""}
+                        {it.duration_ms != null ? fmt.ms(it.duration_ms) : ""}
+                      </div>
+                    )}
+                    {(it.summary || it.error) && (
+                      <div className="mt-1 text-[12px] line-clamp-2" style={{ color: it.error ? "var(--color-err)" : "var(--color-muted)" }}>
+                        {it.error ? `✗ ${it.error}` : it.summary}
+                      </div>
+                    )}
+                    <div className="mt-1.5 flex items-center gap-2 text-[11.5px] tabular-nums" style={{ color: "var(--color-muted)" }}>
+                      {(it.tokens_in || it.tokens_out) && <span>{fmt.num(it.tokens_in)} / {fmt.num(it.tokens_out)}</span>}
+                      <span className="ml-auto" style={{ color: it.cost == null ? "var(--color-muted)" : "var(--color-text)" }}>
+                        {fmt.money(it.cost, it.currency ?? "¥")}
+                      </span>
+                    </div>
+                    {it.fanout && (
+                      <button
+                        type="button"
+                        className="mt-1.5 rounded-full px-1.5 py-[1px] text-[11px]"
+                        style={{
+                          border: `1px solid color-mix(in srgb, ${it.fanout.failed ? "var(--color-err)" : "var(--color-accent)"} 34%, transparent)`,
+                          color: it.fanout.failed ? "var(--color-err)" : "var(--color-accent)",
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setFanoutOpen((s) => {
+                            const next = new Set(s);
+                            if (next.has(it.id)) next.delete(it.id);
+                            else next.add(it.id);
+                            return next;
+                          });
+                        }}
+                      >
+                        分派 {it.fanout.total} 路 · {it.fanout.ok} 成功{it.fanout.failed ? ` · ${it.fanout.failed} 失败` : ""}
+                      </button>
+                    )}
+                    {!live && (
+                      <input
+                        type="checkbox"
+                        checked={selected.has(it.id)}
+                        onChange={() => toggle(it.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="absolute mt-0.5 accent-[var(--color-accent)]"
+                        style={{ marginLeft: "calc(100% - 18px)", marginTop: "-2px" }}
+                      />
+                    )}
+                    {it.fanout && fanoutOpen.has(it.id) && (
+                      <div className="mt-2 flex flex-col gap-1 border-t pt-2" style={{ borderColor: "var(--color-border)" }}>
+                        {it.fanout.items.map((f) => (
+                          <div key={f.index} className="flex items-center gap-2 text-[12px]">
+                            <span className="shrink-0" style={{ color: f.status === "ok" ? "var(--color-ok)" : f.status === "error" || f.status === "aborted" ? "var(--color-err)" : "var(--color-accent)" }}>
+                              {f.status === "ok" ? "✓" : f.status === "error" || f.status === "aborted" ? "✕" : "◌"}
+                            </span>
+                            <span className="min-w-0 flex-1 truncate">{f.label || `第 ${f.index + 1} 项`}</span>
+                            {f.duration_ms ? <span className="shrink-0 tabular-nums" style={{ color: "var(--color-muted)" }}>{(f.duration_ms / 1000).toFixed(1)}s</span> : null}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* ── 桌面（≥lg）：表格 ─────────────────────────────────── */}
+            <table className="hidden lg:table w-full min-w-[880px] text-[12.5px]">
               <thead className="bg-[var(--color-surface-2)] text-[var(--color-muted)]">
                 <tr>
                   <th className="w-10 px-3 py-2.5">
@@ -713,6 +841,7 @@ export function RunsPanel() {
                 })}
               </tbody>
             </table>
+            </>
           )}
 
           {/* 分页：一页 50 条。不摆页码 —— 记录一直在新增，页码会错位，

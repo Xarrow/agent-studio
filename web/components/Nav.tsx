@@ -26,12 +26,19 @@ import { useEffect, useState } from "react";
 
 type Item = { href: string; label: string; icon: string; tip: string };
 
+/** 内联 SVG 描边图标（用户偏好：克制 emoji / 字符图标，统一用描边 SVG） */
+const Icon = ({ d, size = 15 }: { d: string; size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d={d} />
+  </svg>
+);
+
 /** 使用 —— 日常干活的入口 */
 const USE_ITEMS: Item[] = [
   {
     href: "/playground",
     label: "Playground",
-    icon: "✦",
+    icon: "playground",
     // 「对话」已经并进这里 —— 一个节点就是对话，多个节点就是编排。
     // 侧边栏只留这一个入口：同一件事不开两道门。
     tip: "干活的地方：把助手拖进来摆成一条链，就是让它们分工做一件事；只放一个，就是跟它聊天。",
@@ -43,40 +50,51 @@ const SETUP_ITEMS: Item[] = [
   {
     href: "/runs",
     label: "管理",
-    icon: "▶",
+    icon: "manage",
     tip: "流程管理 + 全部运行记录：全部流程、每次执行、点步骤看这一步的执行详情（Playground 顶栏「流程」也能就地打开它）",
   },
   {
     href: "/agents",
     label: "Agents",
-    icon: "▲",
+    icon: "agents",
     tip: "「助手」：一个会自己想办法帮你做事的 AI。你可以给不同的助手不同的分工。",
   },
   {
     href: "/memories",
     label: "记忆",
-    icon: "❖",
+    icon: "memory",
     tip: "跨对话的长期记性：值得记住的事存下来，以后聊天会自动想起来。",
   },
   {
     href: "/tools",
     label: "工具",
-    icon: "⚙",
+    icon: "tools",
     tip: "给助手加「手」：能查网页、读文件、跑命令之类。不加就只能聊天。",
   },
     {
     href: "/environment",
     label: "环境配置",
-    icon: "⛁",
+    icon: "database",
     tip: "选择平台把数据存在哪里：默认是本地文件（SQLite），也可以切到你自己的 MySQL 或 PostgreSQL。切换时新库会自动建好表。",
   },
   {
     href: "/credentials",
     label: "LLM 配置",
-    icon: "⚿",
+    icon: "key",
     tip: "让 AI 能工作的「钥匙」（模型服务商的密钥）。加密保存，不会明文显示。",
   },
 ];
+
+/** 图标路径（24×24 描边）：与 Item.icon 对应 */
+const ICON_PATHS: Record<string, string> = {
+  playground: "M4 5.5v13l12-6.5-12-6.5zM17 5.5h3v13h-3z", // 画布/播放
+  manage: "M4 6h16M4 12h16M4 18h10", // 列表
+  agents: "M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3zM12 12l8-4.5M12 12v9M12 12L4 7.5", // 立方体
+  memory: "M12 5a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4", // 芯片/记忆
+  tools: "M14.7 6.3a4.5 4.5 0 0 0-6 5.9L3 18l3 3 5.8-5.7a4.5 4.5 0 0 0 5.9-6L14 13l-3-3 3.7-3.7z", // 扳手
+  database: "M12 3c4.4 0 8 1.3 8 3s-3.6 3-8 3-8-1.3-8-3 3.6-3 8-3zM4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3", // 数据库
+  key: "M14.5 4a5.5 5.5 0 1 1-4.9 8L4 17.6V20h2.4l1-1v-2h2v-2h2l1.2-1.2A5.5 5.5 0 0 1 14.5 4z", // 钥匙
+};
 
 export function Nav() {
   const pathname = usePathname();
@@ -164,14 +182,14 @@ export function Nav() {
               {groupLabel("使用")}
               {USE_ITEMS.map((l) => (
                 <Link key={l.href} href={l.href} className={rowCls(isActive(l.href))} title={l.tip}>
-                  <span className="w-4 text-center text-[12px]">{l.icon}</span>
+                  <Icon d={ICON_PATHS[l.icon] ?? ""} size={14} />
                   <span>{l.label}</span>
                 </Link>
               ))}
               {groupLabel("配置")}
               {SETUP_ITEMS.map((l) => (
                 <Link key={l.href} href={l.href} className={rowCls(isActive(l.href))} title={l.tip}>
-                  <span className="w-4 text-center text-[12px]">{l.icon}</span>
+                  <Icon d={ICON_PATHS[l.icon] ?? ""} size={14} />
                   <span>{l.label}</span>
                 </Link>
               ))}
@@ -188,13 +206,13 @@ export function Nav() {
             key={l.href}
             href={l.href}
             title={`${l.label} —— ${l.tip}`}
-            className={`w-11 h-11 flex items-center justify-center rounded-md text-[15px] ${
+            className={`w-11 h-11 flex items-center justify-center rounded-md ${
               isActive(l.href)
                 ? "text-[var(--color-accent)] bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)]"
                 : "hover:bg-[var(--color-surface-2)]"
             }`}
           >
-            {l.icon}
+            <Icon d={ICON_PATHS[l.icon] ?? ""} size={16} />
           </Link>
         ))}
         <div className="w-6 border-t border-[var(--color-border)] my-1" />
@@ -203,13 +221,13 @@ export function Nav() {
             key={l.href}
             href={l.href}
             title={`${l.label} —— ${l.tip}`}
-            className={`w-11 h-11 flex items-center justify-center rounded-md text-[13.5px] ${
+            className={`w-11 h-11 flex items-center justify-center rounded-md ${
               isActive(l.href)
                 ? "text-[var(--color-accent)] bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)]"
                 : "hover:bg-[var(--color-surface-2)]"
             }`}
           >
-            {l.icon}
+            <Icon d={ICON_PATHS[l.icon] ?? ""} size={16} />
           </Link>
         ))}
       </aside>
@@ -229,7 +247,7 @@ export function Nav() {
           {groupLabel("使用")}
           {USE_ITEMS.map((l) => (
             <Link key={l.href} href={l.href} className={rowCls(isActive(l.href))} title={l.tip}>
-              <span className="w-4 text-center text-[12px]">{l.icon}</span>
+              <Icon d={ICON_PATHS[l.icon] ?? ""} size={14} />
               <span>{l.label}</span>
             </Link>
           ))}
@@ -237,7 +255,7 @@ export function Nav() {
           {groupLabel("配置")}
           {SETUP_ITEMS.map((l) => (
             <Link key={l.href} href={l.href} className={rowCls(isActive(l.href))} title={l.tip}>
-              <span className="w-4 text-center text-[12px]">{l.icon}</span>
+              <Icon d={ICON_PATHS[l.icon] ?? ""} size={14} />
               <span>{l.label}</span>
             </Link>
           ))}

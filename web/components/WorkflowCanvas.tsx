@@ -3403,10 +3403,18 @@ const taskOnly = (t: string | null | undefined) => String(t || "").split("——
               <div
                 /* data-draghead：拖动的把手只在这里 —— 正文要能选字、能滚动，不能被拖动抢走 */
                 data-draghead
-                className={`touch-none flex items-center gap-2 border-b px-3 pt-3 pb-2 ${
+                className={`touch-none flex items-center gap-2 border-b px-3 pt-2.5 pb-2 ${
                   drag?.nid === n.nid ? "cursor-grabbing" : "cursor-grab"
                 }`}
-                style={{ borderColor: "var(--color-border)" }}
+                style={{
+                  // **卡头状态染色**（对齐 Dify 的节点头色带）：扫一眼颜色就知道这一步的状态，
+                  // 不用读徽标文字。染色很淡（8%），不抢正文对比度。
+                  background:
+                    st === "idle" || st === "wait" || st === "stale"
+                      ? undefined
+                      : `color-mix(in srgb, ${meta.dot} 8%, transparent)`,
+                  borderColor: "var(--color-border)",
+                }}
               >
                 {/* 节点上只留三样：**序号、名字、一行摘要**。
                     原来这里有 10 个元素：[主控] 徽标、[第N步] 徽标、⚙、✕、模型名…
@@ -3477,7 +3485,7 @@ const taskOnly = (t: string | null | undefined) => String(t || "").split("——
                     }}
                     title="编排者：分析任务 → 管理上下文 → 验证结果 → 归纳总结（适合放在流程首节点或末节点）"
                   >
-                    ✦ 编排者
+                    编排者
                     {orcMisplaced && (
                       <span
                         className="ml-1 rounded-full px-1 py-0 text-[10px] font-normal"
@@ -3488,19 +3496,8 @@ const taskOnly = (t: string | null | undefined) => String(t || "").split("——
                       </span>
                     )}
                   </span>
-                ) : (
-                  <span
-                    className="shrink-0 rounded-full px-1.5 py-[1px] text-[10.5px]"
-                    style={{
-                      border: "1px solid var(--color-border)",
-                      color: "var(--color-muted)",
-                      background: "var(--color-surface)",
-                    }}
-                    title="这一步用哪个助手（卡片类型：助手卡）"
-                  >
-                    助手
-                  </span>
-                )}
+                ) : null}
+                {/* 「助手」徽标已删：每张卡都是助手卡，写了等于没写（零信息噪音） */}
                 {/* **设过的等待上限要看得见**（用户要求：信息默认可见、别藏在菜单里）——
                     没设 = 平台默认 15 分钟，不占位置；设了才出现这枚小标。 */}
                 {typeof n.wait_timeout_s === "number" && (
@@ -3798,6 +3795,36 @@ const taskOnly = (t: string | null | undefined) => String(t || "").split("——
                 </div>
               )}
               {st === "run" && <div className="indeterminate mx-2.5 mt-1.5" />}
+
+              {/* **分派进度条**（内嵌节点底部）：分了几路、跑到哪，一条细进度直接给答案。
+                  比"2/5"文本徽标更省一次阅读 —— 长度即进度，颜色即健康。 */}
+              {(() => {
+                const list = fanout?.[n.nid];
+                if (!list?.length) return null;
+                const total = list.length;
+                const done = list.filter((x) => x.status === "ok").length;
+                const failed = list.filter((x) => x.status === "error" || x.status === "aborted").length;
+                const waiting = list.filter((x) => x.status === "waiting_hitl").length;
+                const color = failed ? "var(--color-err)" : done === total ? "var(--color-ok)" : "var(--color-accent)";
+                return (
+                  <div className="mx-3 mb-2 mt-1" title={`分派 ${total} 路：${done} 完成${failed ? ` · ${failed} 失败` : ""}${waiting ? ` · ${waiting} 等你确认` : ""}`}>
+                    <div
+                      className="flex h-[5px] w-full overflow-hidden rounded-full"
+                      style={{ background: "var(--color-surface-2)" }}
+                    >
+                      <div className="h-full transition-all duration-300" style={{ width: `${(done / total) * 100}%`, background: "var(--color-ok)" }} />
+                      {failed > 0 && (
+                        <div className="h-full transition-all duration-300" style={{ width: `${(failed / total) * 100}%`, background: "var(--color-err)" }} />
+                      )}
+                    </div>
+                    <div className="mt-0.5 flex items-center gap-1.5 text-[10.5px] tabular-nums" style={{ color }}>
+                      <span>{done + failed}/{total}</span>
+                      {failed > 0 && <span>· {failed} 失败</span>}
+                      {waiting > 0 && <span style={{ color: "var(--color-warn)" }}>· {waiting} 等确认</span>}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {hitl?.nid === n.nid && (
                 <div
