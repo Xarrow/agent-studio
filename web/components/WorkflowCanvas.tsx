@@ -94,6 +94,8 @@ type Props = {
   onRun?: () => void;
   /** **重跑这一条执行**（分派出去的某一项失败时，只重跑那一路） */
   onRetryRun?: (runId: string) => void;
+  /** **补齐失败的那几路**：走编排层的"重新分派"（已成功的路不会重跑） */
+  onRefill?: (runId: string) => void;
   /** **只跑这一步**（单步运行）：交给父组件发一条只含该节点的编排 */
   onRunNode?: (nid: string) => void;
   running?: boolean;
@@ -1978,7 +1980,12 @@ export function WorkflowCanvas({
               style={{ left: l.x - 1, top: l.y1, height: Math.max(2, l.y2 - l.y1) }}
             />
           ))}
-        <svg className="pointer-events-none absolute inset-0" width={layout.w} height={layout.h}>
+        <svg
+          className="pointer-events-none absolute inset-0"
+          width={layout.w}
+          height={layout.h}
+          style={{ overflow: "visible" }}
+        >
           {ghost && (
             <path d={ghost} fill="none" stroke="var(--color-accent)" strokeWidth={1.6} strokeDasharray="5 4" />
           )}
@@ -2576,9 +2583,44 @@ export function WorkflowCanvas({
                     每一条都在原位展开，符合"就地展开、不跳页"）。 */}
                 {(fanout?.[n.nid]?.length ?? 0) > 0 && (
                   <div className="border-b px-3 py-2" style={{ borderColor: "var(--color-border)" }}>
-                    <div className="mb-1 text-[12px] font-semibold" style={{ color: "var(--color-muted)" }}>
-                      分派出去的 {fanout![n.nid].length} 路
-                      <span className="ml-1 font-normal">（点某一路就地看它的输入/输出）</span>
+                    <div className="mb-1 flex items-center gap-1.5 text-[12px] font-semibold" style={{ color: "var(--color-muted)" }}>
+                      <span>
+                        分派出去的 {fanout![n.nid].length} 路
+                        <span className="ml-1 font-normal">（点某一路就地看它的输入/输出）</span>
+                      </span>
+                      {/* 与卡上表头同一个动作、同一套文案（同一动作全站行为一致） */}
+                      {(() => {
+                        const items = fanout![n.nid];
+                        const failed = items.filter((x) => x.status === "error" || x.status === "aborted").length;
+                        const cid = items.find((x) => x.containerRunId)?.containerRunId;
+                        if (!failed || !cid) return null;
+                        return (
+                          <button
+                            type="button"
+                            title={
+                              retryArm === cid
+                                ? "再点一次就补齐（已成功的几路不会重跑）"
+                                : "只重跑失败/没跑的那几路，已成功的不会重跑"
+                            }
+                            className="ml-auto shrink-0 rounded-[5px] px-1.5 py-[1px] text-[10.5px] font-normal"
+                            style={{
+                              color: retryArm === cid ? "var(--color-err)" : "var(--color-accent)",
+                              border: `1px solid color-mix(in srgb, ${retryArm === cid ? "var(--color-err)" : "var(--color-accent)"} 34%, transparent)`,
+                            }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (retryArm === cid) {
+                                onRefill?.(cid);
+                                setRetryArm(null);
+                              } else {
+                                setRetryArm(cid);
+                              }
+                            }}
+                          >
+                            {retryArm === cid ? `确认补齐 ${failed} 路？` : `补齐失败的 ${failed} 路`}
+                          </button>
+                        );
+                      })()}
                     </div>
                     <div className="max-h-[220px] overflow-auto pr-1">
                       {fanout![n.nid].map((it) => {
@@ -2918,12 +2960,23 @@ export function WorkflowCanvas({
         )}
 
         {/* 卡与节点之间的两条虚线：把"任务 → … → 结论"串起来 */}
-        <svg className="pointer-events-none absolute inset-0" width={layout.w} height={layout.h}>
+        <svg
+          className="pointer-events-none absolute inset-0"
+          width={layout.w}
+          height={layout.h}
+          style={{ overflow: "visible" }}
+        >
           {(() => {
             const lines: React.ReactNode[] = [];
             const first = layout.layers[0] ?? [];
             const last = layout.layers[layout.layers.length - 1] ?? [];
-            const yOf = (nid: string) => (layout.pos[nid]?.y ?? 24) + (heights[nid] || 104) / 2;
+            // 拖动中的节点用**实时**位置（与卡片一致 ✓）——否则线还画在自动布局的老位置，
+            // 表现为"线跟卡片脱开 / 拖出布局盒子后整条线被裁掉" ✗
+            const posOf = (nid: string) =>
+              drag?.nid === nid
+                ? { x: drag.ox + drag.dx, y: drag.oy + drag.dy }
+                : (layout.pos[nid] ?? { x: 0, y: 0 });
+            const yOf = (nid: string) => posOf(nid).y + (heights[nid] || 104) / 2;
             const f = first[0];
             if (f && taskText.trim()) {
               const x1 = layout.taskAt.x + layout.CARD_W;
@@ -2931,7 +2984,7 @@ export function WorkflowCanvas({
               lines.push(
                 <path
                   key="t"
-                  d={`M${x1},${y1} L${layout.pos[f].x - 10},${y1}`}
+                  d={`M${x1},${y1} L${posOf(f).x - 10},${y1}`}
                   stroke="var(--color-border)"
                   strokeWidth={1.6}
                   strokeDasharray="5 5"
@@ -2941,7 +2994,7 @@ export function WorkflowCanvas({
             }
             const l = last[0];
             if (l && finalText.trim()) {
-              const x1 = layout.pos[l].x + (layout.W[l] ?? layout.NW);
+              const x1 = posOf(l).x + (layout.W[l] ?? layout.NW);
               const y1 = yOf(l);
               lines.push(
                 <path
@@ -3492,6 +3545,8 @@ export function WorkflowCanvas({
                   const list = fanout![n.nid];
                   const done = list.filter((x) => x.status === "ok").length;
                   const failed = list.filter((x) => x.status === "error" || x.status === "aborted").length;
+                  // 「补齐失败的几路」要重跑的是**分派容器**那条执行（幂等：已成功的路不会重跑）
+                  const cid = list.find((x) => x.containerRunId)?.containerRunId;
                   const expanded = !!fanOpen[n.nid];
                   const shown = expanded ? list : list.slice(0, 3);
                   const tint = (s: string) =>
@@ -3503,6 +3558,35 @@ export function WorkflowCanvas({
                         <span>·</span>
                         <span style={{ color: "var(--color-ok)" }}>{done} 完成</span>
                         {failed > 0 && <span style={{ color: "var(--color-err)" }}>· {failed} 失败</span>}
+                        {/* **补齐失败的那几路**：多路失败时不必一路一路点。
+                            走的是幂等重跑（已成功的那几路不会重跑、不重复扣费），
+                            与全站一致：第一下变红问一句，第二下才真跑。 */}
+                        {failed > 0 && cid && (
+                          <button
+                            type="button"
+                            title={
+                              retryArm === cid
+                                ? "再点一次就补齐（已成功的几路不会重跑）"
+                                : "只重跑失败/没跑的那几路，已成功的不会重跑"
+                            }
+                            className="shrink-0 rounded-[5px] px-1.5 py-[1px] text-[10.5px]"
+                            style={{
+                              color: retryArm === cid ? "var(--color-err)" : "var(--color-accent)",
+                              border: `1px solid color-mix(in srgb, ${retryArm === cid ? "var(--color-err)" : "var(--color-accent)"} 34%, transparent)`,
+                            }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (retryArm === cid) {
+                                onRefill?.(cid);
+                                setRetryArm(null);
+                              } else {
+                                setRetryArm(cid);
+                              }
+                            }}
+                          >
+                            {retryArm === cid ? `确认补齐 ${failed} 路？` : `补齐失败的 ${failed} 路`}
+                          </button>
+                        )}
                         {(() => {
                           // 「等你确认」要单独说 —— 这不是失败也不是在跑，是**要人做点什么**
                           const waiting = list.filter((x) => x.status === "waiting_hitl").length;
