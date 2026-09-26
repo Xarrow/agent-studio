@@ -126,6 +126,7 @@ def _fanout_of(step: dict[str, Any]) -> dict[str, Any] | None:
         "max": (step or {}).get("fanout_max"),
         "agent": (step or {}).get("fanout_agent"),
         "wait_s": (step or {}).get("wait_timeout_s"),
+        "budget": (step or {}).get("fanout_budget"),
     }
 
 
@@ -602,6 +603,7 @@ class Orchestrator:
                 items=items,
                 max_items=fanout.get("max"),
                 wait_s=fanout.get("wait_s"),
+                budget_tokens=fanout.get("budget"),
             )
             # 合并产出：把 N 份产出按项拼成可读清单交下游（下游多是编排者，由它验证总结）
             merged = "\n\n".join(

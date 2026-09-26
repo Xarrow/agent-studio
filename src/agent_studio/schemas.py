@@ -811,6 +811,8 @@ class OrchestrationStep(BaseModel):
     fanout: str | None = None
     #: 最多几路（默认 5，内核硬上限 20）
     fanout_max: int | None = None
+    #: 这一步最多花多少 token（0/不填 = 不限）
+    fanout_budget: int | None = None
 
 
 class OrchestrationCreate(BaseModel):
@@ -916,6 +918,9 @@ class WorkflowNode(BaseModel):
     fanout_max: int | None = None
     #: 分派给**别的助手**（不填 = 本节点这个助手；P1 用，先留字段）
     fanout_agent: str | None = None
+    #: 分派这一步最多花多少 token（0/不填 = 不限）。超了就停下，剩下的标「超出预算未跑」——
+    #: 不做跑前预估（估出来的数是编的），只按**真花掉的**掐。
+    fanout_budget: int | None = None
 
 
 class WorkflowEdge(BaseModel):

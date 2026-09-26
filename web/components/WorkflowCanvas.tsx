@@ -1520,7 +1520,7 @@ export function WorkflowCanvas({
    * 默认**不分派**（不配就是原来的单实例行为，老流程零影响）。
    */
   const setFanoutCfg = useCallback(
-    (nid: string, patch: { fanout?: string; fanout_max?: number }) => {
+    (nid: string, patch: { fanout?: string; fanout_max?: number; fanout_budget?: number }) => {
       onChange({
         ...graph,
         nodes: graph.nodes.map((n) => {
@@ -1842,6 +1842,30 @@ export function WorkflowCanvas({
                     <option value="list">按上游清单</option>
                   </select>
                 </div>
+                {(graph.nodes.find((n) => n.nid === nid)?.fanout ?? "") === "list" && (
+                  <div className="flex items-center gap-2 px-3 py-1.5">
+                    <span className="flex-1" style={{ color: "var(--color-muted)" }}>最多花多少</span>
+                    <select
+                      value={String(graph.nodes.find((n) => n.nid === nid)?.fanout_budget ?? "")}
+                      onChange={(e) =>
+                        setFanoutCfg(nid, {
+                          fanout: "list",
+                          fanout_budget: e.target.value === "" ? undefined : Number(e.target.value),
+                        })
+                      }
+                      title="这一步最多花多少 token。超了会停下**还没开始**的那几路（正在跑的不打断），
+停下的那几路会标「超出预算未跑」，可单独重跑 —— 不做跑前预估，按真花掉的掐"
+                      className="rounded-[5px] border px-1 py-0.5 text-[12px]"
+                      style={{ borderColor: "var(--color-border)", background: "var(--color-surface)", color: "var(--color-text)" }}
+                    >
+                      <option value="">不限</option>
+                      <option value="1000">1 千</option>
+                      <option value="5000">5 千</option>
+                      <option value="20000">2 万</option>
+                      <option value="100000">10 万</option>
+                    </select>
+                  </div>
+                )}
                 {(graph.nodes.find((n) => n.nid === nid)?.fanout ?? "") === "list" && (
                   <div className="flex items-center gap-2 px-3 py-1.5">
                     <span className="flex-1" style={{ color: "var(--color-muted)" }}>最多几路</span>

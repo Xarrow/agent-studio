@@ -122,6 +122,9 @@ def normalise(graph: Graph | None) -> tuple[list[dict[str, Any]], list[dict[str,
             fagent = str((n or {}).get("fanout_agent") or "").strip()
             if fagent:
                 item["fanout_agent"] = fagent
+            fb = (n or {}).get("fanout_budget")
+            if isinstance(fb, int) and not isinstance(fb, bool) and fb > 0:
+                item["fanout_budget"] = fb
         nodes.append(item)
 
     ids = {n["nid"] for n in nodes}

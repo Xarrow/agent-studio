@@ -642,6 +642,8 @@ export interface WorkflowNode {
   fanout?: string;
   /** 最多几路（枚举 2/3/5/10/20，默认 5）；超出的项不处理并在执行记录里说明 */
   fanout_max?: number;
+  /** 这一步最多花多少 token（不填/0 = 不限）。超了会停下**还没开始**的那几路并如实标出 */
+  fanout_budget?: number;
 }
 
 export interface WorkflowEdge {

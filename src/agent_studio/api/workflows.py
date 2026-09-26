@@ -68,6 +68,9 @@ def _wait_of(node: dict[str, Any]) -> dict[str, Any]:
         fagent = str((node or {}).get("fanout_agent") or "").strip()
         if fagent:
             out["fanout_agent"] = fagent
+        fb = (node or {}).get("fanout_budget")
+        if isinstance(fb, int) and not isinstance(fb, bool) and fb > 0:
+            out["fanout_budget"] = fb
     return out
 
 

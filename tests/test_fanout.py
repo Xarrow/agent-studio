@@ -111,7 +111,7 @@ async def _dispatch_with_pump(**kwargs):
     """分派 + 手动泵分发器（测试里没有后台分发器循环）。"""
     task = asyncio.create_task(fanout.dispatch(**kwargs))
     guard = 0
-    while not task.done() and guard < 600:
+    while not task.done() and guard < 2000:
         await dispatcher.tick()
         await asyncio.sleep(0.02)
         guard += 1
@@ -321,9 +321,15 @@ def test_fanout_of_helper_shape():
     from agent_studio.orchestrator.service import _fanout_of
 
     assert _fanout_of({}) is None
-    assert _fanout_of({"fanout": "list"}) == {"mode": "list", "max": None, "agent": None, "wait_s": None}
-    got = _fanout_of({"fanout": "list", "fanout_max": 10, "wait_timeout_s": 600, "fanout_agent": "ag_x"})
-    assert got == {"mode": "list", "max": 10, "agent": "ag_x", "wait_s": 600}
+    assert _fanout_of({"fanout": "list"}) == {
+        "mode": "list",
+        "max": None,
+        "agent": None,
+        "wait_s": None,
+        "budget": None,
+    }
+    got = _fanout_of({"fanout": "list", "fanout_max": 10, "wait_timeout_s": 600, "fanout_agent": "ag_x", "fanout_budget": 20000})
+    assert got == {"mode": "list", "max": 10, "agent": "ag_x", "wait_s": 600, "budget": 20000}
 
 
 # --------------------------------------------------------------------------- #
@@ -533,3 +539,81 @@ async def test_timeline_groups_fanout_under_container(client):
     assert [i["index"] for i in box["fanout"]["items"]] == [0, 1, 2]
     assert all(i["run_id"] for i in box["fanout"]["items"]), "每一路要带执行 id（重跑要用）"
     assert box["fanout"]["items"][0]["label"].startswith("第 1 项")
+
+
+# --------------------------------------------------------------------------- #
+# 10. 预算护栏：按**真花掉的** token 掐（不做跑前预估），剩下的如实标"未跑"
+# --------------------------------------------------------------------------- #
+class SlowSpanRuntime(SpanRuntime):
+    """跑得慢一点的桩 —— 预算监控要"还有没开始的"才有可停的对象。
+
+    真模型一路几秒到几十秒，本来就有富余；这里只是把测试变成确定的：
+    并发上限 1 时，第一路跑完时后面两路还在排队（pending）。
+    """
+
+    name = "span-test-runtime"  # 同一个名字覆盖注册（这套测试自己的桩）
+
+    def run(self, agent, run_input):  # noqa: ANN001
+        inner = super().run(agent, run_input)
+
+        async def gen():
+            async for e in inner:
+                yield e
+                await asyncio.sleep(0.15)
+
+        return gen()
+
+
+async def test_budget_stops_the_tail_and_says_so(client):
+    from agent_studio.config import settings
+    from agent_studio.runtimes import register_runtime
+
+    register_runtime(SlowSpanRuntime())
+    settings.max_concurrent_runs = 1  # 一次一路 → 预算能卡在中间
+    aid = await _agent_with_stub(client)
+    parent = await _parent_run(aid, node_id="n1")
+
+    result = await _dispatch_with_pump(
+        parent_run=parent,
+        agent_id=aid,
+        definition_snapshot=dict(parent.definition_snapshot or {}),
+        items=["甲", "乙", "丙"],
+        wait_s=30,
+        budget_tokens=10,  # 第一路（18 token）跑完就该停后面的
+    )
+
+    assert result["budget_stopped"] >= 1, f"该停至少一路，实际 {result['budget_stopped']}"
+    assert result["succeeded"] >= 1
+    stopped = [x for x in result["items"] if x["status"] == "aborted"]
+    assert stopped and all("超出预算" in (x.get("error_text") or "") for x in stopped)
+    text = fanout.render_summary(result)
+    assert "没有执行" in text and "预算" in text, text
+
+    # 停下的那几路仍是**独立执行**（所以能单独重跑）
+    async with SessionLocal() as s:
+        rows = list(
+            (await s.execute(Run.__table__.select().where(Run.parent_run_id == parent.id))).all()
+        )
+    skipped = [r._mapping for r in rows if r._mapping["status"] == "aborted"]
+    assert skipped and all("超出预算" in (r["error"] or "") for r in skipped)
+
+
+async def test_no_budget_means_all_items_run(client):
+    """不设预算 = 全跑（默认行为不能被护栏改掉）。"""
+    from agent_studio.config import settings
+    from agent_studio.runtimes import register_runtime
+
+    register_runtime(SpanRuntime())
+    settings.max_concurrent_runs = 0
+    aid = await _agent_with_stub(client)
+    parent = await _parent_run(aid, node_id="n1")
+    result = await _dispatch_with_pump(
+        parent_run=parent,
+        agent_id=aid,
+        definition_snapshot=dict(parent.definition_snapshot or {}),
+        items=["甲", "乙", "丙"],
+        wait_s=20,
+        budget_tokens=0,
+    )
+    assert result["budget_stopped"] == 0
+    assert result["succeeded"] == 3

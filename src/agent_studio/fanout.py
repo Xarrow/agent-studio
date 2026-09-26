@@ -129,6 +129,7 @@ async def dispatch(
     items: list[str],
     max_items: int | None = None,
     wait_s: float | None = None,
+    budget_tokens: int | None = None,
     db_factory: Any = SessionLocal,
 ) -> dict[str, Any]:
     """建 N 条子 run → 交给调度队列（受并发闸）→ 等齐 → 汇总。"""
@@ -182,6 +183,13 @@ async def dispatch(
         for c in created:
             await session.refresh(c)
 
+    ids = [c.id for c in created] + [r.id for r in done.values()]
+    timeout = float(wait_s if wait_s is not None else DEFAULT_WAIT_S)
+    deadline = time.monotonic() + max(timeout, 1.0)
+
+    #: 预算（token）用完后没跑的项 —— 如实标记，不静默丢弃
+    not_started: list[Run] = []
+    budget = int(budget_tokens or 0)
     if not created:
         logger.info("分派：%d 项全部已有成功记录，直接复用", len(done))
     else:
@@ -190,14 +198,49 @@ async def dispatch(
         for c in created:
             await run_service.start(c.id, definition, (c.input or {}).get("text") or "")
 
-    # ── 等齐 ────────────────────────────────────────────────────────────
-    ids = [c.id for c in created] + [r.id for r in done.values()]
-    timeout = float(wait_s if wait_s is not None else DEFAULT_WAIT_S)
-    deadline = time.monotonic() + max(timeout, 1.0)
+    # ── 等齐 + 预算监控 ──────────────────────────────────────────────────
+    # 预算按**真花掉的** token 掐（不做跑前预估 —— 估出来的数是编的）：
+    # 全部照常提交（并行度不受影响），监控里发现超了就**只停还没开始的那几路** ——
+    # 正在跑的不打断（半途掐断反而更浪费），停下的如实标原因，之后可单独重跑。
     timed_out = False
+    budget_hit = False
     while True:
         async with db_factory() as session:
             rows = list((await session.execute(select(Run).where(Run.id.in_(ids)))).scalars())
+            if budget > 0 and not budget_hit:
+                used = 0
+                for r in rows:
+                    u = r.usage or {}
+                    used += int(u.get("tokens_in") or u.get("prompt_tokens") or 0)
+                    used += int(u.get("tokens_out") or u.get("completion_tokens") or 0)
+                if used > budget:
+                    # 超预算：把**还没开始的**那几路停下并写清原因。
+                    # ⚠️ 两个坑都在这里：① 光写库不够 —— 它可能还在分发器的**内存队列**里，
+                    #     下一步就被领走跑起来了；② 正在跑的那几路**不打断**（半途掐断更浪费）。
+                    # 所以顺序是：先判「没在跑」→ 写库（分发器的 DB 扫描从此不再捡它）→ 再从队列摘掉。
+                    from .runner import run_service as _rs
+
+                    _doomed: list[str] = []
+                    for r in rows:
+                        if r.status == "pending" and not _rs.is_running(r.id):
+                            _doomed.append(r.id)
+                            r.status = "aborted"
+                            r.error = (
+                                f"超出预算（{budget} token，已用 {used}）未跑 —— "
+                                "可单独重跑，或调高「最多花多少」后整批重跑"
+                            )
+                            # started_at 也压到同一刻：它**根本没跑**，
+                            # 否则界面上会出现"未跑却耗时 34 秒"这种假数字
+                            r.ended_at = now_ms()
+                            r.started_at = r.ended_at
+                    if _doomed:
+                        await session.commit()
+                        for _rid in _doomed:
+                            await _rs.abort(_rid)  # 从内存队列摘掉（上面已确认没在跑）
+                        logger.warning(
+                            "分派：token 已超预算（%d > %d），停下未开始的 %d 路", used, budget, len(_doomed)
+                        )
+                    budget_hit = True
         if all(r.status in TERMINAL for r in rows):
             break
         if time.monotonic() > deadline:
@@ -227,6 +270,7 @@ async def dispatch(
                 "run_id": r.id,
                 "duration_ms": (r.ended_at - r.started_at) if (r.ended_at and r.started_at) else None,
                 "summary": text[:SUMMARY_CHARS],
+                "error_text": r.error or "",
                 "tokens_in": tin,
                 "tokens_out": tout,
             }
@@ -242,9 +286,25 @@ async def dispatch(
         "items": out_items,
         "truncated": truncated,
         "capped_at": cap,
+        "budget_tokens": int(budget_tokens or 0),
+        "budget_stopped": sum(1 for x in out_items if (x["status"] == "aborted" and "超出预算" in (x.get("error_text") or ""))),
         "timed_out": timed_out,
         "wait_s": timeout,
     }
+
+
+async def _tokens_of(ids: list[str], db_factory: Any = SessionLocal) -> int:
+    """这批执行到现在**真花掉的** token（预算按真数掐，不按预估）。"""
+    if not ids:
+        return 0
+    async with db_factory() as session:
+        rows = list((await session.execute(select(Run).where(Run.id.in_(ids)))).scalars())
+    total = 0
+    for r in rows:
+        u = r.usage or {}
+        total += int(u.get("tokens_in") or u.get("prompt_tokens") or 0)
+        total += int(u.get("tokens_out") or u.get("completion_tokens") or 0)
+    return total
 
 
 def _text_of(blob: Any) -> str:
@@ -272,6 +332,11 @@ def render_summary(result: dict[str, Any]) -> str:
     ]
     if result.get("truncated"):
         lines.append(f"注意：项数超过上限，只处理了前 {result['capped_at']} 项（其余未处理）")
+    if result.get("budget_stopped"):
+        lines.append(
+            f"注意：已花超过预算（{result.get('budget_tokens')} token），"
+            f"后面 {result['budget_stopped']} 项**没有执行**（可单独重跑，或调高「最多花多少」后重跑整批）"
+        )
     if result.get("timed_out"):
         lines.append(f"注意：等待超过 {int(result['wait_s'])}s，仍有项没跑完（它们可能还在跑）")
     for x in result["items"]:
@@ -336,6 +401,7 @@ async def handle_tool_call(**kwargs: Any) -> str:
         items=items,
         max_items=kwargs.get("max_items"),
         wait_s=kwargs.get("wait_s"),
+        budget_tokens=kwargs.get("budget_tokens"),
     )
     return render_summary(result)
 
@@ -369,6 +435,10 @@ TOOL_SCHEMA: dict[str, Any] = {
         "wait_s": {
             "type": "integer",
             "description": "最多等多久（秒，可选，默认 900）",
+        },
+        "budget_tokens": {
+            "type": "integer",
+            "description": "这一批最多花多少 token（可选，默认不限）。超了会停下还没开始的那几路并如实上报",
         },
     },
     "required": ["tasks"],
