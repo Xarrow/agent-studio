@@ -379,6 +379,45 @@ def compress_payload(obj: Any) -> tuple[bytes, bool]:
 # --------------------------------------------------------------------------- #
 # Run 服务
 # --------------------------------------------------------------------------- #
+#: 「等子执行」的封顶：节点上把等待上限写得很大（或写错）时，别让执行真的挂到天亮
+FANOUT_WAIT_CAP_S = 3600
+
+
+def effective_timeout(base_timeout: int, fanout_wait_s: int = 0) -> int:
+    """算出这一次执行**真正**的超时时间。
+
+    为什么需要它（现场踩到）
+    ----------------------
+    节点上有「最长等多久」（默认 15 分钟），而助手的执行超时（``limits.timeout_s``）可能是 2 分钟。
+    两句配置互相矛盾时，现实里**执行超时先到** —— 于是「等 15 分钟」是句假话，
+    用户看到的现象是「这一步超时了」，完全看不出其实是**分派在等子执行**（编排者 + 6 项批次实测）。
+
+    · ``fanout_wait_s > 0``：取 max(助手超时, 等待上限)，封顶 :data:`FANOUT_WAIT_CAP_S`
+      —— 这一步既然要等子执行，等的时间就该算进去。
+    · ``fanout_wait_s < 0``（不限）：**不延长**，但大声提醒 —— 「不限」会让执行挂到进程结束，
+      助手的执行超时是最后一层保护；真要等到底就调大助手的执行超时。
+    · 助手超时 <= 0 表示不限（沿用平台既有语义）→ 原样返回。
+    """
+    if base_timeout <= 0:
+        return base_timeout
+    if fanout_wait_s > 0:
+        extended = max(int(base_timeout), min(int(fanout_wait_s), FANOUT_WAIT_CAP_S))
+        if extended != base_timeout:
+            logger.info(
+                "这一步要等子执行：执行超时 %ss -> %ss（节点上写的「最长等多久」）",
+                base_timeout,
+                extended,
+            )
+        return extended
+    if fanout_wait_s < 0:
+        logger.warning(
+            "节点写了「最长等多久：不限」，但助手的执行超时是 %ss —— 到点仍会停。"
+            "要真等到底，请调大这个助手的执行超时（limits.timeout_s）",
+            base_timeout,
+        )
+    return base_timeout
+
+
 class RunService:
     """执行编排：compile → run → 落库 → 广播。
 
@@ -530,7 +569,13 @@ class RunService:
                         context=context,
                     )
 
-                    timeout = definition.limits.timeout_s or settings.default_timeout_s
+                    # 这一步要「派出去并等结果」时，等子执行的时间也算进执行超时 ——
+                    # 否则节点上写「最长等多久 15 分钟」、助手超时 2 分钟，执行超时先到，
+                    # 那句配置就是假的（现场：编排者 + 6 项批次整步超时，看不出是分派在等）。
+                    timeout = effective_timeout(
+                        definition.limits.timeout_s or settings.default_timeout_s,
+                        int((run.input or {}).get("fanout_wait_s") or 0),
+                    )
 
                     async def consume() -> None:
                         nonlocal seq, status, hitl_payload
@@ -718,18 +763,26 @@ class RunService:
                 return False
             definition = AgentDefinition.model_validate(run.definition_snapshot)
             payload = dict(run.pending_hitl or {})
+            # 顺手取出「这一步要等子执行多久」—— 恢复执行同样受它影响
+            fanout_wait_s = int((run.input or {}).get("fanout_wait_s") or 0)
             run.status = "running"
             run.pending_hitl = None
             await session.commit()
 
         hitl.payload = {**payload, **(hitl.payload or {})}
-        task = asyncio.create_task(self._resume_execute(run_id, definition, hitl))
+        task = asyncio.create_task(
+            self._resume_execute(run_id, definition, hitl, fanout_wait_s=fanout_wait_s)
+        )
         self._tasks[run_id] = task
         task.add_done_callback(lambda _t, rid=run_id: self._tasks.pop(rid, None))
         return True
 
     async def _resume_execute(
-        self, run_id: str, definition: AgentDefinition, hitl: HitlResponse
+        self,
+        run_id: str,
+        definition: AgentDefinition,
+        hitl: HitlResponse,
+        fanout_wait_s: int = 0,
     ) -> None:
         runtime = get_runtime(definition.runtime)
         collector = MetricsCollector(
@@ -772,7 +825,10 @@ class RunService:
                         _run.pending_state = None
                         await session.commit()
 
-            timeout = definition.limits.timeout_s or settings.default_timeout_s
+            timeout = effective_timeout(
+                definition.limits.timeout_s or settings.default_timeout_s,
+                int(fanout_wait_s or 0),
+            )
 
             hitl_payload: dict[str, Any] = {}
 

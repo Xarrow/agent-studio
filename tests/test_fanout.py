@@ -1021,3 +1021,57 @@ def test_spec_keeps_fanout_agent_even_without_list_mode():
     step = spec["steps"][0]
     assert step.get("fanout_agent") == "ag_worker", step
     assert "fanout" not in step or not step.get("fanout"), "别顺手把模式也塞进去"
+
+
+# --------------------------------------------------------------------------- #
+# 14. 分派等待不该被 agent 超时误杀（节点上「最长等多久」与「执行超时」不再自相矛盾）
+# --------------------------------------------------------------------------- #
+def test_effective_timeout_counts_the_dispatch_wait():
+    from agent_studio.runner.service import FANOUT_WAIT_CAP_S, effective_timeout
+
+    # 助手超时 120s、节点说最多等 15 分钟 → 真正该等 900s（否则那句配置是假的）
+    assert effective_timeout(120, 900) == 900
+    # 助手超时比等待上限还大 → 以助手超时为准（不缩短）
+    assert effective_timeout(1200, 900) == 1200
+    # 没有分派 → 原样
+    assert effective_timeout(120, 0) == 120
+    # 「不限」(-1) → 不延长（执行超时是最后一层保护），但也不能变成负数/无限
+    assert effective_timeout(120, -1) == 120
+    # 助手超时=不限(<=0) → 原样
+    assert effective_timeout(0, 900) == 0
+    # 写错成很大的值 → 封顶，别把执行挂到天亮
+    assert effective_timeout(120, 10**9) == FANOUT_WAIT_CAP_S
+
+
+async def test_step_records_how_long_it_may_wait_for_children(client):
+    """这一步会等子执行时，把「最多等多久」随 run.input 带下去（执行层据此放宽超时）。"""
+    from agent_studio.config import settings
+    from agent_studio.db import SessionLocal
+    from agent_studio.models import Run
+    from agent_studio.runtimes import register_runtime
+
+    register_runtime(SpanRuntime())
+    settings.max_concurrent_runs = 0
+    owner = await _agent_with_stub(client)
+    d = await _run_orchestration_with_pump(
+        client,
+        {
+            "mode": "single",
+            "steps": [
+                {
+                    "agent_id": owner,
+                    "carry_prev": False,
+                    "nid": "n1",
+                    "fanout": "list",
+                    "fanout_max": 2,
+                    "wait_timeout_s": 900,
+                }
+            ],
+            "task": "- 甲\n- 乙",
+        },
+    )
+    assert d["status"] == "ok", d
+    box = [s for s in d["steps"] if not s.get("parent_run_id")][0]
+    async with SessionLocal() as s:
+        row = await s.get(Run, box["run_id"])
+        assert (row.input or {}).get("fanout_wait_s") == 900, row.input

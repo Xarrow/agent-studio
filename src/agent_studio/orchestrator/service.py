@@ -557,6 +557,8 @@ class Orchestrator:
             # 把"合并产出"覆盖成模型的回答（间歇性，取决于哪次 tick 撞上）。
             # 容器的语义是"正在分派/等结果"，所以直接建成 running。
             _as_fanout = bool(fanout) and str((fanout or {}).get("mode") or "").strip() == "list"
+            # 这一步会不会"等子执行"：容器（按清单分派）或模型可能自己调分派工具（配了派给谁）
+            _can_dispatch = _as_fanout or bool((fanout or {}).get("agent"))
             run = Run(
                 agent_id=agent.id,
                 agent_version=agent.version,
@@ -567,6 +569,13 @@ class Orchestrator:
                 input={
                     "text": payload,
                     **({"fanout_agent": fanout.get("agent")} if (fanout or {}).get("agent") else {}),
+                    # 这一步要「派出去并等结果」→ 顺带把「最多等多久」带上：
+                    # 执行层据此把等待时间算进执行超时（不然节点上那句「最长等多久」是假的）
+                    **(
+                        {"fanout_wait_s": (fanout or {}).get("wait_s")}
+                        if _can_dispatch and (fanout or {}).get("wait_s") is not None
+                        else {}
+                    ),
                 },
                 # 冻结定义快照：与 /api/runs 一致，保证这次执行可复现
                 definition_snapshot=definition.model_dump(
