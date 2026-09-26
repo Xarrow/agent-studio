@@ -419,6 +419,27 @@ def effective_timeout(base_timeout: int, fanout_wait_s: int = 0) -> int:
     return base_timeout
 
 
+def resolve_timeout(
+    configured: int | None, default: int, fanout_wait_s: int = 0
+) -> int:
+    """把「助手上配的执行超时」解析成这次真正要用的值。
+
+    现场踩到 ✗：原来写的是 ``definition.limits.timeout_s or settings.default_timeout_s``，
+    而 Python 里 **``0 or X`` 等于 X** —— 界面上写着「0 = 不超时」的助手，
+    实际仍套着默认超时：用户设了 0 还在超时（2026-09-26）。
+
+    · ``None``（没配过）→ 用默认值
+    · ``0`` / 负数（**不限**，界面既有语义）→ 原样返回；调用方**不能**塞进
+      ``asyncio.wait_for``（timeout=0 是"立刻超时" ✗ 语义相反）
+    · 正数 → 交给 :func:`effective_timeout`（含"等子执行"的延长 ✓）
+    """
+    if configured is None:
+        return int(default)
+    if configured <= 0:
+        return int(configured)
+    return effective_timeout(int(configured), fanout_wait_s)
+
+
 def _with_work_dir_hint(run_input: Any, work_dir: Any) -> Any:
     """把「你的工作目录在哪」明确告诉模型。
 
@@ -633,8 +654,9 @@ class RunService:
                     # 这一步要「派出去并等结果」时，等子执行的时间也算进执行超时 ——
                     # 否则节点上写「最长等多久 15 分钟」、助手超时 2 分钟，执行超时先到，
                     # 那句配置就是假的（现场：编排者 + 6 项批次整步超时，看不出是分派在等）。
-                    timeout = effective_timeout(
-                        definition.limits.timeout_s or settings.default_timeout_s,
+                    timeout = resolve_timeout(
+                        definition.limits.timeout_s,
+                        settings.default_timeout_s,
                         int((run.input or {}).get("fanout_wait_s") or 0),
                     )
 
@@ -654,7 +676,11 @@ class RunService:
                                 status = "waiting_hitl"
                                 hitl_payload = dict(ev.payload)
 
-                    await asyncio.wait_for(consume(), timeout=timeout)
+                    if timeout and timeout > 0:
+                        # 不限（0 / 负数）时**不能**包 wait_for ✗ —— timeout=0 是"立刻超时"，语义正好相反 ✓
+                        await asyncio.wait_for(consume(), timeout=timeout)
+                    else:
+                        await consume()
                     break
                 except asyncio.CancelledError:
                     raise
@@ -893,8 +919,9 @@ class RunService:
                         _run.pending_state = None
                         await session.commit()
 
-            timeout = effective_timeout(
-                definition.limits.timeout_s or settings.default_timeout_s,
+            timeout = resolve_timeout(
+                definition.limits.timeout_s,
+                settings.default_timeout_s,
                 int(fanout_wait_s or 0),
             )
 
@@ -913,7 +940,11 @@ class RunService:
                         status = "waiting_hitl"
                         hitl_payload = dict(ev.payload)
 
-            await asyncio.wait_for(consume(), timeout=timeout)
+            if timeout and timeout > 0:
+                # 不限（0 / 负数）时**不能**包 wait_for ✗ —— timeout=0 是"立刻超时"，语义正好相反 ✓
+                await asyncio.wait_for(consume(), timeout=timeout)
+            else:
+                await consume()
 
             # 恢复之后**又**要授权（模型连着要两步是常事：先写脚本、再跑脚本）：
             # 这里必须和正常执行路径一样，把待确认内容 + 状态快照一起落库。
