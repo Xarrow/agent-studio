@@ -2519,23 +2519,20 @@ export function WorkflowCanvas({
             const out = outputs[n.nid] ?? "";
             const lv = live?.[n.nid];
             const stepNo = layout.layers.findIndex((ids) => ids.includes(n.nid)) + 1;
-            // 宽度按可用空间收敛：桌面 384；窄屏（手机）取列宽 - 8，永不超出屏幕。
-            // 位置：桌面贴节点右侧（贴右边界就翻到左侧）；窄屏**放到节点下方**并左对齐
-            // —— 手机只有 ~375px 宽，横着放必然溢出屏幕（这是我在窄屏上要确认的那条）。
-            const BW = narrow ? Math.max(240, colW - 8) : 384;
+            // ── 尺寸与落点：**尺寸稳定、位置让路**（专业检视面板的做法 ✓）──
+            // 宽度：桌面 400（能舒服读正文）；窄屏取列宽 - 8，永不超出屏幕
+            // 高度：桌面给**舒适区间 340~560** —— 绝不为"下面放不下"把面板压成一条 ✗
+            //      （上一版就是这么干的 ✗ → 实测只有 158px 高、正文根本读不了，用户投诉"太小、没设计" ✗）
+            const BW = narrow ? Math.max(240, colW - 8) : 400;
+            const panelH = narrow ? null : Math.max(340, Math.min(560, layout.h - 40));
+            // 水平：贴节点右侧；贴右边界就翻到左侧
+            // 垂直：与节点顶对齐；**底边会探出画布就整体上移**（保完整高度 ✓ 宁可盖住上方 ✓）
             const toRight = at.x + (layout.W[n.nid] ?? layout.NW) + 14;
             const flip = toRight + BW > layout.w - 6;
             const left = narrow ? Math.max(4, at.x) : flip ? Math.max(6, at.x - BW - 14) : toRight;
-            // **垂直方向同样要收敛** ✗ —— 原来桌面端 top 直接取 at.y：
-            // 节点靠下时，470px 高的面板会一路越过画布内容底边，视觉上就是"盖住/压住下面的东西"。
-            // 现在按"从上边缘算起的可用高度"取 min：真放不下就**变矮**（面板自身可滚 ✓），
-            // 而不是探出画布、压到别的卡上 ✓
-            const panelH = narrow
-              ? null
-              : Math.max(240, Math.min(470, layout.h - at.y - 8));
             const top = narrow
               ? at.y + (heights[n.nid] ?? 220) + 10
-              : Math.max(6, at.y);
+              : Math.max(6, Math.min(at.y, layout.h - (panelH ?? 400) - 8));
             const statusText =
               st === "run" ? "执行中" : st === "ask" ? "等你确认" : st === "ok" ? "完成" : st === "err" ? "出错" : st === "stale" ? "已失效" : "还没跑";
             const statusColor =
@@ -2549,6 +2546,8 @@ export function WorkflowCanvas({
                 style={{
                   transform: `translate(${left}px, ${top}px)`,
                   width: BW,
+                  // **固定高度**（不是只有上限 ✗）—— 检视面板要有稳定尺寸：内容少也不塌成一条 ✓
+                  height: panelH ?? undefined,
                   maxHeight: panelH ?? "62vh",
                   background: "var(--color-surface)",
                   borderColor: "var(--color-border)",
