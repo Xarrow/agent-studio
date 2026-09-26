@@ -1334,8 +1334,34 @@ export function WorkflowCanvas({
       });
       return out;
     };
+    // **触屏长按**：手指按住某张卡 0.5s（不移动）→ 把这一步**加入多选**（等价于"框选"的手指版本 ✓）
+    // Dify 没有这个（它连触屏都没处理 ✗）；我们靠它让手机上也能"多选 → 一起删/一起挪" ✓
+    let holdTimer: number | null = null;
+    let holdStart = { x: 0, y: 0 };
+    const clearHold = () => {
+      if (holdTimer !== null) {
+        window.clearTimeout(holdTimer);
+        holdTimer = null;
+      }
+    };
     const onDown = (e: PointerEvent) => {
-      if (e.pointerType === "touch" || e.button !== 0) return;
+      if (e.pointerType === "touch") {
+        const node = (e.target as HTMLElement).closest?.("[data-nid]");
+        if (node) {
+          holdStart = { x: e.clientX, y: e.clientY };
+          clearHold();
+          holdTimer = window.setTimeout(() => {
+            const nid = node.getAttribute("data-nid");
+            if (!nid) return;
+            suppressClickRef.current = Date.now() + 600;   // 长按后浏览器补的 click 不算"点卡片" ✗
+            setGroup((g) => (g.includes(nid) ? g.filter((x) => x !== nid) : [...g, nid]));
+            w.__boxDbg = "longpress:" + nid;
+            holdTimer = null;
+          }, 500);
+        }
+        return;
+      }
+      if (e.button !== 0) return;
       const t = e.target as HTMLElement;
       if (t.closest("[data-nid],button,input,textarea,select,a,[data-canvas-zoom-box],path,g")) return;
       dragging = true;
@@ -1346,6 +1372,7 @@ export function WorkflowCanvas({
       w.__boxDbg = "down";
     };
     const onMove = (e: PointerEvent) => {
+      if (holdTimer !== null && Math.hypot(e.clientX - holdStart.x, e.clientY - holdStart.y) > 8) clearHold();
       if (!dragging) return;
       cur = { ...cur, x1: e.clientX, y1: e.clientY };
       setBox({ ...cur });
@@ -1354,6 +1381,7 @@ export function WorkflowCanvas({
       w.__boxDbg = "move:" + g.length;
     };
     const onUp = () => {
+      clearHold();
       if (!dragging) return;
       dragging = false;
       setBox(null);
@@ -1409,6 +1437,24 @@ export function WorkflowCanvas({
     onSelect(newNodes[newNodes.length - 1]?.nid ?? null);
   }, [graph, onChange, onSelect]);
 
+  /**
+   * **一次删掉多个**（连带它们的连线）—— 必须**一次原子改图** ✗：
+   * 循环调 deleteNode 每次都基于同一个旧 graph，会互相覆盖（实测 3 个一组只删掉 1 个）。
+   */
+  const deleteMany = useCallback(
+    (ids: string[]) => {
+      if (!ids.length) return;
+      onChange({
+        ...graph,
+        nodes: graph.nodes.filter((x) => !ids.includes(x.nid)),
+        edges: graph.edges.filter((x) => !ids.includes(x.from) && !ids.includes(x.to)),
+      });
+      setGroup([]);
+      onSelect(null);
+    },
+    [graph, onChange, onSelect],
+  );
+
   /** 删掉一个节点（连带它的连线）—— 卡片上的「删除」和键盘 Delete 共用这一条路径 ✓ */
   const deleteNode = useCallback(
     (nid: string) => {
@@ -1446,16 +1492,7 @@ export function WorkflowCanvas({
       // 删除（Dify 键位表：Delete / Backspace —— shortcuts/definitions.ts:49-55）
       if ((e.key === "Delete" || e.key === "Backspace") && (group.length || selected)) {
         e.preventDefault();
-        // **一次原子改图**：不能循环调 deleteNode —— 每次都用同一个旧 graph，会互相覆盖 ✗
-        // （实测：3 个一组删完只剩 2 个，就是这个原因）
-        const ids = group.length ? group : [selected as string];
-        onChange({
-          ...graph,
-          nodes: graph.nodes.filter((x) => !ids.includes(x.nid)),
-          edges: graph.edges.filter((x) => !ids.includes(x.from) && !ids.includes(x.to)),
-        });
-        setGroup([]);
-        onSelect(null);
+        deleteMany(group.length ? group : [selected as string]);
         return;
       }
       // 方向键移动选中节点（Dify：±5，Shift 时 ±20 —— utils/keyboard-movement.ts:7-16）
@@ -1493,7 +1530,7 @@ export function WorkflowCanvas({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onSelect, fitView, zoomTo, zoomStep, selected, group, graph, onChange, deleteNode, duplicateNode, copySel, pasteClip]);
+  }, [onSelect, fitView, zoomTo, zoomStep, selected, group, graph, onChange, deleteNode, deleteMany, duplicateNode, copySel, pasteClip]);
 
 
   const growTask = () => {
@@ -1601,6 +1638,27 @@ export function WorkflowCanvas({
         backgroundSize: `${14 * zoom}px ${14 * zoom}px`,
       }}
     >
+      {/* **多选操作条**：选到 ≥2 步时出现（触屏没有 Delete 键，这是手机上"一起删"的入口 ✓）。
+          长按卡片 0.5s = 加入多选（手指版的框选 ✓）；桌面用框选或 Shift 都不需要它常驻 ✓ */}
+      {group.length >= 2 && (
+        <div
+          className="fixed bottom-4 left-1/2 z-[70] flex -translate-x-1/2 items-center gap-2 rounded-full border px-3 py-1.5 shadow-lg"
+          style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+        >
+          <span className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>已选 {group.length} 步</span>
+          <button
+            type="button"
+            className="rounded-[6px] px-2.5 py-1 text-[12.5px] font-medium"
+            style={{ background: "var(--color-err)", color: "#fff" }}
+            onClick={() => deleteMany(group)}
+          >
+            删除这 {group.length} 步
+          </button>
+          <button type="button" className="rounded-[6px] px-2 py-1 text-[12.5px]" onClick={() => setGroup([])}>
+            取消选择
+          </button>
+        </div>
+      )}
       {/* 框选矩形（视口坐标；配色照 Dify style.css:21-30） */}
       {box && (
         <div
