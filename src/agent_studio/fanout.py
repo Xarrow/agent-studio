@@ -403,8 +403,25 @@ async def handle_tool_call(**kwargs: Any) -> str:
     ctx = current_run_ctx()
     run_id = ctx.get("run_id")
     agent_id = ctx.get("agent_id")
-    # 派给谁：默认自己；填了别的助手名字就用它（编排者派活给通用助手走这条）
+    # 派给谁：优先级 —— ① 这次调用显式填的（模型自己判断）；② **本步在节点上配的「派给谁」**
+    # （人在画布上定死的默认，不靠模型自觉）；③ 都没有 = 自己。
     target_name = str(kwargs.get("agent") or "").strip()
+    _node_default = ""
+    if not target_name:
+        _pre = current_run_ctx()
+        if _pre.get("run_id"):
+            async with SessionLocal() as _s:
+                _row = await _s.get(Run, _pre["run_id"])
+                if _row is not None:
+                    _node_default = str(((_row.input or {}).get("fanout_agent") or "")).strip()
+            if _node_default:
+                # 存的是 agent_id（节点上选的是"哪一个助手"）→ 换回名字走下面同一条解析
+                async with SessionLocal() as _s:
+                    from .models import Agent as _A
+
+                    _t = await _s.get(_A, _node_default)
+                    target_name = _t.name if _t is not None else ""
+                logger.info("分派未指定 agent → 用本步节点配的「派给谁」：%s", target_name)
     target_agent_id = agent_id
     if not run_id or not agent_id:
         # 不在执行上下文里（例如被别处直接调用）——明确拒绝，而不是建出无主的执行

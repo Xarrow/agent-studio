@@ -915,3 +915,109 @@ async def test_node_fanout_to_another_agent_uses_its_snapshot(client):
     kids = [s for s in d["steps"] if s.get("parent_run_id")]
     assert len(kids) == 2
     assert all(k["agent_id"] == target["id"] for k in kids), "子实例要跑被派的那个助手"
+
+
+# --------------------------------------------------------------------------- #
+# 13. 「派给谁」不靠模型自觉：① 工具说明里列出可派的助手 ② 节点配了就当默认
+# --------------------------------------------------------------------------- #
+async def test_fork_tool_description_lists_dispatchable_agents(client):
+    from agent_studio.db import SessionLocal
+    from agent_studio.defaults import ensure_default_agents
+    from agent_studio.models import AgentTool, Tool
+    from agent_studio.runner.service import load_tools
+
+    me = await _agent_with_stub(client)  # 一个"本助手"
+    async with SessionLocal() as s:
+        # 测试库是空的：先把「分派」工具行建出来（生产里由"同步内置工具"建）
+        fork_id = (await s.execute(select(Tool.id).where(Tool.name == "fork"))).scalar_one_or_none()
+        if fork_id is None:
+            s.add(
+                Tool(
+                    kind="fork",
+                    name="fork",
+                    description="分派",
+                    input_schema={"type": "object"},
+                    impl={},
+                    flags={},
+                )
+            )
+            await s.commit()
+            fork_id = (await s.execute(select(Tool.id).where(Tool.name == "fork"))).scalar_one()
+        await ensure_default_agents(s)
+        s.add(AgentTool(agent_id=me, tool_id=fork_id))
+        await s.commit()
+        specs = await load_tools(s, me)
+    fork = [x for x in specs if x.kind == "fork"][0]
+    assert "可派的助手" in (fork.description or ""), fork.description
+    assert "通用助手" in fork.description, "名单里要有默认的通用助手（模型才知道能派给谁）"
+
+
+async def test_node_configured_agent_is_the_default_for_the_fork_tool(client):
+    """节点上配了「派给谁」，模型调 fork 时没填 agent → 用节点配的那个（人定死的默认）。"""
+    from agent_studio.config import settings
+    from agent_studio.db import SessionLocal
+    from agent_studio.defaults import WORKER_NAME, ensure_default_agents
+    from agent_studio.models import Agent, Run
+    from agent_studio.runner.ctx import set_run_ctx
+    from agent_studio.runtimes import register_runtime
+
+    register_runtime(SpanRuntime())
+    settings.max_concurrent_runs = 0
+    boss_id = await _agent_with_stub(client)
+    async with SessionLocal() as s:
+        await ensure_default_agents(s)
+        worker = (await s.execute(select(Agent).where(Agent.name == WORKER_NAME))).scalars().first()
+        d = dict(worker.definition)
+        d["runtime"] = SpanRuntime.name
+        worker.definition = d
+        boss = await s.get(Agent, boss_id)
+        assert boss is not None
+        parent = Run(
+            agent_id=boss.id,
+            agent_version=1,
+            runtime=SpanRuntime.name,
+            status="running",
+            # 节点上配的「派给谁」（编排者节点预置 = 通用助手）
+            input={"text": "把这批活派下去", "fanout_agent": worker.id},
+            definition_snapshot=dict(boss.definition),
+            started_at=now_ms(),
+            node_id="n1",
+        )
+        s.add(parent)
+        await s.commit()
+        await s.refresh(parent)
+        worker_id = worker.id
+
+    set_run_ctx(run_id=parent.id, agent_id=boss.id, node_id="n1", depth=0)
+    task = asyncio.create_task(fanout.handle_tool_call(tasks=["甲", "乙"], max_items=2))  # 注意：不填 agent
+    guard = 0
+    while not task.done() and guard < 2000:
+        await dispatcher.tick()
+        await asyncio.sleep(0.02)
+        guard += 1
+    text = await task
+    assert "成功 2" in text, text
+    async with SessionLocal() as s:
+        kids = list(
+            (await s.execute(select(Run).where(Run.parent_run_id == parent.id))).scalars()
+        )
+        assert kids and all(k.agent_id == worker_id for k in kids), (
+            "节点配了「派给谁」就该派给它，而不是派给自己"
+        )
+
+
+def test_spec_keeps_fanout_agent_even_without_list_mode():
+    """「派给谁」与分派模式无关：非容器的编排者节点也要把它带到 spec（白名单陷阱）。"""
+    from agent_studio.api.workflows import graph_to_spec
+    from agent_studio.schemas import WorkflowGraph
+
+    graph = WorkflowGraph.model_validate(
+        {
+            "nodes": [{"nid": "n1", "agent_id": "ag_x", "fanout_agent": "ag_worker"}],
+            "edges": [],
+        }
+    )
+    spec = graph_to_spec(graph, "single", "任务")
+    step = spec["steps"][0]
+    assert step.get("fanout_agent") == "ag_worker", step
+    assert "fanout" not in step or not step.get("fanout"), "别顺手把模式也塞进去"

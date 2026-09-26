@@ -1869,20 +1869,28 @@ export function WorkflowCanvas({
                     </select>
                   </div>
                 )}
-                {(graph.nodes.find((n) => n.nid === nid)?.fanout ?? "") === "list" && (
-                  /* **派给谁**：默认本助手（同一助手多实例）；也可以派给别的助手 ——
-                     典型用法：编排者开始并把活派给「通用助手」多路并行，最后自己验证汇总。 */
+                {(() => {
+                  // **这件事值得问一句"派给谁"**的两种情况：
+                  //   ① 这一步配了"按清单分派"（容器直接按清单派）；
+                  //   ② 这个助手自己挂着「分派」工具（编排者开局后自己决定分几路）——
+                  //      这时节点上配的就成了它的**默认派发对象**，不必靠模型记得填参数。
+                  const n0 = graph.nodes.find((x) => x.nid === nid);
+                  const ag0 = agents.find((a) => a.id === n0?.agent_id);
+                  return (n0?.fanout ?? "") === "list" || ag0?.definition?.role === "orchestrator";
+                })() && (
                   <div className="flex items-center gap-2 px-3 py-1.5">
                     <span className="flex-1" style={{ color: "var(--color-muted)" }}>派给谁</span>
                     <select
                       value={graph.nodes.find((n) => n.nid === nid)?.fanout_agent ?? ""}
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        const isList =
+                          (graph.nodes.find((n) => n.nid === nid)?.fanout ?? "") === "list";
                         setFanoutCfg(nid, {
-                          fanout: "list",
+                          ...(isList ? { fanout: "list" } : {}),
                           fanout_agent: e.target.value || undefined,
-                        })
-                      }
-                      title="这些子任务交给谁干：默认本节点的助手（同一助手多实例）；也可以派给别的助手"
+                        });
+                      }}
+                      title="分派出去的活交给谁：默认本节点的助手（同一助手多实例）；也可以派给别的助手 —— 典型：编排者开局，把活派给「通用助手」多路并行"
                       className="rounded-[5px] border px-1 py-0.5 text-[12px] max-w-[130px]"
                       style={{ borderColor: "var(--color-border)", background: "var(--color-surface)", color: "var(--color-text)" }}
                     >

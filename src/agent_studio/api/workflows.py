@@ -59,15 +59,17 @@ def _wait_of(node: dict[str, Any]) -> dict[str, Any]:
     if isinstance(v, int) and not isinstance(v, bool):
         out["wait_timeout_s"] = v
     # 分派配置（按上游清单每项一路）—— 与 wait_timeout_s 同理，必须全链路带上
+    # 「派给谁」与分派模式无关 —— 非容器的编排者自己决定分几路时，节点上配的这个
+    # 就是它的默认派发对象，所以要在 if fm 之外单独带上（同一个白名单陷阱）。
+    fagent = str((node or {}).get("fanout_agent") or "").strip()
+    if fagent:
+        out["fanout_agent"] = fagent
     fm = str((node or {}).get("fanout") or "").strip()
     if fm:
         out["fanout"] = fm
         fmax = (node or {}).get("fanout_max")
         if isinstance(fmax, int) and not isinstance(fmax, bool) and fmax > 0:
             out["fanout_max"] = fmax
-        fagent = str((node or {}).get("fanout_agent") or "").strip()
-        if fagent:
-            out["fanout_agent"] = fagent
         fb = (node or {}).get("fanout_budget")
         if isinstance(fb, int) and not isinstance(fb, bool) and fb > 0:
             out["fanout_budget"] = fb

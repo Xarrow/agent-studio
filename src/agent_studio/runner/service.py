@@ -331,7 +331,30 @@ async def load_tools(session: Any, agent_id: str) -> list[ToolSpec]:
         .order_by(Tool.name)
     )
     rows = list((await session.execute(stmt)).scalars())
-    return [ToolSpec.from_row(r) for r in rows]
+    specs = [ToolSpec.from_row(r) for r in rows]
+
+    # 「分派」工具的说明里**带上可派的助手名单** —— 不然模型不知道 `agent` 参数该填谁，
+    # 十有八九就派给自己了（用户的目标形态是"编排者开局、把活派给通用助手多路并行"）。
+    if any(s.kind == "fork" for s in specs):
+        me = (await session.execute(select(Agent.name).where(Agent.id == agent_id))).scalar_one_or_none()
+        others = [
+            n
+            for n in (await session.execute(select(Agent.name).order_by(Agent.created_at))).scalars()
+            if n != me
+        ]
+        hint = "、".join(others) if others else "（还没有别的助手）"
+        specs = [
+            s.model_copy(
+                update={
+                    "description": (s.description or "")
+                    + f"【可派的助手：{hint}；想派给某个助手就把 agent 填成它的名字，不填=你自己】"
+                }
+            )
+            if s.kind == "fork"
+            else s
+            for s in specs
+        ]
+    return specs
 
 
 async def load_skill_rows(session: Any, agent_id: str) -> list[Skill]:

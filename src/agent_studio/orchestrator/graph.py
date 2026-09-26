@@ -114,14 +114,16 @@ def normalise(graph: Graph | None) -> tuple[list[dict[str, Any]], list[dict[str,
         # 同一个白名单陷阱，wait_timeout_s 当年就是在这里被丢掉、界面设了等于没设。
         # fanout="list" = 按上游产出的清单每项一路。
         fm = str((n or {}).get("fanout") or "").strip()
+        # 「派给谁」**与分派模式无关** —— 非容器的编排者自己决定分几路时，节点上配的这个
+        # 就是它的默认派发对象。所以它要在 if fm 之外单独带上（同一个白名单陷阱）。
+        fagent = str((n or {}).get("fanout_agent") or "").strip()
+        if fagent:
+            item["fanout_agent"] = fagent
         if fm:
             item["fanout"] = fm
             fmax = (n or {}).get("fanout_max")
             if isinstance(fmax, int) and not isinstance(fmax, bool) and fmax > 0:
                 item["fanout_max"] = fmax
-            fagent = str((n or {}).get("fanout_agent") or "").strip()
-            if fagent:
-                item["fanout_agent"] = fagent
             fb = (n or {}).get("fanout_budget")
             if isinstance(fb, int) and not isinstance(fb, bool) and fb > 0:
                 item["fanout_budget"] = fb

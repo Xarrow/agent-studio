@@ -126,12 +126,16 @@ def _fanout_of(step: dict[str, Any]) -> dict[str, Any] | None:
     等待上限沿用节点上那个「最长等多久」（同一件事：这一步最多等多久）。
     """
     mode = str((step or {}).get("fanout") or "").strip()
-    if mode != "list":
+    agent = (step or {}).get("fanout_agent")
+    # 「派给谁」**与分派模式无关**：即使这一步不是"按清单容器"，只要助手自己能调「分派」工具
+    # （典型：编排者开局后自己决定分几路），节点上配的这个对象就是它的**默认派发对象** ——
+    # 人定死的默认不该由模型的记性决定。
+    if mode != "list" and not agent:
         return None
     return {
         "mode": mode,
         "max": (step or {}).get("fanout_max"),
-        "agent": (step or {}).get("fanout_agent"),
+        "agent": agent,
         "wait_s": (step or {}).get("wait_timeout_s"),
         "budget": (step or {}).get("fanout_budget"),
     }
@@ -558,7 +562,12 @@ class Orchestrator:
                 agent_version=agent.version,
                 runtime=definition.runtime,
                 status="running" if _as_fanout else "pending",
-                input={"text": payload},
+                # 节点上配的「派给谁」随 input 一起带着 —— 模型调「分派」工具时若没指定
+                # agent，就以它作为默认（人定死的默认不该被模型的记性决定）
+                input={
+                    "text": payload,
+                    **({"fanout_agent": fanout.get("agent")} if (fanout or {}).get("agent") else {}),
+                },
                 # 冻结定义快照：与 /api/runs 一致，保证这次执行可复现
                 definition_snapshot=definition.model_dump(
                     mode="json", exclude={"model": {"api_key"}}
