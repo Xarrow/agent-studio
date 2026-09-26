@@ -817,7 +817,10 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
           </section>
 
           {/* MCP：挂哪几台外部工具服务（在「工具 → MCP」里注册与探测） */}
-          <section className="card p-4">
+          <Fold
+            title="MCP 工具"
+            summary={`${(def.mcp_servers ?? []).length} 已选 / ${mcpServers.length} 已注册`}
+          >
             <h2 className="text-[14px] font-medium mb-3 flex items-center gap-1.5">
               <Hint text="MCP 是一套标准协议：别人写好的工具服务，用这个协议接进来就能给助手用。挂上之后，它有哪些工具由服务器说了算（平台负责探测）。">
                 MCP 工具
@@ -868,7 +871,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 })}
               </div>
             )}
-          </section>
+          </Fold>
 
           <Fold title="工具" summary={`${def.tools.length} 已选 / ${tools.length} 可用`}>
             <div className="mb-3 flex items-center gap-2">
@@ -974,10 +977,10 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
             )}
           </Fold>
 
-          <section className="card p-4">
-            <h2 className="text-[14px] font-medium mb-3">
-              Skills（{def.skills.length} 已选 / {skills.length} 可用）
-            </h2>
+          <Fold
+            title="Skills"
+            summary={`${def.skills.length} 已选 / ${skills.length} 可用`}
+          >
             {skills.length === 0 ? (
               // Skill 必须填导入来源（Git / URL / 本地路径），是个完整表单 ——
               // 留在它自己的页面比塞进弹框更清楚，所以这里只做引导。
@@ -1013,7 +1016,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 })}
               </div>
             )}
-          </section>
+          </Fold>
         </div>
 
       {/* ── 历史版本 ───────────────────────────────────────────────
@@ -1024,8 +1027,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
       </section>
 
       {/* ── 试跑与观测 ─────────────────────────────────────────── */}
-      <section id="sec-run" className="mt-4 scroll-mt-14">
-        <h2 className="text-[14px] font-medium mb-3">试跑与观测</h2>
+          <Fold title="试跑与观测">
         <RunPanel
           agentId={agentId}
           agentName={agent.name}
@@ -1033,7 +1035,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
           unsaved={dirty}
           onSave={save}
         />
-      </section>
+          </Fold>
 
       {/* ── 记忆 ───────────────────────────────────────────────── */}
       {/* 不另加外层标题：记忆面板的卡片自带「记忆」标题，再加一层就重复了 */}
