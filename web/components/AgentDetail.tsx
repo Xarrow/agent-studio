@@ -1043,9 +1043,11 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
       {/* ── 历史版本 ───────────────────────────────────────────────
           放在"配置"与"使用"之间：它属于配置（改坏了退回去），
           但又不是每次都看 —— 所以不做成常驻工具条，做成一个可折叠感的区。 */}
-      <section id="sec-revisions" className="mt-4 scroll-mt-14">
+      <div id="sec-revisions" className="scroll-mt-14">
+        <Fold title="历史版本">
         <RevisionHistory kind="agent" targetId={agentId} onRestored={() => void load()} />
-      </section>
+        </Fold>
+      </div>
 
       {/* ── 试跑与观测 ─────────────────────────────────────────── */}
           <Fold title="试跑与观测">
@@ -1060,9 +1062,11 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
 
       {/* ── 记忆 ───────────────────────────────────────────────── */}
       {/* 不另加外层标题：记忆面板的卡片自带「记忆」标题，再加一层就重复了 */}
-      <section id="sec-memory" className="mt-4 scroll-mt-14">
+      <div id="sec-memory" className="scroll-mt-14">
+        <Fold title="记忆">
         <AgentMemoryPanel agentId={agentId} />
-      </section>
+        </Fold>
+      </div>
     </div>
   );
 }
