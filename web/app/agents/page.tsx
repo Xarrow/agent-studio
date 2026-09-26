@@ -68,6 +68,8 @@ export default function AgentsPage() {
   const [busy, setBusy] = useState<string | null>(null);
   /** 列表里就地改名：非 null = 正在改这个助手的名字（用户反馈"看不到修改名称的入口"） */
   const [renaming, setRenaming] = useState<string | null>(null);
+  /** 卡片上的「⋯」菜单（设置/改名/复制/删除）—— 一次只开一个 ✓ 点别处关 */
+  const [menuFor, setMenuFor] = useState<string | null>(null);
   const [nameDraft, setNameDraft] = useState("");
 
   const load = useCallback(async () => {
@@ -267,36 +269,70 @@ export default function AgentsPage() {
                 >
                   聊天
                 </Link>
-                <Link href={`/agents/${a.id}`} className="btn text-[12.5px]">
-                  设置
-                </Link>
-                <button
-                  className="btn text-[12.5px]"
-                  disabled={busy === a.id}
-                  onClick={() => {
-                    setRenaming(a.id);
-                    setNameDraft(a.name);
-                  }}
-                  title="就地改名：回车保存，Esc 取消"
-                >
-                  改名
-                </button>
-                <button
-                  className="btn text-[12.5px]"
-                  disabled={busy === a.id}
-                  onClick={() => duplicate(a.id)}
-                  title="按这个助手的配置，复制出一个新的"
-                >
-                  复制
-                </button>
-                <button
-                  className="btn ml-auto text-[12.5px] text-[var(--color-err)]"
-                  disabled={busy === a.id}
-                  onClick={() => remove(a)}
-                  title="删除这个助手（记录会保留）"
-                >
-                  删除
-                </button>
+                {/* 卡上只留**一个**主操作（聊天 = 用它）+ 一个「⋯」（设置 / 改名 / 复制 / 删除）
+                    —— 原来 5 个动作平铺：`设置` 与"点名字进设置"重复，4 个次级动作把主操作挤小了 ✗
+                    （用户准绳：操作更少、看到更多；触屏上尤其明显 ✓） */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    className="btn px-2.5 text-[12.5px]"
+                    disabled={busy === a.id}
+                    onClick={() => setMenuFor(menuFor === a.id ? null : a.id)}
+                    title="更多：设置 / 改名 / 复制 / 删除"
+                    aria-label="更多操作"
+                  >
+                    ⋯
+                  </button>
+                  {menuFor === a.id && (
+                    <div
+                      className="absolute bottom-full right-0 z-50 mb-1 min-w-[132px] overflow-hidden rounded-[8px] border py-1 text-[12.5px] shadow-lg"
+                      style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+                    >
+                      <Link
+                        href={`/agents/${a.id}`}
+                        className="block px-3 py-1.5 text-left hover:bg-[color-mix(in_srgb,var(--color-accent)_7%,transparent)]"
+                        onClick={() => setMenuFor(null)}
+                      >
+                        设置 / 定义
+                      </Link>
+                      <button
+                        type="button"
+                        className="block w-full px-3 py-1.5 text-left hover:bg-[color-mix(in_srgb,var(--color-accent)_7%,transparent)]"
+                        disabled={busy === a.id}
+                        onClick={() => {
+                          setMenuFor(null);
+                          setRenaming(a.id);
+                          setNameDraft(a.name);
+                        }}
+                      >
+                        改名
+                      </button>
+                      <button
+                        type="button"
+                        className="block w-full px-3 py-1.5 text-left hover:bg-[color-mix(in_srgb,var(--color-accent)_7%,transparent)]"
+                        disabled={busy === a.id}
+                        onClick={() => {
+                          setMenuFor(null);
+                          void duplicate(a.id);
+                        }}
+                      >
+                        复制一份
+                      </button>
+                      <button
+                        type="button"
+                        className="block w-full px-3 py-1.5 text-left hover:bg-[color-mix(in_srgb,var(--color-accent)_7%,transparent)]"
+                        style={{ color: "var(--color-err)" }}
+                        disabled={busy === a.id}
+                        onClick={() => {
+                          setMenuFor(null);
+                          void remove(a);
+                        }}
+                      >
+                        删除…
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           ))}
