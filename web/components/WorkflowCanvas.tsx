@@ -2523,8 +2523,8 @@ export function WorkflowCanvas({
             // 宽度：桌面 400（能舒服读正文）；窄屏取列宽 - 8，永不超出屏幕
             // 高度：桌面给**舒适区间 340~560** —— 绝不为"下面放不下"把面板压成一条 ✗
             //      （上一版就是这么干的 ✗ → 实测只有 158px 高、正文根本读不了，用户投诉"太小、没设计" ✗）
-            const BW = narrow ? Math.max(240, colW - 8) : 400;
-            const panelH = narrow ? null : Math.max(340, Math.min(560, layout.h - 40));
+            const BW = narrow ? Math.max(240, colW - 8) : 440;
+            const panelH = narrow ? null : Math.max(460, Math.min(640, layout.h - 40));
             // 水平：贴节点右侧；贴右边界就翻到左侧
             // 垂直：与节点顶对齐；**底边会探出画布就整体上移**（保完整高度 ✓ 宁可盖住上方 ✓）
             const toRight = at.x + (layout.W[n.nid] ?? layout.NW) + 14;
@@ -2547,8 +2547,10 @@ export function WorkflowCanvas({
                   transform: `translate(${left}px, ${top}px)`,
                   width: BW,
                   // **固定高度**（不是只有上限 ✗）—— 检视面板要有稳定尺寸：内容少也不塌成一条 ✓
+                  // 桌面：固定高度（panelH）；窄屏：**给最小高度**，别塌成一条 ✗
                   height: panelH ?? undefined,
-                  maxHeight: panelH ?? "62vh",
+                  minHeight: panelH ?? 300,
+                  maxHeight: panelH ?? "70vh",
                   background: "var(--color-surface)",
                   borderColor: "var(--color-border)",
                 }}
