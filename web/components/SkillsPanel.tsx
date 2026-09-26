@@ -59,27 +59,26 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
 
   return (
     <div className={embedded ? "" : "p-4 md:p-6 lg:p-7 max-w-5xl"}>
-      {!embedded && (
-        <>
-<header className="flex items-start justify-between mb-6">
-        <div>
-          <h1 className="text-[22px] font-semibold tracking-tight flex items-center gap-1.5">
-            <Hint text={HINTS.skill}>Skills</Hint>
-          </h1>
-          <p className="text-[13px] text-[var(--color-muted)] mt-1">
-            预先写好的「做事套路」。装上之后，助手遇到这类任务就知道该按什么步骤做。
-          </p>
-          <p className="text-[11.5px] text-[var(--color-muted)] mt-1">
-            {skills.length} 个 · 标准 <span className="mono">SKILL.md</span> 格式，与 Claude Code /
-            Hermes / AgentScope 通用
-          </p>
-        </div>
-        <button className="btn btn-primary" onClick={() => setShowImport(true)}>
-          + 导入 Skill
+      {/* 新建/导入入口：嵌入工具页时也要可见（否则用户没有任何创建自定义 skill 的地方） */}
+      <div className={`flex items-center justify-between ${embedded ? "mb-4" : ""}`}>
+        {!embedded && (
+          <div>
+            <h1 className="text-[22px] font-semibold tracking-tight flex items-center gap-1.5">
+              <Hint text={HINTS.skill}>Skills</Hint>
+            </h1>
+            <p className="text-[13px] text-[var(--color-muted)] mt-1">
+              预先写好的「做事套路」。装上之后，助手遇到这类任务就知道该按什么步骤做。
+            </p>
+            <p className="text-[11.5px] text-[var(--color-muted)] mt-1">
+              {skills.length} 个 · 标准 <span className="mono">SKILL.md</span> 格式，与 Claude Code /
+              Hermes / AgentScope 通用
+            </p>
+          </div>
+        )}
+        <button className={`btn btn-primary ${embedded ? "ml-auto" : ""}`} onClick={() => setShowImport(true)}>
+          + 新建 / 导入 Skill
         </button>
-      </header>
-        </>
-      )}
+      </div>
 
       {showImport && (
         <ImportDialog
