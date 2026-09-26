@@ -871,7 +871,7 @@ async def get_model_test(
 
 @router.post("/model-tests/bulk-delete", response_model=RunDeleteResponse)
 async def bulk_delete_model_tests(
-    payload: BulkDeleteRequest, session: AsyncSession = Depends(get_session)
+    payload: RunBulkDeleteRequest, session: AsyncSession = Depends(get_session)
 ) -> RunDeleteResponse:
     """删除选中的 LLM 对话测试记录（「运行记录」页里和助手执行一起勾选的）。"""
     deleted = 0
