@@ -18,6 +18,8 @@ export default function CredentialsPage() {
   /** 正在编辑的凭据（null = 没在编辑） */
   const [editing, setEditing] = useState<Credential | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
+  /** 手填的模型名（每套凭据一个）：探测不出清单的服务商靠它测 ✓ */
+  const [typedModel, setTypedModel] = useState<Record<string, string>>({});
   /** 已显示明文的凭据：id → 明文 key（默认空 = 全部隐藏） */
   const [revealed, setRevealed] = useState<Record<string, string>>({});
   /** 正在做「对话测试」的凭据（null = 没开） */
@@ -83,10 +85,11 @@ export default function CredentialsPage() {
     }
   };
 
-  const test = async (id: string) => {
+  const test = async (id: string, model?: string) => {
     setTesting(id);
     try {
-      const r = await api.testCredential(id);
+      // 传了模型名就用它测（服务商没有 /models 清单时，这是唯一能验证的路 ✓）
+      const r = await api.testCredential(id, model);
       setTestResult((prev) => ({ ...prev, [id]: r }));
     } catch (e) {
       setTestResult((prev) => ({
@@ -282,6 +285,29 @@ export default function CredentialsPage() {
                     >
                       {testing === c.id ? "测试中…" : "测试连接"}
                     </button>
+                    {/* **手填模型测试** ✓ —— 有些服务商（如火山引擎方舟的 Agent Plan key）
+                        根本没有 /models 清单，探测不出任何模型；这种时候只能自己填一个名字去测 ✗
+                        （后端 /test 本来就支持带 model ✓，所以这里只是把路露出来 ✓） */}
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        className="input mono w-[190px] text-[12px]"
+                        placeholder={c.default_model || "手填模型名"}
+                        title="服务商没有模型清单时，填一个模型名直接测"
+                        value={typedModel[c.id] ?? ""}
+                        onChange={(e) => setTypedModel({ ...typedModel, [c.id]: e.target.value })}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && (typedModel[c.id] || "").trim()) void test(c.id, (typedModel[c.id] || "").trim());
+                        }}
+                      />
+                      <button
+                        className="btn"
+                        disabled={testing === c.id || !(typedModel[c.id] || "").trim()}
+                        title="按这个模型名发一次极小调用，验证能不能真用"
+                        onClick={() => void test(c.id, (typedModel[c.id] || "").trim())}
+                      >
+                        {testing === c.id ? "测试中…" : "测这个模型"}
+                      </button>
+                    </div>
                     <button className="btn text-[var(--color-err)]" onClick={() => remove(c)}>
                       删除
                     </button>
