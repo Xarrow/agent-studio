@@ -1050,7 +1050,14 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
       </div>
 
       {/* ── 试跑与观测 ─────────────────────────────────────────── */}
-          <Fold title="试跑与观测">
+          <Fold
+          title="试跑与观测"
+          summary={
+            ov.lastRun
+              ? `最近：${ov.lastRun.status} · ${fmt.relative(ov.lastRun.at)}`
+              : "还没跑过"
+          }
+        >
         <RunPanel
           agentId={agentId}
           agentName={agent.name}
@@ -1063,7 +1070,14 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
       {/* ── 记忆 ───────────────────────────────────────────────── */}
       {/* 不另加外层标题：记忆面板的卡片自带「记忆」标题，再加一层就重复了 */}
       <div id="sec-memory" className="scroll-mt-14">
-        <Fold title="记忆">
+        <Fold
+          title="记忆"
+          summary={
+            ov.memoryOwn === null
+              ? undefined
+              : `自己的 ${ov.memoryOwn} · 共用 ${ov.memoryShared}`
+          }
+        >
         <AgentMemoryPanel agentId={agentId} />
         </Fold>
       </div>
