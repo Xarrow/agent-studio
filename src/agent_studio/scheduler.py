@@ -192,7 +192,44 @@ async def loop() -> None:
             raise
         except Exception:  # noqa: BLE001
             logger.exception("调度器这一轮出错（继续下一轮）")
+        try:
+            await _maybe_compact()
+        except asyncio.CancelledError:  # 服务在退出
+            raise
+        except Exception:  # noqa: BLE001
+            # 归档失败**不影响**自动运行 —— 它只是省空间，不该拖垮调度
+            logger.exception("事件归档这一轮出错（继续下一轮）")
         await asyncio.sleep(TICK_SECONDS)
+
+
+async def _maybe_compact() -> None:
+    """事件分层归档：并进**已有**的调度循环，不新建脚本/cron（运维准则）。
+
+    好处是不用再记一个"还要去跑那个脚本"，坏处是这个循环里多了一件与"自动运行"
+    无关的事 —— 所以这里做三件保护：开关、最小间隔（默认 1 小时）、异常不影响调度。
+    """
+    from .config import settings
+
+    if not settings.event_compact_enabled:
+        return
+    interval = max(int(settings.event_compact_interval_s), 60)
+    async with SessionLocal() as session:
+        from .settings_store import get_setting, set_setting
+
+        last = int(await get_setting(session, "events_compact_last_at", 0) or 0)
+        if now_ms() - last < interval * 1000:
+            return
+        from .maintenance import compact_events
+
+        stats = await compact_events(session)
+        await set_setting(session, "events_compact_last_at", now_ms())
+        await session.commit()
+        if stats.get("runs_archived"):
+            logger.info(
+                "事件分层归档：%d 条执行、折叠 %d 行、payload %d → %d 字节",
+                stats["runs_archived"], stats["rows_removed"],
+                stats["bytes_before"], stats["bytes_after"],
+            )
 
 
 def describe(mode: str | None, at: str | None, weekdays: str | None) -> str:

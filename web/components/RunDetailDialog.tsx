@@ -20,6 +20,7 @@ import type { ActivityItem, LlmCall, RunEvent, RunTrace, ToolCallRow } from "@/l
 import { RunTimeline, eventsToSteps } from "@/components/ui/run-timeline";
 import { HitlPrompt } from "@/components/HitlPrompt";
 import { useFeedback } from "@/components/ui/feedback";
+import { SpanWaterfall } from "@/components/SpanWaterfall";
 
 /** 状态配色（与全局一致） */
 const STATUS_STYLE: Record<string, string> = {
@@ -377,6 +378,12 @@ export function RunDetailDialog({
                 <div className="rounded-md p-3 bg-[var(--color-surface-2)]">
                   <RunTimeline steps={steps} />
                 </div>
+              </Section>
+            )}
+
+            {trace?.spans && trace.spans.length > 0 && (
+              <Section title="耗时瀑布（谁在吃时间）">
+                <SpanWaterfall spans={trace.spans} />
               </Section>
             )}
 

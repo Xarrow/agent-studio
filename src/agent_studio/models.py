@@ -127,6 +127,10 @@ class Run(Base):
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
     # pending | running | ok | error | aborted | waiting_hitl
 
+    #: 事件已分层归档的时间（NULL = 还没归档）。归档只动"够老 + 已结束"的执行，
+    #: 打这个标记是为了**幂等**：反复整理不会重复处理（见 maintenance.compact_events）
+    events_archived_at: Mapped[int | None] = mapped_column(BigInteger, default=None)
+
     input: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     output: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
     definition_snapshot: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)

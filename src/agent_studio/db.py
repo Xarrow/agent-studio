@@ -186,6 +186,8 @@ _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("run", "pending_state", "pending_state JSON"),
     # 这次编排源自哪份设计稿（NULL = 临时摆的）—— 「运行记录」据此回链到 workflow
     ("orchestration", "workflow_id", "workflow_id VARCHAR(32)"),
+    # 事件分层归档标记（NULL = 未归档）—— 幂等的关键
+    ("run", "events_archived_at", "events_archived_at BIGINT"),
     # 凭据的默认模型（LLM 配置页可探测后选择 / 手动填写）
     ("secret", "default_model", "default_model VARCHAR(128)"),
     # 自动运行（无人值守）：默认任务 + 定时三件套 + 排期与外部触发凭证

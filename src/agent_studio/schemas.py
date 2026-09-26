@@ -393,6 +393,23 @@ class ToolCallRead(BaseModel):
     error: str | None
 
 
+class SpanRead(BaseModel):
+    """一段耗时（瀑布图的一条）。
+
+    ``kind``：run（整次执行）→ iteration（第几轮）→ llm / tool。
+    层级靠 ``parent_id`` 表达，前端据此缩进；时间用绝对毫秒，横条按真实时间轴摆放。
+    """
+
+    id: str
+    parent_id: str | None = None
+    kind: str
+    name: str = ""
+    started_at: int
+    ended_at: int | None = None
+    duration_ms: int | None = None
+    attributes: dict[str, Any] = Field(default_factory=dict)
+
+
 class RunTrace(BaseModel):
     """Run 的完整可观测视图（瀑布图数据源）。"""
 
@@ -403,6 +420,8 @@ class RunTrace(BaseModel):
     events: list[RunEventRead]
     llm_calls: list[LlmCallRead]
     tool_calls: list[ToolCallRead]
+    #: 耗时瀑布（run → iteration → llm/tool）。老记录没有这一段，所以默认为空
+    spans: list[SpanRead] = Field(default_factory=list)
     metrics: dict[str, Any]
 
 

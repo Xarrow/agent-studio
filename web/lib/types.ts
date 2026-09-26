@@ -260,6 +260,18 @@ export interface ActivityList {
   total?: number;
 }
 
+/** 一段耗时（瀑布图的一条）：run → iteration → llm / tool */
+export interface Span {
+  id: string;
+  parent_id?: string | null;
+  kind: string;
+  name: string;
+  started_at: number;
+  ended_at?: number | null;
+  duration_ms?: number | null;
+  attributes?: Record<string, unknown>;
+}
+
 export interface RunTrace {
   run: Run;
   /** 助手名 —— 弹框从任意入口打开都要能显示"这是谁跑的" */
@@ -267,6 +279,8 @@ export interface RunTrace {
   events: RunEvent[];
   llm_calls: LlmCall[];
   tool_calls: ToolCallRow[];
+  /** 耗时瀑布；老记录没有这一段 → 空数组 */
+  spans?: Span[];
   metrics: Record<string, number | null>;
 }
 

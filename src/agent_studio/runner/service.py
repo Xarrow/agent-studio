@@ -11,7 +11,7 @@ from pathlib import Path
 import zlib
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, delete
 
 from ..config import settings
 from ..context import append_turn, build_turn_context, compress_if_needed, run_dialogue
@@ -34,6 +34,7 @@ from ..models import (
     RunEvent,
     Secret,
     Skill,
+    Span,
     Tool,
     ToolCall,
     now_ms,
@@ -807,6 +808,8 @@ class RunService:
         ts = now_ms()
         collector.flush_open(ts)
         usage = collector.summary()
+        # 最后一轮的 iteration span 也要收口（否则它没有结束时间、瀑布图上悬空）
+        collector.finish_spans(ts)
         output = getattr(compiled, "last_output", None) if compiled is not None else None
 
         async with SessionLocal() as session:
@@ -862,6 +865,30 @@ class RunService:
                         error=r.error,
                     )
                 )
+            # ── span 树落库（瀑布图的数据源）────────────────────────────────
+            # 先删这个 run 已有的 span：重试 / HITL 续跑会多次 finalize，
+            # 不删就会出现重复条（同一段时间在图上出现两次）。
+            await session.execute(delete(Span).where(Span.run_id == run_id))
+            key_to_id: dict[str, str] = {}
+            # 根 span 用助手名（_finalize 里没有 definition，从库里取一次就够了）
+            _agent = await session.get(Agent, run.agent_id)
+            for row in collector.span_rows(
+                root_name=(_agent.name if _agent is not None else run.runtime)
+            ):
+                span = Span(
+                    run_id=run_id,
+                    # 父一定排在子之前 → 一遍循环就能接好父子关系
+                    parent_id=key_to_id.get(row["parent"]) if row["parent"] else None,
+                    kind=row["kind"],
+                    name=row["name"] or "",
+                    started_at=row["started_at"],
+                    ended_at=row["ended_at"],
+                    duration_ms=row["duration_ms"],
+                    attributes=row["attributes"],
+                )
+                session.add(span)
+                await session.flush()
+                key_to_id[row["key"]] = span.id
             await session.commit()
 
 

@@ -113,11 +113,105 @@ class MetricsCollector:
         self._open_tools: dict[str, ToolCallRecord] = {}
         self._pending_args: dict[str, dict[str, Any]] = {}
 
+        # ── span 树（瀑布图的数据源）───────────────────────────────────────
+        # `span` 表一直是空的：schema 早就有、没人写。没有它，"这一步为什么慢了三分钟"
+        # 只能靠翻日志。这里从**已经在消费的那份事件流**里顺手把树搭出来
+        # （不要求运行时额外上报）：run → iteration（每轮）→ llm / tool。
+        self._spans: list[dict[str, Any]] = []
+        self._root_span: str | None = None
+        self._iter_spans: dict[int, str] = {}
+        self._open_llm_span: str | None = None
+        self._tool_spans: dict[str, str] = {}
+
     # ------------------------------------------------------------------ #
     def on_event(self, ev: UnifiedEvent) -> None:
+        self._ensure_root(ev.ts)
         handler = getattr(self, f"_on_{ev.type}", None)
         if handler is not None:
             handler(ev)
+
+    # ------------------------------------------------------------------ #
+    # span 树（瀑布图数据源）
+    # ------------------------------------------------------------------ #
+    def _add_span(
+        self,
+        *,
+        kind: str,
+        name: str,
+        started_at: int,
+        parent: str | None,
+        attributes: dict[str, Any] | None = None,
+    ) -> str:
+        sid = f"s{len(self._spans)}"
+        self._spans.append(
+            {
+                "id": sid,
+                "parent": parent,
+                "kind": kind,
+                "name": name[:128],
+                "started_at": started_at,
+                "ended_at": None,
+                "attributes": dict(attributes or {}),
+            }
+        )
+        return sid
+
+    def _close_span(self, sid: str | None, ts: int, **attrs: Any) -> None:
+        if not sid:
+            return
+        for sp in self._spans:
+            if sp["id"] == sid and sp["ended_at"] is None:
+                sp["ended_at"] = ts
+                if attrs:
+                    sp["attributes"].update({k: v for k, v in attrs.items() if v is not None})
+                return
+
+    def _ensure_root(self, ts: int) -> None:
+        if self._root_span is None:
+            self._root_span = self._add_span(kind="run", name="", started_at=ts, parent=None)
+
+    def _iter_span(self, ts: int) -> str:
+        """每一轮 LLM 调用一个 iteration span（父 = run）。"""
+        self._ensure_root(ts)
+        if self.iteration not in self._iter_spans:
+            self._iter_spans[self.iteration] = self._add_span(
+                kind="iteration",
+                name=f"第 {self.iteration} 轮",
+                started_at=ts,
+                parent=self._root_span,
+                attributes={"iteration": self.iteration},
+            )
+        return self._iter_spans[self.iteration]
+
+    def finish_spans(self, ts: int) -> None:
+        """正常收尾：把还没闭合的 iteration 与根 span 收口（否则瀑布图上出现"永不结束"的条）。"""
+        for sid in self._iter_spans.values():
+            self._close_span(sid, ts)
+        self._close_span(self._root_span, ts)
+
+    def span_rows(self, *, root_name: str = "") -> list[dict[str, Any]]:
+        """整理成可落库的形状。
+
+        ``key_ 是本地引用（"s0"…）—— 落库时换成真 id；父 span 一定排在子之前，
+        所以调用方一遍循环就能建好父子关系。
+        """
+        out: list[dict[str, Any]] = []
+        for sp in self._spans:
+            end = sp["ended_at"]
+            start = sp["started_at"]
+            out.append(
+                {
+                    "key": sp["id"],
+                    "parent": sp["parent"],
+                    "kind": sp["kind"],
+                    "name": root_name if (sp["kind"] == "run" and root_name) else sp["name"],
+                    "started_at": start,
+                    "ended_at": end,
+                    "duration_ms": max(0, end - start) if end is not None else None,
+                    "attributes": sp["attributes"],
+                }
+            )
+        return out
 
     # ------------------------------------------------------------------ #
     def _on_llm_call_start(self, ev: UnifiedEvent) -> None:
@@ -129,6 +223,14 @@ class MetricsCollector:
             model=_first(ev.payload, "model", "model_name") or self.default_model,
         )
         self._ttft_done = False
+        # span：本轮 → 本次 LLM 调用
+        self._open_llm_span = self._add_span(
+            kind="llm",
+            name=str(self._open_llm.model or "llm"),
+            started_at=ev.ts,
+            parent=self._iter_span(ev.ts),
+            attributes={"iteration": self.iteration, "provider": self._open_llm.provider},
+        )
 
     def _mark_ttft(self, ev: UnifiedEvent) -> None:
         if self._open_llm is not None and not self._ttft_done:
@@ -160,6 +262,15 @@ class MetricsCollector:
             rec.status = "error"
             rec.error = str(err)[:2000]
         self.llm_calls.append(rec)
+        self._close_span(
+            self._open_llm_span,
+            ev.ts,
+            tokens_in=rec.tokens_in,
+            tokens_out=rec.tokens_out,
+            ttft_ms=rec.ttft_ms,
+            status=rec.status,
+        )
+        self._open_llm_span = None
         self._open_llm = None
 
     # ------------------------------------------------------------------ #
@@ -198,6 +309,13 @@ class MetricsCollector:
             rec.args = {**rec.args, **self._pending_args.pop(key)}
         # 工具真正开始执行的时间（比 LLM 决定调用更准确）
         rec.started_at = ev.ts
+        self._tool_spans[key] = self._add_span(
+            kind="tool",
+            name=str(rec.tool_name),
+            started_at=ev.ts,
+            parent=self._iter_span(ev.ts),
+            attributes={"call_id": key, "iteration": rec.iteration},
+        )
 
     def _on_tool_result_delta(self, ev: UnifiedEvent) -> None:
         key = self._tool_key(ev)
@@ -232,6 +350,9 @@ class MetricsCollector:
                 text = chunk if isinstance(chunk, str) else str(chunk)
                 rec.result_size = len(text.encode("utf-8"))
                 rec.result_preview = text[:500]
+        self._close_span(
+            self._tool_spans.pop(key, None), ev.ts, result_size=rec.result_size, status=rec.status
+        )
         self.tool_calls.append(rec)
 
     def _on_error(self, ev: UnifiedEvent) -> None:
@@ -242,11 +363,15 @@ class MetricsCollector:
             self._open_llm.ended_at = ev.ts
             self.llm_calls.append(self._open_llm)
             self._open_llm = None
+        self._close_span(self._open_llm_span, ev.ts, status="error")
+        self._open_llm_span = None
         for rec in list(self._open_tools.values()):
             rec.status = "error"
             rec.error = str(message)[:2000]
             rec.ended_at = ev.ts
             self.tool_calls.append(rec)
+        for key in list(self._tool_spans):
+            self._close_span(self._tool_spans.pop(key), ev.ts, status="error")
         self._open_tools.clear()
 
     # ------------------------------------------------------------------ #
@@ -286,3 +411,9 @@ class MetricsCollector:
             rec.error = rec.error or "事件流未正常结束"
             self.tool_calls.append(rec)
         self._open_tools.clear()
+        # 流异常结束：把没闭合的 span 也收口（否则瀑布图上出现"永不结束"的条）
+        self._close_span(self._open_llm_span, ts, status="error")
+        self._open_llm_span = None
+        for key in list(self._tool_spans):
+            self._close_span(self._tool_spans.pop(key), ts, status="error")
+        self.finish_spans(ts)

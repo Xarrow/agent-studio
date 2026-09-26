@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import SessionLocal, get_session
-from ..models import Agent, LlmCall, ModelTest, Run, RunEvent, ToolCall, now_ms
+from ..models import Agent, LlmCall, ModelTest, Run, RunEvent, Span, ToolCall, now_ms
 from ..pricing import cost_of, currency_of, load_prices, price_key, tokens_of
 from ..runner import run_service
 from ..runner.service import resolve_api_key
@@ -30,6 +30,7 @@ from ..schemas import (
     RunPruneRequest,
     RunRead,
     RunTrace,
+    SpanRead,
     ToolCallRead,
 )
 
@@ -175,6 +176,13 @@ async def get_trace(run_id: str, session: AsyncSession = Depends(get_session)) -
         )
     ).scalars().all()
 
+    # 耗时瀑布：按开始时间排（父一般早于子，缩进才好算）
+    span_rows = (
+        await session.execute(
+            select(Span).where(Span.run_id == run_id).order_by(Span.started_at.asc())
+        )
+    ).scalars().all()
+
     agent = await session.get(Agent, run.agent_id)
 
     return RunTrace(
@@ -201,6 +209,19 @@ async def get_trace(run_id: str, session: AsyncSession = Depends(get_session)) -
                 result_preview=t.result_preview, error=t.error,
             )
             for t in tool_rows
+        ],
+        spans=[
+            SpanRead(
+                id=s.id,
+                parent_id=s.parent_id,
+                kind=s.kind,
+                name=s.name or "",
+                started_at=s.started_at,
+                ended_at=s.ended_at,
+                duration_ms=s.duration_ms,
+                attributes=s.attributes or {},
+            )
+            for s in span_rows
         ],
         metrics=run.usage or {},
     )

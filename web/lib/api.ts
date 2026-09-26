@@ -448,6 +448,31 @@ export const api = {
    * 统一的「运行记录」时间线：助手执行（对话/试跑/编排）+ LLM 对话测试。
    * 一次请求拿全，前端不用为了看另一类再切页面。
    */
+  // ── 存储体检与事件归档 ─────────────────────────────────────────────────
+  /** 当前占用：事件行数 / 明细字节 / 已归档数 / 归档规则 */
+  storage: () => request<{
+    event_rows: number;
+    stream_rows: number;
+    event_payload_bytes: number;
+    runs: number;
+    runs_archived: number;
+    last_archived_at?: number | null;
+    last_auto_run_at?: number | null;
+    keep_days: number;
+    preview_bytes: number;
+    enabled: boolean;
+    db_bytes?: number | null;
+  }>("/api/maintenance/storage"),
+  /** 立刻整理一次（只动够老的执行：折叠逐字片段 + 截断超大 payload） */
+  compactEvents: () => post<{
+    ok: boolean;
+    runs_archived?: number;
+    rows_removed?: number;
+    bytes_before?: number;
+    bytes_after?: number;
+    reason?: string;
+  }>("/api/maintenance/compact", {}),
+
   // ── 版本历史与回滚 ─────────────────────────────────────────────────────
   /** 某个对象的版本列表（助手 / 流程共用；label 是"改了什么"的人话） */
   revisions: (kind: "agent" | "workflow", targetId: string, withPayload = false) =>
@@ -746,6 +771,10 @@ export const api = {
 
 /** 格式化辅助 */
 export const fmt = {
+  /** 精确整数（带千分位）。存储/计数这类数字**不能压缩** —— 用户要看准 */
+  int(v: number | null | undefined): string {
+    return Number(v || 0).toLocaleString("zh-CN");
+  },
   /** 大数压缩：3695 → 3.7k（表格里不占地方，但量级一眼看得出） */
   num(v: number | null | undefined): string {
     const n = Number(v || 0);

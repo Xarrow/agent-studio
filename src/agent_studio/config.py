@@ -48,6 +48,14 @@ class Settings(BaseSettings):
     resume_runs_after_restart: bool = True
     #: 一条执行最多被续跑几次（反复重启不该变成无限重跑）
     run_max_resume: int = 1
+    #: 事件分层归档：最近多少天的执行保留**完整**事件（更早的只留骨架）
+    event_keep_days: int = 7
+    #: 归档时旧 payload 截断到多少字节（保留开头，能看出"这里被截过"）
+    event_preview_bytes: int = 4096
+    #: 是否允许自动归档（关掉就只有手动整理）
+    event_compact_enabled: bool = True
+    #: 自动归档的最小间隔（秒）—— 并进已有的调度 tick，不新建脚本/cron
+    event_compact_interval_s: int = 3600
     max_tool_output_bytes: int = 64 * 1024        # 工具结果截断上限
     llm_payload_limit_bytes: int = 256 * 1024     # LLM 请求/响应入库上限（超出截断）
     stream_flush_interval_ms: int = 100           # SSE 批量推送间隔

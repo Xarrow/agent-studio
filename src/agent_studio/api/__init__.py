@@ -11,6 +11,8 @@ from . import (
     memories,
     openai_compat,
     orchestrations,
+    maintenance,
+    metrics,
     portability,
     prices,
     revisions,
@@ -40,6 +42,8 @@ api_router.include_router(workflows.router)      # /api/workflows（Playground �
 api_router.include_router(hooks.router)          # /api/hooks/{token}（外部触发：让别的系统也能跑一条流程）
 api_router.include_router(portability.router)    # /api/export + /api/import（数据带走：导出/导入）
 api_router.include_router(revisions.router)      # /api/revisions（版本历史与回滚）
+api_router.include_router(maintenance.router)    # /api/maintenance（存储体检 + 事件归档）
+api_router.include_router(metrics.router)        # /metrics（Prometheus 文本，监控系统直接抓）
 api_router.include_router(uploads.router)       # /api/uploads（任务卡的上传附件）
 api_router.include_router(database.router)        # /api/database（环境配置：切换持久化驱动）
 
