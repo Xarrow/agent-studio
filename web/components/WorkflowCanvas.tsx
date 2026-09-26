@@ -372,6 +372,8 @@ export function WorkflowCanvas({
    *  实现用 CSS transform（零依赖）：内容层整体 scale，外面再包一层按缩放后尺寸占位的容器，
    *  这样滚动条范围也跟着缩放走。 */
   const [zoom, setZoom] = useState(1);
+  /** 缩放菜单是否展开 —— 触屏没有 hover，只能点开（用户：playground 移动端不流畅） */
+  const [zoomMenu, setZoomMenu] = useState(false);
   const zoomRef = useRef(1);
   zoomRef.current = zoom;
   const ZOOM_MIN = 0.25;
@@ -1242,6 +1244,47 @@ export function WorkflowCanvas({
       window.removeEventListener("pointerup", onUp);
     };
   }, [resize, graph, onChange, layout.W, layout.NW, layout.CARD_W, layout.CONC_W, layout.W_MIN, layout.W_MAX]);
+  /**
+   * **双指缩放**（触屏）—— 用户："playground 在移动端操作还是不流畅"。
+   *
+   * 桌面靠 ctrl+滚轮，手机上既没有滚轮也没有 ctrl ✗，所以自己处理两个手指的距离比。
+   * 单指**不接管**（留给原生滚动，手感最顺 ✓）；touch-action: pan-x pan-y 关掉
+   * 浏览器的"整页缩放"，pinch 才落得到我们手里。
+   */
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    let d0 = 0;
+    let z0 = 1;
+    const dist = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    const onStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        d0 = dist(e.touches);
+        z0 = zoomRef.current || 1;
+      }
+    };
+    const onMove = (e: TouchEvent) => {
+      if (e.touches.length !== 2 || !d0) return;
+      e.preventDefault();
+      const z = z0 * (dist(e.touches) / d0);
+      setZoom(Math.max(0.25, Math.min(2, Math.round(z * 100) / 100)));
+    };
+    const onEnd = (e: TouchEvent) => {
+      if (e.touches.length < 2) d0 = 0;
+    };
+    el.addEventListener("touchstart", onStart, { passive: true });
+    el.addEventListener("touchmove", onMove, { passive: false });
+    el.addEventListener("touchend", onEnd);
+    el.addEventListener("touchcancel", onEnd);
+    return () => {
+      el.removeEventListener("touchstart", onStart);
+      el.removeEventListener("touchmove", onMove);
+      el.removeEventListener("touchend", onEnd);
+      el.removeEventListener("touchcancel", onEnd);
+    };
+  }, []);
+
+
   const growTask = () => {
     const el = taskBoxRef.current;
     if (!el) return;
@@ -1289,20 +1332,20 @@ export function WorkflowCanvas({
     {/* 缩放控件（对齐 Dify postionControls：左下角「－ 百分比 ＋」，点百分比出档位 + 适应画布）。
         放在 stage **外面** —— stage 是 overflow-auto，放里面会跟着内容滚走。 */}
     {!frozen && (
-      <div className="absolute bottom-3 left-3 z-30 flex items-center gap-0.5 rounded-[8px] border px-1 py-0.5 shadow-sm" style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}>
+      <div data-canvas-zoom-box="1" className="absolute bottom-3 left-3 z-30 flex items-center gap-0.5 rounded-[8px] border px-1 py-0.5 shadow-sm" style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}>
         <button type="button" title="缩小" onClick={() => zoomStep(-0.1)} className="px-1.5 py-0.5 text-[13px] leading-none hover:bg-[var(--color-surface-2)]" style={{ color: "var(--color-muted)" }}>−</button>
-        <div className="group relative">
-          <button type="button" className="min-w-[46px] rounded-[5px] px-1 py-0.5 text-[11.5px] tabular-nums hover:bg-[var(--color-surface-2)]" title="选择缩放档位 / 适应画布">
+        <div className="relative">
+          <button type="button" onClick={() => setZoomMenu((v) => !v)} className="min-w-[46px] rounded-[5px] px-1 py-0.5 text-[11.5px] tabular-nums hover:bg-[var(--color-surface-2)]" title="选择缩放档位 / 适应画布">
             {Math.round(zoom * 100)}%
           </button>
-          <div className="pointer-events-none absolute bottom-full left-0 mb-1 hidden flex-col rounded-[8px] border py-1 shadow-lg group-hover:pointer-events-auto group-hover:flex" style={{ borderColor: "var(--color-border)", background: "var(--color-surface)", minWidth: 96 }}>
+          <div className={`absolute bottom-full left-0 mb-1 flex-col rounded-[8px] border bg-[var(--color-surface)] py-1 shadow-lg ${zoomMenu ? "flex" : "hidden"}`}>
             {[2, 1, 0.75, 0.5, 0.25].map((z) => (
-              <button key={z} type="button" onClick={() => zoomTo(z)} className="px-3 py-1 text-left text-[12px] hover:bg-[var(--color-surface-2)]">
+              <button key={z} type="button" onClick={() => { zoomTo(z); setZoomMenu(false); }} className="px-3 py-1 text-left text-[12px] hover:bg-[var(--color-surface-2)]">
                 {Math.round(z * 100)}%
               </button>
             ))}
             <div className="my-1 border-t" style={{ borderColor: "var(--color-border)" }} />
-            <button type="button" onClick={fitView} className="px-3 py-1 text-left text-[12px] hover:bg-[var(--color-surface-2)]">适应画布</button>
+            <button type="button" onClick={() => { fitView(); setZoomMenu(false); }} className="px-3 py-1 text-left text-[12px] hover:bg-[var(--color-surface-2)]">适应画布</button>
           </div>
         </div>
         <button type="button" title="放大" onClick={() => zoomStep(+0.1)} className="px-1.5 py-0.5 text-[13px] leading-none hover:bg-[var(--color-surface-2)]" style={{ color: "var(--color-muted)" }}>＋</button>
@@ -1315,6 +1358,7 @@ export function WorkflowCanvas({
         if (e.target === e.currentTarget) {
           onSelect(null);
           setEdgeSel(null);
+          setZoomMenu(false);
         }
       }}
       onWheel={(e) => {
@@ -1322,8 +1366,10 @@ export function WorkflowCanvas({
         e.preventDefault();
         zoomStep(-Math.sign(e.deltaY) * 0.1);
       }}
+      data-canvas-stage="1"
       className="relative h-full min-w-0 flex-1 overflow-auto"
       style={{
+        touchAction: "pan-x pan-y",   // 触屏：单指滚动交给原生（手感顺），双指缩放我们自己处理
         backgroundColor: hot ? "color-mix(in srgb, var(--color-accent) 5%, var(--color-surface-2))" : "var(--color-surface-2)",
         // 点阵对齐 Dify（nodes/loop/node.tsx: <Background gap={[14,14]} size={2} />）：
         // 点是 2px、间距 14px；我们原来是 1.2px / 20px，显得又稀又小。

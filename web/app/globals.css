@@ -172,6 +172,13 @@ body {
    手机（< 768px）：放大触摸目标 + 防 iOS 输入框缩放
    ────────────────────────────────────────────────────────────────────────── */
 @media (max-width: 767px) {
+  /* 画布缩放控件：桌面上 24px 够用，手指点不准 → 手机上放到 40px
+     （用户："playground 在移动端操作还是不流畅"） */
+  [data-canvas-zoom-box] button {
+    min-width: 40px;
+    min-height: 40px;
+    font-size: 15px;
+  }
   /* 手指点得准：最小 44px 高 */
   .btn {
     min-height: 44px;
