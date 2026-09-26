@@ -231,8 +231,11 @@ export default function AgentsPage() {
                       )}
                     </Link>
                   )}
+                  {/* 原来这行是 `slug · v2 · ag_4afeff0c121943bd` —— 24 位 id 是**开发者噪声** ✗
+                      （卡片上没人要用 id 认助手，详情页里仍然完整保留 ✓）
+                      只留"认得出来是谁 + 第几版"这两条人对人说话会用的信息 ✓ */}
                   <div className="text-[11.5px] text-[var(--color-muted)] mono mt-0.5">
-                    {a.slug} · v{a.version} · {a.id}
+                    {a.slug} · v{a.version}
                   </div>
                 </div>
                 <span className="tag shrink-0">{a.definition?.runtime ?? a.runtime}</span>
@@ -252,7 +255,7 @@ export default function AgentsPage() {
                   </span>
                 </span>
                 <span>
-                  <Hint text={HINTS.skill}>Skill</Hint>{" "}
+                  <Hint text={HINTS.skill}>Skills</Hint>{" "}
                   <span className="mono text-[var(--color-text)]">
                     {a.definition?.skills?.length ?? 0}
                   </span>
