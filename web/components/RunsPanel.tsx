@@ -79,6 +79,9 @@ type Usage = Awaited<ReturnType<typeof api.usage>>;
  * 选中某条流程时右侧换成那条流程的执行卡。同一份组件在**两个地方**用：
  *   ① /runs（整页）  ② Playground 顶栏「流程」浮层 —— 一处能力，两个入口，不写两遍。
  */
+//: 一页多少条。50 是「看得见一屏内容」与「别一次读上千行」之间的取舍。
+const PAGE = 50;
+
 export function RunsPanel() {
   const fb = useFeedback();
   const [items, setItems] = useState<ActivityItem[]>([]);
@@ -94,6 +97,10 @@ export function RunsPanel() {
   const [open, setOpen] = useState<ActivityItem | null>(null);
   /** 用了多少 / 花了多少（今日 + 近 7 天）—— 与列表同一个请求里取，不额外等一轮 */
   const [usage, setUsage] = useState<Usage | null>(null);
+  /** 分页：一页 50 条，「加载更多」往后翻（游标式 —— 翻页时新记录插进来也不会错位） */
+  const [hasMore, setHasMore] = useState(false);
+  const [serverTotal, setServerTotal] = useState(0);
+  const [moreBusy, setMoreBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -105,13 +112,15 @@ export function RunsPanel() {
           status: status || undefined,
           agent_id: agentId || undefined,
           q: q.trim() || undefined,
-          limit: 300,
+          limit: PAGE,
         }),
         api.agents(),
       ]);
       setUsage(u);
       setItems(tl.items);
       setCounts(tl.counts);
+      setHasMore(Boolean(tl.has_more));
+      setServerTotal(tl.total ?? tl.items.length);
       setAgents(a);
       setSelected(new Set());
     } catch (e) {
@@ -127,6 +136,34 @@ export function RunsPanel() {
     const t = setTimeout(() => void load(), q ? 300 : 0); // 搜索防抖，其余立刻
     return () => clearTimeout(t);
   }, [load, q]);
+
+  /** 往后翻一页：拿最后一条做游标（按 id 去重，宁可少显示也不重复） */
+  const loadMore = async () => {
+    const last = items[items.length - 1];
+    if (!last || moreBusy) return;
+    setMoreBusy(true);
+    try {
+      const tl = await api.runTimeline({
+        kind: kind === "all" ? undefined : kind,
+        status: status || undefined,
+        agent_id: agentId || undefined,
+        q: q.trim() || undefined,
+        limit: PAGE,
+        before: last.at,
+        before_id: last.id,
+      });
+      setItems((prev) => {
+        const seen = new Set(prev.map((x) => x.id));
+        return [...prev, ...tl.items.filter((x) => !seen.has(x.id))];
+      });
+      setHasMore(Boolean(tl.has_more));
+      setServerTotal(tl.total ?? 0);
+    } catch (e) {
+      fb.error("加载更多失败", e instanceof Error ? e.message : String(e));
+    } finally {
+      setMoreBusy(false);
+    }
+  };
 
   const total = useMemo(
     () => Object.values(counts).reduce((a, b) => a + b, 0),
@@ -548,6 +585,33 @@ export function RunsPanel() {
                 })}
               </tbody>
             </table>
+          )}
+
+          {/* 分页：一页 50 条。不摆页码 —— 记录一直在新增，页码会错位，
+              用户要的其实是"还有没有、还有多少"（见后端 timeline 的注释）。 */}
+          {!loading && items.length > 0 && (
+            <div className="mt-3 flex items-center justify-center gap-3 text-[12.5px]">
+              {hasMore ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => void loadMore()}
+                    disabled={moreBusy}
+                    className="rounded-[8px] border px-3 py-1.5 disabled:opacity-50"
+                    style={{ borderColor: "var(--color-border)" }}
+                  >
+                    {moreBusy ? "加载中…" : `加载更多（还有 ${Math.max(serverTotal - items.length, 0)} 条）`}
+                  </button>
+                  <span style={{ color: "var(--color-muted)" }}>
+                    已显示 {items.length} / {serverTotal}
+                  </span>
+                </>
+              ) : (
+                <span style={{ color: "var(--color-muted)" }}>
+                  共 {serverTotal} 条，已到底
+                </span>
+              )}
+            </div>
           )}
         </div>
 

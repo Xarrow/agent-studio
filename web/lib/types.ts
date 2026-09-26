@@ -254,6 +254,10 @@ export interface ActivityList {
   items: ActivityItem[];
   /** 各类型总数（筛选栏上的计数徽标，不用额外请求） */
   counts: Record<string, number>;
+  /** 还有没有更早的记录（游标分页 → 界面显示「加载更多」） */
+  has_more?: boolean;
+  /** 当前筛选下的总条数（界面用它说「还有 N 条」） */
+  total?: number;
 }
 
 export interface RunTrace {

@@ -329,6 +329,10 @@ class ActivityList(BaseModel):
     items: list[ActivityItem] = Field(default_factory=list)
     #: 各类型的总数（用于筛选栏上的计数徽标，不用额外请求）
     counts: dict[str, int] = Field(default_factory=dict)
+    #: 还有没有更早的记录（游标分页：界面据此显示「加载更多」）
+    has_more: bool = False
+    #: 当前筛选条件下的总条数（界面用它说"还有 N 条"，而不是让用户自己数）
+    total: int = 0
 
 
 class RunRead(BaseModel):

@@ -522,6 +522,10 @@ export const api = {
     agent_id?: string;
     q?: string;
     limit?: number;
+    /** 游标：只取这个时间戳（毫秒）之前的记录 —— 分页用「加载更多」而不是页码 */
+    before?: number;
+    /** 游标 tiebreak：同一毫秒内的记录靠它排序（否则翻页会漏/重） */
+    before_id?: string;
   }) => {
     const sp = new URLSearchParams();
     Object.entries(params ?? {}).forEach(([k, v]) => {

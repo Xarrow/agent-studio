@@ -358,43 +358,161 @@ def _text_of(blob: Any) -> str:
     return ""
 
 
+# ── 「运行记录」时间线（分页版）────────────────────────────────────────────
+#
+# 为什么要重写（原来差在哪）
+# -------------------------
+# 原来把一个 1000 条的窗口**全捞进内存**再在 Python 里筛/搜/截断：
+#   · 前端要 limit=300 → 每次都把上千行记录（含 output/input 全文）读出来、序列化、扔掉
+#   · 没有分页：超过窗口的老记录**翻不到**（不是慢，是根本看不见）
+#   · 搜索只在这个窗口内匹配 → "我明明搜到过那条"变成玄学
+# 现在：条件全部下推到 SQL（可移植：`cast(...).ilike` 在 SQLite/MySQL/PG 都成立），
+# 游标分页（`(started_at, id)` 复合游标，避免同毫秒记录在翻页时被跳过或重复），
+# 并明确返回 `total`（界面能说"还有 N 条"）与 `has_more`。
+def _kind_case(model):  # noqa: ANN001
+    """kind 的 SQL 表达式：老数据 origin 为空 → 按 orchestration/session 推断。
+
+    与 Python 版 ``_run_kind`` 必须**完全一致**，否则筛选出来的条数会对不上。
+    """
+    from sqlalchemy import case, literal
+
+    return case(
+        (model.origin.in_(("chat", "preview", "playground")), model.origin),
+        (model.orchestration_id.is_not(None), literal("playground")),
+        (model.session_id.is_not(None), literal("chat")),
+        else_=literal("preview"),
+    )
+
+
+def _needles(q: str) -> list[str]:
+    r"""搜索词 → 若干个 LIKE 模式。
+
+    ⚠️ 为什么要两个：JSON 列（input/output/definition_snapshot/messages）在 SQLite 里是
+    ``json.dumps`` 的结果，中文默认被转义成 ``\uXXXX`` —— 拿 ``LIKE '%中文%'`` 去匹配
+    **永远搜不到**（库里根本没有那几个汉字）。这是"我明明搜到过"的隐形坑，
+    所以除了原样，再拿一份"转义后的形式"去比。
+    """
+    raw = q.strip()
+    escaped = json.dumps(raw, ensure_ascii=True)[1:-1]
+    return [raw] if escaped == raw else [raw, escaped]
+
+
+def _like_any(col, q: str):  # noqa: ANN001, ANN201
+    from sqlalchemy import or_
+
+    return or_(*[col.ilike(f"%{n}%") for n in _needles(q)])
+
+
+def _run_conds(kind, status, agent_id, q, before_at, before_id) -> list:  # noqa: ANN001
+    from sqlalchemy import String, and_, cast, or_
+
+    from ..models import Agent
+
+    conds: list = []
+    if kind and kind != "all":
+        conds.append(_kind_case(Run) == kind)
+    if status:
+        conds.append(Run.status == status)
+    if agent_id:
+        conds.append(Run.agent_id == agent_id)
+    if q and q.strip():
+        conds.append(
+            or_(
+                _like_any(cast(Run.input, String), q),
+                _like_any(cast(Run.output, String), q),
+                _like_any(cast(Run.definition_snapshot, String), q),
+                _like_any(Run.error, q),
+                Run.agent_id.in_(select(Agent.id).where(_like_any(Agent.name, q))),
+            )
+        )
+    if before_at:
+        # 复合游标：同一毫秒内的多条靠 id 决定先后，否则翻页会漏/重
+        conds.append(
+            or_(Run.started_at < before_at, and_(Run.started_at == before_at, Run.id < before_id))
+        )
+    return conds
+
+
+def _test_conds(kind, status, q, before_at, before_id) -> list:  # noqa: ANN001
+    from sqlalchemy import String, and_, cast, or_
+
+    conds: list = []
+    if kind and kind not in ("all", "llm_test"):
+        return [literal_false()]        # 只看助手执行时，裸模型调用不进结果
+    if status:
+        conds.append(ModelTest.status == status)
+    if q and q.strip():
+        conds.append(
+            or_(
+                _like_any(ModelTest.model, q),
+                _like_any(ModelTest.credential_name, q),
+                _like_any(ModelTest.reply, q),
+                _like_any(ModelTest.error, q),
+                _like_any(cast(ModelTest.messages, String), q),
+            )
+        )
+    if before_at:
+        conds.append(
+            or_(
+                ModelTest.started_at < before_at,
+                and_(ModelTest.started_at == before_at, ModelTest.id < before_id),
+            )
+        )
+    return conds
+
+
+def literal_false():  # noqa: ANN201
+    from sqlalchemy import false
+
+    return false()
+
+
 @router.get("/timeline", response_model=ActivityList)
 async def activity_timeline(
     kind: str | None = Query(None, description="chat / preview / playground / llm_test"),
     status: str | None = Query(None),
     agent_id: str | None = Query(None),
     q: str | None = Query(None, description="关键词：主体名 / 模型 / 摘要 / 错误"),
-    limit: int = Query(200, ge=1, le=1000),
+    limit: int = Query(50, ge=1, le=200, description="每页条数（默认 50，界面用「加载更多」翻）"),
+    before: int | None = Query(None, description="游标：只取这个时间戳（毫秒）之前的记录"),
+    before_id: str | None = Query(None, description="游标 tiebreak：同一毫秒内的记录靠它排序"),
     session: AsyncSession = Depends(get_session),
 ) -> ActivityList:
-    """把**三类调用**并成一条时间线，供「运行记录」页展示。
+    """把**三类调用**并成一条时间线（分页 + 搜索在库里完成）。
 
-    为什么要合并（而不是分三个列表）
+    为什么合并（而不是分三个列表）
     ------------------------------
-    用户脑子里的问题是"我发起过哪些调用、结果如何、哪次出错了"，而不是
-    "它存在哪张表"。分开放，就等于逼用户在几个列表之间对照着看。
+    用户脑子里的问题是"我发起过哪些调用、结果如何、哪次出错了"，而不是"它存在哪张表"。
+    分开放，就等于逼用户在几个列表之间对照着看。存储上仍然分开（语义不同，见 models.ModelTest）。
 
-    存储上仍然是分开的，原因见 ``models.ModelTest`` 的注释：
-    助手执行（run，带 agent）和裸模型调用（model_test，无 agent）语义不同。
-    这里只在**读取时**合并 —— 一次调用就是一次调用。
+    分页是**游标式**（`before` + `before_id`）而不是 offset：
+    记录一直在新增，offset 会让"翻到第 2 页"时内容整体位移、用户看到重复或漏掉的条目。
     """
-    # 助手名映射（列表里要显示"哪次是哪个助手跑的"）
+    from sqlalchemy import func
+
     agents = {a.id: a.name for a in (await session.execute(select(Agent))).scalars()}
-    # 单价与币种：一次读出来，循环里直接用（别在 for 里查库）
     prices = await load_prices(session)
     currency = await currency_of(session)
 
-    runs = list(
-        (await session.execute(select(Run).order_by(Run.started_at.desc()).limit(1000)))
-        .scalars()
+    # 取 limit+1：多取一条用来判断"还有没有"。两个来源各取 limit+1 再合并，
+    # 结果的前 limit 条必然正确（数学上：并集的前 k 条一定来自各自的前 k 条）。
+    want = limit + 1
+    run_stmt = (
+        select(Run).where(*_run_conds(kind, status, agent_id, q, before, before_id or ""))
+        .order_by(Run.started_at.desc(), Run.id.desc())
+        .limit(want)
     )
-    tests = list(
-        (
-            await session.execute(
-                select(ModelTest).order_by(ModelTest.started_at.desc()).limit(1000)
-            )
-        ).scalars()
-    )
+    runs = list((await session.execute(run_stmt)).scalars())
+
+    tests: list[ModelTest] = []
+    if not agent_id:
+        test_stmt = (
+            select(ModelTest)
+            .where(*_test_conds(kind, status, q, before, before_id or ""))
+            .order_by(ModelTest.started_at.desc(), ModelTest.id.desc())
+            .limit(want)
+        )
+        tests = list((await session.execute(test_stmt)).scalars())
 
     items: list[ActivityItem] = []
     for r in runs:
@@ -402,10 +520,8 @@ async def activity_timeline(
         dur = (r.ended_at - r.started_at) if (r.ended_at and r.started_at) else None
         usage = r.usage if isinstance(r.usage, dict) else {}
         model_name = (r.definition_snapshot or {}).get("model", {}).get("name")
-        # ⚠️ 取 token 一律走 pricing.tokens_of：它同时认平台的 tokens_in/out 与
-        #    provider 的 prompt/completion_tokens 两套键名。
-        #    之前这里只认后者 → 平台自己采的数一个都取不到 → 记录页 Tokens 列**整列「—」**
-        #    （数据一直在库里，只是没被读出来）。这就是那个 bug 的根因。
+        # ⚠️ 取 token 一律走 pricing.tokens_of：同时认平台 tokens_in/out 与 provider 的
+        #    prompt/completion_tokens 两套键名（只认后者会导致 Tokens 整列「—」）。
         tin, tout = tokens_of(usage)
         items.append(
             ActivityItem(
@@ -416,17 +532,13 @@ async def activity_timeline(
                 duration_ms=dur,
                 status=r.status,
                 title=agents.get(r.agent_id, r.agent_id),
-                subtitle=(
-                    f"多轮第 {r.turn_index} 轮" if r.turn_index else None
-                ),
+                subtitle=(f"多轮第 {r.turn_index} 轮" if r.turn_index else None),
                 agent_id=r.agent_id,
                 model=model_name,
                 tokens_in=tin,
                 tokens_out=tout,
-                #: 金额（没填单价 = None → 界面显示「—」，不假装 0 元）
                 cost=cost_of(model_name, tin, tout, prices),
                 currency=currency,
-                # 定时 / 外部触发发起的执行要标出来（不是用户点的）
                 trigger=(r.origin if r.origin in ("schedule", "webhook") else None),
                 summary=(_text_of(r.input) or _text_of(out))[:120] or None,
                 error=r.error,
@@ -457,31 +569,51 @@ async def activity_timeline(
             )
         )
 
-    items.sort(key=lambda x: x.at, reverse=True)
+    items.sort(key=lambda x: (x.at, x.id), reverse=True)
+    has_more = len(items) > limit
+    items = items[:limit]
 
-    # 计数徽标：基于"还没按类型筛选"的全集，这样切换筛选时徽标不会跳
+    # 徽标计数：**不带类型筛选**，这样切换类型时徽标不会跳（原有语义，保持不变）
     counts: dict[str, int] = {}
-    for it in items:
-        counts[it.kind] = counts.get(it.kind, 0) + 1
+    for kind_name, cnt in (
+        await session.execute(
+            select(_kind_case(Run).label("k"), func.count()).group_by(_kind_case(Run))
+        )
+    ).all():
+        counts[str(kind_name)] = int(cnt)
+    test_count = int(
+        (await session.execute(select(func.count()).select_from(ModelTest))).scalar() or 0
+    )
+    if test_count:
+        counts["llm_test"] = test_count
 
-    if kind and kind != "all":
-        items = [x for x in items if x.kind == kind]
-    if status:
-        items = [x for x in items if x.status == status]
-    if agent_id:
-        items = [x for x in items if x.agent_id == agent_id]
-    if q:
-        needle = q.strip().lower()
-        items = [
-            x
-            for x in items
-            if needle
-            in " ".join(
-                filter(None, [x.title, x.subtitle, x.summary, x.model, x.error])
-            ).lower()
-        ]
+    # 当前筛选下的总条数（界面用来说"还有 N 条"）—— 与列表同源同条件
+    total_runs = int(
+        (
+            await session.execute(
+                select(func.count())
+                .select_from(Run)
+                .where(*_run_conds(kind, status, agent_id, q, None, None))
+            )
+        ).scalar()
+        or 0
+    )
+    total_tests = 0
+    if not agent_id:
+        total_tests = int(
+            (
+                await session.execute(
+                    select(func.count())
+                    .select_from(ModelTest)
+                    .where(*_test_conds(kind, status, q, None, None))
+                )
+            ).scalar()
+            or 0
+        )
 
-    return ActivityList(items=items[:limit], counts=counts)
+    return ActivityList(
+        items=items, counts=counts, has_more=has_more, total=total_runs + total_tests
+    )
 
 
 @router.get("/usage", response_model=dict)
