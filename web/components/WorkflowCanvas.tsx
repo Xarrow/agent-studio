@@ -1285,6 +1285,29 @@ export function WorkflowCanvas({
   }, []);
 
 
+  /**
+   * **再制**选中节点（Dify: Mod+D —— shortcuts/definitions.ts:68-73）。
+   *
+   * 只克隆自己、位置错开一点（+40/+40），**不动连线** —— 不能因为按一下 ⌘D
+   * 就把拓扑悄悄改了 ✗（那属于"加一步"该做的事，是另一个动作）。
+   */
+  const duplicateNode = useCallback(
+    (nid: string) => {
+      const src = graph.nodes.find((x) => x.nid === nid);
+      if (!src) return;
+      const newNid = `n${Math.random().toString(36).slice(2, 6)}`;
+      onChange({
+        ...graph,
+        nodes: [
+          ...graph.nodes,
+          { ...src, nid: newNid, x: (src.x ?? 0) + 40, y: (src.y ?? 0) + 40 },
+        ],
+      });
+      onSelect(newNid);
+    },
+    [graph, onChange, onSelect],
+  );
+
   /** 删掉一个节点（连带它的连线）—— 卡片上的「删除」和键盘 Delete 共用这一条路径 ✓ */
   const deleteNode = useCallback(
     (nid: string) => {
@@ -1346,7 +1369,8 @@ export function WorkflowCanvas({
       //  —— shortcuts/definitions.ts:111-141。上一轮我写成 Mod+1=100% ✗，这次照源码改 ✓）
       // 注意：Shift+1 的 e.key 是 "!" ✗（键盘布局差异）→ 必须用 e.code（物理键）判数字 ✓
       const digit = e.code.startsWith("Digit") ? e.code.slice(5) : /^[0-9]$/.test(e.key) ? e.key : "";
-      if (digit === "1" && e.shiftKey) { e.preventDefault(); zoomTo(1); }
+      if (e.key.toLowerCase() === "d" && selected) { e.preventDefault(); duplicateNode(selected); }
+      else if (digit === "1" && e.shiftKey) { e.preventDefault(); zoomTo(1); }
       else if (digit === "5" && e.shiftKey) { e.preventDefault(); zoomTo(0.5); }
       else if (digit === "1") { e.preventDefault(); fitView(); }
       else if (digit === "0") { e.preventDefault(); fitView(); }
@@ -1355,7 +1379,7 @@ export function WorkflowCanvas({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onSelect, fitView, zoomTo, zoomStep, selected, graph, onChange, deleteNode]);
+  }, [onSelect, fitView, zoomTo, zoomStep, selected, graph, onChange, deleteNode, duplicateNode]);
 
 
   const growTask = () => {
@@ -1405,7 +1429,7 @@ export function WorkflowCanvas({
     {/* 缩放控件（对齐 Dify postionControls：左下角「－ 百分比 ＋」，点百分比出档位 + 适应画布）。
         放在 stage **外面** —— stage 是 overflow-auto，放里面会跟着内容滚走。 */}
     {!frozen && (
-      <div data-canvas-zoom-box="1" className="absolute bottom-3 left-3 z-30 flex items-center gap-0.5 rounded-[8px] border px-1 py-0.5 shadow-sm" style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}>
+      <div data-canvas-zoom-box="1" className="absolute bottom-3 right-3 z-30 flex items-center gap-0.5 rounded-[8px] border px-1 py-0.5 shadow-sm" style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}>
         <button type="button" title="缩小" onClick={() => zoomStep(-0.1)} className="px-1.5 py-0.5 text-[13px] leading-none hover:bg-[var(--color-surface-2)]" style={{ color: "var(--color-muted)" }}>−</button>
         <div className="relative">
           <button type="button" onClick={() => setZoomMenu((v) => !v)} className="min-w-[46px] rounded-[5px] px-1 py-0.5 text-[11.5px] tabular-nums hover:bg-[var(--color-surface-2)]" title="选择缩放档位 / 适应画布">
