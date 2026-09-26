@@ -1,5 +1,6 @@
 """Run 编排与指标采集。"""
 
+from .dispatcher import Dispatcher, dispatcher
 from .metrics import LlmCallRecord, MetricsCollector, ToolCallRecord
 from .service import (
     EventBus,
@@ -12,11 +13,13 @@ from .service import (
 )
 
 __all__ = [
+    "Dispatcher",
     "EventBus",
     "LlmCallRecord",
     "MetricsCollector",
     "ToolCallRecord",
     "bus",
+    "dispatcher",
     "compress_payload",
     "load_skill_rows",
     "load_tools",

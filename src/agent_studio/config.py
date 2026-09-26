@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     run_retry_backoff_s: float = 1.5
     #: 排队最多等多久（秒）；超时则明确失败并说明"排队太久"。0 = 一直等
     run_gate_wait_s: float = 300.0
+    #: 服务重启后，把重启前**没跑完**的单步执行重新排队跑起来（编排内的执行不续跑，见 dispatcher）
+    resume_runs_after_restart: bool = True
+    #: 一条执行最多被续跑几次（反复重启不该变成无限重跑）
+    run_max_resume: int = 1
     max_tool_output_bytes: int = 64 * 1024        # 工具结果截断上限
     llm_payload_limit_bytes: int = 256 * 1024     # LLM 请求/响应入库上限（超出截断）
     stream_flush_interval_ms: int = 100           # SSE 批量推送间隔

@@ -196,10 +196,19 @@ async def _mk_agent(client, runtime: str, name: str) -> str:
 
 
 async def _wait_terminal(client, run_id: str, timeout_s: float = 8.0) -> dict:
+    """等一条执行结束。
+
+    测试里 ASGI 客户端**不会**跑 lifespan（没有后台分发器循环），所以这里手动
+    "泵"同一个 ``dispatcher.tick()`` —— 走的是和生产完全一样的那条路
+    （tick → _spawn → RunService.execute），只是由测试驱动节拍。
+    """
     import time as _t
+
+    from agent_studio.runner.dispatcher import dispatcher
 
     deadline = _t.monotonic() + timeout_s
     while _t.monotonic() < deadline:
+        await dispatcher.tick()
         r = await client.get(f"/api/runs/{run_id}")
         if r.status_code == 200:
             data = r.json()

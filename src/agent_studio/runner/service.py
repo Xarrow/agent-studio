@@ -95,9 +95,31 @@ async def reap_orphan_runs(boot_ms: int) -> int:
         )
         if not rows:
             return 0
+        from .dispatcher import resume_policy
+
         now = now_ms()
+        requeued = 0
         for r in rows:
             was = r.status
+            resumed_n = int((r.usage or {}).get("resumed") or 0)
+            policy = resume_policy(
+                status=was,
+                orchestration_id=r.orchestration_id,
+                resumed=resumed_n,
+                enabled=bool(settings.resume_runs_after_restart),
+                max_resume=int(settings.run_max_resume or 0),
+            )
+            if policy == "requeue":
+                # **续跑**：状态回到 pending = 队列里等着，分发器（最多 1 秒）会捡起来。
+                # 顺手刷新 started_at —— 否则下一次重启时它又会被判成"重启前的在途"。
+                r.status = "pending"
+                r.error = None
+                r.ended_at = None
+                r.started_at = now
+                # **不在这里计数**：计数交给真正跑起来的那次（execute(resumed=True)）——
+                # 两边都加会让"续跑 1 次"显示成 2 次，那种数字比没有更糟。
+                requeued += 1
+                continue
             r.status = "error"
             r.pending_hitl = None
             # **不设 ended_at**：我们并不知道它究竟何时停的（进程是被重启带走的）。
@@ -110,7 +132,38 @@ async def reap_orphan_runs(boot_ms: int) -> int:
                 "这条记录由启动时的自动回收标记，现在可以正常删除。"
             )
         await session.commit()
-        logger.warning("回收 %d 条因服务重启而中断的执行记录", len(rows))
+        if requeued:
+            logger.warning(
+                "重启续跑：%d 条执行已重新排队（其余 %d 条标中断）", requeued, len(rows) - requeued
+            )
+        else:
+            logger.warning("回收 %d 条因服务重启而中断的执行记录", len(rows))
+
+        # 编排（orchestration）也要收尾：它的推进协程同样随重启消失，不收就永远停在
+        # running（界面上一直转圈、还删不掉）。**不自动续跑** —— 从头再跑会把已完成的
+        # 步骤重复执行（有副作用更糟）：明确标中断，让用户在画布上重跑。
+        from ..models import Orchestration
+
+        stuck = list(
+            (
+                await session.execute(
+                    select(Orchestration).where(
+                        Orchestration.status.in_(("pending", "running")),
+                        Orchestration.started_at.is_not(None),
+                        Orchestration.started_at < boot_ms,
+                    )
+                )
+            ).scalars()
+        )
+        for o in stuck:
+            o.status = "error"
+            o.error = (
+                "编排被中断：服务在它运行期间重启了。未完成的步骤已标为中断 —— "
+                "可以在画布上重新跑一次（已完成的步骤不重复执行）"
+            )
+        if stuck:
+            await session.commit()
+            logger.warning("回收 %d 条因服务重启而中断的编排", len(stuck))
         return len(rows)
 
 
@@ -315,20 +368,27 @@ class RunService:
 
     # ------------------------------------------------------------------ #
     async def start(self, run_id: str, definition: AgentDefinition, run_input: Any) -> None:
-        task = asyncio.create_task(self._execute(run_id, definition, run_input))
-        self._tasks[run_id] = task
-        task.add_done_callback(lambda _t, rid=run_id: self._tasks.pop(rid, None))
+        """提交一条执行 —— **不再直接起协程**，交给分发器。
+
+        为什么必须这样（原来是 ``asyncio.create_task``）：
+          · 推进的协程活在内存里 → 服务一重启，这条执行就只剩"标中断"一条路
+          · 并发没有上限 → 同层节点 + 多流程 + 定时一起冲，自己把自己限流
+          · 队列不可见 → "为什么我的任务还没开始跑"没地方查
+        交给分发器之后：pending 就是队列，重启后照样被捡起来（见 runner/dispatcher.py）。
+        """
+        from .dispatcher import dispatcher
+
+        await dispatcher.submit(run_id, definition, run_input)
 
     async def abort(self, run_id: str) -> bool:
-        task = self._tasks.get(run_id)
-        if task is not None and not task.done():
-            task.cancel()
-            return True
-        return False
+        from .dispatcher import dispatcher
+
+        return await dispatcher.abort(run_id)
 
     def is_running(self, run_id: str) -> bool:
-        task = self._tasks.get(run_id)
-        return task is not None and not task.done()
+        from .dispatcher import dispatcher
+
+        return dispatcher.is_running(run_id)
 
     async def wait(self, run_id: str, timeout: float | None = None) -> Run:
         """等这次执行结束，返回结束时的 Run 快照。
@@ -356,7 +416,20 @@ class RunService:
             await asyncio.sleep(0.3)
 
     # ------------------------------------------------------------------ #
-    async def _execute(self, run_id: str, definition: AgentDefinition, run_input: Any) -> None:
+    async def execute(
+        self, run_id: str, definition: AgentDefinition, run_input: Any, *, resumed: bool = False
+    ) -> None:
+        if resumed:
+            # 续跑：这件事要**落进 usage**（界面上看得出"这条是重启后接着跑的"），
+            # 否则用户只会看到一条"莫名其妙又跑起来"的记录。
+            async with SessionLocal() as _s:
+                _r = await _s.get(Run, run_id)
+                if _r is not None:
+                    _u = dict(_r.usage or {})
+                    _u["resumed"] = int(_u.get("resumed") or 0) + 1
+                    _r.usage = _u
+                    _r.error = None
+                    await _s.commit()
         runtime = get_runtime(definition.runtime)
         collector = MetricsCollector(
             provider=definition.model.provider, model=definition.model.name

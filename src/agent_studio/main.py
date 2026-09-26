@@ -22,6 +22,7 @@ from .api import api_router
 from .config import settings
 from .db import init_db
 from .runner.service import reap_orphan_runs
+from .runner.dispatcher import loop as dispatcher_loop
 from .scheduler import loop as scheduler_loop
 from .runtimes import discover_runtimes, list_runtimes
 
@@ -60,10 +61,14 @@ async def lifespan(_app: FastAPI):
     # **自动运行**（无人值守）：进程内一个 20 秒的 tick，不引调度库、不起第二个服务。
     # 它比任何一次执行都更该耐活 —— 挂了就再也没有"自动跑"（见 scheduler.loop）。
     scheduler = asyncio.create_task(scheduler_loop())
+    # **执行分发器**：所有执行都由它按并发上限取走（pending 就是队列）——
+    # 重启后没跑完的单步执行会被它捡起来续跑（见 runner/dispatcher.py）。
+    dispatcher_task = asyncio.create_task(dispatcher_loop())
     try:
         yield
     finally:
         scheduler.cancel()
+        dispatcher_task.cancel()
         logger.info("Agent Studio 关闭")
 
 
