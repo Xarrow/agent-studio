@@ -1752,7 +1752,7 @@ export function WorkflowCanvas({
       {/* 框选矩形（视口坐标；配色照 Dify style.css:21-30） */}
       {box && (
         <div
-          className="pointer-events-none fixed z-[60] rounded-[2px]"
+          className="wf-box-in pointer-events-none fixed z-[60] rounded-[2px]"
           style={{
             left: Math.min(box.x0, box.x1),
             top: Math.min(box.y0, box.y1),
@@ -2725,7 +2725,7 @@ export function WorkflowCanvas({
                 const head = (e.target as HTMLElement).closest("[data-draghead]");
                 if (head) startDrag(e, n.nid);
               }}
-              className={`touch-none wf-node group absolute rounded-[15px] border shadow-xs hover:shadow-lg ${
+              className={`touch-none wf-node wf-node-in group absolute rounded-[15px] border shadow-xs hover:shadow-lg ${
                 lv && st === "run" ? "node-run" : st === "ask" ? "node-ask" : ""
               } ${
                 // 进度可视化（零操作）：只要有任何一步在跑/等待确认，还没轮到的步骤就压暗。
@@ -2735,7 +2735,14 @@ export function WorkflowCanvas({
               style={{
                 // 聚焦：不是这一张就压暗（透明度而不是隐藏 —— 还能看到上下游关系 ✓）
                 opacity: dimmed ? 0.35 : 1,
-                transition: "opacity .15s",
+                // **动画**：位置/尺寸变化平滑滑过去（方向键移动、自动整理、撤销重做都受益 ✓）；
+                // 但**正在拖它/调尺寸**时必须瞬时跟手 ✗ —— 否则卡片会拖在光标后面半拍
+                //（globals.css:526 记过"卡片用 transform 定位，transition 不能带 transform"，
+                //  那条教训在这里用"拖动中置 none"的方式满足 ✓）
+                transition:
+                  drag?.nid === n.nid || resize?.nid === n.nid
+                    ? "opacity .15s"
+                    : "transform .2s ease, width .18s ease, height .18s ease, opacity .15s",
                 transform: `translate(${p.x}px, ${p.y}px)`,
                 // 宽度：正在拖这张卡时用实时值（跟手），否则用图里存的（拖过就用拖过的宽）
                 width: resize?.nid === n.nid ? resize.w : layout.W[n.nid] ?? layout.NW,

@@ -574,3 +574,15 @@ body {
 .wf-node:hover {
   box-shadow: 0 6px 20px rgba(20, 24, 31, .10), 0 2px 6px rgba(20, 24, 31, .06);
 }
+
+/* ── 画布动效（对齐"有反馈但不喧哗"：位置/尺寸滑动、新卡淡入、选框淡入）──────────────
+   注意：卡片用 transform: translate 定位 —— 所以**拖动/调尺寸时** transition 里不能带
+   transform ✗（否则拖起来糊在光标后面半拍）。这个由 WorkflowCanvas 按拖动状态切换 transition 满足 ✓ */
+@keyframes node-in {
+  from { opacity: 0; transform: scale(.96) translateY(4px); }
+  to   { opacity: 1; }
+}
+.wf-node-in { animation: node-in .18s ease-out; }
+
+@keyframes box-in { from { opacity: 0; } to { opacity: 1; } }
+.wf-box-in { animation: box-in .12s ease-out; }
