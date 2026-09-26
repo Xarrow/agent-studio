@@ -35,7 +35,12 @@ _TRANSIENT = re.compile(
     r"\b50[0234]\b|bad gateway|service unavailable|gateway time-?out|"
     r"overload|temporar|try again|"
     r"connection (reset|aborted|closed|error)|read ?timeout|connect(error|timeout)|"
-    r"remotedisconnected|incomplete ?read",
+    r"remotedisconnected|incomplete ?read|"
+    # ↓ 2026-09-26 实测补：**SDK 自己的超时**压根匹配不上上面任何一条 ✗
+    #   openai 抛的是 `APITimeoutError: Request timed out.`（不是 builtin TimeoutError ✗）
+    #   → 以前 is_transient=False → retries 一直是 0，上游抖一次就整步失败（现场 11/40 失败 ✓）
+    #   `timed out` 这类文案就是"对端/中继没按时回" ✓ 属于该等一等再试的情形 ✓
+    r"apitimeouterror|apiconnectionerror|apitimeout|timed out|timeout exceeded",
     re.I,
 )
 
