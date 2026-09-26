@@ -438,6 +438,21 @@ export interface OrchStep {
 
 /** 编排下的一个子步骤（后端返回，就是一条 Run 的摘要） */
 /** 分派出来的一路（fan-out 的一个实例）—— 画布就地叠卡、抽屉按项看、徽标计数都用它 */
+export interface GuardrailsRead {
+  /** 今日额度：used/limit 都是 token；limit=0 表示不限 */
+  daily: {
+    used: number;
+    limit: number;
+    exceeded: boolean;
+    reset_at: number;
+    message: string;
+    /** 界面上只给这几档（枚举，不让手打） */
+    choices: number[];
+  };
+  /** 允许的分派层数（默认 1） */
+  depth: { limit: number; choices: number[] };
+}
+
 export interface FanoutItem {
   index: number;
   label: string;

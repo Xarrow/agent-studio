@@ -1,6 +1,7 @@
 /** 后端 API 客户端（类型化 fetch 封装）。 */
 
 import type {
+  GuardrailsRead,
   UsageBucket,
   WorkflowAuto,
   ActivityList,
@@ -565,6 +566,18 @@ export const api = {
   abortRun: (id: string) => post<{ aborted: boolean }>(`/api/runs/abort/${id}`),
   /** **重跑这一条执行**：记录原地重来（归属不变）——分派的某一项失败时只重跑那一路 */
   rerunRun: (id: string) => post<Run>(`/api/runs/${id}/rerun`, {}),
+  /** 护栏：今日用量 + 两个上限（每日额度 / 分派层数） */
+  guardrails: () => request<GuardrailsRead>("/api/guardrails"),
+  setDailyLimit: (limit: number) =>
+    request<GuardrailsRead>("/api/guardrails/daily", {
+      method: "PUT",
+      body: JSON.stringify({ limit }),
+    }),
+  setDepthLimit: (limit: number) =>
+    request<GuardrailsRead>("/api/guardrails/depth", {
+      method: "PUT",
+      body: JSON.stringify({ limit }),
+    }),
   /** 补齐失败的那几路（分派这一步重跑；已成功的路不会重跑） */
   refillFanout: (id: string) =>
     post<{ run_id: string; status: string }>(`/api/runs/${id}/refill`, {}),

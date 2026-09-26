@@ -11,6 +11,8 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
+from unittest.mock import patch
 import uuid
 
 from sqlalchemy import select
@@ -272,16 +274,93 @@ async def test_fork_tool_rejects_outside_execution_context():
     assert "不在一次执行上下文中" in out
 
 
-async def test_fork_tool_blocked_at_depth_one(monkeypatch):
-    """深度 1：分派出来的实例不允许再次分派（内核兜底，不只靠工具清单）。"""
-    from agent_studio.runner.ctx import set_run_ctx
+async def test_fork_tool_blocked_at_depth_one(client):
+    """默认 1 层：分派出来的实例不允许再次分派（内核兜底，不只靠工具清单）。"""
+    from agent_studio.runner.ctx import clear_run_ctx, set_run_ctx
 
     set_run_ctx(run_id="run_x", agent_id="ag_x", depth=1)
-    out = await fanout.handle_tool_call(tasks=["甲", "乙"])
-    assert "不允许再次分派" in out
-    from agent_studio.runner.ctx import clear_run_ctx
+    try:
+        out = await fanout.handle_tool_call(tasks=["甲", "乙"])
+    finally:
+        clear_run_ctx()
+    assert "分派失败" in out and "1 层" in out, f"要拒绝并说清允许几层：{out}"
 
-    clear_run_ctx()
+
+async def test_depth_two_allows_the_second_layer(client):
+    """把层数放开到 2 之后，第一层实例**可以**继续分派（第 2 层仍被拦）。
+
+    这是"深度可配"的正面证据：同一次调用，1 层时被拒、2 层时放行。
+    """
+    from agent_studio.models import Run
+    from agent_studio.quota import set_depth_limit
+    from agent_studio.runner.ctx import clear_run_ctx, set_run_ctx
+
+    from agent_studio.db import SessionLocal
+
+    async with SessionLocal() as s:
+        # 建一条真父执行 —— 分派要按父执行建子执行（不是空转）
+        s.add(
+            Run(
+                id="run_parent_ok",
+                agent_id="ag_x",
+                status="ok",
+                input={"text": "甲"},
+                # 父执行要有定义快照 —— 子执行按它建（否则拿不到 runtime/model）
+                definition_snapshot={
+                    "runtime": "span-test-runtime",
+                    "name": "父执行",
+                    "model": {"provider": "deepseek", "name": "deepseek-v4-flash"},
+                },
+            )
+        )
+        await s.commit()
+        await set_depth_limit(s, 2)
+
+    # ⚠️ 这里只验**放行判据**，不真跑分派：真 dispatch 会等子执行跑完
+    #    （测试环境没有驱动分发器的泵 → 会一直等到"最长等多久"，把测试挂死）。
+    hit: dict[str, Any] = {}
+
+    async def fake_dispatch(**kw: Any) -> dict[str, Any]:
+        items = kw.get("items") or []
+        hit["called"] = True
+        # 结果形状要与真 dispatch 一致（render_summary 会逐个读这些键）
+        return {
+            "ok": True,
+            "total": len(items),
+            "succeeded": len(items),
+            "failed": [],
+            "items": [
+                {
+                    "index": i,
+                    "label": str(it),
+                    "status": "ok",
+                    "summary": "（测试桩：没真跑）",
+                    "duration_ms": 1,
+                    "run_id": f"run_stub_{i}",
+                }
+                for i, it in enumerate(items)
+            ],
+        }
+
+    set_run_ctx(run_id="run_parent_ok", agent_id="ag_x", depth=1)
+    try:
+        with patch.object(fanout, "dispatch", fake_dispatch):
+            out = await fanout.handle_tool_call(tasks=["甲", "乙"])
+    finally:
+        clear_run_ctx()
+    assert hit.get("called"), f"放开到 2 层后第一层实例应当能走到分派：{out}"
+    assert "分派失败" not in out, out
+
+    # 第 2 层仍然不允许（上限就是 2）
+    set_run_ctx(run_id="run_parent_ok", agent_id="ag_x", depth=2)
+    try:
+        out2 = await fanout.handle_tool_call(tasks=["甲"])
+    finally:
+        clear_run_ctx()
+
+    async with SessionLocal() as s:
+        await set_depth_limit(s, 1)  # 收尾：恢复默认
+    assert "分派失败" in out2 and "2 层" in out2, f"第 2 层必须被拦：{out2}"
 
 
 # --------------------------------------------------------------------------- #

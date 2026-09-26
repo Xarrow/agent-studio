@@ -491,9 +491,17 @@ async def handle_tool_call(**kwargs: Any) -> str:
         # 不在执行上下文里（例如被别处直接调用）——明确拒绝，而不是建出无主的执行
         return "分派失败：当前不在一次执行上下文中（fork 只能由正在运行的助手调用）。"
 
-    if ctx.get("depth", 0) >= 1:
-        # 深度 1：实例不再具备分派能力（内核兜底，不只靠工具清单）
-        return "分派失败：分派出来的实例不允许再次分派（最多一层）。"
+    # 内核兜底（不只靠工具清单）：到允许的层数就不再分派。
+    # 默认 1 层 —— 分派出来的实例不再分派；平台可在界面上放开到 2 层。
+    from .quota import get_depth_limit as _depth_limit_of
+
+    async with SessionLocal() as _ds:
+        _max_depth = await _depth_limit_of(_ds)
+    if ctx.get("depth", 0) >= _max_depth:
+        return (
+            f"分派失败：你已经处在第 {ctx.get('depth', 0)} 层，"
+            f"当前平台最多允许 {_max_depth} 层分派。"
+        )
 
     async with SessionLocal() as session:
         parent = await session.get(Run, run_id)

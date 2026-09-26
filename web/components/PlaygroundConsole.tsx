@@ -31,6 +31,7 @@ import {
 import { api } from "@/lib/api";
 import type {
   FanoutItem,
+  GuardrailsRead,
   Agent,
   EdgeOrder,
   OrchestrationDetail,
@@ -131,6 +132,9 @@ export function PlaygroundConsole() {
   const [wfMenu, setWfMenu] = useState(false);
   /** 「自动运行」对话框：定时 / 外部触发 / 默认任务 */
   const [autoOpen, setAutoOpen] = useState(false);
+  /** 护栏：今日用量 + 每日上限 + 分派层数（顶栏那颗键，数字常驻可见） */
+  const [guard, setGuard] = useState<GuardrailsRead | null>(null);
+  const [guardOpen, setGuardOpen] = useState(false);
   /** 当前流程的自动运行情况（顶栏那颗键上直接显示"每天 09:00"，不藏着） */
   const [autoInfo, setAutoInfo] = useState<WorkflowAuto | null>(null);
 
@@ -375,6 +379,22 @@ export function PlaygroundConsole() {
    *  为什么不做成"重跑整批"：整批会重复扣费、也会把已完成的项再做一遍。
    *  后端按 (父执行, 第几路) 幂等 —— 容器整批重跑时，已成功的项会自动跳过。
    */
+  /** 读护栏现状（用量是"今天真花掉的"，所以跟着跑动刷新） */
+  const loadGuard = async () => {
+    try {
+      setGuard(await api.guardrails());
+    } catch {
+      setGuard(null); // 读不到就不显示这颗键（不摆一个假数字）
+    }
+  };
+
+  /** 今天用了多少 —— 按"人能读"的写法（12.3万），与后端同一口径 */
+  const fmtTokens = (n: number) => {
+    if (n >= 100_000_000) return `${(n / 100_000_000).toFixed(2)}亿`;
+    if (n >= 10_000) return `${(n / 10_000).toFixed(1)}万`;
+    return String(n);
+  };
+
   const retryRun = async (runId: string) => {
     try {
       await api.rerunRun(runId);
@@ -692,6 +712,20 @@ export function PlaygroundConsole() {
       ),
     );
   }, [detail, graph]);
+
+  useEffect(() => {
+    void loadGuard();
+    const timer = setInterval(() => void loadGuard(), 30_000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    void loadGuard();
+    const timer = setInterval(() => void loadGuard(), 30_000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     void api
@@ -1026,6 +1060,146 @@ export function PlaygroundConsole() {
           {autoInfo?.mode ? <span className="ml-1 hidden sm:inline">· {autoInfo.describe}</span> : null}
           {autoInfo?.mode ? <span className="ml-1 sm:hidden">●</span> : null}
         </button>
+
+        {/* **今日用量 + 两道护栏**：数字**常驻可见**（一眼看到今天花了多少），
+            设置点开就地选（枚举，不让手打数字）；不跳页、不弹原生对话框。
+            为什么放顶栏：额度是"跑之前"要关心的事，而顶栏就是"要跑"的地方。 */}
+        {guard && (
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              onClick={() => setGuardOpen((v) => !v)}
+              className="rounded-[8px] border px-2.5 py-1.5 text-[12.5px] hover:bg-[var(--color-surface-2)]"
+              style={{
+                borderColor: guard.daily.exceeded ? "var(--color-err)" : "var(--color-border)",
+                color: guard.daily.exceeded ? "var(--color-err)" : "var(--color-muted)",
+              }}
+              title={
+                guard.daily.exceeded
+                  ? guard.daily.message
+                  : "今日用了多少；点开可以设「每天最多用多少」和「允许分派几层」"
+              }
+            >
+              今日 {fmtTokens(guard.daily.used)}
+              {guard.daily.limit ? ` / ${fmtTokens(guard.daily.limit)}` : ""}
+            </button>
+            {guardOpen && (
+              <>
+                {/* 点外面收起（与全站一致：就地展开、不弹原生框） */}
+                <div className="fixed inset-0 z-30" onClick={() => setGuardOpen(false)} />
+                <div
+                  className="absolute left-0 top-full z-40 mt-1.5 w-[272px] rounded-[10px] border p-2.5 shadow-lg"
+                  style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+                >
+                  <div className="mb-1.5 flex items-baseline justify-between">
+                    <span className="text-[12.5px] font-semibold">今日用量</span>
+                    <span className="text-[12.5px] tabular-nums" style={{ color: "var(--color-muted)" }}>
+                      {fmtTokens(guard.daily.used)}
+                      {guard.daily.limit ? ` / ${fmtTokens(guard.daily.limit)}` : "（不限）"}
+                    </span>
+                  </div>
+                  {guard.daily.limit > 0 && (
+                    <div
+                      className="mb-2 h-[5px] w-full overflow-hidden rounded-full"
+                      style={{ background: "var(--color-surface-2)" }}
+                    >
+                      <div
+                        className="h-full rounded-full"
+                        style={{
+                          width: `${Math.min(100, Math.round((guard.daily.used / guard.daily.limit) * 100))}%`,
+                          background: guard.daily.exceeded ? "var(--color-err)" : "var(--color-accent)",
+                        }}
+                      />
+                    </div>
+                  )}
+                  {guard.daily.exceeded && (
+                    <div
+                      className="mb-2 rounded-[6px] px-2 py-1 text-[11.5px]"
+                      style={{
+                        color: "var(--color-err)",
+                        background: "color-mix(in srgb, var(--color-err) 10%, transparent)",
+                      }}
+                    >
+                      {guard.daily.message}
+                    </div>
+                  )}
+
+                  <div className="mb-1 text-[12px] font-semibold" style={{ color: "var(--color-muted)" }}>
+                    每天最多用多少
+                  </div>
+                  <div className="mb-2.5 flex flex-wrap gap-1">
+                    {[...new Set([...guard.daily.choices, guard.daily.limit])]
+                      .sort((a, b) => a - b)
+                      .map((c) => {
+                      const on = c === guard.daily.limit;
+                      return (
+                        <button
+                          key={c}
+                          type="button"
+                          onClick={() => {
+                            void (async () => {
+                              try {
+                                setGuard(await api.setDailyLimit(c));
+                                fb.success("已设置每日额度", c ? `今天最多用 ${fmtTokens(c)} token` : "不再限制");
+                              } catch (e) {
+                                fb.error("设置失败", e instanceof Error ? e.message : String(e));
+                              }
+                            })();
+                          }}
+                          className="rounded-[7px] border px-2 py-1 text-[12px]"
+                          style={{
+                            borderColor: on ? "var(--color-accent)" : "var(--color-border)",
+                            color: on ? "var(--color-accent)" : "var(--color-muted)",
+                            background: on ? "color-mix(in srgb, var(--color-accent) 8%, transparent)" : "transparent",
+                          }}
+                        >
+                            {c ? fmtTokens(c) : "不限"}
+                          </button>
+                        );
+                      })}
+                  </div>
+
+                  <div className="mb-1 text-[12px] font-semibold" style={{ color: "var(--color-muted)" }}>
+                    允许分派几层
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {guard.depth.choices.map((d) => {
+                      const on = d === guard.depth.limit;
+                      return (
+                        <button
+                          key={d}
+                          type="button"
+                          title={d === 1 ? "分派出来的助手只管干活，不再往下分派（默认）" : "分派出来的助手还能再分派一层 —— 调用量会成倍放大"}
+                          onClick={() => {
+                            void (async () => {
+                              try {
+                                setGuard(await api.setDepthLimit(d));
+                                fb.success("已设置分派层数", d === 1 ? "1 层（默认）" : "2 层（调用量会成倍放大）");
+                              } catch (e) {
+                                fb.error("设置失败", e instanceof Error ? e.message : String(e));
+                              }
+                            })();
+                          }}
+                          className="rounded-[7px] border px-2 py-1 text-[12px]"
+                          style={{
+                            borderColor: on ? "var(--color-accent)" : "var(--color-border)",
+                            color: on ? "var(--color-accent)" : "var(--color-muted)",
+                            background: on ? "color-mix(in srgb, var(--color-accent) 8%, transparent)" : "transparent",
+                          }}
+                        >
+                          {d} 层{d === 1 ? "（默认）" : ""}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-2 text-[11px]" style={{ color: "var(--color-muted)" }}>
+                    额度按「今天真花掉的」token 算；到顶只拦新起的执行，正在跑的不打断。
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
 
         {/* 工作流入口（重做过）：
             以前是「一个输入框 + 一个无名 ⌄」—— 输入框看起来像"你必须先改名"，

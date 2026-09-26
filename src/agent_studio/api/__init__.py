@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from . import (
     agents,
+    guardrails,
     credentials,
     database,
     hooks,
@@ -46,6 +47,7 @@ api_router.include_router(maintenance.router)    # /api/maintenance（存储体�
 api_router.include_router(metrics.router)        # /metrics（Prometheus 文本，监控系统直接抓）
 api_router.include_router(uploads.router)       # /api/uploads（任务卡的上传附件）
 api_router.include_router(database.router)        # /api/database（环境配置：切换持久化驱动）
+api_router.include_router(guardrails.router)      # /api/guardrails（护栏：今日额度 + 分派层数）
 
 # OpenAI 兼容层：任何 OpenAI 客户端都能直接用这些 Agent
 # （model = Agent，messages → 会话历史，text_delta → choices[].delta）

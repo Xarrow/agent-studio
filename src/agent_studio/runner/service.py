@@ -14,6 +14,7 @@ from typing import Any
 from sqlalchemy import select, delete
 
 from ..config import settings
+from ..quota import check_daily_quota, get_depth_limit
 from ..context import append_turn, build_turn_context, compress_if_needed, run_dialogue
 from ..db import SessionLocal
 from ..memory import (
@@ -500,6 +501,25 @@ class RunService:
             await asyncio.sleep(0.3)
 
     # ------------------------------------------------------------------ #
+    async def _blocked_by_quota(self, run_id: str) -> bool:
+        """每日额度到顶就把这条执行判掉（写明原因与下一步），返回"是否被拦下"。
+
+        为什么写在执行入口、而不是在界面上禁止点"运行"：
+        定时任务、外部触发、分派出来的实例都不经过界面 —— 只在界面上拦等于没拦。
+        """
+        async with SessionLocal() as session:
+            quota = await check_daily_quota(session)
+            if not quota["exceeded"]:
+                return False
+            run = await session.get(Run, run_id)
+            if run is not None:
+                run.status = "error"
+                run.error = quota["message"]
+                run.ended_at = now_ms()
+                await session.commit()
+        logger.warning("执行 %s 被每日额度拦下：%s", run_id, quota["message"])
+        return True
+
     async def execute(
         self, run_id: str, definition: AgentDefinition, run_input: Any, *, resumed: bool = False
     ) -> None:
@@ -514,6 +534,13 @@ class RunService:
                     _r.usage = _u
                     _r.error = None
                     await _s.commit()
+        # ── 每日额度护栏 ────────────────────────────────────────────────
+        # 拦在**执行的最开始**这一处：编排、单跑、定时、外部触发、分派出来的实例
+        # 全都经过它 —— 单点收口，不会漏掉某条新加的执行路径。
+        # 到顶只拦"新起的"，正在跑的不打断（砍掉跑了一半的活更浪费）。
+        if await self._blocked_by_quota(run_id):
+            return
+
         runtime = get_runtime(definition.runtime)
         collector = MetricsCollector(
             provider=definition.model.provider, model=definition.model.name
@@ -543,7 +570,16 @@ class RunService:
                     if _waited > 1:
                         logger.info("执行 %s 排队 %.1fs 后拿到槽位", run_id, _waited)
                 # ── 让工具知道"我在哪次执行的哪个节点上"（分派工具要用）───────
-                # 深度：本 run 是不是分派出来的实例（有父 = 实例 → 深度 1，不再具备分派能力）
+                # 深度：**走父链算真实层数** —— 不能只看"有没有父"：
+                # 平台允许两层时，第一层实例仍要能继续往下分派。
+                _depth = 0
+                _cur = run
+                while _cur.parent_run_id and _depth < 8:
+                    _cur = await session.get(Run, _cur.parent_run_id)
+                    if _cur is None:
+                        break
+                    _depth += 1
+                _depth_limit = await get_depth_limit(session)
                 from .ctx import set_run_ctx
 
                 set_run_ctx(
@@ -551,12 +587,13 @@ class RunService:
                     agent_id=run.agent_id,
                     node_id=run.node_id,
                     orchestration_id=run.orchestration_id,
-                    depth=1 if run.parent_run_id else 0,
+                    depth=_depth,
                 )
 
                 tools = await load_tools(session, run.agent_id)
-                # **深度 1**：分派出来的实例不再具备分派能力（内核兜底，不只靠工具清单）
-                if run.parent_run_id:
+                # 到允许的层数就不再给分派工具（内核另有兜底；这里让工具清单一致，
+                # 免得模型"看得见工具却调不动"）
+                if _depth >= _depth_limit:
                     tools = [t for t in tools if getattr(t, 'kind', '') != 'fork']
                 api_key, cred_base_url = await resolve_credential(definition, session)
                 # 凭据上的 base_url 必须补进定义 —— 否则 compile / 压缩 / 提炼
@@ -808,6 +845,13 @@ class RunService:
         hitl: HitlResponse,
         fanout_wait_s: int = 0,
     ) -> None:
+        # ── 每日额度护栏 ────────────────────────────────────────────────
+        # 拦在**执行的最开始**这一处：编排、单跑、定时、外部触发、分派出来的实例
+        # 全都经过它 —— 单点收口，不会漏掉某条新加的执行路径。
+        # 到顶只拦"新起的"，正在跑的不打断（砍掉跑了一半的活更浪费）。
+        if await self._blocked_by_quota(run_id):
+            return
+
         runtime = get_runtime(definition.runtime)
         collector = MetricsCollector(
             provider=definition.model.provider, model=definition.model.name
