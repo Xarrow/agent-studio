@@ -1473,7 +1473,10 @@ export function WorkflowCanvas({
       data-canvas-stage="1"
       className="relative h-full min-w-0 flex-1 overflow-auto"
       style={{
-        touchAction: "pan-x pan-y",   // 触屏：单指滚动交给原生（手感顺），双指缩放我们自己处理
+        touchAction: "pan-x pan-y",   // 触屏：空白处单指滚动交给原生（手感顺），双指缩放我们自己处理
+        // ⚠️ 但**卡头**必须 touch-action:none（见节点卡头的 touch-none）——
+        //    否则手指从卡片上开始拖时，浏览器把它当滚动、直接发 pointercancel ✗
+        //    → "移动端画布组件拖拽不了"（用户报过，根因就是这个组合）
         backgroundColor: hot ? "color-mix(in srgb, var(--color-accent) 5%, var(--color-surface-2))" : "var(--color-surface-2)",
         // 点阵对齐 Dify（nodes/loop/node.tsx: <Background gap={[14,14]} size={2} />）：
         // 点是 2px、间距 14px；我们原来是 1.2px / 20px，显得又稀又小。
@@ -1786,7 +1789,7 @@ export function WorkflowCanvas({
           <div
             data-draghead
             onPointerDown={(e) => startDrag(e, CARD_IN)}
-            className={`flex items-center gap-2 ${drag?.nid === CARD_IN ? "cursor-grabbing" : "cursor-grab"}`}
+            className={`touch-none flex items-center gap-2 ${drag?.nid === CARD_IN ? "cursor-grabbing" : "cursor-grab"}`}
           >
             <span
               className="shrink-0 rounded-full px-1.5 py-[1px] text-[11px] font-semibold"
@@ -2239,7 +2242,7 @@ export function WorkflowCanvas({
             <div
               data-draghead
               onPointerDown={(e) => startDrag(e, CARD_OUT)}
-              className={`flex items-center gap-2 border-b px-2.5 py-1.5 ${drag?.nid === CARD_OUT ? "cursor-grabbing" : "cursor-grab"}`}
+              className={`touch-none flex items-center gap-2 border-b px-2.5 py-1.5 ${drag?.nid === CARD_OUT ? "cursor-grabbing" : "cursor-grab"}`}
               style={{ borderColor: "color-mix(in srgb, var(--color-accent) 24%, var(--color-border))" }}>
               <span
                 className="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full text-[12px] text-white"
@@ -2443,7 +2446,7 @@ export function WorkflowCanvas({
                 const head = (e.target as HTMLElement).closest("[data-draghead]");
                 if (head) startDrag(e, n.nid);
               }}
-              className={`wf-node group absolute rounded-[15px] border shadow-xs hover:shadow-lg ${
+              className={`touch-none wf-node group absolute rounded-[15px] border shadow-xs hover:shadow-lg ${
                 lv && st === "run" ? "node-run" : st === "ask" ? "node-ask" : ""
               } ${
                 // 进度可视化（零操作）：只要有任何一步在跑/等待确认，还没轮到的步骤就压暗。
@@ -2628,7 +2631,7 @@ export function WorkflowCanvas({
               <div
                 /* data-draghead：拖动的把手只在这里 —— 正文要能选字、能滚动，不能被拖动抢走 */
                 data-draghead
-                className={`flex items-center gap-2 border-b px-3 pt-3 pb-2 ${
+                className={`touch-none flex items-center gap-2 border-b px-3 pt-3 pb-2 ${
                   drag?.nid === n.nid ? "cursor-grabbing" : "cursor-grab"
                 }`}
                 style={{ borderColor: "var(--color-border)" }}
