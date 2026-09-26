@@ -39,6 +39,14 @@ async def lifespan(_app: FastAPI):
     boot_ms = int(time.time() * 1000)
     await init_db()
     await reap_orphan_runs(boot_ms)
+    # 给早就存在的助手/流程补一条起点版本（幂等）—— 否则老对象点进去是"还没有历史"
+    from .db import SessionLocal
+    from .revisions import backfill_initial
+
+    async with SessionLocal() as _s:
+        _made = await backfill_initial(_s)
+    if _made:
+        logger.info("版本历史：为 %d 个已有对象补了起点快照", _made)
     discover_runtimes()
     runtimes = [rt.name for rt in list_runtimes()]
     logger.info(

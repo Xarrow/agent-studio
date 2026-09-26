@@ -229,6 +229,11 @@ async def create_workflow(
     )
     session.add(wf)
     await session.commit()
+    # 第一版快照（新流程也要有"起点"，回滚才有意义）
+    from ..revisions import KIND_WORKFLOW, snapshot
+
+    await snapshot(session, KIND_WORKFLOW, wf.id)
+    await session.commit()
     await session.refresh(wf)
     return _to_read(wf)
 
@@ -258,6 +263,11 @@ async def update_workflow(
         wf.mode_override = mode if mode in VALID_MODES else None
     wf.updated_at = now_ms()
     await session.commit()
+    # 快照（内容没变不记）：画布是自动保存的，所以"只在真变了才记"这道闸很关键
+    from ..revisions import KIND_WORKFLOW, snapshot
+
+    await snapshot(session, KIND_WORKFLOW, wf.id)
+    await session.commit()
     await session.refresh(wf)
     return _to_read(wf, await _run_count(session, wf_id))
 
@@ -267,6 +277,14 @@ async def delete_workflow(wf_id: str, session: AsyncSession = Depends(get_sessio
     """删设计稿。**不动**它跑出来的历史记录（那是执行事实，不该跟着消失）。"""
     wf = await _get_or_404(session, wf_id)
     await session.delete(wf)
+    # 版本历史跟着走（对象没了，快照就是孤儿行）
+    from sqlalchemy import delete as _delete
+
+    from ..models import Revision
+
+    await session.execute(
+        _delete(Revision).where(Revision.kind == "workflow", Revision.target_id == wf_id)
+    )
     await session.commit()
     return {"deleted": 1, "id": wf_id}
 

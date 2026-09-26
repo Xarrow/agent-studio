@@ -620,6 +620,34 @@ class ModelPrice(Base):
     updated_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
 
 
+class Revision(Base):
+    """版本快照 —— 助手 / 流程共用一张表。
+
+    为什么泛化（而不是 agent_revision + workflow_revision）：
+    两者语义完全一样（快照 + 列表 + 回滚），做两套就是两处要改、两处会不一致。
+    ``payload`` 里放"能回滚该对象"的那份内容（**不含密钥**：凭据属于环境）。
+
+    为什么不做"每次自动保存都插一条"：画布上拖一下就是一次保存，那样历史会被噪声刷满 ——
+    写入方（``revisions.snapshot``）只在**内容真的变了**时才记。
+    """
+
+    __tablename__ = "revision"
+    __table_args__ = (
+        UniqueConstraint("kind", "target_id", "version", name="uq_revision_version"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("rev_"))
+    #: agent | workflow
+    kind: Mapped[str] = mapped_column(String(16), index=True)
+    target_id: Mapped[str] = mapped_column(String(32), index=True)
+    #: 该对象的第几版（从 1 起，单调递增；**回滚也是新增一版**）
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    #: 一句人话：「改了提示词」「步骤 3 → 4」—— 界面直接显示，用户不用逐字段对比
+    label: Mapped[str] = mapped_column(String(200), default="")
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+
+
 class AppSetting(Base):
     """平台级小配置（键值对）：能被界面改、改完立刻生效、跟数据一起备份。
 

@@ -20,6 +20,7 @@ import type {
   Tool,
 } from "@/lib/types";
 import { AgentMemoryPanel } from "@/components/AgentMemoryPanel";
+import { RevisionHistory } from "@/components/RevisionHistory";
 import { PermissionScope, type PermConf } from "@/components/PermissionScope";
 import { Hint } from "@/components/ui/hint";
 import { ModelPicker } from "@/components/ModelPicker";
@@ -978,6 +979,13 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
             )}
           </section>
         </div>
+
+      {/* ── 历史版本 ───────────────────────────────────────────────
+          放在"配置"与"使用"之间：它属于配置（改坏了退回去），
+          但又不是每次都看 —— 所以不做成常驻工具条，做成一个可折叠感的区。 */}
+      <section id="sec-revisions" className="mt-4 scroll-mt-14">
+        <RevisionHistory kind="agent" targetId={agentId} onRestored={() => void load()} />
+      </section>
 
       {/* ── 试跑与观测 ─────────────────────────────────────────── */}
       <section id="sec-run" className="mt-4 scroll-mt-14">

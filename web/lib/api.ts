@@ -448,6 +448,16 @@ export const api = {
    * 统一的「运行记录」时间线：助手执行（对话/试跑/编排）+ LLM 对话测试。
    * 一次请求拿全，前端不用为了看另一类再切页面。
    */
+  // ── 版本历史与回滚 ─────────────────────────────────────────────────────
+  /** 某个对象的版本列表（助手 / 流程共用；label 是"改了什么"的人话） */
+  revisions: (kind: "agent" | "workflow", targetId: string, withPayload = false) =>
+    request<{
+      items: { id: string; version: number; label: string; created_at: number; current: boolean; payload?: Record<string, unknown> }[];
+      latest_version: number;
+    }>(`/api/revisions?kind=${kind}&target_id=${targetId}${withPayload ? "&with_payload=true" : ""}`),
+  /** 回到某一版（**新建一条记录，不改写历史**） */
+  restoreRevision: (revId: string) => post<{ ok: boolean; version: number; restored_from: number }>(`/api/revisions/${revId}/restore`, {}),
+
   // ── 备份与迁移（数据带走）──────────────────────────────────────────────
   /** 导出全部（助手/流程/单价/记忆）—— **包里不含任何密钥** */
   exportBundle: () =>

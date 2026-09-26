@@ -86,6 +86,11 @@ async def create_agent(
     await session.flush()
     await _sync_relations(session, row.id, payload.definition)
     await session.commit()
+    # 第一版快照：这样"从第 1 版开始"就成立（不必等第一次修改才有历史）
+    from ..revisions import KIND_AGENT, snapshot
+
+    await snapshot(session, KIND_AGENT, row.id)
+    await session.commit()
     await session.refresh(row)
     return to_read(row)
 
@@ -118,6 +123,11 @@ async def update_agent(
 
     row.updated_at = now_ms()
     await session.commit()
+    # 打一版快照（内容没变就不记）—— 有了它，"改坏了"就能退回去
+    from ..revisions import KIND_AGENT, snapshot
+
+    await snapshot(session, KIND_AGENT, row.id)
+    await session.commit()
     await session.refresh(row)
     return to_read(row)
 
@@ -127,6 +137,12 @@ async def delete_agent(agent_id: str, session: AsyncSession = Depends(get_sessio
     row = await _get_or_404(session, agent_id)
     await session.execute(delete(AgentTool).where(AgentTool.agent_id == agent_id))
     await session.execute(delete(AgentSkill).where(AgentSkill.agent_id == agent_id))
+    # 版本历史跟着走：对象都没了，留着这些快照只是孤儿行（也再没人能回滚它）
+    from ..models import Revision
+
+    await session.execute(
+        delete(Revision).where(Revision.kind == "agent", Revision.target_id == agent_id)
+    )
     await session.delete(row)
     await session.commit()
 
