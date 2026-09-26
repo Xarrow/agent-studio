@@ -44,6 +44,7 @@ from ..context import next_turn_index
 from ..db import SessionLocal, get_session
 from ..models import Agent, Run, now_ms
 from ..runner import run_service
+from ..runner.service import resolve_timeout
 from ..schemas import AgentDefinition
 
 router = APIRouter(prefix="/v1", tags=["openai-compat"])
@@ -234,7 +235,12 @@ async def chat_completions(
     model_name = agent.id
 
     if not stream:
-        text, usage, err = await _wait_for_run(run_id, timeout_s=defn.limits.timeout_s or 300)
+        # 这里曾写 `defn.limits.timeout_s or 300` —— 同一个 `0 or X` 陷阱 ✗：
+        # 助手上「0 = 不超时」会被吃掉、退回硬编码 300s，且完全无视 default_timeout_s ✓
+        # 「不限」沿用编排器的既有约定（-1/0 → 365 天，近似"一直等" ✓ 不真的永久挂住 ✓）
+        _t = resolve_timeout(defn.limits.timeout_s, settings.default_timeout_s)
+        _wait_s = _t if _t > 0 else 365 * 24 * 3600
+        text, usage, err = await _wait_for_run(run_id, timeout_s=_wait_s)
         if err and not text:
             raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, err)
         return _completion_body(completion_id, created, model_name, text, usage, session_id, err)
