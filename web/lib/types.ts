@@ -523,6 +523,13 @@ export interface WorkflowNode {
   w?: number;
   /** 卡片高度：拖右下角调过才有值；不填 = 由内容决定 */
   h?: number;
+  /**
+   * **这一跳最多等多久**（秒）—— 「等上游跑完」的上限。
+   * 不填 = 平台默认 900s（15 分钟）；-1 = 不限（一直等）；正数 = 到点放弃这一步。
+   * 为什么挂在节点上：上限属于**那个等待的人**（编排者等 worker 就是它）；
+   * 上游自己跑太久则由上游节点的值兜住 —— 两边都设得住，才不会出现卡住不动的流程。
+   */
+  wait_timeout_s?: number | null;
 }
 
 export interface WorkflowEdge {

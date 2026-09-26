@@ -193,7 +193,8 @@ class Orchestrator:
         ]
         # return_exceptions=True：一个挂了不能拖垮其余
         results = await asyncio.gather(
-            *(self._await(r.id) for r in runs), return_exceptions=True
+            *(self._await(r.id, step.get("wait_timeout_s")) for r, step in zip(runs, steps)),
+            return_exceptions=True,
         )
 
         done: list[Run] = []
@@ -419,7 +420,7 @@ class Orchestrator:
         # ── 第一步：主控拆任务 ────────────────────────────────────────
         plan_payload = _PLAN_PROMPT.format(task=task, n=n)
         plan_run = await self._start_step(orc_id, master_id, "master", 0, plan_payload)
-        plan_done = await self._await(plan_run.id)
+        plan_done = await self._await(plan_run.id, spec.get("master_wait_timeout_s"))
         done.append(plan_done)
 
         subtasks = self._parse_plan(self._text(plan_done), n)
@@ -436,7 +437,7 @@ class Orchestrator:
             for i, step in enumerate(steps):
                 payload = self._compose_worker(subtasks[i], prev, i)
                 r = await self._start_step(orc_id, step["agent_id"], "worker", i + 1, payload)
-                d = await self._await(r.id)
+                d = await self._await(r.id, step.get("wait_timeout_s"))
                 worker_runs.append(d)
                 if d.status == "ok" and (t := self._text(d)):
                     prev = t
@@ -448,7 +449,8 @@ class Orchestrator:
                 for i, step in enumerate(steps)
             ]
             results = await asyncio.gather(
-                *(self._await(r.id) for r in runs), return_exceptions=True
+                *(self._await(r.id, step.get("wait_timeout_s")) for r, step in zip(runs, steps)),
+                return_exceptions=True,
             )
             for r, res in zip(runs, results):
                 if isinstance(res, BaseException):
@@ -467,7 +469,7 @@ class Orchestrator:
         sum_run = await self._start_step(
             orc_id, master_id, "master", n + 1, summary_payload
         )
-        sum_done = await self._await(sum_run.id)
+        sum_done = await self._await(sum_run.id, spec.get("master_wait_timeout_s"))
         done.append(sum_done)
 
         await self._finish(
@@ -539,9 +541,9 @@ class Orchestrator:
         """等一个子 Run 结束（超时即当失败，不拖住整个编排）。"""
         from ..runner import run_service
 
+        # -1 = 不限：给一个足够大的上限（别让一次编排永久挂住）
+        t = STEP_TIMEOUT_S if wait_s is None else (365 * 24 * 3600 if wait_s < 0 else wait_s)
         try:
-            # -1 = 不限：给一个足够大的上限（别让一次编排永久挂住）
-            t = STEP_TIMEOUT_S if wait_s is None else (365 * 24 * 3600 if wait_s < 0 else wait_s)
             return await run_service.wait(run_id, timeout=t)
         except TimeoutError:
             logger.warning("子 Run %s 等待超时", run_id)
@@ -549,7 +551,7 @@ class Orchestrator:
                 run = await session.get(Run, run_id)
                 if run is not None:
                     run.status = "error"
-                    run.error = f"等待超时（>{STEP_TIMEOUT_S if wait_s is None else wait_s}s）"
+                    run.error = f"等待超时（>{t}s）"
                     await session.commit()
                     return run
             raise

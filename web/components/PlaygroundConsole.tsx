@@ -1147,7 +1147,12 @@ export function PlaygroundConsole() {
       {/* ══ 主体：助手栏 / 画布 / 节点详情 ══ */}
       <div className="pg-split flex min-h-0 flex-1">
 
-        <div className="min-w-0 flex-1">
+        {/* ⚠️ **min-h-0 不能省**（2026-09-26 实测）：flex 项的 min-height 默认是 auto
+            （= min-content），内容比这一行高时它**不肯缩**，撑着整列变高 ——
+            于是画布右下角的缩放键 / 左下角「整理」跟着掉到视口外（手机 390×844 下
+            bottom 落在 898 > 844，够不到，页面又不可滚）。加上 min-h-0 后这一列
+            老老实实等于行高，画布内部自己滚动（overflow-auto），控件就回到屏幕里了。 */}
+        <div className="min-h-0 min-w-0 flex-1">
           <WorkflowManager
         open={manager}
         currentId={wf?.id ?? null}

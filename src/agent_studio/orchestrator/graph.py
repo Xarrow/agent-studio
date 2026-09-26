@@ -86,7 +86,7 @@ def dep_edges(edges: list[dict[str, str]]) -> list[dict[str, str]]:
     return [e for e in edges if is_dependency(e)]
 
 
-def normalise(graph: Graph | None) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+def normalise(graph: Graph | None) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """把图清洗成统一形状。
 
     丢掉：指向不存在节点的连线、自连、重复连线、缺字段的节点。
@@ -95,7 +95,7 @@ def normalise(graph: Graph | None) -> tuple[list[dict[str, str]], list[dict[str,
     raw_nodes = list((graph or {}).get("nodes") or [])
     raw_edges = list((graph or {}).get("edges") or [])
 
-    nodes: list[dict[str, str]] = []
+    nodes: list[dict[str, Any]] = []
     seen: set[str] = set()
     for n in raw_nodes:
         nid = str((n or {}).get("nid") or "").strip()
@@ -103,7 +103,14 @@ def normalise(graph: Graph | None) -> tuple[list[dict[str, str]], list[dict[str,
         if not nid or not aid or nid in seen:
             continue
         seen.add(nid)
-        nodes.append({"nid": nid, "agent_id": aid})
+        item: dict[str, Any] = {"nid": nid, "agent_id": aid}
+        # **这一跳最多等多久**（秒）必须跟着节点走到底 ——
+        # 它原来在这里被丢掉了，于是执行层 node.get("wait_timeout_s") 永远拿到 None ✗
+        # （画布上设的值也就等于没设）。不填 = 平台默认；-1 = 不限；正数 = 到点放弃这一步。
+        wt = (n or {}).get("wait_timeout_s")
+        if isinstance(wt, int) and not isinstance(wt, bool):
+            item["wait_timeout_s"] = wt
+        nodes.append(item)
 
     ids = {n["nid"] for n in nodes}
     edges: list[dict[str, Any]] = []

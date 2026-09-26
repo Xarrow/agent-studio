@@ -42,6 +42,18 @@ VALID_MODES = {"single", "serial", "parallel", "master_worker", "dag"}
 # --------------------------------------------------------------------------- #
 # 图 → 执行 spec
 # --------------------------------------------------------------------------- #
+def _wait_of(node: dict[str, Any]) -> dict[str, Any]:
+    """把节点上的「最多等多久」带进 spec 的那一步（不填 = 不带，执行层用平台默认）。"""
+    v = (node or {}).get("wait_timeout_s")
+    return {"wait_timeout_s": v} if isinstance(v, int) and not isinstance(v, bool) else {}
+
+
+def _master_wait(node: dict[str, Any]) -> dict[str, Any]:
+    """主控自己那两跳（拆任务 / 汇总）的等待上限 —— 同样是它自己节点上设的值。"""
+    v = (node or {}).get("wait_timeout_s")
+    return {"master_wait_timeout_s": v} if isinstance(v, int) and not isinstance(v, bool) else {}
+
+
 def graph_to_spec(graph: WorkflowGraph, mode: str, task: str) -> dict[str, Any]:
     """把画布上的图翻译成编排器认得的 spec。
 
@@ -66,14 +78,17 @@ def graph_to_spec(graph: WorkflowGraph, mode: str, task: str) -> dict[str, Any]:
     if mode == "single":
         return {
             "mode": "single",
-            "steps": [{"agent_id": nodes[0]["agent_id"], "carry_prev": False}],
+            "steps": [{"agent_id": nodes[0]["agent_id"], "carry_prev": False, **_wait_of(nodes[0])}],
             "task": task,
         }
 
     if mode == "parallel":
         return {
             "mode": "parallel",
-            "steps": [{"agent_id": n["agent_id"], "carry_prev": False} for n in nodes],
+            "steps": [
+                {"agent_id": n["agent_id"], "carry_prev": False, **_wait_of(n)}
+                for n in nodes
+            ],
             "task": task,
         }
 
@@ -83,7 +98,11 @@ def graph_to_spec(graph: WorkflowGraph, mode: str, task: str) -> dict[str, Any]:
             "mode": "serial",
             # 画布上的连线本身就是"要传下去"，所以第一步之后都带上一步产出
             "steps": [
-                {"agent_id": by_nid[nid]["agent_id"], "carry_prev": i > 0}
+                {
+                    "agent_id": by_nid[nid]["agent_id"],
+                    "carry_prev": i > 0,
+                    **_wait_of(by_nid[nid]),
+                }
                 for i, nid in enumerate(order)
             ],
             "task": task,
@@ -102,7 +121,11 @@ def graph_to_spec(graph: WorkflowGraph, mode: str, task: str) -> dict[str, Any]:
         "mode": "master_worker",
         "worker_mode": "parallel",
         "master_agent_id": by_nid[master_nid]["agent_id"],
-        "steps": [{"agent_id": n["agent_id"], "carry_prev": False} for n in workers],
+        # 主控自己的两跳（拆任务 / 汇总）等多久 —— 也让它自己那个节点说了算
+        **_master_wait(by_nid[master_nid]),
+        "steps": [
+            {"agent_id": n["agent_id"], "carry_prev": False, **_wait_of(n)} for n in workers
+        ],
         "task": task,
     }
 

@@ -1618,6 +1618,24 @@ export function WorkflowCanvas({
   );
 
   /**
+   * **这一步最多等多久**（秒）：写在节点上。
+   *
+   * 用户原话：「Orchestrator 需要等待其他 agent 执行完再验证总结，但需要设置超时时间」。
+   * 上限挂在**等待的那个节点**上（编排者），上游自己跑太久则由上游节点的值兜住。
+   * 枚举用下拉（不让手打 ✓），改完跟着流程自动保存 ✓。
+   */
+  const setWaitTimeout = useCallback(
+    (nid: string, v: string) => {
+      const val = v === "" ? undefined : Number(v);
+      onChange({
+        ...graph,
+        nodes: graph.nodes.map((n) => (n.nid === nid ? { ...n, wait_timeout_s: val } : n)),
+      });
+    },
+    [graph, onChange],
+  );
+
+  /**
    * **画布键位**（对齐 Dify：dify-ref/web/app/components/workflow/shortcuts/definitions.ts）。
    *
    * Dify 的键位表：Delete/Backspace 删选中、Mod+C/V 复制粘贴、Mod+D 复制、
@@ -1864,7 +1882,7 @@ export function WorkflowCanvas({
       {/* 节点菜单：右键 / 卡上「⋯」都开它；破坏性操作仍走**两步确认**（删 → 先"待删"再点一次）✓ */}
       {nodeMenu && (
         <div
-          className="fixed z-[80] min-w-[132px] overflow-hidden rounded-[8px] border py-1 text-[12.5px] shadow-lg"
+          className="fixed z-[80] min-w-[208px] overflow-hidden rounded-[8px] border py-1 text-[12.5px] shadow-lg"
           style={{ left: Math.min(nodeMenu.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 150), top: nodeMenu.y, borderColor: "var(--color-border)", background: "var(--color-surface)" }}
           onClick={(e) => e.stopPropagation()}
         >
@@ -1878,6 +1896,32 @@ export function WorkflowCanvas({
                 </button>
                 <button type="button" className={row} onClick={() => { copySel(nid); setNodeMenu(null); }}>复制这一步</button>
                 <button type="button" className={row} onClick={() => { onRunNode?.(nid); setNodeMenu(null); }}>只跑这一步</button>
+                {/* **最长等多久**：等上游跑完的上限。枚举用下拉（不让手打 ✓），触屏点开是系统滚轮选择 ✓ */}
+                <div
+                  className="mt-1 flex items-center gap-2 border-t px-3 py-1.5"
+                  style={{ borderColor: "var(--color-border)" }}
+                >
+                  <span className="flex-1" style={{ color: "var(--color-muted)" }}>最长等多久</span>
+                  <select
+                    value={String(graph.nodes.find((n) => n.nid === nid)?.wait_timeout_s ?? "")}
+                    onChange={(e) => setWaitTimeout(nid, e.target.value)}
+                    title="等上游跑完的上限：默认 15 分钟；不限 = 一直等"
+                    className="rounded-[5px] border px-1 py-0.5 text-[12px]"
+                    style={{
+                      borderColor: "var(--color-border)",
+                      background: "var(--color-surface)",
+                      color: "var(--color-text)",
+                    }}
+                  >
+                    <option value="">默认（15 分钟）</option>
+                    <option value="60">1 分钟</option>
+                    <option value="300">5 分钟</option>
+                    <option value="900">15 分钟</option>
+                    <option value="1800">30 分钟</option>
+                    <option value="3600">1 小时</option>
+                    <option value="-1">不限</option>
+                  </select>
+                </div>
                 <button type="button" className={row} onClick={() => { duplicateNode(nid); setNodeMenu(null); }}>再制一份</button>
                 <button type="button" className={row} onClick={() => { setPicking({ mode: "swap", nid }); setNodeMenu(null); }}>换成别的助手</button>
                 <button type="button" className={row} onClick={() => { if (delArm === nid) deleteNode(nid); else setDelArm(nid); setNodeMenu(null); }}
@@ -3128,6 +3172,25 @@ export function WorkflowCanvas({
                     title="这一步用哪个助手（卡片类型：助手卡）"
                   >
                     助手
+                  </span>
+                )}
+                {/* **设过的等待上限要看得见**（用户要求：信息默认可见、别藏在菜单里）——
+                    没设 = 平台默认 15 分钟，不占位置；设了才出现这枚小标。 */}
+                {typeof n.wait_timeout_s === "number" && (
+                  <span
+                    className="shrink-0 rounded-full px-1.5 py-[1px] text-[10.5px]"
+                    style={{
+                      border: "1px solid var(--color-border)",
+                      background: "var(--color-surface-2)",
+                      color: "var(--color-muted)",
+                    }}
+                    title={
+                      n.wait_timeout_s < 0
+                        ? "这一步会一直等上游跑完（不设上限）"
+                        : `这一步最多等上游 ${n.wait_timeout_s} 秒；到点还没跑完就放弃这一步（在「⋯ → 最长等多久」里改）`
+                    }
+                  >
+                    等 {n.wait_timeout_s < 0 ? "不限" : n.wait_timeout_s >= 60 ? `${Math.round(n.wait_timeout_s / 60)} 分` : `${n.wait_timeout_s} 秒`}
                   </span>
                 )}
                 {master === n.nid && (
