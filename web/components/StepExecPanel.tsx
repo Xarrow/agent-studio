@@ -140,6 +140,8 @@ const hhmmss = (ts: number) => new Date(ts).toLocaleTimeString("zh-CN", { hour12
 
 /** 画布节点上要显示的一行摘要（悬停卡也用这份） */
 export type NodeLiveInfo = {
+  /** 这一步的失败原因（来自 trace.run.error）—— 详情抽屉要**显眼地**显示它 ✓ */
+  error?: string | null;
   status: string;
   elapsedMs: number | null;
   action: string;
@@ -160,7 +162,9 @@ export function buildNodeLive(t: TraceData, status: string): NodeLiveInfo {
   const started = t.run?.started_at ?? null;
   const ended = t.run?.ended_at ?? null;
   const last = tools[tools.length - 1];
+  const runErr = ((t as { run?: { error?: string | null } }).run?.error ?? null);
   return {
+    error: runErr,
     status,
     elapsedMs: started ? (ended ?? Date.now()) - started : null,
     // 一句话说清"它现在在干什么"：正在调工具 > 在思考 > 刚开始

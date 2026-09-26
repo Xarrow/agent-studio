@@ -2591,7 +2591,7 @@ const taskOnly = (t: string | null | undefined) => String(t || "").split("——
             // 关：点遮罩 / 点 ✕（都不跳页 ✓ 仍在本页就地 ✓）
             const BW = narrow ? "100%" : Math.min(880, Math.max(720, layout.w - 64));
             // fixed 锚视口 → 顶部不会再被页面标题栏挡住（上一版 88vh absolute 就被挡了 ✗）
-            const panelH = narrow ? "76vh" : Math.max(560, Math.min(760, layout.h - 40));
+            const panelH = narrow ? "88vh" : Math.max(600, Math.min(820, layout.h - 40));
             const statusText =
               st === "run" ? "执行中" : st === "ask" ? "等你确认" : st === "ok" ? "完成" : st === "err" ? "出错" : st === "stale" ? "已失效" : "还没跑";
             const statusColor =
@@ -2636,6 +2636,23 @@ const taskOnly = (t: string | null | undefined) => String(t || "").split("——
                     ✕
                   </button>
                 </div>
+
+                {/* **报错要显眼** ✗ —— 用户："agent 报错在弹出的卡片上没有显示"。
+                    失败时第一眼就该看到原因（含"上游模型超时 vs 平台执行超时"的区分文案 ✓），
+                    而不是一片"还没产出" ✗ */}
+                {(lv?.error || st === "err") && (
+                  <div className="border-b px-3 py-2" style={{ borderColor: "var(--color-border)" }}>
+                    <div className="mb-1 text-[10.5px] font-medium uppercase tracking-wider" style={{ color: "var(--color-err)" }}>
+                      这一步失败了
+                    </div>
+                    <div
+                      className="max-h-[220px] overflow-auto whitespace-pre-wrap break-words rounded-[8px] border px-2 py-1.5 text-[11.5px] leading-relaxed"
+                      style={{ color: "var(--color-err)", borderColor: "var(--color-err)", background: "color-mix(in srgb, var(--color-err) 6%, transparent)" }}
+                    >
+                      {lv?.error || "（标记为失败，但没记录到原因 —— 去「运行记录」看这次执行的日志）"}
+                    </div>
+                  </div>
+                )}
 
                 {/* **分区标题** —— 检视面板必须有层级：不分区就成了"一堆裸文字" ✗（用户："没有任何设计"）*/}
                 <div className="border-b px-3 py-2" style={{ borderColor: "var(--color-border)" }}>
