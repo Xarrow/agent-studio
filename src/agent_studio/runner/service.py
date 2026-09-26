@@ -718,14 +718,23 @@ class RunService:
         except asyncio.CancelledError:
             status, error = "aborted", "用户中断"
         except TimeoutError:
-            status, error = "error", f"执行超时（>{definition.limits.timeout_s}s）"
+            status, error = "error", f"执行超时（>{timeout}s）"
         except GateTimeout as exc:
             # 拿不到并发槽位：说清是「排队太久」，别让用户以为是模型不行
             logger.warning("Run %s 排队超时：%s", run_id, exc)
             status, error = "error", str(exc)
         except Exception as exc:
             logger.exception("Run %s 失败", run_id)
-            status, error = "error", f"{type(exc).__name__}: {exc}"
+            _n = type(exc).__name__
+            if "APITimeout" in _n or "ReadTimeout" in _n or "ConnectTimeout" in _n:
+                # 客户端的 APITimeoutError **不是** 内置 TimeoutError 子类 ✗ → 原来落到这里、原样抛出
+                # "APITimeoutError: Request timed out."，用户看不出是"上游迟迟不吐数据" ✓
+                status, error = "error", (
+                    "上游模型请求超时（模型客户端/SDK 层，**不是**平台的「执行超时」）"
+                    f" · {_n}: {exc} · 常见原因：对端久不返回首字节，或中继/网关掐连接"
+                )
+            else:
+                status, error = "error", f"{_n}: {exc}"
         finally:
             # 不管成功失败都要**归还并发槽位**，否则跑几次之后闸就被占死了
             if _gated:
