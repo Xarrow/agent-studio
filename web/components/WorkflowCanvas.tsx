@@ -900,6 +900,10 @@ export function WorkflowCanvas({
    *  注：这个状态原来只有 Esc 置空、从不渲染（残留死代码 ✗），这里改造复用 ✓
    *  长按不开菜单 —— 长按保留给"加入多选"（触屏唯一的多选入口 ✓） */
   const [nodeMenu, setNodeMenu] = useState<{ nid: string; x: number; y: number } | null>(null);
+  /** 拖动时的**对齐辅助线**（对齐 Dify：拖动中与其它卡片左/中/右、上/中/下对齐就提示）。
+   *  刻意做"只提示、不吸磁" ✓ —— 不改变任何拖动结果，只让"对没对齐"一眼可见。
+   *  算法：拖动后读一次各卡片的屏幕位置比较（不碰 drag 的位移计算 ✓，零风险） */
+  const [guides, setGuides] = useState<{ v: number[]; h: number[] }>({ v: [], h: [] });
   /** 「配置这个助手」点开后**就地在画布上**弹出的助手设置浮层。
    *  之前这个动作只把节点选中、什么都不打开 —— 点了没反应等于空承诺
    *  （用户反馈"点击后弹出不会消失"，根子在"点了没有正经回应"）。
@@ -1533,6 +1537,30 @@ export function WorkflowCanvas({
     setFocusNid(null);
   }, [graph, onChange, onSelect]);
 
+  useEffect(() => {
+    if (!drag?.moved) {
+      setGuides((g) => (g.v.length || g.h.length ? { v: [], h: [] } : g));
+      return;
+    }
+    const cur = document.querySelector(`[data-nid="${drag.nid}"]`) as HTMLElement | null;
+    if (!cur) return;
+    const a = cur.getBoundingClientRect();
+    const ax = [a.left, a.left + a.width / 2, a.right];
+    const ay = [a.top, a.top + a.height / 2, a.bottom];
+    const v = new Set<number>();
+    const h = new Set<number>();
+    document.querySelectorAll("[data-nid]").forEach((el) => {
+      const nid = el.getAttribute("data-nid");
+      if (!nid || nid === drag.nid) return;
+      const b = el.getBoundingClientRect();
+      const bx = [b.left, b.left + b.width / 2, b.right];
+      const by = [b.top, b.top + b.height / 2, b.bottom];
+      ax.forEach((x) => bx.forEach((xv) => { if (Math.abs(x - xv) <= 6) v.add(Math.round(xv)); }));
+      ay.forEach((y) => by.forEach((yv) => { if (Math.abs(y - yv) <= 6) h.add(Math.round(yv)); }));
+    });
+    setGuides({ v: [...v], h: [...h] });
+  }, [drag]);
+
   /** 删掉一个节点（连带它的连线）—— 卡片上的「删除」和键盘 Delete 共用这一条路径 ✓ */
   const deleteNode = useCallback(
     (nid: string) => {
@@ -1766,6 +1794,13 @@ export function WorkflowCanvas({
           }}
         />
       )}
+      {/* 对齐辅助线（只提示、不吸磁 ✓）：拖动中与其他卡片对齐时出现的 1px 蓝线 */}
+      {guides.v.map((gx, i) => (
+        <div key={`gv${i}`} className="pointer-events-none fixed bottom-0 top-0 z-[55] w-px" style={{ left: gx, background: "#528bff" }} />
+      ))}
+      {guides.h.map((gy, i) => (
+        <div key={`gh${i}`} className="pointer-events-none fixed left-0 right-0 z-[55] h-px" style={{ top: gy, background: "#528bff" }} />
+      ))}
       {/* 节点菜单：右键 / 卡上「⋯」都开它；破坏性操作仍走**两步确认**（删 → 先"待删"再点一次）✓ */}
       {nodeMenu && (
         <div
