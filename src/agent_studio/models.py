@@ -676,3 +676,43 @@ class AppSetting(Base):
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     value: Mapped[Any] = mapped_column(JSON, default=None)
     updated_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+
+class EvalSuite(Base):
+    """一套评测用例（挂在某个助手上）。
+
+    为什么是"用例集"而不是"跑一次算一次"：**要能重复跑**才有意义 ——
+    改了提示词/换了模型，用同一套题再跑一遍，才有"变好还是变坏"可言。
+    """
+
+    __tablename__ = "eval_suite"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("ev_"))
+    agent_id: Mapped[str] = mapped_column(String(32), index=True)
+    name: Mapped[str] = mapped_column(String(120), default="未命名用例集")
+    #: 每一条：{id, input, must_include(用 | 分隔的关键词), rubric(评分要点，可选)}
+    cases: Mapped[list[Any]] = mapped_column(JSON, default=list)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+    updated_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+
+
+class EvalRun(Base):
+    """跑一次评测（一个用例集 × 一次执行）。
+
+    ``label`` 是给这次起的名字（「改提示词前」/「改后」）——
+    对比时人一眼认得出，不用去比时间戳。
+    """
+
+    __tablename__ = "eval_run"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("evr_"))
+    suite_id: Mapped[str] = mapped_column(String(32), index=True)
+    agent_id: Mapped[str] = mapped_column(String(32), index=True)
+    label: Mapped[str] = mapped_column(String(60), default="")
+    #: running | ok | partial | error
+    status: Mapped[str] = mapped_column(String(16), default="running")
+    #: 每一例的结果（输入/产出/得分/命中情况/裁判理由/错误）
+    results: Mapped[list[Any]] = mapped_column(JSON, default=list)
+    #: 平均分（0~100）；**没有判据的例不计分** —— 全都没判据就是 None，不是 0 也不是 100
+    score: Mapped[float | None] = mapped_column(Float, default=None)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+    finished_at: Mapped[int | None] = mapped_column(BigInteger, default=None)

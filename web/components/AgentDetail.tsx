@@ -56,6 +56,8 @@ type ViewMode = "chat" | "table" | "raw";
  * 为什么要有浮层这种打开方式：正在聊天时点「配置」跳走，是"做一件事被弹走"——
  * 回来还得重新找回对话。配置和使用是同一件事的两半，不该互相打断。
  */
+import { AgentEvalPanel } from "@/components/AgentEvalPanel";
+
 export function AgentDetail({
   agentId,
   inDialog = false,
@@ -1066,6 +1068,15 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
           onSave={save}
         />
           </Fold>
+
+      {/* ── 评测 ─────────────────────────────────────────────────
+          "我改了提示词，到底变好了还是变坏了？" —— 用同一套用例跑两次才有答案。
+          放在助手页里（评测是这个助手的事），不新开导航/不加 tab。 */}
+      <div id="sec-evals" className="scroll-mt-14">
+        <Fold title="评测" summary={undefined}>
+          <AgentEvalPanel agentId={agentId} disabled={dirty} />
+        </Fold>
+      </div>
 
       {/* ── 记忆 ───────────────────────────────────────────────── */}
       {/* 不另加外层标题：记忆面板的卡片自带「记忆」标题，再加一层就重复了 */}

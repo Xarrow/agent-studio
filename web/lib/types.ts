@@ -453,6 +453,69 @@ export interface GuardrailsRead {
   depth: { limit: number; choices: number[] };
 }
 
+export interface EvalCase {
+  id: string;
+  input: string;
+  /** 必须包含的关键词（多个用 | 分隔）；留空则请模型当裁判 */
+  must_include: string;
+  /** 评分要点（只在没写关键词时用） */
+  rubric: string;
+}
+
+export interface EvalSuiteRead {
+  id: string;
+  agent_id: string;
+  name: string;
+  cases: EvalCase[];
+  created_at: number;
+  updated_at: number;
+}
+
+export interface EvalCaseResult {
+  case_id: string;
+  index: number;
+  input: string;
+  status: string;
+  output: string;
+  /** null = 这一例没有判据、或没跑成 —— **不是 0 分** */
+  score: number | null;
+  checks: { keyword: string; hit: boolean }[];
+  judge: { score: number | null; reason: string } | null;
+  note: string;
+  error: string;
+  tokens: number;
+  run_id: string;
+}
+
+export interface EvalRunRead {
+  id: string;
+  suite_id: string;
+  agent_id: string;
+  label: string;
+  status: string;
+  score: number | null;
+  created_at: number;
+  finished_at: number | null;
+  case_count: number;
+}
+
+export interface EvalRunDetail extends EvalRunRead {
+  results: EvalCaseResult[];
+}
+
+export interface EvalCompareRead {
+  left: { id: string; label: string; score: number | null; at: number };
+  right: { id: string; label: string; score: number | null; at: number };
+  total_delta: number | null;
+  items: {
+    index: number;
+    input: string;
+    left: { score: number | null; output: string; status: string };
+    right: { score: number | null; output: string; status: string };
+    delta: number | null;
+  }[];
+}
+
 export interface FanoutItem {
   index: number;
   label: string;

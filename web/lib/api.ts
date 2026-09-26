@@ -1,6 +1,10 @@
 /** 后端 API 客户端（类型化 fetch 封装）。 */
 
 import type {
+  EvalCompareRead,
+  EvalRunDetail,
+  EvalRunRead,
+  EvalSuiteRead,
   GuardrailsRead,
   UsageBucket,
   WorkflowAuto,
@@ -566,6 +570,33 @@ export const api = {
   abortRun: (id: string) => post<{ aborted: boolean }>(`/api/runs/abort/${id}`),
   /** **重跑这一条执行**：记录原地重来（归属不变）——分派的某一项失败时只重跑那一路 */
   rerunRun: (id: string) => post<Run>(`/api/runs/${id}/rerun`, {}),
+  /** 评测：用例集 + 跑一次 + 结果 + 两版对比（都挂在助手维度） */
+  evalSuites: (agentId: string) => request<EvalSuiteRead[]>(`/api/evals/suites?agent_id=${agentId}`),
+  evalCreateSuite: (body: {
+    agent_id: string;
+    name: string;
+    cases: { input: string; must_include?: string; rubric?: string }[];
+  }) => post<EvalSuiteRead>("/api/evals/suites", body),
+  evalSaveSuite: (
+    id: string,
+    body: {
+      agent_id: string;
+      name: string;
+      cases: { input: string; must_include?: string; rubric?: string }[];
+    },
+  ) =>
+    request<EvalSuiteRead>(`/api/evals/suites/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  evalDeleteSuite: (id: string) =>
+    request<{ deleted: number; id: string }>(`/api/evals/suites/${id}`, { method: "DELETE" }),
+  evalRunSuite: (id: string, label: string) =>
+    post<EvalRunDetail>(`/api/evals/suites/${id}/run`, { label }),
+  evalRuns: (suiteId: string) => request<EvalRunRead[]>(`/api/evals/runs?suite_id=${suiteId}`),
+  evalRun: (id: string) => request<EvalRunDetail>(`/api/evals/runs/${id}`),
+  evalCompare: (left: string, right: string) =>
+    request<EvalCompareRead>(`/api/evals/compare?left=${left}&right=${right}`),
   /** 护栏：今日用量 + 两个上限（每日额度 / 分派层数） */
   guardrails: () => request<GuardrailsRead>("/api/guardrails"),
   setDailyLimit: (limit: number) =>
