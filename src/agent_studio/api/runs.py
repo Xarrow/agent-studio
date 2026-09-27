@@ -8,7 +8,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import SessionLocal, get_session
@@ -1173,7 +1173,13 @@ async def _delete_runs(
 
     deleted = 0
     skipped: list[dict[str, Any]] = []
+    # 删除**前**记录涉及的会话 —— 删完要检查哪些会话被清空了（见函数尾）
+    _touched_sessions: set[str] = set()
     for rid in run_ids:
+        if not rid.startswith("orc_"):
+            _r = await session.get(Run, rid)
+            if _r is not None and _r.session_id:
+                _touched_sessions.add(_r.session_id)
         if rid.startswith("orc_"):
             orc = await session.get(Orchestration, rid)
             if orc is None:
@@ -1209,6 +1215,33 @@ async def _delete_runs(
         await session.delete(run)
         deleted += 1
     await session.commit()
+
+    # ── 级联清掉「空会话壳」───────────────────────────────────────────
+    # 会话与 run 是两个生命周期：删 run 时会话行还在，Agent 执行页左栏
+    # 就残留一条点开啥都没有的「新对话」✗。规则：这次删除涉及的会话，
+    # 如果已经**一条 run 都不剩**，会话壳连同消息一起删。
+    if _touched_sessions:
+        # 类名纠正：模型里是 Session / SessionMessage —— 之前写的
+        # ChatMessage / ChatSession 根本不存在，走到这里直接 ImportError，
+        # 空会话壳清理从未生效（「管理页删了记录、执行页左栏还在」的根因）。
+        from ..models import Session as ChatSession
+        from ..models import SessionMessage as ChatMessage
+
+        for sid in _touched_sessions:
+            n = (
+                await session.execute(
+                    select(func.count()).select_from(Run).where(Run.session_id == sid)
+                )
+            ).scalar()
+            if n == 0:
+                await session.execute(
+                    delete(ChatMessage).where(ChatMessage.session_id == sid)
+                )
+                await session.execute(
+                    delete(ChatSession).where(ChatSession.id == sid)
+                )
+        await session.commit()
+
     return deleted, skipped
 
 

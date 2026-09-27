@@ -366,7 +366,7 @@ PERMISSION_MODES: dict[str, str] = {
 DEFAULT_PERMISSION_MODE = "accept_edits"
 
 
-def build_permission_state(defn: AgentDefinition):
+def build_permission_state(defn: AgentDefinition, tools: list[ToolSpec] | None = None):
     """把权限 scope 翻译成 ``AgentState``（AgentScope 从 state.permission_context 取）。
 
     配置形如::
@@ -378,6 +378,14 @@ def build_permission_state(defn: AgentDefinition):
 
     ``pattern`` 的语义由工具自己解释（Bash 是命令子串，Read/Write 是路径 glob）。
     留空表示"这个工具的所有调用"。
+
+    **严格模式（default）必须注入显式 ask 规则**：AgentScope 权限引擎的判定
+    顺序是 deny → ask → **只读快速通道** → tool.check → allow → 默认 ASK。
+    只读快速通道排在 ask 之后没错，但``read_only=True`` 的工具（fetch/
+    web_search）在第 3 步就被放行 —— 引擎认为"无副作用就不用问"。而平台
+    的「严格」承诺是"每个操作都要确认"（试跑/观测里 fetch 直接跑掉不打
+    招呼，用户实测踩到）。所以 default 模式下给**每个已挂工具**注入一条
+    ``rule_content=None`` 的 ask 规则（Step 2，先于只读通道），语义才对齐。
     """
     from agentscope.permission import (
         PermissionBehavior,
@@ -394,6 +402,7 @@ def build_permission_state(defn: AgentDefinition):
 
     raw = str(conf.get("mode") or DEFAULT_PERMISSION_MODE).strip().lower()
     mode = PermissionMode[PERMISSION_MODES.get(raw, PERMISSION_MODES[DEFAULT_PERMISSION_MODE])]
+    is_strict = raw == "default"
 
     def _group(key: str, behavior: PermissionBehavior) -> dict[str, list]:
         """按工具名分组 —— PermissionContext 的 *_rules 是 dict[tool_name, list]。
@@ -427,11 +436,42 @@ def build_permission_state(defn: AgentDefinition):
             )
         return out
 
+    ask_rules = _group("ask", PermissionBehavior.ASK)
+
+    # ── 严格模式的语义补全 ──────────────────────────────────────────────
+    # AgentScope 的权限引擎把「只读快速通道」排在默认 ASK 之前：
+    # is_read_only=True 的工具（平台的 fetch / web_search 等）即使
+    # DEFAULT（严格）模式也直接放行 —— 用户选了「每个操作都要确认」，
+    # 结果工具静默执行 ✗（实测：严格模式试跑 fetch 一次没问）。
+    # 修法：严格模式下给**这个助手挂的所有工具**注入显式 ASK 规则——
+    # ask 是 Step 2，优先于只读通道，且用户可在权限表里对单个工具
+    # 写 allow 规则覆盖（allow 同为 Step 5 之后…不，allow 是 Step 5，
+    # ask 在 Step 2 先命中）。所以严格模式 = 真正的「每个工具都问」。
+    # 注意数据源：``defn.tools`` 里是 ``{"ref": 工具行id}``，**不是工具名** ——
+    # 按 ref 注入的规则在 AgentScope 侧永远匹配不上注册名，等于没注入
+    # （和 fanout._tool_name 的坑同源）。必须用编译时传进来的 ToolSpec
+    # （真名）来建规则。
+    if mode is PermissionMode.DEFAULT and tools:
+        covered = set(ask_rules)  # 用户已点名的工具不重复注入
+        for spec in tools:
+            name = BUILTIN_TOOLS.get(spec.name.lower(), spec.name)
+            if name in covered:
+                continue
+            covered.add(name)
+            ask_rules.setdefault(name, []).append(
+                PermissionRule(
+                    tool_name=name,
+                    rule_content=None,  # 不限 pattern = 这个工具的所有调用
+                    behavior=PermissionBehavior.ASK,
+                    source="userSettings",
+                )
+            )
+
     ctx = PermissionContext(
         mode=mode,
         allow_rules=_group("allow", PermissionBehavior.ALLOW),
         deny_rules=_group("deny", PermissionBehavior.DENY),
-        ask_rules=_group("ask", PermissionBehavior.ASK),
+        ask_rules=ask_rules,
     )
     return AgentState(permission_context=ctx)
 
@@ -530,7 +570,12 @@ def build_agent(
         toolkit=toolkit,
         # 权限 scope：不注入的话 AgentScope 用自己的默认（每个操作都要确认），
         # 而平台没有中途审批界面 → 运行会停在等待人工确认上。
-        state=build_permission_state(defn),
+        state=build_permission_state(
+            defn,
+            # 严格模式的 ASK 兜底需要真实工具名（ToolRef.ref 是行 id），
+            # 由编译入口把 ToolSpec 列表传进来
+            tools=tools,
+        ),
         model_config=model_cfg,
         context_config=context_cfg,
         react_config=react_cfg,
