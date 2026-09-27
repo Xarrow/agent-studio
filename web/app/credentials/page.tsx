@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { api, fmt } from "@/lib/api";
 import type { Credential, CredentialTestResult, Provider } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
+import { Chip, Empty, KV, PageHead, Row, RowDetail, RowList, Section } from "@/components/ui/kit";
 import { PriceBook } from "@/components/PriceBook";
 import { Hint, HINTS } from "@/components/ui/hint";
 import { CredentialChatDialog } from "@/components/CredentialChatDialog";
@@ -25,6 +26,8 @@ export default function CredentialsPage() {
   /** 正在做「对话测试」的凭据（null = 没开） */
   const [chatting, setChatting] = useState<Credential | null>(null);
   const [testResult, setTestResult] = useState<Record<string, CredentialTestResult>>({});
+  /** 就地展开的那一套钥匙（展开里 = 端点/时间 + 明文密钥 + 测试结果详情） */
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -133,23 +136,20 @@ export default function CredentialsPage() {
 
   return (
     <div className="p-4 md:p-6 lg:p-7 max-w-5xl">
-      <header className="flex items-start justify-between mb-6">
-        <div>
-          <h1 className="text-[22px] font-semibold tracking-tight flex items-center gap-1.5">
-            <Hint text={HINTS.credential}>LLM 配置</Hint>
-          </h1>
-          <p className="text-[13px] text-[var(--color-muted)] mt-1">
+      <PageHead
+        title="LLM 配置"
+        desc={
+          <>
             让 AI 能工作的「钥匙」。在这里填一次，所有助手都能用；存进来会加密，不会再明文显示。
-          </p>
-          <p className="text-[11.5px] text-[var(--color-muted)] mt-1">
-            支持 {providers.length} 家 <Hint text={HINTS.provider}>服务商</Hint> · 同一家可配多套钥匙（主号
-            / 备用号）
-          </p>
-        </div>
-        <button className="btn btn-primary" onClick={() => setShowNew(true)}>
-          + 添加配置
-        </button>
-      </header>
+            支持 {providers.length} 家服务商，同一家可以配多套（主号 / 备用号）。
+          </>
+        }
+        actions={
+          <button className="btn btn-primary" onClick={() => setShowNew(true)}>
+            + 添加配置
+          </button>
+        }
+      />
 
       {err && (
         <div className="card p-4 mb-4 text-[13px] text-[var(--color-err)]">
@@ -192,165 +192,234 @@ export default function CredentialsPage() {
       {loading ? (
         <div className="card p-6 text-[13px] text-[var(--color-muted)]">加载中…</div>
       ) : creds.length === 0 ? (
-        <div className="card p-8 text-center mb-6">
-          <p className="text-[14px] mb-2">还没有配置任何 LLM Key</p>
-          <p className="text-[12.5px] text-[var(--color-muted)] mb-4">
-            添加后 Agent 就能选用。Key 加密存储，列表只显示脱敏串。
-          </p>
-          <button className="btn btn-primary" onClick={() => setShowNew(true)}>
-            添加第一份配置
-          </button>
+        <div className="card">
+          <Empty
+            title="还没有配置任何 LLM Key"
+            hint="添加后 Agent 就能选用。Key 加密存储，列表只显示脱敏串。"
+            action={
+              <button className="btn btn-primary" onClick={() => setShowNew(true)}>
+                添加第一份配置
+              </button>
+            }
+          />
         </div>
       ) : (
-        <div className="space-y-2.5 mb-7">
+        /* 一行一套钥匙（原来每套一张卡片，五颗动作按钮把卡片撑得很高）。
+           行上只留「认得出是谁 + 通不通」；端点、时间、明文密钥、测试详情收进就地展开。 */
+        <RowList>
           {creds.map((c) => {
             const r = testResult[c.id];
+            const open = expanded === c.id;
             return (
-              <div key={c.id} className="card p-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2.5">
-                      <span className="font-medium text-[14px]">{c.name}</span>
-                      <span className="tag">{c.provider_display}</span>
-                      {c.last_test_ok === true && (
-                        <span className="tag text-[var(--color-ok)]">✓ 上次测试通过</span>
-                      )}
-                      {c.last_test_ok === false && (
-                        <span className="tag text-[var(--color-err)]">✗ 上次测试失败</span>
-                      )}
-                    </div>
-                    <div className="text-[12px] text-[var(--color-muted)] mono mt-1.5 flex items-center gap-2 flex-wrap">
+              <Fragment key={c.id}>
+                <Row
+                  expanded={open}
+                  onToggle={() => setExpanded(open ? null : c.id)}
+                  actions={
+                    <>
+                      <button
+                        type="button"
+                        className="btn text-[12.5px]"
+                        onClick={() => setEditing(c)}
+                      >
+                        编辑
+                      </button>
                       {revealed[c.id] ? (
-                        <>
-                          <span className="text-[var(--color-text)] break-all">
-                            {revealed[c.id]}
-                          </span>
-                          <button
-                            className="btn text-[10.5px] px-1.5 py-0.5"
-                            onClick={() => void copyKey(c.id)}
-                          >
-                            复制
-                          </button>
-                          <button
-                            className="btn text-[10.5px] px-1.5 py-0.5"
-                            onClick={() => hide(c.id)}
-                          >
-                            隐藏
-                          </button>
-                        </>
+                        <button
+                          type="button"
+                          className="btn text-[12.5px]"
+                          onClick={() => hide(c.id)}
+                        >
+                          隐藏密钥
+                        </button>
                       ) : (
-                        <span>{c.masked_key}</span>
+                        <button
+                          type="button"
+                          className="btn text-[12.5px]"
+                          onClick={() => void reveal(c)}
+                        >
+                          显示密钥
+                        </button>
                       )}
-                      <span>· {c.base_url || "默认端点"}</span>
-                    </div>
-                    <div className="text-[12px] text-[var(--color-muted)] mt-1">
-                      默认模型：{" "}
-                      {c.default_model ? (
-                        <span className="mono text-[var(--color-text)]">{c.default_model}</span>
-                      ) : (
-                        <span className="text-[var(--color-muted)]">未设置</span>
-                      )}
-                    </div>
-                    {c.created_at > 0 && (
-                      <div className="text-[11.5px] text-[var(--color-muted)] mt-1">
-                        添加于 {fmt.relative(c.created_at)}
-                        {c.last_test_at ? ` · 测试于 ${fmt.relative(c.last_test_at)}` : ""}
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex gap-2 shrink-0">
-                    <button className="btn" onClick={() => setEditing(c)}>
-                      编辑
-                    </button>
-                    {revealed[c.id] ? (
-                      <button className="btn" onClick={() => hide(c.id)}>
-                        隐藏密钥
+                      <button
+                        type="button"
+                        className="btn text-[12.5px]"
+                        title="直接跟模型聊两句，不经过助手"
+                        onClick={() => setChatting(c)}
+                      >
+                        对话测试
                       </button>
-                    ) : (
-                      <button className="btn" onClick={() => void reveal(c)}>
-                        显示密钥
+                      <button
+                        type="button"
+                        className="btn text-[12.5px]"
+                        disabled={testing === c.id}
+                        onClick={() => {
+                          setExpanded(c.id);
+                          void test(c.id);
+                        }}
+                      >
+                        {testing === c.id ? "测试中…" : "测试连接"}
                       </button>
-                    )}
-                    <button
-                      className="btn"
-                      title="直接跟模型聊两句，不经过助手"
-                      onClick={() => setChatting(c)}
+                      <button
+                        type="button"
+                        className="btn text-[12.5px]"
+                        style={{ color: "var(--color-err)" }}
+                        onClick={() => void remove(c)}
+                      >
+                        删除
+                      </button>
+                    </>
+                  }
+                >
+                  <span className="min-w-0 flex-1 basis-[240px]">
+                    <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className="truncate text-[14px] font-medium">{c.name}</span>
+                      <Chip tone="muted">{c.provider_display}</Chip>
+                      {c.last_test_ok === true && <Chip tone="ok">上次测试通过</Chip>}
+                      {c.last_test_ok === false && <Chip tone="err">上次测试失败</Chip>}
+                    </span>
+                    <span
+                      className="mono mt-0.5 block truncate text-[11.5px]"
+                      style={{ color: "var(--color-muted)" }}
                     >
-                      对话测试
-                    </button>
-                    <button
-                      className="btn"
-                      disabled={testing === c.id}
-                      onClick={() => test(c.id)}
-                    >
-                      {testing === c.id ? "测试中…" : "测试连接"}
-                    </button>
-                    <button className="btn text-[var(--color-err)]" onClick={() => remove(c)}>
-                      删除
-                    </button>
-                  </div>
-                </div>
+                      {revealed[c.id] ? revealed[c.id] : c.masked_key} ·{" "}
+                      {c.base_url || "默认端点"} · 默认模型 {c.default_model || "未设置"}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-[11px]" style={{ color: "var(--color-muted)" }}>
+                    {open ? "▾" : "▸"}
+                  </span>
+                </Row>
 
-                {r && (
-                  <div className="mt-3 pt-3 border-t border-[var(--color-border)] text-[12.5px]">
-                    {r.ok ? (
-                      <div>
-                        <span className="text-[var(--color-ok)]">✓ 连接正常</span>
-                        <span className="text-[var(--color-muted)]">
-                          {" "}
-                          · 延迟 {fmt.ms(r.latency_ms)} · 模型 {r.models.length} 个
-                        </span>
-                        {r.models.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5 mt-2">
-                            {r.models.slice(0, 12).map((m) => (
-                              <span key={m} className="tag mono">
-                                {m.trim()}
-                              </span>
-                            ))}
+                {open && (
+                  <RowDetail>
+                    <div className="grid gap-1.5 md:grid-cols-2">
+                      <KV k="端点">
+                        <span className="mono">{c.base_url || "默认端点"}</span>
+                      </KV>
+                      <KV k="默认模型">
+                        {c.default_model ? (
+                          <span className="mono">{c.default_model}</span>
+                        ) : (
+                          <span style={{ color: "var(--color-muted)" }}>
+                            未设置（用服务商推荐的第一个）
+                          </span>
+                        )}
+                      </KV>
+                      {c.created_at > 0 ? (
+                        <KV k="添加时间">{fmt.relative(c.created_at)}</KV>
+                      ) : null}
+                      {c.last_test_at ? <KV k="上次测试">{fmt.relative(c.last_test_at)}</KV> : null}
+                    </div>
+
+                    {revealed[c.id] ? (
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <span className="mono break-all text-[12px]">{revealed[c.id]}</span>
+                        <button
+                          type="button"
+                          className="btn text-[11.5px] px-2 py-1"
+                          onClick={() => void copyKey(c.id)}
+                        >
+                          复制
+                        </button>
+                        <button
+                          type="button"
+                          className="btn text-[11.5px] px-2 py-1"
+                          onClick={() => hide(c.id)}
+                        >
+                          隐藏
+                        </button>
+                      </div>
+                    ) : null}
+
+                    {r ? (
+                      <div
+                        className="mt-2.5 rounded-[8px] border p-2.5 text-[12.5px]"
+                        style={{ borderColor: r.ok ? "var(--color-ok)" : "var(--color-err)" }}
+                      >
+                        {r.ok ? (
+                          <>
+                            <div style={{ color: "var(--color-ok)" }}>✓ 连接正常</div>
+                            <div
+                              className="mt-0.5 text-[11.5px]"
+                              style={{ color: "var(--color-muted)" }}
+                            >
+                              延迟 {fmt.ms(r.latency_ms)} · 可用模型 {r.models.length} 个
+                            </div>
+                            {r.models.length > 0 ? (
+                              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                {r.models.slice(0, 12).map((m) => (
+                                  <Chip key={m} tone="muted">
+                                    {m.trim()}
+                                  </Chip>
+                                ))}
+                              </div>
+                            ) : null}
+                          </>
+                        ) : (
+                          <div style={{ color: "var(--color-err)" }}>
+                            ✗ {r.error}
+                            {r.latency_ms ? ` （${fmt.ms(r.latency_ms)}）` : ""}
                           </div>
                         )}
                       </div>
                     ) : (
-                      <div className="text-[var(--color-err)]">
-                        ✗ {r.error}
-                        {r.latency_ms ? ` （${fmt.ms(r.latency_ms)}）` : ""}
+                      <div className="mt-2.5 text-[12px]" style={{ color: "var(--color-muted)" }}>
+                        点右侧「测试连接」验一下能不能通 —— 延迟与可用模型会显示在这里。
                       </div>
                     )}
-                  </div>
+                  </RowDetail>
                 )}
-              </div>
+              </Fragment>
             );
           })}
-        </div>
+        </RowList>
       )}
 
       {/* 单价：把"用了多少 token"变成"花了多少钱"。放在密钥下面 ——
-          它的输入是密钥连着的那些模型，用户的动线是"配好 key → 顺手把单价填了"。 */}
-      <PriceBook />
+          它的输入是密钥连着的那些模型，动线是"配好 key → 顺手把单价填了"。 */}
+      <div className="mt-3">
+        <PriceBook />
+      </div>
 
-      <section>
-        <h2 className="text-[15px] font-medium mb-3">支持的 Provider</h2>
-        <div className="grid gap-2 md:grid-cols-3">
-          {byProvider.map(({ meta, items }) => (
-            <div key={meta.name} className="card p-3.5">
-              <div className="flex items-center justify-between">
-                <span className="text-[13.5px] font-medium">{meta.display_name}</span>
-                <span className="tag mono">{items.length}</span>
+      {/* 支持的 Provider：原来 9 张静态卡片（三列网格，每张只放名称/端点/说明），
+          改成分区里一行一家 —— 顺手把「这家配了几套钥匙」摆出来。 */}
+      <div className="mt-3">
+        <Section
+          title="支持的 Provider"
+          count={`${byProvider.length} 家`}
+          desc="平台已经知道怎么跟这些服务商说话；钥匙配在上面的列表里，这里只是清单与默认端点"
+        >
+          <div className="flex flex-col">
+            {byProvider.map(({ meta, items }) => (
+              <div
+                key={meta.name}
+                className="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-b py-2 last:border-b-0"
+                style={{ borderColor: "var(--color-border)" }}
+              >
+                <span className="min-w-0 flex-1 basis-[220px]">
+                  <span className="block text-[13.5px] font-medium">{meta.display_name}</span>
+                  <span
+                    className="mono mt-0.5 block truncate text-[11.5px]"
+                    style={{ color: "var(--color-muted)" }}
+                  >
+                    {meta.default_base_url || "（固定端点）"}
+                    {meta.requires_key ? " · 需要 API Key" : " · 无需 Key"}
+                    {meta.note ? ` · ${meta.note}` : ""}
+                  </span>
+                </span>
+                <Chip tone={items.length > 0 ? "ok" : "muted"}>
+                  {items.length > 0 ? `已配 ${items.length} 套` : "还没配"}
+                </Chip>
               </div>
-              <div className="text-[11.5px] text-[var(--color-muted)] mt-1.5 mono truncate">
-                {meta.default_base_url || "（固定端点）"}
-              </div>
-              <div className="text-[11.5px] text-[var(--color-muted)] mt-1">
-                {meta.requires_key ? "需要 API Key" : "无需 Key"}
-                {meta.note ? ` · ${meta.note}` : ""}
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
+            ))}
+          </div>
+        </Section>
+      </div>
     </div>
   );
 }
+
 
 // --------------------------------------------------------------------------- //
 function NewCredentialDialog({
