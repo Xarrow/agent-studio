@@ -74,6 +74,10 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   const [liveEvents, setLiveEvents] = useState<RunEvent[]>([]);
   /** 本次发送的内容（作为执行过程的第一段「输入」） */
   const [liveInput, setLiveInput] = useState("");
+  /** 正在跑的这一轮的 run id —— 停止时要拿它去 abort 后端 */
+  const [liveRunId, setLiveRunId] = useState("");
+  /** 待发送的附件（已上传，拿绝对路径注入消息让助手用 Read 读） */
+  const [pendingFiles, setPendingFiles] = useState<{ name: string; path: string }[]>([]);
   const [busy, setBusy] = useState(false);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(true);
@@ -237,6 +241,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   const attachStream = (runId: string, sentText: string) => {
     const es = new EventSource(api.streamUrl(runId));
     esRef.current = es;
+    setLiveRunId(runId);
 
     es.onmessage = (e: MessageEvent) => {
       try {
@@ -257,6 +262,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     const settle = async () => {
       es.close();
       setBusy(false);
+      setLiveRunId("");
       const r = await api.run(runId).catch(() => null);
       if (r && r.status === "waiting_hitl") {
         // **不是结束，是暂停等你点头** —— 保留现场（不清 live），
@@ -279,32 +285,40 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   const send = async (override?: unknown) => {
     // 允许传文本进来（重试时用）—— 传进来的可能是事件对象，所以只认字符串
     const text = (typeof override === "string" ? override : input).trim();
-    if (!text || busy || !sessionId || !agentId) return;
+    if ((!text && pendingFiles.length === 0) || busy || !sessionId || !agentId) return;
+
+    // 附件：上传后拿到服务端绝对路径 —— 以路径注入消息，助手用 Read 工具读
+    //（不用 base64 塞进 input：大文件爆上下文，且文本类文件 Read 更省）
+    const attachNote =
+      pendingFiles.length > 0
+        ? "\n\n" + pendingFiles.map((f) => `[附件] ${f.path}（${f.name}，可用 Read 工具读取）`).join("\n")
+        : "";
+    const composed = (text || "（请处理附件）") + attachNote;
 
     setFailed(null);
     setHitl(null);
     setInput("");
+    setPendingFiles([]);
     setBusy(true);
-    setLive({ role: "user", text });
+    setLive({ role: "user", text: composed });
     // 直接进入助手流式态（user 消息由 live 显示，完成后由 history 接管）
-    const userEcho = { role: "user" as const, content: text, run_id: null, turn_index: 0 };
+    const userEcho = { role: "user" as const, content: composed, run_id: null, turn_index: 0 };
     setHistory((h) => [...h, userEcho]);
     setLive({ role: "assistant", text: "" });
     setLiveEvents([]);
-    setLiveInput(text);
+    setLiveInput(composed);
 
     try {
       const run = await api.createRun({
         agent_id: agentId,
-        input: text,
+        input: composed,
         session_id: sessionId,
         origin: "chat",
       });
-
-      attachStream(run.id, text);
+      attachStream(run.id, composed);
     } catch (e) {
       // 请求本身就没发出去 —— 同样要摆出来（原来只弹个 toast，消失后无从追溯）
-      setFailed({ text, message: e instanceof Error ? e.message : String(e) });
+      setFailed({ text: composed, message: e instanceof Error ? e.message : String(e) });
       setLive(null);
       setBusy(false);
     }
@@ -325,11 +339,34 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   };
 
   const stop = async () => {
-    // 关流 + 中止后端执行
+    // 关流 + **中止后端执行**（不是只不看了 —— 那会白烧 token，
+    // 用户点停止的意图就是「别做了」；abort 端点会把 run 标成 aborted）
     esRef.current?.close();
+    if (liveRunId) await api.abortRun(liveRunId).catch(() => null);
+    setLiveRunId("");
     setLive(null);
     setBusy(false);
-    fb.warn("已停止接收输出", "后端可能仍在执行，可在 Runs 里查看结果");
+    fb.warn("已停止", "这一轮已中止；输入还在，改改再发就行");
+  };
+
+  /** 选了文件 → 上传 → 进待发清单（路径注入方案，见 send()） */
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const pickFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setUploading(true);
+    try {
+      const items = await Promise.all([...files].map((f) => api.uploadFile(f)));
+      setPendingFiles((prev) => [
+        ...prev,
+        ...items.map((it) => ({ name: it.name, path: it.path })),
+      ]);
+    } catch (e) {
+      fb.error("附件上传失败", e instanceof Error ? e.message : String(e));
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
   };
 
   /* ------------------------------- 渲染 ------------------------------- */
@@ -565,11 +602,26 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             </div>
           )}
           <div className="max-w-3xl mx-auto flex gap-2 items-end">
+            <input
+              ref={fileRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(e) => void pickFiles(e.target.files)}
+            />
+            <button
+              className="btn shrink-0 w-10 px-0"
+              title="附件（助手会用 Read 工具读）"
+              disabled={busy || uploading}
+              onClick={() => fileRef.current?.click()}
+            >
+              {uploading ? "…" : "📎"}
+            </button>
             <textarea
               className="input flex-1 resize-none text-[13px]"
               rows={1}
               style={{ maxHeight: "9rem" }}
-              placeholder="发消息…（Enter 发送，Shift + Enter 换行）"
+              placeholder={pendingFiles.length > 0 ? `附了 ${pendingFiles.length} 个文件，说点什么…` : "发消息…（Enter 发送，Shift + Enter 换行）"}
               value={input}
               disabled={busy}
               onChange={(e) => setInput(e.target.value)}
@@ -585,11 +637,36 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 停止
               </button>
             ) : (
-              <button className="btn btn-primary" disabled={!input.trim()} onClick={() => void send()}>
+              <button
+                className="btn btn-primary"
+                disabled={!input.trim() && pendingFiles.length === 0}
+                onClick={() => void send()}
+              >
                 发送
               </button>
             )}
           </div>
+          {/* 待发附件 —— 名字即所见，点 ✕ 撤掉（还没进消息，撤掉零成本） */}
+          {pendingFiles.length > 0 && (
+            <div className="max-w-3xl mx-auto mt-2 flex flex-wrap gap-1.5">
+              {pendingFiles.map((f, i) => (
+                <span
+                  key={f.path + i}
+                  className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11.5px]"
+                  style={{ background: "var(--color-surface-2)" }}
+                >
+                  {f.name}
+                  <button
+                    className="text-[var(--color-muted)] hover:text-[var(--color-err)]"
+                    title="撤掉"
+                    onClick={() => setPendingFiles((p) => p.filter((_, j) => j !== i))}
+                  >
+                    ✕
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       </section>
     </div>
@@ -617,6 +694,8 @@ function Bubble({
   const [loadingEv, setLoadingEv] = useState(false);
   /** 完整记录弹框（气泡内自己持有 —— 它是独立组件，不是 ChatConsole 的作用域） */
   const [detailOpen, setDetailOpen] = useState(false);
+  /** 这一轮的用量与耗时（展开时顺手拉 run 拿 —— 不展开就不拉） */
+  const [meta, setMeta] = useState<{ tokens: number; seconds: number } | null>(null);
 
   const hasTrace = !isUser && !!runId && !streaming;
 
@@ -630,7 +709,20 @@ function Bubble({
     if (events === null && runId) {
       setLoadingEv(true);
       try {
-        setEvents(await api.runEvents(runId));
+        const [evs, run] = await Promise.all([
+          api.runEvents(runId),
+          api.run(runId).catch(() => null),
+        ]);
+        setEvents(evs);
+        // 用量+耗时：一次顺手带出（token 数取 total，没有就算了）
+        if (run) {
+          const u = (run.usage || {}) as Record<string, number>;
+          const tokens =
+            Number(u.total ?? 0) || Number(u.tokens_in ?? 0) + Number(u.tokens_out ?? 0) || 0;
+          const seconds =
+            run.ended_at && run.started_at ? Math.max(0, (run.ended_at - run.started_at) / 1000) : 0;
+          setMeta({ tokens, seconds });
+        }
       } catch {
         setEvents([]);
       } finally {
@@ -679,6 +771,12 @@ function Bubble({
               >
                 完整记录 →
               </button>
+              {meta && (
+                <span className="text-[11px] text-[var(--color-muted)]">
+                  {meta.tokens > 0 ? `${fmt.int(meta.tokens)} tokens · ` : ""}
+                  {fmt.ms(meta.seconds * 1000)}
+                </span>
+              )}
               {detailOpen && runId && (
                 <RunDetailById runId={runId} onClose={() => setDetailOpen(false)} />
               )}
