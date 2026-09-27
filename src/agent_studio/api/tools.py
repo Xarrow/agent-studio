@@ -201,8 +201,13 @@ async def sync_builtins(
     # 查资料类任务是瘸的；没有 python，算数/数据处理只能靠模型心算。
     # 唯一真相在 native_tools.NATIVE_TOOLS（sync 与 compile 共用）。
     from ..native_tools import NATIVE_TOOLS
+    # ── Agent 互操作（list/read/fork_agent）── 让助手能盘点、查看、复制其他助手，
+    # 配合 fork 工具的 agent 参数构成完整的多 agent 互操作（P1.5）。
+    from ..agent_ops import AGENT_OPS_TOOLS
 
-    for name, entry in NATIVE_TOOLS.items():
+    _native_all: dict[str, dict[str, Any]] = {**NATIVE_TOOLS, **AGENT_OPS_TOOLS}
+
+    for name, entry in _native_all.items():
         exists = (
             await session.execute(select(Tool).where(Tool.kind == "native", Tool.name == name))
         ).scalar_one_or_none()

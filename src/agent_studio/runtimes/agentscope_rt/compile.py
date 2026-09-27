@@ -265,10 +265,27 @@ def build_tools(specs: list[ToolSpec]) -> list[Any]:
             elif spec.kind == "fork":
                 tools.append(build_fanout_tool(spec))
             elif spec.kind == "native":
-                # 平台原生内核工具（fetch/web_search/python）—— 实现在 native_tools.py
+                # 平台原生内核工具（fetch/web_search/python + agent 互操作三件）
+                # —— 实现在 native_tools.py / agent_ops.py
                 from ...native_tools import build_native_tool
+                from ...agent_ops import AGENT_OPS_TOOLS
 
-                tools.append(build_native_tool(spec.name))
+                if spec.name in AGENT_OPS_TOOLS:
+                    from agentscope.tool import FunctionTool as _FT
+
+                    _e = AGENT_OPS_TOOLS[spec.name]
+                    tools.append(
+                        _FT(
+                            _e["fn"],
+                            name=spec.name,
+                            description=_e["description"],
+                            input_schema=_e["schema"],
+                            is_read_only=bool(_e["flags"].get("read_only")),
+                            is_concurrency_safe=bool(_e["flags"].get("concurrency_safe")),
+                        )
+                    )
+                else:
+                    tools.append(build_native_tool(spec.name))
             else:
                 logger.warning("跳过暂不支持的工具类型: %s (%s)", spec.kind, spec.name)
         except Exception as exc:
