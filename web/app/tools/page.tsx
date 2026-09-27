@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { api, fmt } from "@/lib/api";
 import type { Tool } from "@/lib/types";
+import { Chip, Empty, KV, PageHead, Row, RowDetail, RowList, Segmented, Toolbar } from "@/components/ui/kit";
 import { SkillsPanel } from "@/components/SkillsPanel";
 import { McpPanel } from "@/components/McpPanel";
 import { ToolTestForm } from "@/components/ToolTestForm";
@@ -21,6 +22,23 @@ export default function ToolsPage() {
   const [kindFilter, setKindFilter] = useState("");
   /** 这一页管三件事：工具 / Skills /（以后的）MCP —— 页签切换，不跳页 */
   const [tab, setTab] = useState<"tools" | "skills" | "mcp">("tools");
+  /** 就地展开的那一个工具（展开里放参数详情 + 试运行表单 + 上次试跑结果） */
+  const [expanded, setExpanded] = useState<string | null>(null);
+  /** 每个页签自己的说法 —— 标题跟着页签走，不再"页签 + 又一个 h1"两层头 */
+  const TAB_META: Record<"tools" | "skills" | "mcp", { title: string; desc: string }> = {
+    tools: {
+      title: "工具",
+      desc: "给助手加「手」：能查网页、读文件、跑命令之类。不加的话它就只能聊天。",
+    },
+    skills: {
+      title: "Skills",
+      desc: "给助手加「说明书」：告诉它这类任务该怎么做（正文按需加载，不占上下文）。",
+    },
+    mcp: {
+      title: "MCP",
+      desc: "接外部工具服务器：把别的系统提供的能力挂给助手用。",
+    },
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -92,35 +110,24 @@ export default function ToolsPage() {
 
   return (
     <div className="p-4 md:p-6 lg:p-7 max-w-5xl">
-      {/* 页签：工具 / Skills —— 对用户本是同一件事（"这个助手能干什么"），
-          分成两个菜单只会让人先猜该点哪个 */}
-      <div className="mb-5 flex gap-1 border-b" style={{ borderColor: "var(--color-border)" }}>
-        {(
-          [
-            ["tools", "工具"],
-            ["skills", "Skills"],
-            ["mcp", "MCP"],
-          ] as const
-        ).map(([k, label]) => (
-          <button
-            key={k}
-            type="button"
-            onClick={() => setTab(k)}
-            className="-mb-px border-b-2 px-3.5 py-2 text-[13.5px] transition-colors"
-            style={
-              tab === k
-                ? {
-                    borderColor: "var(--color-accent)",
-                    color: "var(--color-accent)",
-                    fontWeight: 600,
-                  }
-                : { borderColor: "transparent", color: "var(--color-muted)" }
-            }
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      {/* 头部一行：标题跟页签走 + 右侧「工具 / Skills / MCP」切换。
+          原来是「顶部页签条 + 页签里再来一个 h1 + 说明 + 按钮」两层头，
+          占了 150px 才看到第一个工具，且字号与其它页不一致 ✗ */}
+      <PageHead
+        title={TAB_META[tab].title}
+        desc={TAB_META[tab].desc}
+        actions={
+          <Segmented
+            value={tab}
+            onChange={setTab}
+            options={[
+              { key: "tools", label: "工具", count: tools.length },
+              { key: "skills", label: "Skills" },
+              { key: "mcp", label: "MCP" },
+            ]}
+          />
+        }
+      />
 
       {tab === "skills" && <SkillsPanel embedded />}
 
@@ -128,178 +135,233 @@ export default function ToolsPage() {
 
       {tab === "tools" && (
         <>
-      <header className="flex items-start justify-between mb-6">
-        <div>
-          <h1 className="text-[22px] font-semibold tracking-tight">工具</h1>
-          <p className="text-[13px] text-[var(--color-muted)] mt-1">
-            给助手加「手」：能查网页、读文件、跑命令之类。不加的话它就只能聊天。
-          </p>
-          <p className="text-[11.5px] text-[var(--color-muted)] mt-1">
-            内置 {counts.builtin} · HTTP {counts.http} · 代码 {counts.code}
-            {counts.fork > 0 ? ` · 分派 ${counts.fork}` : ""}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <button className="btn" disabled={syncing} onClick={sync}>
-            {syncing ? "同步中…" : "同步内置工具"}
-          </button>
-          <button className="btn btn-primary" onClick={() => setShowNew(true)}>
-            + 自定义工具
-          </button>
-        </div>
-      </header>
+          {editing && (
+            <EditToolDialog
+              key={editing.id}
+              tool={editing}
+              onClose={() => setEditing(null)}
+              onSaved={async () => {
+                setEditing(null);
+                await load();
+              }}
+            />
+          )}
 
-      {editing && (
-        <EditToolDialog
-          key={editing.id}
-          tool={editing}
-          onClose={() => setEditing(null)}
-          onSaved={async () => {
-            setEditing(null);
-            await load();
-          }}
-        />
-      )}
+          {showNew && (
+            <NewToolDialog
+              onClose={() => setShowNew(false)}
+              onCreated={async () => {
+                setShowNew(false);
+                await load();
+              }}
+            />
+          )}
 
-      {showNew && (
-        <NewToolDialog
-          onClose={() => setShowNew(false)}
-          onCreated={async () => {
-            setShowNew(false);
-            await load();
-          }}
-        />
-      )}
-
-      <div className="flex gap-1.5 mb-4">
-        {[
-          ["", "全部"],
-          ["builtin", "内置"],
-          ["http", "HTTP"],
-          ["code", "代码"],
-          // 分派是平台给助手的"分身"能力（一个助手 → 多个实例并行）——单独一类，
-          // 否则用户在"内置/HTTP/代码"里翻不到它
-          ["fork", "分派"],
-        ].map(([k, label]) => (
-          <button
-            key={k}
-            className={`btn ${kindFilter === k ? "border-[var(--color-accent)]" : ""}`}
-            onClick={() => setKindFilter(k)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {loading ? (
-        <div className="card p-6 text-[13px] text-[var(--color-muted)]">加载中…</div>
-      ) : filtered.length === 0 ? (
-        <div className="card p-8 text-center">
-          <p className="text-[14px] mb-2">还没有工具</p>
-          <p className="text-[12.5px] text-[var(--color-muted)] mb-4">
-            点击「同步内置工具」导入运行时的内置能力，或创建自定义 HTTP 工具。
-          </p>
-          <button className="btn" disabled={syncing} onClick={sync}>
-            同步 AgentScope 内置工具
-          </button>
-        </div>
-      ) : (
-        <div className="space-y-2.5">
-          {filtered.map((t) => (
-            <div key={t.id} className="card p-4">
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2.5 flex-wrap">
-                    <span className="font-medium text-[14px] mono">{t.name}</span>
-                    <span className="tag">{t.kind}</span>
-                    {Boolean(t.flags?.read_only) && <span className="tag">只读</span>}
-                    {Boolean(t.flags?.dangerous) && (
-                      <span className="tag text-[var(--color-warn)]">写/执行</span>
-                    )}
-                    {t.flags?.platform_ok === false && (
-                      <span className="tag text-[var(--color-err)]">当前平台不可用</span>
-                    )}
-                  </div>
-                  {t.flags?.platform_ok === false &&
-                    typeof t.flags?.platform_note === "string" && (
-                      <p className="text-[11.5px] text-[var(--color-err)] mt-1.5">
-                        ⚠ {t.flags.platform_note}
-                      </p>
-                    )}
-                  {t.description && (
-                    <p className="text-[12.5px] text-[var(--color-muted)] mt-1.5">
-                      {t.description}
-                    </p>
-                  )}
-                  {t.kind === "http" && (
-                    <p className="text-[11.5px] text-[var(--color-muted)] mono mt-1">
-                      {String(t.impl?.method ?? "GET")} {String(t.impl?.url ?? "")}
-                    </p>
-                  )}
-                  {/* 内置工具：展示试跑所需参数（来自运行时签名探测） */}
-                  {t.kind === "builtin" &&
-                    Array.isArray(t.impl?.args) &&
-                    (t.impl?.args as { name: string; required: boolean }[]).length > 0 && (
-                      <p className="text-[11.5px] text-[var(--color-muted)] mt-1">
-                        试跑参数：
-                        {(t.impl?.args as { name: string; required: boolean }[])
-                          .map((a) => `${a.name}${a.required ? "*" : ""}`)
-                          .join(", ")}
-                        <span className="opacity-60">（* 必填）</span>
-                      </p>
-                    )}
-                  {Object.keys(t.input_schema?.properties ?? {}).length > 0 && (
-                    <p className="text-[11.5px] text-[var(--color-muted)] mt-1">
-                      参数：
-                      {Object.keys(
-                        (t.input_schema.properties as Record<string, unknown>) ?? {},
-                      ).join(", ")}
-                    </p>
-                  )}
-                </div>
-                <div className="flex gap-2 shrink-0">
-                  <button className="btn" onClick={() => setEditing(t)}>
-                    编辑
-                  </button>
-                  <button
-                    className="btn"
-                    disabled={t.flags?.platform_ok === false}
-                    title={
-                      t.flags?.platform_ok === false
-                        ? String(t.flags?.platform_note ?? "")
-                        : "参数表单按签名自动生成"
-                    }
-                    onClick={() => setTesting(testing?.id === t.id ? null : t)}
-                  >
-                    {testing?.id === t.id ? "收起" : "试运行"}
-                  </button>
-                  {t.kind !== "builtin" && (
-                    <button
-                      className="btn text-[var(--color-err)]"
-                      onClick={() => remove(t)}
-                    >
-                      删除
-                    </button>
-                  )}
-                </div>
-              </div>
-              {testing?.id === t.id && (
-                <ToolTestForm tool={t} onDone={(out) => testOut2(t, out)} />
-              )}
-              {testOut[t.id] && testing?.id !== t.id && (
-                <pre className="mt-3 pt-3 border-t border-[var(--color-border)] text-[11.5px] whitespace-pre-wrap break-all text-[var(--color-muted)] max-h-40 overflow-auto">
-                  {testOut[t.id]}
-                </pre>
-              )}
-              {testing?.id === t.id && testOut[t.id] && (
-                <pre className="mt-3 pt-3 border-t border-[var(--color-border)] text-[11.5px] whitespace-pre-wrap break-all text-[var(--color-muted)] max-h-40 overflow-auto">
-                  {testOut[t.id]}
-                </pre>
-              )}
+          {/* 工具条一行：类型筛选（带计数）+ 两个动作 */}
+          <Toolbar>
+            <Segmented
+              value={kindFilter}
+              onChange={setKindFilter}
+              options={[
+                { key: "", label: "全部", count: tools.length },
+                { key: "builtin", label: "内置", count: counts.builtin },
+                { key: "http", label: "HTTP", count: counts.http },
+                { key: "code", label: "代码", count: counts.code },
+                // 分派是平台给助手的"分身"能力（一个助手 → 多个实例并行）——
+                // 单独一类，否则用户在"内置/HTTP/代码"里翻不到它
+                ...(counts.fork > 0
+                  ? [{ key: "fork", label: "分派", count: counts.fork }]
+                  : []),
+              ]}
+            />
+            <div className="ml-auto flex flex-wrap items-center gap-1.5">
+              <button className="btn" disabled={syncing} onClick={sync}>
+                {syncing ? "同步中…" : "同步内置工具"}
+              </button>
+              <button className="btn btn-primary" onClick={() => setShowNew(true)}>
+                + 自定义工具
+              </button>
             </div>
-          ))}
-        </div>
-      )}
+          </Toolbar>
+
+          {loading ? (
+            <div className="card p-6 text-[13px] text-[var(--color-muted)]">加载中…</div>
+          ) : filtered.length === 0 ? (
+            <div className="card">
+              <Empty
+                title="这个分类下还没有工具"
+                hint="点「同步内置工具」导入运行时的内置能力，或创建自定义 HTTP 工具。"
+                action={
+                  <>
+                    <button className="btn" disabled={syncing} onClick={sync}>
+                      同步内置工具
+                    </button>
+                    <button className="btn btn-primary" onClick={() => setShowNew(true)}>
+                      + 自定义工具
+                    </button>
+                  </>
+                }
+              />
+            </div>
+          ) : (
+            /* 一行一个工具（原来是每项一张卡片，13 个工具要滚三屏）。
+               参数、请求地址、试运行表单、上次试跑结果全在**就地展开**里。 */
+            <RowList>
+              {filtered.map((t) => {
+                const open = expanded === t.id;
+                const isTesting = testing?.id === t.id;
+                const unavailable = t.flags?.platform_ok === false;
+                const args = Array.isArray(t.impl?.args)
+                  ? (t.impl.args as { name: string; required: boolean }[])
+                  : [];
+                const schemaProps = Object.keys(
+                  (t.input_schema?.properties as Record<string, unknown>) ?? {},
+                );
+                return (
+                  <Fragment key={t.id}>
+                    <Row
+                      expanded={open}
+                      onToggle={() => setExpanded(open ? null : t.id)}
+                      actions={
+                        <>
+                          <button
+                            type="button"
+                            className="btn text-[12.5px]"
+                            onClick={() => {
+                              setExpanded(t.id);
+                              setTesting(null);
+                              setEditing(t);
+                            }}
+                          >
+                            编辑
+                          </button>
+                          <button
+                            type="button"
+                            className="btn text-[12.5px]"
+                            disabled={unavailable}
+                            title={
+                              unavailable
+                                ? String(t.flags?.platform_note ?? "")
+                                : "参数表单按签名自动生成，不用手写 JSON"
+                            }
+                            onClick={() => {
+                              setTesting(isTesting ? null : t);
+                              setExpanded(t.id);
+                            }}
+                          >
+                            {isTesting ? "收起" : "试运行"}
+                          </button>
+                          {t.kind !== "builtin" && (
+                            <button
+                              type="button"
+                              className="btn text-[12.5px]"
+                              style={{ color: "var(--color-err)" }}
+                              onClick={() => void remove(t)}
+                            >
+                              删除
+                            </button>
+                          )}
+                        </>
+                      }
+                    >
+                      <span className="min-w-0 flex-1 basis-[240px]">
+                        <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                          <span className="mono truncate text-[14px] font-medium">{t.name}</span>
+                          <Chip tone="muted">{t.kind}</Chip>
+                          {Boolean(t.flags?.read_only) && <Chip tone="ok">只读</Chip>}
+                          {Boolean(t.flags?.dangerous) && <Chip tone="warn">写/执行</Chip>}
+                          {unavailable && <Chip tone="err">当前平台不可用</Chip>}
+                        </span>
+                        <span
+                          className="mt-0.5 block truncate text-[11.5px]"
+                          style={{ color: "var(--color-muted)" }}
+                        >
+                          {t.description || "没有说明"}
+                          {t.kind === "http" ? (
+                            <>
+                              {" · "}
+                              <span className="mono">
+                                {String(t.impl?.method ?? "GET")} {String(t.impl?.url ?? "")}
+                              </span>
+                            </>
+                          ) : null}
+                          {args.length > 0 ? <> · 参数 {args.map((a) => a.name).join(", ")}</> : null}
+                          {args.length === 0 && schemaProps.length > 0 ? (
+                            <> · 参数 {schemaProps.join(", ")}</>
+                          ) : null}
+                        </span>
+                      </span>
+                      {testOut[t.id] ? (
+                        <Chip tone="ok" title="这条工具试跑过，展开能看到结果">
+                          已试跑
+                        </Chip>
+                      ) : null}
+                      <span className="shrink-0 text-[11px]" style={{ color: "var(--color-muted)" }}>
+                        {open ? "▾" : "▸"}
+                      </span>
+                    </Row>
+
+                    {open && (
+                      <RowDetail>
+                        {unavailable && typeof t.flags?.platform_note === "string" ? (
+                          <div className="mb-2 text-[12.5px]" style={{ color: "var(--color-err)" }}>
+                            ⚠ {t.flags.platform_note}
+                          </div>
+                        ) : null}
+                        <div className="grid gap-1.5 md:grid-cols-2">
+                          <KV k="权限">
+                            {Boolean(t.flags?.read_only)
+                              ? "只读（不会改动任何东西）"
+                              : Boolean(t.flags?.dangerous)
+                                ? "会写数据 / 会执行命令"
+                                : "没说"}
+                          </KV>
+                          {t.kind === "http" ? (
+                            <KV k="请求">
+                              <span className="mono">
+                                {String(t.impl?.method ?? "GET")} {String(t.impl?.url ?? "")}
+                              </span>
+                            </KV>
+                          ) : null}
+                          {args.length > 0 ? (
+                            <KV k="试跑参数">
+                              <span className="mono">
+                                {args.map((a) => `${a.name}${a.required ? "*" : ""}`).join(", ")}{" "}
+                                <span style={{ color: "var(--color-muted)" }}>（* 必填）</span>
+                              </span>
+                            </KV>
+                          ) : null}
+                          {args.length === 0 && schemaProps.length > 0 ? (
+                            <KV k="参数">
+                              <span className="mono">{schemaProps.join(", ")}</span>
+                            </KV>
+                          ) : null}
+                          {t.description ? <KV k="说明">{t.description}</KV> : null}
+                        </div>
+                        {isTesting ? (
+                          <div className="mt-2.5">
+                            <ToolTestForm tool={t} onDone={(out) => testOut2(t, out)} />
+                          </div>
+                        ) : (
+                          <div className="mt-2.5 text-[12px]" style={{ color: "var(--color-muted)" }}>
+                            点右侧「试运行」就在这里出参数表单（按签名自动生成，不用手写 JSON）。
+                          </div>
+                        )}
+                        {testOut[t.id] ? (
+                          <pre
+                            className="mt-2.5 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-[8px] border p-2.5 text-[11.5px]"
+                            style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
+                          >
+                            {testOut[t.id]}
+                          </pre>
+                        ) : null}
+                      </RowDetail>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </RowList>
+          )}
         </>
       )}
     </div>
