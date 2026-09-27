@@ -14,6 +14,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { PageHead, Section } from "@/components/ui/kit";
 import { api } from "@/lib/api";
 import type { DbDriver, DbDriverInfo, DbStatus, DbTestResult , UploadConfigRead } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
@@ -248,17 +249,17 @@ export default function EnvironmentPage() {
     !busy && !switching && !!test?.ok && passwordReady && (isFile || (!!form.host && !!form.user && !!form.database));
 
   return (
-    <div className="p-4 md:p-6 lg:p-7 max-w-3xl">
-      <header className="mb-5">
-        <h1 className="text-[22px] font-semibold tracking-tight">环境配置</h1>
-        <p className="text-[13px] text-[var(--color-muted)] mt-1">
-          选择平台把数据存在哪里。本地开发用默认的 SQLite 就够了；要多人共用或跑在服务器上，可以切到自己的 MySQL / PostgreSQL。
-        </p>
-      </header>
+    <div className="flex max-w-3xl flex-col gap-4 p-4 md:p-6 lg:p-7">
+      <PageHead
+        title="环境配置"
+        desc="平台把数据存在哪里。本地开发用默认的 SQLite 就够了；要多人共用或跑在服务器上，可以切到自己的 MySQL / PostgreSQL。"
+      />
 
       {/* ── 当前使用 ─────────────────────────────────────────── */}
-      <section className="card p-4 mb-4">
-        <h2 className="text-[14px] font-medium mb-3">当前使用</h2>
+      <Section
+        title="当前使用"
+        desc="平台此刻真正的数据落点 —— 下面「切换」改的是下一份配置，改完要重启才生效"
+      >
         {status && (
           <>
             <div className="flex items-center gap-2 flex-wrap">
@@ -301,11 +302,13 @@ export default function EnvironmentPage() {
             )}
           </>
         )}
-      </section>
+      </Section>
 
       {/* ── 切换 ─────────────────────────────────────────────── */}
-      <section className="card p-4 mb-4">
-        <h2 className="text-[14px] font-medium mb-3">切换到其他数据库</h2>
+      <Section
+        title="切换到其他数据库"
+        desc="换到自己的 MySQL / PostgreSQL：新库的表会自动建好，但里面是空的（旧库数据不动，切回来还能看到）"
+      >
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
           {drivers.map((d) => {
@@ -529,15 +532,18 @@ export default function EnvironmentPage() {
             </span>
           )}
         </div>
-      </section>
+      </Section>
 
       {/* ── 上传目录 ─────────────────────────────────────────── */}
-      <section className="card p-4 mb-4">
-        <h2 className="text-[14px] font-medium mb-1">上传目录</h2>
-        <p className="text-[12.5px] text-[var(--color-muted)] mb-3">
-          Playground 任务卡上传的图片/文件存到这个目录；留空 = 用默认目录
-          {upCfg && <span className="mono"> （{upCfg.default_dir}）</span>}。
-        </p>
+      <Section
+        title="上传目录"
+        desc={
+          <>
+            对话与任务里上传的图片/文件存到这个目录；留空 = 用默认目录
+            {upCfg && <span className="mono"> （{upCfg.default_dir}）</span>}。
+          </>
+        }
+      >
         <div className="flex flex-wrap items-center gap-2">
           <input
             className="input mono min-w-[260px] flex-1"
@@ -574,7 +580,7 @@ export default function EnvironmentPage() {
             {upCfg.is_default ? " · 当前用默认目录" : ""}
           </p>
         )}
-      </section>
+      </Section>
 
       {/* 备份与迁移：数据能带走。放在"数据存哪"下面 —— 同一件事的两面：
           存在哪 / 怎么拿走。 */}
@@ -583,8 +589,10 @@ export default function EnvironmentPage() {
         <BackupRestore />
 
       {/* ── 说明 ─────────────────────────────────────────────── */}
-      <section className="card p-4">
-        <h2 className="text-[14px] font-medium mb-2">几点说明</h2>
+      <Section
+        title="几点说明"
+        desc="切换数据库的真实行为：数据不搬、服务会重启、密码加密保存、切错会自动退回"
+      >
         <ul className="text-[12.5px] text-[var(--color-muted)] space-y-1.5 leading-relaxed">
           <li>
             <b>数据不会自动搬过去。</b>切到新库后表会自动建好，但里面是空的 ——
@@ -601,7 +609,7 @@ export default function EnvironmentPage() {
             万一新库起来后有问题，服务会自动退回 SQLite。
           </li>
         </ul>
-      </section>
+      </Section>
     </div>
   );
 }
