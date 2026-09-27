@@ -521,7 +521,7 @@ export default function MemoriesPage() {
                       <>
                         <button
                           type="button"
-                          className="btn text-[11.5px] px-2.5 py-1"
+                          className="btn min-h-[36px] text-[11.5px] px-2.5"
                           style={{
                             background: "var(--color-warn)",
                             borderColor: "var(--color-warn)",
@@ -533,7 +533,7 @@ export default function MemoriesPage() {
                         </button>
                         <button
                           type="button"
-                          className="btn text-[11.5px] px-2.5 py-1"
+                          className="btn min-h-[36px] text-[11.5px] px-2.5"
                           onClick={() => void setStatusOf(m, "archived")}
                         >
                           丢弃
@@ -542,14 +542,14 @@ export default function MemoriesPage() {
                     )}
                     <button
                       type="button"
-                      className="btn text-[11.5px] px-2.5 py-1"
+                      className="btn min-h-[36px] text-[11.5px] px-2.5"
                       onClick={() => void edit(m)}
                     >
                       编辑
                     </button>
                     <button
                       type="button"
-                      className="btn text-[11.5px] px-2.5 py-1"
+                      className="btn min-h-[36px] text-[11.5px] px-2.5"
                       title="复制一份并绑定到别的助手（原件不动）"
                       onClick={() => setCopying(m)}
                     >
@@ -558,7 +558,7 @@ export default function MemoriesPage() {
                     {m.status === "active" ? (
                       <button
                         type="button"
-                        className="btn text-[11.5px] px-2.5 py-1"
+                        className="btn min-h-[36px] text-[11.5px] px-2.5"
                         onClick={() => void setStatusOf(m, "archived")}
                       >
                         停用
@@ -567,7 +567,7 @@ export default function MemoriesPage() {
                     {m.status === "archived" ? (
                       <button
                         type="button"
-                        className="btn text-[11.5px] px-2.5 py-1"
+                        className="btn min-h-[36px] text-[11.5px] px-2.5"
                         onClick={() => void setStatusOf(m, "active")}
                       >
                         启用
@@ -575,7 +575,7 @@ export default function MemoriesPage() {
                     ) : null}
                     <button
                       type="button"
-                      className="ml-auto rounded px-2 py-1 text-[11.5px] hover:bg-[var(--color-surface-2)]"
+                      className="ml-auto min-h-[36px] rounded px-2 text-[11.5px] hover:bg-[var(--color-surface-2)]"
                       style={{ color: "var(--color-err)" }}
                       onClick={() => void remove(m)}
                     >
