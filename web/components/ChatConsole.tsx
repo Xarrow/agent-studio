@@ -18,6 +18,9 @@ import { api, fmt } from "@/lib/api";
 import type { Agent, RunEvent, Session } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
 import { RunTimeline, eventsToSteps, summarize } from "@/components/ui/run-timeline";
+import { ProcessRail } from "@/components/ProcessRail";
+import { SlashMenu, type CommandItem } from "@/components/SlashMenu";
+import Markdown from "@/components/Markdown";
 import { RunDetailById } from "@/components/RunDetailDialog";
 import { AgentDetailDialog } from "@/components/AgentDetailDialog";
 
@@ -46,6 +49,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   // 执行详情用弹框看，不跳页 —— 聊天上下文（输入框内容、滚动位置）不该
   // 因为「想看一眼这轮到底怎么回事」而丢掉。
   const [detailRun, setDetailRun] = useState<string | null>(null);
+  /** `/` 命令菜单是否打开（输入以 / 开头时） */
+  const [slashOpen, setSlashOpen] = useState(false);
   /** 正在浮层里配置的助手（从对话页直接打开，不离开对话） */
   const [configAgent, setConfigAgent] = useState<string | null>(null);
   /**
@@ -178,6 +183,24 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   useEffect(() => () => esRef.current?.close(), []);
 
   /* ------------------------------- 操作 ------------------------------- */
+
+  /** `/` 命令表 —— 能枚举的一律给选择（用户口径：让用户选择而不是输入） */
+  const slashItems: CommandItem[] = [
+    {
+      id: "new",
+      label: "新对话",
+      hint: "另起一个干净的会话",
+      fill: "/新对话",
+      run: () => void newChat(),
+    },
+    ...agents.map((a) => ({
+      id: `agent-${a.id}`,
+      label: `切换到 ${a.name}`,
+      hint: (a.description ?? "").slice(0, 40) || "换一个助手接着聊",
+      fill: `/${a.name}`,
+      run: () => setAgentId(a.id),
+    })),
+  ];
 
   const newChat = async () => {
     if (!agentId) return;
@@ -533,7 +556,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               </p>
             </div>
           ) : (
-            <div className="max-w-3xl mx-auto space-y-5">
+            <div className="max-w-4xl mx-auto space-y-5">
               {history.map((m, i) => {
                 // 给助手的执行过程带上「用户说了什么」，这样六段里第一段（输入）有着落
                 const prevUser =
@@ -610,7 +633,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               </button>
             </div>
           )}
-          <div className="max-w-3xl mx-auto flex gap-2 items-end">
+          <div className="max-w-4xl mx-auto flex gap-2 items-end relative">
             <input
               ref={fileRef}
               type="file"
@@ -633,7 +656,10 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               placeholder={pendingFiles.length > 0 ? `附了 ${pendingFiles.length} 个文件，说点什么…` : "发消息…（Enter 发送，Shift + Enter 换行）"}
               value={input}
               disabled={busy}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                setInput(e.target.value);
+                setSlashOpen(e.target.value.startsWith("/"));
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
@@ -641,6 +667,17 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 }
               }}
             />
+            {slashOpen && !busy && (
+              <SlashMenu
+                query={input.slice(1)}
+                items={slashItems}
+                onPick={(it) => {
+                  setSlashOpen(false);
+                  it.run();
+                }}
+                onClose={() => setSlashOpen(false)}
+              />
+            )}
             {busy ? (
               <button className="btn text-[var(--color-warn)]" onClick={() => void stop()}>
                 停止
@@ -657,7 +694,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
           </div>
           {/* 待发附件 —— 名字即所见，点 ✕ 撤掉（还没进消息，撤掉零成本） */}
           {pendingFiles.length > 0 && (
-            <div className="max-w-3xl mx-auto mt-2 flex flex-wrap gap-1.5">
+            <div className="max-w-4xl mx-auto mt-2 flex flex-wrap gap-1.5">
               {pendingFiles.map((f, i) => (
                 <span
                   key={f.path + i}
@@ -679,6 +716,16 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
           )}
         </div>
       </section>
+
+      {/* 右栏执行过程（xl 起常驻；手机/平板用消息内折叠条 —— 同一数据两个视口形态） */}
+      <ProcessRail
+        liveEvents={liveEvents}
+        busy={busy}
+        liveInput={liveInput}
+        lastRunId={
+          !busy && history.length > 0 ? history[history.length - 1].run_id : null
+        }
+      />
     </div>
   );
 }
@@ -747,8 +794,8 @@ function Bubble({
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div className={isUser ? "max-w-[85%]" : "min-w-0 flex-1"}>
         <div
-          className={`rounded-lg px-3.5 py-2.5 text-[13.5px] leading-relaxed whitespace-pre-wrap break-words ${
-            isUser ? "text-white w-fit ml-auto" : ""
+          className={`rounded-lg px-3.5 py-2.5 text-[13.5px] leading-relaxed break-words ${
+            isUser ? "text-white w-fit ml-auto whitespace-pre-wrap" : ""
           }`}
           style={
             isUser
@@ -756,7 +803,11 @@ function Bubble({
               : { background: "var(--color-surface-2)", color: "var(--color-text)" }
           }
         >
-          {content}
+          {isUser ? (
+            content
+          ) : (
+            <Markdown text={content} />
+          )}
           {streaming && <span className="live-dot ml-0.5">▍</span>}
         </div>
 

@@ -15,6 +15,7 @@
  */
 
 import React from "react";
+import { CodeBlock } from "@/components/CodeBlock";
 
 /** 行内：**加粗**、`代码`、[文字](链接) */
 function inline(text: string, keyBase: string): React.ReactNode[] {
@@ -283,20 +284,51 @@ export default function Markdown({ text }: { text: string }) {
   while (i < lines.length) {
     const line = lines[i];
 
-    // ``` 代码块
+    // ``` 代码块 —— CodeBlock（复制按钮 + html 预览）
     if (line.trimStart().startsWith("```")) {
+      const lang = line.trim().slice(3).trim();
       const buf: string[] = [];
       i++;
       while (i < lines.length && !lines[i].trimStart().startsWith("```")) buf.push(lines[i++]);
       i++; // 跳过收尾的 ```
+      blocks.push(<CodeBlock key={`b${k++}`} code={buf.join("\n")} lang={lang} />);
+      continue;
+    }
+
+    // 表格（| a | b | + |---|---|）—— 模型汇报对比/列表时高频出现，
+    // 之前按普通文本贴出来就是一排竖线 ✗。连续表格行合成一张表。
+    if (/^\s*\|/.test(line) && /^\s*\|?\s*:?-{2,}/.test(lines[i + 1] ?? "")) {
+      const rows: string[][] = [];
+      const splitRow = (l: string) =>
+        l.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
+      rows.push(splitRow(line));
+      i += 2; // 表头 + 分隔行
+      while (i < lines.length && /^\s*\|/.test(lines[i])) rows.push(splitRow(lines[i++]));
       blocks.push(
-        <pre
-          key={`b${k++}`}
-          className="my-2 overflow-auto rounded-[8px] border px-2.5 py-2 text-[11.5px] leading-[1.6]"
-          style={{ background: "var(--color-surface-2)", borderColor: "var(--color-border)" }}
-        >
-          <code>{buf.join("\n")}</code>
-        </pre>,
+        <div key={`t${k++}`} className="my-2 overflow-x-auto rounded-[8px] border" style={{ borderColor: "var(--color-border)" }}>
+          <table className="w-full text-[12px]" style={{ borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ background: "var(--color-surface-2)" }}>
+                {rows[0].map((h, j) => (
+                  <th key={j} className="px-2.5 py-1.5 text-left font-medium" style={{ borderBottom: "1px solid var(--color-border)" }}>
+                    {inline(h, `th${k}-${j}`)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.slice(1).map((r, ri) => (
+                <tr key={ri}>
+                  {r.map((c, ci) => (
+                    <td key={ci} className="px-2.5 py-1.5 align-top" style={{ borderBottom: "1px solid var(--color-border)" }}>
+                      {inline(c, `td${k}-${ri}-${ci}`)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>,
       );
       continue;
     }
