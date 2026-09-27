@@ -576,6 +576,44 @@ def literal_false():  # noqa: ANN201
     return false()
 
 
+def _append_run_item(
+    items: list,
+    r: "Run",
+    agents: dict,
+    prices: dict,
+    currency: str,
+) -> None:
+    """单条 run 平铺成一行（timeline 内复用 —— 单轮会话/无 session 的 run 走这里）。"""
+    out = r.output if isinstance(r.output, dict) else {}
+    dur = (r.ended_at - r.started_at) if (r.ended_at and r.started_at) else None
+    usage = r.usage if isinstance(r.usage, dict) else {}
+    model_name = (r.definition_snapshot or {}).get("model", {}).get("name")
+    # ⚠️ 取 token 一律走 pricing.tokens_of：同时认平台 tokens_in/out 与 provider 的
+    #    prompt/completion_tokens 两套键名（只认后者会导致 Tokens 整列「—」）。
+    tin, tout = tokens_of(usage)
+    items.append(
+        ActivityItem(
+            kind=_run_kind(r),  # type: ignore[arg-type]
+            id=r.id,
+            at=r.started_at,
+            orchestration_id=r.orchestration_id,
+            duration_ms=dur,
+            status=r.status,
+            title=agents.get(r.agent_id, r.agent_id),
+            subtitle=(f"多轮第 {r.turn_index} 轮" if r.turn_index else None),
+            agent_id=r.agent_id,
+            model=model_name,
+            tokens_in=tin,
+            tokens_out=tout,
+            cost=cost_of(model_name, tin, tout, prices),
+            currency=currency,
+            trigger=(r.origin if r.origin in ("schedule", "webhook") else None),
+            summary=_first_user_line(r.input)[:120] or _text_of(out)[:120] or None,
+            error=r.error,
+        )
+    )
+
+
 @router.get("/timeline", response_model=ActivityList)
 async def activity_timeline(
     kind: str | None = Query(None, description="chat / preview / playground / llm_test"),
@@ -628,8 +666,8 @@ async def activity_timeline(
     # 用户口中的"一次执行"= 编排者拆解 → 各助手分步干 → 回总结，数据库里它由
     # orchestration 1 行 + N 条 worker run 组成。之前把 N 条 worker run 平铺，
     # 结果同一件事在列表里出现 N 行（编排者/通用助手/编程助手各一行）——
-    # 用户要的是"我发起了哪些执行"，不是"内部拆了几步"。步骤详情在画布回放里看
-    # （行上「以流程查看」），这里只给一次一行。
+    # 用户要的是"我发起了哪些执行"，不是"内部拆了几步"。步骤详情在详情弹框里看，
+    # 这里只给一次一行。
     orc_workers: dict[str, list[Run]] = {}
     solo_runs: list[Run] = []
     for r in runs:
@@ -637,6 +675,18 @@ async def activity_timeline(
             orc_workers.setdefault(r.orchestration_id, []).append(r)
         else:
             solo_runs.append(r)
+
+    # ── 对话（chat）按**会话**归组：同一 session 的多轮 = 一行（会话树）──────────
+    # 一次对话里聊了 8 轮，之前列表里就是 8 行（每行"多轮第 N 轮"）——
+    # 用户要的是"我开过哪些对话"，轮次展开看（装进 fanout 结构，前端已支持就地展开）。
+    # 单轮会话保持原样（一个 run 一行，不套一层空壳）。
+    session_runs: dict[str, list[Run]] = {}
+    plain_runs: list[Run] = []
+    for r in solo_runs:
+        if r.session_id:
+            session_runs.setdefault(r.session_id, []).append(r)
+        else:
+            plain_runs.append(r)
 
     orc_ids = list(orc_workers)
     if orc_ids:
@@ -715,35 +765,83 @@ async def activity_timeline(
                 )
             )
 
-    for r in solo_runs:
-        out = r.output if isinstance(r.output, dict) else {}
-        dur = (r.ended_at - r.started_at) if (r.ended_at and r.started_at) else None
-        usage = r.usage if isinstance(r.usage, dict) else {}
-        model_name = (r.definition_snapshot or {}).get("model", {}).get("name")
-        # ⚠️ 取 token 一律走 pricing.tokens_of：同时认平台 tokens_in/out 与 provider 的
-        #    prompt/completion_tokens 两套键名（只认后者会导致 Tokens 整列「—」）。
-        tin, tout = tokens_of(usage)
+    # ── 会话归组行：一行 = 一次对话；轮次装进 fanout（前端就地展开）─────────────
+    ses_ids = list(session_runs)
+    ses_titles: dict[str, str] = {}
+    if ses_ids:
+        from ..models import Session as DbSession
+
+        for s_ in (
+            await session.execute(select(DbSession).where(DbSession.id.in_(ses_ids)))
+        ).scalars():
+            if s_.title:
+                ses_titles[s_.id] = s_.title
+
+    for sid, rows in session_runs.items():
+        # 只有一轮的会话不套壳（= 原来的单行行为，不倒退）
+        if len(rows) == 1:
+            _append_run_item(items, rows[0], agents, prices, currency)
+            continue
+        rows.sort(key=lambda x: (x.turn_index or 0, x.started_at))
+        first = rows[0]
+        tin = tout = 0
+        ok_n = err_n = 0
+        kids: list[FanoutItemRead] = []
+        for k in rows:
+            k_usage = k.usage if isinstance(k.usage, dict) else {}
+            k_in, k_out = tokens_of(k_usage)
+            tin += k_in
+            tout += k_out
+            if k.status == "ok":
+                ok_n += 1
+            elif k.status in ("error", "aborted"):
+                err_n += 1
+            kids.append(
+                FanoutItemRead(
+                    run_id=k.id,
+                    index=int(k.turn_index or 0),
+                    # label = 每轮用户那句话（列表里认得出"这是哪一轮"）
+                    label=(_first_user_line(k.input) or "")[:60],
+                    status=k.status,
+                    duration_ms=(k.ended_at - k.started_at) if (k.ended_at and k.started_at) else None,
+                    tokens_in=k_in,
+                    tokens_out=k_out,
+                )
+            )
+        whole_status = "error" if err_n else ("ok" if ok_n else first.status)
+        times = [x.started_at for x in rows if x.started_at] + [x.ended_at for x in rows if x.ended_at]
+        dur = (max(times) - min(times)) if times else None
+        model_name = next(
+            ((k.definition_snapshot or {}).get("model", {}).get("name") for k in rows
+             if (k.definition_snapshot or {}).get("model", {}).get("name")),
+            None,
+        )
         items.append(
             ActivityItem(
-                kind=_run_kind(r),  # type: ignore[arg-type]
-                id=r.id,
-                at=r.started_at,
-                orchestration_id=r.orchestration_id,
+                kind="chat",
+                id=sid,
+                at=first.started_at,
                 duration_ms=dur,
-                status=r.status,
-                title=agents.get(r.agent_id, r.agent_id),
-                subtitle=(f"多轮第 {r.turn_index} 轮" if r.turn_index else None),
-                agent_id=r.agent_id,
+                status=whole_status,
+                title=ses_titles.get(sid) or agents.get(first.agent_id, first.agent_id),
+                subtitle=f"{len(rows)} 轮",
+                agent_id=first.agent_id,
                 model=model_name,
                 tokens_in=tin,
                 tokens_out=tout,
-                cost=cost_of(model_name, tin, tout, prices),
+                cost=None,
                 currency=currency,
-                trigger=(r.origin if r.origin in ("schedule", "webhook") else None),
-                summary=_first_user_line(r.input)[:120] or _text_of(out)[:120] or None,
-                error=r.error,
+                summary=(_first_user_line(first.input) or "")[:120] or None,
+                error=next((k.error for k in rows if k.error), None),
             )
         )
+        # 轮次明细挂上（fanout 渲染通道前端现成）
+        items[-1].fanout = FanoutRead(
+            total=len(rows), ok=ok_n, failed=err_n, tokens_in=tin, tokens_out=tout, items=kids
+        )
+
+    for r in plain_runs:
+        _append_run_item(items, r, agents, prices, currency)
 
     for t in tests:
         first_user = next(
@@ -774,7 +872,8 @@ async def activity_timeline(
     items = items[:limit]
 
     # ── 分派明细：给这一页里的容器行，一次查询把它们的各路取回来 ────────────
-    run_ids = [x.id for x in items if x.kind in ("playground", "preview", "chat")]
+    # （chat 会话行的 fanout 已在上面装好轮次，不在这里被覆盖 —— 只处理真分派容器）
+    run_ids = [x.id for x in items if x.kind in ("playground", "preview", "chat") and not x.fanout]
     if run_ids:
         kids = list(
             (

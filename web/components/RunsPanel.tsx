@@ -540,7 +540,9 @@ export function RunsPanel() {
                           });
                         }}
                       >
-                        分派 {it.fanout.total} 路 · {it.fanout.ok} 成功{it.fanout.failed ? ` · ${it.fanout.failed} 失败` : ""}
+                        {it.kind === "chat"
+                          ? `${it.fanout.total} 轮对话 · ${it.fanout.ok} 成功${it.fanout.failed ? ` · ${it.fanout.failed} 失败` : ""}`
+                          : `分派 ${it.fanout.total} 路 · ${it.fanout.ok} 成功${it.fanout.failed ? ` · ${it.fanout.failed} 失败` : ""}`}
                       </button>
                     )}
                     {!live && (
@@ -736,8 +738,9 @@ export function RunsPanel() {
                                 });
                               }}
                             >
-                              分派 {it.fanout.total} 路 · {it.fanout.ok} 成功
-                              {it.fanout.failed ? ` · ${it.fanout.failed} 失败` : ""}
+                              {it.kind === "chat"
+                                ? `${it.fanout.total} 轮对话 · ${it.fanout.ok} 成功${it.fanout.failed ? ` · ${it.fanout.failed} 失败` : ""}`
+                                : `分派 ${it.fanout.total} 路 · ${it.fanout.ok} 成功${it.fanout.failed ? ` · ${it.fanout.failed} 失败` : ""}`}
                               {(() => {
                                 const w = it.fanout.items.filter((x) => x.status === "waiting_hitl").length;
                                 return w ? ` · ${w} 等你确认` : "";
@@ -752,10 +755,12 @@ export function RunsPanel() {
                       <tr className="bg-[var(--color-surface-2)]">
                         <td colSpan={8} className="px-3 pb-3 pt-1">
                           <div className="mb-1 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
-                            这一步分派出去的 {it.fanout.total} 路
+                            {it.kind === "chat"
+                              ? `这个对话的 ${it.fanout.total} 轮`
+                              : `这一步分派出去的 ${it.fanout.total} 路`}
                             {it.fanout.tokens_in + it.fanout.tokens_out > 0 &&
                               ` · 合计 ${fmt.num(it.fanout.tokens_in + it.fanout.tokens_out)} token`}
-                            （每一路都是独立执行，可单独重跑）
+                            {it.kind === "chat" ? "" : "（每一路都是独立执行，可单独重跑）"}
                           </div>
                           <div className="flex flex-col gap-1">
                             {it.fanout.items.map((f) => (
