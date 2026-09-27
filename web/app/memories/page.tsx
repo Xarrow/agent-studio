@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, fmt } from "@/lib/api";
 import type { Agent, Memory, MemoryStats } from "@/lib/types";
+import { Chip, Empty, PageHead, Row, RowList, Segmented, Toolbar } from "@/components/ui/kit";
 import { useFeedback } from "@/components/ui/feedback";
 import { MemoryCopyDialog } from "@/components/MemoryCopyDialog";
 import { RunIdLink } from "@/components/RunIdLink";
@@ -54,6 +55,9 @@ export default function MemoriesPage() {
   const [busy, setBusy] = useState(false);
   /** 正在复制哪条记忆（null = 没在复制） */
   const [copying, setCopying] = useState<Memory | null>(null);
+  /** 新增记忆的输入区默认收起：常态只留一个「+ 记一条」按钮，
+   *  避免一块空白表单长期占着首屏（数据默认可见 ≠ 表单必须常驻）。 */
+  const [composeOpen, setComposeOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -196,117 +200,113 @@ export default function MemoriesPage() {
     });
 
   return (
-    <div className="p-4 md:p-6 lg:p-7 max-w-[1200px]">
-      <header className="mb-5">
-        <h1 className="text-[22px] font-semibold tracking-tight">记忆</h1>
-        <p className="text-[13px] text-[var(--color-muted)] mt-1">
-          跨会话的长期记忆 · 对话前自动回忆起相关的内容
-        </p>
-      </header>
+    <div className="p-4 md:p-6 lg:p-7 max-w-[1000px]">
+      <PageHead
+        title="记忆"
+        desc="跨会话的长期记忆 · 对话前自动回忆起相关的内容；自动总结出来的先进候选区，你点头之后才会被使用"
+        actions={
+          <button className="btn btn-primary" onClick={() => setComposeOpen((v) => !v)}>
+            {composeOpen ? "收起" : "+ 记一条"}
+          </button>
+        }
+      />
 
-      {/* 两栏：左栏=筛选 + 新增（sticky 常驻），主区=待确认 + 记忆卡片
-          —— 原来是一根从上到下的大长条，新增表单夹在候选区和筛选行中间，
-            内容又横跨 1200px（13px 字跑满屏，长文本很难读）。 */}
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
-        <aside className="flex w-full shrink-0 flex-col gap-3.5 lg:sticky lg:top-5 lg:w-[280px]">
-          {/* 状态：点一下即筛，计数就在旁边（原来是 4 张只读统计卡 + 一条下拉） */}
-          {stats && (
-            <div className="card p-2">
-              {(
-                [
-                  ["", "全部", stats.active + stats.candidate + stats.archived, "var(--color-muted)"],
-                  ["candidate", "待确认", stats.candidate, "var(--color-warn)"],
-                  ["active", "在用", stats.active, "var(--color-accent)"],
-                  ["archived", "已停用", stats.archived, "var(--color-muted)"],
-                ] as const
-              ).map(([v, label, cnt, color]) => {
-                const on = status === v;
-                return (
-                  <button
-                    key={v}
-                    type="button"
-                    onClick={() => setStatus(v)}
-                    className="flex w-full items-center justify-between rounded-[6px] px-2.5 py-1.5 text-[12.5px] hover:bg-[var(--color-surface-2)]"
-                    style={
-                      on
-                        ? {
-                            background: "color-mix(in srgb, var(--color-accent) 10%, transparent)",
-                            color: "var(--color-accent)",
-                            fontWeight: 500,
-                          }
-                        : undefined
-                    }
-                  >
-                    <span>{label}</span>
-                    <span className="mono" style={{ color: on ? "var(--color-accent)" : color }}>
-                      {cnt}
-                    </span>
-                  </button>
-                );
-              })}
+      {/* 新增（常态收起，点「+ 记一条」就地展开；打开即聚焦，可以直接打字） */}
+      {composeOpen && (
+        <div className="card mb-3 p-3">
+          <textarea
+            autoFocus
+            className="input mono text-[12.5px]"
+            rows={2}
+            placeholder="例如：用户偏好中文回复，不要 emoji。"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+          />
+          {/* 默认「所有助手都能用」，所以只写内容 + 保存就完事；
+              类型与归属属于进阶选项，收进「更多选项」不占视线。 */}
+          <div className="mt-2.5 flex flex-wrap items-center gap-2">
+            <button
+              className="btn btn-primary"
+              disabled={busy || !draft.trim()}
+              onClick={() => void create()}
+            >
+              保存
+            </button>
+            <button
+              type="button"
+              className="text-[12.5px]"
+              style={{ color: "var(--color-muted)" }}
+              onClick={() => setShowMore((v) => !v)}
+            >
+              {showMore ? "▾" : "▸"} 更多选项
+            </button>
+            <span className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+              默认所有助手共用
+            </span>
+          </div>
+
+          {showMore && (
+            <div
+              className="mt-3 flex flex-wrap items-end gap-3 border-l-2 pl-3"
+              style={{ borderColor: "var(--color-border)" }}
+            >
+              <div>
+                <label className="label">类型</label>
+                <select
+                  className="input w-36"
+                  value={draftKind}
+                  onChange={(e) => setDraftKind(e.target.value)}
+                >
+                  {Object.entries(KIND_LABEL).map(([v, label]) => (
+                    <option key={v} value={v}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="label">归给谁</label>
+                <select
+                  className="input w-48"
+                  value={draftOwner}
+                  onChange={(e) => setDraftOwner(e.target.value)}
+                >
+                  <option value="__global__">所有助手共用</option>
+                  {agents.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name} 专有
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           )}
-
-      {/* 新建 */}
-      <div className="card p-4">
-        <h2 className="text-[14px] font-medium mb-3">新增记忆</h2>
-        <textarea
-          className="input mono text-[12.5px]"
-          rows={2}
-          placeholder="例如：用户偏好中文回复，不要 emoji。"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-        />
-        {/* 默认「所有 Agent 都能用」，所以只需要写内容 + 点保存。
-            类型和范围属于进阶选项，收进「更多选项」里，不占视线。 */}
-        <div className="flex gap-2 mt-3 flex-wrap items-center">
-          <button className="btn btn-primary" disabled={busy || !draft.trim()} onClick={() => void create()}>
-            保存
-          </button>
-          <button
-            className="text-[12.5px] text-[var(--color-muted)] hover:text-[var(--color-text)]"
-            onClick={() => setShowMore((v) => !v)}
-          >
-            {showMore ? "▾" : "▸"} 更多选项
-          </button>
         </div>
+      )}
 
-        {showMore && (
-          <div className="flex gap-2 mt-3 flex-wrap items-center pl-3 border-l-2 border-[var(--color-border)]">
-            <div>
-              <label className="label">类型</label>
-              <select className="input w-36" value={draftKind} onChange={(e) => setDraftKind(e.target.value)}>
-                {Object.entries(KIND_LABEL).map(([v, label]) => (
-                  <option key={v} value={v}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="label">归给谁</label>
-              <select
-                className="input w-48"
-                value={draftOwner}
-                onChange={(e) => setDraftOwner(e.target.value)}
-              >
-                <option value="__global__">所有助手共用</option>
-                {agents.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name} 专有
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-        )}
-      </div>
-
-
-          {/* 筛选：归属 / 类型 / 搜索（"状态"已挪到上面的状态列表，点一下就筛） */}
-          <div className="card flex flex-col gap-2.5 p-3">
-            <div className="text-[12px] font-medium" style={{ color: "var(--color-muted)" }}>筛选</div>
-        <select className="input w-full" value={agentId} onChange={(e) => setAgentId(e.target.value)}>
+      {/* 工具条一行：状态（点一下即筛，计数就在旁边）+ 归属 + 类型 + 搜索 + 刷新。
+          原来是左栏三张卡（状态卡 / 新增卡 / 筛选卡）竖着堆，把主区挤到 1200px 里的右边一窄条。 */}
+      <Toolbar>
+        <Segmented
+          value={status}
+          onChange={setStatus}
+          options={[
+            {
+              key: "",
+              label: "全部",
+              count: stats ? stats.active + stats.candidate + stats.archived : undefined,
+            },
+            { key: "candidate", label: "待确认", count: stats?.candidate },
+            { key: "active", label: "在用", count: stats?.active },
+            { key: "archived", label: "已停用", count: stats?.archived },
+          ]}
+        />
+        <select
+          className="input h-[36px] w-auto min-w-0"
+          title="只看某个助手的记忆"
+          value={agentId}
+          onChange={(e) => setAgentId(e.target.value)}
+        >
           <option value="">全部 Agent</option>
           {agents.map((a) => (
             <option key={a.id} value={a.id}>
@@ -314,7 +314,12 @@ export default function MemoriesPage() {
             </option>
           ))}
         </select>
-        <select className="input w-28" value={kind} onChange={(e) => setKind(e.target.value)}>
+        <select
+          className="input h-[36px] w-auto min-w-0"
+          title="只看某种类型"
+          value={kind}
+          onChange={(e) => setKind(e.target.value)}
+        >
           <option value="">全部类型</option>
           {Object.entries(KIND_LABEL).map(([v, label]) => (
             <option key={v} value={v}>
@@ -323,7 +328,7 @@ export default function MemoriesPage() {
           ))}
         </select>
         <input
-          className="input flex-1 min-w-[180px]"
+          className="input h-[36px] w-full min-w-0 sm:w-[200px]"
           placeholder="搜索内容…（回车）"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -331,58 +336,85 @@ export default function MemoriesPage() {
             if (e.key === "Enter") void load();
           }}
         />
-        <button className="btn" onClick={() => void load()}>
+        <button className="btn ml-auto" onClick={() => void load()}>
           刷新
         </button>
-          </div>
+      </Toolbar>
 
-        </aside>
-
-        <div className="flex min-w-0 flex-1 flex-col gap-4">
-      {/* 候选区 —— 自动沉淀的待确认项 */}
+      {/* 候选区 —— 自动沉淀的待确认项（确认/丢弃的动作就落在每一行上） */}
       {candidates.length > 0 && (
-        <div
-          className="card p-4 mb-5"
-          style={{ borderLeft: "3px solid var(--color-warn)" }}
-        >
-          <div className="flex items-start justify-between gap-3 flex-wrap mb-3">
-            <div>
-              <h2 className="text-[14px] font-medium">
-                候选区 · {candidates.length} 条待确认
-              </h2>
-              <p className="text-[12px] text-[var(--color-muted)] mt-0.5">
-                自动总结的内容先进这里，你确认后才会被使用 —— 避免噪音干扰
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <button className="btn" onClick={() => void bulk("active")} disabled={picked.size === 0}>
-                确认选中{picked.size > 0 ? ` (${picked.size})` : ""}
+        <div className="mb-3">
+          <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="text-[13px] font-medium" style={{ color: "var(--color-warn)" }}>
+              候选区 · {candidates.length} 条待确认
+            </span>
+            <span className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+              自动提炼的内容要先经你点头，避免噪音干扰
+            </span>
+            <div className="ml-auto flex flex-wrap items-center gap-1.5">
+              <button
+                className="btn text-[12.5px]"
+                disabled={picked.size === 0}
+                onClick={() => void bulk("active")}
+              >
+                确认选中{picked.size > 0 ? `（${picked.size}）` : ""}
               </button>
               <button
-                className="btn text-[var(--color-err)]"
-                onClick={() => void bulk("archived")}
+                className="btn text-[12.5px]"
+                style={{ color: "var(--color-err)" }}
                 disabled={picked.size === 0}
+                onClick={() => void bulk("archived")}
               >
                 丢弃选中
               </button>
             </div>
           </div>
-          <div className="space-y-1.5">
+          <RowList>
             {candidates.map((m) => (
-              <label
+              <Row
                 key={m.id}
-                className="flex items-start gap-2.5 p-2.5 rounded-md cursor-pointer hover:bg-[var(--color-surface-2)]"
-                style={{ border: "1px solid var(--color-border)" }}
+                actions={
+                  <>
+                    <button
+                      type="button"
+                      className="btn text-[12.5px]"
+                      style={{
+                        background: "var(--color-warn)",
+                        borderColor: "var(--color-warn)",
+                        color: "#fff",
+                      }}
+                      onClick={() => void setStatusOf(m, "active")}
+                    >
+                      确认使用
+                    </button>
+                    <button
+                      type="button"
+                      className="btn text-[12.5px]"
+                      onClick={() => void setStatusOf(m, "archived")}
+                    >
+                      丢弃
+                    </button>
+                  </>
+                }
               >
-                <input
-                  type="checkbox"
-                  className="mt-1 accent-[var(--color-accent)]"
-                  checked={picked.has(m.id)}
-                  onChange={() => togglePick(m.id)}
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="text-[13px] break-words">{m.content}</div>
-                  <div className="flex gap-2 mt-1 text-[11px] text-[var(--color-muted)] items-center flex-wrap">
+                {/* 勾选框仍是 label：点框旁边的空白也算勾选，且不冒泡（勾选 ≠ 别的动作） */}
+                <label
+                  className="flex h-9 w-6 shrink-0 cursor-pointer items-center justify-center"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <input
+                    type="checkbox"
+                    className="h-[17px] w-[17px] accent-[var(--color-accent)]"
+                    checked={picked.has(m.id)}
+                    onChange={() => togglePick(m.id)}
+                  />
+                </label>
+                <span className="min-w-0 flex-1 basis-[240px]">
+                  <span className="block break-words text-[13px]">{m.content}</span>
+                  <span
+                    className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px]"
+                    style={{ color: "var(--color-muted)" }}
+                  >
                     <KindTag kind={m.kind} />
                     <span>{m.agent_name ?? "—"}</span>
                     <span>·</span>
@@ -397,65 +429,67 @@ export default function MemoriesPage() {
                         />
                       </>
                     )}
-                  </div>
-                </div>
-                <button
-                  className="btn text-[11px] shrink-0"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    void setStatusOf(m, "active");
-                  }}
-                >
-                  确认使用
-                </button>
-              </label>
+                  </span>
+                </span>
+              </Row>
             ))}
-          </div>
+          </RowList>
         </div>
       )}
 
-
-      {/* 列表 */}
-      <div className="card overflow-x-auto">
+      {/* 记忆列表 —— 内容默认**全展开**（表格把内容压进一列窄字里最难读），
+          状态用左边条 + 徽章两条视觉通道表达；一行一条，共用一个外框。 */}
+      <RowList>
         {loading ? (
-          <div className="p-6 text-[13px] text-[var(--color-muted)]">加载中…</div>
-        ) : items.length === 0 ? (
-          <div className="p-8 text-center text-[13px] text-[var(--color-muted)]">
-            还没有记忆。
-            <br />
-            可以在上面手动新增，或打开任意一次执行记录（运行记录 / 对话页 / 助手页都能点开）点「沉淀为记忆」。
+          <div className="px-4 py-6 text-[13px]" style={{ color: "var(--color-muted)" }}>
+            加载中…
           </div>
+        ) : items.filter((m) => !(status === "" && m.status === "candidate")).length === 0 ? (
+          <Empty
+            title="这里还没有记忆"
+            hint="点右上「+ 记一条」手动新增；或打开任意一次执行记录（运行记录 / 对话页 / 助手页都能点开）点「沉淀为记忆」。"
+            action={
+              <button className="btn btn-primary" onClick={() => setComposeOpen(true)}>
+                + 记一条
+              </button>
+            }
+          />
         ) : (
-          /* 卡片流（原来是一张表格）：表格把内容压进一列窄字里，读起来最费劲。
-             改卡片后 —— 内容默认**全展开**；**状态用卡片外观**表达
-             （待确认 = 橙色左边条 + 确认/丢弃 常驻；生效中 = 蓝色条；
-               已停用 = 灰条 + 整体压暗）；**类型用颜色徽章**（另一条视觉通道，不与状态色打架）。 */
-          <div className="flex max-w-[780px] flex-col gap-2">
-            {items
-              /* 看「全部」时，待确认的由上面的候选区负责（那里有批量选中），
-                 这里就不再重复显示一遍；筛到具体状态时才由卡片流负责。 */
-              .filter((m) => !(status === "" && m.status === "candidate"))
-              .map((m) => {
+          items
+            /* 看「全部」时，待确认的由上面的候选区负责（那里有批量选中），
+               这里就不再重复显示一遍；筛到具体状态时才由列表负责。 */
+            .filter((m) => !(status === "" && m.status === "candidate"))
+            .map((m) => {
               const cand = m.status === "candidate";
               const arch = m.status === "archived";
               return (
                 <div
                   key={m.id}
                   data-mem={m.id}
-                  className="card p-3 pl-4"
+                  className="border-b px-3 py-2.5 last:border-b-0"
                   style={{
-                    opacity: arch ? 0.62 : 1,
+                    borderColor: "var(--color-border)",
                     borderLeft: `3px solid ${
-                      cand ? "var(--color-warn)" : arch ? "var(--color-border)" : "var(--color-accent)"
+                      cand
+                        ? "var(--color-warn)"
+                        : arch
+                          ? "var(--color-border)"
+                          : "var(--color-accent)"
                     }`,
+                    opacity: arch ? 0.62 : 1,
                   }}
                 >
-                  {/* 内容：默认全展开 */}
-                  <div className="text-[13px] leading-relaxed whitespace-pre-wrap break-words">{m.content}</div>
+                  <div className="max-w-[780px] whitespace-pre-wrap break-words text-[13px] leading-relaxed">
+                    {m.content}
+                  </div>
 
-                  {/* 元信息一行：类型徽章 · 来源 · 归属 · 用过几次 · 更新时间 · 状态 */}
-                  <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] text-[var(--color-muted)]">
+                  <div
+                    className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px]"
+                    style={{ color: "var(--color-muted)" }}
+                  >
                     <KindTag kind={m.kind} />
+                    {cand ? <Chip tone="warn">待你确认</Chip> : null}
+                    {arch ? <Chip tone="muted">已停用</Chip> : null}
                     <span>{m.source === "auto" ? "自动提炼" : "手动录入"}</span>
                     {m.source_run_id && (
                       <>
@@ -468,20 +502,25 @@ export default function MemoriesPage() {
                       </>
                     )}
                     <span>·</span>
-                    <span>{m.scope === "global" ? "所有助手共用" : (m.agent_name ?? "（绑定助手已失效）")}</span>
+                    <span>
+                      {m.scope === "global" ? "所有助手共用" : (m.agent_name ?? "（绑定助手已失效）")}
+                    </span>
                     <span>·</span>
-                    <span title={m.last_hit_at ? `最后使用：${fmt.time(m.last_hit_at)}` : "还没用过"}>用过 {m.hits} 次</span>
+                    <span
+                      title={m.last_hit_at ? `最后使用：${fmt.time(m.last_hit_at)}` : "还没用过"}
+                    >
+                      用过 {m.hits} 次
+                    </span>
                     <span>·</span>
                     <span>{fmt.relative(m.updated_at)}</span>
-                    {cand && <span style={{ color: "var(--color-warn)" }}>· 待你确认</span>}
-                    {arch && <span>· 已停用</span>}
                   </div>
 
-                  {/* 操作：常用在前、危险在后；待确认的直接给「确认使用 / 丢弃」（一步到位） */}
-                  <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                  {/* 动作：常用在前、危险靠最右；待确认的一步到位（确认使用 / 丢弃） */}
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
                     {cand && (
                       <>
                         <button
+                          type="button"
                           className="btn text-[11.5px] px-2.5 py-1"
                           style={{
                             background: "var(--color-warn)",
@@ -492,51 +531,65 @@ export default function MemoriesPage() {
                         >
                           确认使用
                         </button>
-                        <button className="btn text-[11.5px] px-2.5 py-1" onClick={() => void setStatusOf(m, "archived")}>
+                        <button
+                          type="button"
+                          className="btn text-[11.5px] px-2.5 py-1"
+                          onClick={() => void setStatusOf(m, "archived")}
+                        >
                           丢弃
                         </button>
                       </>
                     )}
-                    <button className="btn text-[11.5px] px-2.5 py-1" onClick={() => void edit(m)}>
+                    <button
+                      type="button"
+                      className="btn text-[11.5px] px-2.5 py-1"
+                      onClick={() => void edit(m)}
+                    >
                       编辑
                     </button>
                     <button
+                      type="button"
                       className="btn text-[11.5px] px-2.5 py-1"
                       title="复制一份并绑定到别的助手（原件不动）"
                       onClick={() => setCopying(m)}
                     >
                       复制到…
                     </button>
-                    {m.status === "active" && (
-                      <button className="btn text-[11.5px] px-2.5 py-1" onClick={() => void setStatusOf(m, "archived")}>
+                    {m.status === "active" ? (
+                      <button
+                        type="button"
+                        className="btn text-[11.5px] px-2.5 py-1"
+                        onClick={() => void setStatusOf(m, "archived")}
+                      >
                         停用
                       </button>
-                    )}
-                    {m.status === "archived" && (
-                      <button className="btn text-[11.5px] px-2.5 py-1" onClick={() => void setStatusOf(m, "active")}>
+                    ) : null}
+                    {m.status === "archived" ? (
+                      <button
+                        type="button"
+                        className="btn text-[11.5px] px-2.5 py-1"
+                        onClick={() => void setStatusOf(m, "active")}
+                      >
                         启用
                       </button>
-                    )}
+                    ) : null}
                     <button
-                      className="ml-auto text-[11.5px] text-[var(--color-err)] hover:underline px-2 py-1 rounded hover:bg-[var(--color-surface-2)]"
+                      type="button"
+                      className="ml-auto rounded px-2 py-1 text-[11.5px] hover:bg-[var(--color-surface-2)]"
+                      style={{ color: "var(--color-err)" }}
                       onClick={() => void remove(m)}
                     >
                       删除
                     </button>
                   </div>
-                  </div>
-                );
-              })}
-          </div>
+                </div>
+              );
+            })
         )}
-      </div>
+      </RowList>
 
-        </div>
-      </div>
-
-      <p className="text-[11.5px] text-[var(--color-muted)] mt-3">
-        相关设置在每个 Agent 的「记忆」面板里。
-        长期没被用到的记忆会自动降低优先级。
+      <p className="mt-3 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+        相关设置在每个 Agent 的「记忆」面板里；长期没被用到的记忆会自动降低优先级。
         <br />
         要让多个助手共用同一条内容，用「复制到…」—— 复制出的副本单独绑定，原件不受影响。
       </p>
