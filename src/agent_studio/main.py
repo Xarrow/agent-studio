@@ -19,6 +19,7 @@ from fastapi.responses import JSONResponse
 
 from . import __version__
 from .api import api_router
+from .api import a2a
 from .config import settings
 from .db import init_db
 from .runner.service import reap_orphan_runs
@@ -277,6 +278,8 @@ async def access_log(request: "Request", call_next):
 
 
 app.include_router(api_router)
+# A2A（Agent2Agent）协议入口 —— 根路径 /a2a + /.well-known/agent-card.json
+app.include_router(a2a.router)
 
 
 @app.get("/api/health")
