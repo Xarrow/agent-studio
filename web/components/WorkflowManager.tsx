@@ -67,11 +67,8 @@ export function WorkflowManager({
   currentId,
   agents,
   onClose,
-  onOpenWorkflow,
-  onNew,
   onDuplicate,
   onDeleted,
-  onReplay,
   onRenamed,
   variant = "overlay",
 }: {
@@ -79,13 +76,10 @@ export function WorkflowManager({
   currentId?: string | null;
   agents: Agent[];
   onClose: () => void;
-  onOpenWorkflow: (w: Workflow) => void;
-  onNew: () => void;
   onDuplicate: (w: Workflow) => void;
   onDeleted: () => void;
-  onReplay: (orcId: string) => void;
   onRenamed?: (w: Workflow) => void;
-  /** overlay = Playground 里的浮层（默认）；page = 整页（/runs 「管理」页），无遮罩、无 ✕、Esc 不关 */
+  /** overlay = 浮层（默认）；page = 整页（/runs 「管理」页），无遮罩、无 ✕、Esc 不关 */
   variant?: "overlay" | "page";
 }) {
   /** 左列置顶的伪条目「全部运行记录」—— 选中它右侧就是原来 Runs 页那张表 */
@@ -234,14 +228,6 @@ export function WorkflowManager({
               : `共 ${list.length} 份 · 选中这份跑过 ${curRuns} 次`}
           </span>
           <div className="ml-auto flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={onNew}
-              className="rounded-[8px] border px-2.5 py-1.5 text-[12.5px] hover:bg-[var(--color-surface-2)]"
-              style={{ borderColor: "var(--color-border)" }}
-            >
-              ＋ 新建
-            </button>
             {cur && (
               <>
                 <button
@@ -298,17 +284,6 @@ export function WorkflowManager({
                   }}
                 >
                   {confirmDel ? "再点一次删除" : "删除"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onOpenWorkflow(cur);
-                    onClose();
-                  }}
-                  className="rounded-[8px] px-3 py-1.5 text-[12.5px] font-medium text-white"
-                  style={{ background: "var(--color-accent)" }}
-                >
-                  打开到画布
                 </button>
               </>
             )}
@@ -544,14 +519,6 @@ export function WorkflowManager({
                         <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
                           {ago(o.started_at)} · 耗时 {took(o.started_at, o.ended_at)} · 走了 {o.step_count ?? chain.length} 步
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => onReplay(o.id)}
-                          className="ml-auto rounded-[7px] border px-2.5 py-1 text-[12px] hover:bg-[var(--color-surface-2)]"
-                          style={{ borderColor: "var(--color-border)", color: "var(--color-accent)" }}
-                        >
-                          就地回放
-                        </button>
                       </div>
 
                       {/* ② 这次让它做什么 */}

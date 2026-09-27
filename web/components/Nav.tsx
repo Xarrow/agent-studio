@@ -36,12 +36,11 @@ const Icon = ({ d, size = 15 }: { d: string; size?: number }) => (
 /** 使用 —— 日常干活的入口 */
 const USE_ITEMS: Item[] = [
   {
-    href: "/playground",
-    label: "Playground",
-    icon: "playground",
-    // 「对话」已经并进这里 —— 一个节点就是对话，多个节点就是编排。
-    // 侧边栏只留这一个入口：同一件事不开两道门。
-    tip: "干活的地方：把助手拖进来摆成一条链，就是让它们分工做一件事；只放一个，就是跟它聊天。",
+    href: "/exec",
+    label: "Agent 执行",
+    icon: "exec",
+    // 对话式干活入口（画布已退役）：选一个助手、说话、看它怎么想怎么做。
+    tip: "干活的地方：选一个助手，把任务说给它听（可带文件）；它每一步怎么想、调了什么工具、结果是什么，全程看得见。",
   },
 ];
 
@@ -87,7 +86,7 @@ const SETUP_ITEMS: Item[] = [
 
 /** 图标路径（24×24 描边）：与 Item.icon 对应 */
 const ICON_PATHS: Record<string, string> = {
-  playground: "M4 5.5v13l12-6.5-12-6.5zM17 5.5h3v13h-3z", // 画布/播放
+  exec: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10z", // 对话气泡
   manage: "M4 6h16M4 12h16M4 18h10", // 列表
   agents: "M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3zM12 12l8-4.5M12 12v9M12 12L4 7.5", // 立方体
   memory: "M12 5a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4", // 芯片/记忆

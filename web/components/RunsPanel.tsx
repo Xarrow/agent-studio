@@ -654,20 +654,8 @@ export function RunsPanel() {
                             {it.trigger === "schedule" ? "定时" : "外部"}
                           </span>
                         )}
-                        {/* 编排执行额外给个「以流程查看」：直接进 Playground 的历史回放，
-                            用画布看那次的图 —— 而不是在这里弹一个五页签的日志框 */}
-                        {it.kind === "playground" && it.orchestration_id && (
-                          <Link
-                            href={`/playground?history=${it.orchestration_id}`}
-                            onClick={(e) => e.stopPropagation()}
-                            className="ml-1.5 whitespace-nowrap text-[11px] underline decoration-dotted"
-                            style={{ color: "var(--color-accent)" }}
-                            title="用画布看这次执行（哪一步在跑、跑成什么样）"
-                          >
-                            以流程查看
-                          </Link>
-                        )}
-                      </td>
+                        {/* 编排执行的详情弹框已含完整步骤 —— 画布退役后不再有「以流程查看」深链 */}
+                       </td>
                       <td className="px-3 py-2.5">
                         <div className="truncate max-w-[240px]">{it.title}</div>
                         {/* 耗时**不再单占一列**（用户："耗时不需要单独输出，
