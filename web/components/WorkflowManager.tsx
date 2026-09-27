@@ -210,20 +210,29 @@ export function WorkflowManager({
       <div
         className={
           variant === "page"
-            ? "flex h-[calc(100dvh-150px)] md:h-[calc(100vh-116px)] min-h-[420px] md:min-h-[520px] w-full flex-col overflow-hidden rounded-[14px] md:rounded-[14px] border"
+            ? "flex w-full flex-col"
             : "m-auto flex h-[86vh] w-[min(1080px,94vw)] flex-col overflow-hidden rounded-[14px] border shadow-2xl"
         }
         style={{ background: "var(--color-surface)", borderColor: "var(--color-border)" }}
       >
         {/* 头部 */}
-        <div className="flex items-center gap-3 border-b px-4 py-3" style={{ borderColor: "var(--color-border)" }}>
-          <span className="text-[14.5px] font-semibold">
-            {variant === "page" ? "管理" : "流程管理"}
-          </span>
-          <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+        <div
+          className={
+            variant === "page"
+              ? "flex flex-wrap items-baseline gap-x-2.5 gap-y-1 pb-3"
+              : "flex items-center gap-3 border-b px-4 py-3"
+          }
+          style={{ borderColor: "var(--color-border)" }}
+        >
+          {variant === "page" ? (
+            <h1 className="text-[22px] font-semibold tracking-tight">管理</h1>
+          ) : (
+            <span className="text-[14.5px] font-semibold">流程管理</span>
+          )}
+          <span className={variant === "page" ? "text-[13px]" : "text-[12px]"} style={{ color: "var(--color-muted)" }}>
             {sel === ALL
               ? variant === "page"
-                ? "LLM 测试 / 助手试跑 / 流程执行 —— 全在一张表里，按类型、状态、助手筛"
+                ? `全部流程与运行记录 —— 点一行就地展开，看它怎么跑的（共 ${list.length} 份流程）`
                 : `共 ${list.length} 份流程 —— 左边流程 / 右边运行记录，一处管完`
               : `共 ${list.length} 份 · 选中这份跑过 ${curRuns} 次`}
           </span>
@@ -374,7 +383,7 @@ export function WorkflowManager({
           {/* 右：选中「全部运行记录」→ 原 Runs 页那张表；选中某条流程 → 骨架 + 每次执行一张卡 */}
           <div className="min-w-0 flex-1 overflow-auto">
             {sel === ALL ? (
-              <div className="p-4">
+              <div className={variant === "page" ? "" : "p-4"}>
                 <RunsPanel />
               </div>
             ) : (

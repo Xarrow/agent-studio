@@ -22,7 +22,7 @@ export default function ManagePage() {
   }, []);
 
   return (
-    <div className="h-full">
+    <div className="p-4 md:p-6 lg:p-7">
       <WorkflowManager
         key={ver}
         open
