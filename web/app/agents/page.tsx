@@ -1,9 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { api, fmt } from "@/lib/api";
-import type { Agent, Credential, Provider, RuntimeCapabilities } from "@/lib/types";
+import type {
+  ActivityItem,
+  Agent,
+  Credential,
+  Provider,
+  RuntimeCapabilities,
+  Skill,
+  Tool,
+} from "@/lib/types";
+import { Chip, Empty, KV, PageHead, Row, RowDetail, RowList } from "@/components/ui/kit";
 import { useFeedback } from "@/components/ui/feedback";
 import { Hint, HINTS } from "@/components/ui/hint";
 import { ModelPicker } from "@/components/ModelPicker";
@@ -71,20 +80,39 @@ export default function AgentsPage() {
   /** 卡片上的「⋯」菜单（设置/改名/复制/删除）—— 一次只开一个 ✓ 点别处关 */
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [nameDraft, setNameDraft] = useState("");
+  /** 就地展开的那一行 —— 展开里放「职责 / 工具真名 / Skills 真名 / 最近一次运行」，
+   *  不必再跳详情页才能看清一个助手的配置（范式：点哪展开哪）。 */
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  /** 工具 / Skills 全量清单：助手卡上原来只写「工具 3」，说不出是**哪三个** */
+  const [tools, setTools] = useState<Tool[]>([]);
+  const [skills, setSkills] = useState<Skill[]>([]);
+  /** 每个助手最近一次运行 —— 一次拉 100 条按 agent 归并，避免每个助手发一次请求 */
+  const [lastRuns, setLastRuns] = useState<Record<string, ActivityItem>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [a, r, p, c] = await Promise.all([
+      const [a, r, p, c, ts, sk, tl] = await Promise.all([
         api.agents(),
         api.runtimes(),
         api.providers(),
         api.credentials(),
+        api.tools(),
+        api.skills(),
+        api.runTimeline({ limit: 100 }),
       ]);
       setAgents(a);
       setRuntimes(r);
       setProviders(p);
       setCreds(c);
+      setTools(ts);
+      setSkills(sk);
+      // 时间线是新的在前 → 第一次遇到某个助手的那条就是它最近一次运行
+      const byAgent: Record<string, ActivityItem> = {};
+      for (const it of tl.items) {
+        if (it.agent_id && !byAgent[it.agent_id]) byAgent[it.agent_id] = it;
+      }
+      setLastRuns(byAgent);
       setErr(null);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -154,19 +182,29 @@ export default function AgentsPage() {
     }
   };
 
+  /** 工具的 ref 存的是「工具行的 id」而不是名字 —— 要拿给人看，必须查表换名 */
+  const toolName = (ref: string) => tools.find((t) => t.id === ref)?.name ?? ref;
+  const skillName = (ref: string) => skills.find((s) => s.id === ref)?.name ?? ref;
+
+  const toggleRow = (id: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
   return (
     <div className="p-4 md:p-6 lg:p-7 max-w-6xl">
-      <header className="flex items-start justify-between mb-6">
-        <div>
-          <h1 className="text-[22px] font-semibold tracking-tight">Agents</h1>
-          <p className="text-[13px] text-[var(--color-muted)] mt-1">
-            {agents.length} 个 Agent · 定义、复制、试跑与观测
-          </p>
-        </div>
-        <button className="btn btn-primary" onClick={() => setShowNew(true)}>
-          + 新建 Agent
-        </button>
-      </header>
+      <PageHead
+        title="Agents"
+        desc={`${agents.length} 个 Agent · 点一行就地看清它配了什么：一句话职责、挂了哪些工具与 Skills、最近一次跑得怎么样`}
+        actions={
+          <button className="btn btn-primary" onClick={() => setShowNew(true)}>
+            + 新建 Agent
+          </button>
+        }
+      />
 
       {err && (
         <div className="card p-4 mb-4 text-[13px] text-[var(--color-err)]">
@@ -190,117 +228,202 @@ export default function AgentsPage() {
       {loading ? (
         <div className="card p-6 text-[13px] text-[var(--color-muted)]">加载中…</div>
       ) : agents.length === 0 ? (
-        <div className="card p-8 text-center">
-          <p className="text-[14px] mb-2">还没有 Agent</p>
-          <p className="text-[12.5px] text-[var(--color-muted)] mb-4">
-            创建一个，然后在页面里定义、试跑并观测完整的思考与工具调用过程。
-          </p>
-          <button className="btn btn-primary" onClick={() => setShowNew(true)}>
-            创建第一个 Agent
-          </button>
+        <div className="card">
+          <Empty
+            title="还没有 Agent"
+            hint="创建一个，然后在页面里定义、试跑并观测完整的思考与工具调用过程。"
+            action={
+              <button className="btn btn-primary" onClick={() => setShowNew(true)}>
+                创建第一个 Agent
+              </button>
+            }
+          />
         </div>
       ) : (
-        <div className="grid gap-3 md:grid-cols-2">
-          {agents.map((a) => (
-            <div key={a.id} className="card p-4 flex flex-col">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  {renaming === a.id ? (
-                    <input
-                      autoFocus
-                      value={nameDraft}
-                      onChange={(e) => setNameDraft(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") void rename(a);
-                        if (e.key === "Escape") setRenaming(null);
-                      }}
-                      onBlur={() => void rename(a)}
-                      /* 点开就全选：直接打字即覆盖，不用先删 */
-                      onFocus={(e) => e.currentTarget.select()}
-                      className="input text-[14px]"
-                      placeholder="给它起个名字"
-                    />
-                  ) : (
-                    <Link
-                      href={`/agents/${a.id}`}
-                      className="font-medium text-[14.5px] hover:text-[var(--color-accent)] truncate block"
+        /* 一行一个 Agent（原来是每项一张卡片框）。动作**不藏进 ⋯**——常驻可见：
+           主操作蓝色「设置 / 定义」→ 次级「改名 / 复制一份」→ 危险「删除」红字靠最右 */
+        <RowList>
+          {agents.map((a) => {
+            const open = expanded.has(a.id);
+            const last = lastRuns[a.id];
+            const toolNames = (a.definition?.tools ?? []).map((t) => toolName(t.ref));
+            const skillNames = (a.definition?.skills ?? []).map((s) => skillName(s.ref));
+            const runtime = a.definition?.runtime ?? a.runtime;
+            return (
+              <Fragment key={a.id}>
+                <Row
+                  expanded={open}
+                  onToggle={() => toggleRow(a.id)}
+                  actions={
+                    <>
+                      <Link href={`/agents/${a.id}`} className="btn btn-primary text-[12.5px]">
+                        设置 / 定义
+                      </Link>
+                      <button
+                        type="button"
+                        className="btn text-[12.5px]"
+                        disabled={busy === a.id}
+                        onClick={() => {
+                          setRenaming(a.id);
+                          setNameDraft(a.name);
+                        }}
+                      >
+                        改名
+                      </button>
+                      <button
+                        type="button"
+                        className="btn text-[12.5px]"
+                        disabled={busy === a.id}
+                        title="按这份配置再建一个助手，改改就能用"
+                        onClick={() => void duplicate(a.id)}
+                      >
+                        复制一份
+                      </button>
+                      <button
+                        type="button"
+                        className="btn text-[12.5px]"
+                        style={{ color: "var(--color-err)" }}
+                        title="删除这个助手（会再确认一次）"
+                        disabled={busy === a.id}
+                        onClick={() => void remove(a)}
+                      >
+                        删除
+                      </button>
+                    </>
+                  }
+                >
+                  <span className="min-w-0 flex-1 basis-[240px]">
+                    {renaming === a.id ? (
+                      /* 就地改名：点开全选（直接打字即覆盖）。输入框自己的点击不再冒泡，
+                         否则点一下就把这一行展开了。 */
+                      <input
+                        autoFocus
+                        value={nameDraft}
+                        onChange={(e) => setNameDraft(e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") void rename(a);
+                          if (e.key === "Escape") setRenaming(null);
+                        }}
+                        onBlur={() => void rename(a)}
+                        onFocus={(e) => e.currentTarget.select()}
+                        className="input text-[14px]"
+                        placeholder="给它起个名字"
+                      />
+                    ) : (
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className="truncate text-[14.5px] font-medium">{a.name}</span>
+                        {a.definition?.role === "orchestrator" && (
+                          <Chip tone="accent" title="编排者：分析任务 → 管理上下文 → 验证结果 → 归纳总结">
+                            ✦ 编排者
+                          </Chip>
+                        )}
+                      </span>
+                    )}
+                    {/* 一行摘要：认得出来是谁 + 配了什么 + 最近跑得怎么样。
+                        24 位 id 是开发者噪声，卡片上不放（详情页仍完整保留）。 */}
+                    <span
+                      className="mt-0.5 block truncate text-[11.5px]"
+                      style={{ color: "var(--color-muted)" }}
                     >
-                      {a.name}
-                      {a.definition?.role === "orchestrator" && (
-                        <span className="shrink-0 rounded-full border px-1.5 py-[1px] text-[10.5px]" style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }} title="编排者：分析任务 → 管理上下文 → 验证结果 → 归纳总结">✦ 编排者</span>
+                      <span className="mono">{a.slug}</span> · v{a.version} ·{" "}
+                      <span className="mono">{a.definition?.model?.name || "未指定模型"}</span>
+                      {" · "}工具 {toolNames.length} · Skills {skillNames.length}
+                      {last ? (
+                        <>
+                          {" · 最近 "}
+                          {fmt.relative(last.at)}{" "}
+                          <span
+                            style={{
+                              color:
+                                last.status === "ok"
+                                  ? "var(--color-ok)"
+                                  : last.status === "error"
+                                    ? "var(--color-err)"
+                                    : "var(--color-accent)",
+                            }}
+                          >
+                            {last.status === "ok" ? "✓" : last.status === "error" ? "✕" : "◌"}
+                          </span>
+                        </>
+                      ) : (
+                        <> · 还没跑过</>
                       )}
-                    </Link>
-                  )}
-                  {/* 原来这行是 `slug · v2 · ag_4afeff0c121943bd` —— 24 位 id 是**开发者噪声** ✗
-                      （卡片上没人要用 id 认助手，详情页里仍然完整保留 ✓）
-                      只留"认得出来是谁 + 第几版"这两条人对人说话会用的信息 ✓ */}
-                  <div className="text-[11.5px] text-[var(--color-muted)] mono mt-0.5">
-                    {a.slug} · v{a.version}
-                  </div>
-                </div>
-                <span className="tag shrink-0">{a.definition?.runtime ?? a.runtime}</span>
-              </div>
+                    </span>
+                  </span>
+                  <Chip tone="muted">{runtime}</Chip>
+                  <span className="shrink-0 text-[11px]" style={{ color: "var(--color-muted)" }}>
+                    {open ? "▾" : "▸"}
+                  </span>
+                </Row>
 
-              <div className="text-[12px] text-[var(--color-muted)] mt-3 flex flex-wrap gap-x-4 gap-y-1">
-                <span>
-                  <Hint text="这个助手背后用的是哪个 AI 模型。">模型</Hint>{" "}
-                  <span className="mono text-[var(--color-text)]">
-                    {a.definition?.model?.name || "—"}
-                  </span>
-                </span>
-                <span>
-                  <Hint text={HINTS.tool}>工具</Hint>{" "}
-                  <span className="mono text-[var(--color-text)]">
-                    {a.definition?.tools?.length ?? 0}
-                  </span>
-                </span>
-                <span>
-                  <Hint text={HINTS.skill}>Skills</Hint>{" "}
-                  <span className="mono text-[var(--color-text)]">
-                    {a.definition?.skills?.length ?? 0}
-                  </span>
-                </span>
-                <span>更新 {fmt.relative(a.updated_at)}</span>
-              </div>
-
-              {/* 卡上动作：**四个都常驻可见** ✗ 不再藏进「⋯」（用户："设置 / 定义 · 改名 / 复制一份 / 删除 放到更明显的位置"）
-                  层级：主操作「设置 / 定义」（蓝色，占主要宽度）→ 次级「改名 / 复制一份」（安静按钮）→ 危险「删除」（红字、靠最右）
-                  触屏友好：都是实体按钮（移动端 CSS 统一 44px ✓）· 无 hover-only ✓ · 全站同名同序 ✓ */}
-              <div className="mt-4 flex flex-wrap items-center gap-2 border-t pt-3" style={{ borderColor: "var(--color-border)" }}>
-                <Link href={`/agents/${a.id}`} className="btn btn-primary text-center text-[12.5px]">
-                  设置 / 定义
-                </Link>
-                <button type="button" className="btn text-[12.5px]" disabled={busy === a.id}
-                  onClick={() => {
-                    setRenaming(a.id);
-                    setNameDraft(a.name);
-                  }}
-                >
-                  改名
-                </button>
-                <button type="button" className="btn text-[12.5px]" disabled={busy === a.id}
-                  title="按这份配置再建一个助手，改改就能用"
-                  onClick={() => void duplicate(a.id)}
-                >
-                  复制一份
-                </button>
-                <button type="button" className="btn ml-auto text-[12.5px]" style={{ color: "var(--color-err)" }}
-                  title="删除这个助手（会再确认一次）"
-                  disabled={busy === a.id}
-                  onClick={() => void remove(a)}
-                >
-                  删除
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
+                {open && (
+                  <RowDetail>
+                    {a.description ? (
+                      <div className="mb-2 text-[12.5px] leading-[1.65]">{a.description}</div>
+                    ) : null}
+                    <div className="grid gap-1.5 md:grid-cols-2">
+                      <KV k="工具">
+                        {toolNames.length > 0 ? (
+                          <span className="flex flex-wrap gap-1">
+                            {toolNames.map((n, i) => (
+                              <Chip key={n + i} tone="muted">
+                                {n}
+                              </Chip>
+                            ))}
+                          </span>
+                        ) : (
+                          <span style={{ color: "var(--color-muted)" }}>没挂工具（只会聊天）</span>
+                        )}
+                      </KV>
+                      <KV k="Skills">
+                        {skillNames.length > 0 ? (
+                          <span className="flex flex-wrap gap-1">
+                            {skillNames.map((n, i) => (
+                              <Chip key={n + i} tone="muted">
+                                {n}
+                              </Chip>
+                            ))}
+                          </span>
+                        ) : (
+                          <span style={{ color: "var(--color-muted)" }}>没挂 Skill</span>
+                        )}
+                      </KV>
+                      <KV k="上限">
+                        <span className="mono">
+                          {a.definition?.limits?.max_iters ?? "—"} 轮 ·{" "}
+                          {a.definition?.limits?.timeout_s ?? "—"}s 超时
+                        </span>
+                      </KV>
+                      <KV k="最近运行">
+                        {last ? (
+                          <>
+                            {fmt.relative(last.at)} · {last.title}
+                            {last.duration_ms != null ? ` · ${fmt.ms(last.duration_ms)}` : ""}
+                          </>
+                        ) : (
+                          <span style={{ color: "var(--color-muted)" }}>还没有运行过</span>
+                        )}
+                      </KV>
+                    </div>
+                    <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                      <Link href={`/agents/${a.id}`} className="btn text-[12.5px]">
+                        打开完整设置 →
+                      </Link>
+                      <Link href={`/exec?agent=${a.id}`} className="btn text-[12.5px]">
+                        用这个助手跑一次 →
+                      </Link>
+                    </div>
+                  </RowDetail>
+                )}
+              </Fragment>
+            );
+          })}
+        </RowList>
       )}
     </div>
   );
 }
-
-// --------------------------------------------------------------------------- //
 function NewAgentDialog({
   runtimes,
   providers,

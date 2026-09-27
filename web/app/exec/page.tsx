@@ -13,8 +13,19 @@
  * HITL 就地确认、失败重试 —— 它们与 exec 是同一份数据的两个视图。
  */
 
+import { useEffect, useState } from "react";
 import { ChatConsole } from "@/components/ChatConsole";
 
 export default function ExecPage() {
-  return <ChatConsole />;
+  /** 支持从别处「用这个助手跑一次」直接带过来：/exec?agent=<id>。
+   *
+   *  读 window.location 而不是 useSearchParams()：后者会把 /exec 从静态页
+   *  改成动态渲染（还要额外套 Suspense 边界），为了一个查询参数不值得。
+   *  放在 effect 里读也避免了服务端/客户端渲染不一致。 */
+  const [agent, setAgent] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("agent");
+    if (id) setAgent(id);
+  }, []);
+  return <ChatConsole agentId={agent} />;
 }
