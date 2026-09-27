@@ -87,12 +87,23 @@ export function HitlPrompt({
   onError?: (message: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
+  /** 已提交过的那次决定 —— 提交后按钮组变状态条，不能再点第二次。
+   *
+   * 为什么要锁：resume 之后 run 继续、模型可能**又要一次授权**（先写脚本、
+   * 再跑脚本是常态）。旧确认条若还在原地可点，用户看到新提示时手一快点的
+   * 是**旧条**——回灌的是上一轮的 tool_call id，AgentScope 直接拒绝：
+   * "Received UserConfirmResultEvent with tool call ids ... not waiting
+   * for confirmation"，run 就此报 error（实测现场：一条 run 连要 5 次确认，
+   * 第 4 次的确认条点在了第 5 次的等待上）。父组件在 run 再次暂停时会用
+   * **新 payload** 重新挂一张新条，各管各的。 */
+  const [sent, setSent] = useState<null | boolean>(null);
   const [err, setErr] = useState<string | null>(null);
   const items = describeHitl(payload);
 
   const resume = async (confirm: boolean) => {
-    if (busy) return;
+    if (busy || sent !== null) return;
     setBusy(true);
+    setSent(confirm);
     setErr(null);
     // 先接流，再恢复 —— 顺序不能反
     onBeforeResume?.();
@@ -106,6 +117,7 @@ export function HitlPrompt({
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setErr(msg);
+      setSent(null); // 没发成功，允许重试
       onError?.(msg);
     } finally {
       setBusy(false);
@@ -142,17 +154,32 @@ export function HitlPrompt({
       {err && <div className="text-[11.5px] text-[var(--color-err)] mb-2">恢复失败：{err}</div>}
 
       <div className="flex items-center gap-2 flex-wrap">
-        <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => void resume(true)}>
-          {busy ? "处理中…" : "允许"}
-        </button>
-        <button
-          className="btn btn-sm"
-          style={{ color: "var(--color-err)" }}
-          disabled={busy}
-          onClick={() => void resume(false)}
-        >
-          拒绝
-        </button>
+        {sent === null ? (
+          <>
+            <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => void resume(true)}>
+              {busy ? "处理中…" : "允许"}
+            </button>
+            <button
+              className="btn btn-sm"
+              style={{ color: "var(--color-err)" }}
+              disabled={busy}
+              onClick={() => void resume(false)}
+            >
+              拒绝
+            </button>
+          </>
+        ) : (
+          /* 已提交 —— 状态条代替按钮，等待结果期间不可再点 */
+          <span
+            className="rounded-[6px] px-2 py-1 text-[12px] font-medium"
+            style={{
+              background: "var(--color-surface-2)",
+              color: sent ? "var(--color-ok)" : "var(--color-err)",
+            }}
+          >
+            {sent ? "已允许，继续执行…" : "已拒绝，等它收尾…"}
+          </span>
+        )}
         <span className="text-[11px] text-[var(--color-muted)]">
           不想每次都问？去助手的「权限」里调范围。
         </span>

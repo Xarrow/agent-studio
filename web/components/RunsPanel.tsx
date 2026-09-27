@@ -34,6 +34,8 @@ import { api, fmt } from "@/lib/api";
 import type { ActivityItem, Agent, RunDeleteResult } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
 import { KIND_LABEL } from "@/components/RunDetailDialog";
+import { SpanWaterfall } from "@/components/SpanWaterfall";
+import type { Span } from "@/lib/types";
 import { RunTimeline, eventsToSteps, type Step } from "@/components/ui/run-timeline";
 
 /** 状态配色（与全局一致） */
@@ -75,8 +77,8 @@ const STATUS_LABEL: Record<string, string> = {
 type Usage = Awaited<ReturnType<typeof api.usage>>;
 type Evts = Awaited<ReturnType<typeof api.runEvents>>;
 
-/** 就地展开的执行过程（懒加载：点了才拉，不点不请求） */
-type Detail = { loading: boolean; steps?: Step[]; note?: string };
+/** 就地展开的执行过程 + 耗时瀑布（懒加载：点了才拉，不点不请求） */
+type Detail = { loading: boolean; steps?: Step[]; spans?: Span[]; note?: string };
 
 //: 一页多少条。50 是「看得见一屏内容」与「别一次读上千行」之间的取舍。
 const PAGE = 50;
@@ -239,10 +241,19 @@ export function RunsPanel() {
     setDetails((d) => ({ ...d, [it.id]: { loading: true } }));
     void (async () => {
       try {
-        const evts = (await api.runEvents(it.id)) as unknown as Evts;
+        // 两个请求一起发：事件流（分色过程）+ trace（耗时瀑布）。瀑布在旧详情
+        // 弹窗里有、重写成就地展开时被落下了 —— 「这条为什么慢 3 分钟」没有它答不了。
+        const [evts, trace] = await Promise.all([
+          api.runEvents(it.id) as unknown as Promise<Evts>,
+          api.runTrace(it.id).catch(() => null),
+        ]);
         setDetails((d) => ({
           ...d,
-          [it.id]: { loading: false, steps: eventsToSteps(evts, it.title) },
+          [it.id]: {
+            loading: false,
+            steps: eventsToSteps(evts, it.title),
+            spans: (trace as { spans?: Span[] } | null)?.spans,
+          },
         }));
       } catch (e) {
         setDetails((d) => ({
@@ -473,12 +484,23 @@ export function RunsPanel() {
               已选 {selected.size}
             </span>
           )}
+          {/* 删除选中常驻可见 —— 用户口径：动作收进 ⋯ = 藏起来了（曾被打回过一次）。
+              其余低频清理（按时间/清空）留在 ⋯ 里。 */}
+          <button
+            type="button"
+            className="btn btn-sm"
+            style={{ color: "var(--color-err)" }}
+            disabled={busy || selected.size === 0}
+            onClick={() => void deleteSelected()}
+          >
+            删除选中{selected.size > 0 ? `（${selected.size}）` : ""}
+          </button>
           <div className="relative" ref={menuRef}>
             <button
               type="button"
               aria-haspopup="menu"
               aria-expanded={menu}
-              title="清理与批量操作"
+              title="按时间清理 / 清空"
               onClick={() => setMenu((v) => !v)}
               className="min-h-[36px] rounded-[8px] border px-2.5 text-[13px] hover:bg-[var(--color-surface-2)]"
               style={{ borderColor: "var(--color-border)" }}
@@ -491,15 +513,6 @@ export function RunsPanel() {
                 className="absolute right-0 z-30 mt-1 w-[190px] overflow-hidden rounded-[10px] border shadow-lg"
                 style={{ background: "var(--color-surface)", borderColor: "var(--color-border)" }}
               >
-                <button
-                  type="button"
-                  role="menuitem"
-                  disabled={busy || selected.size === 0}
-                  onClick={() => void deleteSelected()}
-                  className="flex min-h-[38px] w-full items-center gap-2 px-3 text-left text-[12.5px] hover:bg-[var(--color-surface-2)] disabled:opacity-40"
-                >
-                  删除选中{selected.size > 0 ? `（${selected.size}）` : ""}
-                </button>
                 <button
                   type="button"
                   role="menuitem"
@@ -844,6 +857,20 @@ export function RunsPanel() {
                           )}
                         </div>
                       </div>
+
+                      {/* 耗时瀑布（谁在吃时间）—— 与执行过程并列，懒加载、有 span 才显示 */}
+                      {d?.spans && d.spans.length > 0 && (
+                        <div className="rounded-[8px] border" style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}>
+                          <div className="border-b px-2.5 py-1.5" style={{ borderColor: "var(--color-border)" }}>
+                            <span className="text-[11.5px] font-medium" style={{ color: "var(--color-muted)" }}>
+                              耗时瀑布（谁在吃时间）
+                            </span>
+                          </div>
+                          <div className="px-2.5 py-2">
+                            <SpanWaterfall spans={d.spans} />
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </Fragment>

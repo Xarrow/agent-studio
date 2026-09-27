@@ -266,8 +266,15 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
       const r = await api.run(runId).catch(() => null);
       if (r && r.status === "waiting_hitl") {
         // **不是结束，是暂停等你点头** —— 保留现场（不清 live），
-        // 这样确认之后接着往同一个视图里追加，看起来是连贯的一次执行
-        setHitl({ runId, payload: (r.pending_hitl as Record<string, unknown>) ?? {} });
+        // 这样确认之后接着往同一个视图里追加，看起来是连贯的一次执行。
+        // 每次 settle 都**重新读 pending_hitl**：resume 之后模型可能又要一次
+        // 授权（新的 tool_call id）——旧条已锁死不可点，这里必须换**新条**，
+        // 否则用户手里的还是上一轮的确认内容，点了必被 AgentScope 拒。
+        setHitl((prev) =>
+          prev && prev.payload === (r.pending_hitl as Record<string, unknown>)
+            ? prev
+            : { runId, payload: (r.pending_hitl as Record<string, unknown>) ?? {} },
+        );
         return;
       }
       setHitl(null);
