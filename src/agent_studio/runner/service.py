@@ -744,9 +744,13 @@ class RunService:
                     await runtime.dispose(compiled)
                 except Exception:  # pragma: no cover
                     logger.debug("dispose 失败", exc_info=True)
-            # 先落终态（写 output / usage），再做收尾（会话历史、记忆）
+            # 先落终态（写 output / usage），再做收尾（会话历史、记忆）。
+            # waiting_hitl 是**暂停**不是结束：此刻 output 是 AgentScope 的占位文案
+            # （"I'm waiting for your permission..."），不能当正式回答写进会话历史；
+            # resume 真正结束后 _resume_execute 的收尾里补写。
             await self._finalize(run_id, collector, compiled, status, error)
-            await self._post_run(run_id, definition, context, api_key)
+            if status != "waiting_hitl":
+                await self._post_run(run_id, definition, context, api_key)
             self.bus.close(run_id)
 
     # ------------------------------------------------------------------ #
@@ -982,6 +986,10 @@ class RunService:
                 except Exception:  # pragma: no cover
                     pass
             await self._finalize(run_id, collector, compiled, status, error)
+            # 恢复后的收尾：把这轮**真正的最终回答**写进会话历史
+            # （暂停时跳过了 append_turn，这里补上）。context 传 None ——
+            # 记忆候选在暂停前的首轮已统计过，不重复记。
+            await self._post_run(run_id, definition, None, api_key)
             self.bus.close(run_id)
 
     # ------------------------------------------------------------------ #

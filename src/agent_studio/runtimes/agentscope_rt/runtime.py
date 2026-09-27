@@ -359,10 +359,14 @@ class AgentScopeRuntime(AgentRuntime):
 
         msgs: list[Any] = []
         if context.summary:
+            # 注意角色必须是 user（或 assistant）：AgentScope 对输入消息有校验
+            # （role=='system' 直接 ValueError: Invalid message in the input），
+            # 而这份摘要会随快照（state.context）在 HITL 恢复时被回放校验 ——
+            # 恢复时炸「点了允许却报 Invalid message」就是它。name 保留语义即可。
             msgs.append(
                 Msg(
                     name="system",
-                    role="system",
+                    role="user",
                     content=[
                         TextBlock(
                             type="text",
