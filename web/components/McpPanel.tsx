@@ -18,6 +18,7 @@ import { api, fmt } from "@/lib/api";
 import type { McpProbeResult, McpServer, McpServerInput } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
 import { Hint } from "@/components/ui/hint";
+import { DLG_BACKDROP, DLG_CARD } from "@/components/ui/kit";
 
 const EMPTY: McpServerInput = {
   name: "",
@@ -308,9 +309,9 @@ function McpDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
+    <div className={DLG_BACKDROP} onClick={onClose}>
       <div
-        className="max-h-[86vh] w-full max-w-[560px] overflow-auto rounded-[12px] border p-4"
+        className={`${DLG_CARD} max-w-[560px] p-4`}
         style={{ background: "var(--color-surface)", borderColor: "var(--color-border)" }}
         onClick={(e) => e.stopPropagation()}
       >

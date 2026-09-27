@@ -236,6 +236,7 @@ export default function MemoriesPage() {
               type="button"
               className="text-[12.5px]"
               style={{ color: "var(--color-muted)" }}
+              data-tap
               onClick={() => setShowMore((v) => !v)}
             >
               {showMore ? "▾" : "▸"} 更多选项

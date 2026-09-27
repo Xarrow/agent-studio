@@ -21,6 +21,7 @@ import { RunTimeline, eventsToSteps } from "@/components/ui/run-timeline";
 import { HitlPrompt } from "@/components/HitlPrompt";
 import { useFeedback } from "@/components/ui/feedback";
 import { SpanWaterfall } from "@/components/SpanWaterfall";
+import { DLG_BACKDROP, DLG_CARD } from "@/components/ui/kit";
 
 /** 状态配色（与全局一致） */
 const STATUS_STYLE: Record<string, string> = {
@@ -261,12 +262,12 @@ export function RunDetailDialog({
 
   return (
     <div
-      className="fixed inset-0 bg-[var(--color-overlay)] flex items-start justify-center p-4 z-50 overflow-y-auto"
+      className={DLG_BACKDROP}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="card w-full max-w-4xl p-5 my-8">
+      <div className={`${DLG_CARD} max-w-4xl p-5`}>
         {/* ── 头部：类型 + 主体 + 状态 ─────────────────────────── */}
         <div className="flex items-start justify-between gap-4 mb-3">
           <div className="min-w-0">

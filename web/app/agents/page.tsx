@@ -12,7 +12,7 @@ import type {
   Skill,
   Tool,
 } from "@/lib/types";
-import { Chip, Empty, KV, PageHead, Row, RowDetail, RowList } from "@/components/ui/kit";
+import { Chip, DLG_BACKDROP, DLG_CARD, Empty, KV, PageHead, Row, RowDetail, RowList } from "@/components/ui/kit";
 import { useFeedback } from "@/components/ui/feedback";
 import { Hint, HINTS } from "@/components/ui/hint";
 import { ModelPicker } from "@/components/ModelPicker";
@@ -541,14 +541,14 @@ function NewAgentDialog({
 
   return (
     <div
-      className="fixed inset-0 bg-[var(--color-overlay)] flex items-start sm:items-center justify-center p-4 z-50 overflow-auto"
+      className={DLG_BACKDROP}
       onClick={requestClose}
     >
       {/* 面板本体：点它不关（否则点输入框就把弹层关掉了） */}
       {/* 手机上：面板最高 92vh、内容自己滚、**「取消 / 创建」常驻底部** ——
           否则"创建"被顶到视口外面，手指要先把整个表单滚到底才够得到 ✗（实测过） */}
       <div
-        className="card w-full max-w-lg p-5 my-auto flex max-h-[92dvh] flex-col"
+        className="card flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-b-none rounded-t-[14px] p-5 sm:my-auto sm:max-h-[88dvh] sm:rounded-[12px]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* 头部：标题 + **右上角固定的关闭键** —— 之前只有最底部一个"取消"，
@@ -566,7 +566,7 @@ function NewAgentDialog({
               onClick={requestClose}
               title="关闭（Esc）"
               aria-label="关闭"
-              className="rounded-[8px] px-2 py-1 text-[15px] leading-none hover:bg-[var(--color-surface-2)]"
+              className="flex h-10 w-10 items-center justify-center rounded-[10px] text-[15px] leading-none hover:bg-[var(--color-surface-2)]"
               style={{ color: confirmClose ? "var(--color-err)" : "var(--color-muted)" }}
             >
               ✕
@@ -579,7 +579,8 @@ function NewAgentDialog({
           </div>
         </div>
 
-        <div className="space-y-5">
+        {/* 正文：手机上自己滚 —— 卡片封顶 92dvh，「取消 / 创建」常驻下方（原来正文没有滚动，内容 897px 直接被裁，按钮在视口外）。 */}
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto">
           {/* ① 名字 */}
           <div>
             <label className="label flex items-center gap-1.5">
@@ -766,6 +767,7 @@ function NewAgentDialog({
           <div>
             <button
               type="button"
+              data-tap
               onClick={() => setShowAdvanced((v) => !v)}
               className="text-[12.5px] text-[var(--color-accent)] flex items-center gap-1"
             >

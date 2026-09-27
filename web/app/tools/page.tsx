@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { api, fmt } from "@/lib/api";
 import type { Tool } from "@/lib/types";
-import { Chip, Empty, KV, PageHead, Row, RowDetail, RowList, Segmented, Toolbar } from "@/components/ui/kit";
+import { Chip, DLG_BACKDROP, DLG_CARD, Empty, KV, PageHead, Row, RowDetail, RowList, Segmented, Toolbar } from "@/components/ui/kit";
 import { SkillsPanel } from "@/components/SkillsPanel";
 import { McpPanel } from "@/components/McpPanel";
 import { ToolTestForm } from "@/components/ToolTestForm";
@@ -418,8 +418,8 @@ function NewToolDialog({
   };
 
   return (
-    <div className="fixed inset-0 bg-[var(--color-overlay)] flex items-center justify-center p-4 z-50">
-      <div className="card w-full max-w-lg p-5">
+    <div className={DLG_BACKDROP}>
+      <div className={`${DLG_CARD} max-w-lg p-5`}>
         <h2 className="text-[16px] font-medium mb-1">自定义 HTTP 工具</h2>
         <p className="text-[12px] text-[var(--color-muted)] mb-4">
           URL 里用 <code className="mono">{"{{参数名}}"}</code> 占位，调用时替换成模型给出的实参。
@@ -635,8 +635,8 @@ function EditToolDialog({
   };
 
   return (
-    <div className="fixed inset-0 bg-[var(--color-overlay)] flex items-center justify-center p-4 z-50 overflow-y-auto">
-      <div className="card w-full max-w-lg p-5 my-8">
+    <div className={DLG_BACKDROP}>
+      <div className={`${DLG_CARD} max-w-lg p-5`}>
         <div className="flex items-center gap-2 mb-1">
           <h2 className="text-[16px] font-medium">编辑工具</h2>
           <span className="tag mono">{t.kind}</span>
@@ -723,6 +723,7 @@ function EditToolDialog({
           <div className="pt-1 border-t border-[var(--color-border)]">
             <button
               className="text-[12.5px] text-[var(--color-muted)] mt-3"
+              data-tap
               onClick={() => {
                 setShowImpl(!showImpl);
                 if (!showImpl) setImplText(JSON.stringify(t.impl ?? {}, null, 2));

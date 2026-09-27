@@ -98,8 +98,8 @@ export function BackupRestore() {
             type="button"
             disabled={busy}
             onClick={() => void doExport()}
-            className="rounded-[8px] px-3 py-1.5 text-[12.5px] font-medium disabled:opacity-50"
-            style={{ background: "var(--color-accent)", color: "var(--color-accent-fg)" }}
+            className="btn btn-primary text-[12.5px]"
+            style={{ color: "var(--color-accent-fg)" }}
             title="导出一个 JSON 文件（不含密钥）"
           >
             导出
@@ -108,8 +108,7 @@ export function BackupRestore() {
             type="button"
             disabled={busy}
             onClick={() => fileRef.current?.click()}
-            className="rounded-[8px] border px-3 py-1.5 text-[12.5px] disabled:opacity-50"
-            style={{ borderColor: "var(--color-border)" }}
+            className="btn text-[12.5px]"
             title="选择之前导出的 JSON 文件导入"
           >
             导入

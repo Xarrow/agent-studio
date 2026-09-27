@@ -19,6 +19,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { api, fmt } from "@/lib/api";
 import { useFeedback } from "@/components/ui/feedback";
+import { DLG_BACKDROP, DLG_CARD } from "@/components/ui/kit";
 
 type Auto = {
   mode: string;
@@ -166,12 +167,12 @@ export function AutoRunDialog({
 
   return (
     <div
-      className="pg-modal fixed inset-0 z-[75] flex items-center justify-center p-4"
+      className="pg-modal fixed inset-0 z-[75] flex items-end justify-center overflow-y-auto p-0 sm:items-center sm:p-4"
       style={{ background: "var(--color-overlay)" }}
       onClick={onClose}
     >
       <div
-        className="df-card flex max-h-[90vh] w-full max-w-[560px] flex-col overflow-hidden border"
+        className="df-card flex max-h-[92dvh] w-full max-w-[560px] flex-col overflow-hidden rounded-b-none rounded-t-[14px] border sm:my-auto sm:max-h-[88dvh] sm:rounded-[12px]"
         style={{ background: "var(--color-surface)", borderColor: "var(--color-border)" }}
         onClick={(e) => e.stopPropagation()}
       >

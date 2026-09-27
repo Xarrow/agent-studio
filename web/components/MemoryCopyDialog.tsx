@@ -16,6 +16,7 @@ import { useState } from "react";
 import { api } from "@/lib/api";
 import type { Agent, Memory } from "@/lib/types";
 import { useFeedback } from "./ui/feedback";
+import { DLG_BACKDROP, DLG_CARD } from "@/components/ui/kit";
 
 const KIND_LABEL: Record<string, string> = {
   fact: "事实",
@@ -74,8 +75,8 @@ export function MemoryCopyDialog({
     : "所有助手共用的记忆";
 
   return (
-    <div className="fixed inset-0 bg-[var(--color-overlay)] flex items-center justify-center p-4 z-50 overflow-y-auto">
-      <div className="card w-full max-w-lg p-5 my-8">
+    <div className={DLG_BACKDROP}>
+      <div className={`${DLG_CARD} max-w-lg p-5`}>
         <h2 className="text-[16px] font-medium mb-1">复制这条记忆</h2>
         <p className="text-[12px] text-[var(--color-muted)] mb-4">
           原件（{ownerLabel}）保持不动，复制出的新记忆单独绑定到你选的去处。

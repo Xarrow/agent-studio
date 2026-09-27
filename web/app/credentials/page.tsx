@@ -4,7 +4,7 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 import { api, fmt } from "@/lib/api";
 import type { Credential, CredentialTestResult, Provider } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
-import { Chip, Empty, KV, PageHead, Row, RowDetail, RowList, Section } from "@/components/ui/kit";
+import { Chip, DLG_BACKDROP, DLG_CARD, Empty, KV, PageHead, Row, RowDetail, RowList, Section } from "@/components/ui/kit";
 import { PriceBook } from "@/components/PriceBook";
 import { Hint, HINTS } from "@/components/ui/hint";
 import { CredentialChatDialog } from "@/components/CredentialChatDialog";
@@ -489,8 +489,8 @@ function NewCredentialDialog({
   };
 
   return (
-    <div className="fixed inset-0 bg-[var(--color-overlay)] flex items-center justify-center p-4 z-50">
-      <div className="card w-full max-w-lg p-5">
+    <div className={DLG_BACKDROP}>
+      <div className={`${DLG_CARD} max-w-lg p-5`}>
         <h2 className="text-[16px] font-medium mb-1">添加 LLM 配置</h2>
         <p className="text-[12px] text-[var(--color-muted)] mb-4">
           可以先用「测试连接」验证，通过后再保存。
@@ -742,8 +742,8 @@ function EditCredentialDialog({
   };
 
   return (
-    <div className="fixed inset-0 bg-[var(--color-overlay)] flex items-center justify-center p-4 z-50 overflow-y-auto">
-      <div className="card w-full max-w-lg p-5 my-8">
+    <div className={DLG_BACKDROP}>
+      <div className={`${DLG_CARD} max-w-lg p-5`}>
         <h2 className="text-[16px] font-medium mb-1">编辑配置「{credential.name}」</h2>
         <p className="text-[12px] text-[var(--color-muted)] mb-4">
           API Key 留空表示不修改。其它字段改完保存即生效。

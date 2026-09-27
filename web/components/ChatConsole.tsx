@@ -403,7 +403,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   }
 
   return (
-    <div className="h-full flex flex-col lg:flex-row">
+    <div className="h-full min-h-0 flex flex-col lg:flex-row">
       {configAgent && (
         <AgentDetailDialog agentId={configAgent} onClose={() => setConfigAgent(null)} />
       )}
@@ -435,7 +435,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                   </div>
                 </div>
                 <button
-                  className="shrink-0 w-9 h-9 flex items-center justify-center rounded-md text-[13px] text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] md:w-7 md:h-7 md:opacity-0 md:group-hover:opacity-100"
+                  className="shrink-0 w-9 h-9 flex items-center justify-center rounded-md text-[13px] text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] lg:w-7 lg:h-7 lg:opacity-0 lg:group-hover:opacity-100"
                   title="重命名"
                   onClick={(e) => {
                     e.stopPropagation();
@@ -445,7 +445,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                   ✎
                 </button>
                 <button
-                  className="shrink-0 w-9 h-9 flex items-center justify-center rounded-md text-[13px] text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-err)] md:w-7 md:h-7 md:opacity-0 md:group-hover:opacity-100"
+                  className="shrink-0 w-9 h-9 flex items-center justify-center rounded-md text-[13px] text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-err)] lg:w-7 lg:h-7 lg:opacity-0 lg:group-hover:opacity-100"
                   title="删除"
                   onClick={(e) => {
                     e.stopPropagation();
@@ -461,7 +461,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
       </aside>
 
       {/* ── 对话区 ───────────────────────────────────────────── */}
-      <section className="flex-1 flex flex-col min-w-0">
+      <section className="flex-1 flex flex-col min-h-0 min-w-0">
         <header className="px-4 py-3 border-b border-[var(--color-border)] flex items-center gap-3 flex-wrap">
           {/* 受外层控制时不显示自带的助手下拉 —— 参与者条是唯一入口，
               两处都能选助手就是两套真相 */}
@@ -490,6 +490,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             {history.length > 0 && history[history.length - 1].run_id && (
               <>
                 <button
+                  data-tap
                   className="text-[11.5px] hover:underline whitespace-nowrap"
                   style={{ color: "var(--color-accent)" }}
                   onClick={() => setDetailRun(history[history.length - 1].run_id ?? null)}
@@ -505,6 +506,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 回来时对话、输入框、滚动位置都还在（跳页就全丢了） */}
             {agentId && (
               <button
+                data-tap
                 className="text-[11.5px] text-[var(--color-muted)] hover:text-[var(--color-text)] whitespace-nowrap"
                 onClick={() => setConfigAgent(agentId)}
               >
@@ -657,6 +659,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 >
                   {f.name}
                   <button
+                    data-tap
                     className="text-[var(--color-muted)] hover:text-[var(--color-err)]"
                     title="撤掉"
                     onClick={() => setPendingFiles((p) => p.filter((_, j) => j !== i))}
@@ -754,6 +757,7 @@ function Bubble({
           <div className="mt-1.5">
             <div className="flex items-center gap-3 flex-wrap">
               <button
+                data-tap
                 onClick={() => void toggle()}
                 className="text-[11.5px] text-[var(--color-accent)] hover:underline flex items-center gap-1"
               >
@@ -766,6 +770,7 @@ function Bubble({
                 )}
               </button>
               <button
+                data-tap
                 onClick={() => setDetailOpen(true)}
                 className="text-[11.5px] text-[var(--color-muted)] hover:text-[var(--color-text)]"
               >

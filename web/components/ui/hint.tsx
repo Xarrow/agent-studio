@@ -92,6 +92,11 @@ export function Hint({
           {children}
         </span>
       )}
+      {/* 触屏点得准：按钮本体是 36×36 的**热区**，视觉仍是 16px 的小圆圈
+          （内圈 span 画圆），靠 -m-[10px] 抵掉多出来的 20px ——
+          这样行内排版和以前一模一样，但手指点得中。
+          别再用 before:-inset-* 假装扩大热区：伪元素不接收点击，
+          elementFromPoint 实测外扩 10px 全部落空 ✗。 */}
       <button
         ref={btnRef}
         type="button"
@@ -102,16 +107,20 @@ export function Hint({
           e.stopPropagation();
           setOpen((v) => !v);
         }}
-        className="shrink-0 w-[13px] h-[13px] rounded-full flex items-center justify-center text-[9px] font-bold leading-none transition-colors cursor-help relative before:content-[''] before:absolute before:-inset-2 before:rounded-full"
-        style={{
-          border: "1px solid color-mix(in srgb, var(--color-muted) 55%, transparent)",
-          color: "var(--color-muted)",
-          background: open
-            ? "color-mix(in srgb, var(--color-accent) 12%, transparent)"
-            : "transparent",
-        }}
+        className="relative -m-[10px] flex h-9 w-9 shrink-0 cursor-help items-center justify-center"
       >
-        ?
+        <span
+          className="flex h-[16px] w-[16px] items-center justify-center rounded-full text-[10px] font-bold leading-none transition-colors"
+          style={{
+            border: "1px solid color-mix(in srgb, var(--color-muted) 55%, transparent)",
+            color: "var(--color-muted)",
+            background: open
+              ? "color-mix(in srgb, var(--color-accent) 12%, transparent)"
+              : "transparent",
+          }}
+        >
+          ?
+        </span>
       </button>
 
       {open && (

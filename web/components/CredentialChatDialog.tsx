@@ -18,6 +18,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, fmt } from "@/lib/api";
 import type { Credential } from "@/lib/types";
+import { DLG_BACKDROP, DLG_CARD } from "@/components/ui/kit";
 
 type Turn = {
   role: "user" | "assistant";
@@ -125,8 +126,8 @@ export function CredentialChatDialog({
   };
 
   return (
-    <div className="fixed inset-0 bg-[var(--color-overlay)] flex items-center justify-center p-4 z-50">
-      <div className="card w-full max-w-2xl p-5 flex flex-col max-h-[88vh]">
+    <div className={DLG_BACKDROP}>
+      <div className={`${DLG_CARD} max-w-2xl p-5 flex flex-col`}>
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="min-w-0">
             <h2 className="text-[16px] font-medium">对话测试 · {credential.name}</h2>

@@ -5,6 +5,7 @@ import { api, fmt } from "@/lib/api";
 import type { Skill } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
 import { Hint, HINTS } from "@/components/ui/hint";
+import { DLG_BACKDROP, DLG_CARD } from "@/components/ui/kit";
 
 type Source = "git" | "url" | "local" | "inline";
 
@@ -236,8 +237,8 @@ function ImportDialog({
   };
 
   return (
-    <div className="fixed inset-0 bg-[var(--color-overlay)] flex items-center justify-center p-4 z-50">
-      <div className="card w-full max-w-2xl p-5">
+    <div className={DLG_BACKDROP}>
+      <div className={`${DLG_CARD} max-w-2xl p-5`}>
         <h2 className="text-[16px] font-medium mb-4">导入 Skill</h2>
 
         <div className="flex gap-1.5 mb-4">
