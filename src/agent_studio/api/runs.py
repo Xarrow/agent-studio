@@ -513,8 +513,6 @@ def _run_conds(kind, status, agent_id, q, before_at, before_id) -> list:  # noqa
     conds: list = []
     if kind and kind != "all":
         conds.append(_kind_case(Run) == kind)
-    if status:
-        conds.append(Run.status == status)
     if agent_id:
         conds.append(Run.agent_id == agent_id)
     if q and q.strip():
@@ -535,6 +533,12 @@ def _run_conds(kind, status, agent_id, q, before_at, before_id) -> list:  # noqa
     # **分派出去的每一路不单独占一条** —— 它们是同一件事的分身，收在容器那一行下面
     # （否则记录页被同一批刷屏、翻页也翻不完；画布上是叠卡，这里就应该是"一行 + 展开"）。
     conds.append(Run.parent_run_id.is_(None))
+    # **编排 worker run 不在 SQL 里按状态滤** —— 一次编排的状态记在 orchestration
+    # 本体（worker 全 ok 但总结失败 → 整次失败）。SQL 先把 worker 全放进来，
+    # 归组后在 Python 里按编排本体的状态过滤，否则 status=error 的筛选会把
+    # "整次失败"的编排从列表里整条抹掉（各步明明都成功了，却连失败都看不到 ✗）。
+    if status:
+        conds.append(or_(Run.orchestration_id.is_not(None), Run.status == status))
     return conds
 
 
@@ -620,7 +624,98 @@ async def activity_timeline(
         tests = list((await session.execute(test_stmt)).scalars())
 
     items: list[ActivityItem] = []
+    # ── 编排执行按**整次**归组（一次编排 = 一行，不是每个步骤一行）──────────────
+    # 用户口中的"一次执行"= 编排者拆解 → 各助手分步干 → 回总结，数据库里它由
+    # orchestration 1 行 + N 条 worker run 组成。之前把 N 条 worker run 平铺，
+    # 结果同一件事在列表里出现 N 行（编排者/通用助手/编程助手各一行）——
+    # 用户要的是"我发起了哪些执行"，不是"内部拆了几步"。步骤详情在画布回放里看
+    # （行上「以流程查看」），这里只给一次一行。
+    orc_workers: dict[str, list[Run]] = {}
+    solo_runs: list[Run] = []
     for r in runs:
+        if r.orchestration_id:
+            orc_workers.setdefault(r.orchestration_id, []).append(r)
+        else:
+            solo_runs.append(r)
+
+    orc_ids = list(orc_workers)
+    if orc_ids:
+        from ..models import Orchestration
+
+        orcs = {
+            o.id: o
+            for o in (
+                await session.execute(select(Orchestration).where(Orchestration.id.in_(orc_ids)))
+            ).scalars()
+        }
+        for oid, rows in orc_workers.items():
+            orc = orcs.get(oid)
+            # 按状态筛时以编排本体的状态为准（worker 状态不能代表整次）
+            if status and orc and orc.status != status:
+                continue
+            first = min(rows, key=lambda x: (x.started_at, x.id))
+            # 汇总整次的用量与金额（各步骤相加；模型名取第一条有值的，花费逐条算再求和）
+            tin = tout = 0
+            cost_total = 0.0
+            cost_known = True
+            model_name = None
+            for k in rows:
+                k_usage = k.usage if isinstance(k.usage, dict) else {}
+                k_in, k_out = tokens_of(k_usage)
+                tin += k_in
+                tout += k_out
+                k_model = (k.definition_snapshot or {}).get("model", {}).get("name")
+                if k_model and not model_name:
+                    model_name = k_model
+                k_cost = cost_of(k_model, k_in, k_out, prices)
+                if k_cost is None and (k_in or k_out):
+                    cost_known = False
+                elif k_cost is not None:
+                    cost_total += k_cost
+            # 状态取编排本体（worker 各步都 ok 但总结失败 → 整次是失败的）
+            status = (orc.status if orc else None) or first.status
+            dur = None
+            if orc and orc.ended_at and orc.started_at:
+                dur = orc.ended_at - orc.started_at
+            elif len(rows) > 1:
+                times = [x.started_at for x in rows if x.started_at] + [
+                    x.ended_at for x in rows if x.ended_at
+                ]
+                if times:
+                    dur = max(times) - min(times)
+            # 摘要用编排本体记录的用户输入（orchestration.input.text），比 worker 步骤的输入更完整
+            orc_in = (orc.input if orc and isinstance(orc.input, dict) else {}) or {}
+            orc_summary = _first_user_line(orc_in.get("text"))[:120] if orc_in else ""
+            items.append(
+                ActivityItem(
+                    kind="playground",
+                    id=oid,
+                    at=(orc.started_at if orc else first.started_at),
+                    orchestration_id=oid,
+                    duration_ms=dur,
+                    status=status,
+                    title=(orc.name if orc and orc.name else None)
+                    or " · ".join(
+                        dict.fromkeys(agents.get(x.agent_id, x.agent_id) for x in rows[:3])
+                    )
+                    + (f" 等 {len(rows)} 步" if len(rows) > 3 and orc is None else ""),
+                    subtitle=(f"{len(rows)} 步" if len(rows) > 1 else None),
+                    agent_id=first.agent_id,
+                    model=model_name,
+                    tokens_in=tin,
+                    tokens_out=tout,
+                    cost=round(cost_total, 6) if cost_known and (tin or tout) else None,
+                    currency=currency,
+                    trigger=(first.origin if first.origin in ("schedule", "webhook") else None),
+                    summary=orc_summary
+                    or _first_user_line(first.input)[:120]
+                    or (orc and _text_of(orc.output)[:120])
+                    or None,
+                    error=orc.error if orc else first.error,
+                )
+            )
+
+    for r in solo_runs:
         out = r.output if isinstance(r.output, dict) else {}
         dur = (r.ended_at - r.started_at) if (r.ended_at and r.started_at) else None
         usage = r.usage if isinstance(r.usage, dict) else {}
@@ -730,32 +825,61 @@ async def activity_timeline(
             )
 
     # 徽标计数：**不带类型筛选**，这样切换类型时徽标不会跳（原有语义，保持不变）
+    # 编排按**整次**计（= orchestration 行数）——worker run 在 SQL 里没法只按
+    # "编排本体"去重（每步都带 orchestration_id），所以 playground 计数单独查本体表，
+    # 与列表"一次一行"的口径一致（否则徽标 18、列表 6 行，用户又该数不对了）。
     counts: dict[str, int] = {}
     for kind_name, cnt in (
         await session.execute(
             select(_kind_case(Run).label("k"), func.count())
-            .where(Run.parent_run_id.is_(None))  # 口径与列表一致：不把每一路算成一条
+            .where(Run.parent_run_id.is_(None), Run.orchestration_id.is_(None))
             .group_by(_kind_case(Run))
         )
     ).all():
         counts[str(kind_name)] = int(cnt)
+    orc_count = int(
+        (
+            await session.execute(
+                select(func.count(func.distinct(Run.orchestration_id))).where(
+                    Run.orchestration_id.is_not(None), Run.parent_run_id.is_(None)
+                )
+            )
+        ).scalar()
+        or 0
+    )
+    if orc_count:
+        counts["playground"] = counts.get("playground", 0) + orc_count
     test_count = int(
         (await session.execute(select(func.count()).select_from(ModelTest))).scalar() or 0
     )
     if test_count:
         counts["llm_test"] = test_count
 
-    # 当前筛选下的总条数（界面用来说"还有 N 条"）—— 与列表同源同条件
-    total_runs = int(
+    # 当前筛选下的总条数（界面用来说"还有 N 条"）—— 与列表同源同条件。
+    # 编排 worker 不算独立条目：总数 = 非 worker 的 run 数 + **去重后**的编排次数。
+    # （同一次编排的 N 条 worker 在列表里只有 1 行，total 若按 run 数会把"还有 N 条"虚报。）
+
+
+    base_conds = _run_conds(kind, status, agent_id, q, None, None)
+    non_worker_total = int(
         (
             await session.execute(
                 select(func.count())
                 .select_from(Run)
-                .where(*_run_conds(kind, status, agent_id, q, None, None))
+                .where(*base_conds, Run.orchestration_id.is_(None))
             )
         ).scalar()
         or 0
     )
+    orc_total = int(
+        (
+            await session.execute(
+                select(func.count(func.distinct(Run.orchestration_id))).where(*base_conds)
+            )
+        ).scalar()
+        or 0
+    )
+    total_runs = non_worker_total + orc_total
     total_tests = 0
     if not agent_id:
         total_tests = int(
@@ -940,10 +1064,40 @@ IN_FLIGHT = ("pending", "running", "waiting_hitl")
 async def _delete_runs(
     session: AsyncSession, run_ids: list[str]
 ) -> tuple[int, list[dict[str, Any]]]:
-    """删除终态 Run；运行中的跳过并说明原因。"""
+    """删除终态 Run；运行中的跳过并说明原因。
+
+    归组后运行记录里编排行带着 ``orc_`` 前缀（= orchestration 本体）——
+    用户勾的是"这一次执行"，删除要级联删掉它的全部 worker run + 编排本体，
+    否则行删掉了、画布回放和用量统计里还留着整次编排 ✗。
+    """
+    from ..models import Orchestration
+
     deleted = 0
     skipped: list[dict[str, Any]] = []
     for rid in run_ids:
+        if rid.startswith("orc_"):
+            orc = await session.get(Orchestration, rid)
+            if orc is None:
+                skipped.append({"id": rid, "reason": "记录不存在"})
+                continue
+            if orc.status in ("running", "pending", "waiting_hitl"):
+                skipped.append(
+                    {"id": rid, "reason": f"状态为 {orc.status}，请先中断再删除"}
+                )
+                continue
+            workers = (
+                await session.execute(select(Run).where(Run.orchestration_id == rid))
+            ).scalars().all()
+            n_ok = 0
+            for w in workers:
+                if w.status in IN_FLIGHT:
+                    continue
+                await session.delete(w)
+                n_ok += 1
+            await session.delete(orc)
+            await session.commit()
+            deleted += n_ok + 1
+            continue
         run = await session.get(Run, rid)
         if run is None:
             skipped.append({"id": rid, "reason": "记录不存在"})

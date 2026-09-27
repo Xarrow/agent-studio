@@ -16,7 +16,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api, fmt } from "@/lib/api";
-import type { ActivityItem, LlmCall, RunEvent, RunTrace, ToolCallRow } from "@/lib/types";
+import type { ActivityItem, LlmCall, OrchestrationDetail, RunEvent, RunTrace, ToolCallRow } from "@/lib/types";
 import { RunTimeline, eventsToSteps } from "@/components/ui/run-timeline";
 import { HitlPrompt } from "@/components/HitlPrompt";
 import { useFeedback } from "@/components/ui/feedback";
@@ -85,6 +85,10 @@ export function RunDetailDialog({
   const fb = useFeedback();
 
   const isTest = item.kind === "llm_test";
+  /** 归组的编排行：id 就是 orchestration_id —— 详情走编排端点（步骤列表+总结） */
+  const isOrch = item.kind === "playground" && item.id.startsWith("orc_");
+
+  const [orch, setOrch] = useState<OrchestrationDetail | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -92,6 +96,8 @@ export function RunDetailDialog({
     try {
       if (isTest) {
         setTest((await api.modelTest(item.id)) as unknown as Record<string, unknown>);
+      } else if (isOrch) {
+        setOrch(await api.orchestration(item.id));
       } else {
         setTrace(await api.runTrace(item.id));
       }
@@ -100,7 +106,7 @@ export function RunDetailDialog({
     } finally {
       setLoading(false);
     }
-  }, [item.id, isTest]);
+  }, [item.id, isTest, isOrch]);
 
   useEffect(() => {
     void load();
@@ -183,12 +189,30 @@ export function RunDetailDialog({
   const events: RunEvent[] = trace?.events ?? [];
   const steps = events.length ? eventsToSteps(events, item.summary ?? undefined) : [];
 
-  const inputText =
-    typeof run?.input === "string"
+  /**
+   * 输入/输出的取数源**按记录类型分流** —— 编排行手里没有 run（都是 orchestration
+   * 本体），若照 run 取会得到空，然后把 item.summary（= 用户那句输入）错当输出显示 ✗
+   * （"总结输出"里出现用户自己的提问，比空白更误导）。
+   */
+  const orchText = (v: unknown): string => {
+    if (typeof v === "string") return v;
+    if (v && typeof v === "object") {
+      const o = v as Record<string, unknown>;
+      for (const k of ["text", "content", "output", "result"]) {
+        if (typeof o[k] === "string" && o[k]) return o[k] as string;
+      }
+    }
+    return "";
+  };
+
+  const inputText = isOrch
+    ? orchText(orch?.input) || item.summary || ""
+    : typeof run?.input === "string"
       ? run.input
       : ((run?.input as Record<string, unknown> | undefined)?.text as string) ?? "";
-  const outputText =
-    typeof run?.output === "string"
+  const outputText = isOrch
+    ? orchText(orch?.output)
+    : typeof run?.output === "string"
       ? run.output
       : ((run?.output as Record<string, unknown> | undefined)?.content as string) ??
         item.summary ??
@@ -330,6 +354,50 @@ export function RunDetailDialog({
 
         {loading ? (
           <div className="p-6 text-center text-[12.5px] text-[var(--color-muted)]">加载中…</div>
+        ) : isOrch && orch ? (
+          /* ────────────── 编排执行（整次归组行）──────────────
+              一次编排 = 编排者拆解 → 各助手分步 → 回总结。
+              这里给「任务输入 + 各步骤状态一览 + 最终总结」；
+              要逐步看过程，走底部「以流程查看」进画布回放。 */
+          <>
+            <Section title="任务输入">
+              <div className="rounded-md p-2.5 bg-[var(--color-surface-2)] text-[12.5px] whitespace-pre-wrap break-words">
+                {inputText || "—"}
+              </div>
+            </Section>
+            <Section title={`执行步骤（${orch.steps.length} 步）`}>
+              <div className="space-y-1.5">
+                {orch.steps.map((st, i) => (
+                  <div
+                    key={st.run_id}
+                    className="rounded-md p-2.5 bg-[var(--color-surface-2)] flex items-center gap-2.5 text-[12.5px]"
+                  >
+                    <span className="text-[var(--color-muted)] mono w-5 shrink-0">{i + 1}</span>
+                    <span
+                      className="mono text-[11px] shrink-0"
+                      style={{ color: STATUS_STYLE[st.status] ?? "var(--color-text)" }}
+                    >
+                      {st.status}
+                    </span>
+                    <span className="truncate">{st.agent_name}</span>
+                    {st.item_label && (
+                      <span className="text-[var(--color-muted)] truncate">· {st.item_label}</span>
+                    )}
+                    {st.error && (
+                      <span className="text-[var(--color-err)] truncate ml-auto" title={st.error}>
+                        {st.error}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </Section>
+            <Section title="总结输出">
+              <div className="rounded-md p-2.5 bg-[var(--color-surface-2)] text-[12.5px] whitespace-pre-wrap break-words">
+                {outputText || "—"}
+              </div>
+            </Section>
+          </>
         ) : isTest ? (
           /* ────────────── LLM 对话测试 ────────────── */
           <>

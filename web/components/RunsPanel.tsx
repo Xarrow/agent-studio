@@ -375,7 +375,7 @@ export function RunsPanel() {
         )}
 
         {/* ── 类型筛选：带计数，一眼看出各有多少 ─────────────────── */}
-        <div className="flex gap-1 mb-3 overflow-x-auto pb-0.5">
+        <div className="flex gap-1 mb-3 overflow-x-auto pb-0.5 max-w-full min-w-0">
           {KIND_TABS.map((t) => {
             const n = t.key === "all" ? total : (counts[t.key] ?? 0);
             const on = kind === t.key;
@@ -549,8 +549,8 @@ export function RunsPanel() {
                         checked={selected.has(it.id)}
                         onChange={() => toggle(it.id)}
                         onClick={(e) => e.stopPropagation()}
-                        className="absolute mt-0.5 accent-[var(--color-accent)]"
-                        style={{ marginLeft: "calc(100% - 18px)", marginTop: "-2px" }}
+                        className="absolute mt-0.5 right-1 accent-[var(--color-accent)]"
+                        style={{ marginTop: "-2px" }}
                       />
                     )}
                     {it.fanout && fanoutOpen.has(it.id) && (
