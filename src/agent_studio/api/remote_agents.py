@@ -240,6 +240,7 @@ async def test_remote_agent(remote_id: str) -> RemoteAgentTestResult:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"远程 agent 不存在: {remote_id}")
 
     t0 = time.monotonic()
+    t0_ms = now_ms()
     try:
         status_txt, answer, task_id = await a2a_client.run_until_done(
             row.url,
@@ -251,7 +252,23 @@ async def test_remote_agent(remote_id: str) -> RemoteAgentTestResult:
         ms = int((time.monotonic() - t0) * 1000)
         state = status_txt
         ok = status_txt == "ok"
-        async with SessionLocal() as session:
+        # 测试调用也落一条 runtime=a2a 的调用记录 —— 「每次调用都留痕」不分正式/测试
+        async with SessionLocal() as cs:
+            probe = Run(
+                agent_id="",  # 探测调用不来自任何本地助手（run.agent_id 非空列，用空串占位）
+                runtime="a2a",
+                status="ok" if ok else "error",
+                input={"text": "连通性测试：请只回复四个字「远端在线」。", "remote": row.url, "remote_name": row.name, "probe": True},
+                definition_snapshot={},
+                started_at=now_ms() - ms,
+                ended_at=now_ms(),
+                origin="test",
+                output={"content": (answer or "")[:4000]},
+                error="" if ok else f"远端状态：{state}",
+            )
+            cs.add(probe)
+            await cs.commit()
+        async with SessionLocal() as es:
             fresh = await session.get(RemoteAgent, remote_id)
             if fresh is not None:
                 fresh.status = "ok" if ok else "error"

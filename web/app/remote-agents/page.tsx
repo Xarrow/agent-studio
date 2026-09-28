@@ -9,8 +9,9 @@
  *
  * 口径（按平台的既有规矩来）：
  *   · 一行一个远端对象，点行就地展开，不跳页；
- *   · 常用动作**常驻可见**（测试调用 / 重新解析 / 挂到助手），删除是红字靠最右、两步确认；
- *   · 挂载复用既有机制 —— 注册时会自动生成一个 `kind=a2a` 工具，助手的「工具」里就能勾到。
+ *   · 常用动作**常驻可见**（测试调用 / 重新解析），删除是红字靠最右、两步确认；
+ *   · 绑定归属助手的配置页（Agents → 能力）—— 注册时会自动生成一个 `kind=a2a` 工具，
+ *     助手在「能力」里勾上它就能调远端；这里只做治理与观测，不重复放绑定控件。
  */
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
@@ -155,7 +156,11 @@ function SkillTable({ parsed }: { parsed: RemoteAgentParsed }) {
             </span>
           ))}
           {s.description ? (
-            <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+            <span
+              className="line-clamp-2 text-[12px]"
+              style={{ color: "var(--color-muted)" }}
+              title={s.description}
+            >
               {s.description}
             </span>
           ) : null}
@@ -289,20 +294,33 @@ export default function RemoteAgentsPage() {
     <>
       <PageHead
         title="远程 Agent 管理"
-        desc="注册外部 A2A agent（另一台 agent-studio 或任何实现了 A2A 的 agent）——解析它的能力，挂到助手上直接调用"
+        desc={`注册外部 A2A agent —— 解析它的能力，挂到助手上直接调用 · 挂载 ${stats.bound} / ${stats.total}`}
+        actions={
+          <>
+            <button className="btn btn-primary" onClick={() => setRegistering(true)}>
+              ＋ 注册
+            </button>
+            <button className="btn" onClick={() => void copySelfreg()}>
+              {copied ? "已复制注册地址" : "复制自注册地址"}
+            </button>
+          </>
+        }
       />
 
-      <div className="mb-3">
-        <Toolbar>
-          <button className="btn btn-primary" onClick={() => setRegistering(true)}>
-            ＋ 注册
-          </button>
-          <button className="btn" onClick={() => void copySelfreg()}>
-            {copied ? "已复制注册地址" : "复制自注册地址"}
-          </button>
-          <button
-            className="btn"
-            disabled={busy === "refresh-all" || !(rows ?? []).length}
+      <Toolbar>
+        <Segmented<Filter>
+          value={filter}
+          onChange={setFilter}
+          options={[
+            { key: "all", label: "全部", count: stats.total },
+            { key: "ok", label: "可用", count: stats.ok },
+            { key: "error", label: "异常", count: stats.bad },
+            { key: "off", label: "已停用" },
+          ]}
+        />
+        <button
+          className="btn"
+          disabled={busy === "refresh-all" || !(rows ?? []).length}
             onClick={() =>
               void run("refresh-all", async () => {
                 const list = rows ?? [];
@@ -320,33 +338,12 @@ export default function RemoteAgentsPage() {
                 );
               })
             }
-          >
-            {busy === "refresh-all" ? "解析中…" : "全部重新解析"}
-          </button>
-          <span className="ml-auto hidden text-[12.5px] sm:inline" style={{ color: "var(--color-muted)" }}>
-            挂载 {stats.bound} / {stats.total}
-          </span>
-        </Toolbar>
-      </div>
+        >
+          {busy === "refresh-all" ? "解析中…" : "全部重新解析"}
+        </button>
+      </Toolbar>
 
-      <Section
-        title="已注册的远端"
-        desc="一行一个远端：点开看它声明了哪些技能、被哪些助手用着；要调用就直接挂到助手上"
-      >
-        <div className="mb-2">
-          <Segmented<Filter>
-            value={filter}
-            onChange={setFilter}
-            options={[
-              { key: "all", label: "全部", count: stats.total },
-              { key: "ok", label: "可用", count: stats.ok },
-              { key: "error", label: "异常", count: stats.bad },
-              { key: "off", label: "已停用" },
-            ]}
-          />
-        </div>
-
-        {rows === null ? (
+      {rows === null ? (
           <Empty title="读取中…" />
         ) : !shown.length ? (
           <Empty
@@ -377,16 +374,6 @@ export default function RemoteAgentsPage() {
                     actions={
                       <>
                         <button
-                          className={r.enabled ? "btn" : "btn btn-primary"}
-                          disabled={busy === `toggle:${r.id}`}
-                          onClick={() =>
-                            void run(`toggle:${r.id}`, () => api.patchRemoteAgent(r.id, { enabled: !r.enabled }),
-                              r.enabled ? "已停用（挂它的助手不再能调它）" : "已启用")
-                          }
-                        >
-                          {r.enabled ? "停用" : "启用"}
-                        </button>
-                        <button
                           className="btn btn-primary"
                           disabled={!r.enabled || busy === `test:${r.id}`}
                           onClick={() => void onTest(r)}
@@ -403,17 +390,14 @@ export default function RemoteAgentsPage() {
                           {busy === `refresh:${r.id}` ? "解析中…" : "重新解析"}
                         </button>
                         <button
-                          className={r.enabled ? "btn" : "btn btn-primary"}
+                          className="btn"
                           disabled={busy === `toggle:${r.id}`}
                           onClick={() =>
-                            void run(
-                              `toggle:${r.id}`,
-                              () => api.patchRemoteAgent(r.id, { enabled: !r.enabled }),
-                              r.enabled ? "已停用" : "已启用",
-                            )
+                            void run(`toggle:${r.id}`, () => api.patchRemoteAgent(r.id, { enabled: !r.enabled }),
+                              r.enabled ? "已停用（挂它的助手不再能调它）" : "已启用")
                           }
                         >
-                          {r.enabled ? "关闭" : "开启"}
+                          {r.enabled ? "停用" : "启用"}
                         </button>
                         <button
                           className="ml-auto text-[12.5px]"
@@ -488,30 +472,20 @@ export default function RemoteAgentsPage() {
                           <SkillTable parsed={r.parsed} />
                         </div>
 
-                        <div>
-                          <FieldLabel hint="勾上就用它了 —— 助手的「工具」里也会出现同名工具">挂到助手</FieldLabel>
-                          {agents.length ? (
-                            <div className="flex flex-wrap gap-2">
-                              {agents.map((a) => {
-                                const on = boundIds.has(a.id);
-                                return (
-                                  <button
-                                    key={a.id}
-                                    className={on ? "btn btn-primary" : "btn"}
-                                    disabled={busy === `bind:${r.id}:${a.id}` || !r.enabled}
-                                    onClick={() => void onBind(r, a.id, !on)}
-                                  >
-                                    {on ? "✓ " : ""}
-                                    {a.name}
-                                  </button>
-                                );
-                              })}
-                            </div>
+                        <div
+                          className="rounded px-2.5 py-2 text-[12.5px]"
+                          style={{ background: "var(--color-surface-2)", color: "var(--color-muted)" }}
+                        >
+                          绑定在助手的配置页做：它注册时会自动生成一个同名工具，到
+                          {(r.bound_agents ?? []).length ? (
+                            <>
+                              「Agents」→ 选助手 → 「能力」里能看到它
+                              （当前挂着：{(r.bound_agents ?? []).map((b) => b.agent_name).join("、")}）
+                            </>
                           ) : (
-                            <p className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
-                              平台上还没有助手
-                            </p>
+                            <>「Agents」→ 选助手 → 「能力」里勾上它就能用</>
                           )}
+                          。
                         </div>
 
                         <EditRow
@@ -607,13 +581,6 @@ function EditRow({
       <div className="flex flex-wrap items-center gap-2">
         <button className="btn" onClick={() => setOpenEdit(true)}>
           编辑
-        </button>
-        <button
-          className="btn"
-          disabled={busy === `toggle:${r.id}`}
-          onClick={() => void onSave({ enabled: !r.enabled }, r.enabled ? "已停用" : "已启用")}
-        >
-          {r.enabled ? "停用" : "启用"}
         </button>
       </div>
     );
@@ -889,14 +856,16 @@ function RecordsTabs({ remoteId, name }: { remoteId: string; name: string }) {
 
   return (
     <div className="flex flex-col gap-2">
-      <Segmented<Tab>
-        value={tab}
-        onChange={setTab}
-        options={[
-          { key: "calls", label: "调用记录" },
-          { key: "events", label: "操作记录" },
-        ]}
-      />
+      <div className="flex">
+        <Segmented<Tab>
+          value={tab}
+          onChange={setTab}
+          options={[
+            { key: "calls", label: "调用记录" },
+            { key: "events", label: "操作记录" },
+          ]}
+        />
+      </div>
       {tab === "calls" ? (
         <CallList rows={calls} />
       ) : (
