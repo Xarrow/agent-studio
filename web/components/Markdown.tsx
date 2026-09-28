@@ -17,6 +17,7 @@
 import React from "react";
 import { CodeBlock } from "@/components/CodeBlock";
 import { Mermaid } from "@/components/Mermaid";
+import { splitInlineDisplayMath, texParse, type MNode } from "@/lib/tex";
 
 /** 行内：**加粗**、`代码`、[文字](链接) */
 function inline(text: string, keyBase: string): React.ReactNode[] {
@@ -91,117 +92,6 @@ function inline(text: string, keyBase: string): React.ReactNode[] {
    实现路子：TeX 串 → 节点树 → span + inline-flex 排（分数 = 上下两行 + 一条横线），
    不用 canvas/svg、不加载字体。 */
 
-const TEX_SYM: Record<string, string> = {
-  // 希腊字母
-  alpha: "α", beta: "β", gamma: "γ", delta: "δ", epsilon: "ε", varepsilon: "ε",
-  zeta: "ζ", eta: "η", theta: "θ", iota: "ι", kappa: "κ", lambda: "λ", mu: "μ",
-  nu: "ν", xi: "ξ", pi: "π", rho: "ρ", sigma: "σ", tau: "τ", upsilon: "υ",
-  phi: "φ", chi: "χ", psi: "ψ", omega: "ω",
-  Gamma: "Γ", Delta: "Δ", Theta: "Θ", Lambda: "Λ", Xi: "Ξ", Pi: "Π",
-  Sigma: "Σ", Phi: "Φ", Psi: "Ψ", Omega: "Ω",
-  // 算符 / 关系
-  times: "×", cdot: "·", div: "÷", pm: "±", mp: "∓",
-  le: "≤", leq: "≤", ge: "≥", geq: "≥", ne: "≠", neq: "≠", approx: "≈", equiv: "≡",
-  in: "∈", notin: "∉", subset: "⊂", subseteq: "⊆", cup: "∪", cap: "∩",
-  to: "→", rightarrow: "→", Rightarrow: "⇒", leftrightarrow: "↔", mapsto: "↦",
-  infty: "∞", partial: "∂", nabla: "∇", forall: "∀", exists: "∃",
-  sum: "∑", prod: "∏", int: "∫", oint: "∮", sqrt: "√",
-  cdotp: "·", ldots: "…", dots: "…", cdots: "⋯",
-  quad: " ", qquad: "  ", ", ": " ", ";": " ", " ": " ",
-  "%": "%", "#": "#", "{": "{", "}": "}", "_": "_", "&": "&", "$": "$",
-};
-
-type MNode =
-  | { k: "t"; v: string }
-  | { k: "grp"; a: MNode[] }
-  | { k: "frac"; a: MNode[]; b: MNode[] }
-  | { k: "sqrt"; a: MNode[] }
-  | { k: "sup"; base: MNode[]; sup: MNode[] }
-  | { k: "sub"; base: MNode[]; sub: MNode[] }
-  | { k: "supsub"; base: MNode[]; sup: MNode[]; sub: MNode[] };
-
-/** 把一根 TeX 串解析成节点树。认不出的命令按字面文本（宁可显示 \foo，不要白掉）。 */
-function texParse(src: string): MNode[] {
-  let i = 0;
-  const peek = () => src[i];
-
-  /** 取一个"组"：{...} 递归；否则取单字符（x^2 里的 2） */
-  const group = (): MNode[] => {
-    if (peek() === "{") {
-      i++;
-      const out = seq(true);
-      if (peek() === "}") i++;
-      return out;
-    }
-    if (i >= src.length) return [];
-    return [{ k: "t", v: src[i++] }];
-  };
-
-  /** 取一个基元（一个 MNode） */
-  const atom = (): MNode => {
-    const c = peek();
-    if (c === "{") return { k: "grp", a: group() };
-    if (c === "\\") {
-      i++;
-      let name = "";
-      while (i < src.length && /[a-zA-Z]/.test(src[i])) name += src[i++];
-      if (!name) {
-        const ch = src[i++] ?? "";
-        return { k: "t", v: TEX_SYM[ch] ?? ch };
-      }
-      if (name === "frac") return { k: "frac", a: group(), b: group() };
-      if (name === "sqrt") return { k: "sqrt", a: group() };
-      if (name === "text" || name === "mathrm" || name === "operatorname") {
-        return { k: "t", v: plain(group()) }; // 这些里面的字符按字面
-      }
-      return { k: "t", v: TEX_SYM[name] ?? "\\" + name };
-    }
-    i++;
-    return { k: "t", v: c ?? "" };
-  };
-
-  /** 一串基元；遇到 } 就停（若在组里） */
-  const seq = (inGroup: boolean): MNode[] => {
-    const out: MNode[] = [];
-    while (i < src.length) {
-      if (inGroup && peek() === "}") break;
-      const base = atom();
-      // 基元后面可能挂上下标（可以同时有 ^ 和 _，顺序随意）
-      let sup: MNode[] | null = null;
-      let sub: MNode[] | null = null;
-      while (peek() === "^" || peek() === "_") {
-        const isSup = peek() === "^";
-        i++;
-        const arg = group();
-        if (isSup) sup = arg;
-        else sub = arg;
-      }
-      if (sup && sub) out.push({ k: "supsub", base: [base], sup, sub });
-      else if (sup) out.push({ k: "sup", base: [base], sup });
-      else if (sub) out.push({ k: "sub", base: [base], sub });
-      else out.push(base);
-    }
-    return out;
-  };
-
-  /** 把节点树摊回纯文本（\text{} 用） */
-  const plain = (nodes: MNode[]): string =>
-    nodes
-      .map((n) => {
-        switch (n.k) {
-          case "t": return n.v;
-          case "grp": return plain(n.a);
-          case "frac": return `${plain(n.a)}/${plain(n.b)}`;
-          case "sqrt": return `√${plain(n.a)}`;
-          case "sup": return `${plain(n.base)}^${plain(n.sup)}`;
-          case "sub": return `${plain(n.base)}_${plain(n.sub)}`;
-          case "supsub": return `${plain(n.base)}^${plain(n.sup)}_${plain(n.sub)}`;
-        }
-      })
-      .join("");
-
-  return seq(false);
-}
 
 
 /** 渲染上面解析出来的节点树。分数 = 上下两行 + 一条横线（inline-flex 排）；
@@ -233,6 +123,12 @@ function renderTex(nodes: MNode[], kb: string): React.ReactNode[] {
       case "sqrt":
         return (
           <span key={key}>
+            {/* 方根指数（\sqrt[3]{x}）：小字贴左上，与数学排版一致 */}
+            {n.idx ? (
+              <span style={{ fontSize: "0.65em", verticalAlign: "0.55em" }}>
+                {renderTex(n.idx, key + "i")}
+              </span>
+            ) : null}
             <span style={{ opacity: 0.85 }}>√</span>
             <span style={{ borderTop: "1px solid currentColor", paddingTop: 1 }}>{renderTex(n.a, key)}</span>
           </span>
@@ -423,6 +319,24 @@ export default function Markdown({ text }: { text: string }) {
       }
       i++;
       blocks.push(<TexBlock key={`b${k++}`} tex={buf.join(" ").trim()} />);
+      continue;
+    }
+
+    // 同一行里混排的块级公式：`说明：$$E=mc^2$$ 后半句`
+    // —— 之前只认"整行以 $$ 开头"，这种写法会把首尾 $$ 当字面量留在页面上。
+    // 拆成三段：前文按段落、公式按块级居中、后文（若有）塞回待处理行。
+    const dm = splitInlineDisplayMath(line);
+    if (dm && line.trimStart().startsWith("$$") === false) {
+      if (dm.head.trim()) {
+        blocks.push(
+          <p key={`p${k++}`} className="my-1.5 leading-[1.7]">
+            {inline(dm.head.trim(), `dm${k}`)}
+          </p>,
+        );
+      }
+      blocks.push(<TexBlock key={`b${k++}`} tex={dm.math.trim()} />);
+      if (dm.tail.trim()) lines[i] = dm.tail.trim();
+      else i++;
       continue;
     }
 
