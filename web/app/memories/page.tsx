@@ -1,9 +1,33 @@
 "use client";
 
+/**
+ * 记忆（长期记忆管理）
+ * ====================
+ *
+ * 2026-09-28 以专业 UX 重写。改的是**结构**，不是样式：
+ *
+ * ① 一行数字代替卡带
+ *    标题下就是一句概览（共 N 条 · 在用 / 待确认 / 已停用 · 累计被用 N 次），
+ *    不再让统计各占一张卡。
+ *
+ * ② 一行一对象 + 点哪展开哪
+ *    老版每一条记忆都把「完整正文 + 6 个动作按钮」全摊在页面上，看一眼是
+ *    一堵按钮墙；候选记忆还要在「候选区」和主列表两个地方各渲染一次，
+ *    同一条内容在「全部」里看得见、切一下就换位置 ✗。
+ *    新版：一条记忆 = 一行（类型 + 正文两行 + 元信息），点行进**就地展开**
+ *    看完整正文与全部明细；动作区常驻可见（用户否决过收进 ⋯），层级分明：
+ *    主操作蓝 → 次级安静 → 删除红字靠最右。
+ *
+ * ③ 批量动作就地出现
+ *    候选行左侧是勾选框，勾上之后**在这批行的正上方**出现一条选择条
+ *    （已选 N 条 · 确认使用 · 丢弃 · 取消）—— 动作跟着它作用的对象走，
+ *    不再占着工具条常年空转。
+ */
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, fmt } from "@/lib/api";
 import type { Agent, Memory, MemoryStats } from "@/lib/types";
-import { Chip, Empty, PageHead, Row, RowList, Segmented, Toolbar } from "@/components/ui/kit";
+import { Chip, Empty, KV, PageHead, Row, RowDetail, RowList, Segmented, Toolbar } from "@/components/ui/kit";
 import { useFeedback } from "@/components/ui/feedback";
 import { MemoryCopyDialog } from "@/components/MemoryCopyDialog";
 import { RunIdLink } from "@/components/RunIdLink";
@@ -22,12 +46,6 @@ const KIND_COLOR: Record<string, string> = {
   instruction: "var(--color-warn)",
 };
 
-const WHO_LABEL: Record<string, string> = {
-  agent: "仅此 Agent",
-  global: "所有 Agent",
-  session: "这个对话",
-};
-
 export default function MemoriesPage() {
   const fb = useFeedback();
   const [items, setItems] = useState<Memory[]>([]);
@@ -36,27 +54,28 @@ export default function MemoriesPage() {
   const [loading, setLoading] = useState(true);
 
   // 筛选
-  const [agentId, setAgentId] = useState("");
-  /* 默认**不筛状态**：待确认的才是要用户动手的（现在 10 条里 8 条待确认）。
-     默认只显示"在用"= 8 条待办默认看不见，还得手动切筛选 —— 违背「操作更少」。 */
+  /* 默认**不筛状态**：待确认的才是要用户动手的，默认藏起来等于把待办藏起来。 */
   const [status, setStatus] = useState<string>("");
+  const [agentId, setAgentId] = useState("");
   const [kind, setKind] = useState("");
   const [query, setQuery] = useState("");
 
-  // 候选区多选
+  /** 展开中那条（一行一对象：详情就在这一行下面展开） */
+  const [openId, setOpenId] = useState<string>("");
+
+  // 候选多选
   const [picked, setPicked] = useState<Set<string>>(new Set());
 
   // 新建
   const [draft, setDraft] = useState("");
   const [draftKind, setDraftKind] = useState("fact");
-  /** 新记忆归给谁："__global__" = 所有助手共用，否则是某个 Agent 的 id */
-  const [draftOwner, setDraftOwner] = useState("__global__");
+  /** 新记忆归给谁："" = 所有助手共用，否则是某个 Agent 的 id */
+  const [draftOwner, setDraftOwner] = useState("");
   const [showMore, setShowMore] = useState(false);
   const [busy, setBusy] = useState(false);
   /** 正在复制哪条记忆（null = 没在复制） */
   const [copying, setCopying] = useState<Memory | null>(null);
-  /** 新增记忆的输入区默认收起：常态只留一个「+ 记一条」按钮，
-   *  避免一块空白表单长期占着首屏（数据默认可见 ≠ 表单必须常驻）。 */
+  /** 新增区默认收起：常态只留一个「+ 记一条」（信息默认可见 ≠ 表单必须常驻） */
   const [composeOpen, setComposeOpen] = useState(false);
 
   const load = useCallback(async () => {
@@ -98,9 +117,7 @@ export default function MemoriesPage() {
       fb.warn("内容不能为空");
       return;
     }
-    // 归属由用户直接选定，不再"跟着页面上方的筛选走"——那样很绕
-    // （原来要先在下面按助手筛一遍，"只给某个助手"才可选）
-    const isGlobal = draftOwner === "__global__";
+    const isGlobal = draftOwner === "";
     setBusy(true);
     try {
       await api.createMemory({
@@ -177,7 +194,7 @@ export default function MemoriesPage() {
       description:
         next === "active"
           ? "确认后它会在后续对话里被用到。"
-          : "停用后不再被使用（之后能在「已停用」里找回）。",
+          : "丢弃后不再被使用（之后能在「已停用」里找回）。",
       danger: next !== "active",
       confirmText: label,
     });
@@ -199,11 +216,29 @@ export default function MemoriesPage() {
       return next;
     });
 
+  /** 选择条上的「全选待确认」—— 把剩下的候选一次勾上（10 条候选不用点 10 次） */
+  const pickAllCandidates = () =>
+    setPicked((prev) =>
+      prev.size === candidates.length ? new Set() : new Set(candidates.map((c) => c.id)),
+    );
+
   return (
-    <div className="p-4 md:p-6 lg:p-7 max-w-[1000px]">
+    <div className="max-w-[1000px] p-4 md:p-6 lg:p-7">
       <PageHead
         title="记忆"
-        desc="跨会话的长期记忆 · 对话前自动回忆起相关的内容；自动总结出来的先进候选区，你点头之后才会被使用"
+        desc={
+          <>
+            跨会话的长期记忆 —— 对话前自动回忆起相关的内容。
+            {stats ? (
+              <>
+                {" "}
+                共 <Num n={stats.active + stats.candidate + stats.archived} /> 条（在用{" "}
+                <Num n={stats.active} /> · 待确认 <Num n={stats.candidate} tone="warn" /> · 已停用{" "}
+                <Num n={stats.archived} />）· 累计被用 <Num n={stats.total_hits} /> 次
+              </>
+            ) : null}
+          </>
+        }
         actions={
           <button className="btn btn-primary" onClick={() => setComposeOpen((v) => !v)}>
             {composeOpen ? "收起" : "+ 记一条"}
@@ -222,14 +257,8 @@ export default function MemoriesPage() {
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
           />
-          {/* 默认「所有助手都能用」，所以只写内容 + 保存就完事；
-              类型与归属属于进阶选项，收进「更多选项」不占视线。 */}
           <div className="mt-2.5 flex flex-wrap items-center gap-2">
-            <button
-              className="btn btn-primary"
-              disabled={busy || !draft.trim()}
-              onClick={() => void create()}
-            >
+            <button className="btn btn-primary" disabled={busy || !draft.trim()} onClick={() => void create()}>
               保存
             </button>
             <button
@@ -272,7 +301,7 @@ export default function MemoriesPage() {
                   value={draftOwner}
                   onChange={(e) => setDraftOwner(e.target.value)}
                 >
-                  <option value="__global__">所有助手共用</option>
+                  <option value="">所有助手共用</option>
                   {agents.map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.name} 专有
@@ -285,8 +314,7 @@ export default function MemoriesPage() {
         </div>
       )}
 
-      {/* 工具条一行：状态（点一下即筛，计数就在旁边）+ 归属 + 类型 + 搜索 + 刷新。
-          原来是左栏三张卡（状态卡 / 新增卡 / 筛选卡）竖着堆，把主区挤到 1200px 里的右边一窄条。 */}
+      {/* 工具条：状态（点一下即筛、带计数）+ 归属 + 类型 + 搜索 + 刷新 */}
       <Toolbar>
         <Segmented
           value={status}
@@ -303,7 +331,8 @@ export default function MemoriesPage() {
           ]}
         />
         <select
-          className="input h-[36px] w-auto min-w-0"
+          className="input h-[36px] min-w-0"
+          style={{ width: "auto" }}
           title="只看某个助手的记忆"
           value={agentId}
           onChange={(e) => setAgentId(e.target.value)}
@@ -316,7 +345,8 @@ export default function MemoriesPage() {
           ))}
         </select>
         <select
-          className="input h-[36px] w-auto min-w-0"
+          className="input h-[36px] min-w-0"
+          style={{ width: "auto" }}
           title="只看某种类型"
           value={kind}
           onChange={(e) => setKind(e.target.value)}
@@ -329,7 +359,7 @@ export default function MemoriesPage() {
           ))}
         </select>
         <input
-          className="input h-[36px] w-full min-w-0 sm:w-[200px]"
+          className="input h-[36px] min-w-0 w-full sm:w-[200px]!"
           placeholder="搜索内容…（回车）"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -342,110 +372,49 @@ export default function MemoriesPage() {
         </button>
       </Toolbar>
 
-      {/* 候选区 —— 自动沉淀的待确认项（确认/丢弃的动作就落在每一行上） */}
-      {candidates.length > 0 && (
-        <div className="mb-3">
-          <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="text-[13px] font-medium" style={{ color: "var(--color-warn)" }}>
-              候选区 · {candidates.length} 条待确认
-            </span>
-            <span className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
-              自动提炼的内容要先经你点头，避免噪音干扰
-            </span>
-            <div className="ml-auto flex flex-wrap items-center gap-1.5">
-              <button
-                className="btn text-[12.5px]"
-                disabled={picked.size === 0}
-                onClick={() => void bulk("active")}
-              >
-                确认选中{picked.size > 0 ? `（${picked.size}）` : ""}
-              </button>
-              <button
-                className="btn text-[12.5px]"
-                style={{ color: "var(--color-err)" }}
-                disabled={picked.size === 0}
-                onClick={() => void bulk("archived")}
-              >
-                丢弃选中
-              </button>
-            </div>
-          </div>
-          <RowList>
-            {candidates.map((m) => (
-              <Row
-                key={m.id}
-                actions={
-                  <>
-                    <button
-                      type="button"
-                      className="btn text-[12.5px]"
-                      style={{
-                        background: "var(--color-warn)",
-                        borderColor: "var(--color-warn)",
-                        color: "#fff",
-                      }}
-                      onClick={() => void setStatusOf(m, "active")}
-                    >
-                      确认使用
-                    </button>
-                    <button
-                      type="button"
-                      className="btn text-[12.5px]"
-                      onClick={() => void setStatusOf(m, "archived")}
-                    >
-                      丢弃
-                    </button>
-                  </>
-                }
-              >
-                {/* 勾选框仍是 label：点框旁边的空白也算勾选，且不冒泡（勾选 ≠ 别的动作） */}
-                <label
-                  className="flex h-9 w-6 shrink-0 cursor-pointer items-center justify-center"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <input
-                    type="checkbox"
-                    className="h-[17px] w-[17px] accent-[var(--color-accent)]"
-                    checked={picked.has(m.id)}
-                    onChange={() => togglePick(m.id)}
-                  />
-                </label>
-                <span className="min-w-0 flex-1 basis-[240px]">
-                  <span className="block break-words text-[13px]">{m.content}</span>
-                  <span
-                    className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px]"
-                    style={{ color: "var(--color-muted)" }}
-                  >
-                    <KindTag kind={m.kind} />
-                    <span>{m.agent_name ?? "—"}</span>
-                    <span>·</span>
-                    <span>来自{m.source === "auto" ? "自动提炼" : "手动录入"}</span>
-                    {m.source_run_id && (
-                      <>
-                        <span>·</span>
-                        <RunIdLink
-                          runId={m.source_run_id}
-                          label={m.source_run_id}
-                          className="hover:underline"
-                        />
-                      </>
-                    )}
-                  </span>
-                </span>
-              </Row>
-            ))}
-          </RowList>
+      {/* 选择条 —— 勾了候选行才出现，就落在这批行的上方（动作跟着对象走） */}
+      {picked.size > 0 && (
+        <div
+          className="mb-2 flex flex-wrap items-center gap-2 rounded-[10px] px-3 py-2"
+          style={{ background: "color-mix(in srgb, var(--color-accent) 8%, transparent)" }}
+        >
+          <span className="text-[12.5px]">已选 {picked.size} 条</span>
+          <button className="btn btn-primary text-[12.5px]" onClick={() => void bulk("active")}>
+            确认使用
+          </button>
+          <button
+            className="btn text-[12.5px]"
+            style={{ color: "var(--color-err)" }}
+            onClick={() => void bulk("archived")}
+          >
+            丢弃
+          </button>
+          <button
+            className="btn text-[12.5px]"
+            style={{ color: "var(--color-muted)" }}
+            onClick={() => setPicked(new Set())}
+          >
+            取消选择
+          </button>
+          {candidates.length > 1 && (
+            <button
+              className="btn text-[12.5px]"
+              style={{ color: "var(--color-muted)" }}
+              onClick={pickAllCandidates}
+            >
+              {picked.size === candidates.length ? "取消全选" : `全选待确认（${candidates.length}）`}
+            </button>
+          )}
         </div>
       )}
 
-      {/* 记忆列表 —— 内容默认**全展开**（表格把内容压进一列窄字里最难读），
-          状态用左边条 + 徽章两条视觉通道表达；一行一条，共用一个外框。 */}
+      {/* 一行一对象：一条记忆一行；点行就地展开全部明细 */}
       <RowList>
         {loading ? (
           <div className="px-4 py-6 text-[13px]" style={{ color: "var(--color-muted)" }}>
             加载中…
           </div>
-        ) : items.filter((m) => !(status === "" && m.status === "candidate")).length === 0 ? (
+        ) : items.length === 0 ? (
           <Empty
             title="这里还没有记忆"
             hint="点右上「+ 记一条」手动新增；或打开任意一次执行记录（运行记录 / 对话页 / 助手页都能点开）点「沉淀为记忆」。"
@@ -456,143 +425,191 @@ export default function MemoriesPage() {
             }
           />
         ) : (
-          items
-            /* 看「全部」时，待确认的由上面的候选区负责（那里有批量选中），
-               这里就不再重复显示一遍；筛到具体状态时才由列表负责。 */
-            .filter((m) => !(status === "" && m.status === "candidate"))
-            .map((m) => {
-              const cand = m.status === "candidate";
-              const arch = m.status === "archived";
-              return (
-                <div
-                  key={m.id}
-                  data-mem={m.id}
-                  className="border-b px-3 py-2.5 last:border-b-0"
-                  style={{
-                    borderColor: "var(--color-border)",
-                    borderLeft: `3px solid ${
-                      cand
-                        ? "var(--color-warn)"
-                        : arch
-                          ? "var(--color-border)"
-                          : "var(--color-accent)"
-                    }`,
-                    opacity: arch ? 0.62 : 1,
-                  }}
-                >
-                  <div className="max-w-[780px] whitespace-pre-wrap break-words text-[13px] leading-relaxed">
-                    {m.content}
-                  </div>
-
-                  <div
-                    className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px]"
-                    style={{ color: "var(--color-muted)" }}
-                  >
-                    <KindTag kind={m.kind} />
-                    {cand ? <Chip tone="warn">待你确认</Chip> : null}
-                    {arch ? <Chip tone="muted">已停用</Chip> : null}
-                    <span>{m.source === "auto" ? "自动提炼" : "手动录入"}</span>
-                    {m.source_run_id && (
-                      <>
-                        <span>·</span>
-                        <RunIdLink
-                          runId={m.source_run_id}
-                          label={`来源 ${m.source_run_id.slice(0, 12)}…`}
-                          className="hover:underline"
-                        />
-                      </>
-                    )}
-                    <span>·</span>
-                    <span>
-                      {m.scope === "global" ? "所有助手共用" : (m.agent_name ?? "（绑定助手已失效）")}
-                    </span>
-                    <span>·</span>
-                    <span
-                      title={m.last_hit_at ? `最后使用：${fmt.time(m.last_hit_at)}` : "还没用过"}
-                    >
-                      用过 {m.hits} 次
-                    </span>
-                    <span>·</span>
-                    <span>{fmt.relative(m.updated_at)}</span>
-                  </div>
-
-                  {/* 动作：常用在前、危险靠最右；待确认的一步到位（确认使用 / 丢弃） */}
-                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                    {cand && (
-                      <>
+          items.map((m) => {
+            const cand = m.status === "candidate";
+            const arch = m.status === "archived";
+            const open = openId === m.id;
+            return (
+              <div key={m.id} data-mem={m.id}>
+                <Row
+                  expanded={open}
+                  onToggle={() => setOpenId(open ? "" : m.id)}
+                  actions={
+                    <>
+                      {cand && (
+                        <>
+                          <button
+                            type="button"
+                            className="btn btn-primary min-h-[36px] px-2.5 text-[11.5px]"
+                            onClick={() => void setStatusOf(m, "active")}
+                          >
+                            确认使用
+                          </button>
+                          <button
+                            type="button"
+                            className="btn min-h-[36px] px-2.5 text-[11.5px]"
+                            onClick={() => void setStatusOf(m, "archived")}
+                          >
+                            丢弃
+                          </button>
+                        </>
+                      )}
+                      {m.status === "active" && (
                         <button
                           type="button"
-                          className="btn min-h-[36px] text-[11.5px] px-2.5"
-                          style={{
-                            background: "var(--color-warn)",
-                            borderColor: "var(--color-warn)",
-                            color: "#fff",
-                          }}
-                          onClick={() => void setStatusOf(m, "active")}
-                        >
-                          确认使用
-                        </button>
-                        <button
-                          type="button"
-                          className="btn min-h-[36px] text-[11.5px] px-2.5"
+                          className="btn min-h-[36px] px-2.5 text-[11.5px]"
+                          title="暂时不用它 —— 之后能在「已停用」里找回"
                           onClick={() => void setStatusOf(m, "archived")}
                         >
-                          丢弃
+                          停用
                         </button>
-                      </>
-                    )}
-                    <button
-                      type="button"
-                      className="btn min-h-[36px] text-[11.5px] px-2.5"
-                      onClick={() => void edit(m)}
-                    >
-                      编辑
-                    </button>
-                    <button
-                      type="button"
-                      className="btn min-h-[36px] text-[11.5px] px-2.5"
-                      title="复制一份并绑定到别的助手（原件不动）"
-                      onClick={() => setCopying(m)}
-                    >
-                      复制到…
-                    </button>
-                    {m.status === "active" ? (
+                      )}
+                      {arch && (
+                        <button
+                          type="button"
+                          className="btn min-h-[36px] px-2.5 text-[11.5px]"
+                          onClick={() => void setStatusOf(m, "active")}
+                        >
+                          启用
+                        </button>
+                      )}
                       <button
                         type="button"
-                        className="btn min-h-[36px] text-[11.5px] px-2.5"
-                        onClick={() => void setStatusOf(m, "archived")}
+                        className="min-h-[36px] rounded px-2 text-[11.5px] hover:bg-[var(--color-surface-2)]"
+                        style={{ color: "var(--color-err)" }}
+                        onClick={() => void remove(m)}
                       >
-                        停用
+                        删除
                       </button>
-                    ) : null}
-                    {m.status === "archived" ? (
+                    </>
+                  }
+                >
+                  {/* 勾选框只给候选行：批量确认/丢弃是候选区唯一的批量语义 */}
+                  {cand ? (
+                    <label
+                      className="flex h-9 w-6 shrink-0 cursor-pointer items-center justify-center"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <input
+                        type="checkbox"
+                        className="h-[17px] w-[17px] accent-[var(--color-accent)]"
+                        checked={picked.has(m.id)}
+                        onChange={() => togglePick(m.id)}
+                      />
+                    </label>
+                  ) : null}
+
+                  <span className="min-w-0 flex-1 basis-[260px]">
+                    <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                      <KindTag kind={m.kind} />
+                      {cand ? <Chip tone="warn">待确认</Chip> : null}
+                      {arch ? <Chip tone="muted">已停用</Chip> : null}
+                      <span
+                        className="line-clamp-2 min-w-0 flex-1 text-[13.5px] leading-snug"
+                        style={{ color: arch ? "var(--color-muted)" : undefined }}
+                        title={m.content}
+                      >
+                        {m.content}
+                      </span>
+                    </span>
+                    <span
+                      className="mt-0.5 block text-[11.5px]"
+                      style={{ color: "var(--color-muted)" }}
+                    >
+                      {m.scope === "global" ? "所有助手共用" : (m.agent_name ?? "（绑定助手已失效）")}
+                      {" · "}
+                      {m.source === "auto" ? "自动提炼" : "手动录入"}
+                      {" · 用过 "}
+                      {m.hits} 次
+                      {" · "}
+                      {fmt.relative(m.updated_at)}
+                    </span>
+                  </span>
+
+                  <span className="shrink-0 text-[11px]" style={{ color: "var(--color-muted)" }}>
+                    {open ? "▾" : "▸"}
+                  </span>
+                </Row>
+
+                {open && (
+                  <RowDetail>
+                    <div className="whitespace-pre-wrap break-words text-[13px] leading-relaxed">
+                      {m.content}
+                    </div>
+
+                    <div className="mt-3 grid gap-1.5 md:grid-cols-2">
+                      <KV k="类型">{KIND_LABEL[m.kind] ?? m.kind}</KV>
+                      <KV k="归谁">
+                        {m.scope === "global" ? "所有助手共用" : (m.agent_name ?? "（绑定助手已失效）")}
+                      </KV>
+                      <KV k="来源">
+                        {m.source === "auto" ? "自动提炼" : m.source === "import" ? "导入" : "手动录入"}
+                        {m.source_run_id ? (
+                          <>
+                            {" "}
+                            <span style={{ color: "var(--color-muted)" }}>来自</span>{" "}
+                            <RunIdLink
+                              runId={m.source_run_id}
+                              label={`${m.source_run_id.slice(0, 16)}…`}
+                              className="hover:underline"
+                            />
+                          </>
+                        ) : null}
+                      </KV>
+                      <KV k="被使用">
+                        {m.hits} 次
+                        <span style={{ color: "var(--color-muted)" }}>
+                          {m.last_hit_at ? ` · 最后 ${fmt.relative(m.last_hit_at)}` : " · 还没用过"}
+                        </span>
+                      </KV>
+                      <KV k="重要度">{m.importance}</KV>
+                      <KV k="有效期">
+                        {m.ttl_s ? `${Math.round(m.ttl_s / 86400)} 天` : "长期有效"}
+                      </KV>
+                      <KV k="更新">
+                        {fmt.time(m.updated_at)}
+                        <span style={{ color: "var(--color-muted)" }}>
+                          {" "}
+                          · 创建 {fmt.relative(m.created_at)}
+                        </span>
+                      </KV>
+                      <KV k="编号">
+                        <span className="mono text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                          {m.id}
+                        </span>
+                      </KV>
+                    </div>
+
+                    {/* 次级动作放在展开区：常用动作（确认/停用/删除）留在行上常驻 */}
+                    <div className="mt-3 flex flex-wrap items-center gap-1.5">
                       <button
                         type="button"
-                        className="btn min-h-[36px] text-[11.5px] px-2.5"
-                        onClick={() => void setStatusOf(m, "active")}
+                        className="btn min-h-[36px] px-2.5 text-[11.5px]"
+                        onClick={() => void edit(m)}
                       >
-                        启用
+                        编辑内容
                       </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      className="ml-auto min-h-[36px] rounded px-2 text-[11.5px] hover:bg-[var(--color-surface-2)]"
-                      style={{ color: "var(--color-err)" }}
-                      onClick={() => void remove(m)}
-                    >
-                      删除
-                    </button>
-                  </div>
-                </div>
-              );
-            })
+                      <button
+                        type="button"
+                        className="btn min-h-[36px] px-2.5 text-[11.5px]"
+                        title="复制一份并绑定到别的助手（原件不动）"
+                        onClick={() => setCopying(m)}
+                      >
+                        复制到别的助手…
+                      </button>
+                    </div>
+                  </RowDetail>
+                )}
+              </div>
+            );
+          })
         )}
       </RowList>
 
       <p className="mt-3 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
         相关设置在每个 Agent 的「记忆」面板里；长期没被用到的记忆会自动降低优先级。
         <br />
-        要让多个助手共用同一条内容，用「复制到…」—— 复制出的副本单独绑定，原件不受影响。
+        要让多个助手共用同一条内容，用「复制到别的助手…」—— 复制出的副本单独绑定，原件不受影响。
       </p>
 
       {copying && (
@@ -611,12 +628,23 @@ export default function MemoriesPage() {
   );
 }
 
+/** 概览里的数字（等宽、强调色，避免一长串灰字的计数看不清） */
+function Num({ n, tone }: { n: number; tone?: "warn" }) {
+  return (
+    <span
+      className="tabular-nums"
+      style={{ color: tone === "warn" ? "var(--color-warn)" : "var(--color-text)", fontWeight: 500 }}
+    >
+      {fmt.int(n)}
+    </span>
+  );
+}
 
 function KindTag({ kind }: { kind: string }) {
   const color = KIND_COLOR[kind] ?? "var(--color-muted)";
   return (
     <span
-      className="inline-block px-1.5 py-0.5 rounded text-[10.5px] whitespace-nowrap"
+      className="inline-block shrink-0 rounded px-1.5 py-0.5 text-[10.5px] whitespace-nowrap"
       style={{ background: `color-mix(in srgb, ${color} 14%, transparent)`, color }}
     >
       {KIND_LABEL[kind] ?? kind}
