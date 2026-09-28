@@ -814,6 +814,11 @@ class ExternalMemoryConfigRead(BaseModel):
     search_path: str = "/search"
     add_path: str = "/add"
     timeout_s: float = 15.0
+    #: 请求侧映射（默认为空 = 用平台标准契约；配了就能接任意 JSON 接口）
+    extra_headers: dict[str, str] = {}
+    search_body: dict[str, Any] = {}
+    add_body: dict[str, Any] = {}
+    results_path: str = ""
     has_api_key: bool = False
     #: 填了地址且开着开关 —— 界面上据它显示"已接入/未接入"
     ready: bool = False
@@ -829,6 +834,11 @@ class ExternalMemoryConfigUpdate(BaseModel):
     search_path: str | None = None
     add_path: str | None = None
     timeout_s: float | None = Field(default=None, ge=1, le=120)
+    #: 额外请求头 / 请求体模板 / 结果点路径 —— 留给"字段名跟标准契约不一样"的服务
+    extra_headers: dict[str, Any] | None = None
+    search_body: dict[str, Any] | None = None
+    add_body: dict[str, Any] | None = None
+    results_path: str | None = None
 
 
 class ExternalMemoryTestResult(BaseModel):

@@ -121,6 +121,10 @@ async def put_external_config(
         search_path=fields.get("search_path"),
         add_path=fields.get("add_path"),
         timeout_s=fields.get("timeout_s"),
+        extra_headers=fields.get("extra_headers"),
+        search_body=fields.get("search_body"),
+        add_body=fields.get("add_body"),
+        results_path=fields.get("results_path"),
         clear_api_key=clear_key,
     )
     return ExternalMemoryConfigRead(**external.dumps(cfg))

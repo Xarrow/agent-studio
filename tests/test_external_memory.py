@@ -11,6 +11,8 @@
 
 from __future__ import annotations
 
+import json
+
 import httpx
 import pytest
 from sqlalchemy import select
@@ -155,3 +157,88 @@ async def test_未配置时_recall_退回内置(client, monkeypatch):
         ctx = await build_turn_context(s, agent_id="ag_ext", session_id=None,
                                        query="用户在哪", policy=policy)
     assert ctx.memory_text and "杭州" in ctx.memory_text, "外部没配时应退回内置记忆"
+
+# ───────────────────────────────────────────────────────────────────────────── #
+# 请求映射（把"字段名/额外头/结果路径跟标准契约不一样"的服务也接进来）
+#
+# 起因：实测用户自己的 tdai 网关（.13:8420 /v3/atomic/search）要
+#   {"team_id","agent_id","user_id","query","limit"} + 头 x-tdai-service-id，
+# 结果在 data.items[]。硬编码一套字段名就只能接"恰好长得一样"的服务。
+# ───────────────────────────────────────────────────────────────────────────── #
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestWarning")
+def test_请求模板_整值占位保类型_嵌入占位转字符串():
+    from agent_studio.memory.external import render_body
+
+    body = render_body(
+        {"team_id": "default", "query": "{query}", "limit": "{top_k}", "note": "找 {query} 相关"},
+        {"query": "蓝鲸", "top_k": 3, "agent_id": "ag1"},
+    )
+    assert body == {"team_id": "default", "query": "蓝鲸", "limit": 3, "note": "找 蓝鲸 相关"}
+    assert isinstance(body["limit"], int), "整值占位必须保留数字类型（网关要 int）"
+
+
+def test_结果点路径_能取到_tdai_那种_data_items():
+    from agent_studio.memory.external import pick_by_path, _parse_results
+
+    payload = {"code": 0, "data": {"items": [{"content": "用户在上海", "score": 0.9}]}}
+    assert pick_by_path(payload, "data.items")[0]["content"] == "用户在上海"
+    assert pick_by_path(payload, "data.missing") is None
+
+    # 不配路径也要自动认出来（宽容探测钻一层 data）
+    assert [i.content for i in _parse_results(payload)] == ["用户在上海"]
+    assert [i.content for i in _parse_results(payload, results_path="data.items")] == ["用户在上海"]
+
+
+def test_额外请求头会并进请求():
+    from agent_studio.memory.external import ExternalMemoryConfig, _headers
+
+    h = _headers(ExternalMemoryConfig(api_key="k", extra_headers={"x-tdai-service-id": "default"}))
+    assert h["Authorization"] == "Bearer k"
+    assert h["x-tdai-service-id"] == "default"
+
+
+@pytest.mark.asyncio
+async def test_配了模板就按模板发_没配就是标准契约(client):
+    """搜索/写入的**请求体**要能整体替换成对方要的形状（端到端过一遍 HTTP 桩）。"""
+    from agent_studio.memory import external
+
+    seen: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(
+            {
+                "url": str(request.url),
+                "body": json.loads(request.content or b"{}"),
+                "hdrs": dict(request.headers),
+            }
+        )
+        return httpx.Response(200, json={"code": 0, "data": {"items": [{"content": "命中", "score": 1}]}})
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as http:
+        cfg = external.ExternalMemoryConfig(
+            enabled=True,
+            base_url="http://mem.local",
+            search_path="/v3/atomic/search",
+            extra_headers={"x-tdai-service-id": "default"},
+            search_body={"team_id": "default", "user_id": "default", "query": "{query}", "limit": "{top_k}"},
+            results_path="data.items",
+        )
+        got = await external.search(cfg, "蓝鲸", top_k=3, agent_id="ag1", client=http)
+        assert [i.content for i in got] == ["命中"]
+
+        assert seen[0]["url"].endswith("/v3/atomic/search")
+        assert seen[0]["body"] == {
+            "team_id": "default",
+            "user_id": "default",
+            "query": "蓝鲸",
+            "limit": 3,
+        }, "配了模板就只发模板里的字段（不掺标准契约的 top_k）"
+        assert seen[0]["hdrs"].get("x-tdai-service-id") == "default"
+
+        # 没配模板 → 回到标准契约
+        plain = external.ExternalMemoryConfig(enabled=True, base_url="http://mem.local")
+        await external.search(plain, "蓝鲸", top_k=3, agent_id="ag1", client=http)
+        assert seen[1]["body"] == {"query": "蓝鲸", "top_k": 3, "agent_id": "ag1"}

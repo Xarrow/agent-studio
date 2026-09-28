@@ -68,6 +68,17 @@ class ExternalMemoryConfig:
     search_path: str = DEFAULT_SEARCH_PATH
     add_path: str = DEFAULT_ADD_PATH
     timeout_s: float = DEFAULT_TIMEOUT_S
+    #: 额外请求头（如 {"x-tdai-service-id": "default"}）
+    extra_headers: dict[str, str] = field(default_factory=dict)
+    #: 搜索请求体**模板**：占位符 {query} {top_k} {agent_id}。
+    #: 空 = 用平台的标准契约 {"query","top_k","agent_id"}。
+    #: 为什么做成模板：外部服务各写各的字段名（实测 tdai 要 team_id/user_id/limit），
+    #: 硬编码一套字段就只能接"恰好长得一样"的服务。
+    search_body: dict[str, Any] = field(default_factory=dict)
+    #: 写入请求体模板：占位符 {content} {tags} {agent_id}
+    add_body: dict[str, Any] = field(default_factory=dict)
+    #: 结果数组在响应里的点路径（如 "data.items"）。空 = 宽容自动探测。
+    results_path: str = ""
 
     @property
     def ready(self) -> bool:
@@ -80,6 +91,57 @@ class ExternalMemoryItem:
     score: float = 0.0
     id: str = ""
     tags: list[str] = field(default_factory=list)
+
+
+def _as_dict(raw: Any) -> dict[str, Any]:
+    """只认 dict，其它一律当"没配"。"""
+    return dict(raw) if isinstance(raw, dict) else {}
+
+
+def _as_str_map(raw: Any) -> dict[str, str]:
+    """{str: str} 的映射（请求头）：值都转成字符串。"""
+    if not isinstance(raw, dict):
+        return {}
+    return {str(k): str(v) for k, v in raw.items() if str(k).strip()}
+
+
+def render_body(template: dict[str, Any], values: dict[str, Any]) -> dict[str, Any]:
+    """按模板渲染请求体。
+
+    规则（简单到能背下来）：
+      · ``"limit": "{top_k}"`` —— 整个值就是占位符 → 用**原值**（保留数字/列表类型）
+      · ``"q": "找 {query} 相关"`` —— 占位符嵌在文本里 → 转成字符串替换
+      · 没写占位符的字面量原样带上（比如 ``"team_id": "default"``）
+    """
+    out: dict[str, Any] = {}
+    for key, raw in template.items():
+        if not isinstance(raw, str):
+            out[key] = raw
+            continue
+        for name, val in values.items():
+            token = "{" + name + "}"
+            if raw == token:  # 整值占位 → 保类型
+                out[key] = val
+                break
+            raw = raw.replace(token, "" if val is None else str(val))
+        else:
+            out[key] = raw
+            continue
+        # for-else 走的是 break（整值占位）分支
+    return out
+
+
+def pick_by_path(data: Any, path: str) -> Any:
+    """按点路径取子结构（``data.items``）；取不到返回 None。"""
+    node = data
+    for part in [p for p in path.split(".") if p]:
+        if isinstance(node, dict) and part in node:
+            node = node[part]
+        elif isinstance(node, list) and part.isdigit() and int(part) < len(node):
+            node = node[int(part)]
+        else:
+            return None
+    return node
 
 
 def _normalize_path(path: str, fallback: str) -> str:
@@ -95,6 +157,9 @@ def _headers(cfg: ExternalMemoryConfig) -> dict[str, str]:
     headers = {"Content-Type": "application/json"}
     if cfg.api_key:
         headers["Authorization"] = f"Bearer {cfg.api_key}"
+    # 有些网关还要自有头（实测 tdai 要 x-tdai-service-id）；配了就带上
+    for k, v in (cfg.extra_headers or {}).items():
+        headers[str(k)] = str(v)
     return headers
 
 
@@ -119,6 +184,10 @@ async def load_config(session: AsyncSession) -> ExternalMemoryConfig:
         search_path=str(raw.get("search_path") or DEFAULT_SEARCH_PATH),
         add_path=str(raw.get("add_path") or DEFAULT_ADD_PATH),
         timeout_s=float(raw.get("timeout_s") or DEFAULT_TIMEOUT_S),
+        extra_headers=_as_str_map(raw.get("extra_headers")),
+        search_body=_as_dict(raw.get("search_body")),
+        add_body=_as_dict(raw.get("add_body")),
+        results_path=str(raw.get("results_path") or "").strip(),
     )
 
 
@@ -131,6 +200,10 @@ async def save_config(
     search_path: str | None = None,
     add_path: str | None = None,
     timeout_s: float | None = None,
+    extra_headers: dict[str, Any] | None = None,
+    search_body: dict[str, Any] | None = None,
+    add_body: dict[str, Any] | None = None,
+    results_path: str | None = None,
     clear_api_key: bool = False,
 ) -> ExternalMemoryConfig:
     """局部更新配置（只覆盖显式传入的字段）。密钥加密后存。"""
@@ -159,15 +232,29 @@ async def save_config(
 # --------------------------------------------------------------------------- #
 # 调用外部服务
 # --------------------------------------------------------------------------- #
-def _parse_results(payload: Any) -> list[ExternalMemoryItem]:
-    """容忍三种常见形状：{results:[...]} / [...] / {"data":[...]}。"""
+def _parse_results(payload: Any, results_path: str = "") -> list[ExternalMemoryItem]:
+    """从响应里取出条目数组。
+
+    配了 ``results_path`` 就按点路径精确取（如 tdai 的 ``data.items``）；
+    没配则宽容探测常见形状：{results:[...]} / [...] / {"data":[...]} /
+    {"data":{"items":[...]}} / {"memories":[...]}。
+    """
     rows: Any = payload
-    if isinstance(payload, dict):
+    if results_path:
+        rows = pick_by_path(payload, results_path)
+    elif isinstance(payload, dict):
         rows = payload.get("results")
         if rows is None:
             rows = payload.get("data")
         if rows is None:
             rows = payload.get("memories")
+        if rows is None:
+            rows = payload.get("items")
+        if isinstance(rows, dict):  # data.items 这类再钻一层
+            for k in ("items", "results", "memories", "list"):
+                if isinstance(rows.get(k), list):
+                    rows = rows[k]
+                    break
     if not isinstance(rows, list):
         return []
     items: list[ExternalMemoryItem] = []
@@ -206,16 +293,21 @@ async def search(
     if not cfg.ready or not query.strip():
         return []
     url = _url(cfg, cfg.search_path)
-    body = {"query": query, "top_k": max(1, int(top_k))}
-    if agent_id:
-        body["agent_id"] = agent_id
+    top_k = max(1, int(top_k))
+    if cfg.search_body:
+        # 配了模板就按模板来（可接任意 JSON 接口：字段名、附加常量都随你）
+        body = render_body(cfg.search_body, {"query": query, "top_k": top_k, "agent_id": agent_id or ""})
+    else:
+        body = {"query": query, "top_k": top_k}
+        if agent_id:
+            body["agent_id"] = agent_id
     own = client is None
     http = client or httpx.AsyncClient(timeout=cfg.timeout_s)
     try:
         resp = await http.post(url, json=body, headers=_headers(cfg))
         if resp.status_code >= 400:
             raise ExternalMemoryError(f"外部记忆搜索失败 HTTP {resp.status_code}：{resp.text[:200]}")
-        return _parse_results(resp.json())
+        return _parse_results(resp.json(), results_path=cfg.results_path)
     except ExternalMemoryError:
         raise
     except Exception as exc:  # noqa: BLE001 —— 网络/JSON 都归成一句人话
@@ -239,9 +331,14 @@ async def add(
     text = (content or "").strip()
     if not text:
         raise ExternalMemoryError("内容为空，不写")
-    body: dict[str, Any] = {"content": text, "tags": list(tags or [])}
-    if agent_id:
-        body["agent_id"] = agent_id
+    if cfg.add_body:
+        body = render_body(
+            cfg.add_body, {"content": text, "tags": list(tags or []), "agent_id": agent_id or ""}
+        )
+    else:
+        body = {"content": text, "tags": list(tags or [])}
+        if agent_id:
+            body["agent_id"] = agent_id
     own = client is None
     http = client or httpx.AsyncClient(timeout=cfg.timeout_s)
     try:
@@ -347,6 +444,10 @@ def dumps(cfg: ExternalMemoryConfig) -> dict[str, Any]:
         "search_path": cfg.search_path,
         "add_path": cfg.add_path,
         "timeout_s": cfg.timeout_s,
+        "extra_headers": dict(cfg.extra_headers or {}),
+        "search_body": dict(cfg.search_body or {}),
+        "add_body": dict(cfg.add_body or {}),
+        "results_path": cfg.results_path,
         "has_api_key": bool(cfg.api_key),
         "ready": cfg.ready,
     }
