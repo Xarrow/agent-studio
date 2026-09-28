@@ -37,6 +37,30 @@ import { KIND_LABEL } from "@/components/RunDetailDialog";
 import { SpanWaterfall } from "@/components/SpanWaterfall";
 import type { Span } from "@/lib/types";
 import { RunTimeline, eventsToSteps, type Step } from "@/components/ui/run-timeline";
+import { Mermaid } from "@/components/Mermaid";
+
+/**
+ * 把一次分派画成调用链（Mermaid 源码）。
+ *
+ * 为什么画图而不只是列表：fork 出来的每一路可能是**另一个助手**在干活，
+ * 列表只有一行行 label，看不出"谁派给谁"；一张链图把"父助手 → N 个子助手"
+ * 的血缘一次说清（节点名 = 助手名 + 第几路 + 结果）。图由 Mermaid 组件自动布局。
+ */
+function dispatchChain(it: ActivityItem, nameOf: (id: string | null) => string): string | null {
+  const f = it.fanout;
+  if (!f || f.items.length === 0) return null;
+  if (it.kind === "chat") return null; // 会话轮次不是分派（同一个助手接着聊）
+  const mark = (s: string) => (s === "ok" ? " ✓" : s === "error" || s === "aborted" ? " ✕" : " …");
+  const safe = (s: string) => s.replace(/[[\]{}()|>]/g, " ").trim() || "助手";
+  const parent = safe(nameOf(it.agent_id) || "发起方");
+  const lines = ["flowchart TD", `  P[${parent}]`];
+  f.items.forEach((x, i) => {
+    const who = safe(x.agent_name || parent);
+    const tag = x.label ? `·${x.label.slice(0, 8)}` : "";
+    lines.push(`  P --> N${i}[${who}${tag}${mark(x.status)}]`);
+  });
+  return lines.join("\n");
+}
 
 /** 状态配色（与全局一致） */
 const STATUS_STYLE: Record<string, string> = {
@@ -53,8 +77,11 @@ const KIND_TABS: { key: string; label: string }[] = [
   { key: "all", label: "全部" },
   { key: "llm_test", label: "LLM 测试" },
   { key: "preview", label: "助手试跑" },
-  { key: "chat", label: "对话" },
-  { key: "playground", label: "编排" },
+  // 「对话」→「Agent」：这些记录本来就是"某个 Agent 被跑了一次"，
+  // 「编排」筛选去掉（编排已从产品里退役，旧记录仍在「全部」里可见）
+  { key: "chat", label: "Agent" },
+  // 远端执行单独一档：跨平台的调用要看得出"这不是本地跑的"
+  { key: "a2a", label: "A2A 远端" },
 ];
 
 /** 运行中的记录不给删（删了状态就永远悬着） */
@@ -88,6 +115,11 @@ export function RunsPanel() {
   const [items, setItems] = useState<ActivityItem[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [agents, setAgents] = useState<Agent[]>([]);
+  /** id → 助手名：调用链图上要显示名字而不是 id（用已加载的列表，不额外请求） */
+  const agentNameOf = useCallback(
+    (id: string | null) => (id ? (agents.find((a) => a.id === id)?.name ?? "") : ""),
+    [agents],
+  );
   const [kind, setKind] = useState("all");
   const [status, setStatus] = useState("");
   const [agentId, setAgentId] = useState("");
@@ -766,6 +798,17 @@ export function RunsPanel() {
                               ` · 合计 ${fmt.num(it.fanout.tokens_in + it.fanout.tokens_out)} token`}
                             {it.kind === "chat" ? "" : "（每一路都是独立执行，可单独重跑）"}
                           </div>
+
+                          {/* 调用链：父助手 → 各路（fork 出的子助手在这里第一次"看得见"）。
+                              只有真分派（不是会话轮次）才画，图是自动布局出来的。 */}
+                          {dispatchChain(it, agentNameOf) && (
+                            <div className="mb-1.5">
+                              <div className="mb-1 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                                调用链（谁派给谁）
+                              </div>
+                              <Mermaid code={dispatchChain(it, agentNameOf)!} />
+                            </div>
+                          )}
                           <div className="flex flex-col gap-1">
                             {it.fanout.items.map((f) => (
                               <div
@@ -787,6 +830,18 @@ export function RunsPanel() {
                                   {f.status === "ok" ? "✓" : f.status === "error" || f.status === "aborted" ? "✕" : "◌"}
                                 </span>
                                 <span className="min-w-0 flex-1 truncate">{f.label || `第 ${f.index + 1} 项`}</span>
+                                {f.agent_name && (
+                                  <span
+                                    className="shrink-0 rounded px-1.5 py-px text-[10.5px]"
+                                    title={`这一路由「${f.agent_name}」执行`}
+                                    style={{
+                                      background: "color-mix(in srgb, var(--color-accent) 12%, transparent)",
+                                      color: "var(--color-accent)",
+                                    }}
+                                  >
+                                    {f.agent_name}
+                                  </span>
+                                )}
                                 {f.status === "waiting_hitl" && (
                                   <span className="shrink-0" style={{ color: "var(--color-warn)" }}>等你确认</span>
                                 )}

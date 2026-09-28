@@ -81,6 +81,9 @@ export default function AgentsPage() {
   /** 卡片上的「⋯」菜单（设置/改名/复制/删除）—— 一次只开一个 ✓ 点别处关 */
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [nameDraft, setNameDraft] = useState("");
+  /** 谁是「我派生出来的」—— 直接由列表算，不再为每个助手发一次请求 */
+  const childrenOf = (id: string) => agents.filter((x) => x.parent_id === id);
+
   /** 就地展开的那一行 —— 展开里放「职责 / 工具真名 / Skills 真名 / 最近一次运行」，
    *  不必再跳详情页才能看清一个助手的配置（范式：点哪展开哪）。 */
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -331,6 +334,10 @@ export default function AgentsPage() {
                       <span className="mono">{a.slug}</span> · v{a.version} ·{" "}
                       <span className="mono">{a.definition?.model?.name || "未指定模型"}</span>
                       {" · "}工具 {toolNames.length} · Skills {skillNames.length}
+                      {/* fork 血缘：这是谁派生出来的、又派生出几个 —— 排在同一行摘要里，
+                          不额外占位置；点开这一行能看到具体名字 */}
+                      {a.parent_id ? ` · 派生自 ${agents.find((x) => x.id === a.parent_id)?.name ?? "（已删除）"}` : ""}
+                      {childrenOf(a.id).length > 0 ? ` · 派生出了 ${childrenOf(a.id).length} 个` : ""}
                       {last ? (
                         <>
                           {" · 最近 "}
@@ -364,6 +371,49 @@ export default function AgentsPage() {
                     {a.description ? (
                       <div className="mb-2 text-[12.5px] leading-[1.65]">{a.description}</div>
                     ) : null}
+                    {/* 血缘：派生自谁 / 派生出哪些 —— 有血缘才显示，没有就不占一行 */}
+                    {(a.parent_id || childrenOf(a.id).length > 0) && (
+                      <div className="mb-2 rounded-[8px] px-2.5 py-2" style={{ background: "var(--color-surface-2)" }}>
+                        <div className="mb-1 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                          fork 血缘（助手之间的派生关系）
+                        </div>
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px]">
+                          {a.parent_id && (
+                            <>
+                              <span style={{ color: "var(--color-muted)" }}>派生自</span>
+                              <Link
+                                href={`/agents/${a.parent_id}`}
+                                className="hover:underline"
+                                style={{ color: "var(--color-accent)" }}
+                              >
+                                {agents.find((x) => x.id === a.parent_id)?.name ?? "（已删除）"}
+                              </Link>
+                            </>
+                          )}
+                          {childrenOf(a.id).length > 0 && (
+                            <>
+                              {a.parent_id ? <span style={{ color: "var(--color-muted)" }}>·</span> : null}
+                              <span style={{ color: "var(--color-muted)" }}>派生出</span>
+                              {childrenOf(a.id).map((c) => (
+                                <Link
+                                  key={c.id}
+                                  href={`/agents/${c.id}`}
+                                  className="rounded px-1.5 py-px hover:underline"
+                                  style={{
+                                    background: "color-mix(in srgb, var(--color-accent) 12%, transparent)",
+                                    color: "var(--color-accent)",
+                                  }}
+                                >
+                                  {c.name}
+                                </Link>
+                              ))}
+                              <span style={{ color: "var(--color-muted)" }}>（点名字直接跳过去）</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="grid gap-1.5 md:grid-cols-2">
                       <KV k="工具">
                         {toolNames.length > 0 ? (

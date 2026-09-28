@@ -50,7 +50,7 @@ const SETUP_ITEMS: Item[] = [
     href: "/runs",
     label: "管理",
     icon: "manage",
-    tip: "流程管理 + 全部运行记录：全部流程、每次执行、点步骤看这一步的执行详情（Playground 顶栏「流程」也能就地打开它）",
+    tip: "全部运行记录：每次执行（LLM 测试 / 助手试跑 / Agent 执行）点一行就地展开，看它怎么想、调了什么、耗时花在哪。",
   },
   {
     href: "/agents",

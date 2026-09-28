@@ -750,8 +750,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               >
                 {paths.database_file ?? paths.database_url}
               </button>
-              <span>· 执行产物在</span>
-              <span className="mono">{paths.runs_dir}</span>
+              <span>· 助手干活的工作目录</span>
+              <span className="mono">{paths.work_dir}</span>
             </div>
           )}
         </div>

@@ -471,7 +471,6 @@ export const api = {
       database_file: string | null;
       database_url: string;
       work_dir: string;
-      runs_dir: string;
       backup_dir: string;
       note: string;
     }>("/api/maintenance/paths"),

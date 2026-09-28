@@ -54,9 +54,12 @@ async def read_paths() -> dict[str, Any]:
         "database_file": db_file,
         "database_url": settings.db_url,
         "work_dir": str(work.resolve()) if work.exists() else str(work),
-        "runs_dir": str((work / "runs").resolve()),
         "backup_dir": str(backups.resolve()),
-        "note": "会话与消息存在数据库文件里；每次执行的工作目录在 runs_dir 下的 run 目录中。",
+        # 说清"存在哪"的语义，别报一个不存在的路径（原来这里凭空拼了个 runs/ 子目录）
+        "note": (
+            "会话与消息存在数据库文件里；助手干活（读写的文件、跑的脚本）落在工作目录里 —— "
+            "默认所有助手共用一个工作目录，助手自己配了「工作目录」则用它的子目录。"
+        ),
     }
 
 

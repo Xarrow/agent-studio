@@ -16,12 +16,13 @@
 
 import React from "react";
 import { CodeBlock } from "@/components/CodeBlock";
+import { Mermaid } from "@/components/Mermaid";
 
 /** 行内：**加粗**、`代码`、[文字](链接) */
 function inline(text: string, keyBase: string): React.ReactNode[] {
   const out: React.ReactNode[] = [];
   // 一次扫描，按优先级匹配三种标记
-  const re = /(\*\*[^*]+\*\*)|(`[^`]+`)|(\[[^\]]+\]\([^)]+\))|(\$\S(?:[^$\n]*\S)?\$)/g;
+  const re = /(\*\*[^*]+\*\*)|(`[^`]+`)|(!\[[^\]]*\]\([^)]+\))|(\[[^\]]+\]\([^)]+\))|(\$\S(?:[^$\n]*\S)?\$)/g;
   let last = 0;
   let m: RegExpExecArray | null;
   let i = 0;
@@ -48,6 +49,19 @@ function inline(text: string, keyBase: string): React.ReactNode[] {
     } else if (tok.startsWith("$")) {
       // 行内公式：$x^2$ / $rac{a}{b}$
       out.push(<TexInline key={key} tex={tok.slice(1, -1)} />);
+    } else if (tok.startsWith("![")) {
+      // 图片：模型给链接就直接显示（比一个裸链接有用得多）
+      const mm = /^!\[([^\]]*)\]\(([^)]+)\)$/.exec(tok);
+      out.push(
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          key={key}
+          src={mm ? mm[2] : ""}
+          alt={mm ? mm[1] : ""}
+          className="my-1 max-w-full rounded-md border"
+          style={{ borderColor: "var(--color-border)" }}
+        />,
+      );
     } else {
       const mm = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(tok);
       out.push(
@@ -272,6 +286,58 @@ function TexBlock({ tex }: { tex: string }) {
   );
 }
 
+/**
+ * ```svg 代码块 —— agent 直接产出的图，**直接画出来**
+ * （OpenGenerativeUI 那一类：产出即可见，不用先看代码再想象）。
+ *
+ * 走沙箱 iframe（sandbox=""）而不是 dangerouslySetInnerHTML：
+ * 模型产出的 SVG 里可能带 <script> / onload，内联就等于让它拿到同源权限。
+ * 沙箱里没有脚本权限，外面也不受它影响。想看源码就切到「代码」。
+ */
+function SvgBlock({ code }: { code: string }) {
+  const [showCode, setShowCode] = React.useState(false);
+  if (showCode) {
+    return (
+      <div className="my-2">
+        <button
+          type="button"
+          data-tap
+          className="mb-1 text-[11.5px] hover:underline"
+          style={{ color: "var(--color-accent)" }}
+          onClick={() => setShowCode(false)}
+        >
+          ← 看图
+        </button>
+        <CodeBlock code={code} lang="svg" />
+      </div>
+    );
+  }
+  return (
+    <div className="my-2 rounded-[10px] border" style={{ borderColor: "var(--color-border)" }}>
+      <div className="flex items-center gap-2 border-b px-2.5 py-1.5" style={{ borderColor: "var(--color-border)" }}>
+        <span className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+          图（SVG）
+        </span>
+        <button
+          type="button"
+          data-tap
+          className="ml-auto text-[11.5px] hover:underline"
+          style={{ color: "var(--color-accent)" }}
+          onClick={() => setShowCode(true)}
+        >
+          代码
+        </button>
+      </div>
+      <iframe
+        title="svg-preview"
+        sandbox=""
+        srcDoc={`<!doctype html><html><body style="margin:0;display:flex;align-items:center;justify-content:center;background:#fff">${code}</body></html>`}
+        className="block h-[260px] w-full"
+      />
+    </div>
+  );
+}
+
 export default function Markdown({ text }: { text: string }) {
   const src = (text || "").replace(/\r\n/g, "\n");
   if (!src.trim()) return null;
@@ -291,7 +357,16 @@ export default function Markdown({ text }: { text: string }) {
       i++;
       while (i < lines.length && !lines[i].trimStart().startsWith("```")) buf.push(lines[i++]);
       i++; // 跳过收尾的 ```
-      blocks.push(<CodeBlock key={`b${k++}`} code={buf.join("\n")} lang={lang} />);
+      const body = buf.join("\n");
+      if (lang === "mermaid") {
+        // 流程图：自动布局画出来（认不出的语法会自己退回代码）
+        blocks.push(<Mermaid key={`b${k++}`} code={body} />);
+      } else if (lang === "svg") {
+        // agent 直接产 SVG → 直接显示（OpenGenerativeUI 那一类：产出即可见）
+        blocks.push(<SvgBlock key={`b${k++}`} code={body} />);
+      } else {
+        blocks.push(<CodeBlock key={`b${k++}`} code={body} lang={lang} />);
+      }
       continue;
     }
 
@@ -366,51 +441,6 @@ export default function Markdown({ text }: { text: string }) {
         </div>,
       );
       i++;
-      continue;
-    }
-
-    // 表格：| 列 | 列 | 换行后跟 |---|---| —— 模型产出里很常见（天气、对比、参数表）
-    if (/^\s*\|/.test(line) && i + 1 < lines.length && /^\s*\|[\s:|-]+\|\s*$/.test(lines[i + 1])) {
-      const cells = (l: string) =>
-        l.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((x) => x.trim());
-      const head = cells(lines[i]);
-      i += 2; // 跳过表头行与分隔行
-      const rows: string[][] = [];
-      while (i < lines.length && /^\s*\|/.test(lines[i])) rows.push(cells(lines[i++]));
-      blocks.push(
-        <div key={`tb${k++}`} className="my-2 overflow-auto rounded-[8px] border" style={{ borderColor: "var(--color-border)" }}>
-          <table className="w-full border-collapse text-[11.5px]">
-            <thead>
-              <tr style={{ background: "var(--color-surface-2)" }}>
-                {head.map((h, n) => (
-                  <th
-                    key={n}
-                    className="border-b px-2 py-1 text-left font-semibold"
-                    style={{ borderColor: "var(--color-border)" }}
-                  >
-                    {inline(h, `th${k}-${n}`)}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, ri) => (
-                <tr key={ri}>
-                  {r.map((c, ci) => (
-                    <td
-                      key={ci}
-                      className="border-b px-2 py-1 align-top"
-                      style={{ borderColor: "color-mix(in srgb, var(--color-border) 60%, transparent)" }}
-                    >
-                      {inline(c, `td${k}-${ri}-${ci}`)}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>,
-      );
       continue;
     }
 

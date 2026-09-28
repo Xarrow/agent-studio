@@ -305,6 +305,12 @@ class FanoutItemRead(BaseModel):
     duration_ms: int | None = None
     tokens_in: int = 0
     tokens_out: int = 0
+    #: 这一路**是哪个助手跑的** —— fork 出来的变体往往和父不是同一个 agent，
+    #: 只显示 label 时用户看不出"这一路换了人"（记录页因此看不出血缘）
+    agent_id: str = ""
+    agent_name: str = ""
+    #: 分派深度（1 = 直接派出去的第一层；深度 2 目前是禁用的，留着展示用）
+    depth: int = 1
 
 
 class FanoutRead(BaseModel):
@@ -339,7 +345,7 @@ class ActivityItem(BaseModel):
       llm_test   LLM 配置页的「对话测试」
     """
 
-    kind: Literal["chat", "preview", "playground", "llm_test"]
+    kind: Literal["chat", "preview", "playground", "llm_test", "a2a"]
     id: str
     at: int                                  # 开始时间（毫秒）
     # 编排执行才有：点这一行可以「以流程查看」—— 前端据此深链到 Playground 的历史回放

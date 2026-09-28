@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --test --experimental-strip-types lib/canvas/*.test.ts lib/tool-params.test.ts lib/ime.test.ts"
+    "test": "node --test --experimental-strip-types lib/canvas/*.test.ts lib/tool-params.test.ts lib/ime.test.ts lib/mermaid.test.ts"
   },
   "dependencies": {
     "next": "16.3.5",

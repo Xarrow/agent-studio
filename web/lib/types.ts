@@ -206,11 +206,17 @@ export interface FanoutRead {
     duration_ms: number | null;
     tokens_in: number;
     tokens_out: number;
+    /** 这一路**是哪个助手跑的**（fork 出来的变体与父不是同一个 agent，血缘靠它看） */
+    agent_id?: string;
+    agent_name?: string;
+    /** 分派深度（1 = 直接派出去的第一层） */
+    depth?: number;
   }[];
 }
 
 export interface ActivityItem {
-  kind: "chat" | "preview" | "playground" | "llm_test";
+  /** a2a = 远端执行（这一路是发给别的平台上的 agent 跑的，走 A2A 协议） */
+  kind: "chat" | "preview" | "playground" | "llm_test" | "a2a";
   id: string;
   at: number;
   /** 编排执行才有：有它就能「以流程查看」（深链到 Playground 的历史回放） */

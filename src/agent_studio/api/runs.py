@@ -421,6 +421,9 @@ def _run_kind(run: Run) -> str:
     带编排 → playground，带会话 → chat，都没有 → preview（助手页试跑）。
     推断只是为了让历史数据也能归类，新数据一律显式记录。
     """
+    # 远端执行（A2A）优先认：它是"这一路不是在本地跑的"，比 origin 更能说明问题
+    if run.runtime == "a2a":
+        return "a2a"
     if run.origin in ("chat", "preview", "playground"):
         return run.origin
     if run.orchestration_id:
@@ -479,6 +482,7 @@ def _kind_case(model):  # noqa: ANN001
     from sqlalchemy import case, literal
 
     return case(
+        (model.runtime == "a2a", literal("a2a")),
         (model.origin.in_(("chat", "preview", "playground")), model.origin),
         (model.orchestration_id.is_not(None), literal("playground")),
         (model.session_id.is_not(None), literal("chat")),
@@ -894,6 +898,16 @@ async def activity_timeline(
             tin = tout = 0
             kids_out: list[FanoutItemRead] = []
             ok_n = failed_n = 0
+            # 每一路是哪个助手跑的 —— 一次把名字查出来，避免逐条 get（N+1）
+            kid_agent_ids = {str(k.agent_id) for k in rows if k.agent_id}
+            kid_agent_names: dict[str, str] = {}
+            if kid_agent_ids:
+                anames = (
+                    await session.execute(
+                        select(Agent.id, Agent.name).where(Agent.id.in_(kid_agent_ids))
+                    )
+                ).all()
+                kid_agent_names = {str(i): str(n) for i, n in anames}
             for k in rows:
                 k_usage = k.usage if isinstance(k.usage, dict) else {}
                 k_in, k_out = tokens_of(k_usage)
@@ -912,6 +926,9 @@ async def activity_timeline(
                         duration_ms=(k.ended_at - k.started_at) if (k.ended_at and k.started_at) else None,
                         tokens_in=k_in,
                         tokens_out=k_out,
+                        agent_id=str(k.agent_id or ""),
+                        agent_name=kid_agent_names.get(str(k.agent_id or ""), ""),
+                        depth=1,
                     )
                 )
             x.fanout = FanoutRead(
