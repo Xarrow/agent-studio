@@ -72,7 +72,7 @@ const SETUP_ITEMS: Item[] = [
   },
     {
     href: "/remote-agents",
-    label: "远程 Agent",
+    label: "远程Agent管理",
     icon: "exchange",
     tip: "接入别处的 A2A agent：粘地址注册或把注册地址给对方，看清它会什么，挂到助手上直接调用。",
   },

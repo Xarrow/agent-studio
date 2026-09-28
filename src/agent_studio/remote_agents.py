@@ -27,7 +27,7 @@ from sqlalchemy import select
 
 from . import a2a_client
 from .db import SessionLocal
-from .models import RemoteAgent, Tool, new_id, now_ms
+from .models import RemoteAgent, RemoteAgentEvent, Tool, new_id, now_ms
 
 logger = logging.getLogger(__name__)
 
@@ -190,6 +190,28 @@ async def resolve(url: str, *, timeout: float = 15.0, headers: dict[str, str] | 
     if not parsed["name"]:
         raise a2a_client.A2AError("卡片里没有 name —— 这地址可能不是 A2A agent card")
     return {"base": base, "card": card, "parsed": parsed, "summary": card_text(parsed)}
+
+
+async def log_event(
+    session: Any,
+    remote: "RemoteAgent | None",
+    action: str,
+    summary: str,
+    detail: dict[str, Any] | None = None,
+    *,
+    remote_id: str = "",
+    remote_name: str = "",
+) -> None:
+    """记一条操作记录（审计）。删除场景行已没了，用 remote_id/remote_name 补。"""
+    ev = RemoteAgentEvent(
+        remote_id=remote_id or (remote.id if remote else ""),
+        remote_name=remote_name or (remote.name if remote else ""),
+        action=action,
+        summary=summary[:300],
+        detail=detail or {},
+    )
+    session.add(ev)
+    await session.commit()
 
 
 async def self_register(

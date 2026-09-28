@@ -15,13 +15,13 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import a2a_client, remote_agents
 from ..db import SessionLocal, get_session
-from ..models import RemoteAgent, Tool, now_ms
+from ..models import Run, RemoteAgent, Tool, now_ms
 from ..schemas import (
     RemoteAgentCreateIn,
     RemoteAgentPatchIn,
@@ -151,6 +151,11 @@ async def create_remote_agent(
     row.updated_at = now_ms()
     await session.commit()
     await session.refresh(row)
+    await remote_agents.log_event(
+        session, row, "register",
+        f"注册远程 Agent「{row.name}」（{len((row.parsed or {}).get('skills') or [])} 个技能）",
+        {"url": row.url},
+    )
     return _to_read(row, tool=tool, bound=[])
 
 
@@ -182,6 +187,11 @@ async def self_register_remote_agent(
     # 重推（created=False）也返回 200/201 由框架决定；语义在 note 里可见（「远端自注册」）
     resp = _to_read(row, tool=tool, bound=bound)
     resp.note = (f"{resp.note} · 重推已更新卡片" if not created else resp.note)
+    await remote_agents.log_event(
+        session, row, "self_register",
+        (f"远端自注册「{row.name}」" if created else f"远端重推更新「{row.name}」的卡片快照"),
+        {"url": row.url},
+    )
     return resp
 
 
@@ -212,6 +222,12 @@ async def refresh_remote_agent(
     row.tool_id = tool.id
     await session.commit()
     await session.refresh(row)
+    await remote_agents.log_event(
+        session, row, "refresh",
+        (f"重新解析「{row.name}」：{len((row.parsed or {}).get('skills') or [])} 个技能"
+         if row.status == "ok" else f"重新解析「{row.name}」失败：{row.last_error[:80]}"),
+        {"url": row.url, "status": row.status},
+    )
     return _to_read(row, tool=tool, bound=await remote_agents.bindings_of(row.id))
 
 
@@ -244,6 +260,14 @@ async def test_remote_agent(remote_id: str) -> RemoteAgentTestResult:
                 if ok:
                     fresh.last_ok_at = now_ms()
                 await session.commit()
+        async with SessionLocal() as es:
+            erow = await es.get(RemoteAgent, remote_id)
+            await remote_agents.log_event(
+                es, erow, "test",
+                (f"测试调用「{erow.name if erow else ''}」通过（{ms}ms）"
+                 if ok else f"测试调用「{erow.name if erow else ''}」失败：{state}"),
+                {"ms": ms, "state": state, "task_id": task_id},
+            )
         return RemoteAgentTestResult(
             ok=ok, ms=ms, state=state, task_id=task_id, answer=answer[:2000],
             error="" if ok else f"远端状态：{state}",
@@ -258,6 +282,11 @@ async def test_remote_agent(remote_id: str) -> RemoteAgentTestResult:
                 fresh.last_checked_at = now_ms()
                 fresh.last_error = msg
                 await session.commit()
+        async with SessionLocal() as es:
+            erow = await es.get(RemoteAgent, remote_id)
+            await remote_agents.log_event(
+                es, erow, "test", f"测试调用「{erow.name if erow else ''}」异常：{msg[:120]}", {"ms": ms},
+            )
         return RemoteAgentTestResult(ok=False, ms=ms, error=msg)
 
 
@@ -283,8 +312,12 @@ async def patch_remote_agent(
         row.auth_token_enc = encrypt(payload.token) if payload.token else None
     if payload.timeout_s is not None:
         row.timeout_s = float(payload.timeout_s)
-    if payload.enabled is not None:
+    if payload.enabled is not None and bool(payload.enabled) != row.enabled:
         row.enabled = bool(payload.enabled)
+        await remote_agents.log_event(
+            session, row, "enable" if row.enabled else "disable",
+            ("启用" if row.enabled else "停用") + f"远程 Agent「{row.name}」",
+        )
     if payload.note is not None:
         row.note = payload.note
     row.updated_at = now_ms()
@@ -295,6 +328,66 @@ async def patch_remote_agent(
     await session.commit()
     await session.refresh(row)
     return _to_read(row, tool=tool, bound=await remote_agents.bindings_of(row.id))
+
+
+@router.get("/events")
+async def list_remote_agent_events(
+    remote_id: str | None = None,
+    limit: int = Query(default=50, le=200),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict[str, Any]]:
+    """操作记录：注册/更新/启停/删除/解析/测试，时间倒序（删除后的行靠名字快照显示）。"""
+    stmt = select(RemoteAgentEvent).order_by(RemoteAgentEvent.created_at.desc()).limit(limit)
+    if remote_id:
+        stmt = stmt.where(RemoteAgentEvent.remote_id == remote_id)
+    rows = (await session.execute(stmt)).scalars().all()
+    return [
+        {
+            "id": r.id, "remote_id": r.remote_id, "remote_name": r.remote_name,
+            "action": r.action, "summary": r.summary, "detail": r.detail or {},
+            "created_at": r.created_at,
+        }
+        for r in rows
+    ]
+
+
+@router.get("/{remote_id}/calls")
+async def list_remote_agent_calls(
+    remote_id: str,
+    limit: int = Query(default=30, le=100),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict[str, Any]]:
+    """调用记录：runtime=a2a 且 input.remote 指向本 agent 的执行（含后台续轮回填）。"""
+    row = await session.get(RemoteAgent, remote_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"远程 agent 不存在: {remote_id}")
+    stmt = (
+        select(Run)
+        .where(Run.runtime == "a2a")
+        .order_by(Run.started_at.desc())
+        .limit(400)
+    )
+    rows = (await session.execute(stmt)).scalars().all()
+    base = (row.url or "").rstrip("/")
+    picked = []
+    for r in rows:
+        remote = str((r.input or {}).get("remote") or "") if isinstance(r.input, dict) else ""
+        if remote.rstrip("/") == base:
+            picked.append(r)
+            if len(picked) >= limit:
+                break
+    return [
+        {
+            "run_id": r.id, "status": r.status, "started_at": r.started_at,
+            "ended_at": r.ended_at,
+            "duration_ms": (r.ended_at - r.started_at) if r.ended_at else None,
+            "input": (r.input or {}).get("text", "") if isinstance(r.input, dict) else str(r.input or "")[:120],
+            "output": ((r.output or {}).get("content", "")[:300] if isinstance(r.output, dict) else ""),
+            "error": (r.error or "")[:300],
+            "origin": r.origin,
+        }
+        for r in picked
+    ]
 
 
 @router.delete("/{remote_id}")
@@ -311,6 +404,10 @@ async def delete_remote_agent(remote_id: str) -> dict[str, Any]:
                 status.HTTP_409_CONFLICT,
                 f"还有助手在用它（{names}）—— 先在那些助手的「工具」里取消勾选，再删除",
             )
+        await remote_agents.log_event(
+            session, None, "delete", f"删除远程 Agent「{row.name}」（{row.url}）",
+            {"url": row.url}, remote_id=remote_id, remote_name=row.name,
+        )
         tool = await session.get(Tool, row.tool_id) if row.tool_id else None
         if tool is not None:
             await session.delete(tool)

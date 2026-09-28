@@ -16,7 +16,13 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 
 import { api, apiBase } from "@/lib/api";
-import type { Agent, RemoteAgentParsed, RemoteAgentRecord } from "@/lib/types";
+import type {
+  Agent,
+  RemoteAgentCallRecord,
+  RemoteAgentEventRecord,
+  RemoteAgentParsed,
+  RemoteAgentRecord,
+} from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
 import {
   Chip,
@@ -35,6 +41,83 @@ import {
 } from "@/components/ui/kit";
 
 type Filter = "all" | "ok" | "error" | "off";
+
+function CallList({ rows }: { rows: RemoteAgentCallRecord[] | null }) {
+  if (rows === null)
+    return (
+      <p className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+        读取中…
+      </p>
+    );
+  if (!rows.length)
+    return (
+      <p className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+        还没通过它调过远端 —— 挂到助手后，助手每调一次远端这里就多一条
+      </p>
+    );
+  return (
+    <div className="flex flex-col gap-1.5">
+      {rows.map((c) => (
+        <div key={c.run_id} className="flex flex-col gap-0.5 rounded p-2" style={{ background: "var(--color-surface-2)" }}>
+          <div className="flex items-center gap-2">
+            <span
+              className="text-[11.5px] font-medium"
+              style={{
+                color:
+                  c.status === "ok" ? "var(--color-ok)" : c.status === "error" ? "var(--color-danger)" : "var(--color-warn)",
+              }}
+            >
+              {c.status === "ok" ? "成功" : c.status === "error" ? "失败" : c.status === "aborted" ? "已中止" : c.status}
+            </span>
+            <span className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+              {new Date(c.started_at).toLocaleString()}
+              {c.duration_ms != null ? ` · ${(c.duration_ms / 1000).toFixed(1)}s` : ""}
+            </span>
+          </div>
+          {c.input ? (
+            <span className="truncate text-[12px]">问：{c.input}</span>
+          ) : null}
+          {c.error ? (
+            <span className="text-[12px]" style={{ color: "var(--color-danger)" }}>
+              {c.error}
+            </span>
+          ) : c.output ? (
+            <span className="truncate text-[12px]" style={{ color: "var(--color-muted)" }}>
+              答：{c.output}
+            </span>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function EventList({ rows }: { rows: RemoteAgentEventRecord[] | null }) {
+  if (rows === null)
+    return (
+      <p className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+        读取中…
+      </p>
+    );
+  if (!rows.length)
+    return (
+      <p className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+        还没有操作记录
+      </p>
+    );
+  return (
+    <div className="flex flex-col gap-1">
+      {rows.map((e) => (
+        <div key={e.id} className="flex items-baseline gap-2 text-[12px]">
+          <span className="mono shrink-0" style={{ color: "var(--color-muted)" }}>
+            {new Date(e.created_at).toLocaleString()}
+          </span>
+          <span>{e.summary || e.action}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function StatusChip({ r }: { r: RemoteAgentRecord }) {
   if (!r.enabled) return <Chip tone="muted">已停用</Chip>;
@@ -91,6 +174,7 @@ export default function RemoteAgentsPage() {
   const [busy, setBusy] = useState("");
   const [registering, setRegistering] = useState(false);
   const [copied, setCopied] = useState(false);
+  // 展开的远端的调用/操作记录（点开时拉一次；「刷新」按钮重拉）
   // API 地址与前端 api 客户端同一口径（lib/api.ts 的 apiBase）：内网 hostname:8848、公网走反代
   const base = apiBase();
   const selfRegUrl = `${base}/api/remote-agents/self`;
@@ -204,7 +288,7 @@ export default function RemoteAgentsPage() {
   return (
     <>
       <PageHead
-        title="远程 Agent"
+        title="远程 Agent 管理"
         desc="注册外部 A2A agent（另一台 agent-studio 或任何实现了 A2A 的 agent）——解析它的能力，挂到助手上直接调用"
       />
 
@@ -293,6 +377,16 @@ export default function RemoteAgentsPage() {
                     actions={
                       <>
                         <button
+                          className={r.enabled ? "btn" : "btn btn-primary"}
+                          disabled={busy === `toggle:${r.id}`}
+                          onClick={() =>
+                            void run(`toggle:${r.id}`, () => api.patchRemoteAgent(r.id, { enabled: !r.enabled }),
+                              r.enabled ? "已停用（挂它的助手不再能调它）" : "已启用")
+                          }
+                        >
+                          {r.enabled ? "停用" : "启用"}
+                        </button>
+                        <button
                           className="btn btn-primary"
                           disabled={!r.enabled || busy === `test:${r.id}`}
                           onClick={() => void onTest(r)}
@@ -307,6 +401,19 @@ export default function RemoteAgentsPage() {
                           }
                         >
                           {busy === `refresh:${r.id}` ? "解析中…" : "重新解析"}
+                        </button>
+                        <button
+                          className={r.enabled ? "btn" : "btn btn-primary"}
+                          disabled={busy === `toggle:${r.id}`}
+                          onClick={() =>
+                            void run(
+                              `toggle:${r.id}`,
+                              () => api.patchRemoteAgent(r.id, { enabled: !r.enabled }),
+                              r.enabled ? "已停用" : "已启用",
+                            )
+                          }
+                        >
+                          {r.enabled ? "关闭" : "开启"}
                         </button>
                         <button
                           className="ml-auto text-[12.5px]"
@@ -414,6 +521,8 @@ export default function RemoteAgentsPage() {
                             run(`edit:${r.id}`, () => api.patchRemoteAgent(r.id, patch), msg)
                           }
                         />
+
+                        <RecordsTabs remoteId={r.id} name={r.name} />
                       </div>
                     </RowDetail>
                   ) : null}
@@ -741,6 +850,58 @@ function RegisterDialog({ onClose, onDone }: { onClose: () => void; onDone: () =
           </span>
         </div>
       </div>
+    </div>
+  );
+}
+
+
+/** 详情里的「调用记录 / 操作记录」两个分段（点行就地展开，不跳页）。 */
+function RecordsTabs({ remoteId, name }: { remoteId: string; name: string }) {
+  type Tab = "calls" | "events";
+  const [tab, setTab] = useState<Tab>("calls");
+  const [calls, setCalls] = useState<RemoteAgentCallRecord[] | null>(null);
+  const [events, setEvents] = useState<RemoteAgentEventRecord[] | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    if (tab === "calls") {
+      if (calls !== null) return;
+      api
+        .remoteAgentCalls(remoteId)
+        .then((v) => { if (alive) setCalls(v); })
+        .catch(() => { if (alive) setCalls([]); });
+    } else {
+      if (events !== null) return;
+      api
+        .remoteAgentEvents(remoteId)
+        .then((v) => { if (alive) setEvents(v); })
+        .catch(() => { if (alive) setEvents([]); });
+    }
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, remoteId]);
+
+  const ACTION_LABEL: Record<string, string> = {
+    register: "注册", self_register: "自注册", update: "更新", refresh: "重新解析",
+    test: "测试调用", enable: "开启", disable: "关闭", delete: "删除",
+    bind: "挂载", unbind: "取下",
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <Segmented<Tab>
+        value={tab}
+        onChange={setTab}
+        options={[
+          { key: "calls", label: "调用记录" },
+          { key: "events", label: "操作记录" },
+        ]}
+      />
+      {tab === "calls" ? (
+        <CallList rows={calls} />
+      ) : (
+        <EventList rows={events} />
+      )}
     </div>
   );
 }

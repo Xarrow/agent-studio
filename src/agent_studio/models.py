@@ -633,6 +633,28 @@ class RemoteAgent(Base):
     updated_at: Mapped[int] = mapped_column(Integer, default=now_ms)
 
 
+class RemoteAgentEvent(Base):
+    """远程 Agent 的**操作记录**（谁在什么时候对它做了什么）。
+
+    注册/更新/重新解析/测试调用/启停/删除都留一条。删除操作发生在行被删掉
+    **之前**记（删除后行没了，事件还在——审计就是要能回答"它去哪了"）。
+    """
+
+    __tablename__ = "remote_agent_event"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("rae_"))
+    workspace_id: Mapped[str] = mapped_column(String(32), default="ws_default", index=True)
+    remote_id: Mapped[str] = mapped_column(String(32), index=True)
+    #: 事件发生时的名字快照（行删掉后列表仍能显示"删除了 XX"）
+    remote_name: Mapped[str] = mapped_column(String(120), default="")
+    #: register | self_register | update | refresh | test | enable | disable | delete | bind | unbind
+    action: Mapped[str] = mapped_column(String(24))
+    #: 人话摘要（列表直接显示这一列）
+    summary: Mapped[str] = mapped_column(String(300), default="")
+    detail: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[int] = mapped_column(Integer, default=now_ms)
+
+
 class McpServer(Base):
     """一个 MCP 服务器（注册表条目）。
 
