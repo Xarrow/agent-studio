@@ -487,9 +487,30 @@ class RunService:
         await dispatcher.submit(run_id, definition, run_input)
 
     async def abort(self, run_id: str) -> bool:
+        """中止一次执行。
+
+        内存里有任务/在排队 → 交给分发器取消（正在跑的会收到 CancelledError）。
+
+        内存里**没有**它时不能就这么返回 False —— 那种行（重启前遗留的、或由别的
+        进程建的孤儿）会卡成死结：abort 说"没在跑"、删除接口又要求终态，于是界面上
+        永远挂着一条"待跑/进行中"，既停不掉也删不掉（实测踩到）。这种情况直接把它
+        落成终态（和 A2A 的 tasks/cancel 同一口径）。
+        """
         from .dispatcher import dispatcher
 
-        return await dispatcher.abort(run_id)
+        if await dispatcher.abort(run_id):
+            return True
+
+        async with SessionLocal() as session:
+            row = await session.get(Run, run_id)
+            if row is None or row.status not in ("pending", "running", "waiting_hitl"):
+                return False
+            row.status = "aborted"
+            row.error = row.error or "已中止（这条执行不在运行队列里，直接落终态）"
+            row.ended_at = now_ms()
+            row.pending_hitl = None
+            await session.commit()
+            return True
 
     def is_running(self, run_id: str) -> bool:
         from .dispatcher import dispatcher

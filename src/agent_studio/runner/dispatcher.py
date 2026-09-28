@@ -37,7 +37,7 @@ from sqlalchemy import select
 from ..config import settings
 from ..db import SessionLocal
 from ..schemas import AgentDefinition
-from ..models import Run
+from ..models import Run, now_ms
 
 logger = logging.getLogger(__name__)
 
@@ -173,7 +173,21 @@ class Dispatcher:
             try:
                 definition = AgentDefinition.model_validate(snapshot)
             except Exception:  # noqa: BLE001 —— 快照坏了不该让分发器停摆
-                logger.warning("执行 %s 的定义快照无法解析，跳过（会一直留在 pending）", run.id)
+                # 坏快照之前是"跳过、留在 pending" —— 实测这条路是死结：
+                #   · 留在 pending 的行**每秒**被这里扫到一次，每次都刷一条 WARNING
+                #     （一个坏行 ≈ 每天 8.6 万条日志，纯属日志/磁盘泄漏）；
+                #   · 它既**中断不了**（abort 只作用于内存里的任务/队列，这里没任务）
+                #     又**删不掉**（删除接口要求终态）—— 界面上永远挂着一条"待跑"。
+                # 所以直接落终态：如实说明原因，让用户能删、日志闭嘴。
+                async with SessionLocal() as _s:
+                    row = await _s.get(Run, run.id)
+                    if row is not None and row.status == "pending":
+                        row.status = "error"
+                        row.error = "这条执行的配置快照损坏、无法解析，未执行（可以直接删除）"
+                        row.ended_at = now_ms()
+                        row.started_at = row.started_at or row.ended_at
+                        await _s.commit()
+                logger.warning("执行 %s 的定义快照无法解析 → 已标为 error（不再每轮重扫）", run.id)
                 continue
             self._spawn(run.id, definition, input_of(run.input), resumed=True)
             started.append(run.id)
