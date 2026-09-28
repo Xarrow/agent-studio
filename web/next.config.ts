@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // 静态导出：部署机不依赖 Node（FastAPI 同进程托管 out/）
+  output: "export",
   // Next.js 16 默认阻止跨源访问 dev 资源（/_next/*），
   // 用 IP 而非 localhost 访问时会导致 JS 加载失败、组件无法 hydrate。
   // 内网自托管场景统一放行这些 host。

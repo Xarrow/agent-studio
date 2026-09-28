@@ -260,7 +260,7 @@ export default function AgentsPage() {
                   onToggle={() => toggleRow(a.id)}
                   actions={
                     <>
-                      <Link href={`/agents/${a.id}`} className="btn btn-primary text-[12.5px]">
+                      <Link href={`/agents/detail?id=${a.id}`} className="btn btn-primary text-[12.5px]">
                         设置 / 定义
                       </Link>
                       <button
@@ -382,7 +382,7 @@ export default function AgentsPage() {
                             <>
                               <span style={{ color: "var(--color-muted)" }}>派生自</span>
                               <Link
-                                href={`/agents/${a.parent_id}`}
+                                href={`/agents/detail?id=${a.parent_id}`}
                                 className="hover:underline"
                                 style={{ color: "var(--color-accent)" }}
                               >
@@ -397,7 +397,7 @@ export default function AgentsPage() {
                               {childrenOf(a.id).map((c) => (
                                 <Link
                                   key={c.id}
-                                  href={`/agents/${c.id}`}
+                                  href={`/agents/detail?id=${c.id}`}
                                   className="rounded px-1.5 py-px hover:underline"
                                   style={{
                                     background: "color-mix(in srgb, var(--color-accent) 12%, transparent)",
@@ -459,7 +459,7 @@ export default function AgentsPage() {
                       </KV>
                     </div>
                     <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-                      <Link href={`/agents/${a.id}`} className="btn text-[12.5px]">
+                      <Link href={`/agents/detail?id=${a.id}`} className="btn text-[12.5px]">
                         打开完整设置 →
                       </Link>
                       <Link href={`/exec?agent=${a.id}`} className="btn text-[12.5px]">

@@ -13,9 +13,11 @@ import secrets
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from pathlib import Path
+
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from . import __version__
 from .api import api_router
@@ -290,3 +292,41 @@ async def health() -> dict:
         "db": str(settings.db_path),
         "runtimes": [rt.name for rt in list_runtimes()],
     }
+
+
+# --------------------------------------------------------------------------- #
+# 前端静态托管 —— 部署机不依赖 Node.js
+# --------------------------------------------------------------------------- #
+# 为什么后端来托管前端：
+#   前端是 Next.js **静态导出**（output:"export"，构建期跑在开发机，产物 out/ 是
+#   纯 HTML/JS/CSS）。部署机上没有任何 Node 进程 —— 一个 uvicorn 进程同时把
+#   API 和页面都端出去，单端口、单服务、单份配置。
+#
+# 为什么不用 StaticFiles(html=True) 一步到位：
+#   SPA 有**客户端路由**（/agents/detail?id=…、/runs/… 这类没有对应物理文件的
+#   路径），StaticFiles 只会 404。所以这里手动分发：物理文件存在就给文件，
+#   不存在就回 index.html，交给前端路由接管。
+#
+# 顺序为什么安全：这条 catch-all **最后定义**，FastAPI 按注册顺序匹配，
+#   /api/*、/a2a、/.well-known/* 这些真路由都在它前面命中，轮不到兜底。
+_WEB_DIST = Path(
+    os.getenv("STUDIO_WEB_DIST", Path(__file__).resolve().parents[2] / "web" / "out")
+)
+
+if _WEB_DIST.is_dir():
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_web(full_path: str) -> "Response":
+        # 目录形式（/agents → agents.html）：Next 导出的根级 .html 就这么取
+        candidate = _WEB_DIST / f"{full_path}.html" if full_path else _WEB_DIST / "index.html"
+        target = _WEB_DIST / full_path
+        if full_path and target.is_file():
+            return FileResponse(target)
+        if candidate.is_file():
+            return FileResponse(candidate)
+        # SPA 兜底：客户端路由没有物理文件，回 index.html 交给前端路由
+        return FileResponse(_WEB_DIST / "index.html")
+
+    logger.info("静态前端已托管 src=%s", _WEB_DIST)
+else:
+    logger.warning("未找到前端构建产物 src=%s（仅 API 可用）", _WEB_DIST)

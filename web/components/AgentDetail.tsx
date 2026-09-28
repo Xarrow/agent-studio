@@ -416,7 +416,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 setMsg(`已复制为「${c.name}」，可在助手列表找到`);
                 return;
               }
-              router.push(`/agents/${c.id}`);
+              router.push(`/agents/detail?id=${c.id}`);
             }}
           >
             复制为副本
