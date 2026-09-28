@@ -474,6 +474,8 @@ class MemoryPolicy(Base):
     recall_top_k: Mapped[int] = mapped_column(Integer, default=5)
     #: recent | keyword | hybrid
     recall_strategy: Mapped[str] = mapped_column(String(16), default="hybrid")
+    #: 召回来源：local（平台内置 BM25）| external（外部记忆服务）| hybrid（两边都要，合并去重）
+    recall_backend: Mapped[str] = mapped_column(String(16), default="local")
     #: 注入预算（字符数上限），防止记忆撑爆上下文
     max_inject_chars: Mapped[int] = mapped_column(Integer, default=2000)
     #: 提炼用的模型（留空则跟随 Agent 定义；建议用轻量模型控成本）
@@ -716,3 +718,4 @@ class EvalRun(Base):
     score: Mapped[float | None] = mapped_column(Float, default=None)
     created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
     finished_at: Mapped[int | None] = mapped_column(BigInteger, default=None)
+

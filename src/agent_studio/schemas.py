@@ -425,6 +425,31 @@ class LlmCallRead(BaseModel):
     cost_usd: float
     status: str
     error: str | None
+    #: 这次调用是否留了**完整请求/响应**原文（老数据可能没有；
+    #: 界面据此决定「看原文」入口给不给，否则点了必然是空的）
+    has_payload: bool = False
+
+
+class LlmCallPayloadRead(BaseModel):
+    """一次模型调用的完整请求与响应（按需取，列表不背这份重量）。"""
+
+    id: int
+    iteration: int
+    provider: str | None
+    model: str | None
+    duration_ms: int | None
+    ttft_ms: int | None
+    tokens_in: int
+    tokens_out: int
+    tokens_cache_read: int
+    status: str
+    error: str | None
+    #: 发出去的东西：model / generate_kwargs / messages / tools / tool_choice
+    request: Any = None
+    #: 回来的东西：content 块（文本/思考/工具调用）/ finished_reason / usage
+    response: Any = None
+    #: 体积超限被截断（只留了前段）
+    truncated: bool = False
 
 
 class ToolCallRead(BaseModel):
@@ -763,6 +788,8 @@ class MemoryPolicyRead(BaseModel):
     recall_enabled: bool = True
     recall_top_k: int = 5
     recall_strategy: str = "hybrid"
+    #: local（平台内置）| external（外部记忆服务）| hybrid（两边合并去重）
+    recall_backend: str = "local"
     max_inject_chars: int = 2000
     extract_model: str | None = None
     compress_after_turns: int = 10
@@ -773,9 +800,41 @@ class MemoryPolicyUpdate(BaseModel):
     recall_enabled: bool | None = None
     recall_top_k: int | None = Field(default=None, ge=1, le=50)
     recall_strategy: Literal["recent", "keyword", "hybrid"] | None = None
+    recall_backend: Literal["local", "external", "hybrid"] | None = None
     max_inject_chars: int | None = Field(default=None, ge=100, le=20000)
     extract_model: str | None = None
     compress_after_turns: int | None = Field(default=None, ge=0, le=200)
+
+
+class ExternalMemoryConfigRead(BaseModel):
+    """外部记忆服务的配置（**绝不回明文密钥**，只报"配没配"）。"""
+
+    enabled: bool = False
+    base_url: str = ""
+    search_path: str = "/search"
+    add_path: str = "/add"
+    timeout_s: float = 15.0
+    has_api_key: bool = False
+    #: 填了地址且开着开关 —— 界面上据它显示"已接入/未接入"
+    ready: bool = False
+
+
+class ExternalMemoryConfigUpdate(BaseModel):
+    """局部更新（只覆盖显式传入的字段）。"""
+
+    enabled: bool | None = None
+    base_url: str | None = None
+    #: 传空串 = 显式清空密钥；不传 = 保持原样
+    api_key: str | None = None
+    search_path: str | None = None
+    add_path: str | None = None
+    timeout_s: float | None = Field(default=None, ge=1, le=120)
+
+
+class ExternalMemoryTestResult(BaseModel):
+    ok: bool
+    detail: str
+    ms: int | None = None
 
 
 class MemoryBindingRequest(BaseModel):

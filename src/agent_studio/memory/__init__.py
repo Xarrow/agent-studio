@@ -11,6 +11,7 @@
 
 from .extract import Candidate, call_llm, dedupe, parse_candidates
 from .policy import DEFAULT_POLICY, get_policy, to_read, update_policy
+from . import external
 from .recall import RecallResult, RecalledMemory, mark_hit, recall, render
 
 __all__ = [
@@ -20,6 +21,7 @@ __all__ = [
     "RecalledMemory",
     "call_llm",
     "dedupe",
+    "external",
     "get_policy",
     "mark_hit",
     "parse_candidates",

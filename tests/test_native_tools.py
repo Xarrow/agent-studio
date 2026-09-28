@@ -16,8 +16,12 @@ from agent_studio.native_tools import (
 
 
 def test_builtin_registry_shape():
-    """三个内核工具都要有：描述、schema、安全 flags（前端试跑/权限引擎依赖）。"""
-    assert set(NATIVE_TOOLS) == {"fetch", "web_search", "python"}
+    """内核工具都要有：描述、schema、安全 flags（前端试跑/权限引擎依赖）。
+
+    memory_search / memory_save 是后加的一对：**主动**查记忆与记一条
+    （以前记忆只能在执行开始时自动注入一次，Agent 没法"想起来去查"）。
+    """
+    assert set(NATIVE_TOOLS) == {"fetch", "web_search", "python", "memory_search", "memory_save"}
     for name, entry in NATIVE_TOOLS.items():
         assert entry["description"], name
         assert entry["schema"].get("required"), name

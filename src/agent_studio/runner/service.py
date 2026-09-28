@@ -29,7 +29,6 @@ from ..models import (
     Agent,
     AgentSkill,
     AgentTool,
-    LlmCall,
     Memory,
     Run,
     RunEvent,
@@ -1065,24 +1064,9 @@ class RunService:
             if run.status != "waiting_hitl":
                 run.ended_at = ts
 
-            for r in collector.llm_calls:
-                session.add(
-                    LlmCall(
-                        run_id=run_id,
-                        iteration=r.iteration,
-                        provider=r.provider,
-                        model=r.model,
-                        started_at=r.started_at,
-                        ended_at=r.ended_at,
-                        duration_ms=r.duration_ms,
-                        ttft_ms=r.ttft_ms,
-                        tokens_in=r.tokens_in,
-                        tokens_out=r.tokens_out,
-                        tokens_cache_read=r.tokens_cache_read,
-                        status=r.status,
-                        error=r.error,
-                    )
-                )
+            # 模型调用明细改由 runner/recorder.py 的中间件写：它在 on_model_call
+            # 钩子里同时拿到**完整请求与响应**（llm_call.request_blob/response_blob），
+            # 元数据和原文出自同一次调用、不会对不上。这里再写一遍就会一行变两行。
             for r in collector.tool_calls:
                 session.add(
                     ToolCall(

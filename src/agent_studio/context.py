@@ -23,7 +23,7 @@ from typing import Any
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .memory import call_llm, recall
+from .memory import call_llm, external, recall
 from .models import Run, Session as ChatSession, SessionMessage, now_ms
 from .runtimes.base import TurnContext, TurnMessage
 from .schemas import AgentDefinition, MemoryPolicyRead
@@ -86,6 +86,15 @@ async def load_history(
     return [TurnMessage(role=r.role, content=_clip(r.content)) for r in picked if r.role in ("user", "assistant", "system")]
 
 
+def recall_render(items: list[tuple[str, float]]) -> str | None:
+    """内置记忆命中 → 注入文本（与 memory.recall.render 同形，含标题与列表）。"""
+    if not items:
+        return None
+    lines = ["## 长期记忆（与本次任务相关）"]
+    lines += [f"- {content}" for content, _score in items]
+    return "\n".join(lines)
+
+
 async def build_turn_context(
     session: AsyncSession,
     *,
@@ -105,18 +114,61 @@ async def build_turn_context(
             ctx.history = await load_history(session, session_id)
 
     if policy.recall_enabled:
-        result = await recall(
-            session,
-            agent_id,
-            query,
-            top_k=policy.recall_top_k,
-            strategy=policy.recall_strategy,
-            max_chars=policy.max_inject_chars,
-            session_id=session_id,
-        )
-        if result.memories:
-            ctx.memory_text = result.text
-            ctx.memory_ids = result.ids
+        # 召回来源：local（内置 BM25）/ external（外部记忆服务）/ hybrid（两边合并去重）。
+        # 三档都要能跑：外部没配、外部挂了，都不能让执行停摆 ——
+        # 失败时如实记日志并退回内置（静默变空才是最坏的结果）。
+        backend = getattr(policy, "recall_backend", None) or "local"
+        local_items: list[tuple[str, float]] = []
+        if backend in ("local", "hybrid"):
+            result = await recall(
+                session,
+                agent_id,
+                query,
+                top_k=policy.recall_top_k,
+                strategy=policy.recall_strategy,
+                max_chars=policy.max_inject_chars,
+                session_id=session_id,
+            )
+            local_items = [(m.content, m.score) for m in result.memories]
+            if result.memories:
+                ctx.memory_ids = result.ids
+
+        ext_items: list[external.ExternalMemoryItem] = []
+        if backend in ("external", "hybrid"):
+            cfg = await external.load_config(session)
+            if cfg.ready:
+                try:
+                    ext_items = await external.search(
+                        cfg, query, top_k=policy.recall_top_k, agent_id=agent_id
+                    )
+                except external.ExternalMemoryError as exc:
+                    logger.warning("外部记忆召回失败，本次退回内置记忆：%s", exc)
+                    if backend == "external" and not local_items:
+                        result = await recall(
+                            session, agent_id, query,
+                            top_k=policy.recall_top_k,
+                            strategy=policy.recall_strategy,
+                            max_chars=policy.max_inject_chars,
+                            session_id=session_id,
+                        )
+                        local_items = [(m.content, m.score) for m in result.memories]
+                        if result.memories:
+                            ctx.memory_ids = result.ids
+            elif backend == "external":
+                logger.warning("记忆来源选了外部，但还没配置外部记忆服务 —— 本次用内置记忆")
+
+        if backend == "hybrid":
+            merged = external.budget(
+                external.merge_items(local_items, ext_items), policy.max_inject_chars
+            )
+            ctx.memory_text = external.render(merged, source_tag="内置 + 外部") or None
+        elif backend == "external" and ext_items:
+            merged = external.budget(
+                [(i.content, i.score) for i in ext_items], policy.max_inject_chars
+            )
+            ctx.memory_text = external.render(merged, source_tag="外部记忆") or None
+        elif local_items:
+            ctx.memory_text = recall_render(local_items)
 
     return ctx
 

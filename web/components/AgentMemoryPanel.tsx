@@ -319,6 +319,31 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
         {showAdvanced && (
           <div className="mt-4 space-y-4">
             <div>
+              <label className="label">记忆从哪来</label>
+              <select
+                className="input"
+                value={policy.recall_backend}
+                disabled={busy}
+                onChange={(e) =>
+                  void patch({
+                    recall_backend: e.target.value as MemoryPolicy["recall_backend"],
+                  })
+                }
+              >
+                <option value="local">平台内置记忆（本地关键词匹配）</option>
+                <option value="external">外部记忆服务（接你自己的记忆库）</option>
+                <option value="hybrid">两者都用 · 合并去重</option>
+              </select>
+              <p className="text-[11.5px] text-[var(--color-muted)] mt-1">
+                {policy.recall_backend === "local"
+                  ? "记忆存在平台数据库里，按关键词 + 最近使用打分。"
+                  : policy.recall_backend === "external"
+                    ? "只问外部服务；它没配好或连不上时会退回内置记忆（不会静默变空）。在「记忆」页配置外部服务。"
+                    : "内置与外部各问一遍，同一句话只留一条；外部分数略降权，不会顶掉内置排序。"}
+              </p>
+            </div>
+
+            <div>
               <label className="label">挑选方式</label>
               <select
                 className="input"

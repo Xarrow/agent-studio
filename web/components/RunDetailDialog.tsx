@@ -14,9 +14,18 @@
  *   · LLM 对话测试（裸调用）→ 请求消息 + 回复/错误（它没有工具、没有事件流）
  */
 
-import { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { api, fmt } from "@/lib/api";
-import type { ActivityItem, LlmCall, OrchestrationDetail, RunEvent, RunTrace, ToolCallRow } from "@/lib/types";
+import type {
+  ActivityItem,
+  LlmCall,
+  LlmCallPayload,
+  OrchestrationDetail,
+  RunEvent,
+  RunTrace,
+  ToolCallRow,
+} from "@/lib/types";
+import { JsonBlock } from "@/components/DataBlocks";
 import { RunTimeline, eventsToSteps } from "@/components/ui/run-timeline";
 import { HitlPrompt } from "@/components/HitlPrompt";
 import { useFeedback } from "@/components/ui/feedback";
@@ -37,14 +46,16 @@ const STATUS_STYLE: Record<string, string> = {
 export const KIND_LABEL: Record<ActivityItem["kind"], string> = {
   llm_test: "LLM 测试",
   preview: "助手试跑",
-  chat: "对话",
+  chat: "Agent",
+  a2a: "A2A 远端",
   playground: "编排",
 };
 
 const KIND_HINT: Record<ActivityItem["kind"], string> = {
   llm_test: "在「LLM 配置」里直接跟模型聊的两句 —— 用来确认这把 key 和这个模型本身能通。",
   preview: "在助手详情页「试跑与观测」里发起的执行 —— 配置时验证助手用的。",
-  chat: "在「对话」页跟助手正式聊天的一轮。",
+  chat: "在「Agent 执行」页跟助手干活的一轮。",
+  a2a: "派给**远端** A2A agent 执行的一路 —— 跑在别的平台上，本平台只拿结果。",
   playground: "在「对话 → 多 Agent 编排」里由编排发起的执行。",
 };
 
@@ -83,6 +94,8 @@ export function RunDetailDialog({
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [rawOpen, setRawOpen] = useState(false);
+  //: 展开看原文的模型调用（一次只展开一条 —— 原文动辄几十 KB，同时铺开没法看）
+  const [openCall, setOpenCall] = useState<number | null>(null);
   const fb = useFeedback();
 
   const isTest = item.kind === "llm_test";
@@ -468,22 +481,47 @@ export function RunDetailDialog({
                         <th className="text-right py-1.5 font-normal">耗时</th>
                         <th className="text-right py-1.5 font-normal">Tokens</th>
                         <th className="text-left py-1.5 font-normal pl-3">状态</th>
+                        <th className="text-right py-1.5 font-normal">原文</th>
                       </tr>
                     </thead>
                     <tbody>
                       {trace.llm_calls.map((c: LlmCall) => (
-                        <tr key={c.id} className="border-t border-[var(--color-border)]">
-                          <td className="py-1.5 text-[var(--color-muted)]">{c.iteration}</td>
-                          <td className="py-1.5 mono">{c.model ?? "—"}</td>
-                          <td className="py-1.5 text-right">{fmt.ms(c.ttft_ms)}</td>
-                          <td className="py-1.5 text-right">{fmt.ms(c.duration_ms)}</td>
-                          <td className="py-1.5 text-right">
-                            {c.tokens_in}/{c.tokens_out}
-                          </td>
-                          <td className="py-1.5 pl-3 mono" style={{ color: STATUS_STYLE[c.status] ?? "" }}>
-                            {c.status}
-                          </td>
-                        </tr>
+                        <React.Fragment key={c.id}>
+                          <tr className="border-t border-[var(--color-border)]">
+                            <td className="py-1.5 text-[var(--color-muted)]">{c.iteration}</td>
+                            <td className="py-1.5 mono">{c.model ?? "—"}</td>
+                            <td className="py-1.5 text-right">{fmt.ms(c.ttft_ms)}</td>
+                            <td className="py-1.5 text-right">{fmt.ms(c.duration_ms)}</td>
+                            <td className="py-1.5 text-right">
+                              {c.tokens_in}/{c.tokens_out}
+                            </td>
+                            <td className="py-1.5 pl-3 mono" style={{ color: STATUS_STYLE[c.status] ?? "" }}>
+                              {c.status}
+                            </td>
+                            <td className="py-1.5 text-right">
+                              {c.has_payload ? (
+                                <button
+                                  type="button"
+                                  className="rounded px-1.5 py-1 text-[11px] text-[var(--color-accent)] hover:bg-[var(--color-surface-2)]"
+                                  onClick={() =>
+                                    setOpenCall((cur) => (cur === c.id ? null : c.id))
+                                  }
+                                >
+                                  {openCall === c.id ? "收起" : "看原文"}
+                                </button>
+                              ) : (
+                                <span className="text-[11px] text-[var(--color-muted)]">—</span>
+                              )}
+                            </td>
+                          </tr>
+                          {openCall === c.id ? (
+                            <tr className="border-t border-[var(--color-border)]">
+                              <td colSpan={7} className="py-2">
+                                <LlmCallPayloadView runId={item.id} callId={c.id} />
+                              </td>
+                            </tr>
+                          ) : null}
+                        </React.Fragment>
                       ))}
                     </tbody>
                   </table>
@@ -590,5 +628,70 @@ export function RunDetailById({ runId, onClose }: { runId: string; onClose: () =
       }}
       onClose={onClose}
     />
+  );
+}
+
+
+/**
+ * 一次模型调用的**完整请求与响应**（按需拉取 + 折叠展示）。
+ *
+ * 为什么按需：一次 ReAct 循环的请求动辄几十 KB，列表里全带上会让"看记录"变慢；
+ * 而且多数时候人并不需要看原文 —— 出错、或想确认"到底发没发工具定义"时才点开。
+ */
+function LlmCallPayloadView({ runId, callId }: { runId: string; callId: number }) {
+  const [data, setData] = React.useState<LlmCallPayload | null>(null);
+  const [err, setErr] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const got = await api.llmCallPayload(runId, callId);
+        if (alive) setData(got);
+      } catch (e) {
+        if (alive) setErr(e instanceof Error ? e.message : String(e));
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [runId, callId]);
+
+  if (err) return <p className="text-[12px] text-[var(--color-danger)]">原文读取失败：{err}</p>;
+  if (!data) return <p className="text-[12px] text-[var(--color-muted)]">正在读原文…</p>;
+
+  return (
+    <div className="space-y-2">
+      {data.truncated ? (
+        <p className="text-[11.5px] text-[var(--color-muted)]">
+          体积超过上限，下面只保留了前段（原文完整内容没有被保存）。
+        </p>
+      ) : null}
+      <div>
+        <p className="mb-1 text-[12px] font-medium">
+          发给模型的请求
+          <span className="ml-2 font-normal text-[var(--color-muted)]">
+            {data.model ?? "—"} · 进 {data.tokens_in} tokens
+            {data.tokens_cache_read ? `（命中缓存 ${data.tokens_cache_read}）` : ""}
+          </span>
+        </p>
+        <JsonBlock code={JSON.stringify(data.request ?? {}, null, 1)} />
+      </div>
+      <div>
+        <p className="mb-1 text-[12px] font-medium">
+          模型返回
+          <span className="ml-2 font-normal text-[var(--color-muted)]">
+            出 {data.tokens_out} tokens · {data.duration_ms ?? "—"}ms
+          </span>
+        </p>
+        {data.error ? (
+          <pre className="rounded-md bg-[var(--color-surface-2)] p-2 text-[11.5px] whitespace-pre-wrap text-[var(--color-danger)]">
+            {data.error}
+          </pre>
+        ) : (
+          <JsonBlock code={JSON.stringify(data.response ?? {}, null, 1)} />
+        )}
+      </div>
+    </div>
   );
 }

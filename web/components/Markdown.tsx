@@ -17,6 +17,7 @@
 import React from "react";
 import { CodeBlock } from "@/components/CodeBlock";
 import { Mermaid } from "@/components/Mermaid";
+import { ChartBlock, CsvBlock, DiffBlock, JsonBlock } from "@/components/DataBlocks";
 import { splitInlineDisplayMath, texParse, type MNode } from "@/lib/tex";
 
 /** 行内：**加粗**、`代码`、[文字](链接) */
@@ -254,7 +255,17 @@ export default function Markdown({ text }: { text: string }) {
       while (i < lines.length && !lines[i].trimStart().startsWith("```")) buf.push(lines[i++]);
       i++; // 跳过收尾的 ```
       const body = buf.join("\n");
-      if (lang === "mermaid") {
+      if (lang === "json") {
+        blocks.push(<JsonBlock key={`b${k++}`} code={body} />);
+      } else if (lang === "csv") {
+        blocks.push(<CsvBlock key={`b${k++}`} code={body} delimiter="," />);
+      } else if (lang === "tsv") {
+        blocks.push(<CsvBlock key={`b${k++}`} code={body} delimiter="\t" />);
+      } else if (lang === "chart") {
+        blocks.push(<ChartBlock key={`b${k++}`} code={body} />);
+      } else if (lang === "diff" || lang === "patch") {
+        blocks.push(<DiffBlock key={`b${k++}`} code={body} />);
+      } else if (lang === "mermaid") {
         // 流程图：自动布局画出来（认不出的语法会自己退回代码）
         blocks.push(<Mermaid key={`b${k++}`} code={body} />);
       } else if (lang === "svg") {

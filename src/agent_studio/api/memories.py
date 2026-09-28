@@ -34,6 +34,9 @@ from ..models import (
 )
 from ..runner.service import resolve_api_key
 from ..schemas import (
+    ExternalMemoryConfigRead,
+    ExternalMemoryConfigUpdate,
+    ExternalMemoryTestResult,
     AgentDefinition,
     MemoryBindingRequest,
     BulkIdsRequest,
@@ -89,6 +92,51 @@ def _to_read(row: Memory, agent_name: str | None = None) -> MemoryRead:
 # --------------------------------------------------------------------------- #
 # 统计（静态路径，必须在 /{memory_id} 之前）
 # --------------------------------------------------------------------------- #
+# --------------------------------------------------------------------------- #
+# 外部记忆服务（把别处已有的记忆库接进来：内置 / 外部 / 两者混用）
+# --------------------------------------------------------------------------- #
+@router.get("/external-config", response_model=ExternalMemoryConfigRead)
+async def get_external_config(
+    session: AsyncSession = Depends(get_session),
+) -> ExternalMemoryConfigRead:
+    from ..memory import external
+
+    return ExternalMemoryConfigRead(**external.dumps(await external.load_config(session)))
+
+
+@router.put("/external-config", response_model=ExternalMemoryConfigRead)
+async def put_external_config(
+    payload: ExternalMemoryConfigUpdate, session: AsyncSession = Depends(get_session)
+) -> ExternalMemoryConfigRead:
+    """保存外部记忆配置。密钥加密后落库（不回明文）。"""
+    from ..memory import external
+
+    fields = payload.model_dump(exclude_unset=True)
+    clear_key = fields.get("api_key") == ""  # 显式传空串 = 清掉密钥
+    cfg = await external.save_config(
+        session,
+        enabled=fields.get("enabled"),
+        base_url=fields.get("base_url"),
+        api_key=fields.get("api_key"),
+        search_path=fields.get("search_path"),
+        add_path=fields.get("add_path"),
+        timeout_s=fields.get("timeout_s"),
+        clear_api_key=clear_key,
+    )
+    return ExternalMemoryConfigRead(**external.dumps(cfg))
+
+
+@router.post("/external-config/test", response_model=ExternalMemoryTestResult)
+async def test_external_config(
+    session: AsyncSession = Depends(get_session),
+) -> ExternalMemoryTestResult:
+    """真发一次搜索探连通（用当前**已保存**的配置，不猜不装作）。"""
+    from ..memory import external
+
+    result = await external.test_connection(await external.load_config(session))
+    return ExternalMemoryTestResult(**result)
+
+
 @router.get("/stats")
 async def memory_stats(session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     """概览用：各状态计数 + 命中总量。"""

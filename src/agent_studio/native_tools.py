@@ -325,6 +325,127 @@ PYTHON_SCHEMA: dict[str, Any] = {
     "required": ["code"],
 }
 
+MEMORY_SEARCH_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "query": {"type": "string", "description": "要查什么（用自然语言写，别只写关键词）"},
+        "top_k": {"type": "integer", "description": "最多要几条，默认 5"},
+    },
+    "required": ["query"],
+}
+
+MEMORY_SAVE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "content": {"type": "string", "description": "要记住的一句话（写清事实本身，别写'用户说了什么'）"},
+        "tags": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "可选标签（外部记忆服务支持；平台内置记忆会写进正文）",
+        },
+    },
+    "required": ["content"],
+}
+
+
+async def _memory_search(query: str, top_k: int = 5) -> str:
+    """**主动查长期记忆**：内置（BM25）+ 配了就用外部，两边都问、合并去重。
+
+    为什么给 Agent 这个工具
+    ----------------------
+    以前记忆只在执行开始时**自动**注入一次 System Prompt —— Agent 自己没法"想起来去查"
+    （比如先干别的、中途才需要某个事实）。现在它可以随时查，且查的结果里会标出
+    哪些来自内置、哪些来自外部记忆服务。
+    """
+    from .db import SessionLocal
+    from .memory import external
+    from .memory.recall import recall as _recall
+    from .runner.ctx import current_run_ctx
+
+    text = (query or "").strip()
+    if not text:
+        return "查询为空。"
+    k = max(1, min(int(top_k or 5), 20))
+    ctx = current_run_ctx()
+    agent_id = str(ctx.get("agent_id") or "")
+
+    local_lines: list[str] = []
+    ext_lines: list[str] = []
+    note = ""
+
+    async with SessionLocal() as session:
+        res = await _recall(session, agent_id, text, top_k=k, strategy="hybrid", max_chars=4000)
+        local_lines = [f"- {m.content}" for m in res.memories]
+        try:
+            cfg = await external.load_config(session)
+        except Exception:  # noqa: BLE001 —— 配置读不出来不该让工具炸
+            cfg = None
+        if cfg is not None and cfg.ready:
+            try:
+                for item in await external.search(cfg, text, top_k=k, agent_id=agent_id or None):
+                    ext_lines.append(f"- {item.content}")
+            except external.ExternalMemoryError as exc:
+                note = f"\n（外部记忆服务这次没答上来：{exc}）"
+
+    if not local_lines and not ext_lines:
+        return "没有找到相关记忆。" + note
+    parts: list[str] = []
+    if local_lines:
+        parts.append("【平台内置记忆】\n" + "\n".join(local_lines))
+    if ext_lines:
+        parts.append("【外部记忆服务】\n" + "\n".join(ext_lines))
+    return "\n\n".join(parts) + note
+
+
+async def _memory_save(content: str, tags: list[str] | None = None) -> str:
+    """**主动记一条**：内置存为「候选」（等你确认才生效）+ 配了外部就同时写外部。
+
+    为什么内置存成候选而不是直接生效：自动沉淀的东西必须有人过一眼 ——
+    这是平台一贯的闸门（记忆只涨不消、越攒越脏是这类系统的通病）。
+    """
+    from .db import SessionLocal
+    from .memory import external
+    from .models import Memory, now_ms
+    from .runner.ctx import current_run_ctx
+
+    body = (content or "").strip()
+    if not body:
+        return "内容为空，没有存。"
+    tag_list = [str(t).strip() for t in (tags or []) if str(t).strip()]
+    ctx = current_run_ctx()
+    agent_id = str(ctx.get("agent_id") or "") or None
+    run_id = str(ctx.get("run_id") or "") or None
+
+    stored = body + (f"（标签：{'、'.join(tag_list)}）" if tag_list else "")
+    async with SessionLocal() as session:
+        session.add(
+            Memory(
+                agent_id=agent_id,
+                scope="agent" if agent_id else "global",
+                kind="fact",
+                content=stored,
+                source="auto",
+                source_run_id=run_id,
+                status="candidate",
+                importance=0.6,
+                created_at=now_ms(),
+                updated_at=now_ms(),
+            )
+        )
+        await session.commit()
+
+        external_note = "（没配外部记忆服务，只存了内置）"
+        try:
+            cfg = await external.load_config(session)
+            if cfg.ready:
+                item_id = await external.add(cfg, body, tags=tag_list, agent_id=agent_id)
+                external_note = f"已写入外部记忆服务{'（id: ' + item_id + '）' if item_id else ''}"
+        except external.ExternalMemoryError as exc:
+            external_note = f"外部记忆写入失败：{exc}"
+
+    return f"已记下（内置存为候选，待人工确认后生效）；{external_note}"
+
+
 NATIVE_TOOLS: dict[str, dict[str, Any]] = {
     "fetch": {
         "fn": _fetch,
@@ -337,6 +458,24 @@ NATIVE_TOOLS: dict[str, dict[str, Any]] = {
         "description": "搜索互联网（DuckDuckGo），返回前几条结果的标题、摘要和链接。",
         "schema": SEARCH_SCHEMA,
         "flags": {"read_only": True, "concurrency_safe": True, "dangerous": False, "native": True},
+    },
+    "memory_search": {
+        "fn": _memory_search,
+        "description": (
+            "查长期记忆（平台内置 + 配置了的话还包括外部记忆服务），返回与问题相关的事实。"
+            "需要回忆用户偏好、以前定过的结论时主动用。"
+        ),
+        "schema": MEMORY_SEARCH_SCHEMA,
+        "flags": {"read_only": True, "concurrency_safe": True, "dangerous": False, "native": True},
+    },
+    "memory_save": {
+        "fn": _memory_save,
+        "description": (
+            "把值得长期记住的一句话存进记忆（内置存为候选，等你确认才生效；"
+            "配了外部记忆服务会同时写过去）。适合用户明确说「记住…」时。"
+        ),
+        "schema": MEMORY_SAVE_SCHEMA,
+        "flags": {"read_only": False, "concurrency_safe": True, "dangerous": False, "native": True},
     },
     "python": {
         "fn": _python,

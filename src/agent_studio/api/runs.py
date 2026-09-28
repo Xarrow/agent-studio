@@ -23,6 +23,7 @@ from ..schemas import (
     FanoutItemRead,
     FanoutRead,
     HitlResumeRequest,
+    LlmCallPayloadRead,
     LlmCallRead,
     ModelTestRead,
     RunBulkDeleteRequest,
@@ -200,6 +201,7 @@ async def get_trace(run_id: str, session: AsyncSession = Depends(get_session)) -
                 ttft_ms=c.ttft_ms, tokens_in=c.tokens_in, tokens_out=c.tokens_out,
                 tokens_cache_read=c.tokens_cache_read, cost_usd=c.cost_usd or 0.0,
                 status=c.status, error=c.error,
+                has_payload=bool(c.request_blob or c.response_blob),
             )
             for c in llm_rows
         ],
@@ -226,6 +228,46 @@ async def get_trace(run_id: str, session: AsyncSession = Depends(get_session)) -
             for s in span_rows
         ],
         metrics=run.usage or {},
+    )
+
+
+# --------------------------------------------------------------------------- #
+# 一次模型调用的**完整请求与响应**（按需取，界面展开时才拉）
+# --------------------------------------------------------------------------- #
+@router.get("/{run_id}/llm-calls/{call_id}/payload", response_model=LlmCallPayloadRead)
+async def get_llm_call_payload(
+    run_id: str, call_id: int, session: AsyncSession = Depends(get_session)
+) -> LlmCallPayloadRead:
+    """把某次模型调用的请求/响应原文解出来（zlib 解压）。
+
+    为什么单独一个端点、不并进 trace：一次 ReAct 循环的请求动辄几十 KB，
+    列表里带上它会让"看执行记录"变慢；而且多数时候人并不需要看原文。
+    """
+    from ..runner.recorder import decode_payload
+
+    row = (
+        await session.execute(
+            select(LlmCall).where(LlmCall.id == call_id, LlmCall.run_id == run_id)
+        )
+    ).scalars().first()
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "没有这次模型调用记录")
+
+    return LlmCallPayloadRead(
+        id=row.id,
+        iteration=row.iteration,
+        provider=row.provider,
+        model=row.model,
+        duration_ms=row.duration_ms,
+        ttft_ms=row.ttft_ms,
+        tokens_in=row.tokens_in,
+        tokens_out=row.tokens_out,
+        tokens_cache_read=row.tokens_cache_read,
+        status=row.status,
+        error=row.error,
+        request=decode_payload(row.request_blob),
+        response=decode_payload(row.response_blob),
+        truncated=bool(row.payload_truncated),
     )
 
 

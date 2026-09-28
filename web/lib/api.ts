@@ -16,9 +16,11 @@ import type {
   CredentialModelsResult,
   CredentialTestResult,
   DbDriverInfo,
+  ExternalMemoryConfig,
   DbStatus,
   DbTestResult,
   Issue,
+  LlmCallPayload,
   Memory,
   MemoryExtractResult,
   MemoryPolicy,
@@ -804,6 +806,16 @@ export const api = {
     id: string,
     body: { agent_id?: string | null; scope?: "agent" | "global"; content?: string },
   ) => post<Memory>(`/api/memories/${id}/duplicate`, body),
+  /** 一次模型调用的完整请求/响应原文（展开时才拉，列表不背这份重量） */
+  llmCallPayload: (runId: string, callId: number) =>
+    request<LlmCallPayload>(`/api/runs/${runId}/llm-calls/${callId}/payload`),
+  /** 外部记忆服务配置（读/写/探连通） */
+  externalMemory: () => request<ExternalMemoryConfig>("/api/memories/external-config"),
+  saveExternalMemory: (
+    body: Partial<Omit<ExternalMemoryConfig, "has_api_key" | "ready">> & { api_key?: string },
+  ) => put<ExternalMemoryConfig>("/api/memories/external-config", body),
+  testExternalMemory: () =>
+    post<{ ok: boolean; detail: string; ms?: number }>("/api/memories/external-config/test"),
   memoryStats: () => request<MemoryStats>("/api/memories/stats"),
   bulkMemoryStatus: (ids: string[], status: string) =>
     post<{ updated: number }>("/api/memories/bulk-status", { ids, status }),

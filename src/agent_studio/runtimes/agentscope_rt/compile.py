@@ -563,11 +563,21 @@ def build_agent(
     if memory_text:
         system_prompt = f"{system_prompt.rstrip()}\n\n{memory_text}".strip()
 
+    # 记录器：把每次模型调用的**完整请求与响应**落库（llm_call.request_blob/
+    # response_blob）。以前这两列一直是空的 —— 只能看到"花了多少 token"，
+    # 看不到"发出去的消息和工具定义、模型原样回了什么"（排障最需要的那部分）。
+    from ...runner.recorder import ModelCallRecorder
+
+    recorder = ModelCallRecorder(
+        provider=defn.model.provider or "", model=defn.model.name or ""
+    )
+
     agent = Agent(
         name=defn.name,
         system_prompt=system_prompt,
         model=model,
         toolkit=toolkit,
+        middlewares=[recorder],
         # 权限 scope：不注入的话 AgentScope 用自己的默认（每个操作都要确认），
         # 而平台没有中途审批界面 → 运行会停在等待人工确认上。
         state=build_permission_state(

@@ -204,6 +204,8 @@ _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("workflow", "last_run_at", "last_run_at BIGINT"),
     ("workflow", "last_run_source", "last_run_source VARCHAR(16)"),
     ("workflow", "trigger_token", "trigger_token VARCHAR(64)"),
+    # 记忆召回来源：local / external / hybrid（外部记忆服务的接入点）
+    ("memory_policy", "recall_backend", "recall_backend VARCHAR(16) DEFAULT 'local'"),
 )
 
 

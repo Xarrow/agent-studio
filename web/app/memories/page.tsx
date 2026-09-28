@@ -42,6 +42,7 @@ import {
 } from "@/components/ui/kit";
 import { useFeedback } from "@/components/ui/feedback";
 import { MemoryCopyDialog } from "@/components/MemoryCopyDialog";
+import { ExternalMemoryCard } from "@/components/ExternalMemoryCard";
 import { isImeEvent } from "@/lib/ime";
 import { RunIdLink } from "@/components/RunIdLink";
 
@@ -273,6 +274,9 @@ export default function MemoriesPage() {
           </button>
         }
       />
+
+      {/* 外部记忆服务（把别处已有的记忆库接进来；未接入时默认展开，省得找不到入口） */}
+      <ExternalMemoryCard />
 
       {/* 新增（常态收起，点「+ 记一条」就地展开；打开即聚焦，可以直接打字） */}
       {composeOpen && (

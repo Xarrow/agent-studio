@@ -168,6 +168,39 @@ export interface LlmCall {
   cost_usd: number;
   status: string;
   error: string | null;
+  /** 这次调用留了完整请求/响应原文（老数据没有 → 界面不给「看原文」入口） */
+  has_payload?: boolean;
+}
+
+/** 一次模型调用的完整请求与响应（按需拉取） */
+export interface LlmCallPayload {
+  id: number;
+  iteration: number;
+  provider: string | null;
+  model: string | null;
+  duration_ms: number | null;
+  ttft_ms: number | null;
+  tokens_in: number;
+  tokens_out: number;
+  tokens_cache_read: number;
+  status: string;
+  error: string | null;
+  /** 发出去的东西：model / generate_kwargs / messages / tools / tool_choice */
+  request: unknown;
+  /** 回来的东西：content 块 / finished_reason / usage */
+  response: unknown;
+  truncated: boolean;
+}
+
+/** 外部记忆服务的配置（密钥只回"配没配"） */
+export interface ExternalMemoryConfig {
+  enabled: boolean;
+  base_url: string;
+  search_path: string;
+  add_path: string;
+  timeout_s: number;
+  has_api_key: boolean;
+  ready: boolean;
 }
 
 export interface ToolCallRow {
@@ -410,6 +443,8 @@ export interface MemoryPolicy {
   recall_enabled: boolean;
   recall_top_k: number;
   recall_strategy: "recent" | "keyword" | "hybrid";
+  /** local（平台内置 BM25）| external（外部记忆服务）| hybrid（两边合并去重） */
+  recall_backend: "local" | "external" | "hybrid";
   max_inject_chars: number;
   extract_model: string | null;
   compress_after_turns: number;
