@@ -30,6 +30,7 @@ import type { Agent, Memory, MemoryStats } from "@/lib/types";
 import { Chip, Empty, KV, PageHead, Row, RowDetail, RowList, Segmented, Toolbar } from "@/components/ui/kit";
 import { useFeedback } from "@/components/ui/feedback";
 import { MemoryCopyDialog } from "@/components/MemoryCopyDialog";
+import { isImeEvent } from "@/lib/ime";
 import { RunIdLink } from "@/components/RunIdLink";
 
 const KIND_LABEL: Record<string, string> = {
@@ -364,7 +365,8 @@ export default function MemoriesPage() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") void load();
+            // 中文组字中的回车是选字 —— 别拿它触发搜索
+            if (e.key === "Enter" && !isImeEvent(e)) void load();
           }}
         />
         <button className="btn ml-auto" onClick={() => void load()}>

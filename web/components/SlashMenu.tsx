@@ -15,6 +15,7 @@
  */
 
 import React, { useEffect, useRef, useState } from "react";
+import { isImeEvent } from "@/lib/ime";
 
 export type CommandItem = {
   id: string;
@@ -68,6 +69,8 @@ export function SlashMenu({
         e.preventDefault();
         setIdx((v) => Math.max(v - 1, 0));
       } else if (e.key === "Enter") {
+        // 组字中的 Enter 属于输入法（选字），别拿来选命令
+        if (isImeEvent(e)) return;
         e.preventDefault();
         const it = filtered[idx];
         if (it) {

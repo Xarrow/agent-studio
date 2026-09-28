@@ -14,6 +14,7 @@ import Link from "next/link";
 import { HitlPrompt } from "@/components/HitlPrompt";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, fmt, STATUS_STYLE } from "@/lib/api";
+import { isImeEvent } from "@/lib/ime";
 import type { RunEvent, Session } from "@/lib/types";
 import { useFeedback } from "./ui/feedback";
 import { Hint, HINTS } from "@/components/ui/hint";
@@ -533,7 +534,7 @@ export function RunPanel({
             disabled={busy || disabled}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
-              if ((e.ctrlKey || e.metaKey) && e.key === "Enter") void start();
+              if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && !isImeEvent(e)) void start();
             }}
           />
           {busy ? (

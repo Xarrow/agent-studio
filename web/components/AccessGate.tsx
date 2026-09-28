@@ -24,6 +24,7 @@
 
 import { useEffect, useState } from "react";
 import { AUTH_REQUIRED_EVENT, api, setAccessToken } from "@/lib/api";
+import { isImeEvent } from "@/lib/ime";
 
 export function AccessGate() {
   const [open, setOpen] = useState(false);
@@ -84,7 +85,8 @@ export function AccessGate() {
           placeholder="粘贴或输入口令"
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") void submit();
+            // 输入法候选没上屏时的回车是选字（口令也可能是中文输入法状态下的手误）
+            if (e.key === "Enter" && !isImeEvent(e)) void submit();
           }}
         />
         {err && <div className="text-[12.5px] text-[var(--color-err)] mt-2">{err}</div>}

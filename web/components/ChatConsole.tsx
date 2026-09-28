@@ -20,6 +20,7 @@ import { useFeedback } from "@/components/ui/feedback";
 import { RunTimeline, eventsToSteps, summarize } from "@/components/ui/run-timeline";
 import { ProcessRail } from "@/components/ProcessRail";
 import { SlashMenu, type CommandItem } from "@/components/SlashMenu";
+import { useImeGuard } from "@/lib/ime";
 import Markdown from "@/components/Markdown";
 import { RunDetailById } from "@/components/RunDetailDialog";
 import { AgentDetailDialog } from "@/components/AgentDetailDialog";
@@ -51,6 +52,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   const [detailRun, setDetailRun] = useState<string | null>(null);
   /** `/` 命令菜单是否打开（输入以 / 开头时） */
   const [slashOpen, setSlashOpen] = useState(false);
+  /** 输入法守卫：中文组字没上屏时按 Enter 是「选字」，不能当发送 */
+  const ime = useImeGuard();
   /** 正在浮层里配置的助手（从对话页直接打开，不离开对话） */
   const [configAgent, setConfigAgent] = useState<string | null>(null);
   /**
@@ -656,12 +659,16 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               placeholder={pendingFiles.length > 0 ? `附了 ${pendingFiles.length} 个文件，说点什么…` : "发消息…（Enter 发送，Shift + Enter 换行）"}
               value={input}
               disabled={busy}
+              {...ime.props}
               onChange={(e) => {
                 setInput(e.target.value);
                 setSlashOpen(e.target.value.startsWith("/"));
               }}
               onKeyDown={(e) => {
+                // Enter 发送，但**组字中的 Enter 是输入法选字**（中文拼音没上屏
+                // 就回车会把半截拼音发出去）—— 交给输入法，不拦不发。
                 if (e.key === "Enter" && !e.shiftKey) {
+                  if (ime.blocked(e)) return;
                   e.preventDefault();
                   void send();
                 }

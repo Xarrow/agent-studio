@@ -16,6 +16,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { useImeGuard } from "@/lib/ime";
 import { api, fmt } from "@/lib/api";
 import type { Credential } from "@/lib/types";
 import { DLG_BACKDROP, DLG_CARD } from "@/components/ui/kit";
@@ -39,6 +40,8 @@ export function CredentialChatDialog({
   const [models, setModels] = useState<string[]>([]);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
+  /** 输入法守卫：中文组字没上屏时回车是选字，不是发送 */
+  const ime = useImeGuard();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [probing, setProbing] = useState(true);
@@ -207,11 +210,13 @@ export function CredentialChatDialog({
           <input
             className="input flex-1"
             value={input}
-            placeholder="输入消息，回车发送"
+            placeholder="输入消息，回车发送（中文组字中回车是选字）"
             disabled={busy}
+            {...ime.props}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
+                if (ime.blocked(e)) return;
                 e.preventDefault();
                 void send();
               }

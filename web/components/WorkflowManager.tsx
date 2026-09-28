@@ -21,6 +21,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { isImeEvent } from "@/lib/ime";
 import type { Agent, Workflow } from "@/lib/types";
 import { RunsPanel } from "@/components/RunsPanel";
 import { STEP_STYLE, eventsToSteps, type Step } from "@/components/ui/run-timeline";
@@ -490,7 +491,8 @@ export function WorkflowManager({
                   value={nameDraft}
                   onChange={(e) => setNameDraft(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                    // 中文流程名组字中的回车是选字，不是「改完了」
+                    if (e.key === "Enter" && !isImeEvent(e)) (e.target as HTMLInputElement).blur();
                   }}
                   className="df-ctl h-[30px] flex-1 rounded-[8px] border px-2 text-[12.5px]"
                   style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}

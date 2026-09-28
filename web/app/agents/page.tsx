@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { api, fmt } from "@/lib/api";
+import { isImeEvent } from "@/lib/ime";
 import type {
   ActivityItem,
   Agent,
@@ -302,7 +303,8 @@ export default function AgentsPage() {
                         onChange={(e) => setNameDraft(e.target.value)}
                         onClick={(e) => e.stopPropagation()}
                         onKeyDown={(e) => {
-                          if (e.key === "Enter") void rename(a);
+                          // 中文名组字中的回车是选字，不是「改完了」
+                          if (e.key === "Enter" && !isImeEvent(e)) void rename(a);
                           if (e.key === "Escape") setRenaming(null);
                         }}
                         onBlur={() => void rename(a)}

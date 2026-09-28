@@ -10,6 +10,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { useImeGuard } from "@/lib/ime";
 
 /* ==========================================================================
    统一反馈层 —— 替代 alert / confirm / prompt
@@ -382,6 +383,8 @@ function PromptDialog({
 }) {
   const [value, setValue] = useState(opt.defaultValue ?? "");
   const [err, setErr] = useState<string | null>(null);
+  /** 输入法守卫：单行输入框里回车提交，中文组字中的回车是选字（别提交） */
+  const ime = useImeGuard();
 
   const check = (v: string) => (opt.validate ? opt.validate(v) : null);
   const liveErr = check(value);
@@ -433,12 +436,14 @@ function PromptDialog({
             style={{ ...inputStyle, marginTop: opt.label ? 0 : 12 }}
             placeholder={opt.placeholder}
             value={value}
+            {...ime.props}
             onChange={(e) => {
               setValue(e.target.value);
               setErr(null);
             }}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
+                if (ime.blocked(e)) return;
                 e.preventDefault();
                 run();
               }
