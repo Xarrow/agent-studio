@@ -36,6 +36,7 @@ from ..runner.service import resolve_api_key
 from ..schemas import (
     AgentDefinition,
     MemoryBindingRequest,
+    BulkIdsRequest,
     MemoryBulkStatusRequest,
     MemoryCreate,
     MemoryDuplicateRequest,
@@ -214,6 +215,24 @@ async def extract_memories(
 # --------------------------------------------------------------------------- #
 # 批量状态（候选区确认 / 丢弃）
 # --------------------------------------------------------------------------- #
+@router.post("/bulk-delete")
+async def bulk_delete(payload: BulkIdsRequest, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """批量删除（按 id 列表）。
+
+    与单条删除同一件事，只是省掉"点 N 次 + 确认 N 次"—— 前端会先把
+    **具体条目**列给用户看，再带着这批 id 回来（不做条件批量）。
+    """
+    from sqlalchemy import delete as _delete
+
+    rows = (await session.execute(select(Memory).where(Memory.id.in_(payload.ids)))).scalars().all()
+    if not rows:
+        return {"deleted": 0}
+    found = [r.id for r in rows]
+    await session.execute(_delete(Memory).where(Memory.id.in_(found)))
+    await session.commit()
+    return {"deleted": len(found)}
+
+
 @router.post("/bulk-status")
 async def bulk_status(
     payload: MemoryBulkStatusRequest, session: AsyncSession = Depends(get_session)

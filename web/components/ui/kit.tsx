@@ -239,6 +239,91 @@ export function KV({ k, children }: { k: ReactNode; children: ReactNode }) {
 }
 
 /**
+ * 行首勾选框（列表批量选择用）。
+ *
+ * 放在 `Row` 的 children 里；点它是**勾选**，不该顺带展开这一行 ——
+ * 所以自己吞掉冒泡。命中区靠 label 撑到 44px（触屏），外观还是小方框。
+ */
+export function SelectBox({
+  checked,
+  onChange,
+  title,
+  disabled,
+}: {
+  checked: boolean;
+  onChange: (next: boolean) => void;
+  title?: string;
+  disabled?: boolean;
+}) {
+  return (
+    <label
+      title={title}
+      onClick={(e) => e.stopPropagation()}
+      className="flex h-11 w-8 shrink-0 cursor-pointer items-center justify-center lg:h-8"
+    >
+      <input
+        type="checkbox"
+        className="h-[17px] w-[17px] accent-[var(--color-accent)]"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.checked)}
+      />
+    </label>
+  );
+}
+
+/**
+ * 批量操作条 —— 勾了行才出现，且**紧贴被勾的那批行上方**。
+ *
+ * 为什么不做成常驻工具条：批量动作是"跟着选中对象走"的，没选中时它
+ * 只是占着最贵的位置空转。出现在这批行的正上方，用户一眼能看出
+ * "这些动作作用在下面这批"。
+ */
+export function SelectionBar({
+  count,
+  actions,
+  onSelectAll,
+  onClear,
+  selectAllLabel,
+  allSelected,
+}: {
+  count: number;
+  actions: ReactNode;
+  onSelectAll?: () => void;
+  onClear?: () => void;
+  selectAllLabel?: string;
+  allSelected?: boolean;
+}) {
+  return (
+    <div
+      className="mb-2 flex flex-wrap items-center gap-2 rounded-[10px] px-3 py-2"
+      style={{ background: "color-mix(in srgb, var(--color-accent) 8%, transparent)" }}
+    >
+      <span className="text-[12.5px]">已选 {count} 条</span>
+      {actions}
+      {onSelectAll ? (
+        <button
+          className="btn text-[12.5px]"
+          style={{ color: "var(--color-muted)" }}
+          onClick={onSelectAll}
+        >
+          {allSelected ? "取消全选" : (selectAllLabel ?? "全选")}
+        </button>
+      ) : null}
+      {onClear ? (
+        <button
+          className="btn text-[12.5px]"
+          style={{ color: "var(--color-muted)" }}
+          onClick={onClear}
+        >
+          取消选择
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/**
  * 开关（是的/否 这类二元设置）。
  *
  * 为什么要有：原来各页手写 <button role="switch"><span/></button>，

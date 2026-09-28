@@ -785,6 +785,12 @@ class MemoryBulkStatusRequest(BaseModel):
     status: MemoryStatus = "active"
 
 
+class BulkIdsRequest(BaseModel):
+    """按**明确列出的 id** 批量操作（不用条件/模式批量 —— 删了什么必须可核对）。"""
+
+    ids: list[str] = Field(default_factory=list, min_length=1)
+
+
 class MemoryExtractRequest(BaseModel):
     """从某次执行沉淀记忆。
 

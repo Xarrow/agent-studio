@@ -27,7 +27,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, fmt } from "@/lib/api";
 import type { Agent, Memory, MemoryStats } from "@/lib/types";
-import { Chip, Empty, KV, PageHead, Row, RowDetail, RowList, Segmented, Toolbar } from "@/components/ui/kit";
+import {
+  Chip,
+  Empty,
+  KV,
+  PageHead,
+  Row,
+  RowDetail,
+  RowList,
+  Segmented,
+  SelectBox,
+  SelectionBar,
+  Toolbar,
+} from "@/components/ui/kit";
 import { useFeedback } from "@/components/ui/feedback";
 import { MemoryCopyDialog } from "@/components/MemoryCopyDialog";
 import { isImeEvent } from "@/lib/ime";
@@ -209,6 +221,27 @@ export default function MemoriesPage() {
     }
   };
 
+  /** 批量删除：先把**具体条目**列给用户看（删除不可逆，删的必须是可核对的那些） */
+  const bulkDelete = async () => {
+    if (picked.size === 0) return;
+    const rows = items.filter((m) => picked.has(m.id));
+    const ok = await fb.confirm({
+      title: `删除选中的 ${rows.length} 条记忆？`,
+      description: "删除后就彻底没了。只是暂时不想用的话，改成「停用」更合适（之后还能找回）。",
+      details: rows.slice(0, 8).map((m) => m.content.slice(0, 60) + (m.content.length > 60 ? "…" : "")),
+      danger: true,
+      confirmText: "删除",
+    });
+    if (!ok) return;
+    try {
+      const r = await api.bulkDeleteMemories([...picked]);
+      fb.success(`已删除 ${r.deleted} 条`);
+      await load();
+    } catch (e) {
+      fb.error("批量删除失败", e instanceof Error ? e.message : String(e));
+    }
+  };
+
   const togglePick = (id: string) =>
     setPicked((prev) => {
       const next = new Set(prev);
@@ -216,12 +249,6 @@ export default function MemoriesPage() {
       else next.add(id);
       return next;
     });
-
-  /** 选择条上的「全选待确认」—— 把剩下的候选一次勾上（10 条候选不用点 10 次） */
-  const pickAllCandidates = () =>
-    setPicked((prev) =>
-      prev.size === candidates.length ? new Set() : new Set(candidates.map((c) => c.id)),
-    );
 
   return (
     <div className="max-w-[1000px] p-4 md:p-6 lg:p-7">
@@ -374,40 +401,37 @@ export default function MemoriesPage() {
         </button>
       </Toolbar>
 
-      {/* 选择条 —— 勾了候选行才出现，就落在这批行的上方（动作跟着对象走） */}
+      {/* 选择条 —— 勾了行才出现，就落在这批行的上方（动作跟着对象走） */}
       {picked.size > 0 && (
-        <div
-          className="mb-2 flex flex-wrap items-center gap-2 rounded-[10px] px-3 py-2"
-          style={{ background: "color-mix(in srgb, var(--color-accent) 8%, transparent)" }}
-        >
-          <span className="text-[12.5px]">已选 {picked.size} 条</span>
-          <button className="btn btn-primary text-[12.5px]" onClick={() => void bulk("active")}>
-            确认使用
-          </button>
-          <button
-            className="btn text-[12.5px]"
-            style={{ color: "var(--color-err)" }}
-            onClick={() => void bulk("archived")}
-          >
-            丢弃
-          </button>
-          <button
-            className="btn text-[12.5px]"
-            style={{ color: "var(--color-muted)" }}
-            onClick={() => setPicked(new Set())}
-          >
-            取消选择
-          </button>
-          {candidates.length > 1 && (
-            <button
-              className="btn text-[12.5px]"
-              style={{ color: "var(--color-muted)" }}
-              onClick={pickAllCandidates}
-            >
-              {picked.size === candidates.length ? "取消全选" : `全选待确认（${candidates.length}）`}
-            </button>
-          )}
-        </div>
+        <SelectionBar
+          count={picked.size}
+          allSelected={picked.size === items.length && items.length > 0}
+          selectAllLabel={`全选本页（${items.length}）`}
+          onSelectAll={() =>
+            setPicked(
+              picked.size === items.length ? new Set() : new Set(items.map((m) => m.id)),
+            )
+          }
+          onClear={() => setPicked(new Set())}
+          actions={
+            <>
+              {/* 候选的"确认使用"与在用的"启用"是同一件事，只是说法不同 */}
+              <button className="btn btn-primary text-[12.5px]" onClick={() => void bulk("active")}>
+                {pickedAllCandidates(items, picked) ? "确认使用" : "启用"}
+              </button>
+              <button className="btn text-[12.5px]" onClick={() => void bulk("archived")}>
+                停用
+              </button>
+              <button
+                className="btn text-[12.5px]"
+                style={{ color: "var(--color-err)" }}
+                onClick={() => void bulkDelete()}
+              >
+                删除
+              </button>
+            </>
+          }
+        />
       )}
 
       {/* 一行一对象：一条记忆一行；点行就地展开全部明细 */}
@@ -486,20 +510,12 @@ export default function MemoriesPage() {
                     </>
                   }
                 >
-                  {/* 勾选框只给候选行：批量确认/丢弃是候选区唯一的批量语义 */}
-                  {cand ? (
-                    <label
-                      className="flex h-9 w-6 shrink-0 cursor-pointer items-center justify-center"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <input
-                        type="checkbox"
-                        className="h-[17px] w-[17px] accent-[var(--color-accent)]"
-                        checked={picked.has(m.id)}
-                        onChange={() => togglePick(m.id)}
-                      />
-                    </label>
-                  ) : null}
+                  {/* 勾选框对所有行都在：批量启用/停用/删除对任何状态都有意义 */}
+                  <SelectBox
+                    checked={picked.has(m.id)}
+                    onChange={() => togglePick(m.id)}
+                    title="选中这条（可批量启停 / 删除）"
+                  />
 
                   <span className="min-w-0 flex-1 basis-[260px]">
                     <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
@@ -628,6 +644,12 @@ export default function MemoriesPage() {
       )}
     </div>
   );
+}
+
+/** 选中的是不是**全是候选**（是的话"启用"该说成"确认使用"） */
+function pickedAllCandidates(items: Memory[], picked: Set<string>): boolean {
+  const rows = items.filter((m) => picked.has(m.id));
+  return rows.length > 0 && rows.every((m) => m.status === "candidate");
 }
 
 /** 概览里的数字（等宽、强调色，避免一长串灰字的计数看不清） */

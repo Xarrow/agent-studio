@@ -389,6 +389,12 @@ export const api = {
     },
   ) => put<Tool>(`/api/tools/${id}`, body),
   deleteTool: (id: string) => del(`/api/tools/${id}`),
+  /** 批量删除工具：平台/运行时提供的会被跳过，返回跳过的名单与原因 */
+  bulkDeleteTools: (ids: string[]) =>
+    post<{ deleted: number; skipped: { id: string; name: string; reason: string }[] }>(
+      "/api/tools/bulk-delete",
+      { ids },
+    ),
   syncBuiltins: (runtime = "agentscope") =>
     post<{
       runtime: string;
@@ -802,6 +808,9 @@ export const api = {
   memoryStats: () => request<MemoryStats>("/api/memories/stats"),
   bulkMemoryStatus: (ids: string[], status: string) =>
     post<{ updated: number }>("/api/memories/bulk-status", { ids, status }),
+  /** 批量删除记忆（按明确列出的 id —— 删了什么必须可核对） */
+  bulkDeleteMemories: (ids: string[]) =>
+    post<{ deleted: number }>("/api/memories/bulk-delete", { ids }),
   extractMemories: (
     runId: string,
     items?: {

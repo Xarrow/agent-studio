@@ -11,9 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_session
 from ..models import AgentTool, Tool, now_ms
-from ..schemas import ToolCreate, ToolRead, ToolTestRequest, ToolUpdate
+from ..schemas import BulkIdsRequest, ToolCreate, ToolRead, ToolTestRequest, ToolUpdate
 
 router = APIRouter(prefix="/api/tools", tags=["tools"])
+
+#: 平台 / 运行时提供的工具：可绑定、可试跑，但**不给删**（删了会被同步回来）
+PROTECTED_KINDS = {"builtin", "native", "fork"}
 
 
 def to_read(row: Tool) -> ToolRead:
@@ -121,6 +124,31 @@ async def delete_tool(tool_id: str, session: AsyncSession = Depends(get_session)
     await session.execute(delete(AgentTool).where(AgentTool.tool_id == tool_id))
     await session.delete(row)
     await session.commit()
+
+
+@router.post("/bulk-delete")
+async def bulk_delete_tools(
+    payload: BulkIdsRequest, session: AsyncSession = Depends(get_session)
+) -> dict[str, Any]:
+    """批量删除自定义工具。
+
+    内建 / 平台内置（builtin / native / fork）**一律跳过**并回名单 ——
+    它们是运行时或平台给的，删掉之后会被同步回来（或直接不可恢复），
+    与其"删了又出现"让人困惑，不如如实说明跳过了哪些。
+    """
+    rows = (await session.execute(select(Tool).where(Tool.id.in_(payload.ids)))).scalars().all()
+    removable = [r for r in rows if (r.kind or "") not in PROTECTED_KINDS]
+    skipped = [
+        {"id": r.id, "name": r.name, "reason": f"{r.kind} 是平台/运行时提供的，不能删"}
+        for r in rows
+        if (r.kind or "") in PROTECTED_KINDS
+    ]
+    if removable:
+        ids = [r.id for r in removable]
+        await session.execute(delete(AgentTool).where(AgentTool.tool_id.in_(ids)))
+        await session.execute(delete(Tool).where(Tool.id.in_(ids)))
+        await session.commit()
+    return {"deleted": len(removable), "skipped": skipped}
 
 
 # --------------------------------------------------------------------------- #

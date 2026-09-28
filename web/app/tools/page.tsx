@@ -2,13 +2,30 @@
 
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { api, fmt } from "@/lib/api";
-import type { Tool } from "@/lib/types";
-import { Chip, DLG_BACKDROP, DLG_CARD, Empty, KV, PageHead, Row, RowDetail, RowList, Segmented, Toolbar } from "@/components/ui/kit";
+import type { Agent, Tool } from "@/lib/types";
+import {
+  Chip,
+  DLG_BACKDROP,
+  DLG_CARD,
+  Empty,
+  KV,
+  PageHead,
+  Row,
+  RowDetail,
+  RowList,
+  Segmented,
+  SelectBox,
+  SelectionBar,
+  Toolbar,
+} from "@/components/ui/kit";
 import { SkillsPanel } from "@/components/SkillsPanel";
 import { McpPanel } from "@/components/McpPanel";
 import { ToolTestForm } from "@/components/ToolTestForm";
 import { urlParams } from "@/lib/tool-params";
 import { useFeedback } from "@/components/ui/feedback";
+
+/** 平台/运行时提供的工具：可绑定可试跑，但不给删（与后端 PROTECTED_KINDS 一致） */
+const PROTECTED_KINDS = new Set(["builtin", "native", "fork"]);
 
 export default function ToolsPage() {
   const fb = useFeedback();
@@ -24,6 +41,12 @@ export default function ToolsPage() {
   const [tab, setTab] = useState<"tools" | "skills" | "mcp">("tools");
   /** 就地展开的那一个工具（展开里放参数详情 + 试运行表单 + 上次试跑结果） */
   const [expanded, setExpanded] = useState<string | null>(null);
+  /** 批量选中的工具 id（勾选后选择条紧贴这批行出现） */
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  /** 「加到助手…」弹窗：null = 没开 */
+  const [attachOpen, setAttachOpen] = useState(false);
+  const [attachAgents, setAttachAgents] = useState<Agent[]>([]);
+  const [attachBusy, setAttachBusy] = useState(false);
   /** 每个页签自己的说法 —— 标题跟着页签走，不再"页签 + 又一个 h1"两层头 */
   const TAB_META: Record<"tools" | "skills" | "mcp", { title: string; desc: string }> = {
     tools: {
@@ -98,6 +121,75 @@ export default function ToolsPage() {
     }
   };
 
+  const togglePick = (id: string, on: boolean) =>
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+
+  /**
+   * 批量删除。平台/运行时提供的工具会被后端跳过 —— 这里先把**会跳过哪些**
+   * 讲清楚再动手，避免"以为删干净了其实没删"。
+   */
+  const bulkRemove = async () => {
+    const rows = filtered.filter((t) => picked.has(t.id));
+    if (rows.length === 0) return;
+    const protectedRows = rows.filter((t) => PROTECTED_KINDS.has(t.kind));
+    const ok = await fb.confirm({
+      title: `删除选中的 ${rows.length} 个工具？`,
+      description:
+        protectedRows.length > 0
+          ? `已挂载这些工具的助手会立即失去对应能力。平台/运行时提供的 ${protectedRows.length} 个会被跳过（删了也会被同步回来）。`
+          : "已挂载这些工具的助手会立即失去对应能力。",
+      details: rows
+        .slice(0, 8)
+        .map((t) => `${t.name}（${t.kind}${protectedRows.includes(t) ? " · 会跳过" : ""}）`),
+      danger: true,
+      confirmText: "删除",
+    });
+    if (!ok) return;
+    try {
+      const r = await api.bulkDeleteTools([...picked]);
+      if (r.skipped.length > 0) {
+        fb.warn(`已删除 ${r.deleted} 个`, `跳过 ${r.skipped.length} 个平台/运行时工具`);
+      } else {
+        fb.success(`已删除 ${r.deleted} 个工具`);
+      }
+      await load();
+    } catch (e) {
+      fb.error("批量删除失败", e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  /** 打开「加到助手…」：一次把选中的工具全挂上去 */
+  const openAttach = async () => {
+    setAttachOpen(true);
+    try {
+      setAttachAgents(await api.agents());
+    } catch (e) {
+      fb.error("加载助手失败", e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const attachTo = async (agentId: string, agentName: string) => {
+    setAttachBusy(true);
+    try {
+      const ids = [...picked];
+      const results = await Promise.allSettled(
+        ids.map((id) => api.mountTool(agentId, id)),
+      );
+      const okCount = results.filter((r) => r.status === "fulfilled").length;
+      if (okCount === ids.length) fb.success(`已把 ${okCount} 个工具加到「${agentName}」`);
+      else fb.warn(`加到「${agentName}」成功 ${okCount} / ${ids.length}`, "失败的多半是已经挂过了");
+      setAttachOpen(false);
+      setPicked(new Set());
+    } finally {
+      setAttachBusy(false);
+    }
+  };
+
   const filtered = kindFilter ? tools.filter((t) => t.kind === kindFilter) : tools;
   const counts = {
     builtin: tools.filter((t) => t.kind === "builtin").length,
@@ -157,6 +249,54 @@ export default function ToolsPage() {
             />
           )}
 
+          {/* 「加到助手…」—— 一次把选中的工具挂到某个助手（选一个，不填） */}
+          {attachOpen && (
+            <div className={DLG_BACKDROP} onClick={() => setAttachOpen(false)}>
+              <div
+                className={DLG_CARD}
+                role="dialog"
+                aria-labelledby="attach-title"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="border-b px-4 py-3" style={{ borderColor: "var(--color-border)" }}>
+                  <h2 id="attach-title" className="text-[15px] font-semibold">
+                    把选中的 {picked.size} 个工具加到哪个助手？
+                  </h2>
+                  <p className="mt-1 text-[12px]" style={{ color: "var(--color-muted)" }}>
+                    已经挂过的会自动跳过，不会重复。
+                  </p>
+                </div>
+                <div className="p-2">
+                  {attachAgents.length === 0 ? (
+                    <div className="px-3 py-6 text-center text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+                      加载中…
+                    </div>
+                  ) : (
+                    attachAgents.map((a) => (
+                      <button
+                        key={a.id}
+                        type="button"
+                        disabled={attachBusy}
+                        onClick={() => void attachTo(a.id, a.name)}
+                        className="flex min-h-[44px] w-full flex-col items-start justify-center rounded-[8px] px-3 text-left hover:bg-[var(--color-surface-2)] disabled:opacity-50"
+                      >
+                        <span className="text-[13.5px]">{a.name}</span>
+                        <span className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                          {a.description || "没有说明"}
+                        </span>
+                      </button>
+                    ))
+                  )}
+                </div>
+                <div className="flex justify-end gap-2 border-t px-4 py-3" style={{ borderColor: "var(--color-border)" }}>
+                  <button className="btn" onClick={() => setAttachOpen(false)}>
+                    取消
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* 工具条一行：类型筛选（带计数）+ 两个动作 */}
           <Toolbar>
             <Segmented
@@ -206,6 +346,37 @@ export default function ToolsPage() {
           ) : (
             /* 一行一个工具（原来是每项一张卡片，13 个工具要滚三屏）。
                参数、请求地址、试运行表单、上次试跑结果全在**就地展开**里。 */
+            <>
+            {/* 选择条 —— 勾了行才出现，紧贴这批行上方 */}
+            {picked.size > 0 && (
+              <SelectionBar
+                count={picked.size}
+                allSelected={picked.size === filtered.length && filtered.length > 0}
+                selectAllLabel={`全选本页（${filtered.length}）`}
+                onSelectAll={() =>
+                  setPicked(
+                    picked.size === filtered.length
+                      ? new Set()
+                      : new Set(filtered.map((t) => t.id)),
+                  )
+                }
+                onClear={() => setPicked(new Set())}
+                actions={
+                  <>
+                    <button className="btn btn-primary text-[12.5px]" onClick={() => void openAttach()}>
+                      加到助手…
+                    </button>
+                    <button
+                      className="btn text-[12.5px]"
+                      style={{ color: "var(--color-err)" }}
+                      onClick={() => void bulkRemove()}
+                    >
+                      删除
+                    </button>
+                  </>
+                }
+              />
+            )}
             <RowList>
               {filtered.map((t) => {
                 const open = expanded === t.id;
@@ -264,6 +435,14 @@ export default function ToolsPage() {
                         </>
                       }
                     >
+                      {/* 平台/运行时提供的工具不给删，也就不参与勾选（与单行删除规则一致） */}
+                      {!PROTECTED_KINDS.has(t.kind) && (
+                        <SelectBox
+                          checked={picked.has(t.id)}
+                          onChange={(on) => togglePick(t.id, on)}
+                          title="选中这个工具（可批量加到助手 / 删除）"
+                        />
+                      )}
                       <span className="min-w-0 flex-1 basis-[240px]">
                         <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                           <span className="mono truncate text-[14px] font-medium">{t.name}</span>
@@ -361,6 +540,7 @@ export default function ToolsPage() {
                 );
               })}
             </RowList>
+            </>
           )}
         </>
       )}
