@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * 「远程 Agent」——把外部 A2A agent 注册进来、看清它会干什么、挂到助手上直接调用。
+ * 「远程Agent管理」——把外部 A2A agent 注册进来、看清它会干什么；调用绑定归属助手的配置页。
  *
  * 一条链在界面上就是四个动作（用户要的就是这条链）：
  *   注册（粘贴地址 → **解析预览** → 确认）· 治理（改名/凭据/超时/启停/重新解析/删除）
@@ -53,7 +53,7 @@ function CallList({ rows }: { rows: RemoteAgentCallRecord[] | null }) {
   if (!rows.length)
     return (
       <p className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
-        还没通过它调过远端 —— 挂到助手后，助手每调一次远端这里就多一条
+        还没通过它调过远端 —— 助手勾上它之后每调一次，这里就多一条
       </p>
     );
   return (
@@ -254,28 +254,6 @@ export default function RemoteAgentsPage() {
     });
   }
 
-  async function onBind(r: RemoteAgentRecord, agentId: string, attach: boolean) {
-    const ag = agents.find((a) => a.id === agentId);
-    if (!ag) return;
-    if (!r.tool_id) {
-      fb.error("这个远端还没有对应的工具行", "点「重新解析」重建一次");
-      return;
-    }
-    // 绑定 = 把这个远程 agent 生成的工具行加/减到助手定义的 tools 里
-    // （助手的工具就是 {ref: 工具行 id} 列表 —— 复用既有机制，不为远端另造一套）
-    const current = (ag.definition?.tools ?? []) as { ref?: string }[];
-    const refs = current.map((t) => t.ref).filter((x): x is string => !!x);
-    const next = attach
-      ? Array.from(new Set([...refs, r.tool_id]))
-      : refs.filter((x) => x !== r.tool_id);
-    await run(`bind:${r.id}:${agentId}`, async () => {
-      await api.updateAgent(agentId, {
-        definition: { ...(ag.definition as object), tools: next.map((ref) => ({ ref })) } as never,
-      });
-      fb.success(attach ? `已挂到「${ag.name}」` : `已从「${ag.name}」取下`);
-    });
-  }
-
   async function onDelete(r: RemoteAgentRecord) {
     const ok = await fb.confirm({
       title: `删除远程 agent「${r.name}」？`,
@@ -294,7 +272,7 @@ export default function RemoteAgentsPage() {
     <>
       <PageHead
         title="远程 Agent 管理"
-        desc={`注册外部 A2A agent —— 解析它的能力，挂到助手上直接调用 · 挂载 ${stats.bound} / ${stats.total}`}
+        desc={`注册外部 A2A agent —— 解析能力、治理与调用观测 · 挂载 ${stats.bound} / ${stats.total}（在助手的「能力」里勾选绑定）`}
         actions={
           <>
             <button className="btn btn-primary" onClick={() => setRegistering(true)}>
@@ -505,7 +483,6 @@ export default function RemoteAgentsPage() {
             })}
           </RowList>
         )}
-      </Section>
 
       <Section
         title="远端自注册（A2A 推送）"
