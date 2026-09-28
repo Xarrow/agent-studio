@@ -226,13 +226,24 @@ async def run_until_done(
 
     task_id = await send(base, text, agent_id=agent_id, headers=headers)
     deadline = time.monotonic() + max(30.0, timeout_s)
+    seen_hitl = False
     while True:
         task = await get_task(base, task_id, headers=headers)
         state = state_of(task)
         if state == "input-required":
-            return "waiting_hitl", task_text(task), task_id
-        if state in ("completed", "canceled", "failed", "rejected"):
+            # 远端在等人确认：**不返回**（返回后调用方就停了，远端恢复 completed
+            # 也没人再轮，子 run 会永远停在 waiting_hitl）。继续轮，直到真终态。
+            seen_hitl = True
+        elif state in ("completed", "canceled", "failed", "rejected"):
             return status_of(task), task_text(task), task_id
         if time.monotonic() >= deadline:
+            # 超时了：如果远端还在等人确认，说清楚是"等人"不是"跑太久"
+            if seen_hitl or state_of(task) == "input-required":
+                return (
+                    "waiting_hitl",
+                    "远端在等人确认工具调用，一直没被确认"
+                    f"（超过 {int(timeout_s)}s；远端任务 {task_id}）",
+                    task_id,
+                )
             return "error", f"等远端超时（>{int(timeout_s)}s，远端任务 {task_id} 仍在跑）", task_id
         await asyncio.sleep(POLL_S)
