@@ -199,6 +199,11 @@ export interface ExternalMemoryConfig {
   search_path: string;
   add_path: string;
   timeout_s: number;
+  /** 请求侧映射：默认空 = 平台标准契约；配了就能接"字段名不一样"的服务 */
+  extra_headers: Record<string, string>;
+  search_body: Record<string, unknown>;
+  add_body: Record<string, unknown>;
+  results_path: string;
   has_api_key: boolean;
   ready: boolean;
 }

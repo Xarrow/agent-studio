@@ -41,13 +41,14 @@ function Shell({
   const [copied, setCopied] = useState(false);
   return (
     <div className="my-2 overflow-hidden rounded-lg border border-slate-200">
-      <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-2.5 py-1.5">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-slate-200 bg-slate-50 px-2.5 py-1.5">
         <span className="text-[11.5px] font-medium text-slate-600">{title}</span>
         {hint ? <span className="text-[11px] text-slate-400">{hint}</span> : null}
         <div className="ml-auto flex items-center gap-1">
           <button
             type="button"
             onClick={() => setShowRaw((v) => !v)}
+            data-tap
             className="rounded px-1.5 py-1 text-[11px] text-slate-500 hover:bg-slate-200/70"
           >
             {showRaw ? "看渲染" : "看源码"}
@@ -59,6 +60,7 @@ function Shell({
               setCopied(true);
               window.setTimeout(() => setCopied(false), 1500);
             }}
+            data-tap
             className="rounded px-1.5 py-1 text-[11px] text-slate-500 hover:bg-slate-200/70"
           >
             {copied ? "已复制" : "复制"}
@@ -117,6 +119,7 @@ function TreeNode({
     <div className="py-[1px] font-mono text-[12px] leading-[1.55]">
       <button
         type="button"
+        data-jsonrow
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-1.5 text-left"
         style={{ paddingLeft: pad }}
@@ -159,6 +162,9 @@ export function CsvBlock({ code, delimiter }: { code: string; delimiter: string 
   if (!table) return <CodeBlock code={code} lang="csv" />;
   return (
     <Shell title={delimiter === "\t" ? "TSV" : "CSV"} hint={`${table.rows.length} 行`} raw={code}>
+      {table.header.length >= 3 ? (
+        <p className="px-2.5 pt-1 text-[11px] text-slate-400 lg:hidden">← 左右滑动看更多列 →</p>
+      ) : null}
       <div className="max-h-[420px] overflow-auto bg-white">
         <table className="w-full border-collapse text-[12px]">
           <thead className="sticky top-0 bg-slate-50">

@@ -7,10 +7,14 @@
  * 点 run 号弹的详情），各写一份必然走样（第一版就只加在了弹窗里 —— 用户在
  * 管理页点开记录**看不到**，等于没做）。
  *
- * 两个口径：
+ * 两处口径：
  *   · 列表只带元数据（次数/模型/延迟/tokens），**原文按需拉** —— 一次 ReAct
  *     循环的请求动辄几十 KB，全带上会让"看记录"变慢；
  *   · 没有原文的老数据显示「—」而不是给个点了必然空的入口。
+ *
+ * 移动端：7 列数字表在 390px 上只能横着滚（等于看不了）→ <1024px 换成
+ * 「一行一次调用」的卡片：模型与状态一行，首字/耗时/tokens 折到第二行，
+ * 「看原文」独占一行走 .btn（≤767px 44px / ≤1023px 36px 的点按区）。
  */
 
 import React from "react";
@@ -44,13 +48,25 @@ export function LlmCallPayloadView({ runId, callId }: { runId: string; callId: n
     };
   }, [runId, callId]);
 
-  if (err) return <p className="text-[12px]" style={{ color: "var(--color-danger)" }}>原文读取失败：{err}</p>;
-  if (!data) return <p className="text-[12px]" style={{ color: "var(--color-muted)" }}>正在读原文…</p>;
+  if (err) {
+    return (
+      <p className="text-[12px]" style={{ color: "var(--color-danger)" }}>
+        原文读取失败：{err}
+      </p>
+    );
+  }
+  if (!data) {
+    return (
+      <p className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+        正在读原文…
+      </p>
+    );
+  }
 
   return (
     <div className="space-y-2">
       {data.truncated ? (
-        <p className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+        <p className="text-[12px]" style={{ color: "var(--color-muted)" }}>
           体积超过上限，下面只保留了前段（完整内容没有被保存）。
         </p>
       ) : null}
@@ -73,7 +89,7 @@ export function LlmCallPayloadView({ runId, callId }: { runId: string; callId: n
         </p>
         {data.error ? (
           <pre
-            className="whitespace-pre-wrap rounded-md p-2 text-[11.5px]"
+            className="whitespace-pre-wrap break-all rounded-md p-2 text-[12px]"
             style={{ background: "var(--color-surface-2)", color: "var(--color-danger)" }}
           >
             {data.error}
@@ -106,12 +122,14 @@ export function LlmCallsPanel({
       style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
     >
       <div className="border-b px-2.5 py-1.5" style={{ borderColor: "var(--color-border)" }}>
-        <span className="text-[11.5px] font-medium" style={{ color: "var(--color-muted)" }}>
+        <span className="text-[12px] font-medium" style={{ color: "var(--color-muted)" }}>
           {title ?? `模型请求（${calls.length} 次）`}
         </span>
       </div>
-      <div className="overflow-x-auto px-2.5 py-2">
-        <table className="w-full min-w-[420px] text-[12px]">
+
+      {/* 桌面（≥1024）：表格，数值成列好对比 */}
+      <div className="hidden overflow-x-auto px-2.5 py-2 lg:block">
+        <table className="w-full text-[12px]">
           <thead style={{ color: "var(--color-muted)" }}>
             <tr>
               <th className="py-1 font-normal text-left">#</th>
@@ -127,29 +145,33 @@ export function LlmCallsPanel({
             {calls.map((c) => (
               <React.Fragment key={c.id}>
                 <tr className="border-t" style={{ borderColor: "var(--color-border)" }}>
-                  <td className="py-1" style={{ color: "var(--color-muted)" }}>{c.iteration}</td>
+                  <td className="py-1" style={{ color: "var(--color-muted)" }}>
+                    {c.iteration}
+                  </td>
                   <td className="py-1 mono">{c.model ?? "—"}</td>
                   <td className="py-1 text-right">{fmt.ms(c.ttft_ms)}</td>
                   <td className="py-1 text-right">{fmt.ms(c.duration_ms)}</td>
-                  <td className="py-1 text-right">{c.tokens_in}/{c.tokens_out}</td>
-                  <td
-                    className="py-1 pl-3 mono"
-                    style={{ color: STATUS_COLOR[c.status] ?? "" }}
-                  >
+                  <td className="py-1 text-right">
+                    {c.tokens_in}/{c.tokens_out}
+                  </td>
+                  <td className="py-1 pl-3 mono" style={{ color: STATUS_COLOR[c.status] ?? "" }}>
                     {c.status}
                   </td>
                   <td className="py-1 text-right">
                     {c.has_payload ? (
                       <button
                         type="button"
-                        className="min-h-[28px] rounded px-1.5 text-[11px]"
+                        data-tap
+                        className="rounded px-1.5 text-[11px]"
                         style={{ color: "var(--color-accent)" }}
                         onClick={() => setOpenCall((cur) => (cur === c.id ? null : c.id))}
                       >
                         {openCall === c.id ? "收起" : "看原文"}
                       </button>
                     ) : (
-                      <span className="text-[11px]" style={{ color: "var(--color-muted)" }}>—</span>
+                      <span className="text-[11px]" style={{ color: "var(--color-muted)" }}>
+                        —
+                      </span>
                     )}
                   </td>
                 </tr>
@@ -164,6 +186,58 @@ export function LlmCallsPanel({
             ))}
           </tbody>
         </table>
+      </div>
+
+      {/* 手机/平板（<1024）：一行一次调用，数值折到第二行，按钮独占一行给足点按区 */}
+      <div className="space-y-1.5 px-2.5 py-2 lg:hidden">
+        {calls.map((c) => (
+          <div
+            key={c.id}
+            className="rounded-[8px] border px-2.5 py-2"
+            style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+                #{c.iteration}
+              </span>
+              <span className="mono truncate text-[12px]">{c.model ?? "—"}</span>
+              <span
+                className="ml-auto mono text-[12px]"
+                style={{ color: STATUS_COLOR[c.status] ?? "" }}
+              >
+                {c.status}
+              </span>
+            </div>
+            <div
+              className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[12px]"
+              style={{ color: "var(--color-muted)" }}
+            >
+              <span>首字 {fmt.ms(c.ttft_ms)}</span>
+              <span>耗时 {fmt.ms(c.duration_ms)}</span>
+              <span>
+                tokens {c.tokens_in}/{c.tokens_out}
+              </span>
+            </div>
+            {c.has_payload ? (
+              <button
+                type="button"
+                className="btn mt-1.5 w-full"
+                onClick={() => setOpenCall((cur) => (cur === c.id ? null : c.id))}
+              >
+                {openCall === c.id ? "收起原文" : "看原文"}
+              </button>
+            ) : (
+              <p className="mt-1 text-[12px]" style={{ color: "var(--color-muted)" }}>
+                这次调用没留原文
+              </p>
+            )}
+            {openCall === c.id ? (
+              <div className="mt-2">
+                <LlmCallPayloadView runId={runId} callId={c.id} />
+              </div>
+            ) : null}
+          </div>
+        ))}
       </div>
     </div>
   );

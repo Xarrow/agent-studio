@@ -65,6 +65,16 @@ test("chart：单序列简写 values:[] 也认；字符串数字要转", () => {
   assert.deepEqual(spec!.series[0].values, [1200, 3]);
 });
 
+test("chart：series 的值写在 data 里也认（Chart.js 那类写法）", () => {
+  // 线上实测踩到：模型/用户很自然写 series:[{name,data:[...]}]，
+  // 原来只认 values → 静默退回源码（看着像"不支持图表"）。
+  const spec = parseChartSpec(
+    JSON.stringify({ type: "bar", labels: ["一", "二", "三"], series: [{ name: "耗时", data: [3, 5, 2] }] }),
+  );
+  assert.ok(spec, "series[].data 是常见写法，不能悄悄退回源码");
+  assert.deepEqual(spec!.series[0].values, [3, 5, 2]);
+});
+
 test("chart：序列长度与标签数不一致 → 认不出（不能错位画）", () => {
   const spec = parseChartSpec(JSON.stringify({ labels: ["a", "b", "c"], values: [1, 2] }));
   assert.equal(spec, null);

@@ -140,7 +140,14 @@ export function parseChartSpec(text: string): ChartSpec | null {
     for (const s of obj.series as unknown[]) {
       if (!s || typeof s !== "object") continue;
       const so = s as Record<string, unknown>;
-      const values = Array.isArray(so.values) ? (so.values as unknown[]).map(toNumber) : [];
+      // 值可能写在 values 里，也可能写在 data 里 —— 两种都是常见写法（Chart.js 那类
+      // 用 data、我们自己文档里写 values）。只认一种的话，对方换个键名就静默退回源码。
+      const rawValues = Array.isArray(so.values)
+        ? so.values
+        : Array.isArray(so.data)
+          ? so.data
+          : [];
+      const values = (rawValues as unknown[]).map(toNumber);
       if (values.length === 0 || values.some((v) => v === null)) continue;
       series.push({
         name: String(so.name ?? `系列 ${series.length + 1}`),

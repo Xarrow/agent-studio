@@ -510,6 +510,7 @@ export function RunsPanel() {
                 <Link
                   href="/credentials#prices"
                   className="underline decoration-dotted"
+                  data-tap
                   style={{ color: "var(--color-accent)" }}
                   title={`这些模型还没填单价：${usage.unpriced.join("、")} —— 填了才算得准`}
                 >

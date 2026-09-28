@@ -476,6 +476,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 </div>
                 <button
                   className="shrink-0 w-9 h-9 flex items-center justify-center rounded-md text-[13px] text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] lg:w-7 lg:h-7 lg:opacity-0 lg:group-hover:opacity-100"
+                  data-tap-lg
                   title="重命名"
                   onClick={(e) => {
                     e.stopPropagation();
@@ -486,6 +487,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 </button>
                 <button
                   className="shrink-0 w-9 h-9 flex items-center justify-center rounded-md text-[13px] text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-err)] lg:w-7 lg:h-7 lg:opacity-0 lg:group-hover:opacity-100"
+                  data-tap-lg
                   title="删除"
                   onClick={(e) => {
                     e.stopPropagation();
