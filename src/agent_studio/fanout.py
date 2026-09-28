@@ -252,9 +252,16 @@ async def dispatch_remote(
             if status == "waiting_hitl":
                 row.pending_hitl = {"remote": remote_base, "remote_task_id": task_id,
                                     "note": "远端在等人确认，确认后远端会继续；本平台不代答"}
+                # 后台续轮询：远端确认后会出终态，答案要回填到这条子 run ——
+                # 不然它永远停在"等待确认"，用户在远端点了同意也看不到结果。
+                _asyncio.get_running_loop().create_task(
+                    _repoll_until_done(child.id, remote_base, task_id, timeout, headers, remote_agent_id)
+                )
             await session.commit()
 
     await _asyncio.gather(*(_one(c, picked[int(c.item_index or 0)]) for c in created))
+
+    # 等待确认的那几路由 _repoll_until_done 在后台接管，这里不阻塞。
 
     # ── 汇总（与本地分派同一形状，render_summary 直接可用）───────────────
     async with db_factory() as session:
@@ -845,3 +852,49 @@ def tool_flags() -> dict[str, Any]:
         "concurrency_safe": False,
         "fanout": True,
     }
+
+
+async def _repoll_until_done(
+    child_run_id: str,
+    remote_base: str,
+    task_id: str,
+    timeout_s: float,
+    headers: dict[str, str] | None,
+    remote_agent_id: str | None,
+) -> None:
+    """远端在等人确认时，后台继续轮它的任务直到终态，把结果回填到子 run。
+
+    场景：远端平台的 agent 用工具要人点确认（HITL）。``run_until_done`` 撞到
+    input-required 会立即返回（不能让父 run 干等），但远端被确认后会继续跑出
+    终态 —— 没人接着轮，答案就永远丢了。这里接管：deadline 之前持续轮询，
+    出终态（ok/失败/取消）就回填子 run 并清掉 pending_hitl。
+    """
+    import asyncio as _a
+
+    from . import a2a_client
+
+    deadline = time.monotonic() + max(30.0, timeout_s)
+    while True:
+        try:
+            task = await a2a_client.get_task(remote_base, task_id, headers=headers)
+        except a2a_client.A2AError:
+            break  # 远端暂时连不上就到此为止 —— 子 run 已如实标了等待确认
+        state = a2a_client.state_of(task)
+        if state in ("completed", "canceled", "failed", "rejected"):
+            status = a2a_client.status_of(task)
+            out = a2a_client.task_text(task)
+            async with SessionLocal() as session:
+                row = await session.get(Run, child_run_id)
+                if row is None or row.status != "waiting_hitl":
+                    return  # 用户已在本地重跑/中止，别覆盖
+                row.status = status
+                row.output = {"content": out} if out else None
+                row.error = None if status == "ok" else (out or "远端执行失败")
+                row.ended_at = now_ms()
+                row.pending_hitl = None
+                row.usage = {**(row.usage or {}), "remote_task_id": task_id}
+                await session.commit()
+            return
+        if time.monotonic() >= deadline:
+            return  # 子 run 保持 waiting_hitl（pending_hitl 里留着 task_id，可手动查）
+        await _a.sleep(a2a_client.POLL_S * 2)
