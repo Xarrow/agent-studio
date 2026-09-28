@@ -173,6 +173,59 @@ export interface LlmCall {
 }
 
 /** 一次模型调用的完整请求与响应（按需拉取） */
+/** 「各个功能配置导入导出」里的一个分区 */
+export interface ExportSection {
+  key: string;
+  label: string;
+  note: string;
+  count: number;
+  /** 导入端是否真的会落库（凭据永远是 false：密钥不进包） */
+  importable: boolean;
+}
+
+/** 运行环境自检的结果（环境配置页） */
+export interface EnvRuntimes {
+  python: {
+    found: boolean;
+    version: string;
+    path: string;
+    venv: string | null;
+    in_venv: boolean;
+    pip: string | null;
+    uv: string | null;
+    deps: Record<string, string | null>;
+    installable: boolean;
+    install_note: string;
+  };
+  node: {
+    found: boolean;
+    version: string | null;
+    path: string | null;
+    source: string | null;
+    npm: string | null;
+    npm_path: string | null;
+    installable: boolean;
+    install_note: string;
+  };
+  os: { system: string; release: string; machine: string };
+  runtime_dir: string;
+  mirror: string;
+  default_node_version: string;
+}
+
+/** 一次运行环境安装任务的日志（后台跑，轮询看） */
+export interface InstallJob {
+  id: string;
+  target: string;
+  version: string | null;
+  status: "running" | "ok" | "error";
+  ok: boolean | null;
+  error: string | null;
+  steps: { at: number; line: string }[];
+  started_at: number;
+  ended_at: number | null;
+}
+
 /** 一次「LLM 对话测试」的记录（LLM 配置页里点「对话测试」产生的） */
 export interface ModelTestRecord {
   id: string;

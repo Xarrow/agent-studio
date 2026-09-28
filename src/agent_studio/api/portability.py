@@ -23,7 +23,7 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_session
@@ -32,7 +32,9 @@ from ..models import (
     AgentSkill,
     AgentTool,
     Memory,
+    MemoryPolicy,
     ModelPrice,
+    Secret,
     Skill,
     Tool,
     Workflow,
@@ -48,6 +50,60 @@ router = APIRouter(tags=["portability"])
 
 BUNDLE_KIND = "agent-studio-export"
 BUNDLE_VERSION = 1
+
+
+#: 可分区的功能配置 —— 「各个功能配置导入导出」就是按这里的粒度来。
+#: label 给界面用；importable 表示导入端是否真的会落库（凭据永远不会：密钥不进包）。
+SECTIONS: tuple[dict[str, Any], ...] = (
+    {"key": "agents", "label": "助手", "importable": True,
+     "note": "含它挂的工具/Skill（按名字接）"},
+    {"key": "tools", "label": "自定义工具", "importable": True,
+     "note": "内置/原生工具不用导（启动会自动同步）；请求头里的密钥会被清掉"},
+    {"key": "skills", "label": "技能", "importable": True, "note": "SKILL.md 全文 + 来源"},
+    {"key": "workflows", "label": "编排流程", "importable": True,
+     "note": "含自动运行设置；触发凭证不导出"},
+    {"key": "policies", "label": "记忆策略", "importable": True,
+     "note": "每个助手的召回/提炼/压缩档位"},
+    {"key": "memories", "label": "长期记忆", "importable": True, "note": "按助手名字接回"},
+    {"key": "prices", "label": "模型单价", "importable": False,
+     "note": "按模型名对齐；导入不覆盖你已有的单价"},
+    {"key": "credentials", "label": "LLM 配置", "importable": False,
+     "note": "只导出清单（名字/端点/默认模型），**密钥绝不进包**，换机器重新填"},
+)
+
+#: 启动会自动重建的工具种类 —— 导出它们没意义，导入也不该重复建
+AUTO_SYNCED_TOOL_KINDS = ("builtin", "native", "fork")
+
+#: 长得像密钥的键名（http 工具请求头里）
+_SECRET_KEY_HINTS = ("authorization", "token", "api_key", "apikey", "secret", "cookie", "password")
+
+
+def scrub_secrets(obj: Any) -> tuple[Any, bool]:
+    """把"长得像密钥"的字段值清空（返回 清洗后的对象, 是否清过）。
+
+    为什么要做：自定义 http 工具的请求头里常常直接塞 Bearer token ——
+    导出包会到处飞（发给自己、放进仓库），密钥不能跟着走。
+    """
+    touched = False
+    if isinstance(obj, dict):
+        out: dict[str, Any] = {}
+        for k, v in obj.items():
+            if isinstance(v, str) and v.strip() and any(h in str(k).lower() for h in _SECRET_KEY_HINTS):
+                out[k] = ""
+                touched = True
+            else:
+                new_v, t = scrub_secrets(v)
+                out[k] = new_v
+                touched = touched or t
+        return out, touched
+    if isinstance(obj, list):
+        items = []
+        for v in obj:
+            new_v, t = scrub_secrets(v)
+            items.append(new_v)
+            touched = touched or t
+        return items, touched
+    return obj, False
 
 
 def remap_graph(graph: dict[str, Any] | None, id_map: dict[str, str]) -> dict[str, Any]:
@@ -70,12 +126,17 @@ def remap_graph(graph: dict[str, Any] | None, id_map: dict[str, str]) -> dict[st
 
 @router.get("/api/export", response_model=dict)
 async def export_all(
-    memories: bool = Query(True, description="是否带上长期记忆"),
+    memories: bool = Query(True, description="是否带上长期记忆（兼容旧参数）"),
+    sections: str | None = Query(
+        None,
+        description="要导哪些功能（逗号分隔，如 agents,workflows）。不传 = 全部",
+    ),
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
     """导出成一个 JSON 包（可保存、可搬到另一台实例）。
 
     包里**不含任何密钥/口令** —— 只带"怎么配的"，不带"拿什么连"。
+    ``sections`` 让"各个功能配置"能分开导（只想要助手、或只要流程）。
     """
     agents = list((await session.execute(select(Agent))).scalars())
     workflows = list((await session.execute(select(Workflow))).scalars())
@@ -138,6 +199,64 @@ async def export_all(
             ],
         },
     }
+    # 自定义工具：内置/原生那类启动会自己同步，导出没意义（导入也不该重复建）
+    tool_rows_export = []
+    for t in (await session.execute(select(Tool))).scalars():
+        if (t.kind or "") in AUTO_SYNCED_TOOL_KINDS:
+            continue
+        impl, scrubbed = scrub_secrets(t.impl or {})
+        tool_rows_export.append(
+            {
+                "name": t.name,
+                "kind": t.kind,
+                "description": t.description or "",
+                "input_schema": t.input_schema or {},
+                "impl": impl,
+                #: 请求头里的密钥被清掉了 —— 导入后要重填
+                "secrets_scrubbed": scrubbed,
+            }
+        )
+    out["tools"] = tool_rows_export
+    out["skills"] = [
+        {
+            "name": sk.name,
+            "description": sk.description or "",
+            "source": sk.source or {},
+            "content": sk.content or "",
+            "files": sk.files or {},
+        }
+        for sk in (await session.execute(select(Skill))).scalars()
+    ]
+    # 记忆策略：每个助手一套（跟着助手名字走，导入时接回新助手）
+    pol_rows = (
+        await session.execute(
+            select(MemoryPolicy, Agent.name).join(Agent, Agent.id == MemoryPolicy.agent_id)
+        )
+    ).all()
+    out["policies"] = [
+        {
+            "agent": agent_name,
+            "auto_extract": int(p.auto_extract or 0),
+            "recall_enabled": int(p.recall_enabled or 0),
+            "recall_top_k": int(p.recall_top_k or 5),
+            "recall_strategy": p.recall_strategy or "hybrid",
+            "recall_backend": getattr(p, "recall_backend", "local") or "local",
+            "compress_after_turns": int(p.compress_after_turns or 0),
+        }
+        for p, agent_name in pol_rows
+    ]
+    # LLM 配置：**只导清单**（名字/端点/默认模型）—— 密钥是环境的一部分，不进包
+    out["credentials"] = [
+        {
+            "name": sec.name,
+            "provider": sec.provider,
+            "base_url": sec.base_url,
+            "default_model": getattr(sec, "default_model", None),
+        }
+        for sec in (await session.execute(select(Secret))).scalars()
+    ]
+    out["credential_note"] = "密钥不在包里：导入后请在本机重新填写 API Key（清单只用于告诉你缺哪些）"
+
     if memories:
         rows = list(
             (await session.execute(select(Memory, Agent.name).outerjoin(Agent, Agent.id == Memory.agent_id))).all()
@@ -153,7 +272,42 @@ async def export_all(
             }
             for m, agent_name in rows
         ]
+    if sections:
+        wanted = {x.strip() for x in sections.split(",") if x.strip()}
+        keep = {"kind", "version", "exported_at", "note", "credential_note"} | wanted
+        dropped = sorted(set(out) - keep)
+        out = {k: v for k, v in out.items() if k in keep}
+        out["sections"] = sorted(wanted)
+        out["dropped"] = dropped
+    else:
+        out["sections"] = [x["key"] for x in SECTIONS]
     return out
+
+
+@router.get("/api/export/sections", response_model=dict)
+async def export_sections(session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """「各个功能配置」的清单 + 现有数量（界面据此渲染一行一功能）。"""
+    counts = {
+        "agents": (await session.execute(select(func.count()).select_from(Agent))).scalar_one(),
+        "tools": len(
+            [
+                t
+                for t in (await session.execute(select(Tool))).scalars()
+                if (t.kind or "") not in AUTO_SYNCED_TOOL_KINDS
+            ]
+        ),
+        "skills": (await session.execute(select(func.count()).select_from(Skill))).scalar_one(),
+        "workflows": (await session.execute(select(func.count()).select_from(Workflow))).scalar_one(),
+        "policies": (await session.execute(select(func.count()).select_from(MemoryPolicy))).scalar_one(),
+        "memories": (await session.execute(select(func.count()).select_from(Memory))).scalar_one(),
+        "prices": (await session.execute(select(func.count()).select_from(ModelPrice))).scalar_one(),
+        "credentials": (await session.execute(select(func.count()).select_from(Secret))).scalar_one(),
+    }
+    return {
+        "sections": [{**sec, "count": counts.get(sec["key"], 0)} for sec in SECTIONS],
+        "bundle_kind": BUNDLE_KIND,
+        "bundle_version": BUNDLE_VERSION,
+    }
 
 
 @router.post("/api/import", response_model=dict)
@@ -277,6 +431,130 @@ async def import_bundle(
             wf.next_run_at = compute_next(wf.schedule_mode, wf.schedule_at, wf.schedule_weekdays)
         created_workflows.append({"id": wf.id, "name": name})
 
+    # 自定义工具：同名已存在就不动（导入不改别人的东西）；内置那类不重复建
+    created_tools: list[str] = []
+    skipped_tools: list[str] = []
+    for item in bundle.get("tools") or []:
+        name = str(item.get("name") or "").strip()
+        kind = str(item.get("kind") or "").strip()
+        if not name:
+            continue
+        if kind in AUTO_SYNCED_TOOL_KINDS or name in tool_by_name:
+            skipped_tools.append(name)
+            continue
+        t = Tool(
+            kind=kind or "http",
+            name=name,
+            description=str(item.get("description") or ""),
+            input_schema=dict(item.get("input_schema") or {}),
+            impl=dict(item.get("impl") or {}),
+            created_at=now_ms(),
+            updated_at=now_ms(),
+        )
+        session.add(t)
+        await session.flush()
+        tool_by_name[name] = t.id
+        created_tools.append(name)
+
+    # 技能：同名已存在就不动
+    created_skills: list[str] = []
+    skipped_skills: list[str] = []
+    for item in bundle.get("skills") or []:
+        name = str(item.get("name") or "").strip()
+        if not name:
+            continue
+        if name in skill_by_name:
+            skipped_skills.append(name)
+            continue
+        sk = Skill(
+            name=name,
+            description=str(item.get("description") or ""),
+            source=dict(item.get("source") or {}),
+            content=str(item.get("content") or ""),
+            files=dict(item.get("files") or {}),
+            created_at=now_ms(),
+            updated_at=now_ms(),
+        )
+        session.add(sk)
+        await session.flush()
+        skill_by_name[name] = sk.id
+        created_skills.append(name)
+
+    # 工具/Skill 是在助手**之前**导出的顺序问题：助手那一段先跑，所以这里要补接
+    # （同一个包里既有助手又有工具时，助手当时接不上工具名 → 这里按新工具 id 补上）
+    linked_tools = 0
+    linked_skills = 0
+    if created_tools or created_skills:
+        for item in bundle.get("agents") or []:
+            aid = id_map.get(str(item.get("id") or "")) or id_map.get(
+                f"name:{str(item.get('name') or '').strip()}"
+            )
+            if not aid:
+                continue
+            for tname in item.get("tools") or []:
+                tid = tool_by_name.get(str(tname))
+                if not tid:
+                    continue
+                exists = (
+                    await session.execute(
+                        select(AgentTool).where(
+                            AgentTool.agent_id == aid, AgentTool.tool_id == tid
+                        )
+                    )
+                ).scalars().first()
+                if exists is None:
+                    session.add(AgentTool(agent_id=aid, tool_id=tid))
+                    linked_tools += 1
+            for sname in item.get("skills") or []:
+                sid = skill_by_name.get(str(sname))
+                if not sid:
+                    continue
+                exists = (
+                    await session.execute(
+                        select(AgentSkill).where(
+                            AgentSkill.agent_id == aid, AgentSkill.skill_id == sid
+                        )
+                    )
+                ).scalars().first()
+                if exists is None:
+                    session.add(AgentSkill(agent_id=aid, skill_id=sid))
+                    linked_skills += 1
+
+    # 补接成功的，要从"缺失"名单里划掉 —— 否则界面一边说"接上了"一边说"缺这个工具"，
+    # 用户只会以为导入坏了（实测就是这么报的：工具是同一个包里的，只是排在助手后面）。
+    if linked_tools and missing_tools:
+        now_tools = set(tool_by_name)
+        missing_tools = [m for m in missing_tools if m.split("→")[-1].strip() not in now_tools]
+    if linked_skills and missing_skills:
+        now_skills = set(skill_by_name)
+        missing_skills = [m for m in missing_skills if m.split("→")[-1].strip() not in now_skills]
+
+    # 记忆策略：按助手名接回；**已有策略的助手不动**（导入不改别人的调参）
+    created_policies: list[str] = []
+    skipped_policies: list[str] = []
+    for item in bundle.get("policies") or []:
+        agent_name = str(item.get("agent") or "").strip()
+        aid = id_map.get(f"name:{agent_name}")
+        if not aid:
+            skipped_policies.append(f"{agent_name or '?'}（这次没导入它的助手）")
+            continue
+        exists = (await session.get(MemoryPolicy, aid)) is not None
+        if exists:
+            skipped_policies.append(f"{agent_name}（已有策略，保留你的）")
+            continue
+        session.add(
+            MemoryPolicy(
+                agent_id=aid,
+                auto_extract=int(item.get("auto_extract") or 0),
+                recall_enabled=int(item.get("recall_enabled") or 0),
+                recall_top_k=int(item.get("recall_top_k") or 5),
+                recall_strategy=str(item.get("recall_strategy") or "hybrid"),
+                recall_backend=str(item.get("recall_backend") or "local"),
+                compress_after_turns=int(item.get("compress_after_turns") or 0),
+            )
+        )
+        created_policies.append(agent_name)
+
     # 记忆：按助手名字接回新助手（接不上就作为"不带助手"的记忆留着，不丢内容）
     imported_memories = 0
     for m in bundle.get("memories") or []:
@@ -328,6 +606,17 @@ async def import_bundle(
         missing_tools=missing_tools,
         missing_skills=missing_skills,
         unfixed_nodes=unfixed_nodes,
+        tools=created_tools,
+        skills=created_skills,
+        policies=created_policies,
+        skipped=(
+            [f"工具：{n}（已存在或内置）" for n in skipped_tools]
+            + [f"技能：{n}（已存在）" for n in skipped_skills]
+            + [f"记忆策略：{n}" for n in skipped_policies]
+        ),
+        credentials_to_fill=[
+            str(c.get("name") or "") for c in (bundle.get("credentials") or []) if c.get("name")
+        ],
         detail=(
             "导入只新增、不覆盖；密钥不在包里，请在「LLM 配置」里重新选一次凭据"
             if created_agents

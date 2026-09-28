@@ -1103,6 +1103,13 @@ class ImportResult(BaseModel):
     missing_skills: list[str] = Field(default_factory=list)
     #: 流程里找不到对应助手的节点（保留原 id，流程能用但要人工修）
     unfixed_nodes: list[str] = Field(default_factory=list)
+    #: 这次真的新建了哪些（按分区）—— 让"导入了什么"可核对
+    tools: list[str] = Field(default_factory=list)
+    skills: list[str] = Field(default_factory=list)
+    policies: list[str] = Field(default_factory=list)
+    skipped: list[str] = Field(default_factory=list)
+    #: 包里列了、但**必须在本机重填密钥**的 LLM 配置（名字）
+    credentials_to_fill: list[str] = Field(default_factory=list)
 
 
 class AutoRunIn(BaseModel):

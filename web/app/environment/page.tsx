@@ -20,6 +20,7 @@ import type { DbDriver, DbDriverInfo, DbStatus, DbTestResult , UploadConfigRead 
 import { useFeedback } from "@/components/ui/feedback";
 import { BackupRestore } from "@/components/BackupRestore";
 import { StoragePanel } from "@/components/StoragePanel";
+import { RuntimeCard } from "@/components/RuntimeCard";
 
 /** 表单字段（SQLite 只用 path，其余是网络库的连接参数） */
 type Form = {
@@ -254,6 +255,14 @@ export default function EnvironmentPage() {
         title="环境配置"
         desc="平台把数据存在哪里。本地开发用默认的 SQLite 就够了；要多人共用或跑在服务器上，可以切到自己的 MySQL / PostgreSQL。"
       />
+
+      {/* ── 运行环境：这台机器有什么、缺了能装 ─────────────── */}
+      <Section
+        title="运行环境"
+        desc="检测这台机器上的 Python 与 Node.js。缺了可以一键装到平台自己的目录 —— 不动系统、不改 PATH，只走国内镜像，下载校验 sha256、装完真跑一次版本号才算成功"
+      >
+        <RuntimeCard />
+      </Section>
 
       {/* ── 当前使用 ─────────────────────────────────────────── */}
       <Section
@@ -582,11 +591,16 @@ export default function EnvironmentPage() {
         )}
       </Section>
 
-      {/* 备份与迁移：数据能带走。放在"数据存哪"下面 —— 同一件事的两面：
-          存在哪 / 怎么拿走。 */}
+      {/* 配置导入导出：数据能带走。放在"数据存哪"下面 —— 同一件事的两面：
+          存在哪 / 怎么拿走。按功能分区，能只导助手、只导流程。 */}
       <StoragePanel />
 
+      <Section
+        title="配置导入导出"
+        desc="助手 / 自定义工具 / 技能 / 编排流程 / 记忆策略 / 长期记忆 / 模型单价 / LLM 配置，可以按功能单独导出，也可以一键全量；导入只新增、不覆盖"
+      >
         <BackupRestore />
+      </Section>
 
       {/* ── 说明 ─────────────────────────────────────────────── */}
       <Section

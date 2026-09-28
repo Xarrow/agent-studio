@@ -17,6 +17,9 @@ import type {
   CredentialTestResult,
   DbDriverInfo,
   ExternalMemoryConfig,
+  ExportSection,
+  InstallJob,
+  EnvRuntimes,
   ModelTestRecord,
   DbStatus,
   DbTestResult,
@@ -511,8 +514,22 @@ export const api = {
   restoreRevision: (revId: string) => post<{ ok: boolean; version: number; restored_from: number }>(`/api/revisions/${revId}/restore`, {}),
 
   // ── 备份与迁移（数据带走）──────────────────────────────────────────────
+  // ── 运行环境（Python / Node.js 自检与安装）────────────────────────────
+  /** 检测当前环境的 python / nodejs（含版本、路径、来源） */
+  envRuntimes: () => request<EnvRuntimes>("/api/environment/runtimes"),
+  /** 一键安装（后台跑，返回 job_id；日志用 installStatus 轮询） */
+  installEnvRuntime: (target: "node" | "python", version?: string) =>
+    post<{ started: boolean; job_id: string; note?: string }>("/api/environment/install", {
+      target,
+      version,
+    }),
+  envInstallStatus: (jobId: string) => request<InstallJob>(`/api/environment/install/${jobId}`),
+
+  // ── 各个功能配置导入导出 ────────────────────────────────────────────────
+  /** 分区清单（有哪些功能可导、各有几条） */
+  exportSections: () => request<{ sections: ExportSection[] }>("/api/export/sections"),
   /** 导出全部（助手/流程/单价/记忆）—— **包里不含任何密钥** */
-  exportBundle: () =>
+  exportBundle: (sections?: string[]) =>
     request<{
       kind: string;
       version: number;
@@ -522,7 +539,7 @@ export const api = {
       workflows: { name: string; description: string; graph: WorkflowGraph; mode_override: string | null; auto: Record<string, unknown> }[];
       prices: { currency: string; items: { model: string; in_per_mtok: number; out_per_mtok: number }[] };
       memories?: unknown[];
-    }>("/api/export"),
+    }>(sections && sections.length ? `/api/export?sections=${sections.join(",")}` : "/api/export"),
   /** 导入一个导出包（**只新增、不覆盖**） */
   importBundle: (bundle: Record<string, unknown>) => post<Record<string, unknown>>("/api/import", { bundle }),
 
