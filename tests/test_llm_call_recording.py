@@ -155,6 +155,75 @@ async def test_流式要累加增量而不是只留最后一片(client):
 
 
 @pytest.mark.asyncio
+async def test_终片是完整快照_不能重复累加(client):
+    """AgentScope 的流 = 增量片(is_last=False) + 完整快照片(is_last=True)。
+
+    终片再 append 一次就会**把正文接两遍** —— 实测踩到过（记录里整段话出现两次，
+    而平台自己的输出是单份）。这里把真形状摆出来钉住。
+    """
+    rid = await _mk_run()
+    set_run_ctx(run_id=rid, agent_id="ag_test", depth=0)
+    rec = ModelCallRecorder(provider="deepseek", model="deepseek-chat")
+
+    class _Terminal(_FakeResponse):
+        """终片：与真实现一致，is_last=True 且内容完整。"""
+
+        is_last = True
+
+    async def handler(**kwargs):
+        async def gen():
+            for piece in ("你", "好", "，世界"):
+                part = _FakeResponse(piece, tokens_out=1)
+                part.is_last = False
+                yield part
+            yield _Terminal("你好，世界", tokens_in=120, tokens_out=3)
+        return gen()
+
+    stream = await rec.on_model_call(
+        agent=None,
+        input_kwargs={"current_model": _FakeModel(), "messages": [], "tools": [], "tool_choice": None},
+        next_handler=handler,
+    )
+    got = [c.content[0].text async for c in stream]
+    assert len(got) == 4, "流要原样透传（含终片）"
+
+    resp = decode_payload((await _rows(rid))[0].response_blob)
+    text = resp["content"][0]["text"]
+    assert text == "你好，世界", f"正文只能有一份，实际={text!r}"
+    assert resp["usage"]["input_tokens"] == 120, "用量取终片的（终片带最终 usage）"
+
+
+@pytest.mark.asyncio
+async def test_流被打断也要留下已收到的部分(client):
+    """没有终片（连线中断）时，用增量累加留下半截内容 —— 失败现场最需要原件。"""
+    rid = await _mk_run()
+    set_run_ctx(run_id=rid, agent_id="ag_test", depth=0)
+    rec = ModelCallRecorder()
+
+    async def handler(**kwargs):
+        async def gen():
+            for piece in ("半", "截"):
+                part = _FakeResponse(piece)
+                part.is_last = False
+                yield part
+            raise RuntimeError("连接断了")
+        return gen()
+
+    stream = await rec.on_model_call(
+        agent=None,
+        input_kwargs={"current_model": _FakeModel(), "messages": [], "tools": [], "tool_choice": None},
+        next_handler=handler,
+    )
+    with pytest.raises(RuntimeError):
+        async for _ in stream:
+            pass
+
+    row = (await _rows(rid))[0]
+    assert row.status == "error" and "连接断了" in (row.error or "")
+    assert decode_payload(row.response_blob)["content"][0]["text"] == "半截"
+
+
+@pytest.mark.asyncio
 async def test_调用失败也要留一条错误记录(client):
     rid = await _mk_run()
     set_run_ctx(run_id=rid, agent_id="ag_test", depth=0)

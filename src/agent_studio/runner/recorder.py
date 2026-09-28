@@ -170,13 +170,21 @@ class ModelCallRecorder(MiddlewareBase):
     # ------------------------------------------------------------------ #
     async def _wrap_stream(self, stream: Any, run_id: str, seq: int, provider: str,
                            model_name: str, request_text: str, started: int, t0: float) -> Any:
-        acc = None
+        acc = None      # 增量累加（只在"流被打断、没等到终片"时才用得上）
+        terminal = None  # 权威终片
         last = None
         failed: BaseException | None = None
         try:
             async for chunk in stream:
                 last = chunk
-                if acc is None:
+                # ⚠️ 关键：AgentScope 的流是「若干 is_last=False 的**增量**片 +
+                # 一个 is_last=True 的**完整快照**片」（见 model/_base.py 的包装器：
+                # 它自己就只累加非终片）。**终片不能参与累加** —— 它已经是完整内容，
+                # 再 append 一次就会把正文接两遍（实测踩到：记录里整段话出现两次，
+                # 而平台自己的输出是单份，问题只在记录里）。
+                if getattr(chunk, "is_last", False):
+                    terminal = chunk
+                elif acc is None:
                     # 深拷贝首片：后面 append 会改它，不能动 agent 正在消费的那个对象
                     try:
                         acc = chunk.model_copy(deep=True)
@@ -193,7 +201,8 @@ class ModelCallRecorder(MiddlewareBase):
             raise
         finally:
             try:
-                target = acc if acc is not None else last
+                # 有终片用终片（完整、且带最终 usage）；没有（流被中断）就用增量累加
+                target = terminal if terminal is not None else (acc if acc is not None else last)
                 payload = _dump_json(_response_payload(target)) if target is not None else ""
                 err = f"{type(failed).__name__}: {failed}" if failed else None
                 usage = _usage_of(target) if target is not None else (0, 0, 0)
