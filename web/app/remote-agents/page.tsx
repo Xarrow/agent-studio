@@ -211,7 +211,10 @@ export default function RemoteAgentsPage() {
       <div className="mb-3">
         <Toolbar>
           <button className="btn btn-primary" onClick={() => setRegistering(true)}>
-            ＋ 注册远程 Agent
+            ＋ 注册
+          </button>
+          <button className="btn" onClick={() => void copySelfreg()}>
+            {copied ? "已复制注册地址" : "复制自注册地址"}
           </button>
           <button
             className="btn"
@@ -236,8 +239,8 @@ export default function RemoteAgentsPage() {
           >
             {busy === "refresh-all" ? "解析中…" : "全部重新解析"}
           </button>
-          <span className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
-            {stats.total} 个 · 可用 {stats.ok} · 异常 {stats.bad} · 已挂载 {stats.bound}
+          <span className="ml-auto hidden text-[12.5px] sm:inline" style={{ color: "var(--color-muted)" }}>
+            挂载 {stats.bound} / {stats.total}
           </span>
         </Toolbar>
       </div>
@@ -263,12 +266,17 @@ export default function RemoteAgentsPage() {
           <Empty title="读取中…" />
         ) : !shown.length ? (
           <Empty
-            title={stats.total ? "这个筛选下没有远端" : "还没有注册任何远程 agent"}
-            hint="远端要满足两点：能访问到它的 A2A 端点、以及它的 agent card（/.well-known/agent-card.json）可读"
+            title={stats.total ? "这个筛选下没有远端" : "还没有接入任何远程 agent"}
+            hint="两种接法：粘对方的地址注册进来（拉），或把自注册地址发给对方、它推卡片进来（推）。远端需实现 A2A 协议。"
             action={
-              <button className="btn btn-primary" onClick={() => setRegistering(true)}>
-                注册第一个
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button className="btn btn-primary" onClick={() => setRegistering(true)}>
+                  粘地址注册
+                </button>
+                <button className="btn" onClick={() => void copySelfreg()}>
+                  {copied ? "已复制 ✓" : "复制自注册地址"}
+                </button>
+              </div>
             }
           />
         ) : (
@@ -323,10 +331,10 @@ export default function RemoteAgentsPage() {
                       </span>
                     )}
                     <span
-                      className="mono w-full truncate text-[11.5px] sm:w-auto"
+                      className="mono hidden truncate text-[11.5px] sm:inline"
                       style={{ color: "var(--color-muted)" }}
                     >
-                      {r.url}
+                      {(() => { try { return new URL(r.url).host; } catch { return r.url; } })()}
                     </span>
                   </Row>
 
@@ -334,6 +342,9 @@ export default function RemoteAgentsPage() {
                     <RowDetail>
                       <div className="flex flex-col gap-3">
                         <div className="flex flex-col gap-1">
+                          <KV k="地址">
+                            <code className="mono break-all text-[12px]">{r.url}</code>
+                          </KV>
                           <KV k="版本">
                             {r.parsed?.version || "—"} · A2A {r.parsed?.protocol_version || "—"}
                             {r.parsed?.capabilities?.streaming ? " · 支持流式" : ""}
@@ -415,7 +426,8 @@ export default function RemoteAgentsPage() {
 
       <Section
         title="远端自注册（A2A 推送）"
-        desc="把这个地址给远端 —— 它把自己的 agent card 推过来就完成了注册，之后在这里挂到助手上"
+        desc="把这个地址给远端 —— 它把自己的 agent card 推过来就完成了注册；重推一次 = 更新技能清单"
+        defaultOpen={false}
       >
         <div className="flex flex-col gap-2">
           <KV k="注册地址">
@@ -628,7 +640,7 @@ function RegisterDialog({ onClose, onDone }: { onClose: () => void; onDone: () =
     <div className={DLG_BACKDROP}>
       <div className={`${DLG_CARD} flex max-h-[88vh] w-full max-w-2xl flex-col p-4`}>
         <div className="mb-2 flex items-center gap-2">
-          <span className="text-[14px] font-medium">注册远程 Agent</span>
+          <span className="text-[14px] font-medium">接入远程 Agent（粘地址）</span>
           <button className="btn ml-auto" onClick={onClose}>
             关闭
           </button>
@@ -711,7 +723,7 @@ function RegisterDialog({ onClose, onDone }: { onClose: () => void; onDone: () =
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <button className="btn btn-primary" disabled={!preview || job !== "idle"} onClick={() => void doSave()}>
-            {job === "saving" ? "注册中…" : "确认注册"}
+            {job === "saving" ? "接入中…" : "确认接入"}
           </button>
           <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
             注册后会自动生成一个同名工具，助手的「工具」里就能勾到它
