@@ -378,8 +378,9 @@ export default function RemoteAgentsPage() {
                           {r.enabled ? "停用" : "启用"}
                         </button>
                         <button
-                          className="ml-auto text-[12.5px]"
+                          className="btn ml-auto text-[12.5px]"
                           style={{ color: "var(--color-err)" }}
+                          title="删除这个远程 agent（会再确认一次）"
                           onClick={() => void onDelete(r)}
                         >
                           删除
