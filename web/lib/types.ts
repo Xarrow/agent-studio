@@ -173,6 +173,24 @@ export interface LlmCall {
 }
 
 /** 一次模型调用的完整请求与响应（按需拉取） */
+/** 一次「LLM 对话测试」的记录（LLM 配置页里点「对话测试」产生的） */
+export interface ModelTestRecord {
+  id: string;
+  credential_id: string | null;
+  credential_name: string;
+  provider: string;
+  base_url: string | null;
+  model: string;
+  messages: { role: string; content: string }[];
+  reply: string | null;
+  status: string;
+  error: string | null;
+  started_at: number;
+  duration_ms: number | null;
+  tokens_in: number;
+  tokens_out: number;
+}
+
 export interface LlmCallPayload {
   id: number;
   iteration: number;
@@ -255,6 +273,8 @@ export interface FanoutRead {
 export interface ActivityItem {
   /** a2a = 远端执行（这一路是发给别的平台上的 agent 跑的，走 A2A 协议） */
   kind: "chat" | "preview" | "playground" | "llm_test" | "a2a";
+  /** LLM 测试这类记录：界面上是否给"看原文"入口 */
+  has_payload?: boolean | null;
   id: string;
   at: number;
   /** 编排执行才有：有它就能「以流程查看」（深链到 Playground 的历史回放） */

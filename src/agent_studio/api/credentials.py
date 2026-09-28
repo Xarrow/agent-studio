@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import httpx
+from typing import Any
 import inspect
 import re
 import time
@@ -218,6 +219,17 @@ async def delete_credential(
 # --------------------------------------------------------------------------- #
 # 连通性测试
 # --------------------------------------------------------------------------- #
+def _safe_json(resp: "httpx.Response") -> Any:
+    """响应体尽量给出结构（JSON 优先），给不出就回文本 —— 原文要能读，不能抛。"""
+    try:
+        return resp.json()
+    except Exception:  # noqa: BLE001
+        try:
+            return resp.text[:4000]
+        except Exception:  # noqa: BLE001
+            return "<响应体读不出来>"
+
+
 def _err_of(resp: "httpx.Response") -> str:
     """从服务商返回体里抽出人话错误（OpenAI 兼容格式：error.message）。"""
     try:
@@ -412,6 +424,8 @@ async def _record_model_test(
     error: str | None,
     latency_ms: int,
     usage: dict | None,
+    request: dict | None = None,
+    response: Any = None,
 ) -> None:
     """把一次「对话测试」写进 llm 测试记录。
 
@@ -424,6 +438,21 @@ async def _record_model_test(
     注意：写失败不能影响返回值 —— 记录是旁路，测通了就该告诉用户测通了。
     """
     usage = usage or {}
+    # 原文：请求体 + 原始响应，压缩后落库（体积上限沿用模型调用那套设置）
+    req_blob: dict[str, Any] = {}
+    try:
+        from ..runner import compress_payload
+
+        if request is not None:
+            req_raw, req_trunc = compress_payload(request)
+            req_blob["request_blob"] = req_raw
+        if response is not None:
+            resp_raw, resp_trunc = compress_payload(response)
+            req_blob["response_blob"] = resp_raw
+            if req_trunc or resp_trunc:
+                req_blob["payload_truncated"] = 1
+    except Exception:  # noqa: BLE001 —— 原文是旁路，压不动也不该影响记录
+        req_blob = {}
     try:
         session.add(
             ModelTest(
@@ -441,6 +470,7 @@ async def _record_model_test(
                 tokens_out=int(
                     usage.get("completion_tokens") or usage.get("output_tokens") or 0
                 ),
+                **req_blob,
             )
         )
         await session.commit()
@@ -495,6 +525,8 @@ async def chat_with_credential(
         {"role": "user", "content": "你好"}
     ]
 
+    # 原始请求体（排障要看的就是它：把什么参数发给了谁）
+    req_body: dict[str, Any] = {"model": model, "messages": msgs, "stream": False}
     started = time.perf_counter()
     try:
         async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as client:
@@ -504,7 +536,7 @@ async def chat_with_credential(
                     "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
                 },
-                json={"model": model, "messages": msgs, "stream": False},
+                json=req_body,
             )
         latency = int((time.perf_counter() - started) * 1000)
 
@@ -513,6 +545,13 @@ async def chat_with_credential(
             await _record_model_test(
                 session, row, model=model, base_url=base, messages=msgs,
                 reply=None, status="error", error=msg, latency_ms=latency, usage=None,
+                request=req_body,
+                # 失败现场最需要原件：状态码 + 响应头 + 响应体都留下
+                response={
+                    "status": resp.status_code,
+                    "headers": dict(resp.headers),
+                    "body": _safe_json(resp),
+                },
             )
             return CredentialChatResult(ok=False, model=model, latency_ms=latency, error=msg)
 
@@ -532,6 +571,7 @@ async def chat_with_credential(
         await _record_model_test(
             session, row, model=model, base_url=base, messages=msgs,
             reply=reply, status="ok", error=None, latency_ms=latency, usage=usage,
+            request=req_body, response=data,
         )
         return CredentialChatResult(
             ok=True, model=model, reply=reply, latency_ms=latency, usage=usage,
@@ -541,6 +581,7 @@ async def chat_with_credential(
             session, row, model=model, base_url=base, messages=msgs,
             reply=None, status="error", error=f"{type(exc).__name__}: {exc}",
             latency_ms=int((time.perf_counter() - started) * 1000), usage=None,
+            request=req_body, response={"error": f"{type(exc).__name__}: {exc}"},
         )
         return CredentialChatResult(
             ok=False, model=model,

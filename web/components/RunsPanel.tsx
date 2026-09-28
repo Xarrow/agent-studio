@@ -38,7 +38,7 @@ import { SpanWaterfall } from "@/components/SpanWaterfall";
 import type { Span } from "@/lib/types";
 import { RunTimeline, eventsToSteps, type Step } from "@/components/ui/run-timeline";
 import { Mermaid } from "@/components/Mermaid";
-import { LlmCallsPanel } from "@/components/LlmCallsPanel";
+import { LlmCallsPanel, ModelTestDetail } from "@/components/LlmCallsPanel";
 
 /**
  * 把一次分派画成调用链（Mermaid 源码）。
@@ -112,6 +112,8 @@ type Detail = {
   spans?: Span[];
   /** 每次模型调用的元数据（原文按需拉，见 LlmCallsPanel） */
   llmCalls?: LlmCall[];
+  /** LLM 测试记录：展开的是「对话 + 原始请求/响应」，没有执行过程 */
+  llmTest?: boolean;
   note?: string;
 };
 
@@ -272,10 +274,9 @@ export function RunsPanel() {
     });
     if (!willOpen || details[it.id]) return;
     if (it.kind === "llm_test") {
-      setDetails((d) => ({
-        ...d,
-        [it.id]: { loading: false, note: "LLM 测试只验证「key 能不能用」，没有执行过程可看。" },
-      }));
+      // 裸模型调用没有"执行过程"，但它有**对话 + 完整请求/原始响应** ——
+      // 以前这里只给一句"没有可看"，等于把用户最想要的东西藏了。
+      setDetails((d) => ({ ...d, [it.id]: { loading: false, llmTest: true } }));
       return;
     }
     setDetails((d) => ({ ...d, [it.id]: { loading: true } }));
@@ -909,7 +910,9 @@ export function RunsPanel() {
                           )}
                         </div>
                         <div className="px-2.5 py-2">
-                          {d?.loading ? (
+                          {d?.llmTest ? (
+                            <ModelTestDetail testId={it.id} hasPayload={it.has_payload} />
+                          ) : d?.loading ? (
                             <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>读取中…</div>
                           ) : d?.note ? (
                             <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>{d.note}</div>

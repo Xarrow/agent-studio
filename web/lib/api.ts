@@ -17,6 +17,7 @@ import type {
   CredentialTestResult,
   DbDriverInfo,
   ExternalMemoryConfig,
+  ModelTestRecord,
   DbStatus,
   DbTestResult,
   Issue,
@@ -460,7 +461,7 @@ export const api = {
   runEvents: (id: string) => request<RunEvent[]>(`/api/runs/events/${id}`),
   /** 单条 LLM 对话测试的完整记录（弹框里要看请求原文与回复） */
   modelTest: (id: string) =>
-    request<Record<string, unknown>>(`/api/runs/model-tests/${id}`),
+    request<ModelTestRecord>(`/api/runs/model-tests/${id}`),
   /**
    * 统一的「运行记录」时间线：助手执行（对话/试跑/编排）+ LLM 对话测试。
    * 一次请求拿全，前端不用为了看另一类再切页面。
@@ -807,6 +808,9 @@ export const api = {
     body: { agent_id?: string | null; scope?: "agent" | "global"; content?: string },
   ) => post<Memory>(`/api/memories/${id}/duplicate`, body),
   /** 一次模型调用的完整请求/响应原文（展开时才拉，列表不背这份重量） */
+  /** 「LLM 配置」里那次对话测试的完整请求与原始响应（裸模型调用也留原文） */
+  modelTestPayload: (testId: string) =>
+    request<LlmCallPayload>(`/api/runs/model-tests/${testId}/payload`),
   llmCallPayload: (runId: string, callId: number) =>
     request<LlmCallPayload>(`/api/runs/${runId}/llm-calls/${callId}/payload`),
   /** 外部记忆服务配置（读/写/探连通） */

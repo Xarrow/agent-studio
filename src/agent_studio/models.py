@@ -12,7 +12,7 @@ import time
 import uuid
 from typing import Any
 
-from sqlalchemy import BigInteger, Boolean, Float, JSON, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, Float, ForeignKey, Index, Integer, JSON, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -265,6 +265,15 @@ class ModelTest(Base):
 
     status: Mapped[str] = mapped_column(String(16), default="ok", index=True)  # ok | error
     error: Mapped[str | None] = mapped_column(LongText, default=None)
+
+    #: 发出去的**完整请求体**与**原始响应**（zlib 压缩的 JSON）。
+    #: 为什么要留：``messages``/``reply`` 是"给人看的对话"，而排障要的是
+    #: "究竟把什么参数发给了谁、对方原样回了什么"（含 usage/finish_reason/报错体）。
+    #: 实测缺口：助手执行那条路有原文，而这条**裸模型调用**只有对话文本 ——
+    #: 用户换了 key/端点后想回看"上次到底发了什么"，没有证据。
+    request_blob: Mapped[bytes | None] = mapped_column(LargeBinary, default=None)
+    response_blob: Mapped[bytes | None] = mapped_column(LargeBinary, default=None)
+    payload_truncated: Mapped[int] = mapped_column(Integer, default=0)
 
     started_at: Mapped[int] = mapped_column(Integer, default=now_ms, index=True)
     duration_ms: Mapped[int | None] = mapped_column(Integer, default=None)

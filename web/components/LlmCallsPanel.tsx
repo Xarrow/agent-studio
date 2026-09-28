@@ -20,7 +20,7 @@
 import React from "react";
 
 import { api, fmt } from "@/lib/api";
-import type { LlmCall, LlmCallPayload } from "@/lib/types";
+import type { LlmCall, LlmCallPayload, ModelTestRecord } from "@/lib/types";
 import { JsonBlock } from "@/components/DataBlocks";
 
 const STATUS_COLOR: Record<string, string> = {
@@ -169,7 +169,11 @@ export function LlmCallsPanel({
                         {openCall === c.id ? "收起" : "看原文"}
                       </button>
                     ) : (
-                      <span className="text-[11px]" style={{ color: "var(--color-muted)" }}>
+                      <span
+                        className="text-[11px]"
+                        style={{ color: "var(--color-muted)" }}
+                        title="这条执行早于「原文记录」上线（2026-09-28 06:08 起留存），没有存过原文"
+                      >
                         —
                       </span>
                     )}
@@ -228,7 +232,7 @@ export function LlmCallsPanel({
               </button>
             ) : (
               <p className="mt-1 text-[12px]" style={{ color: "var(--color-muted)" }}>
-                这次调用没留原文
+                这次调用早于「原文记录」上线（09-28 06:08 起留存），没有存过原文
               </p>
             )}
             {openCall === c.id ? (
@@ -239,6 +243,112 @@ export function LlmCallsPanel({
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+/** 「LLM 配置」里那次对话测试的详情：对话 + **完整请求与原始响应**。
+ *
+ * 为什么单独做：对话测试不经过助手（没有模型调用中间件），它的原文存在
+ * ``model_test`` 表里、由 `/api/runs/model-tests/{id}/payload` 解出来。
+ * 以前这里只有一句"没有执行过程可看"—— 用户要的恰恰是"每次原始的请求和响应"。
+ */
+export function ModelTestDetail({ testId, hasPayload }: { testId: string; hasPayload?: boolean | null }) {
+  const [rec, setRec] = React.useState<ModelTestRecord | null>(null);
+  const [raw, setRaw] = React.useState<LlmCallPayload | null>(null);
+  const [err, setErr] = React.useState<string | null>(null);
+  const [showRaw, setShowRaw] = React.useState(false);
+
+  React.useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const got = await api.modelTest(testId);
+        if (alive) setRec(got);
+        if (hasPayload !== false) {
+          const payload = await api.modelTestPayload(testId).catch(() => null);
+          if (alive) setRaw(payload);
+        }
+      } catch (e) {
+        if (alive) setErr(e instanceof Error ? e.message : String(e));
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [testId, hasPayload]);
+
+  if (err) {
+    return (
+      <p className="text-[12px]" style={{ color: "var(--color-danger)" }}>
+        记录读取失败：{err}
+      </p>
+    );
+  }
+  if (!rec) {
+    return (
+      <p className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+        正在读取…
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {/* 对话：人看得懂的部分 */}
+      <div className="space-y-1">
+        {rec.messages.map((m, i) => (
+          <div key={i} className="flex gap-2 text-[12px]">
+            <span className="shrink-0" style={{ color: "var(--color-muted)", minWidth: 44 }}>
+              {m.role === "user" ? "我" : m.role}
+            </span>
+            <span className="break-all whitespace-pre-wrap">{m.content}</span>
+          </div>
+        ))}
+        {rec.reply ? (
+          <div className="flex gap-2 text-[12px]">
+            <span className="shrink-0" style={{ color: "var(--color-muted)", minWidth: 44 }}>
+              模型
+            </span>
+            <span className="break-all whitespace-pre-wrap">{rec.reply}</span>
+          </div>
+        ) : null}
+        {rec.error ? (
+          <p className="text-[12px]" style={{ color: "var(--color-danger)" }}>
+            报错：{rec.error}
+          </p>
+        ) : null}
+      </div>
+
+      {/* 原文：排障要看的部分（默认收起，点了才展开 —— 内容可能几十 KB） */}
+      {raw ? (
+        <div>
+          <button type="button" className="btn w-full" onClick={() => setShowRaw((v) => !v)}>
+            {showRaw ? "收起原始请求/响应" : "看原始请求与响应"}
+          </button>
+          {showRaw ? (
+            <div className="mt-2 space-y-2">
+              {raw.truncated ? (
+                <p className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+                  体积超过上限，只保留了前段。
+                </p>
+              ) : null}
+              <div>
+                <p className="mb-1 text-[12px] font-medium">发给模型的请求</p>
+                <JsonBlock code={JSON.stringify(raw.request ?? {}, null, 1)} />
+              </div>
+              <div>
+                <p className="mb-1 text-[12px] font-medium">模型返回（原始）</p>
+                <JsonBlock code={JSON.stringify(raw.response ?? {}, null, 1)} />
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <p className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+          这条测试早于「原文记录」上线（2026-09-28 06:08 起才开始留存），只能在上面看到当时的对话。
+        </p>
+      )}
     </div>
   );
 }

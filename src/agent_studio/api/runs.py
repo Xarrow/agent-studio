@@ -234,6 +234,42 @@ async def get_trace(run_id: str, session: AsyncSession = Depends(get_session)) -
 # --------------------------------------------------------------------------- #
 # 一次模型调用的**完整请求与响应**（按需取，界面展开时才拉）
 # --------------------------------------------------------------------------- #
+@router.get("/model-tests/{test_id}/payload", response_model=LlmCallPayloadRead)
+async def get_model_test_payload(
+    test_id: str, session: AsyncSession = Depends(get_session)
+) -> LlmCallPayloadRead:
+    """「LLM 配置」里那次对话测试的**完整请求与原始响应**（裸模型调用也留原文）。
+
+    为什么要有：助手执行的原文在 ``llm_call`` 里，而对话测试是另一条路
+    （不经助手、不经模型调用中间件）—— 以前只留了对话文本，排障时看不到
+    "究竟把什么参数发给了对方、对方原样回了什么"。
+    """
+    from ..runner.recorder import decode_payload
+
+    row = (
+        await session.execute(select(ModelTest).where(ModelTest.id == test_id))
+    ).scalars().first()
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"记录不存在: {test_id}")
+    return LlmCallPayloadRead(
+        id=0,
+        run_id=row.id,
+        iteration=1,
+        model=row.model,
+        provider=row.provider,
+        status=row.status,
+        duration_ms=row.duration_ms,
+        ttft_ms=None,
+        tokens_in=row.tokens_in,
+        tokens_out=row.tokens_out,
+        tokens_cache_read=0,
+        error=row.error,
+        request=decode_payload(row.request_blob) if row.request_blob else None,
+        response=decode_payload(row.response_blob) if row.response_blob else None,
+        truncated=bool(row.payload_truncated),
+    )
+
+
 @router.get("/{run_id}/llm-calls/{call_id}/payload", response_model=LlmCallPayloadRead)
 async def get_llm_call_payload(
     run_id: str, call_id: int, session: AsyncSession = Depends(get_session)
@@ -902,6 +938,7 @@ async def activity_timeline(
                 status=t.status,
                 title=f"{t.credential_name or t.provider} · {t.model}",
                 subtitle="裸模型调用（不带助手）",
+                has_payload=bool(t.request_blob or t.response_blob),
                 credential_id=t.credential_id,
                 model=t.model,
                 tokens_in=t.tokens_in,
