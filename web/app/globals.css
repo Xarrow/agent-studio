@@ -191,6 +191,12 @@ body {
     padding: 11px 12px;
     font-size: 16px;
   }
+  /* placeholder 是提示不是输入内容：不必跟着 16px 涨（桌面 13px 的视觉重量），
+     压回 13px——::placeholder 字号不影响 iOS 聚焦缩放（那只看 input 自身 font-size） */
+  .input::placeholder {
+    font-size: 13px;
+    opacity: 0.75;
+  }
   .label {
     font-size: 12.5px;
     margin-bottom: 6px;
