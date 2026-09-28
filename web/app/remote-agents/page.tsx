@@ -269,7 +269,7 @@ export default function RemoteAgentsPage() {
   }
 
   return (
-    <>
+    <div className="p-4 md:p-6 lg:p-7 max-w-5xl">
       <PageHead
         title="远程 Agent 管理"
         desc={`注册外部 A2A agent —— 解析能力、治理与调用观测 · 挂载 ${stats.bound} / ${stats.total}（在助手的「能力」里勾选绑定）`}
@@ -532,7 +532,7 @@ export default function RemoteAgentsPage() {
           }}
         />
       ) : null}
-    </>
+    </div>
   );
 }
 
