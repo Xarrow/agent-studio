@@ -43,27 +43,33 @@ npm install
 npm run dev     # http://192.168.2.11:3000
 ```
 
-### 生产部署（systemd，开机自启）
+### 生产部署（单端口，部署机不依赖 Node.js）
 
-服务已装成两个 systemd 单元，机器重启后自动拉起：
+前端是 **Next.js 静态导出**（`web/out/`，纯 HTML/JS/CSS），由 FastAPI 同进程托管 ——
+一个 uvicorn 进程同时端出 API 和页面，单端口、单服务、单份配置：
+
+```bash
+# 构建机（需要 Node）生成静态产物
+cd /srv/src/agent-studio/web && npm install && npx next build
+
+# 部署机（不需要 Node）：装依赖 + 起服务
+cd /srv/src/agent-studio && uv sync
+systemctl start agent-studio-api    # http://<host>:8848 即完整应用
+```
+
+服务 systemd 单元（机器重启后自动拉起）：
 
 | 单元 | 内容 | 端口 |
 |---|---|---|
-| `agent-studio-api.service` | FastAPI（跑 `.venv/bin/uvicorn`） | 8848 |
-| `agent-studio-web.service` | Next.js **生产模式**（`npm run start`，依赖 api） | 3000 |
+| `agent-studio-api.service` | FastAPI + 托管静态前端（跑 `.venv/bin/uvicorn`） | 8848 |
 
 ```bash
-systemctl status agent-studio-api agent-studio-web      # 看状态
-systemctl restart agent-studio-api agent-studio-web     # 重启
-journalctl -u agent-studio-api -f                       # 跟后端日志
-journalctl -u agent-studio-web -f                       # 跟前端日志
+systemctl status agent-studio-api        # 看状态
+journalctl -u agent-studio-api -f        # 跟日志
 ```
 
-**改了前端代码后必须重新构建**，否则页面还是旧版本：
-
-```bash
-cd /srv/src/agent-studio/web && npm run build && systemctl restart agent-studio-web
-```
+**改了前端代码**：构建机上 `npx next build`，把 `web/out/` 同步到部署机即可
+（不用重启 —— 静态文件每次请求现读）。
 
 **改了后端代码**只需重启（uvicorn 直接读源码）：
 
@@ -77,9 +83,9 @@ systemctl restart agent-studio-api
    `security/crypto.py` 在未设置时用代码里的开发默认值，**现有凭据就是用那个值加密的**。
    给 systemd 换一个值 → 已存的 LLM 密钥全部解不开。要正式轮换密钥就得先把凭据
    逐条解密再重新加密。
-2. **前端的环境变量在构建时固化**
-   `NEXT_PUBLIC_API_BASE`（在 `web/.env.local`）是 `next build` 时内联进产物的，
-   改了它必须重新 `npm run build`。拿不准就把 `.env.local` 留在原地。
+2. **前端不再需要环境变量**
+   页面与 API 同源（`apiBase()` 默认空串），没有跨域、没有构建期内联地址。
+   若要把前后端分开部署，设置 `NEXT_PUBLIC_API_BASE` 并重新构建。
 
 ## 核心概念
 
