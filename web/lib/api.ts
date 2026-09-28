@@ -514,6 +514,18 @@ export const api = {
   restoreRevision: (revId: string) => post<{ ok: boolean; version: number; restored_from: number }>(`/api/revisions/${revId}/restore`, {}),
 
   // ── 备份与迁移（数据带走）──────────────────────────────────────────────
+  // ── AG-UI 协议出口（外部客户端驱动这些助手）──────────────────────────
+  /** 协议版本 / 端点 / 可用助手 / 调用示例 */
+  aguiInfo: () =>
+    request<{
+      protocol: string;
+      version: string;
+      endpoint: string;
+      agents: { id: string; name: string; description: string }[];
+      example: Record<string, unknown>;
+      notes: string;
+    }>("/api/agui/info"),
+
   // ── 运行环境（Python / Node.js 自检与安装）────────────────────────────
   /** 检测当前环境的 python / nodejs（含版本、路径、来源） */
   envRuntimes: () => request<EnvRuntimes>("/api/environment/runtimes"),

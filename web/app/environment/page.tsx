@@ -21,6 +21,7 @@ import { useFeedback } from "@/components/ui/feedback";
 import { BackupRestore } from "@/components/BackupRestore";
 import { StoragePanel } from "@/components/StoragePanel";
 import { RuntimeCard } from "@/components/RuntimeCard";
+import { AguiCard } from "@/components/AguiCard";
 
 /** 表单字段（SQLite 只用 path，其余是网络库的连接参数） */
 type Form = {
@@ -589,6 +590,14 @@ export default function EnvironmentPage() {
             {upCfg.is_default ? " · 当前用默认目录" : ""}
           </p>
         )}
+      </Section>
+
+      {/* 对外接入：把平台当 AG-UI 端点用（任何 AG-UI 客户端都能驱动这些助手） */}
+      <Section
+        title="对外接入 · AG-UI"
+        desc="按 AG-UI 协议暴露一个 SSE 端点，外部客户端（CopilotKit 那类）可以直接驱动平台里的助手"
+      >
+        <AguiCard />
       </Section>
 
       {/* 配置导入导出：数据能带走。放在"数据存哪"下面 —— 同一件事的两面：

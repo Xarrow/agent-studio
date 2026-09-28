@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from . import (
     agents,
+    agui,
     evals,
     guardrails,
     credentials,
@@ -32,6 +33,7 @@ api_router = APIRouter()
 api_router.include_router(credentials.router)   # /api/providers + /api/credentials
 api_router.include_router(runtimes.router)      # /api/runtimes
 api_router.include_router(agents.router)        # /api/agents
+api_router.include_router(agui.router, prefix="/api/agui")   # AG-UI 协议出口
 api_router.include_router(tools.router)         # /api/tools
 api_router.include_router(skills.router)        # /api/skills
 api_router.include_router(runs.router)          # /api/runs
