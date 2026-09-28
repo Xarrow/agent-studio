@@ -647,8 +647,14 @@ function RegisterDialog({ onClose, onDone }: { onClose: () => void; onDone: () =
   const [err, setErr] = useState("");
   const [selfRegisterUrl, setSelfRegisterUrl] = useState("/api/remote-agents/self");
   useEffect(() => {
+    // 单端口同源部署后注册地址就在本 origin 上；老的双端口形态（页面 :3000）
+    // 仍把 3000 换成 8848，两种都兼容。
     if (typeof window !== "undefined") {
-      setSelfRegisterUrl(`${window.location.origin.replace(":3000", ":8848")}/api/remote-agents/self`);
+      // 单端口同源后注册地址就在本 origin；兼容老双端口（页面 :3000 → API :8848）
+      const { origin, port } = window.location;
+      setSelfRegisterUrl(
+        port === "3000" ? origin.replace(":3000", ":8848") + "/api/remote-agents/self" : origin + "/api/remote-agents/self"
+      );
     }
   }, []);
 

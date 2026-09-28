@@ -18,6 +18,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import __version__
 from .api import api_router
@@ -313,6 +314,15 @@ _WEB_DIST = Path(
     os.getenv("STUDIO_WEB_DIST", Path(__file__).resolve().parents[2] / "web" / "out")
 )
 
+#: 静态资源后缀 —— 命中这些却找不到物理文件时**必须如实 404**，
+#: 不能回 index.html：把断链伪装成 200 的 HTML，浏览器报的是另一句
+#: 「Unexpected token '<'」，排障时完全看不出是哪个 chunk 丢了。
+_STATIC_SUFFIXES = {
+    ".js", ".css", ".map", ".json", ".txt", ".xml", ".webmanifest",
+    ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".webp", ".avif",
+    ".woff", ".woff2", ".ttf", ".otf", ".eot", ".wasm",
+}
+
 if _WEB_DIST.is_dir():
 
     @app.get("/{full_path:path}", include_in_schema=False)
@@ -324,6 +334,10 @@ if _WEB_DIST.is_dir():
             return FileResponse(target)
         if candidate.is_file():
             return FileResponse(candidate)
+        # 静态资源缺文件 = 断链，如实 404（回 index.html 会把 JS 报成 HTML，
+        # 浏览器只会甩出「Unexpected token '<'」，谁也看不出 chunk 丢了）。
+        if full_path and Path(full_path).suffix.lower() in _STATIC_SUFFIXES:
+            raise StarletteHTTPException(status_code=404)
         # SPA 兜底：客户端路由没有物理文件，回 index.html 交给前端路由
         return FileResponse(_WEB_DIST / "index.html")
 

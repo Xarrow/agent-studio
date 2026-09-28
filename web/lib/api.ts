@@ -102,19 +102,6 @@ export function withToken(url: string): string {
   return `${url}${url.includes("?") ? "&" : "?"}token=${encodeURIComponent(t)}`;
 }
 
-function isLanHost(host: string): boolean {
-  if (!host) return false;
-  if (host === "localhost" || host.endsWith(".local")) return true;
-  const m = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (!m) return false;
-  const a = Number(m[1]);
-  const b = Number(m[2]);
-  if (a === 127 || a === 10) return true;              // 回环 / 10.x
-  if (a === 192 && b === 168) return true;             // 192.168.x
-  if (a === 172 && b >= 16 && b <= 31) return true;    // 172.16-31.x
-  return false;
-}
-
 /**
  * 后端 API 地址 —— **运行时**决定，绝不能构建时写死。
  *
@@ -133,14 +120,11 @@ function isLanHost(host: string): boolean {
  * 不能依赖只在服务端可用的配置。
  */
 export function apiBase(): string {
-  if (typeof window !== "undefined") {
-    const { protocol, hostname } = window.location;
-    if (isLanHost(hostname)) return `${protocol}//${hostname}:8848`;
-    // 通过域名访问：改用 API 子域名（同为 HTTPS，不触发混合内容）
-    return "https://dev-api.zeit.ccwu.cc";
-  }
-  // 服务端渲染兜底（同机回环）
-  return process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8848";
+  // 同源直连（默认）：页面由 FastAPI 同进程托管（单端口），API 就在同一 origin
+  // —— 浏览器同源请求不触发 CORS，SSE/EventSource 也天然可用。
+  // 仍保留 NEXT_PUBLIC_API_BASE 给「前后端分开部署」的形态（构建期内联）。
+  if (process.env.NEXT_PUBLIC_API_BASE) return process.env.NEXT_PUBLIC_API_BASE;
+  return "";
 }
 
 /**
