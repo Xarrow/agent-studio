@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import a2a_client, remote_agents
 from ..db import SessionLocal, get_session
-from ..models import Run, RemoteAgent, Tool, now_ms
+from ..models import RemoteAgent, RemoteAgentEvent, Run, Tool, now_ms
 from ..schemas import (
     RemoteAgentCreateIn,
     RemoteAgentPatchIn,
