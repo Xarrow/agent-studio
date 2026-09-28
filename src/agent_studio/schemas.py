@@ -1159,6 +1159,18 @@ class RemoteAgentPatchIn(BaseModel):
     note: str | None = None
 
 
+class RemoteAgentSelfRegisterIn(BaseModel):
+    """远端 agent **自己**推卡片进来注册（A2A 方向：远端 → 平台）。
+
+    body 是它的 agent card（name/description/skills/...）；
+    ``url`` 是它声明的回连地址（卡片里没有 url 时必填）。
+    """
+
+    url: str = ""
+    #: 卡片其余字段放行 —— A2A 卡片本身在演进，别把门口写死
+    model_config = {"extra": "allow"}
+
+
 class RemoteAgentTestResult(BaseModel):
     ok: bool
     ms: int = 0

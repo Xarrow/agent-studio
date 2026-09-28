@@ -15,7 +15,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 
-import { api } from "@/lib/api";
+import { api, apiBase } from "@/lib/api";
 import type { Agent, RemoteAgentParsed, RemoteAgentRecord } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
 import {
@@ -90,6 +90,20 @@ export default function RemoteAgentsPage() {
   const [open, setOpen] = useState<string | null>(null);
   const [busy, setBusy] = useState("");
   const [registering, setRegistering] = useState(false);
+  const [copied, setCopied] = useState(false);
+  // API 地址与前端 api 客户端同一口径（lib/api.ts 的 apiBase）：内网 hostname:8848、公网走反代
+  const base = apiBase();
+  const selfRegUrl = `${base}/api/remote-agents/self`;
+  const selfCardUrl = `${base}/.well-known/agent-card.json`;
+  async function copySelfreg() {
+    try {
+      await navigator.clipboard.writeText(selfRegUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      fb.error("复制失败", "手动选中文本复制");
+    }
+  }
 
   const load = useCallback(async () => {
     try {
@@ -399,6 +413,44 @@ export default function RemoteAgentsPage() {
         )}
       </Section>
 
+      <Section
+        title="远端自注册（A2A 推送）"
+        desc="把这个地址给远端 —— 它把自己的 agent card 推过来就完成了注册，之后在这里挂到助手上"
+      >
+        <div className="flex flex-col gap-2">
+          <KV k="注册地址">
+            <code className="mono text-[12px]" id="selfreg-url">
+              {selfRegUrl}
+            </code>
+            <button className="btn" onClick={() => void copySelfreg()}>
+              复制
+            </button>
+          </KV>
+          <KV k="本平台卡片">
+            <code className="mono text-[12px]">{selfCardUrl}</code>
+          </KV>
+          <div
+            className="flex flex-col gap-1 rounded p-2.5"
+            style={{ background: "var(--color-surface-2)" }}
+          >
+            <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+              远端用一条 POST 完成注册（body 是它自己的 agent card，url 字段填它的回连地址；重推一次 = 更新技能清单）：
+            </span>
+            <pre
+              className="mono overflow-x-auto whitespace-pre text-[11.5px]"
+              style={{ color: "var(--color-muted)" }}
+            >{`curl -X POST ${selfRegUrl} \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"我的助手","description":"……","skills":[],"url":"http://远端地址:端口"}'`}</pre>
+          </div>
+          {copied ? (
+            <span className="text-[12px]" style={{ color: "var(--color-ok)" }}>
+              已复制
+            </span>
+          ) : null}
+        </div>
+      </Section>
+
       {registering ? (
         <RegisterDialog
           onClose={() => setRegistering(false)}
@@ -527,6 +579,12 @@ function RegisterDialog({ onClose, onDone }: { onClose: () => void; onDone: () =
     skills: number;
   } | null>(null);
   const [err, setErr] = useState("");
+  const [selfRegisterUrl, setSelfRegisterUrl] = useState("/api/remote-agents/self");
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setSelfRegisterUrl(`${window.location.origin.replace(":3000", ":8848")}/api/remote-agents/self`);
+    }
+  }, []);
 
   async function doResolve() {
     setJob("resolving");
@@ -657,6 +715,17 @@ function RegisterDialog({ onClose, onDone }: { onClose: () => void; onDone: () =
           </button>
           <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
             注册后会自动生成一个同名工具，助手的「工具」里就能勾到它
+          </span>
+        </div>
+
+        <div
+          className="mt-2 rounded p-2 text-[12px]"
+          style={{ background: "var(--color-surface-2)", color: "var(--color-muted)" }}
+        >
+          <span>反过来，远端 agent 也能<b>自己注册进来</b>：它向</span>
+          <span className="mono break-all"> {"POST " + selfRegisterUrl} </span>
+          <span>
+            推送自己的 A2A 卡片即可（同一地址重推 = 更新技能清单，不重复建）。进来后与手工注册同一条治理链，你照样能停用/删除。
           </span>
         </div>
       </div>

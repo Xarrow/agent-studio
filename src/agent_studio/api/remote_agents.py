@@ -15,7 +15,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -152,6 +152,37 @@ async def create_remote_agent(
     await session.commit()
     await session.refresh(row)
     return _to_read(row, tool=tool, bound=[])
+
+
+@router.post("/self", response_model=RemoteAgentRead, status_code=status.HTTP_201_CREATED)
+async def self_register_remote_agent(
+    request: Request, session: AsyncSession = Depends(get_session)
+) -> RemoteAgentRead:
+    """远端 agent 通过 A2A 把自己的卡片**推送进来注册**（方向与手工注册相反）。
+
+    幂等：同一地址重推 = 更新卡片快照并 upsert 工具行（远端改了技能后重推即可）。
+    治理无特权：注册后与手工注册完全同一条链（用户可停用/删除）。
+    注意这条路由在 ``/{remote_id}`` 之前匹配，否则 "self" 会被当成 remote_id。
+    """
+    try:
+        body = await request.json()
+    except Exception as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "body 必须是 JSON（A2A agent card）") from exc
+    if not isinstance(body, dict):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "body 必须是 JSON 对象（A2A agent card）")
+
+    card = {k: v for k, v in body.items() if k not in ("url",)}
+    declared = str(body.get("url") or "").strip()
+    try:
+        got = await remote_agents.self_register(session, card, declared_base=declared)
+    except a2a_client.A2AError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    row, tool, created = got["remote"], got["tool"], got["created"]
+    bound = await remote_agents.bindings_of(row.id)
+    # 重推（created=False）也返回 200/201 由框架决定；语义在 note 里可见（「远端自注册」）
+    resp = _to_read(row, tool=tool, bound=bound)
+    resp.note = (f"{resp.note} · 重推已更新卡片" if not created else resp.note)
+    return resp
 
 
 @router.post("/{remote_id}/refresh", response_model=RemoteAgentRead)

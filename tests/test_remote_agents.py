@@ -345,3 +345,95 @@ def test_编译层认得a2a这个kind():
     tools = build_tools([spec])
     assert len(tools) == 1, "a2a 工具必须被编译出来"
     assert tools[0].name == "远端情报助手"
+
+
+# ─── 远端自注册（A2A 反向：远端推卡片进来）───────────────────────────────
+
+
+async def test_远端自注册_推卡片进来即成资源():
+    """远端 agent 通过 POST /api/remote-agents/self 把自己的卡片推上来：
+    落进注册表（note 标「远端自注册」）、自动建工具行 —— 助手立刻能挂载。"""
+    from agent_studio import remote_agents as ra
+    from agent_studio.db import SessionLocal
+    from agent_studio.models import RemoteAgent, Tool
+    from sqlalchemy import delete as _del
+
+    card = {
+        "name": "自报家门的远端",
+        "description": "我会自己注册",
+        "version": "3",
+        "protocolVersion": "0.3.0",
+        "url": "http://10.9.9.9:7777",
+        "skills": [
+            {"id": "tool:sql", "name": "sql", "description": "查库", "tags": ["tool"]},
+        ],
+    }
+    async with SessionLocal() as s:
+        out = await ra.self_register(s, card, declared_base="http://10.9.9.9:7777")
+        assert out["created"] is True
+        row: RemoteAgent = out["remote"]
+        try:
+            assert row.url == "http://10.9.9.9:7777"
+            assert row.name == "自报家门的远端"
+            assert row.note == "（远端自注册）"
+            assert row.status == "unknown"  # 自注册只代表"它说了"，没实测过
+            assert (row.parsed or {}).get("name") == "自报家门的远端"
+            # 工具行建好且可挂载
+            tool = out["tool"]
+            assert tool.kind == ra.TOOL_KIND
+            assert (tool.impl or {}).get("remote_agent_id") == row.id
+            assert "自报家门的远端" in (tool.description or "")
+            assert "sql" in (tool.description or "")  # 技能进工具描述
+        finally:
+            tid = out["tool"].id
+            rid = row.id
+            await s.execute(_del(Tool).where(Tool.id == tid))
+            await s.execute(_del(RemoteAgent).where(RemoteAgent.id == rid))
+            await s.commit()
+
+
+async def test_自注册幂等_重推更新卡片不重复建():
+    """远端改了技能清单后重推一次 = 更新快照 + upsert 工具行（同地址不建第二条）。"""
+    from agent_studio import remote_agents as ra
+    from agent_studio.db import SessionLocal
+    from agent_studio.models import RemoteAgent, Tool
+    from sqlalchemy import delete as _del, select
+
+    base = "http://10.9.9.8:7778"
+    v1 = {"name": "远端甲", "protocolVersion": "0.3.0", "url": base, "skills": []}
+    v2 = {
+        "name": "远端甲",
+        "protocolVersion": "0.3.0",
+        "url": base,
+        "skills": [{"id": "tool:new", "name": "new", "description": "新技能", "tags": ["tool"]}],
+    }
+    async with SessionLocal() as s:
+        try:
+            first = await ra.self_register(s, v1, declared_base=base)
+            assert first["created"] is True
+            second = await ra.self_register(s, v2, declared_base=base)
+            assert second["created"] is False  # 幂等：没建第二条
+            rows = (await s.execute(select(RemoteAgent).where(RemoteAgent.url == base))).scalars().all()
+            assert len(rows) == 1
+            # 新技能出现在快照与工具描述里
+            skills = (rows[0].parsed or {}).get("skills") or []
+            assert any(x.get("name") == "new" for x in skills)
+            assert "新技能" in (second["tool"].description or "")
+            # 工具行还是同一个（upsert 不是重建）
+            assert second["tool"].id == first["tool"].id
+        finally:
+            if "first" in locals():
+                await s.execute(_del(Tool).where(Tool.id == first["tool"].id))
+                await s.execute(_del(RemoteAgent).where(RemoteAgent.url == base))
+                await s.commit()
+
+
+async def test_自注册卡片没地址_拒绝():
+    """卡片没有 url 且推送方也没声明地址 —— 没法回连，直接拒绝并说清原因。"""
+    from agent_studio import remote_agents as ra
+    from agent_studio.db import SessionLocal
+    import agent_studio.a2a_client
+
+    async with SessionLocal() as s:
+        with pytest.raises(agent_studio.a2a_client.A2AError, match="地址"):
+            await ra.self_register(None, {"name": "无地址远端", "protocolVersion": "0.3.0"}, declared_base="")

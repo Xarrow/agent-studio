@@ -192,6 +192,74 @@ async def resolve(url: str, *, timeout: float = 15.0, headers: dict[str, str] | 
     return {"base": base, "card": card, "parsed": parsed, "summary": card_text(parsed)}
 
 
+async def self_register(
+    session: Any,
+    card: dict[str, Any],
+    *,
+    declared_base: str = "",
+) -> dict[str, Any]:
+    """远端 agent **自己**通过 A2A 把卡片推上来注册（方向与 resolve 相反）。
+
+    信任口径（架构师视角必须说清）：
+    · 卡片是**远端自己声明**的 —— name/skills 全是它说的，我们不验证真伪；
+      但调用时我们真连的是它给的地址，若连不上刷新会标 error，不构成安全面。
+    · 与手工注册同一张表、同一条治理链（启停/删除/重新解析）—— 远端自己注册
+      没有任何特权，用户照样能停用/删掉它。
+    · 幂等：同一地址重复推送 = 更新卡片快照（远端改了技能清单后重推一次即可），
+      并照旧 upsert 工具行 —— 新技能立即出现在助手的可挂载清单里。
+    · ``declared_base`` 是推送方声明的回连地址；不信任它指向任意内网 —— 与手工
+      注册一样只按这个地址去连，权限治理仍在远端侧。
+    """
+    parsed = parse_card(card)
+    if not parsed["name"]:
+        raise a2a_client.A2AError("卡片里没有 name —— 这不是有效的 A2A agent card")
+
+    base = normalize_base(declared_base or parsed.get("url") or "")
+    if not base:
+        raise a2a_client.A2AError(
+            "卡片里没有可用的地址（url 字段缺失，且推送方未声明地址）—— 无法回连"
+        )
+
+    same = (
+        await session.execute(select(RemoteAgent).where(RemoteAgent.url == base))
+    ).scalars().first()
+    now = now_ms()
+    if same is None:
+        row = RemoteAgent(
+            name=parsed["name"][:120],
+            url=base,
+            card=card,
+            parsed=parsed,
+            status="unknown",  # 自注册只代表"它说了"，还没实测过 —— 首次测试/刷新后转 ok
+            last_checked_at=now,
+            enabled=True,
+            note="（远端自注册）",
+        )
+        session.add(row)
+        await session.commit()
+        await session.refresh(row)
+        created = True
+    else:
+        same.card = card
+        same.parsed = parsed
+        if not same.name or same.note == "（远端自注册）":
+            same.name = parsed["name"][:120]
+        same.last_checked_at = now
+        same.updated_at = now
+        created = False
+        row = same
+        await session.commit()
+        await session.refresh(row)
+
+    tool = await upsert_tool(session, row)
+    if row.tool_id != tool.id:
+        row.tool_id = tool.id
+        row.updated_at = now
+        await session.commit()
+        await session.refresh(row)
+    return {"remote": row, "tool": tool, "created": created}
+
+
 async def upsert_tool(session: Any, remote: RemoteAgent) -> Tool:
     """把远程 agent 同步成一个 ``kind="a2a"`` 的工具行（助手就能勾选挂载了）。
 
