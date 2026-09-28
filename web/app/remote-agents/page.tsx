@@ -65,7 +65,7 @@ function CallList({ rows }: { rows: RemoteAgentCallRecord[] | null }) {
               className="text-[11.5px] font-medium"
               style={{
                 color:
-                  c.status === "ok" ? "var(--color-ok)" : c.status === "error" ? "var(--color-danger)" : "var(--color-warn)",
+                  c.status === "ok" ? "var(--color-ok)" : c.status === "error" ? "var(--color-err)" : "var(--color-warn)",
               }}
             >
               {c.status === "ok" ? "成功" : c.status === "error" ? "失败" : c.status === "aborted" ? "已中止" : c.status}
@@ -79,7 +79,7 @@ function CallList({ rows }: { rows: RemoteAgentCallRecord[] | null }) {
             <span className="truncate text-[12px]">问：{c.input}</span>
           ) : null}
           {c.error ? (
-            <span className="text-[12px]" style={{ color: "var(--color-danger)" }}>
+            <span className="text-[12px]" style={{ color: "var(--color-err)" }}>
               {c.error}
             </span>
           ) : c.output ? (
@@ -379,7 +379,7 @@ export default function RemoteAgentsPage() {
                         </button>
                         <button
                           className="ml-auto text-[12.5px]"
-                          style={{ color: "var(--color-danger)" }}
+                          style={{ color: "var(--color-err)" }}
                           onClick={() => void onDelete(r)}
                         >
                           删除

@@ -25,7 +25,7 @@ import { JsonBlock } from "@/components/DataBlocks";
 
 const STATUS_COLOR: Record<string, string> = {
   ok: "var(--color-ok)",
-  error: "var(--color-danger)",
+  error: "var(--color-err)",
 };
 
 /** 一次模型调用的完整请求与响应（按需拉取 + 折叠展示） */
@@ -50,7 +50,7 @@ export function LlmCallPayloadView({ runId, callId }: { runId: string; callId: n
 
   if (err) {
     return (
-      <p className="text-[12px]" style={{ color: "var(--color-danger)" }}>
+      <p className="text-[12px]" style={{ color: "var(--color-err)" }}>
         原文读取失败：{err}
       </p>
     );
@@ -90,7 +90,7 @@ export function LlmCallPayloadView({ runId, callId }: { runId: string; callId: n
         {data.error ? (
           <pre
             className="whitespace-pre-wrap break-all rounded-md p-2 text-[12px]"
-            style={{ background: "var(--color-surface-2)", color: "var(--color-danger)" }}
+            style={{ background: "var(--color-surface-2)", color: "var(--color-err)" }}
           >
             {data.error}
           </pre>
@@ -280,7 +280,7 @@ export function ModelTestDetail({ testId, hasPayload }: { testId: string; hasPay
 
   if (err) {
     return (
-      <p className="text-[12px]" style={{ color: "var(--color-danger)" }}>
+      <p className="text-[12px]" style={{ color: "var(--color-err)" }}>
         记录读取失败：{err}
       </p>
     );
@@ -314,7 +314,7 @@ export function ModelTestDetail({ testId, hasPayload }: { testId: string; hasPay
           </div>
         ) : null}
         {rec.error ? (
-          <p className="text-[12px]" style={{ color: "var(--color-danger)" }}>
+          <p className="text-[12px]" style={{ color: "var(--color-err)" }}>
             报错：{rec.error}
           </p>
         ) : null}

@@ -214,7 +214,7 @@ export function ExternalMemoryCard() {
                     已配置（留空则不改）
                     <button
                       type="button"
-                      className="ml-2 text-[var(--color-danger)] underline"
+                      className="ml-2 text-[var(--color-err)] underline"
                       onClick={() => void clearKey()}
                       disabled={busy}
                     >
@@ -349,7 +349,7 @@ export function ExternalMemoryCard() {
             {testResult ? (
               <span
                 className="text-[12px]"
-                style={{ color: testResult.ok ? "var(--color-ok)" : "var(--color-danger)" }}
+                style={{ color: testResult.ok ? "var(--color-ok)" : "var(--color-err)" }}
               >
                 {testResult.ok ? "✓ " : "✕ "}
                 {testResult.detail}
