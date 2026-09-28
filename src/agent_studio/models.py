@@ -590,6 +590,49 @@ class Workflow(Base):
     trigger_token: Mapped[str] = mapped_column(String(64), default="")
 
 
+class RemoteAgent(Base):
+    """一个**远程 A2A agent**（注册表条目）。
+
+    与 McpServer 同一套思路：远端只注册一次、多个助手共用；卡片是**探测来的快照**、
+    不是手填的（手填必然和实际漂移），远端能力变了就点「重新解析」刷新。
+
+    绑定方式：注册时自动 upsert 一个 ``kind="a2a"`` 的 Tool 行（``tool_id``），
+    助手在「工具」里勾选它即完成绑定 —— 不再为"绑定远程 agent"另造一套机制。
+    """
+
+    __tablename__ = "remote_agent"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("ra_"))
+    workspace_id: Mapped[str] = mapped_column(String(32), default="ws_default", index=True)
+    #: 平台里显示的名字（默认取卡片名，可改）
+    name: Mapped[str] = mapped_column(String(120), default="")
+    #: base 地址（已归一化：去掉 /a2a 与 /.well-known/agent-card.json 尾巴）
+    url: Mapped[str] = mapped_column(String(500), default="")
+    #: 卡片原文快照（排查用：远端改了什么，对比这里）
+    card: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    #: 解析出来的能力摘要（name/description/version/protocol/skills/capabilities）
+    parsed: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    #: 远端要哪个助手（放进 message.metadata.agentId；远端不认就忽略）
+    remote_agent_id: Mapped[str | None] = mapped_column(String(64), default=None)
+    #: 鉴权：密钥加密存（引用式，不落明文）；header/scheme 可配
+    auth_header: Mapped[str] = mapped_column(String(64), default="Authorization")
+    auth_scheme: Mapped[str] = mapped_column(String(32), default="Bearer")
+    auth_token_enc: Mapped[bytes | None] = mapped_column(LargeBinary, default=None)
+    #: 单次调用上限（秒）——远端跑多久由远端决定，这里只是"别无限等"
+    timeout_s: Mapped[float] = mapped_column(Float, default=900.0)
+    #: unknown | ok | error（最近一次解析/调用的结果）
+    status: Mapped[str] = mapped_column(String(16), default="unknown")
+    last_checked_at: Mapped[int | None] = mapped_column(Integer, default=None)
+    last_ok_at: Mapped[int | None] = mapped_column(Integer, default=None)
+    last_error: Mapped[str] = mapped_column(LongText, default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    #: 自动创建的工具行（绑定入口）
+    tool_id: Mapped[str | None] = mapped_column(String(32), default=None)
+    note: Mapped[str] = mapped_column(LongText, default="")
+    created_at: Mapped[int] = mapped_column(Integer, default=now_ms)
+    updated_at: Mapped[int] = mapped_column(Integer, default=now_ms)
+
+
 class McpServer(Base):
     """一个 MCP 服务器（注册表条目）。
 

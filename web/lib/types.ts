@@ -227,6 +227,41 @@ export interface InstallJob {
 }
 
 /** 一次「LLM 对话测试」的记录（LLM 配置页里点「对话测试」产生的） */
+/** 远程 A2A agent（注册表条目）。 */
+export interface RemoteAgentParsed {
+  name: string;
+  description: string;
+  version: string;
+  protocol_version: string;
+  url?: string;
+  capabilities?: Record<string, boolean>;
+  skills: { id: string; name: string; description: string; tags: string[]; examples?: string[] }[];
+}
+
+export interface RemoteAgentRecord {
+  id: string;
+  name: string;
+  url: string;
+  parsed: RemoteAgentParsed;
+  summary: string;
+  remote_agent_id: string | null;
+  auth_header: string;
+  auth_scheme: string;
+  has_token: boolean;
+  timeout_s: number;
+  status: "unknown" | "ok" | "error";
+  last_checked_at: number | null;
+  last_ok_at: number | null;
+  last_error: string;
+  enabled: boolean;
+  tool_id: string | null;
+  tool_name: string;
+  note: string;
+  bound_agents: { agent_id: string; agent_name: string }[];
+  created_at: number;
+  updated_at: number;
+}
+
 export interface ModelTestRecord {
   id: string;
   credential_id: string | null;

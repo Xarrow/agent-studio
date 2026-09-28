@@ -159,6 +159,7 @@ async def dispatch_remote(
     max_items: int | None = None,
     wait_s: float | None = None,
     remote_agent_id: str | None = None,
+    headers: dict[str, str] | None = None,
     db_factory: Any = SessionLocal,
 ) -> dict[str, Any]:
     """把每一路**派给远端 A2A agent**（跨平台的 agent 间 fork）。
@@ -185,7 +186,7 @@ async def dispatch_remote(
 
     # 先探一次远端：地址/协议不对就在这里失败，不要建了 N 条 run 才发现连不上
     try:
-        card = await a2a_client.discover(remote_base)
+        card = await a2a_client.discover(remote_base, headers=headers)
     except a2a_client.A2AError as exc:
         return {
             "ok": False,
@@ -226,7 +227,11 @@ async def dispatch_remote(
         """跑一路：发消息 → 等终态 → 落库。任何异常都变成这一路的失败原因。"""
         try:
             status, out, task_id = await a2a_client.run_until_done(
-                remote_base, text, agent_id=remote_agent_id, timeout_s=timeout
+                remote_base,
+                text,
+                agent_id=remote_agent_id,
+                timeout_s=timeout,
+                headers=headers,
             )
         except a2a_client.A2AError as exc:
             status, out, task_id = "error", "", ""

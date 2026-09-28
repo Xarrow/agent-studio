@@ -21,6 +21,8 @@ import type {
   InstallJob,
   EnvRuntimes,
   ModelTestRecord,
+  RemoteAgentParsed,
+  RemoteAgentRecord,
   DbStatus,
   DbTestResult,
   Issue,
@@ -514,6 +516,29 @@ export const api = {
   restoreRevision: (revId: string) => post<{ ok: boolean; version: number; restored_from: number }>(`/api/revisions/${revId}/restore`, {}),
 
   // ── 备份与迁移（数据带走）──────────────────────────────────────────────
+  // ── 远程 Agent（A2A 注册治理）────────────────────────────────────────
+  /** 已注册的远程 agent（含解析出的技能、状态、被哪些助手挂载） */
+  remoteAgents: () => request<RemoteAgentRecord[]>("/api/remote-agents"),
+  /** 注册前先解析：给个地址看它是什么、会干什么（不落库） */
+  resolveRemoteAgent: (body: { url: string; auth_header?: string; auth_scheme?: string; token?: string }) =>
+    request<{ base: string; summary: string; parsed: RemoteAgentParsed; skills: number }>(
+      "/api/remote-agents/resolve",
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+  createRemoteAgent: (body: Record<string, unknown>) =>
+    request<RemoteAgentRecord>("/api/remote-agents", { method: "POST", body: JSON.stringify(body) }),
+  patchRemoteAgent: (id: string, body: Record<string, unknown>) =>
+    request<RemoteAgentRecord>(`/api/remote-agents/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  refreshRemoteAgent: (id: string) =>
+    request<RemoteAgentRecord>(`/api/remote-agents/${id}/refresh`, { method: "POST" }),
+  testRemoteAgent: (id: string) =>
+    request<{ ok: boolean; ms: number; state: string; task_id: string; answer: string; error: string }>(
+      `/api/remote-agents/${id}/test`,
+      { method: "POST" },
+    ),
+  removeRemoteAgent: (id: string) =>
+    request<{ deleted: string }>(`/api/remote-agents/${id}`, { method: "DELETE" }),
+
   // ── AG-UI 协议出口（外部客户端驱动这些助手）──────────────────────────
   /** 协议版本 / 端点 / 可用助手 / 调用示例 */
   aguiInfo: () =>

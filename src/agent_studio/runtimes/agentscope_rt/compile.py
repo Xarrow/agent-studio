@@ -264,6 +264,12 @@ def build_tools(specs: list[ToolSpec]) -> list[Any]:
                 tools.append(build_http_tool(spec))
             elif spec.kind == "fork":
                 tools.append(build_fanout_tool(spec))
+            elif spec.kind == "a2a":
+                # 远程 A2A agent（注册治理来的）—— 执行体在 remote_agents.py，
+                # 真正调用走 fanout.dispatch_remote（每项一条 runtime="a2a" 子 run）
+                from ...remote_agents import build_a2a_tool
+
+                tools.append(build_a2a_tool(spec))
             elif spec.kind == "native":
                 # 平台原生内核工具（fetch/web_search/python + agent 互操作三件）
                 # —— 实现在 native_tools.py / agent_ops.py

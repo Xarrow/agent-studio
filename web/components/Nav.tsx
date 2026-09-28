@@ -71,6 +71,12 @@ const SETUP_ITEMS: Item[] = [
     tip: "给助手加「手」：能查网页、读文件、跑命令之类。不加就只能聊天。",
   },
     {
+    href: "/remote-agents",
+    label: "远程 Agent",
+    icon: "⇄",
+    tip: "注册外部 A2A agent，解析它的能力，挂到助手上直接调用",
+  },
+  {
     href: "/environment",
     label: "环境配置",
     icon: "database",

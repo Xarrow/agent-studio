@@ -204,7 +204,7 @@ class ToolSpec(BaseModel):
     name: str
     description: str = ""
     #: fork/native = 平台原生工具（执行体是平台自己的函数，不依赖任何运行时的内置清单）
-    kind: Literal["builtin", "http", "code", "fork", "native"] = "http"
+    kind: Literal["builtin", "http", "code", "fork", "native", "a2a"] = "http"
     input_schema: dict[str, Any] = Field(default_factory=dict)
     impl: dict[str, Any] = Field(default_factory=dict)
     flags: dict[str, Any] = Field(default_factory=dict)
@@ -1087,6 +1087,85 @@ class ImportRequest(BaseModel):
     """
 
     bundle: dict[str, Any] = Field(default_factory=dict)
+
+
+class RemoteAgentParsed(BaseModel):
+    """解析出来的远端能力（卡片摘要）。"""
+
+    name: str = ""
+    description: str = ""
+    version: str = ""
+    protocol_version: str = ""
+    url: str = ""
+    capabilities: dict[str, Any] = Field(default_factory=dict)
+    default_input_modes: list[str] = Field(default_factory=list)
+    default_output_modes: list[str] = Field(default_factory=list)
+    skills: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class RemoteAgentRead(BaseModel):
+    id: str
+    name: str
+    url: str
+    parsed: RemoteAgentParsed | dict[str, Any] = Field(default_factory=dict)
+    summary: str = ""
+    remote_agent_id: str | None = None
+    auth_header: str = "Authorization"
+    auth_scheme: str = "Bearer"
+    has_token: bool = False
+    timeout_s: float = 900.0
+    status: str = "unknown"
+    last_checked_at: int | None = None
+    last_ok_at: int | None = None
+    last_error: str = ""
+    enabled: bool = True
+    tool_id: str | None = None
+    tool_name: str = ""
+    note: str = ""
+    bound_agents: list[dict[str, str]] = Field(default_factory=list)
+    created_at: int = 0
+    updated_at: int = 0
+
+
+class RemoteAgentResolveIn(BaseModel):
+    """注册前先解析：只给地址（可选凭据），不落库。"""
+
+    url: str
+    auth_header: str = "Authorization"
+    auth_scheme: str = "Bearer"
+    token: str | None = None
+
+
+class RemoteAgentCreateIn(BaseModel):
+    url: str
+    name: str | None = None
+    remote_agent_id: str | None = None
+    auth_header: str = "Authorization"
+    auth_scheme: str = "Bearer"
+    token: str | None = None
+    timeout_s: float | None = None
+    note: str = ""
+
+
+class RemoteAgentPatchIn(BaseModel):
+    name: str | None = None
+    remote_agent_id: str | None = None
+    auth_header: str | None = None
+    auth_scheme: str | None = None
+    #: 传空串 = 清掉凭据；None = 不动
+    token: str | None = None
+    timeout_s: float | None = None
+    enabled: bool | None = None
+    note: str | None = None
+
+
+class RemoteAgentTestResult(BaseModel):
+    ok: bool
+    ms: int = 0
+    state: str = ""
+    task_id: str = ""
+    answer: str = ""
+    error: str = ""
 
 
 class ImportResult(BaseModel):

@@ -68,7 +68,12 @@ def _rpc_url(base: str) -> str:
     return urljoin(u + "/", "a2a")
 
 
-async def _post_json(url: str, payload: dict[str, Any], timeout: float) -> dict[str, Any]:
+async def _post_json(
+    url: str,
+    payload: dict[str, Any],
+    timeout: float,
+    headers: dict[str, str] | None = None,
+) -> dict[str, Any]:
     import httpx
 
     try:
@@ -88,7 +93,12 @@ async def _post_json(url: str, payload: dict[str, Any], timeout: float) -> dict[
     return body or {}
 
 
-async def discover(base: str, timeout: float = 15.0) -> dict[str, Any]:
+async def discover(
+    base: str,
+    timeout: float = 15.0,
+    *,
+    headers: dict[str, str] | None = None,
+) -> dict[str, Any]:
     """读远端 agent card（发现：这台远端有什么能力、叫什么名字）。"""
     import httpx
 
@@ -101,7 +111,9 @@ async def discover(base: str, timeout: float = 15.0) -> dict[str, Any]:
         card_url = urljoin(u + "/", ".well-known/agent-card.json")
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.get(card_url, headers={"Accept": "application/json"})
+            resp = await client.get(
+                card_url, headers={"Accept": "application/json", **(headers or {})}
+            )
     except httpx.HTTPError as exc:
         raise A2AError(f"拉取卡片失败 {card_url}（{type(exc).__name__}: {str(exc)[:120]}）") from exc
     if resp.status_code >= 400:
@@ -118,6 +130,7 @@ async def send(
     *,
     agent_id: str | None = None,
     timeout: float = 60.0,
+    headers: dict[str, str] | None = None,
 ) -> str:
     """发一条消息，返回远端 Task id。
 
@@ -135,6 +148,7 @@ async def send(
         url,
         {"jsonrpc": "2.0", "id": 1, "method": "message/send", "params": {"message": message}},
         timeout,
+        headers,
     )
     task = (body.get("result") or {}) if isinstance(body, dict) else {}
     task_id = str(task.get("id") or "")
@@ -143,13 +157,20 @@ async def send(
     return task_id
 
 
-async def get_task(base: str, task_id: str, *, timeout: float = 30.0) -> dict[str, Any]:
+async def get_task(
+    base: str,
+    task_id: str,
+    *,
+    timeout: float = 30.0,
+    headers: dict[str, str] | None = None,
+) -> dict[str, Any]:
     """查一个远端 Task 的当前状态。"""
     url = _rpc_url(base)
     body = await _post_json(
         url,
         {"jsonrpc": "2.0", "id": 1, "method": "tasks/get", "params": {"id": task_id}},
         timeout,
+        headers,
     )
     return (body.get("result") or {}) if isinstance(body, dict) else {}
 
@@ -192,6 +213,7 @@ async def run_until_done(
     *,
     agent_id: str | None = None,
     timeout_s: float = DEFAULT_TIMEOUT_S,
+    headers: dict[str, str] | None = None,
 ) -> tuple[str, str, str]:
     """发一条消息并等到终态。
 
@@ -202,10 +224,10 @@ async def run_until_done(
     import asyncio
     import time
 
-    task_id = await send(base, text, agent_id=agent_id)
+    task_id = await send(base, text, agent_id=agent_id, headers=headers)
     deadline = time.monotonic() + max(30.0, timeout_s)
     while True:
-        task = await get_task(base, task_id)
+        task = await get_task(base, task_id, headers=headers)
         state = state_of(task)
         if state == "input-required":
             return "waiting_hitl", task_text(task), task_id

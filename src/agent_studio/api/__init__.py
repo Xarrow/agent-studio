@@ -18,6 +18,7 @@ from . import (
     maintenance,
     metrics,
     portability,
+    remote_agents,
     prices,
     revisions,
     runs,
@@ -46,6 +47,7 @@ api_router.include_router(orchestrations.router)  # /api/orchestrations（一次
 api_router.include_router(workflows.router)      # /api/workflows（Playground 画布上保存的编排设计稿）
 api_router.include_router(hooks.router)          # /api/hooks/{token}（外部触发：让别的系统也能跑一条流程）
 api_router.include_router(portability.router)    # /api/export + /api/import（数据带走：导出/导入）
+api_router.include_router(remote_agents.router, prefix="/api/remote-agents")   # 远程 Agent 注册治理
 api_router.include_router(revisions.router)      # /api/revisions（版本历史与回滚）
 api_router.include_router(maintenance.router)    # /api/maintenance（存储体检 + 事件归档）
 api_router.include_router(metrics.router)        # /metrics（Prometheus 文本，监控系统直接抓）

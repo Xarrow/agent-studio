@@ -48,7 +48,7 @@ def test_取文本优先artifacts():
 @pytest.mark.asyncio
 async def test_远端不可用时不建记录并如实说明(client, monkeypatch):
     """地址连不上 → 直接返回失败，别建了一堆 run 才发现连不上。"""
-    async def boom(base, timeout=15.0):
+    async def boom(base, timeout=15.0, *, headers=None):
         raise a2a_client.A2AError("连不上远端")
 
     monkeypatch.setattr(a2a_client, "discover", boom)
@@ -87,10 +87,10 @@ async def test_远端不可用时不建记录并如实说明(client, monkeypatch
 @pytest.mark.asyncio
 async def test_远端分派每一路落一条run并标a2a(client, monkeypatch):
     """正常路径：两路 → 两条 run，runtime=a2a，产出/状态如实写回。"""
-    async def fake_discover(base, timeout=15.0):
+    async def fake_discover(base, timeout=15.0, *, headers=None):
         return {"name": "远端平台"}
 
-    async def fake_run_until_done(base, text, *, agent_id=None, timeout_s=900.0):
+    async def fake_run_until_done(base, text, *, agent_id=None, timeout_s=900.0, headers=None):
         if "第二" in text:
             return "error", "远端说这条做不了", "task-2"
         return "ok", f"远端产出：{text}", "task-1"
