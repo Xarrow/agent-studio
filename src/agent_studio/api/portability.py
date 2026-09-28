@@ -68,7 +68,7 @@ SECTIONS: tuple[dict[str, Any], ...] = (
     {"key": "prices", "label": "模型单价", "importable": False,
      "note": "按模型名对齐；导入不覆盖你已有的单价"},
     {"key": "credentials", "label": "LLM 配置", "importable": False,
-     "note": "只导出清单（名字/端点/默认模型），**密钥绝不进包**，换机器重新填"},
+     "note": "只导出清单（名字/端点/默认模型）；密钥绝不进包，换机器重新填"},
 )
 
 #: 启动会自动重建的工具种类 —— 导出它们没意义，导入也不该重复建

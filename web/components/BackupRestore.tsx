@@ -185,7 +185,8 @@ export function BackupRestore() {
                 </span>
               ) : null}
               <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
-                {s.note}
+                {/* 备注是纯文本渲染：把 markdown 的加粗标记去掉，别让用户看到 ** 号 */}
+                {s.note.replace(/\*\*/g, "")}
               </span>
               <button
                 type="button"
