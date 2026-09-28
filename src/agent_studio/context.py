@@ -191,6 +191,18 @@ async def clear_context(
     return removed
 
 
+#: 会话压缩专用的人设：要的是**一段能接着聊的摘要**，不是结构化数据。
+#: （记忆提炼那套 prompt 是「输出 JSON 候选」，两者不能混用。）
+SUMMARY_SYSTEM_PROMPT = (
+    "你是对话压缩助手。把给定的多轮对话压缩成一段**连贯的中文摘要**，"
+    "供后续对话接着用。要求：\n"
+    "1. 只输出摘要正文，不要标题、不要 JSON、不要列表符号、不要评论；\n"
+    "2. 保留：关键事实与结论、用户的偏好与明确要求、正在做的事与未完成事项；\n"
+    "3. 丢掉客套、重复与无关细节；\n"
+    "4. 用第三人称叙述（\"用户\"\"助手\"），200~300 字。"
+)
+
+
 async def compress_if_needed(
     session: AsyncSession,
     *,
@@ -235,8 +247,16 @@ async def compress_if_needed(
         f"保留关键事实、结论、用户偏好与未完成事项，不要评论、不要加标题：\n\n{convo}"
     )
     try:
+        # **必须传自己的 system prompt**：默认那套是「提炼记忆候选、输出 JSON」，
+        # 用它来压缩会得到一堆 JSON（甚至空），写进会话摘要后又被当成
+        # 「较早内容的摘要」注入给模型 —— 上下文里就成了 JSON 而不是摘要。
         summary = await call_llm(
-            base_url=base_url, api_key=api_key, model=model, user_prompt=prompt, timeout=90.0
+            base_url=base_url,
+            api_key=api_key,
+            model=model,
+            user_prompt=prompt,
+            timeout=90.0,
+            system_prompt=SUMMARY_SYSTEM_PROMPT,
         )
     except Exception:  # pragma: no cover - 压缩失败不该影响主流程
         logger.warning("会话压缩失败 session=%s", session_id, exc_info=True)

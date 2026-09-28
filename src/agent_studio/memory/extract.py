@@ -127,13 +127,20 @@ async def call_llm(
     model: str,
     user_prompt: str,
     timeout: float = 60.0,
+    system_prompt: str | None = None,
 ) -> str:
-    """调用 OpenAI 兼容接口做提炼（轻量、一次性，不进 Agent 循环）。"""
+    """调用 OpenAI 兼容接口做一次轻量调用（不进 Agent 循环）。
+
+    ``system_prompt`` 默认是**记忆提炼**那套（输出 JSON 候选）。别的用途
+    （比如会话压缩要一段散文摘要）必须显式传自己的 —— 复用提炼的 prompt
+    会让模型回一堆 JSON 候选，甚至什么都回不出来，而空结果会被上层当成
+    "没什么可压缩"丢掉（症状：设了阈值却看不到任何摘要）。
+    """
     url = base_url.rstrip("/") + "/chat/completions"
     payload = {
         "model": model,
         "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt or SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
         ],
         "temperature": 0.2,

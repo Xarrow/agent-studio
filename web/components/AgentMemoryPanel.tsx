@@ -24,6 +24,10 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type { Memory, MemoryPolicy } from "@/lib/types";
 import { useFeedback } from "./ui/feedback";
+import { Switch } from "@/components/ui/kit";
+
+/** 精简阈值的可选档位：0 = 不精简 */
+const COMPRESS_CHOICES = [0, 10, 20, 30, 50, 100];
 
 const KIND_LABEL: Record<string, string> = {
   fact: "事实",
@@ -177,28 +181,21 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
               并在对话结束后自动总结值得记住的内容。
             </p>
           </div>
-          <button
-            role="switch"
-            aria-checked={memoryOn}
-            aria-label="记忆开关"
+          {/* 开关用 kit.Switch：圆点定位与触屏命中区都在零件里收口，
+              原来手写的那份圆点会跑出轨道（绝对定位没写 left） */}
+          <Switch
+            checked={memoryOn}
             disabled={busy}
-            onClick={() =>
+            ariaLabel="记忆开关"
+            title={memoryOn ? "关掉记忆" : "打开记忆"}
+            onChange={(next) =>
               void patch({
-                recall_enabled: !memoryOn,
                 // 一起开关自动沉淀：只召回不沉淀会变成"只读旧记录"，不符合直觉
-                auto_extract: !memoryOn,
+                recall_enabled: next,
+                auto_extract: next,
               })
             }
-            className={`shrink-0 relative w-12 h-6 rounded-full transition-colors ${
-              memoryOn ? "bg-[var(--color-accent)]" : "bg-[var(--color-border)]"
-            }`}
-          >
-            <span
-              className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
-                memoryOn ? "translate-x-6" : "translate-x-0.5"
-              }`}
-            />
-          </button>
+          />
         </div>
 
         <div className="mt-3 pt-3 border-t border-[var(--color-border)] flex items-center gap-3 flex-wrap">
@@ -391,20 +388,30 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
             </div>
 
             <div>
-              <label className="label">
-                对话超过 {policy.compress_after_turns} 轮后开始精简
-              </label>
-              <input
-                type="number"
-                min={0}
-                max={200}
+              <label className="label">对话变长后自动精简</label>
+              {/* 档位用选的（枚举值不给自由输入框 —— 手打轮次容易填出奇怪的数） */}
+              <select
                 className="input"
-                value={policy.compress_after_turns}
+                value={COMPRESS_CHOICES.includes(policy.compress_after_turns) ? policy.compress_after_turns : -1}
                 disabled={busy}
-                onChange={(e) => void patch({ compress_after_turns: Number(e.target.value) })}
-              />
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  if (v >= 0) void patch({ compress_after_turns: v });
+                }}
+              >
+                {!COMPRESS_CHOICES.includes(policy.compress_after_turns) && (
+                  <option value={-1}>{policy.compress_after_turns} 轮（当前）</option>
+                )}
+                {COMPRESS_CHOICES.map((n) => (
+                  <option key={n} value={n}>
+                    {n === 0 ? "不精简" : `超过 ${n} 轮`}
+                  </option>
+                ))}
+              </select>
               <p className="text-[11px] text-[var(--color-muted)] mt-1">
-                更早的对话会被总结成一段话继续带着（0 = 不精简）
+                {policy.compress_after_turns === 0
+                  ? "一直保留全部原文（对话很长时会占满上下文）"
+                  : `每次任务跑完后检查：超过 ${policy.compress_after_turns} 轮就把较早的对话总结成一段话继续带着，最近的原文保留`}
               </p>
             </div>
 

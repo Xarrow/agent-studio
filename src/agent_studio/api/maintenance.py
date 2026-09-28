@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends
@@ -30,6 +31,33 @@ def _db_bytes() -> int | None:
         return path.stat().st_size if path.exists() else None
     except Exception:  # noqa: BLE001
         return None
+
+
+@router.get("/paths", response_model=dict)
+async def read_paths() -> dict[str, Any]:
+    """**数据存在服务器上的哪个路径** —— 给界面显示，用户随时能核对/备份。
+
+    为什么要有：平台数据全在服务器上（自托管），但界面从没说过"存在哪"。
+    用户看不到落点，就没法自己备份、也没法判断某次操作到底写没写盘。
+    这里返回的都是**运行时的真实路径**（取自配置，不写死字符串），
+    换成容器/别的机器也自动是对的。
+    """
+    from ..db import _active  # noqa: SLF001  —— 当前生效驱动才是真相（可能被 UI 切过）
+
+    # 只有 SQLite 才有"一个文件"；别的驱动（MySQL/PG）如实返回 None，
+    # 界面就退回显示连接串 —— 编一个路径比不显示更糟。
+    db_file: str | None = str(_active.sqlite_file()) if _active.driver == "sqlite" else None
+
+    work = Path(settings.work_dir).expanduser()
+    backups = Path(settings.db_path).expanduser().parent
+    return {
+        "database_file": db_file,
+        "database_url": settings.db_url,
+        "work_dir": str(work.resolve()) if work.exists() else str(work),
+        "runs_dir": str((work / "runs").resolve()),
+        "backup_dir": str(backups.resolve()),
+        "note": "会话与消息存在数据库文件里；每次执行的工作目录在 runs_dir 下的 run 目录中。",
+    }
 
 
 @router.get("/storage", response_model=dict)

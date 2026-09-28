@@ -32,6 +32,42 @@ from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
+# --------------------------------------------------------------------------- #
+# 出网请求头：伪装成一个真实的 Chrome
+# --------------------------------------------------------------------------- #
+# 为什么必须装：默认 UA（httpx/x.y 或 "compatible; AgentStudio/1.0"）会被
+# 站点直接判成脚本 —— 实测现象是 403 / 验证页 / 空结果，用户看到的是
+# "搜索不可达"。伪装成正经浏览器是最低成本、且对只读抓取无副作用的提升。
+#
+# 要点（浏览器真的会发这些，缺一条就露馅）：
+#   · UA 必须是**完整**的 Chrome UA 串：只有 "AppleWebKit/537.36" 没有
+#     Chrome/xx 的 UA 是最典型的脚本特征（老代码就这样）；
+#   · Accept 要像文档导航（含 q 权重），不能只给 text/html；
+#   · Accept-Language 带中文优先（站点会据此返回中文页，顺带更省 token）；
+#   · Sec-Fetch-* 是现代 Chrome 的必备头，缺失会被指纹识别；
+#   · Upgrade-Insecure-Requests: 1 同理。
+# 三处（fetch / DuckDuckGo / Bing）**共用同一份**，避免"某一条路径忘了改"。
+CHROME_VERSION = "131"
+BROWSER_HEADERS: dict[str, str] = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        f"AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{CHROME_VERSION}.0.0.0 Safari/537.36"
+    ),
+    "Accept": (
+        "text/html,application/xhtml+xml,application/xml;q=0.9,"
+        "image/avif,image/webp,image/apng,*/*;q=0.8"
+    ),
+    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+    "Upgrade-Insecure-Requests": "1",
+    "Connection": "keep-alive",
+}
+
 FETCH_TIMEOUT_S = 20
 FETCH_MAX_BYTES = 256 * 1024
 SEARCH_TIMEOUT_S = 15
@@ -65,7 +101,7 @@ async def _fetch(url: str, max_bytes: int = FETCH_MAX_BYTES) -> str:
         async with httpx.AsyncClient(
             timeout=FETCH_TIMEOUT_S,
             follow_redirects=True,
-            headers={"User-Agent": "Mozilla/5.0 (compatible; AgentStudio/1.0)"},
+            headers=BROWSER_HEADERS,
         ) as client:
             r = await client.get(url)
     except httpx.HTTPError as exc:
@@ -124,9 +160,7 @@ async def _search_ddg(query: str, max_results: int = 8) -> str | None:
         async with httpx.AsyncClient(
             timeout=SEARCH_TIMEOUT_S,
             follow_redirects=True,
-            headers={
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
-            },
+            headers=BROWSER_HEADERS,
         ) as client:
             r = await client.get(
                 "https://html.duckduckgo.com/html/",
@@ -151,12 +185,7 @@ async def _search_bing(query: str, max_results: int = 8) -> str | None:
         async with httpx.AsyncClient(
             timeout=SEARCH_TIMEOUT_S,
             follow_redirects=True,
-            headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
-                )
-            },
+            headers=BROWSER_HEADERS,
         ) as client:
             r = await client.get(
                 "https://www.bing.com/search",

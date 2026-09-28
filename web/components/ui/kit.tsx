@@ -239,6 +239,58 @@ export function KV({ k, children }: { k: ReactNode; children: ReactNode }) {
 }
 
 /**
+ * 开关（是的/否 这类二元设置）。
+ *
+ * 为什么要有：原来各页手写 <button role="switch"><span/></button>，
+ * 圆点用 `absolute + translate-x-*` 却**没写 left** —— 绝对定位在没有
+ * left/top 时取「静态位置」，而按钮里的内容默认居中，于是圆点的起点被
+ * 推到了中间，再 translate 24px 就整个跑出轨道（实测溢出 20px：圆形
+ * 滑块一半挂在框外）。样式问题就是这么来的。
+ *
+ * 两条硬要求写在零件里，页面不该再自己拼：
+ *   ① 圆点用 left/top 显式定位（不依赖静态位置）；
+ *   ② 命中区 ≥44px（触屏）—— 靠**本体尺寸**撑开，不用伪元素
+ *      （伪元素不接收点击，之前踩过）。
+ */
+export function Switch({
+  checked,
+  onChange,
+  disabled,
+  ariaLabel,
+  title,
+}: {
+  checked: boolean;
+  onChange: (next: boolean) => void;
+  disabled?: boolean;
+  ariaLabel?: string;
+  title?: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={ariaLabel}
+      title={title}
+      data-tap
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className="inline-flex h-11 shrink-0 items-center justify-center px-1 disabled:opacity-50 lg:h-8"
+    >
+      <span
+        className="relative block h-6 w-12 rounded-full transition-colors"
+        style={{ background: checked ? "var(--color-accent)" : "var(--color-border)" }}
+      >
+        <span
+          className="absolute left-[2px] top-[2px] h-5 w-5 rounded-full bg-white shadow transition-transform"
+          style={{ transform: checked ? "translateX(24px)" : "translateX(0)" }}
+        />
+      </span>
+    </button>
+  );
+}
+
+/**
  * 自研下拉菜单（禁用浏览器原生 confirm/prompt，也禁用「把动作藏进 ⋯」的写法
  * —— 这里是给**清理类/低频批量**动作用的，常用动作仍须常驻可见）。
  */

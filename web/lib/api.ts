@@ -459,6 +459,16 @@ export const api = {
    */
   // ── 存储体检与事件归档 ─────────────────────────────────────────────────
   /** 当前占用：事件行数 / 明细字节 / 已归档数 / 归档规则 */
+  /** 服务器上的存放路径（会话在数据库文件里、执行产物在 runs 目录下） */
+  paths: () =>
+    request<{
+      database_file: string | null;
+      database_url: string;
+      work_dir: string;
+      runs_dir: string;
+      backup_dir: string;
+      note: string;
+    }>("/api/maintenance/paths"),
   storage: () => request<{
     event_rows: number;
     stream_rows: number;

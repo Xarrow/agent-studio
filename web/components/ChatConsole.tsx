@@ -54,6 +54,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   const [slashOpen, setSlashOpen] = useState(false);
   /** 输入法守卫：中文组字没上屏时按 Enter 是「选字」，不能当发送 */
   const ime = useImeGuard();
+  /** 服务器上的存放路径 —— 界面上说清"这些对话存在哪"（自托管必须让用户能核对） */
+  const [paths, setPaths] = useState<Awaited<ReturnType<typeof api.paths>> | null>(null);
   /** 正在浮层里配置的助手（从对话页直接打开，不离开对话） */
   const [configAgent, setConfigAgent] = useState<string | null>(null);
   /**
@@ -99,8 +101,13 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   useEffect(() => {
     void (async () => {
       try {
-        const list = await api.agents();
+        const [list, p] = await Promise.all([
+          api.agents(),
+          // 顺手带出服务器存放路径（不额外加一次往返；拿不到就不显示那行）
+          api.paths().catch(() => null),
+        ]);
         setAgents(list);
+        setPaths(p);
         // 优先用 URL 带来的助手（从「我的助手」卡片点「聊天」进来时）：
         // 这样用户点谁就聊谁，不用再选一次
         const want =
@@ -719,6 +726,32 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                   </button>
                 </span>
               ))}
+            </div>
+          )}
+          {/* 存在哪 —— 自托管平台上，用户随时能核对落点（点一下复制路径） */}
+          {paths && (
+            <div
+              className="max-w-4xl mx-auto mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px]"
+              style={{ color: "var(--color-muted)" }}
+            >
+              <span>会话保存在服务器</span>
+              <button
+                type="button"
+                data-tap
+                className="mono hover:underline"
+                title="点一下复制完整路径"
+                onClick={() => {
+                  const p = paths.database_file ?? paths.database_url;
+                  void navigator.clipboard?.writeText(p).then(
+                    () => fb.success("已复制路径", p),
+                    () => fb.info("路径", p),
+                  );
+                }}
+              >
+                {paths.database_file ?? paths.database_url}
+              </button>
+              <span>· 执行产物在</span>
+              <span className="mono">{paths.runs_dir}</span>
             </div>
           )}
         </div>

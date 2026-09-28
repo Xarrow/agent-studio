@@ -783,7 +783,9 @@ class RunService:
                         assistant_text=assistant_text,
                         usage=run.usage or {},
                     )
-                    # 2) 轮次超阈值时压缩较早历史（防上下文爆炸）
+                    # 2) 轮次超阈值时压缩较早历史（防上下文爆炸）。
+                    #    **在任务跑完之后做**：一次执行的中间态不该被动（压缩要花一次
+                    #    LLM 调用，而且中途改上下文会让正在跑的这轮前后不一致）。
                     policy = await get_policy(session, run.agent_id)
                     if api_key and policy.compress_after_turns > 0:
                         await compress_if_needed(
@@ -792,7 +794,9 @@ class RunService:
                             threshold_turns=policy.compress_after_turns,
                             base_url=_default_base_url(definition),
                             api_key=api_key,
-                            model=definition.model.name,
+                            # 用「总结用的模型」优先（记忆面板里就是这个字段，
+                            # 用户填了它却被忽略 = 设置不生效）；没填才跟随 Agent 模型。
+                            model=policy.extract_model or definition.model.name,
                         )
                 else:
                     policy = await get_policy(session, run.agent_id)
