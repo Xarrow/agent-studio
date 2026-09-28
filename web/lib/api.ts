@@ -21,6 +21,8 @@ import type {
   InstallJob,
   EnvRuntimes,
   ModelTestRecord,
+  RemoteAgentCallRecord,
+  RemoteAgentEventRecord,
   RemoteAgentParsed,
   RemoteAgentRecord,
   DbStatus,
@@ -538,6 +540,14 @@ export const api = {
     ),
   removeRemoteAgent: (id: string) =>
     request<{ deleted: string }>(`/api/remote-agents/${id}`, { method: "DELETE" }),
+  /** 操作记录：注册/更新/启停/删除/解析/测试，时间倒序 */
+  remoteAgentEvents: (remoteId?: string) =>
+    request<RemoteAgentEventRecord[]>(
+      `/api/remote-agents/events${remoteId ? `?remote_id=${remoteId}` : ""}`,
+    ),
+  /** 调用记录：这个远端真正被调用过的执行 */
+  remoteAgentCalls: (id: string) =>
+    request<RemoteAgentCallRecord[]>(`/api/remote-agents/${id}/calls`),
 
   // ── AG-UI 协议出口（外部客户端驱动这些助手）──────────────────────────
   /** 协议版本 / 端点 / 可用助手 / 调用示例 */

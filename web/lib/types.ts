@@ -238,6 +238,28 @@ export interface RemoteAgentParsed {
   skills: { id: string; name: string; description: string; tags: string[]; examples?: string[] }[];
 }
 
+export interface RemoteAgentEventRecord {
+  id: string;
+  remote_id: string;
+  remote_name: string;
+  action: string;
+  summary: string;
+  detail: Record<string, unknown>;
+  created_at: number;
+}
+
+export interface RemoteAgentCallRecord {
+  run_id: string;
+  status: string;
+  started_at: number;
+  ended_at: number | null;
+  duration_ms: number | null;
+  input: string;
+  output: string;
+  error: string;
+  origin: string;
+}
+
 export interface RemoteAgentRecord {
   id: string;
   name: string;
