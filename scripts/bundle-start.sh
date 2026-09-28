@@ -27,6 +27,15 @@ fi
 
 echo "[1/3] 内置运行时：$("$PY" -V 2>&1) ($ARCH)"
 
+# --- 系统 glibc 检查（包内原生扩展要求 ≥ 2.34） ----------------------------
+GLIBC_MIN="2.34"
+GLIBC_VER="$(ldd --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+$' || true)"
+if [ -n "$GLIBC_VER" ] && [ "$(printf '%s\n%s\n' "$GLIBC_MIN" "$GLIBC_VER" | sort -V | head -1)" != "$GLIBC_MIN" ]; then
+  echo "[!] 本机 glibc $GLIBC_VER 低于依赖要求的 $GLIBC_MIN（cryptography 等原生扩展需要）"
+  echo "    可用系统：Ubuntu 22.04+ / Debian 12+ / RHEL·Rocky·CentOS Stream 9+"
+  exit 1
+fi
+
 # --- 依赖与路径（全部指向包内，不碰系统环境） -------------------------------
 export PYTHONPATH="$PWD/vendor/$ARCH/site-packages:$PWD/app/src"
 export STUDIO_WEB_DIST="$PWD/app/web/out"
