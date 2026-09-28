@@ -154,3 +154,42 @@ async def test_远端连不上就放手():
         finally:
             await s.delete(row)
             await s.commit()
+
+
+async def test_分发器不抢a2a子run():
+    """dispatch_remote 建的 a2a 子 run（快照为空、由远端轮询推进）不该被
+    本地分发器抢走 —— 它的空快照会被误判「定义快照无法解析」落死。
+    真出过：dispatcher 的 pending 扫描没过滤 runtime，a2a 子 run 被打死。"""
+    from sqlalchemy import select as _sel
+
+    from agent_studio.models import Run
+    from agent_studio.runner.dispatcher import Dispatcher
+
+    rid = "run_a2a_nosteal_1"
+    async with SessionLocal() as s:
+        s.add(
+            Run(
+                id=rid,
+                agent_id="ag_x",
+                agent_version=1,
+                runtime="a2a",
+                status="pending",  # dispatch_remote 刚建、还没被 _one() 更新
+                input={"text": "x"},
+                definition_snapshot={},  # a2a 子 run 的快照就是空的
+                started_at=now_ms(),
+            )
+        )
+        await s.commit()
+
+    d = Dispatcher()  # 只用扫描逻辑，不起后台循环
+    d.is_running = lambda _id: False  # type: ignore[method-assign]
+    started = await d.tick()
+
+    async with SessionLocal() as s:
+        row = await s.get(Run, rid)
+        try:
+            assert row.status == "pending"  # 没被抢、没被打死
+            assert rid not in (started or [])
+        finally:
+            await s.delete(row)
+            await s.commit()

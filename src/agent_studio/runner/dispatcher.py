@@ -169,7 +169,7 @@ class Dispatcher:
                         cast(Run.definition_snapshot, Text).label("snapshot_text"),
                         cast(Run.input, Text).label("input_text"),
                     )
-                    .where(Run.status == "pending")
+                    .where(Run.status == "pending", Run.runtime != "a2a")
                     .order_by(Run.started_at.asc())
                     .limit(free)
                 )
