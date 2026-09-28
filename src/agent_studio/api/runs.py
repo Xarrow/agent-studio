@@ -926,8 +926,15 @@ async def activity_timeline(
                         duration_ms=(k.ended_at - k.started_at) if (k.ended_at and k.started_at) else None,
                         tokens_in=k_in,
                         tokens_out=k_out,
-                        agent_id=str(k.agent_id or ""),
-                        agent_name=kid_agent_names.get(str(k.agent_id or ""), ""),
+                        # 远端（A2A）那几路：agent_id 记的是**本地发起方**（远端 agent
+                        # 不在本地表里），所以名字要用远端卡片名 —— 否则界面上会把
+                        # "远端平台跑的"写成"编排者跑的"，血缘就假了。
+                        agent_id="" if (k.runtime or "") == "a2a" else str(k.agent_id or ""),
+                        agent_name=(
+                            str((k.input or {}).get("remote_name") or "远端 A2A")
+                            if (k.runtime or "") == "a2a"
+                            else kid_agent_names.get(str(k.agent_id or ""), "")
+                        ),
                         depth=1,
                     )
                 )

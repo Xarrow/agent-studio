@@ -150,6 +150,163 @@ def _isolated_snapshot(snapshot: dict[str, Any], parent_run: Run, index: int) ->
     return snap
 
 
+async def dispatch_remote(
+    *,
+    parent_run: Run,
+    agent_id: str,
+    remote_base: str,
+    items: list[str],
+    max_items: int | None = None,
+    wait_s: float | None = None,
+    remote_agent_id: str | None = None,
+    db_factory: Any = SessionLocal,
+) -> dict[str, Any]:
+    """把每一路**派给远端 A2A agent**（跨平台的 agent 间 fork）。
+
+    与本地 dispatch 的关系
+    ---------------------
+    形状完全一样：每一项一条独立 run（带 parent_run_id / item_index / item_label），
+    所以记录页、调用链、单独重跑这些能力**不用为远端另写一套**。区别只有一处：
+    子 run 的 ``runtime`` 记成 ``"a2a"``，跑的人不是本地运行时，而是远端平台的
+    agent（通过 A2A 的 message/send + tasks/get）。
+
+    怎么找到远端：``remote_base`` 可以是 ``http://host:port``（自动补 ``/a2a``）、
+    直接是 ``.../a2a``，或者从卡片地址 ``.../.well-known/agent-card.json`` 复制来的
+    整串。``remote_agent_id`` 用来在远端选具体助手（放进 message.metadata.agentId）。
+    """
+    import asyncio as _asyncio
+
+    from . import a2a_client
+
+    cap = max(1, min(int(max_items or DEFAULT_MAX_ITEMS), MAX_ITEMS_HARD))
+    picked = items[:cap]
+    if not picked:
+        return {"ok": False, "reason": "没有可分派的项", "items": [], "total": 0}
+
+    # 先探一次远端：地址/协议不对就在这里失败，不要建了 N 条 run 才发现连不上
+    try:
+        card = await a2a_client.discover(remote_base)
+    except a2a_client.A2AError as exc:
+        return {
+            "ok": False,
+            "reason": f"远端不可用：{exc}",
+            "items": [],
+            "total": 0,
+            "remote": remote_base,
+        }
+    remote_name = str(card.get("name") or remote_base)
+
+    async with db_factory() as session:
+        created: list[Run] = []
+        for i, item in enumerate(picked):
+            child = Run(
+                agent_id=agent_id,                      # 本地发起方（远端 agent 不在本地表里）
+                agent_version=parent_run.agent_version,
+                runtime="a2a",                          # ← 远端执行的标记（记录页据此标 A2A）
+                status="pending",
+                input={"text": item, "remote": remote_base, "remote_name": remote_name},
+                definition_snapshot={},
+                started_at=now_ms(),
+                node_id=parent_run.node_id if parent_run.node_id else None,
+                item_index=i,
+                item_label=item_label(item, i),
+                parent_run_id=parent_run.id,
+                orchestration_id=parent_run.orchestration_id,
+                origin=parent_run.origin,
+            )
+            session.add(child)
+            created.append(child)
+        await session.commit()
+        for c in created:
+            await session.refresh(c)
+
+    timeout = float(wait_s if wait_s is not None else DEFAULT_WAIT_S)
+
+    async def _one(child: Run, text: str) -> None:
+        """跑一路：发消息 → 等终态 → 落库。任何异常都变成这一路的失败原因。"""
+        try:
+            status, out, task_id = await a2a_client.run_until_done(
+                remote_base, text, agent_id=remote_agent_id, timeout_s=timeout
+            )
+        except a2a_client.A2AError as exc:
+            status, out, task_id = "error", "", ""
+            err = str(exc)
+        else:
+            err = "" if status != "error" else (out or "远端执行失败")
+        async with db_factory() as session:
+            row = await session.get(Run, child.id)
+            if row is None:  # pragma: no cover
+                return
+            row.status = status
+            row.output = {"content": out} if out else None
+            row.error = err or None
+            row.ended_at = now_ms()
+            if task_id:
+                # 远端 task id 记进 usage：排查时能拿着它去远端查（本平台自己的 id 是 run.id）
+                row.usage = {**(row.usage or {}), "remote_task_id": task_id}
+            if status == "waiting_hitl":
+                row.pending_hitl = {"remote": remote_base, "remote_task_id": task_id,
+                                    "note": "远端在等人确认，确认后远端会继续；本平台不代答"}
+            await session.commit()
+
+    await _asyncio.gather(*(_one(c, picked[int(c.item_index or 0)]) for c in created))
+
+    # ── 汇总（与本地分派同一形状，render_summary 直接可用）───────────────
+    async with db_factory() as session:
+        rows = list(
+            (
+                await session.execute(select(Run).where(Run.id.in_([c.id for c in created])))
+            ).scalars()
+        )
+    rows.sort(key=lambda r: int(r.item_index or 0))
+    out_items: list[dict[str, Any]] = []
+    ok_n = failed_n = 0
+    for r in rows:
+        if r.status == "ok":
+            ok_n += 1
+        elif r.status in ("error", "aborted"):
+            failed_n += 1
+        text = _text_of(r.output) or (r.error or "")
+        out_items.append(
+            {
+                "index": int(r.item_index or 0),
+                "label": r.item_label or "",
+                "status": r.status,
+                "run_id": r.id,
+                "duration_ms": (r.ended_at - r.started_at) if (r.ended_at and r.started_at) else None,
+                "summary": text[:SUMMARY_CHARS],
+                "error_text": r.error or "",
+                "tokens_in": 0,
+                "tokens_out": 0,
+            }
+        )
+    # 与本地 dispatch **同一种形状** —— render_summary / 记录页都不用为远端另写一套
+    return {
+        "isolated": False,
+        "workspaces": [],
+        "waiting": [
+            {"index": x["index"], "label": x["label"], "run_id": x["run_id"]}
+            for x in out_items
+            if x["status"] in WAITING
+        ],
+        "usage": {"tokens_in": 0, "tokens_out": 0, "llm_calls": 0},
+        "ok": ok_n > 0 and failed_n == 0,
+        "total": len(out_items),
+        "succeeded": ok_n,
+        "failed": [x for x in out_items if x["status"] != "ok"],
+        "items": out_items,
+        "truncated": len(items) > cap,
+        "capped_at": cap,
+        "budget_tokens": 0,
+        "budget_stopped": 0,
+        "timed_out": False,
+        "wait_s": timeout,
+        # 远端专属（供工具层说清"这一批是发给谁的"）
+        "remote": remote_base,
+        "remote_name": remote_name,
+    }
+
+
 async def dispatch(
     *,
     parent_run: Run,
@@ -382,6 +539,15 @@ async def _tokens_of(ids: list[str], db_factory: Any = SessionLocal) -> int:
     return total
 
 
+async def _parent_run(run_id: str) -> Run:
+    """取当前执行在库里的那一行（dispatch 需要 parent_run）。"""
+    async with SessionLocal() as session:
+        row = await session.get(Run, run_id)
+    if row is None:  # pragma: no cover
+        raise RuntimeError(f"父执行不存在: {run_id}")
+    return row
+
+
 def _text_of(blob: Any) -> str:
     """从 run.output 里抠出人话（与记录页同一口径）。"""
     if isinstance(blob, str):
@@ -469,6 +635,30 @@ async def handle_tool_call(**kwargs: Any) -> str:
     agent_id = ctx.get("agent_id")
     # 派给谁：优先级 —— ① 这次调用显式填的（模型自己判断）；② **本步在节点上配的「派给谁」**
     # （人在画布上定死的默认，不靠模型自觉）；③ 都没有 = 自己。
+    # 远端 A2A：填了 remote（URL）就把这一批发给**另一台平台上的 agent**，
+    # 与本地分派共记录页/调用链/汇总形状，只是每一路走 A2A 而不是本地运行时。
+    remote_base = str(kwargs.get("remote") or "").strip()
+    if remote_base:
+        if not run_id or not agent_id:
+            return "分派失败：当前不在一次执行上下文中（fork 只能由正在运行的助手调用）。"
+        # 远端要哪个助手：显式参数优先（远端平台认 message.metadata.agentId）；
+        # 不填 = 远端自己的默认助手
+        remote_agent = str(kwargs.get("remote_agent") or "").strip()
+        result = await dispatch_remote(
+            parent_run=await _parent_run(run_id),
+            agent_id=str(agent_id),
+            remote_base=remote_base,
+            items=items,
+            max_items=kwargs.get("max_items"),
+            wait_s=kwargs.get("wait_s"),
+            remote_agent_id=remote_agent or None,
+        )
+        head = (
+            f"（这一批是发给远端 A2A agent「{result.get('remote_name') or remote_base}」执行的："
+            f"{remote_base}）\n"
+        )
+        return head + render_summary(result)
+
     target_name = str(kwargs.get("agent") or "").strip()
     _node_default = ""
     if not target_name:
@@ -526,8 +716,10 @@ async def handle_tool_call(**kwargs: Any) -> str:
             snap = dict(pick.definition or {})
         else:
             snap = dict(parent.definition_snapshot or {})
-        # 子实例去掉分派工具（双保险：load_tools 那层也会按深度过滤）
-        snap["tools"] = [t for t in (snap.get("tools") or []) if _tool_name(t) != "fork"]
+        # 子实例去掉分派工具（双保险：load_tools 那层也会按深度过滤）。
+        # ⚠️ 定义里的工具项**只有 ref（Tool 行 id），没有 name** —— 只按名字过滤等于没过滤
+        # （实测：子执行的快照里 fork 还在）。所以先把 ref 解析成真名字再比。
+        snap["tools"] = await _without_fork(session, snap.get("tools") or [])
 
     result = await dispatch(
         parent_run=parent,
@@ -543,14 +735,44 @@ async def handle_tool_call(**kwargs: Any) -> str:
 
 
 def _tool_name(ref: Any) -> str:
+    """取工具项的名字（有 name 就用，没有就退化成 ref 字符串 —— 只适合展示）"""
     if isinstance(ref, dict):
         return str(ref.get("name") or ref.get("ref") or "")
     return str(ref or "")
 
 
+async def _without_fork(session: Any, tools: list[Any]) -> list[Any]:
+    """去掉分派工具本身 —— 子实例不该再分派（深度限 1）。
+
+    过滤必须按**真名字**：定义里的工具项形如 ``{"ref": "tl_xxx", "enabled": true}``，
+    名字在 Tool 表里（这与 agent_ops 里 fork 剥离踩过的是同一个坑）。只按
+    ``_tool_name()`` 比字符串，ref 一定不等于 "fork"，于是"双保险"形同虚设。
+    """
+    from .models import Tool as _Tool
+
+    refs = [str(t.get("ref") or "") for t in tools if isinstance(t, dict)]
+    names: dict[str, str] = {}
+    if refs:
+        rows = (await session.execute(select(_Tool.id, _Tool.name).where(_Tool.id.in_(refs)))).all()
+        names = {str(i): str(n) for i, n in rows}
+
+    def keep(t: Any) -> bool:
+        if not isinstance(t, dict):
+            return True
+        ref = str(t.get("ref") or "")
+        # 名字优先取定义里的（可能显式写了），否则回表查
+        name = str(t.get("name") or names.get(ref) or "")
+        return name != "fork"
+
+    return [t for t in tools if keep(t)]
+
+
 #: 给模型看的说明与参数（工具入库时写进 description / input_schema）
 TOOL_DESCRIPTION = (
-    "把一份任务清单分派给**同一助手的多个实例**并行处理（每项一个实例），"
+    "把一份任务清单分派出去并行处理（每项一路，每路一条独立执行记录）。"
+    "默认用你自己；填 agent 用本平台别的助手；填 remote 则派给**远端 A2A agent**（跨平台）。"
+    "适合「这批东西每一条都要过一遍」的场景（多份文档、多张单据、多个查询）。"
+    "原说明留档：把一份任务清单分派给**同一助手的多个实例**并行处理（每项一个实例），"
     "然后一次性拿回各项结果摘要。适合「这批东西每一条都要过一遍」的场景"
     "（多份文档、多张单据、多个查询）。"
     "它会为每一项生成一条独立的执行记录（可单独查看、单独重跑、单独计费），"
@@ -588,6 +810,21 @@ TOOL_SCHEMA: dict[str, Any] = {
             "description": (
                 "用**哪个助手**去跑这些子任务（填助手名字，可选）。"
                 "不填 = 用你自己。编排者派活给别人（例如「通用助手」）时填这里"
+            ),
+        },
+        "remote_agent": {
+            "type": "string",
+            "description": (
+                "远端用**哪个助手**跑（可选）：填远端平台上的助手 id。"
+                "不填 = 远端自己的默认助手。只填了 remote 才有意义"
+            ),
+        },
+        "remote": {
+            "type": "string",
+            "description": (
+                "把这一批发给**远端 A2A agent**（填它的地址，可选）——"
+                "跨平台派活时用，例如 http://other-host:8848 或完整卡片地址。"
+                "填了它就不在本平台跑，每一路仍会记一条执行记录（标为 A2A）。"
             ),
         },
     },

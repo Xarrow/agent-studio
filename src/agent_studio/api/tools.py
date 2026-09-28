@@ -223,6 +223,15 @@ async def sync_builtins(
             )
         )
         created += 1
+    else:
+        # **必须跟着源码走**：只建不更新的话，工具签名改了以后老库里还是旧的那份 ——
+        # 模型看不到新参数（实测：给 fork 加了远端 A2A 参数，界面上却始终只有老的三个）。
+        plat.description = TOOL_DESCRIPTION
+        plat.input_schema = TOOL_SCHEMA
+        plat.impl = {}
+        plat.flags = tool_flags()
+        plat.updated_at = now_ms()
+        updated += 1
 
     # ── 平台原生内核工具（fetch / web_search / python）───────────────────────
     # 参照 Hermes 的内核工具层补齐"通用助手"的手：没有 fetch/web_search，
