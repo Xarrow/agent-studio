@@ -1243,9 +1243,14 @@ async def _delete_runs(
     _touched_sessions: set[str] = set()
     for rid in run_ids:
         if not rid.startswith("orc_"):
-            _r = await session.get(Run, rid)
-            if _r is not None and _r.session_id:
-                _touched_sessions.add(_r.session_id)
+            # 只取 session_id 这一列，**不整行水合**：JSON 列坏了的行读不出来
+            # （会抛 JSONDecodeError），那会让"记下这次删除涉及的会话"这步直接崩，
+            # 于是整条删除失败 —— 界面表现就是"这条记录删不掉"。
+            _sid = (
+                await session.execute(select(Run.session_id).where(Run.id == rid))
+            ).scalar_one_or_none()
+            if _sid:
+                _touched_sessions.add(_sid)
         if rid.startswith("orc_"):
             orc = await session.get(Orchestration, rid)
             if orc is None:
@@ -1269,9 +1274,33 @@ async def _delete_runs(
             await session.commit()
             deleted += n_ok + 1
             continue
-        run = await session.get(Run, rid)
+        # ⚠️ 坏行也要删得掉：JSON 列里有非法 JSON 时，``session.get`` 读行就抛
+        # JSONDecodeError（→ 界面 500"删不掉"）。所以先试 ORM，读不出来就退到
+        # **纯列查询 + core 删除**（只碰主键，级联交给数据库的外键 ON DELETE CASCADE）。
+        run = None
+        try:
+            run = await session.get(Run, rid)
+        except Exception:  # noqa: BLE001
+            run = None
         if run is None:
-            skipped.append({"id": rid, "reason": "记录不存在"})
+            status = (
+                await session.execute(select(Run.status).where(Run.id == rid))
+            ).scalar_one_or_none()
+            if status is None:
+                skipped.append({"id": rid, "reason": "记录不存在"})
+                continue
+            if status in IN_FLIGHT:
+                skipped.append(
+                    {"id": rid, "reason": f"状态为 {status}，请先中断再删除"}
+                )
+                continue
+            sid = (
+                await session.execute(select(Run.session_id).where(Run.id == rid))
+            ).scalar_one_or_none()
+            if sid:
+                _touched_sessions.add(sid)
+            await session.execute(delete(Run).where(Run.id == rid))
+            deleted += 1
             continue
         if run.status in IN_FLIGHT:
             skipped.append(

@@ -114,3 +114,47 @@ async def test_坏快照收口后可以被删除(client):
 
     async with SessionLocal() as s:
         assert (await s.execute(select(Run).where(Run.id == rid))).scalars().first() is None
+
+@pytest.mark.asyncio
+async def test_坏_json_的行不能把分发器扫描整条炸掉(client):
+    """JSON 列里放**非法 JSON**（外部脚本/手工 SQL 的产物）时：
+
+    实测坑（06:09 日志）：SQLAlchemy 读这一行会抛 JSONDecodeError ——
+      ① 分发器的 pending 扫描**整条**失败（每秒一条堆栈，且同时别的正常 pending 也起不来）；
+      ② 这条行还删不掉（删除接口读行同样抛 → 界面 500）。
+    修法：扫描时按**纯文本**读列、自己解析；坏行直接落终态（core UPDATE，绕开 ORM 水合）。
+    """
+    from sqlalchemy import text as sa_text
+
+    from agent_studio.db import SessionLocal
+    from agent_studio.runner.dispatcher import Dispatcher
+
+    ag_id = await _mk_agent()
+    rid = new_id("run")
+    async with SessionLocal() as s:
+        await s.execute(
+            sa_text(
+                "insert into run(id, agent_id, agent_version, runtime, status, input,"
+                " definition_snapshot, usage, started_at) values(:i,:a,1,'agentscope',"
+                "'pending','{}','{\"broken\": true','{}',:t)"
+            ),
+            {"i": rid, "a": ag_id, "t": now_ms()},
+        )
+        await s.commit()
+
+    started = await Dispatcher().tick()
+    assert rid not in started, "坏行不该被当成可跑的执行起起来"
+
+    async with SessionLocal() as s:
+        row = (
+            await s.execute(
+                sa_text("select status, error from run where id=:i"), {"i": rid}
+            )
+        ).first()
+    assert row is not None and row[0] == "error", "坏行应被落成终态，而不是永远留在 pending"
+    assert "未执行" in (row[1] or "")
+
+    # 落成终态后必须能删（界面不能出现"删不掉"的僵尸行）
+    resp = await client.delete(f"/api/runs/{rid}")
+    assert resp.status_code == 200
+    assert resp.json()["deleted"] == 1

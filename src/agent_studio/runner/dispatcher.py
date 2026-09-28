@@ -29,10 +29,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import Text, cast, select
 
 from ..config import settings
 from ..db import SessionLocal
@@ -155,22 +156,30 @@ class Dispatcher:
             return started
 
         # ② 库里 pending 的（**重启续跑**走这条；也可能包含上面正在起的那几条）
+        #
+        # ⚠️ 这里**按纯文本读列、自己解析**，不直接取 ORM 对象：JSON 列里一旦有
+        # 非法 JSON（外部脚本/手工 SQL/写了一半就断），SQLAlchemy 读行时会抛
+        # JSONDecodeError —— 那会让**整条 pending 扫描**炸掉（每秒一条堆栈），
+        # 而且此刻别的正常 pending 执行也一条都起不来。实测撞到过（见 06:09 日志）。
         async with SessionLocal() as session:
-            rows = list(
-                (
-                    await session.execute(
-                        select(Run)
-                        .where(Run.status == "pending")
-                        .order_by(Run.started_at.asc())
-                        .limit(free)
+            rows = (
+                await session.execute(
+                    select(
+                        Run.id,
+                        cast(Run.definition_snapshot, Text).label("snapshot_text"),
+                        cast(Run.input, Text).label("input_text"),
                     )
-                ).scalars()
-            )
-        for run in rows:
-            if self.is_running(run.id):
+                    .where(Run.status == "pending")
+                    .order_by(Run.started_at.asc())
+                    .limit(free)
+                )
+            ).all()
+        for run_id, snapshot_text, input_text in rows:
+            if self.is_running(run_id):
                 continue
-            snapshot = run.definition_snapshot or {}
             try:
+                snapshot = json.loads(snapshot_text) if snapshot_text else {}
+                run_input = json.loads(input_text) if input_text else {}
                 definition = AgentDefinition.model_validate(snapshot)
             except Exception:  # noqa: BLE001 —— 快照坏了不该让分发器停摆
                 # 坏快照之前是"跳过、留在 pending" —— 实测这条路是死结：
@@ -179,19 +188,36 @@ class Dispatcher:
                 #   · 它既**中断不了**（abort 只作用于内存里的任务/队列，这里没任务）
                 #     又**删不掉**（删除接口要求终态）—— 界面上永远挂着一条"待跑"。
                 # 所以直接落终态：如实说明原因，让用户能删、日志闭嘴。
-                async with SessionLocal() as _s:
-                    row = await _s.get(Run, run.id)
-                    if row is not None and row.status == "pending":
-                        row.status = "error"
-                        row.error = "这条执行的配置快照损坏、无法解析，未执行（可以直接删除）"
-                        row.ended_at = now_ms()
-                        row.started_at = row.started_at or row.ended_at
-                        await _s.commit()
-                logger.warning("执行 %s 的定义快照无法解析 → 已标为 error（不再每轮重扫）", run.id)
+                await self._mark_broken(run_id, "定义快照无法解析")
                 continue
-            self._spawn(run.id, definition, input_of(run.input), resumed=True)
-            started.append(run.id)
+            self._spawn(run_id, definition, input_of(run_input), resumed=True)
+            started.append(run_id)
         return started
+
+    async def _mark_broken(self, run_id: str, reason: str) -> None:
+        """把读不出/解析不了的行落成终态（绕开 ORM 水合，坏 JSON 也改得动）。
+
+        为什么不 ``session.get(Run, id)`` 再改：坏 JSON 的行**读都读不出来**，
+        用 ORM 取行会再抛一次 —— 那就又回到"既改不掉也删不掉"的死结。
+        这里用 core 的 UPDATE，只碰这一列。
+        """
+        from sqlalchemy import update
+
+        try:
+            async with SessionLocal() as session:
+                await session.execute(
+                    update(Run)
+                    .where(Run.id == run_id, Run.status == "pending")
+                    .values(
+                        status="error",
+                        error=f"这条执行的{reason}，未执行（可以直接删除）",
+                        ended_at=now_ms(),
+                    )
+                )
+                await session.commit()
+            logger.warning("执行 %s 的%s → 已标为 error（不再每轮重扫）", run_id, reason)
+        except Exception:  # noqa: BLE001 —— 落终态失败也不能让分发器停摆
+            logger.exception("把执行 %s 标为 error 失败", run_id)
 
     def _spawn(self, run_id: str, definition: AgentDefinition, run_input: Any, *, resumed: bool) -> bool:
         from .service import run_service

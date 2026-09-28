@@ -31,13 +31,14 @@
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, fmt } from "@/lib/api";
-import type { ActivityItem, Agent, RunDeleteResult } from "@/lib/types";
+import type { ActivityItem, Agent, LlmCall, RunDeleteResult } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
 import { KIND_LABEL } from "@/components/RunDetailDialog";
 import { SpanWaterfall } from "@/components/SpanWaterfall";
 import type { Span } from "@/lib/types";
 import { RunTimeline, eventsToSteps, type Step } from "@/components/ui/run-timeline";
 import { Mermaid } from "@/components/Mermaid";
+import { LlmCallsPanel } from "@/components/LlmCallsPanel";
 
 /**
  * 把一次分派画成调用链（Mermaid 源码）。
@@ -105,7 +106,14 @@ type Usage = Awaited<ReturnType<typeof api.usage>>;
 type Evts = Awaited<ReturnType<typeof api.runEvents>>;
 
 /** 就地展开的执行过程 + 耗时瀑布（懒加载：点了才拉，不点不请求） */
-type Detail = { loading: boolean; steps?: Step[]; spans?: Span[]; note?: string };
+type Detail = {
+  loading: boolean;
+  steps?: Step[];
+  spans?: Span[];
+  /** 每次模型调用的元数据（原文按需拉，见 LlmCallsPanel） */
+  llmCalls?: LlmCall[];
+  note?: string;
+};
 
 //: 一页多少条。50 是「看得见一屏内容」与「别一次读上千行」之间的取舍。
 const PAGE = 50;
@@ -285,6 +293,7 @@ export function RunsPanel() {
             loading: false,
             steps: eventsToSteps(evts, it.title),
             spans: (trace as { spans?: Span[] } | null)?.spans,
+            llmCalls: (trace as { llm_calls?: LlmCall[] } | null)?.llm_calls,
           },
         }));
       } catch (e) {
@@ -926,6 +935,11 @@ export function RunsPanel() {
                           </div>
                         </div>
                       )}
+
+                      {/* 模型请求：每次调用发了什么、回了什么（原文按需展开） */}
+                      <div className="mt-2">
+                        <LlmCallsPanel runId={it.id} calls={d.llmCalls} />
+                      </div>
                     </div>
                   )}
                 </Fragment>
