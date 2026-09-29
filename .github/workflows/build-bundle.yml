@@ -145,12 +145,18 @@ jobs:
         if: ${{ !inputs.skip_verify }}
         run: |
           set -uo pipefail
-          if [ "${{ matrix.arch }}" = "aarch64" ] && [ ! -e /proc/sys/fs/binfmt_misc/qemu-aarch64 ]; then
-            echo "::warning::qemu 未就绪，aarch64 只做结构校验"
-            tar tzf "$TAR" | head -8
-            exit 0
+          if [ "${{ matrix.arch }}" = "aarch64" ]; then
+            if [ ! -e /proc/sys/fs/binfmt_misc/qemu-aarch64 ]; then
+              echo "::warning::qemu 未就绪，aarch64 只做结构校验"
+              tar tzf "$TAR" | head -8
+              exit 0
+            fi
+            # qemu 下 uname -m 仍是 x86_64，用 BUNDLE_ARCH 显式指定跑 aarch64 那套
+            echo "[i] 用 qemu 模拟执行 aarch64 包（会比原生慢）"
+            BUNDLE_ARCH=aarch64 bash scripts/verify-bundle.sh "$TAR" 8848
+          else
+            bash scripts/verify-bundle.sh "$TAR" 8848
           fi
-          bash scripts/verify-bundle.sh "$TAR" 8848
 
       - name: 上传产物
         uses: actions/upload-artifact@v4
