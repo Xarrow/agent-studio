@@ -53,8 +53,8 @@ unset STUDIO_MASTER_KEY STUDIO_DB_PATH STUDIO_WEB_DIST STUDIO_ACCESS_TOKEN
 [ -n "${BUNDLE_ARCH:-}" ] && echo "  强制架构：$BUNDLE_ARCH（交叉验证）"
 export BUNDLE_ARCH="${BUNDLE_ARCH:-}"
 PORT="$PORT" ./start.sh > "$WORK/run.log" 2>&1 &
-# 等待就绪：x86 原生几秒；aarch64 若走 qemu 模拟，导入重依赖可能要一两分钟
-for i in $(seq 1 150); do
+# 等待就绪：x86 原生几秒；aarch64 若走 qemu 模拟，导入 agentscope/numpy 可能要几分钟
+for i in $(seq 1 300); do
   sleep 1
   curl -sf -m 2 "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1 && break
 done
