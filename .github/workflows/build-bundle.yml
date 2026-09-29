@@ -82,7 +82,15 @@ jobs:
           mkdir -p "bundle/runtime/${{ matrix.arch }}/python"
           tar xzf pbs.tar.gz -C "bundle/runtime/${{ matrix.arch }}" --strip-components=1
           mv "bundle/runtime/${{ matrix.arch }}/"{bin,lib,include,share} "bundle/runtime/${{ matrix.arch }}/python/" 2>/dev/null || true
-          "bundle/runtime/${{ matrix.arch }}/python/bin/python3" -V
+          # 交叉架构时**不能执行**该解释器（Exec format error），只校验 ELF 架构
+          if [ "${{ matrix.arch }}" = "$(uname -m)" ]; then
+            "bundle/runtime/${{ matrix.arch }}/python/bin/python3" -V
+          else
+            ELFARCH=$(readelf -h "bundle/runtime/${{ matrix.arch }}/python/bin/python3.13" \
+                      | awk -F: '/Machine/{print $2}' | xargs)
+            echo "交叉架构：不执行，仅校验 ELF（Machine=$ELFARCH）"
+            case "$ELFARCH" in *AArch64*) echo "ELF 架构正确" ;; *) echo "::error::ELF 架构不符"; exit 1 ;; esac
+          fi
 
       # ---------- 4) 预展开依赖（目标机零安装） ----------
       - name: 展开依赖到 vendor/${{ matrix.arch }}/site-packages
