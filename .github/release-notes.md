@@ -31,10 +31,10 @@ Linux **x86_64** 或 **aarch64**，**glibc ≥ 2.34**（Ubuntu 22.04+ / Debian 1
 
 ### 本版本已通过的验证
 
-- **构建**：双架构均打包成功（内置 CPython 3.13，依赖按架构预展开）
-- **同机验证**：x86_64 原生；aarch64 经 qemu 模拟
+- **构建**：x86_64 打包成功（内置 CPython 3.13，依赖按架构预展开）
+- **同机验证**：x86_64 原生运行验证
 - **多环境验证**：Ubuntu 22.04 / Ubuntu 24.04 / Debian 12 / Rocky 9 全部通过
-- **反向验收**：Debian 11（glibc 2.31）按预期被版本守卫拦下
+- **反向验收**：Rocky 8（glibc 2.28）按预期被版本守卫拦下并给出人话提示
 
 判据包括：`/api/health` 200 且 `runtimes` 含 `agentscope`、7 个页面全 200、
 `/.well-known/agent-card.json` 200、SQLite 落盘、以及**服务进程的解释器来自包内
