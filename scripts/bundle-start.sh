@@ -14,7 +14,9 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 # --- 架构识别（本包含 x86_64 / aarch64 两套运行时） -------------------------
-ARCH="$(uname -m)"
+# BUNDLE_ARCH 用于显式覆盖：qemu 交叉验证时 uname -m 仍报宿主机架构，
+# 需要手动指定跑哪一套（例：BUNDLE_ARCH=aarch64 ./start.sh）
+ARCH="${BUNDLE_ARCH:-$(uname -m)}"
 case "$ARCH" in
   x86_64|amd64) ARCH=x86_64 ;;
   aarch64|arm64) ARCH=aarch64 ;;
