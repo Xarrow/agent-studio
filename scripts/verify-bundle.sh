@@ -42,7 +42,8 @@ gzip -t "$PKG" && ok "gzip 完整性通过" || bad "包损坏"
 
 note "2) 解包（全新空目录）"
 tar xzf "$PKG" || { bad "解包失败"; exit 1; }
-cd agent-studio || { bad "缺 agent-studio 目录"; exit 1; }
+# 包里可能是 agent-studio/ 顶层目录，也可能是平铺结构 —— 两种都接受
+if [ -d agent-studio ]; then cd agent-studio; else echo "  （平铺结构，直接在当前目录验证）"; fi
 ls -1 | sed 's/^/  /'
 [ -x start.sh ] || { chmod +x start.sh; }
 
