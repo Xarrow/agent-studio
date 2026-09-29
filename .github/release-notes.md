@@ -7,13 +7,15 @@
 | 文件 | 说明 |
 |---|---|
 | `agent-studio-*-x86_64.tar.gz` | Intel/AMD x86_64 服务器 |
-| `agent-studio-*-aarch64.tar.gz` | ARM64 (aarch64) 服务器 |
 | `SHA256SUMS.txt` | 校验和 |
+
+> 本版只提供 x86_64。ARM64 的构建流水线已在 workflow 中备好（交叉下载依赖 +
+> qemu 模拟验证），需要时把矩阵里的 `aarch64` 加回来即可。
 
 ### 用法
 
 ```bash
-tar xzf agent-studio-*-<arch>.tar.gz
+tar xzf agent-studio-*-x86_64.tar.gz
 cd agent-studio
 ./start.sh                 # 默认 :8848
 ```
