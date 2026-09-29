@@ -58,11 +58,15 @@ for i in $(seq 1 300); do
   sleep 1
   curl -sf -m 2 "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1 && break
 done
-sed 's/^/  /' "$WORK/run.log" | head -8
+sed 's/^/  /' "$WORK/run.log" | head -6
 
 note "4) 取证"
 H=$(curl -s -m 8 "http://127.0.0.1:$PORT/api/health")
 echo "  health   : $H"
+if ! echo "$H" | grep -q '"status":"ok"'; then
+  echo "  --- 启动日志全文（服务没起来时，报错都在这里）---"
+  sed 's/^/    /' "$WORK/run.log" | tail -60
+fi
 echo "$H" | grep -q '"status":"ok"' && ok "health ok" || bad "health 异常"
 # 决定性判据：运行时被正确发现（动态导入在打包/冻结环境下最容易断的一环）
 echo "$H" | grep -q 'agentscope' && ok "运行时已发现：agentscope" || bad "运行时未发现（动态导断链）"
