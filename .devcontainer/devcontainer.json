@@ -1,8 +1,6 @@
 {
   "name": "Agent Studio 离线包验证",
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
-  "postCreateCommand": "bash .devcontainer/verify-on-open.sh",
-  "postAttachCommand": "bash .devcontainer/verify-on-open.sh",
   "hostRequirements": {
     "cpus": 2,
     "memory": "4gb",
