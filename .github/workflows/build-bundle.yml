@@ -1,14 +1,21 @@
 name: 构建离线一体包
 
 # ============================================================================
-#  在 CI 里打包 + 多环境验证（不在开发机上打、也不依赖 Codespaces）
+#  打包 → 多环境验证 → 验证通过才发布
 #
-#  两个 job：
-#    build        —— 矩阵双架构产出离线包，并在同机验证（aarch64 走 qemu 模拟）
-#    verify-multi —— 拿 x86_64 包，在**多种环境**里分别验证：
-#                    · GitHub runner 原生：Ubuntu 22.04 (glibc 2.35) / 24.04 (2.39)
-#                    · 容器镜像：Debian 12 / Rocky 9（近真实服务器）
-#                    · Debian 11 (glibc 2.31)：预期被版本守卫拦下 —— 反向验收
+#  全流程跑在 GitHub 云端 runner 上，开发机不参与构建与验证。
+#
+#  三个 job（层层把关，任一处不过就不发布）：
+#
+#  build        矩阵双架构打包，并在同机验证
+#                 · x86_64 原生跑
+#                 · aarch64 走 qemu 模拟（需补交叉 libc/libgcc 供 qemu 使用）
+#  verify-multi 用 x86_64 包在多种环境里分别验证
+#                 · Ubuntu 22.04 (glibc 2.35) / 24.04 (2.39)  ← runner 原生
+#                 · Debian 12 (2.36) / Rocky 9 (2.34)        ← 容器，贴近真实服务器
+#                 · Debian 11 (2.31)                          ← 预期被拦下（反向验收）
+#  release      仅当 build 与 verify-multi 全部成功，才发布包 + 校验和到 Release
+#
 #  产物：agent-studio-<日期>-<arch>.tar.gz（顶层目录 agent-studio/）
 # ============================================================================
 on:
@@ -23,10 +30,15 @@ on:
         required: false
         default: '20260924'
       skip_verify:
-        description: '跳过验证（仅打包）'
+        description: '跳过验证（仅打包，不发布）'
         required: false
         type: boolean
         default: false
+      publish:
+        description: '验证通过后发布到 Release'
+        required: false
+        type: boolean
+        default: true
   push:
     tags:
       - 'bundle-*'
@@ -136,6 +148,9 @@ jobs:
 
       - name: 同机验证
         if: ${{ !inputs.skip_verify }}
+        env:
+          # 供 qemu 找 aarch64 的加载器与运行库（真机上这些是系统自带）
+          QEMU_LD_PREFIX: /usr/aarch64-linux-gnu
         run: |
           set -uo pipefail
           if [ "${{ matrix.arch }}" = "aarch64" ]; then
@@ -145,16 +160,18 @@ jobs:
               exit 0
             fi
             sudo apt-get update -qq
-            sudo apt-get install -y -qq libc6-arm64-cross || true
-            export QEMU_LD_PREFIX=/usr/aarch64-linux-gnu
+            sudo apt-get install -y -qq libc6-arm64-cross libgcc-s1-arm64-cross libstdc++6-arm64-cross || true
+            ls -l /usr/aarch64-linux-gnu/lib/ld-linux-aarch64.so.1 /usr/aarch64-linux-gnu/lib/libgcc_s.so.1 2>/dev/null \
+              || echo "::warning::交叉运行库可能不全"
             echo "[i] qemu 模拟执行 aarch64 包（比原生慢）"
-            echo "[i] 第一轮：按默认方式启动（走 uvloop）"
+            echo "[i] 第一轮：默认方式（走 uvloop）"
             if BUNDLE_ARCH=aarch64 bash scripts/verify-bundle.sh "$TAR" 8848; then
               echo "✅ aarch64 默认方式即通过"
               exit 0
             fi
-            echo "::warning::默认方式未通过（日志见上）。qemu-user 对 uvloop 依赖的 syscall 支持不全，"
-            echo "::warning::改用 --loop asyncio 复验 —— 验证的是包内 aarch64 运行时与原生依赖本身能否工作。"
+            echo "::warning::默认方式未通过（日志见上）。改用 --loop asyncio 复验 ——"
+            echo "::warning::qemu-user 对 uvloop 依赖的 syscall 支持不全；这一步验证的是包内 aarch64"
+            echo "::warning::运行时与原生依赖本身能否工作，uvloop 在真机上的表现需真机确认。"
             UVICORN_EXTRA_ARGS="--loop asyncio" BUNDLE_ARCH=aarch64 bash scripts/verify-bundle.sh "$TAR" 8848
           else
             bash scripts/verify-bundle.sh "$TAR" 8848
@@ -166,16 +183,11 @@ jobs:
           path: agent-studio-*.tar.gz
           retention-days: 14
 
-      - name: 附加到 Release（tag 触发时）
-        if: startsWith(github.ref, 'refs/tags/bundle-')
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${GITHUB_REF_NAME}" "$TAR" --clobber
-
   verify-multi:
     name: 多环境验证 · ${{ matrix.label }}
     needs: build
-    if: ${{ !inputs.skip_verify }}
+    # 某一路（如 aarch64）失败也不拖累这一组 —— 它验的是 x86_64 包，那一路是成功的
+    if: ${{ always() && !cancelled() && !inputs.skip_verify }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
     strategy:
@@ -198,9 +210,54 @@ jobs:
       - name: 验证
         run: |
           set -uo pipefail
-          TAR="$(ls -1 pkg/*.tar.gz | head -1)"
+          TAR="$(ls -1 pkg/*.tar.gz 2>/dev/null | head -1)"
+          [ -n "$TAR" ] || { echo "::error::没拿到 x86_64 包（构建那一步可能失败）"; exit 1; }
           echo "包：$TAR（$(du -h "$TAR" | cut -f1)）"
           ARGS=()
           [ "${{ matrix.mode }}" = "docker" ] && ARGS+=(--image "${{ matrix.image }}")
           [ "${{ matrix.expect_blocked }}" = "true" ] && ARGS+=(--expect-blocked)
           bash scripts/verify-in-env.sh "$TAR" "${ARGS[@]}"
+
+  release:
+    name: 发布到 GitHub Release
+    needs: [build, verify-multi]
+    # 发布门禁：所有构建 + 所有环境的验证都成功才发布
+    if: >-
+      ${{ always()
+          && needs.build.result == 'success'
+          && needs.verify-multi.result == 'success'
+          && !inputs.skip_verify
+          && inputs.publish != false }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: 生成校验和
+        run: |
+          cd dist && ls -lh
+          sha256sum *.tar.gz | tee SHA256SUMS.txt
+
+      - name: 发布
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="bundle-$(date +%Y%m%d)-$(git rev-parse --short HEAD)"
+          TITLE="Agent Studio 离线一体包 ${TAG}"
+          NOTES=$(mktemp)
+          cp .github/release-notes.md "$NOTES"
+          printf '\n### 校验和\n\n```\n' >> "$NOTES"
+          cat dist/SHA256SUMS.txt >> "$NOTES"
+          printf '```\n' >> "$NOTES"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "$TITLE" --notes-file "$NOTES"
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* --title "$TITLE" --notes-file "$NOTES"
+          fi
+          gh release view "$TAG" --json url -q .url
