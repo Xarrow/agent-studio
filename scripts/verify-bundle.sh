@@ -23,6 +23,10 @@ echo "  Node     : $(command -v node >/dev/null && node -v || echo '未安装（
 echo "  Python   : $(command -v python3 >/dev/null && python3 -V || echo '未安装（包自带）')"
 
 note "1) 取包"
+# 先把入参转成绝对路径 —— 下面会 cd 进临时目录，相对路径届时会失效（CI 里踩过）
+if [ -n "$SRC" ] && [[ ! "$SRC" =~ ^https?:// ]]; then
+  SRC="$(readlink -f "$SRC")"
+fi
 cd "$WORK"
 if [ -z "$SRC" ]; then
   echo "  未传参数，跳过取包（需手动放 tar 到当前目录）"; ls -1 *.tar.gz 2>/dev/null || { bad "没有 tar.gz"; exit 1; }
