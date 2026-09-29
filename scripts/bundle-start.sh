@@ -63,5 +63,8 @@ fi
 # --- 启动 -------------------------------------------------------------------
 PORT="${PORT:-8848}"
 echo "[3/3] Agent Studio 启动 → http://0.0.0.0:${PORT}   (Ctrl+C 停止)"
-exec "$PY" -m uvicorn agent_studio.main:app \
-  --app-dir app/src --host 0.0.0.0 --port "$PORT"
+# UVICORN_EXTRA_ARGS：透传额外的 uvicorn 参数（例：--loop asyncio 可绕开
+# uvloop —— 在 qemu 模拟环境下 uvloop 可能触发不支持的 syscall）
+# shellcheck disable=SC2086
+exec "$PY" -m uvicorn agent_studio.main:app --app-dir app/src \
+  --host 0.0.0.0 --port "$PORT" ${UVICORN_EXTRA_ARGS:-}
