@@ -1,0 +1,157 @@
+name: 构建离线一体包
+
+# ============================================================================
+#  在 CI 里打包（而不是在开发机上打）
+#    · 环境干净可复现，谁都能重跑出同样的包
+#    · runner 直连 GitHub / PyPI，不必绕代理；aarch64 也能交叉下载依赖
+#    · 打完立刻在同一个干净 runner 上做净机验证，包和证据一起产出
+#
+#  产物：agent-studio-<日期>-<arch>.tar.gz
+#    · 上传为 workflow artifact（Actions 页面可直接下载）
+#    · tag 触发时同时挂到对应 Release
+# ============================================================================
+on:
+  workflow_dispatch:
+    inputs:
+      python_version:
+        description: '内置 CPython 版本'
+        required: false
+        default: '3.13.15'
+      pbs_tag:
+        description: 'python-build-standalone 发布标签'
+        required: false
+        default: '20260924'
+      skip_verify:
+        description: '跳过净机验证（仅打包）'
+        required: false
+        type: boolean
+        default: false
+  push:
+    tags:
+      - 'bundle-*'
+
+permissions:
+  contents: write
+
+env:
+  PYV: ${{ inputs.python_version || '3.13.15' }}
+  PBS_TAG: ${{ inputs.pbs_tag || '20260924' }}
+
+jobs:
+  build:
+    name: 打包 ${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86_64, aarch64]
+    steps:
+      - uses: actions/checkout@v4
+
+      # ---------- 1) 前端：静态导出（运行期不需要 Node） ----------
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: 构建前端（next build → out/）
+        working-directory: web
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+          npm run build
+          test -f out/index.html || { echo "::error::前端未产出 out/index.html"; exit 1; }
+          echo "前端产物 $(du -sh out | cut -f1) / $(find out -type f | wc -l) 个文件"
+
+      # ---------- 2) 依赖清单：从 uv.lock 导出，保证可复现 ----------
+      - uses: astral-sh/setup-uv@v5
+
+      - name: 导出锁定依赖
+        run: |
+          uv export --frozen --no-dev --no-emit-project --no-hashes -o requirements-lock.txt
+          echo "依赖条目：$(grep -c . requirements-lock.txt)"; head -5 requirements-lock.txt
+
+      # ---------- 3) 内置 Python 运行时 ----------
+      - name: 下载内置 CPython（${{ matrix.arch }}）
+        run: |
+          set -euo pipefail
+          U="https://github.com/astral-sh/python-build-standalone/releases/download/${PBS_TAG}/cpython-${PYV}%2B${PBS_TAG}-${{ matrix.arch }}-unknown-linux-gnu-install_only_stripped.tar.gz"
+          echo "下载 $U"
+          curl -fL --retry 3 -o pbs.tar.gz "$U"
+          mkdir -p "bundle/runtime/${{ matrix.arch }}/python"
+          tar xzf pbs.tar.gz -C "bundle/runtime/${{ matrix.arch }}" --strip-components=1
+          mv "bundle/runtime/${{ matrix.arch }}/"{bin,lib,include,share} "bundle/runtime/${{ matrix.arch }}/python/" 2>/dev/null || true
+          "bundle/runtime/${{ matrix.arch }}/python/bin/python3" -V
+
+      # ---------- 4) 预展开依赖（目标机零安装） ----------
+      - name: 展开依赖到 vendor/${{ matrix.arch }}/site-packages
+        run: |
+          set -euo pipefail
+          SP="bundle/vendor/${{ matrix.arch }}/site-packages"
+          mkdir -p "$SP"
+          if [ "${{ matrix.arch }}" = "$(uname -m)" ]; then
+            echo "架构一致 → 直接安装"
+            "bundle/runtime/${{ matrix.arch }}/python/bin/python3" -m pip install -q \
+              --no-warn-script-location --target "$SP" -r requirements-lock.txt
+          else
+            echo "交叉架构 → 下载该架构 wheel 后展开（不执行）"
+            python3 -m pip install -q --target "$SP" --only-binary=:all: \
+              --platform manylinux2014_${{ matrix.arch }} \
+              --platform manylinux_2_28_${{ matrix.arch }} \
+              --platform manylinux_2_24_${{ matrix.arch }} \
+              --platform manylinux_2_17_${{ matrix.arch }} \
+              --python-version 3.13 --implementation cp --abi cp313 \
+              -r requirements-lock.txt
+          fi
+          echo "顶层条目 $(ls "$SP" | wc -l)，原生扩展 $(find "$SP" -name '*.so' | wc -l)"
+
+      # ---------- 5) 组装 + 打包 ----------
+      - name: 组装并打包
+        run: |
+          set -euo pipefail
+          mkdir -p bundle/app
+          cp -a src bundle/app/src
+          mkdir -p bundle/app/web
+          cp -a web/out bundle/app/web/out
+          cp scripts/bundle-start.sh bundle/start.sh
+          cp scripts/bundle-README.md bundle/README.md
+          cp requirements-lock.txt bundle/
+          chmod +x bundle/start.sh
+          rm -rf bundle/data
+          find bundle -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null || true
+          TAR="agent-studio-$(date +%Y%m%d)-${{ matrix.arch }}.tar.gz"
+          tar czf "$TAR" -C bundle .
+          gzip -t "$TAR"
+          echo "TAR=$TAR" >> "$GITHUB_ENV"
+          ls -lh "$TAR"
+
+      # ---------- 6) 净机验证（x86_64 原生；aarch64 走 qemu） ----------
+      - if: matrix.arch == 'aarch64'
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: 净机验证
+        if: ${{ !inputs.skip_verify }}
+        run: |
+          set -uo pipefail
+          if [ "${{ matrix.arch }}" = "aarch64" ] && [ ! -e /proc/sys/fs/binfmt_misc/qemu-aarch64 ]; then
+            echo "::warning::qemu 未就绪，aarch64 只做结构校验"
+            tar tzf "$TAR" | head -8
+            exit 0
+          fi
+          bash scripts/verify-bundle.sh "$TAR" 8848
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-studio-${{ matrix.arch }}
+          path: agent-studio-*.tar.gz
+          retention-days: 14
+
+      - name: 附加到 Release（tag 触发时）
+        if: startsWith(github.ref, 'refs/tags/bundle-')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${GITHUB_REF_NAME}" "$TAR" --clobber
