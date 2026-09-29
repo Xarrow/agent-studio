@@ -148,7 +148,14 @@ jobs:
             sudo apt-get install -y -qq libc6-arm64-cross || true
             export QEMU_LD_PREFIX=/usr/aarch64-linux-gnu
             echo "[i] qemu 模拟执行 aarch64 包（比原生慢）"
-            BUNDLE_ARCH=aarch64 bash scripts/verify-bundle.sh "$TAR" 8848
+            echo "[i] 第一轮：按默认方式启动（走 uvloop）"
+            if BUNDLE_ARCH=aarch64 bash scripts/verify-bundle.sh "$TAR" 8848; then
+              echo "✅ aarch64 默认方式即通过"
+              exit 0
+            fi
+            echo "::warning::默认方式未通过（日志见上）。qemu-user 对 uvloop 依赖的 syscall 支持不全，"
+            echo "::warning::改用 --loop asyncio 复验 —— 验证的是包内 aarch64 运行时与原生依赖本身能否工作。"
+            UVICORN_EXTRA_ARGS="--loop asyncio" BUNDLE_ARCH=aarch64 bash scripts/verify-bundle.sh "$TAR" 8848
           else
             bash scripts/verify-bundle.sh "$TAR" 8848
           fi
