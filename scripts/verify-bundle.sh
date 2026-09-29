@@ -49,6 +49,9 @@ ls -1 | sed 's/^/  /'
 
 note "3) 启动"
 unset STUDIO_MASTER_KEY STUDIO_DB_PATH STUDIO_WEB_DIST STUDIO_ACCESS_TOKEN
+# 交叉验证（qemu 跑异架构包）时由外部指定，例：BUNDLE_ARCH=aarch64 bash verify-bundle.sh pkg.tar.gz
+[ -n "${BUNDLE_ARCH:-}" ] && echo "  强制架构：$BUNDLE_ARCH（交叉验证）"
+export BUNDLE_ARCH="${BUNDLE_ARCH:-}"
 PORT="$PORT" ./start.sh > "$WORK/run.log" 2>&1 &
 # 等待就绪：x86 原生几秒；aarch64 若走 qemu 模拟，导入重依赖可能要一两分钟
 for i in $(seq 1 150); do
