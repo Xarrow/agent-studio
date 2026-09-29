@@ -1,0 +1,52 @@
+name: 验证离线包（干净机器）
+
+# 目的：在 GitHub 的干净 runner 上验证离线一体包 —— 不经我的本机，
+# 证明「目标机零依赖、解压即跑」这个承诺在陌生环境里也成立。
+on:
+  workflow_dispatch:
+    inputs:
+      asset_url:
+        description: '离线包下载地址（留空则自动取本仓库最新 Release 的 .tar.gz 资产）'
+        required: false
+        default: ''
+      port:
+        description: '验证用端口'
+        required: false
+        default: '8848'
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: 解包 → 启动 → 取证
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+
+      - name: 取包（Release 资产 / 指定 URL）
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ASSET_URL: ${{ inputs.asset_url }}
+        run: |
+          set -euo pipefail
+          if [ -n "${ASSET_URL:-}" ]; then
+            echo "使用指定 URL：$ASSET_URL"
+            echo "ASSET_URL=$ASSET_URL" >> "$GITHUB_ENV"
+          else
+            # 私有仓库：用 gh CLI（runner 预装且已认证）拉本仓库最新 Release 的资产
+            gh release download --repo "$GITHUB_REPOSITORY" --pattern '*.tar.gz' --dir /tmp/pkg --clobber
+            TAR=$(ls -1 /tmp/pkg/*.tar.gz | head -1)
+            echo "已下载资产：$TAR ($(du -h "$TAR" | cut -f1))"
+            echo "ASSET_URL=$TAR" >> "$GITHUB_ENV"
+          fi
+
+      - name: 净机验证
+        env:
+          PORT_IN: ${{ inputs.port }}
+        run: |
+          bash scripts/verify-bundle.sh "${ASSET_URL}" "${PORT_IN:-8848}"
