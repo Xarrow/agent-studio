@@ -59,7 +59,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x86_64, aarch64]
+        # 当前只打包与验证 Intel（x86_64）。
+        # 需要恢复 ARM 时，把下面的 aarch64 加回矩阵即可 —— 交叉下载依赖、
+        # qemu 模拟验证（含交叉 libc/libgcc 与 --loop asyncio 兜底）的代码都还在。
+        arch: [x86_64]
     steps:
       - uses: actions/checkout@v4
 
