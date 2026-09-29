@@ -151,8 +151,15 @@ jobs:
               tar tzf "$TAR" | head -8
               exit 0
             fi
-            # qemu 下 uname -m 仍是 x86_64，用 BUNDLE_ARCH 显式指定跑 aarch64 那套
-            echo "[i] 用 qemu 模拟执行 aarch64 包（会比原生慢）"
+            # qemu 下 uname -m 仍是 x86_64 → 用 BUNDLE_ARCH 指定跑哪套；
+            # 另外 x86 机器没有 aarch64 的动态加载器，装交叉 libc 并用 QEMU_LD_PREFIX 指过去
+            echo "[i] 装 aarch64 交叉 libc 供 qemu 使用"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq libc6-arm64-cross || true
+            ls -d /usr/aarch64-linux-gnu/lib/ld-linux-aarch64.so.1 2>/dev/null \
+              && echo "交叉加载器就位" || echo "::warning::交叉加载器缺失，可能失败"
+            export QEMU_LD_PREFIX=/usr/aarch64-linux-gnu
+            echo "[i] 用 qemu 模拟执行 aarch64 包（比原生慢，耐心等）"
             BUNDLE_ARCH=aarch64 bash scripts/verify-bundle.sh "$TAR" 8848
           else
             bash scripts/verify-bundle.sh "$TAR" 8848
