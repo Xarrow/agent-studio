@@ -3,10 +3,10 @@ name: 构建离线一体包
 # ============================================================================
 #  在 CI 里打包（而不是在开发机上打）
 #    · 环境干净可复现，谁都能重跑出同样的包
-#    · runner 直连 GitHub / PyPI，不必绕代理；aarch64 也能交叉下载依赖
+#    · runner 直连 GitHub / PyPI 不必绕代理；aarch64 也能交叉下载依赖
 #    · 打完立刻在同一个干净 runner 上做净机验证，包和证据一起产出
 #
-#  产物：agent-studio-<日期>-<arch>.tar.gz
+#  产物：agent-studio-<日期>-<arch>.tar.gz（顶层目录 agent-studio/）
 #    · 上传为 workflow artifact（Actions 页面可直接下载）
 #    · tag 触发时同时挂到对应 Release
 # ============================================================================
@@ -36,6 +36,7 @@ permissions:
 env:
   PYV: ${{ inputs.python_version || '3.13.15' }}
   PBS_TAG: ${{ inputs.pbs_tag || '20260924' }}
+  PKG: agent-studio
 
 jobs:
   build:
@@ -79,14 +80,14 @@ jobs:
           U="https://github.com/astral-sh/python-build-standalone/releases/download/${PBS_TAG}/cpython-${PYV}%2B${PBS_TAG}-${{ matrix.arch }}-unknown-linux-gnu-install_only_stripped.tar.gz"
           echo "下载 $U"
           curl -fL --retry 3 -o pbs.tar.gz "$U"
-          mkdir -p "bundle/runtime/${{ matrix.arch }}/python"
-          tar xzf pbs.tar.gz -C "bundle/runtime/${{ matrix.arch }}" --strip-components=1
-          mv "bundle/runtime/${{ matrix.arch }}/"{bin,lib,include,share} "bundle/runtime/${{ matrix.arch }}/python/" 2>/dev/null || true
-          # 交叉架构时**不能执行**该解释器（Exec format error），只校验 ELF 架构
+          mkdir -p "$PKG/runtime/${{ matrix.arch }}/python"
+          tar xzf pbs.tar.gz -C "$PKG/runtime/${{ matrix.arch }}" --strip-components=1
+          mv "$PKG/runtime/${{ matrix.arch }}/"{bin,lib,include,share} "$PKG/runtime/${{ matrix.arch }}/python/" 2>/dev/null || true
+          # 交叉架构时不能执行该解释器（Exec format error），只校验 ELF 架构
           if [ "${{ matrix.arch }}" = "$(uname -m)" ]; then
-            "bundle/runtime/${{ matrix.arch }}/python/bin/python3" -V
+            "$PKG/runtime/${{ matrix.arch }}/python/bin/python3" -V
           else
-            ELFARCH=$(readelf -h "bundle/runtime/${{ matrix.arch }}/python/bin/python3.13" \
+            ELFARCH=$(readelf -h "$PKG/runtime/${{ matrix.arch }}/python/bin/python3.13" \
                       | awk -F: '/Machine/{print $2}' | xargs)
             echo "交叉架构：不执行，仅校验 ELF（Machine=$ELFARCH）"
             case "$ELFARCH" in *AArch64*) echo "ELF 架构正确" ;; *) echo "::error::ELF 架构不符"; exit 1 ;; esac
@@ -96,11 +97,11 @@ jobs:
       - name: 展开依赖到 vendor/${{ matrix.arch }}/site-packages
         run: |
           set -euo pipefail
-          SP="bundle/vendor/${{ matrix.arch }}/site-packages"
+          SP="$PKG/vendor/${{ matrix.arch }}/site-packages"
           mkdir -p "$SP"
           if [ "${{ matrix.arch }}" = "$(uname -m)" ]; then
             echo "架构一致 → 直接安装"
-            "bundle/runtime/${{ matrix.arch }}/python/bin/python3" -m pip install -q \
+            "$PKG/runtime/${{ matrix.arch }}/python/bin/python3" -m pip install -q \
               --no-warn-script-location --target "$SP" -r requirements-lock.txt
           else
             echo "交叉架构 → 下载该架构 wheel 后展开（不执行）"
@@ -114,23 +115,23 @@ jobs:
           fi
           echo "顶层条目 $(ls "$SP" | wc -l)，原生扩展 $(find "$SP" -name '*.so' | wc -l)"
 
-      # ---------- 5) 组装 + 打包 ----------
+      # ---------- 5) 组装 + 打包（顶层目录必须是 agent-studio/，与文档一致） ----------
       - name: 组装并打包
         run: |
           set -euo pipefail
-          mkdir -p bundle/app
-          cp -a src bundle/app/src
-          mkdir -p bundle/app/web
-          cp -a web/out bundle/app/web/out
-          cp scripts/bundle-start.sh bundle/start.sh
-          cp scripts/bundle-README.md bundle/README.md
-          cp requirements-lock.txt bundle/
-          chmod +x bundle/start.sh
-          rm -rf bundle/data
-          find bundle -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null || true
+          mkdir -p "$PKG/app/web"
+          cp -a src "$PKG/app/src"
+          cp -a web/out "$PKG/app/web/out"
+          cp scripts/bundle-start.sh "$PKG/start.sh"
+          cp scripts/bundle-README.md "$PKG/README.md"
+          cp requirements-lock.txt "$PKG/"
+          chmod +x "$PKG/start.sh"
+          rm -rf "$PKG/data"
+          find "$PKG" -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null || true
           TAR="agent-studio-$(date +%Y%m%d)-${{ matrix.arch }}.tar.gz"
-          tar czf "$TAR" -C bundle .
+          tar czf "$TAR" "$PKG"
           gzip -t "$TAR"
+          echo "顶层结构：$(tar tzf "$TAR" | head -1)"
           echo "TAR=$TAR" >> "$GITHUB_ENV"
           ls -lh "$TAR"
 
