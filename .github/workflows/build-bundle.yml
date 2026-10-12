@@ -221,14 +221,75 @@ jobs:
           [ "${{ matrix.expect_blocked }}" = "true" ] && ARGS+=(--expect-blocked)
           bash scripts/verify-in-env.sh "$TAR" "${ARGS[@]}"
 
+  build-dev:
+    name: 打包开发包
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: 生成锁定依赖
+        run: uv export --frozen --no-dev --no-emit-project --no-hashes -o requirements-lock.txt || true
+
+      - name: 打开发包
+        run: |
+          set -euo pipefail
+          OUT="$PWD/dist" bash scripts/build-dev-bundle.sh
+          ls -lh dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent-studio-dev
+          path: dist/*.tar.gz
+
+  verify-dev:
+    name: 开发包环境验证 · ${{ matrix.label }}
+    needs: build-dev
+    if: ${{ always() && !cancelled() && !inputs.skip_verify }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { label: 'Ubuntu 22.04', os: 'ubuntu-22.04' }
+          - { label: 'Ubuntu 24.04', os: 'ubuntu-24.04' }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: agent-studio-dev
+          path: pkg
+
+      - uses: astral-sh/setup-uv@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: 验证（真解包、真启动、真取数）
+        run: |
+          set -uo pipefail
+          TAR="$(ls -1 pkg/*.tar.gz 2>/dev/null | head -1)"
+          [ -n "$TAR" ] || { echo "::error::没拿到开发包"; exit 1; }
+          bash scripts/verify-dev-in-env.sh "$TAR" 8861 3100
+
   release:
     name: 发布到 GitHub Release
-    needs: [build, verify-multi]
-    # 发布门禁：所有构建 + 所有环境的验证都成功才发布
+    needs: [build, verify-multi, build-dev, verify-dev]
+    # 发布门禁：所有构建 + 所有环境的验证都成功才发布（两个包都过）
     if: >-
       ${{ always()
           && needs.build.result == 'success'
           && needs.verify-multi.result == 'success'
+          && needs.build-dev.result == 'success'
+          && needs.verify-dev.result == 'success'
           && !inputs.skip_verify
           && inputs.publish != false }}
     runs-on: ubuntu-latest
