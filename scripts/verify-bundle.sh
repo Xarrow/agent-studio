@@ -94,9 +94,28 @@ ls -la data | sed 's/^/    /'
 [ -s data/studio.db ] && ok "SQLite 已创建" || bad "SQLite 未创建"
 
 note "5) 证明用的是包内 Python（而非系统 Python）"
+# 取"监听某端口"的进程号；ss 在精简镜像里可能缺失或拿不到 pid=，故带兜底
+port_pid() {
+  local P="$1" X=""
+  if command -v ss >/dev/null 2>&1; then
+    X="$(ss -ltnpH "sport = :$P" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | head -1)"
+    [ -n "$X" ] && { echo "$X"; return; }
+  fi
+  if command -v lsof >/dev/null 2>&1; then
+    X="$(lsof -t -iTCP:"$P" -sTCP:LISTEN 2>/dev/null | head -1)"
+    [ -n "$X" ] && { echo "$X"; return; }
+  fi
+  # 兜底：包内服务的工作目录就是解包目录，按它唯一匹配
+  local d
+  for d in /proc/[0-9]*; do
+    if [ "$(readlink -f "$d/cwd" 2>/dev/null)" = "$PKG" ] && grep -qa uvicorn "$d/cmdline" 2>/dev/null; then
+      echo "${d#/proc/}"; return
+    fi
+  done
+}
 # 只认"本次测试端口"上的进程。pgrep -f 会连本机其他 uvicorn（生产服务）一起匹配，
 # 取到别的进程就会把解释器判成系统的（曾误报 /root/miniconda3/bin/python3.13）
-PID="$(ss -ltnpH "sport = :$PORT" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | head -1)"
+PID="$(port_pid "$PORT")"
 if [ -n "$PID" ]; then
   EXE=$(readlink -f "/proc/$PID/exe" 2>/dev/null || echo unknown)
   echo "  服务进程 : PID $PID"
@@ -108,7 +127,7 @@ fi
 
 note "6) 结果"
 # 按端口精确清理：pkill -f 'uvicorn agent_studio.main' 会把本机生产服务（:8848/:8850）一起杀掉
-PID="$(ss -ltnpH "sport = :$PORT" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | head -1)"
+PID="$(port_pid "$PORT")"
 [ -n "$PID" ] && kill "$PID" 2>/dev/null
 for _ in 1 2 3 4 5; do
   ss -ltnH "sport = :$PORT" 2>/dev/null | grep -q . || break
