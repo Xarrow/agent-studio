@@ -19,7 +19,7 @@ esac
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 WORK="${WORK:-/srv/build/asb-$ARCH}"
-OUT="/srv/www/agent-studio-bundle"
+OUT="${OUT:-/srv/www/agent-studio-bundle}"
 PBS_TAG="${PBS_TAG:-20260924}"
 PBS_VER="${PBS_VER:-3.13.15}"
 STAGE="$WORK/stage/agent-studio"
@@ -41,8 +41,12 @@ fi
 "$STAGE/runtime/$ARCH/python/bin/python3" -V
 
 echo "[3/6] 源码 + 前端静态产物"
-cp -a "$REPO/src" "$STAGE/app/src/"
-rm -rf "$STAGE/app/src/src" 2>/dev/null || true
+# 先清掉上一次构建留下的 app/，否则旧的错误布局（app/src/src）会残留进新包
+rm -rf "$STAGE/app"
+mkdir -p "$STAGE/app/src" "$STAGE/app/web"
+# 拷目录「内容」而不是目录本身：直接 cp -a src 会变成 app/src/src/agent_studio，
+# 而启动脚本按 PYTHONPATH=app/src 找模块 → 找不到，包起不来（本地打的包踩过）
+cp -a "$REPO/src/." "$STAGE/app/src/"
 mkdir -p "$STAGE/app/web"
 cp -a "$REPO/web/out" "$STAGE/app/web/out"
 [ -f "$STAGE/app/web/out/index.html" ] || { echo "缺少前端产物 web/out（先在 web/ 跑 npm run build）"; exit 1; }

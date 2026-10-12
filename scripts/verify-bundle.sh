@@ -94,7 +94,9 @@ ls -la data | sed 's/^/    /'
 [ -s data/studio.db ] && ok "SQLite 已创建" || bad "SQLite 未创建"
 
 note "5) 证明用的是包内 Python（而非系统 Python）"
-PID=$(pgrep -f 'uvicorn agent_studio.main' | head -1)
+# 只认"本次测试端口"上的进程。pgrep -f 会连本机其他 uvicorn（生产服务）一起匹配，
+# 取到别的进程就会把解释器判成系统的（曾误报 /root/miniconda3/bin/python3.13）
+PID="$(ss -ltnpH "sport = :$PORT" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | head -1)"
 if [ -n "$PID" ]; then
   EXE=$(readlink -f "/proc/$PID/exe" 2>/dev/null || echo unknown)
   echo "  服务进程 : PID $PID"
@@ -105,8 +107,13 @@ else
 fi
 
 note "6) 结果"
-pkill -f 'uvicorn agent_studio.main' 2>/dev/null
-sleep 1
+# 按端口精确清理：pkill -f 'uvicorn agent_studio.main' 会把本机生产服务（:8848/:8850）一起杀掉
+PID="$(ss -ltnpH "sport = :$PORT" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | head -1)"
+[ -n "$PID" ] && kill "$PID" 2>/dev/null
+for _ in 1 2 3 4 5; do
+  ss -ltnH "sport = :$PORT" 2>/dev/null | grep -q . || break
+  sleep 1
+done
 if [ "$FAIL" = "0" ]; then
   echo "  全部通过 ✅"
 else
