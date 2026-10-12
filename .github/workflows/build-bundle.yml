@@ -147,7 +147,8 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: agent-studio-${{ matrix.arch }}
-          path: agent-studio-*.tar.gz
+          # 脚本把产物写到 OUT（=dist/），不是仓库根目录
+          path: dist/*.tar.gz
           retention-days: 14
 
   verify-multi:
