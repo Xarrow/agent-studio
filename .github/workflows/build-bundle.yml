@@ -87,60 +87,24 @@ jobs:
           uv export --frozen --no-dev --no-emit-project --no-hashes -o requirements-lock.txt
           echo "依赖条目：$(grep -c . requirements-lock.txt)"
 
-      - name: 下载内置 CPython（${{ matrix.arch }}）
+      - name: 打包（调用唯一实现 scripts/build-offline-bundle.sh）
+        env:
+          PBS_TAG: ${{ env.PBS_TAG }}
+          PBS_VER: ${{ env.PYV }}
+          # CI 直连 GitHub：显式传空值关掉网关代理，并让 PBS 走官方地址
+          https_proxy: ""
+          http_proxy: ""
+          PBS_URL_BASE: ""
         run: |
           set -euo pipefail
-          U="https://github.com/astral-sh/python-build-standalone/releases/download/${PBS_TAG}/cpython-${PYV}%2B${PBS_TAG}-${{ matrix.arch }}-unknown-linux-gnu-install_only_stripped.tar.gz"
-          echo "下载 $U"
-          curl -fL --retry 3 -o pbs.tar.gz "$U"
-          mkdir -p "$PKG/runtime/${{ matrix.arch }}/python"
-          tar xzf pbs.tar.gz -C "$PKG/runtime/${{ matrix.arch }}" --strip-components=1
-          mv "$PKG/runtime/${{ matrix.arch }}/"{bin,lib,include,share} "$PKG/runtime/${{ matrix.arch }}/python/" 2>/dev/null || true
-          if [ "${{ matrix.arch }}" = "$(uname -m)" ]; then
-            "$PKG/runtime/${{ matrix.arch }}/python/bin/python3" -V
-          else
-            ELFARCH=$(readelf -h "$PKG/runtime/${{ matrix.arch }}/python/bin/python3.13" | awk -F: '/Machine/{print $2}' | xargs)
-            echo "交叉架构：不执行，仅校验 ELF（Machine=$ELFARCH）"
-            case "$ELFARCH" in *AArch64*) echo "ELF 架构正确" ;; *) echo "::error::ELF 架构不符"; exit 1 ;; esac
-          fi
-
-      - name: 展开依赖到 vendor/${{ matrix.arch }}/site-packages
-        run: |
-          set -euo pipefail
-          SP="$PKG/vendor/${{ matrix.arch }}/site-packages"
-          mkdir -p "$SP"
-          if [ "${{ matrix.arch }}" = "$(uname -m)" ]; then
-            echo "架构一致 → 直接安装"
-            "$PKG/runtime/${{ matrix.arch }}/python/bin/python3" -m pip install -q \
-              --no-warn-script-location --target "$SP" -r requirements-lock.txt
-          else
-            echo "交叉架构 → 下载该架构 wheel 后展开（不执行）"
-            python3 -m pip install -q --target "$SP" --only-binary=:all: \
-              --platform manylinux2014_${{ matrix.arch }} \
-              --platform manylinux_2_28_${{ matrix.arch }} \
-              --platform manylinux_2_24_${{ matrix.arch }} \
-              --platform manylinux_2_17_${{ matrix.arch }} \
-              --python-version 3.13 --implementation cp --abi cp313 \
-              -r requirements-lock.txt
-          fi
-          echo "顶层条目 $(ls "$SP" | wc -l)，原生扩展 $(find "$SP" -name '*.so' | wc -l)"
-
-      - name: 组装并打包（顶层目录 agent-studio/）
-        run: |
-          set -euo pipefail
-          mkdir -p "$PKG/app/web"
-          cp -a src "$PKG/app/src"
-          cp -a web/out "$PKG/app/web/out"
-          cp scripts/bundle-start.sh "$PKG/start.sh"
-          cp scripts/bundle-README.md "$PKG/README.md"
-          cp requirements-lock.txt "$PKG/"
-          chmod +x "$PKG/start.sh"
-          rm -rf "$PKG/data"
-          find "$PKG" -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null || true
-          TAR="agent-studio-$(date +%Y%m%d)-${{ matrix.arch }}.tar.gz"
-          tar czf "$TAR" "$PKG"
-          gzip -t "$TAR"
+          export WORK="$RUNNER_TEMP/asb-${{ matrix.arch }}"
+          export OUT="$PWD/dist"
+          bash scripts/build-offline-bundle.sh "${{ matrix.arch }}"
+          PKG="$WORK/stage/agent-studio"
+          echo "PKG=$PKG" >> "$GITHUB_ENV"
+          TAR="$(ls -1 "$OUT"/agent-studio-*-${{ matrix.arch }}.tar.gz | head -1)"
           echo "顶层结构：$(tar tzf "$TAR" | head -1)"
+          echo "app/src 顶层：$(tar tzf "$TAR" | grep -E '^agent-studio/app/src/[^/]+/$' | head -3 | tr '\n' ' ')"
           echo "TAR=$TAR" >> "$GITHUB_ENV"
           ls -lh "$TAR"
 

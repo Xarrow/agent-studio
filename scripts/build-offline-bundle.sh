@@ -25,15 +25,17 @@ PBS_VER="${PBS_VER:-3.13.15}"
 STAGE="$WORK/stage/agent-studio"
 DATE="$(date +%Y%m%d)"
 
-export https_proxy="${https_proxy:-http://192.168.2.7:7890}"
-export http_proxy="${http_proxy:-http://192.168.2.7:7890}"
+export https_proxy="${https_proxy-http://192.168.2.7:7890}"
+export http_proxy="${http_proxy-http://192.168.2.7:7890}"
+# 说明：上面用 '-' 而不是 ':-'，这样调用方传空值可以显式关掉代理（CI 里那个网关代理不可达）。
+# PBS_URL_BASE 同理：本地空着走 gh-proxy，CI 传空字符串 = 直连 GitHub。
 
 echo "[1/6] 准备目录 $STAGE"
 mkdir -p "$WORK" "$STAGE/app/src" "$STAGE/app/web" "$STAGE/runtime/$ARCH/python" "$STAGE/vendor/$ARCH"
 
 echo "[2/6] 内置 Python 运行时 ($PBS_VER·$ARCH)"
 if [ ! -x "$STAGE/runtime/$ARCH/python/bin/python3" ]; then
-  PBS_URL="https://gh-proxy.com/https://github.com/astral-sh/python-build-standalone/releases/download/$PBS_TAG/cpython-$PBS_VER%2B$PBS_TAG-$PBS_ARCH-install_only_stripped.tar.gz"
+  PBS_URL="${PBS_URL_BASE-https://gh-proxy.com/}https://github.com/astral-sh/python-build-standalone/releases/download/$PBS_TAG/cpython-$PBS_VER%2B$PBS_TAG-$PBS_ARCH-install_only_stripped.tar.gz"
   curl -fL --retry 3 -m 900 -o "$WORK/pbs.tar.gz" "$PBS_URL"
   tar xzf "$WORK/pbs.tar.gz" -C "$STAGE/runtime/$ARCH" --strip-components=1
   mv "$STAGE/runtime/$ARCH"/{bin,lib,include,share} "$STAGE/runtime/$ARCH/python/" 2>/dev/null || true
