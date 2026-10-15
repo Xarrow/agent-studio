@@ -87,7 +87,9 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   /** 正在跑的这一轮的 run id —— 停止时要拿它去 abort 后端 */
   const [liveRunId, setLiveRunId] = useState("");
   /** 待发送的附件（已上传，拿绝对路径注入消息让助手用 Read 读） */
-  const [pendingFiles, setPendingFiles] = useState<{ name: string; path: string }[]>([]);
+  const [pendingFiles, setPendingFiles] = useState<
+    { name: string; path: string; kind: "image" | "file"; url: string; size: number }[]
+  >([]);
   const [busy, setBusy] = useState(false);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(true);
@@ -331,7 +333,10 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     //（不用 base64 塞进 input：大文件爆上下文，且文本类文件 Read 更省）
     const attachNote =
       pendingFiles.length > 0
-        ? "\n\n" + pendingFiles.map((f) => `[附件] ${f.path}（${f.name}，可用 Read 工具读取）`).join("\n")
+        ? "\n\n" +
+          pendingFiles.map((f) => `[附件] ${f.path}（${f.name}，可用 Read 工具读取）`).join("\n") +
+          // 展示层标记：前端按它把附件还原成缩略图/卡片；对模型无害（就是一行 URL）
+          "\n" + pendingFiles.map((f) => `[attach:${f.kind}:${f.url}:${f.name}:${f.size}]`).join("\n")
         : "";
     const composed = (text || "（请处理附件）") + attachNote;
 
@@ -399,7 +404,13 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
       const items = await Promise.all([...files].map((f) => api.uploadFile(f)));
       setPendingFiles((prev) => [
         ...prev,
-        ...items.map((it) => ({ name: it.name, path: it.path })),
+        ...items.map((it) => ({
+          name: it.name,
+          path: it.path,
+          kind: (it.kind === "image" ? "image" : "file") as "image" | "file",
+          url: it.url,
+          size: it.size,
+        })),
       ]);
     } catch (e) {
       fb.error("附件上传失败", e instanceof Error ? e.message : String(e));
@@ -710,23 +721,41 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
           </div>
           {/* 待发附件 —— 名字即所见，点 ✕ 撤掉（还没进消息，撤掉零成本） */}
           {pendingFiles.length > 0 && (
-            <div className="max-w-4xl mx-auto mt-2 flex flex-wrap gap-1.5">
+            <div className="max-w-4xl mx-auto mt-2 flex flex-wrap gap-2">
               {pendingFiles.map((f, i) => (
-                <span
+                <div
                   key={f.path + i}
-                  className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px]"
-                  style={{ background: "var(--color-surface-2)" }}
+                  className="relative rounded-lg border overflow-hidden"
+                  style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
                 >
-                  {f.name}
+                  {f.kind === "image" ? (
+                    /* 图片：缩略图本体可点开大图（新窗口），✕ 撤掉 */
+                    <a href={f.url} target="_blank" rel="noreferrer" className="block">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={f.url} alt={f.name} className="w-24 h-24 object-cover" />
+                    </a>
+                  ) : (
+                    /* 文件：图标 + 名字 + 大小的横卡 */
+                    <div className="flex items-center gap-2 px-2.5 py-2 max-w-[220px]">
+                      <span className="text-[20px] leading-none">📄</span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-[12px]">{f.name}</span>
+                        <span className="block text-[11px] text-[var(--color-muted)]">
+                          {fmt.bytes(f.size)}
+                        </span>
+                      </span>
+                    </div>
+                  )}
                   <button
                     data-tap
-                    className="text-[var(--color-muted)] hover:text-[var(--color-err)]"
+                    className="absolute top-1 right-1 flex h-6 w-6 items-center justify-center rounded-full text-[12px]"
+                    style={{ background: "rgba(0,0,0,0.55)", color: "#fff" }}
                     title="撤掉"
                     onClick={() => setPendingFiles((p) => p.filter((_, j) => j !== i))}
                   >
                     ✕
                   </button>
-                </span>
+                </div>
               ))}
             </div>
           )}
@@ -832,6 +861,23 @@ function Bubble({
 
   const steps = events ? eventsToSteps(events, userInput) : [];
 
+  /* 用户消息里的附件展示：从 content 里解析 [attach:kind:url:name:size] 标记行，
+     还原成缩略图/文件卡片；正文去掉附件标记行只留人话。 */
+  const attachMatches = [...content.matchAll(/\[attach:(image|file):([^:\]]+):([^:\]]*):(\d+)\]/g)];
+  const attachments = attachMatches.map((m) => ({
+    kind: m[1] as "image" | "file",
+    url: m[2],
+    name: m[3] || "附件",
+    size: Number(m[4]) || 0,
+  }));
+  const userBody = isUser
+    ? content
+        .split("\n")
+        .filter((ln) => !ln.startsWith("[attach:") && !ln.startsWith("[附件] "))
+        .join("\n")
+        .trim()
+    : content;
+
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div className={isUser ? "max-w-[85%]" : "min-w-0 flex-1"}>
@@ -846,7 +892,42 @@ function Bubble({
           }
         >
           {isUser ? (
-            content
+            <>
+              {attachments.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 justify-end mb-1.5">
+                  {attachments.map((a, i) =>
+                    a.kind === "image" ? (
+                      <a key={i} href={a.url} target="_blank" rel="noreferrer" className="block">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={a.url}
+                          alt={a.name}
+                          className="w-20 h-20 rounded-md object-cover border"
+                          style={{ borderColor: "rgba(255,255,255,0.35)" }}
+                        />
+                      </a>
+                    ) : (
+                      <a
+                        key={i}
+                        href={a.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-2 rounded-md px-2.5 py-1.5 max-w-[220px] text-[12px]"
+                        style={{ background: "rgba(255,255,255,0.16)" }}
+                        title="点开下载"
+                      >
+                        <span className="text-[16px] leading-none">📄</span>
+                        <span className="min-w-0 text-left">
+                          <span className="block truncate">{a.name}</span>
+                          <span className="block text-[10.5px] opacity-80">{fmt.bytes(a.size)}</span>
+                        </span>
+                      </a>
+                    ),
+                  )}
+                </div>
+              )}
+              {userBody}
+            </>
           ) : (
             <Markdown text={content} />
           )}

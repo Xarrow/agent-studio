@@ -28,6 +28,8 @@
  *   error / hitl_request              → 出错 / 等待确认
  */
 
+import { useState } from "react";
+
 import type { RunEvent } from "@/lib/types";
 
 export type StepKind =
@@ -249,49 +251,76 @@ export function RunTimeline({
 
   return (
     <div className={compact ? "space-y-1" : "space-y-2"}>
-      {steps.map((s, i) => {
-        const st = STEP_STYLE[s.kind];
-        const isLast = i === steps.length - 1;
-        return (
-          <div key={i} className="flex gap-2.5">
-            {/* 左侧：图标 + 连接线（把"一连串步骤"这件事视觉化） */}
-            <div className="flex flex-col items-center shrink-0">
-              <div
-                className="w-6 h-6 rounded-md flex items-center justify-center text-[12px] shrink-0"
-                style={{
-                  background: st.bg,
-                  color: st.color,
-                  border: `1px solid ${st.border}`,
-                }}
-              >
-                {st.icon}
-              </div>
-              {!isLast && !compact && (
-                <div
-                  className="w-px flex-1 min-h-[6px] my-0.5"
-                  style={{ background: st.border }}
-                />
-              )}
-            </div>
+      {steps.map((s, i) => (
+        <TimelineRow key={i} s={s} compact={compact} isLast={i === steps.length - 1} />
+      ))}
+    </div>
+  );
+}
 
-            {/* 右侧：标签 + 内容 */}
-            <div className="min-w-0 flex-1 pb-1">
-              <div
-                className="text-[12px] font-medium mb-0.5"
-                style={{ color: st.color }}
-              >
-                {s.label}
-              </div>
-              <div
-                className="text-[12px] leading-relaxed whitespace-pre-wrap break-words mono"
-                style={{ color: "var(--color-text)" }}
-              >
-                {s.body}
-              </div>
-            </div>
-          </div>
-        );
-      })}
+/** 单条：长的折叠（点开看全文），正文按性质选字体 —— 人看思考用正文字体，
+ *  工具参数/结果才用 mono。失败的工具红框标出来，扫一眼就知道哪步坏了。 */
+function TimelineRow({ s, compact, isLast }: { s: Step; compact: boolean; isLast: boolean }) {
+  const st = STEP_STYLE[s.kind];
+  const isErr = s.kind === "tool" && s.ok === false;
+  const bodyLines = s.body ? s.body.split("\n") : [];
+  const long = bodyLines.length > 6 || s.body.length > 400;
+  const [open, setOpen] = useState(false);
+  const monoBody = s.kind === "tool" || s.kind === "tool_response";
+
+  return (
+    <div className="flex gap-2.5">
+      {/* 左侧：图标 + 连接线（把"一连串步骤"这件事视觉化） */}
+      <div className="flex flex-col items-center shrink-0">
+        <div
+          className="w-6 h-6 rounded-md flex items-center justify-center text-[12px] shrink-0"
+          style={{
+            background: isErr ? "#fef2f2" : st.bg,
+            color: isErr ? "#b91c1c" : st.color,
+            border: `1px solid ${isErr ? "#fecaca" : st.border}`,
+          }}
+        >
+          {st.icon}
+        </div>
+        {!isLast && !compact && (
+          <div
+            className="w-px flex-1 min-h-[6px] my-0.5"
+            style={{ background: st.border }}
+          />
+        )}
+      </div>
+
+      {/* 右侧：标签 + 内容 */}
+      <div className="min-w-0 flex-1 pb-1">
+        <button
+          type="button"
+          data-tap
+          className="text-[12px] font-medium mb-0.5 flex items-center gap-1 text-left"
+          style={{ color: isErr ? "#b91c1c" : st.color }}
+          onClick={() => long && setOpen(!open)}
+        >
+          {s.label}
+          {isErr && (
+            <span
+              className="rounded px-1 text-[10.5px]"
+              style={{ background: "#fef2f2", color: "#b91c1c" }}
+            >
+              失败
+            </span>
+          )}
+          {long && (
+            <span className="text-[10.5px] font-normal" style={{ color: "var(--color-muted)" }}>
+              {open ? "收起" : "展开全部"}
+            </span>
+          )}
+        </button>
+        <div
+          className={`text-[12px] leading-relaxed whitespace-pre-wrap break-words ${monoBody ? "mono" : ""}`}
+          style={{ color: "var(--color-text)" }}
+        >
+          {long && !open ? bodyLines.slice(0, 6).join("\n") + "\n…" : s.body}
+        </div>
+      </div>
     </div>
   );
 }
