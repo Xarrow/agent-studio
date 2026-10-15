@@ -29,8 +29,11 @@ fi
 
 echo "[1/3] 内置运行时：$("$PY" -V 2>&1) ($ARCH)"
 
-# --- 系统 glibc 检查（包内原生扩展要求 ≥ 2.34） ----------------------------
-GLIBC_MIN="2.34"
+# --- 系统 glibc 检查（包内原生扩展要求 ≥ 2.28） ----------------------------
+# 2.28 是打包时钉住 wheel 平台换来的门槛：依赖树里 x86_64 wheel 最低标签是 manylinux_2_17/2_28，
+# 覆盖 Rocky 8 / CentOS 8 / Ubuntu 18.04。若不钉平台，新机器打包会挑到 manylinux_2_34 的
+# cryptography，门槛被抬到 2.34。
+GLIBC_MIN="2.28"
 GLIBC_VER="$(ldd --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+$' || true)"
 if [ -n "$GLIBC_VER" ] && [ "$(printf '%s\n%s\n' "$GLIBC_MIN" "$GLIBC_VER" | sort -V | head -1)" != "$GLIBC_MIN" ]; then
   echo "[!] 本机 glibc $GLIBC_VER 低于依赖要求的 $GLIBC_MIN（cryptography 等原生扩展需要）"

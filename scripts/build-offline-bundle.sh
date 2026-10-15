@@ -62,8 +62,15 @@ if [ ! -d "$SP" ]; then
   mkdir -p "$SP"
   PYBIN="$STAGE/runtime/$ARCH/python/bin/python3"
   if [ "$ARCH" = "$(uname -m)" ]; then
-    # 本机构建：直接用运行时 pip 装进 vendor
-    "$PYBIN" -m pip install -q --no-warn-script-location --target "$SP" -r "$REQ"
+    # 本机构建：装进 vendor，但强制按低 glibc 平台挑 wheel。
+    # 不钉平台的话，在新系统（如 glibc 2.41 的 Debian 13）上 pip 会挑"兼容里最新"的 wheel
+    # （cryptography 就带 manylinux_2_34 那份），产物的 glibc 门槛被悄悄抬到 2.34，
+    # 在 Rocky 8/CentOS 8（glibc 2.28）上直接起不来。
+    # 注意：跨平台模式不会自动接受更低标签，必须把 2014/2_17/2_24/2_28 都列出来。
+    "$PYBIN" -m pip install -q --no-warn-script-location --only-binary=:all: \
+      --platform "manylinux2014_$ARCH" --platform "manylinux_2_17_$ARCH" \
+      --platform "manylinux_2_24_$ARCH" --platform "manylinux_2_28_$ARCH" \
+      --target "$SP" -r "$REQ"
   else
     # 交叉构建：只下载该架构 wheel，再解包（不执行）
     WL="$WORK/wheels-$ARCH"; mkdir -p "$WL"
