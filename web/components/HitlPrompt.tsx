@@ -132,18 +132,18 @@ export function HitlPrompt({
         border: "1px solid var(--color-warn)",
       }}
     >
-      <div className="text-[12.5px] font-medium mb-1" style={{ color: "var(--color-warn)" }}>
+      <div className="text-[12px] font-medium mb-1" style={{ color: "var(--color-warn)" }}>
         它想执行需要你授权的操作，等你点头才继续
       </div>
 
       <div className="space-y-1.5 mb-3">
         {items.length === 0 ? (
-          <div className="text-[11.5px] text-[var(--color-muted)]">（没有解析出具体调用）</div>
+          <div className="text-[12px] text-[var(--color-muted)]">（没有解析出具体调用）</div>
         ) : (
           items.map((it, i) => (
             <div key={i} className="rounded bg-[var(--color-surface-2)] px-2 py-1.5">
               <div className="text-[12px] font-medium mono">{it.tool}</div>
-              <div className="text-[11.5px] text-[var(--color-muted)] mono break-all">
+              <div className="text-[12px] text-[var(--color-muted)] mono break-all">
                 {it.detail}
               </div>
             </div>
@@ -151,7 +151,7 @@ export function HitlPrompt({
         )}
       </div>
 
-      {err && <div className="text-[11.5px] text-[var(--color-err)] mb-2">恢复失败：{err}</div>}
+      {err && <div className="text-[12px] text-[var(--color-err)] mb-2">恢复失败：{err}</div>}
 
       <div className="flex items-center gap-2 flex-wrap">
         {sent === null ? (
@@ -180,7 +180,7 @@ export function HitlPrompt({
             {sent ? "已允许，继续执行…" : "已拒绝，等它收尾…"}
           </span>
         )}
-        <span className="text-[11px] text-[var(--color-muted)]">
+        <span className="text-[12px] text-[var(--color-muted)]">
           不想每次都问？去助手的「权限」里调范围。
         </span>
       </div>

@@ -391,7 +391,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
           <h1 className="text-[21px] font-semibold tracking-tight mt-1 truncate">
             {agent.name}
           </h1>
-          <div className="text-[11.5px] text-[var(--color-muted)] mono mt-0.5">
+          <div className="text-[12px] text-[var(--color-muted)] mono mt-0.5">
             {agent.slug} · v{agent.version} · {agent.id}
             {agent.parent_id && ` · 复制自 ${agent.parent_id}`}
           </div>
@@ -400,7 +400,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
           {msg && <span className="text-[12px] text-[var(--color-ok)]">{msg}</span>}
           {dirty && !saving && (
             <span
-              className="text-[11.5px] flex items-center gap-1"
+              className="text-[12px] flex items-center gap-1"
               style={{ color: "var(--color-warn)" }}
               title="改动还没写回去 —— 点「保存改动」，或离开前会被提醒"
             >
@@ -430,13 +430,13 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
       {(errors.length > 0 || warnings.length > 0) && (
         <div className="card p-3.5 mb-4 space-y-1">
           {errors.map((i, n) => (
-            <div key={`e${n}`} className="text-[12.5px] text-[var(--color-err)]">
+            <div key={`e${n}`} className="text-[12px] text-[var(--color-err)]">
               ✗ {i.field ? `${i.field}: ` : ""}
               {i.message}
             </div>
           ))}
           {warnings.map((i, n) => (
-            <div key={`w${n}`} className="text-[12.5px] text-[var(--color-warn)]">
+            <div key={`w${n}`} className="text-[12px] text-[var(--color-warn)]">
               ⚠ {i.field ? `${i.field}: ` : ""}
               {i.message}
             </div>
@@ -453,37 +453,37 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
       <section className="card p-4 mb-4">
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px]">
           <span className="flex items-center gap-1.5">
-            <span className="text-[11.5px] text-[var(--color-muted)]">模型</span>
+            <span className="text-[12px] text-[var(--color-muted)]">模型</span>
             <span className="mono break-all">{def.model.name || "—"}</span>
-            <span className="text-[11.5px] text-[var(--color-muted)]">
+            <span className="text-[12px] text-[var(--color-muted)]">
               {providers.find((x) => x.name === def.model.provider)?.display_name ??
                 def.model.provider}
               {usedCred ? ` · ${usedCred.name}` : " · 用环境变量密钥"}
             </span>
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="text-[11.5px] text-[var(--color-muted)]">工具</span>
+            <span className="text-[12px] text-[var(--color-muted)]">工具</span>
             <span className="mono">
               {def.tools.length}
               <span className="text-[var(--color-muted)]">/{tools.length}</span>
             </span>
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="text-[11.5px] text-[var(--color-muted)]">Skills</span>
+            <span className="text-[12px] text-[var(--color-muted)]">Skills</span>
             <span className="mono">
               {def.skills.length}
               <span className="text-[var(--color-muted)]">/{skills.length}</span>
             </span>
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="text-[11.5px] text-[var(--color-muted)]">记忆</span>
+            <span className="text-[12px] text-[var(--color-muted)]">记忆</span>
             <span className="mono">
               {ov.memoryOwn === null || ov.memoryShared === null
                 ? "…"
                 : `${ov.memoryOwn + ov.memoryShared} 条`}
             </span>
             {ov.memoryOwn !== null && (
-              <span className="text-[11.5px] text-[var(--color-muted)]">
+              <span className="text-[12px] text-[var(--color-muted)]">
                 自己的 {ov.memoryOwn} · 共用 {ov.memoryShared}
               </span>
             )}
@@ -597,13 +597,13 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                     onChange={(e) => patch({ orchestrator_brief: e.target.value })}
                   />
                   <div className="mt-1.5 flex items-center gap-2">
-                    <span className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                    <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
                       {def.orchestrator_brief ? "正在使用：这个助手自己的定义" : "正在使用：平台默认定义（占位文字就是它）"}
                     </span>
                     {def.orchestrator_brief ? (
                       <button
                         type="button"
-                        className="text-[11.5px] underline"
+                        className="text-[12px] underline"
                         style={{ color: "var(--color-accent)" }}
                         onClick={() => patch({ orchestrator_brief: "" })}
                       >
@@ -638,11 +638,11 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                   }
                 />
                 {def.limits.max_iters === -1 ? (
-                  <p className="text-[11px] text-[var(--color-warn)] mt-1">
+                  <p className="text-[12px] text-[var(--color-warn)] mt-1">
                     ⚠ 不限制轮数 —— 请靠超时兜底
                   </p>
                 ) : (
-                  <p className="text-[11px] text-[var(--color-muted)] mt-1">
+                  <p className="text-[12px] text-[var(--color-muted)] mt-1">
                     推理-行动循环上限
                   </p>
                 )}
@@ -660,7 +660,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                     })
                   }
                 />
-                <p className="text-[11px] text-[var(--color-muted)] mt-1">
+                <p className="text-[12px] text-[var(--color-muted)] mt-1">
                   默认 60 秒，可自定义
                 </p>
               </div>
@@ -715,7 +715,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 {/* 原来这里是一段三行的解释常驻在表单里 ✗ —— 只有**第一次配**才需要读它，
                     每次滚动都要重读一遍是浪费。解释搬到旁边那个 ?（点击可开 ✓ 触屏可用 ✓），
                     只留下**会变的那一段**：实际路径（每改一次名字它就变，必须实时可见 ✓） */}
-                <p className="mt-1 text-[11.5px] mono" style={{ color: "var(--color-muted)" }}>
+                <p className="mt-1 text-[12px] mono" style={{ color: "var(--color-muted)" }}>
                   实际位置：data/work/{def.workspace?.trim() || "…"}
                 </p>
               </div>
@@ -828,7 +828,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
           >
             {tools.length === 0 && skills.length === 0 && mcpServers.length === 0 ? (
               <div className="space-y-2.5">
-                <p className="text-[12.5px] text-[var(--color-muted)]">
+                <p className="text-[12px] text-[var(--color-muted)]">
                   还没有能力可选。先把内置工具同步进来（不用跳页）。
                 </p>
                 <div className="flex items-center gap-2 flex-wrap">

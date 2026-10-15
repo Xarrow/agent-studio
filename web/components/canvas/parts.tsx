@@ -62,7 +62,7 @@ export function ResizeCorner({ id, active, onDown }: { id: string; active: boole
       style={{ right: -8, bottom: -8, width: 24, height: 24, cursor: "nwse-resize", touchAction: "none" }}
     >
       <span
-        className="absolute transition-opacity group-hover/corner:opacity-100"
+        className="absolute transition-opacity"
         style={{
           right: 10,
           bottom: 10,
@@ -89,7 +89,7 @@ export function ResizeGrip({ id, active, onDown }: { id: string; active: boolean
       style={{ right: -10, width: 20, touchAction: "none" }}
     >
       <span
-        className="rounded-full transition-opacity group-hover/resize:opacity-100"
+        className="rounded-full transition-opacity"
         style={{
           width: 4,
           height: 44,
@@ -107,11 +107,11 @@ export function DetailSection({ kind, label, children }: { kind: StepKind; label
   const st = STEP_STYLE[kind];
   return (
     <div className="rounded-[8px] border" style={{ borderColor: st.border, background: st.bg }}>
-      <div className="flex items-center gap-1.5 px-2 py-[3px] text-[11px] font-semibold" style={{ color: st.color }}>
+      <div className="flex items-center gap-1.5 px-2 py-[3px] text-[12px] font-semibold" style={{ color: st.color }}>
         <span className="text-[10px] leading-none">{st.icon}</span>
         {label}
       </div>
-      <div className="px-2 pb-[6px] text-[11.5px] leading-[1.65]" style={{ color: "var(--color-text)" }}>
+      <div className="px-2 pb-[6px] text-[12px] leading-[1.65]" style={{ color: "var(--color-text)" }}>
         {children}
       </div>
     </div>

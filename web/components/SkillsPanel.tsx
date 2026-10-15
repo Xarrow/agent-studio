@@ -70,7 +70,7 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
             <p className="text-[13px] text-[var(--color-muted)] mt-1">
               预先写好的「做事套路」。装上之后，助手遇到这类任务就知道该按什么步骤做。
             </p>
-            <p className="text-[11.5px] text-[var(--color-muted)] mt-1">
+            <p className="text-[12px] text-[var(--color-muted)] mt-1">
               {skills.length} 个 · 标准 <span className="mono">SKILL.md</span> 格式，与 Claude Code /
               Hermes / AgentScope 通用
             </p>
@@ -114,11 +114,11 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
                     <span className="tag shrink-0">{String(s.source?.type ?? "—")}</span>
                   </div>
                   {s.description && (
-                    <p className="text-[11.5px] text-[var(--color-muted)] mt-1 line-clamp-2">
+                    <p className="text-[12px] text-[var(--color-muted)] mt-1 line-clamp-2">
                       {s.description}
                     </p>
                   )}
-                  <div className="text-[11px] text-[var(--color-muted)] mt-1.5">
+                  <div className="text-[12px] text-[var(--color-muted)] mt-1.5">
                     {Object.keys(s.files ?? {}).length} 个附件 · {fmt.relative(s.updated_at)}
                   </div>
                 </button>
@@ -134,7 +134,7 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
                 <div>
                   <h2 className="text-[15px] font-medium">{detail.name}</h2>
                   {typeof detail.source?.url === "string" && (
-                    <div className="text-[11px] text-[var(--color-muted)] mono mt-0.5 truncate">
+                    <div className="text-[12px] text-[var(--color-muted)] mono mt-0.5 truncate">
                       {detail.source.url}
                       {typeof detail.source?.sha === "string" &&
                         ` @ ${detail.source.sha.slice(0, 8)}`}
@@ -165,7 +165,7 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
                 <>
               {Object.keys(detail.files ?? {}).length > 0 && (
                 <div className="mb-3">
-                  <div className="text-[11.5px] text-[var(--color-muted)] mb-1">附件</div>
+                  <div className="text-[12px] text-[var(--color-muted)] mb-1">附件</div>
                   <div className="flex flex-wrap gap-1.5">
                     {Object.keys(detail.files).map((f) => (
                       <span key={f} className="tag mono">
@@ -176,14 +176,14 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
                 </div>
               )}
 
-              <pre className="text-[11.5px] whitespace-pre-wrap break-all bg-[var(--color-bg)] p-3 rounded-md max-h-[420px] overflow-auto">
+              <pre className="text-[12px] whitespace-pre-wrap break-all bg-[var(--color-bg)] p-3 rounded-md max-h-[420px] overflow-auto">
                 {detail.content}
               </pre>
                 </>
               )}
             </>
           ) : (
-            <div className="h-full flex items-center justify-center text-[12.5px] text-[var(--color-muted)]">
+            <div className="h-full flex items-center justify-center text-[12px] text-[var(--color-muted)]">
               选择左侧 Skill 查看内容
             </div>
           )}
@@ -350,7 +350,7 @@ function ImportDialog({
             </>
           )}
 
-          {err && <div className="text-[12.5px] text-[var(--color-err)]">{err}</div>}
+          {err && <div className="text-[12px] text-[var(--color-err)]">{err}</div>}
         </div>
 
         <div className="flex justify-end gap-2 mt-5">
@@ -418,7 +418,7 @@ function SkillEditor({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2 text-[11.5px] text-[var(--color-muted)]">
+      <div className="flex items-center gap-2 text-[12px] text-[var(--color-muted)]">
         <span className="mono">{fmName}</span>
         <span>·</span>
         <span>
@@ -426,13 +426,13 @@ function SkillEditor({
         </span>
       </div>
       <textarea
-        className="input mono text-[11.5px] w-full"
+        className="input mono text-[12px] w-full"
         rows={16}
         value={content}
         onChange={(e) => setContent(e.target.value)}
         spellCheck={false}
       />
-      <div className="text-[11px] text-[var(--color-muted)]">
+      <div className="text-[12px] text-[var(--color-muted)]">
         格式：开头的 <span className="mono">---</span> 里写 name 和 description；正文写给
         Agent 的步骤、命令、坑。description 写"什么时候用我"，别写目录。
       </div>

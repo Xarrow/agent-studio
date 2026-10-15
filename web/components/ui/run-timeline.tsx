@@ -257,7 +257,7 @@ export function RunTimeline({
             {/* 左侧：图标 + 连接线（把"一连串步骤"这件事视觉化） */}
             <div className="flex flex-col items-center shrink-0">
               <div
-                className="w-6 h-6 rounded-md flex items-center justify-center text-[11px] shrink-0"
+                className="w-6 h-6 rounded-md flex items-center justify-center text-[12px] shrink-0"
                 style={{
                   background: st.bg,
                   color: st.color,
@@ -277,13 +277,13 @@ export function RunTimeline({
             {/* 右侧：标签 + 内容 */}
             <div className="min-w-0 flex-1 pb-1">
               <div
-                className="text-[11.5px] font-medium mb-0.5"
+                className="text-[12px] font-medium mb-0.5"
                 style={{ color: st.color }}
               >
                 {s.label}
               </div>
               <div
-                className="text-[12.5px] leading-relaxed whitespace-pre-wrap break-words mono"
+                className="text-[12px] leading-relaxed whitespace-pre-wrap break-words mono"
                 style={{ color: "var(--color-text)" }}
               >
                 {s.body}

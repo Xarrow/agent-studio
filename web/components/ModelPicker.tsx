@@ -146,7 +146,7 @@ export function ModelPicker({
             </button>
           )}
         </div>
-        <p className="text-[11.5px] text-[var(--color-muted)] mt-1.5">
+        <p className="text-[12px] text-[var(--color-muted)] mt-1.5">
           手动填写 —— 服务商探测不到（如方舟的接入点 ID）或**清单里没有你要的模型**时，都直接填 ✓
         </p>
       </div>
@@ -191,10 +191,10 @@ export function ModelPicker({
         )}
       </div>
       {note && (
-        <p className="text-[11.5px] text-[var(--color-muted)] mt-1.5">{note}</p>
+        <p className="text-[12px] text-[var(--color-muted)] mt-1.5">{note}</p>
       )}
       {!credentialId && (
-        <p className="text-[11.5px] text-[var(--color-muted)] mt-1.5">
+        <p className="text-[12px] text-[var(--color-muted)] mt-1.5">
           先在下面选好「LLM 配置」，就能自动探测它可用的模型。
         </p>
       )}

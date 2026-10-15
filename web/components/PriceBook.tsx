@@ -137,17 +137,17 @@ export function PriceBook() {
             >
               <div className="min-w-0 flex-1 basis-[170px]">
                 <div className="mono truncate">{r.model}</div>
-                <div className="text-[11px]" style={{ color: "var(--color-muted)" }}>
+                <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>
                   {r.calls ? `${r.calls} 次调用` : "还没跑过"}
                   {used(r) ? ` · 输入 ${fmt.num(r.tokens_in)} / 输出 ${fmt.num(r.tokens_out)}` : ""}
                   {r.priced ? " · 已填单价" : ""}
                 </div>
               </div>
-              <div className="shrink-0 text-right text-[12.5px]" style={{ color: "var(--color-muted)" }}>
-                <div className="text-[11px]">已用 tokens</div>
+              <div className="shrink-0 text-right text-[12px]" style={{ color: "var(--color-muted)" }}>
+                <div className="text-[12px]">已用 tokens</div>
                 {used(r) ? fmt.num(used(r)) : "—"}
               </div>
-              <label className="flex shrink-0 items-center gap-1.5 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+              <label className="flex shrink-0 items-center gap-1.5 text-[12px]" style={{ color: "var(--color-muted)" }}>
                 输入/百万
                 <input
                   inputMode="decimal"
@@ -160,7 +160,7 @@ export function PriceBook() {
                   style={{ width: 92 }}
                 />
               </label>
-              <label className="flex shrink-0 items-center gap-1.5 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+              <label className="flex shrink-0 items-center gap-1.5 text-[12px]" style={{ color: "var(--color-muted)" }}>
                 输出/百万
                 <input
                   inputMode="decimal"

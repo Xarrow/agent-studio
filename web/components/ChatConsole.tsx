@@ -424,7 +424,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
         <div className="card p-6 max-w-md text-center">
           <div className="text-[28px] mb-2">✦</div>
           <h2 className="text-[16px] font-medium mb-2">还没有可以聊的助手</h2>
-          <p className="text-[12.5px] text-[var(--color-muted)] leading-relaxed mb-4">
+          <p className="text-[12px] text-[var(--color-muted)] leading-relaxed mb-4">
             助手就是「会自己想办法帮你做事的 AI」。
             <br />
             创建一个，然后就能像发消息一样让它干活了。
@@ -469,7 +469,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 onClick={() => setSessionId(s.id)}
               >
                 <div className="min-w-0 flex-1">
-                  <div className="text-[12.5px] truncate">{s.title || "未命名对话"}</div>
+                  <div className="text-[12px] truncate">{s.title || "未命名对话"}</div>
                   <div className="text-[10.5px] opacity-70 truncate">
                     {s.turn_count} 轮 · {fmt.relative(s.last_active_at)}
                   </div>
@@ -525,7 +525,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               {currentAgent?.name ?? "（未选助手）"}
             </span>
           )}
-          <span className="text-[11.5px] text-[var(--color-muted)] truncate">
+          <span className="text-[12px] text-[var(--color-muted)] truncate">
             {currentAgent?.description || "runtime-agnostic Agent"}
           </span>
           <div className="ml-auto flex items-center gap-3">
@@ -533,7 +533,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               <>
                 <button
                   data-tap
-                  className="text-[11.5px] hover:underline whitespace-nowrap"
+                  className="text-[12px] hover:underline whitespace-nowrap"
                   style={{ color: "var(--color-accent)" }}
                   onClick={() => setDetailRun(history[history.length - 1].run_id ?? null)}
                 >
@@ -549,7 +549,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             {agentId && (
               <button
                 data-tap
-                className="text-[11.5px] text-[var(--color-muted)] hover:text-[var(--color-text)] whitespace-nowrap"
+                className="text-[12px] text-[var(--color-muted)] hover:text-[var(--color-text)] whitespace-nowrap"
                 onClick={() => setConfigAgent(agentId)}
               >
                 配置
@@ -563,7 +563,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
           {history.length === 0 && !live ? (
             <div className="max-w-lg mx-auto text-center mt-8">
               <p className="text-[15px] font-medium">开始和「{currentAgent?.name || "Agent"}」对话</p>
-              <p className="text-[12.5px] text-[var(--color-muted)] mt-2">
+              <p className="text-[12px] text-[var(--color-muted)] mt-2">
                 它会记住这个对话里说过的内容，也会用上你教过它的长期记忆。
               </p>
             </div>
@@ -589,14 +589,14 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               {/* 生成中：实时分色显示执行过程（思考 / 工具 / 结果 / 回答） */}
               {busy && liveEvents.length > 0 && (
                 <div className="w-full">
-                  <div className="text-[11.5px] text-[var(--color-muted)] mb-2 flex items-center gap-1.5">
+                  <div className="text-[12px] text-[var(--color-muted)] mb-2 flex items-center gap-1.5">
                     <span className="live-dot">●</span> 执行中…
                   </div>
                   <RunTimeline steps={eventsToSteps(liveEvents, liveInput)} compact />
                 </div>
               )}
               {busy && liveEvents.length === 0 && (
-                <div className="text-[12.5px] text-[var(--color-muted)] live-dot">思考中…</div>
+                <div className="text-[12px] text-[var(--color-muted)] live-dot">思考中…</div>
               )}
             </div>
           )}
@@ -638,7 +638,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 重试
               </button>
               <button
-                className="text-[11.5px] shrink-0 hover:underline"
+                className="text-[12px] shrink-0 hover:underline"
                 onClick={() => setFailed(null)}
               >
                 忽略
@@ -714,7 +714,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               {pendingFiles.map((f, i) => (
                 <span
                   key={f.path + i}
-                  className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11.5px]"
+                  className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px]"
                   style={{ background: "var(--color-surface-2)" }}
                 >
                   {f.name}
@@ -733,7 +733,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
           {/* 存在哪 —— 自托管平台上，用户随时能核对落点（点一下复制路径） */}
           {paths && (
             <div
-              className="max-w-4xl mx-auto mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px]"
+              className="max-w-4xl mx-auto mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px]"
               style={{ color: "var(--color-muted)" }}
             >
               <span>会话保存在服务器</span>
@@ -859,7 +859,7 @@ function Bubble({
               <button
                 data-tap
                 onClick={() => void toggle()}
-                className="text-[11.5px] text-[var(--color-accent)] hover:underline flex items-center gap-1"
+                className="text-[12px] text-[var(--color-accent)] hover:underline flex items-center gap-1"
               >
                 <span>{open ? "▾" : "▸"}</span>
                 执行过程
@@ -872,12 +872,12 @@ function Bubble({
               <button
                 data-tap
                 onClick={() => setDetailOpen(true)}
-                className="text-[11.5px] text-[var(--color-muted)] hover:text-[var(--color-text)]"
+                className="text-[12px] text-[var(--color-muted)] hover:text-[var(--color-text)]"
               >
                 完整记录 →
               </button>
               {meta && (
-                <span className="text-[11px] text-[var(--color-muted)]">
+                <span className="text-[12px] text-[var(--color-muted)]">
                   {meta.tokens > 0 ? `${fmt.int(meta.tokens)} tokens · ` : ""}
                   {fmt.ms(meta.seconds * 1000)}
                 </span>
@@ -896,9 +896,9 @@ function Bubble({
                 }}
               >
                 {loadingEv ? (
-                  <div className="text-[12.5px] text-[var(--color-muted)]">加载执行过程…</div>
+                  <div className="text-[12px] text-[var(--color-muted)]">加载执行过程…</div>
                 ) : steps.length === 0 ? (
-                  <div className="text-[12.5px] text-[var(--color-muted)]">
+                  <div className="text-[12px] text-[var(--color-muted)]">
                     这次执行没有可展示的步骤。
                   </div>
                 ) : (

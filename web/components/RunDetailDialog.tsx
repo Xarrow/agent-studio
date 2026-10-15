@@ -63,7 +63,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   return (
     <div className="flex gap-3 py-1.5 border-b border-[var(--color-border)] last:border-0">
       <div className="w-20 shrink-0 text-[12px] text-[var(--color-muted)]">{label}</div>
-      <div className="flex-1 min-w-0 text-[12.5px] break-words">{children}</div>
+      <div className="flex-1 min-w-0 text-[12px] break-words">{children}</div>
     </div>
   );
 }
@@ -71,7 +71,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="mt-4">
-      <h3 className="text-[12.5px] font-medium text-[var(--color-muted)] mb-2">{title}</h3>
+      <h3 className="text-[12px] font-medium text-[var(--color-muted)] mb-2">{title}</h3>
       {children}
     </section>
   );
@@ -284,7 +284,7 @@ export function RunDetailDialog({
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span
-                className="text-[11px] px-1.5 py-0.5 rounded"
+                className="text-[12px] px-1.5 py-0.5 rounded"
                 style={{
                   background: "color-mix(in srgb, var(--color-accent) 12%, transparent)",
                   color: "var(--color-accent)",
@@ -297,7 +297,7 @@ export function RunDetailDialog({
                 {title || <span className="text-[var(--color-muted)]">加载中…</span>}
               </h2>
             </div>
-            <p className="text-[11.5px] text-[var(--color-muted)] mt-1 mono">{item.id}</p>
+            <p className="text-[12px] text-[var(--color-muted)] mt-1 mono">{item.id}</p>
           </div>
           <button className="btn shrink-0" onClick={onClose}>
             关闭
@@ -305,7 +305,7 @@ export function RunDetailDialog({
         </div>
 
         {err && (
-          <div className="text-[12.5px] text-[var(--color-err)] mb-3">✗ {err}</div>
+          <div className="text-[12px] text-[var(--color-err)] mb-3">✗ {err}</div>
         )}
 
         {/* 这个 Run 卡在等待授权 —— 就地确认。
@@ -365,7 +365,7 @@ export function RunDetailDialog({
         </div>
 
         {loading ? (
-          <div className="p-6 text-center text-[12.5px] text-[var(--color-muted)]">加载中…</div>
+          <div className="p-6 text-center text-[12px] text-[var(--color-muted)]">加载中…</div>
         ) : isOrch && orch ? (
           /* ────────────── 编排执行（整次归组行）──────────────
               一次编排 = 编排者拆解 → 各助手分步 → 回总结。
@@ -373,7 +373,7 @@ export function RunDetailDialog({
               要逐步看过程，走底部「以流程查看」进画布回放。 */
           <>
             <Section title="任务输入">
-              <div className="rounded-md p-2.5 bg-[var(--color-surface-2)] text-[12.5px] whitespace-pre-wrap break-words">
+              <div className="rounded-md p-2.5 bg-[var(--color-surface-2)] text-[12px] whitespace-pre-wrap break-words">
                 {inputText || "—"}
               </div>
             </Section>
@@ -382,11 +382,11 @@ export function RunDetailDialog({
                 {orch.steps.map((st, i) => (
                   <div
                     key={st.run_id}
-                    className="rounded-md p-2.5 bg-[var(--color-surface-2)] flex items-center gap-2.5 text-[12.5px]"
+                    className="rounded-md p-2.5 bg-[var(--color-surface-2)] flex items-center gap-2.5 text-[12px]"
                   >
                     <span className="text-[var(--color-muted)] mono w-5 shrink-0">{i + 1}</span>
                     <span
-                      className="mono text-[11px] shrink-0"
+                      className="mono text-[12px] shrink-0"
                       style={{ color: STATUS_STYLE[st.status] ?? "var(--color-text)" }}
                     >
                       {st.status}
@@ -405,7 +405,7 @@ export function RunDetailDialog({
               </div>
             </Section>
             <Section title="总结输出">
-              <div className="rounded-md p-2.5 bg-[var(--color-surface-2)] text-[12.5px] whitespace-pre-wrap break-words">
+              <div className="rounded-md p-2.5 bg-[var(--color-surface-2)] text-[12px] whitespace-pre-wrap break-words">
                 {outputText || "—"}
               </div>
             </Section>
@@ -416,14 +416,14 @@ export function RunDetailDialog({
             <Section title={`请求消息（${messages.length} 条）`}>
               <div className="space-y-2">
                 {messages.length === 0 ? (
-                  <p className="text-[12.5px] text-[var(--color-muted)]">没有记录到请求内容。</p>
+                  <p className="text-[12px] text-[var(--color-muted)]">没有记录到请求内容。</p>
                 ) : (
                   messages.map((m, i) => (
                     <div key={i} className="rounded-md p-2.5 bg-[var(--color-surface-2)]">
-                      <div className="text-[11px] text-[var(--color-muted)] mb-1 mono">
+                      <div className="text-[12px] text-[var(--color-muted)] mb-1 mono">
                         {m.role}
                       </div>
-                      <div className="text-[12.5px] whitespace-pre-wrap break-words">
+                      <div className="text-[12px] whitespace-pre-wrap break-words">
                         {m.content}
                       </div>
                     </div>
@@ -433,7 +433,7 @@ export function RunDetailDialog({
             </Section>
             <Section title="模型回复">
               <div className="rounded-md p-2.5 bg-[var(--color-surface-2)]">
-                <div className="text-[12.5px] whitespace-pre-wrap break-words">
+                <div className="text-[12px] whitespace-pre-wrap break-words">
                   {reply || <span className="text-[var(--color-muted)]">（没有回复内容）</span>}
                 </div>
               </div>
@@ -443,12 +443,12 @@ export function RunDetailDialog({
           /* ────────────── 助手执行 ────────────── */
           <>
             <Section title="输入">
-              <div className="rounded-md p-2.5 bg-[var(--color-surface-2)] text-[12.5px] whitespace-pre-wrap break-words">
+              <div className="rounded-md p-2.5 bg-[var(--color-surface-2)] text-[12px] whitespace-pre-wrap break-words">
                 {inputText || "—"}
               </div>
             </Section>
             <Section title="输出">
-              <div className="rounded-md p-2.5 bg-[var(--color-surface-2)] text-[12.5px] whitespace-pre-wrap break-words">
+              <div className="rounded-md p-2.5 bg-[var(--color-surface-2)] text-[12px] whitespace-pre-wrap break-words">
                 {outputText || "—"}
               </div>
             </Section>
@@ -488,7 +488,7 @@ export function RunDetailDialog({
                         </span>
                       </div>
                       {t.args && Object.keys(t.args).length > 0 && (
-                        <pre className="mt-1.5 text-[11px] text-[var(--color-muted)] whitespace-pre-wrap break-all">
+                        <pre className="mt-1.5 text-[12px] text-[var(--color-muted)] whitespace-pre-wrap break-all">
                           {JSON.stringify(t.args, null, 1)}
                         </pre>
                       )}
@@ -503,7 +503,7 @@ export function RunDetailDialog({
                 {rawOpen ? "▾ 收起" : "▸ 展开原始 JSON"}
               </button>
               {rawOpen && (
-                <pre className="mt-2 max-h-72 overflow-auto rounded-md p-2.5 bg-[var(--color-surface-2)] text-[11px] whitespace-pre-wrap break-all">
+                <pre className="mt-2 max-h-72 overflow-auto rounded-md p-2.5 bg-[var(--color-surface-2)] text-[12px] whitespace-pre-wrap break-all">
                   {JSON.stringify(trace, null, 2)}
                 </pre>
               )}
@@ -525,7 +525,7 @@ export function RunDetailDialog({
             </button>
           )}
           {!isTest && status !== "ok" && (
-            <span className="text-[11.5px] text-[var(--color-muted)]">
+            <span className="text-[12px] text-[var(--color-muted)]">
               只有成功的执行才能沉淀记忆
             </span>
           )}

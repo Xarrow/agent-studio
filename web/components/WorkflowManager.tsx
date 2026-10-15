@@ -257,7 +257,7 @@ export function WorkflowManager({
                       })();
                     }
                   }}
-                  className="rounded-[8px] border px-2.5 py-1.5 text-[12.5px] hover:bg-[var(--color-surface-2)]"
+                  className="rounded-[8px] border px-2.5 py-1.5 text-[12px] hover:bg-[var(--color-surface-2)]"
                   style={{ borderColor: "var(--color-border)" }}
                 >
                   {renaming ? "保存名字" : "重命名"}
@@ -265,7 +265,7 @@ export function WorkflowManager({
                 <button
                   type="button"
                   onClick={() => onDuplicate(cur)}
-                  className="rounded-[8px] border px-2.5 py-1.5 text-[12.5px] hover:bg-[var(--color-surface-2)]"
+                  className="rounded-[8px] border px-2.5 py-1.5 text-[12px] hover:bg-[var(--color-surface-2)]"
                   style={{ borderColor: "var(--color-border)" }}
                 >
                   复制
@@ -286,7 +286,7 @@ export function WorkflowManager({
                       onDeleted();
                     })();
                   }}
-                  className="rounded-[8px] border px-2.5 py-1.5 text-[12.5px]"
+                  className="rounded-[8px] border px-2.5 py-1.5 text-[12px]"
                   style={{
                     borderColor: confirmDel ? "var(--color-err)" : "var(--color-border)",
                     color: confirmDel ? "var(--color-err)" : undefined,
@@ -319,12 +319,12 @@ export function WorkflowManager({
           {variant !== "page" && (
           <div className="w-[280px] shrink-0 overflow-auto border-r" style={{ borderColor: "var(--color-border)" }}>
             {loading && (
-              <div className="px-3 py-3 text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+              <div className="px-3 py-3 text-[12px]" style={{ color: "var(--color-muted)" }}>
                 读取中…
               </div>
             )}
             {!loading && list.length === 0 && (
-              <div className="px-3 py-4 text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+              <div className="px-3 py-4 text-[12px]" style={{ color: "var(--color-muted)" }}>
                 还没有流程。点右上「＋ 新建」，或回画布点一个起步模板。
               </div>
             )}
@@ -345,7 +345,7 @@ export function WorkflowManager({
                 <span className="shrink-0 text-[12px] opacity-70">▤</span>
                 <span className="min-w-0 flex-1 truncate">全部运行记录</span>
               </span>
-              <span className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+              <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
                 LLM 测试 · 助手试跑 · 流程执行，全在一张表
               </span>
             </button>
@@ -367,12 +367,12 @@ export function WorkflowManager({
                   <div className="flex items-center gap-2">
                     <span className="min-w-0 flex-1 truncate text-[13px]">{w.name || "未命名编排"}</span>
                     {w.id === currentId && (
-                      <span className="shrink-0 text-[11px]" style={{ color: "var(--color-accent)" }}>
+                      <span className="shrink-0 text-[12px]" style={{ color: "var(--color-accent)" }}>
                         画布上
                       </span>
                     )}
                   </div>
-                  <div className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                  <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>
                     {n} 步 · 跑过 {w.run_count ?? 0} 次 · 更新 {ago(w.updated_at)}
                   </div>
                 </button>
@@ -407,14 +407,14 @@ export function WorkflowManager({
                     {chain.map((c, i) => (
                       <span key={c.nid} className="flex items-center gap-1">
                         {i > 0 && (
-                          <span className="px-0.5 text-[11px]" style={{ color: "var(--color-border)" }}>
+                          <span className="px-0.5 text-[12px]" style={{ color: "var(--color-border)" }}>
                             →
                           </span>
                         )}
                         <button
                           type="button"
                           onClick={() => void showStep(runs[0]?.id ?? "", i)}
-                          className="flex items-center gap-1.5 rounded-full border px-2 py-[2px] text-[11.5px] hover:brightness-[.97]"
+                          className="flex items-center gap-1.5 rounded-full border px-2 py-[2px] text-[12px] hover:brightness-[.97]"
                           style={{
                             borderColor: "color-mix(in srgb, var(--color-accent) 34%, var(--color-border))",
                             background:
@@ -432,7 +432,7 @@ export function WorkflowManager({
                     ))}
                   </div>
                 ) : (
-                  <div className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+                  <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>
                     这份流程还没有助手。打开到画布，点节点右边的 ＋ 起步。
                   </div>
                 )}
@@ -440,12 +440,12 @@ export function WorkflowManager({
                 {openStep && openStep.startsWith(`${runs[0]?.id ?? ""}:`) && stepDetail && (
                   <div className="mt-2 rounded-[8px] border" style={{ borderColor: "var(--color-border)" }}>
                     <div className="flex items-center gap-2 border-b px-2 py-1" style={{ borderColor: "var(--color-border)" }}>
-                      <span className="text-[11.5px] font-medium" style={{ color: "var(--color-muted)" }}>
+                      <span className="text-[12px] font-medium" style={{ color: "var(--color-muted)" }}>
                         这一步的执行详情
                       </span>
                       <button
                         type="button"
-                        className="ml-auto text-[11.5px]"
+                        className="ml-auto text-[12px]"
                         style={{ color: "var(--color-muted)" }}
                         onClick={() => { setOpenStep(null); setStepDetail(null); }}
                       >
@@ -462,11 +462,11 @@ export function WorkflowManager({
                           const sty = STEP_STYLE[st.kind];
                           return (
                             <div key={k} className="rounded-[8px] border" style={{ borderColor: sty.border, background: sty.bg }}>
-                              <div className="flex items-center gap-1.5 px-2 py-[3px] text-[11px] font-semibold" style={{ color: sty.color }}>
+                              <div className="flex items-center gap-1.5 px-2 py-[3px] text-[12px] font-semibold" style={{ color: sty.color }}>
                                 <span className="text-[10px] leading-none">{sty.icon}</span>
                                 {st.label}
                               </div>
-                              <div className="max-h-[220px] overflow-auto whitespace-pre-wrap break-words px-2 pb-[6px] text-[11.5px] leading-[1.65]">
+                              <div className="max-h-[220px] overflow-auto whitespace-pre-wrap break-words px-2 pb-[6px] text-[12px] leading-[1.65]">
                                 {st.body}
                               </div>
                             </div>
@@ -483,7 +483,7 @@ export function WorkflowManager({
             )}
             {renaming && cur && (
               <div className="flex items-center gap-2 border-b px-4 py-2" style={{ borderColor: "var(--color-border)" }}>
-                <span className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+                <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
                   新名字
                 </span>
                 <input
@@ -494,18 +494,18 @@ export function WorkflowManager({
                     // 中文流程名组字中的回车是选字，不是「改完了」
                     if (e.key === "Enter" && !isImeEvent(e)) (e.target as HTMLInputElement).blur();
                   }}
-                  className="df-ctl h-[30px] flex-1 rounded-[8px] border px-2 text-[12.5px]"
+                  className="df-ctl h-[30px] flex-1 rounded-[8px] border px-2 text-[12px]"
                   style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
                 />
               </div>
             )}
             {!cur && (
-              <div className="px-4 py-4 text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+              <div className="px-4 py-4 text-[12px]" style={{ color: "var(--color-muted)" }}>
                 左边选一份流程，这里显示它跑过的每一次。
               </div>
             )}
             {cur && curRuns === 0 && (
-              <div className="px-4 py-4 text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+              <div className="px-4 py-4 text-[12px]" style={{ color: "var(--color-muted)" }}>
                 这份流程还没跑过。打开到画布写个任务就能跑。
               </div>
             )}
@@ -522,7 +522,7 @@ export function WorkflowManager({
                       {/* ① 结果一行 */}
                       <div className="flex flex-wrap items-center gap-2">
                         <span
-                          className="rounded-full px-2 py-[1px] text-[11.5px]"
+                          className="rounded-full px-2 py-[1px] text-[12px]"
                           style={{ color: st.color, background: `color-mix(in srgb, ${st.color} 12%, transparent)` }}
                         >
                           {st.text}
@@ -533,7 +533,7 @@ export function WorkflowManager({
                       </div>
 
                       {/* ② 这次让它做什么 */}
-                      <div className="mt-1.5 text-[12.5px] leading-[1.6]" title={o.task ?? ""}>
+                      <div className="mt-1.5 text-[12px] leading-[1.6]" title={o.task ?? ""}>
                         {o.task || <span style={{ color: "var(--color-muted)" }}>（无任务文本）</span>}
                       </div>
 
@@ -546,12 +546,12 @@ export function WorkflowManager({
                             return (
                               <span key={c.nid} className="flex items-center gap-1">
                                 {i > 0 && (
-                                  <span style={{ color: "var(--color-border)" }} className="px-0.5 text-[11px]">
+                                  <span style={{ color: "var(--color-border)" }} className="px-0.5 text-[12px]">
                                     →
                                   </span>
                                 )}
                                 <span
-                                  className="flex items-center gap-1 rounded-full border px-1.5 py-[1px] text-[11px]"
+                                  className="flex items-center gap-1 rounded-full border px-1.5 py-[1px] text-[12px]"
                                   style={{
                                     borderColor: reached
                                       ? "color-mix(in srgb, var(--color-accent) 40%, var(--color-border))"

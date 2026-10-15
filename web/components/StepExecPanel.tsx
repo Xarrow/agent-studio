@@ -258,37 +258,37 @@ export function StepExecPanel({
         className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left"
       >
         <span
-          className="shrink-0 text-[11px] font-semibold"
+          className="shrink-0 text-[12px] font-semibold"
           style={{ color: "var(--color-muted)" }}
         >
           {index + 1}
         </span>
         <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{step.agent_name}</span>
-        <span className="shrink-0 text-[11.5px]" style={{ color: statusColor(step.status) }}>
+        <span className="shrink-0 text-[12px]" style={{ color: statusColor(step.status) }}>
           {live && step.status === "running" ? "● " : ""}
           {statusText[step.status] ?? step.status}
         </span>
         {durMs != null && durMs > 0 && (
-          <span className="shrink-0 text-[11px]" style={{ color: "var(--color-muted)" }}>
+          <span className="shrink-0 text-[12px]" style={{ color: "var(--color-muted)" }}>
             {fmtMs(durMs)}
           </span>
         )}
         {iters > 0 && (
-          <span className="shrink-0 text-[11px]" style={{ color: "var(--color-muted)" }}>
+          <span className="shrink-0 text-[12px]" style={{ color: "var(--color-muted)" }}>
             ↻{iters}
           </span>
         )}
         {tools.length > 0 && (
-          <span className="shrink-0 text-[11px]" style={{ color: "var(--color-muted)" }}>
+          <span className="shrink-0 text-[12px]" style={{ color: "var(--color-muted)" }}>
             🛠{tools.length}
           </span>
         )}
         {tokens > 0 && (
-          <span className="shrink-0 text-[11px]" style={{ color: "var(--color-muted)" }}>
+          <span className="shrink-0 text-[12px]" style={{ color: "var(--color-muted)" }}>
             {tokens} 字
           </span>
         )}
-        <span className="shrink-0 text-[11px]" style={{ color: "var(--color-muted)" }}>
+        <span className="shrink-0 text-[12px]" style={{ color: "var(--color-muted)" }}>
           {open ? "▾" : "▸"}
         </span>
       </button>
@@ -336,18 +336,18 @@ export function StepExecPanel({
                         style={{
                           color: t.state === "成功" ? "var(--color-ok)" : t.state === "调用中" ? "var(--color-accent)" : "var(--color-err)",
                         }}
-                        className="text-[11px]"
+                        className="text-[12px]"
                       >
                         {t.state}
                       </span>
                     </div>
                     {argsLine(t.args) && (
-                      <div className="mono mt-0.5 break-all text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                      <div className="mono mt-0.5 break-all text-[12px]" style={{ color: "var(--color-muted)" }}>
                         {argsLine(t.args)}
                       </div>
                     )}
                     {t.result.trim() && (
-                      <div className="mono mt-1 max-h-[120px] overflow-auto whitespace-pre-wrap break-all rounded-[4px] px-1.5 py-1 text-[11.5px]" style={{ background: "var(--color-surface-2)" }}>
+                      <div className="mono mt-1 max-h-[120px] overflow-auto whitespace-pre-wrap break-all rounded-[4px] px-1.5 py-1 text-[12px]" style={{ background: "var(--color-surface-2)" }}>
                         {t.result.trim().slice(0, 800)}
                       </div>
                     )}
@@ -360,7 +360,7 @@ export function StepExecPanel({
           {/* 输出 */}
           <Section label="输出">
             {out ? (
-              <div className="whitespace-pre-wrap text-[12.5px] leading-[1.7]">{out}</div>
+              <div className="whitespace-pre-wrap text-[12px] leading-[1.7]">{out}</div>
             ) : (
               <Muted>{live ? "还没输出最终回答" : "这一步没有输出"}</Muted>
             )}
@@ -379,13 +379,13 @@ export function StepExecPanel({
             <button
               type="button"
               onClick={() => setShowLog((v) => !v)}
-              className="text-[11.5px]"
+              className="text-[12px]"
               style={{ color: "var(--color-muted)" }}
             >
               {showLog ? "收起日志" : `日志（${data?.events?.length ?? 0} 条事件）`}
             </button>
             {showLog && (
-              <div className="mono mt-1.5 max-h-[200px] overflow-auto text-[11px] leading-[1.7]">
+              <div className="mono mt-1.5 max-h-[200px] overflow-auto text-[12px] leading-[1.7]">
                 {(data?.events ?? []).map((ev) => (
                   <div key={ev.seq} className="flex gap-2">
                     <span className="shrink-0" style={{ color: "var(--color-muted)" }}>
@@ -403,7 +403,7 @@ export function StepExecPanel({
           <div className="mt-2 text-right">
             <a
               href={`/runs?run=${step.run_id}`}
-              className="text-[11.5px]"
+              className="text-[12px]"
               style={{ color: "var(--color-accent)" }}
             >
               这一步的完整记录 →
@@ -427,7 +427,7 @@ function Section({
 }) {
   return (
     <div className="mb-2.5">
-      <div className="mb-1 flex items-center gap-1.5 text-[11.5px] font-semibold" style={{ color: "var(--color-muted)" }}>
+      <div className="mb-1 flex items-center gap-1.5 text-[12px] font-semibold" style={{ color: "var(--color-muted)" }}>
         {label}
         {hint && <Hint text={hint} />}
       </div>

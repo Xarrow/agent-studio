@@ -173,13 +173,13 @@ export function ProcessRail({
         className="px-3 py-2.5 border-b flex items-center gap-2"
         style={{ borderColor: "var(--color-border)" }}
       >
-        <span className="text-[12.5px] font-medium">执行</span>
+        <span className="text-[12px] font-medium">执行</span>
         {busy ? (
-          <span className="text-[11px] live-dot" style={{ color: "var(--color-accent)" }}>
+          <span className="text-[12px] live-dot" style={{ color: "var(--color-accent)" }}>
             ● 实时
           </span>
         ) : (
-          <span className="text-[11px]" style={{ color: "var(--color-muted)" }}>
+          <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
             {steps.length ? `共 ${steps.length} 步` : ""}
           </span>
         )}
@@ -188,7 +188,7 @@ export function ProcessRail({
       {/* ① 本轮用量 —— 跑的时候最想知道的几个数，一行摆开 */}
       {(hasUsage || busy) && (
         <div className="border-b px-3 py-2.5" style={{ borderColor: "var(--color-border)" }}>
-          <div className="mb-1.5 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+          <div className="mb-1.5 text-[12px]" style={{ color: "var(--color-muted)" }}>
             本轮用量
           </div>
           <div className="flex flex-wrap gap-x-3 gap-y-1 text-[12px]">
@@ -220,7 +220,7 @@ export function ProcessRail({
             ) : null}
           </div>
           {usage && (usage.llm_ms || usage.tool_ms) ? (
-            <div className="mt-1 text-[11px]" style={{ color: "var(--color-muted)" }}>
+            <div className="mt-1 text-[12px]" style={{ color: "var(--color-muted)" }}>
               模型 {fmt.ms(usage.llm_ms ?? 0)} · 工具 {fmt.ms(usage.tool_ms ?? 0)}
               {usage.retries ? ` · 重试 ${usage.retries}` : ""}
               {usage.errors ? ` · 报错 ${usage.errors}` : ""}
@@ -243,14 +243,14 @@ export function ProcessRail({
       {/* ③ 工具调用 + 产物文件 —— 详情放底部（滚到才看，不抢过程的视线） */}
       {toolSummary.length > 0 && (
         <div className="border-t px-3 py-2.5" style={{ borderColor: "var(--color-border)" }}>
-          <div className="mb-1.5 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+          <div className="mb-1.5 text-[12px]" style={{ color: "var(--color-muted)" }}>
             用到的工具
           </div>
           <div className="flex flex-wrap gap-1.5">
             {toolSummary.map(([name, s]) => (
               <span
                 key={name}
-                className="rounded px-1.5 py-0.5 text-[11px]"
+                className="rounded px-1.5 py-0.5 text-[12px]"
                 title={s.bad ? `${s.n} 次，其中 ${s.bad} 次失败` : `${s.n} 次`}
                 style={{
                   background:
@@ -270,7 +270,7 @@ export function ProcessRail({
 
       {files.length > 0 && (
         <div className="border-t px-3 py-2.5" style={{ borderColor: "var(--color-border)" }}>
-          <div className="mb-1.5 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+          <div className="mb-1.5 text-[12px]" style={{ color: "var(--color-muted)" }}>
             这一轮写了 {files.length} 个文件
           </div>
           <div className="flex flex-col gap-1">
@@ -280,7 +280,7 @@ export function ProcessRail({
                 type="button"
                 data-tap
                 title="点一下复制完整路径"
-                className="mono truncate rounded px-1.5 py-1 text-left text-[11.5px] hover:bg-[var(--color-surface-2)]"
+                className="mono truncate rounded px-1.5 py-1 text-left text-[12px] hover:bg-[var(--color-surface-2)]"
                 onClick={() =>
                   void navigator.clipboard?.writeText(f).then(
                     () => fb.success("已复制路径", f),

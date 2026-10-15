@@ -42,14 +42,14 @@ function Shell({
   return (
     <div className="my-2 overflow-hidden rounded-lg border border-slate-200">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-slate-200 bg-slate-50 px-2.5 py-1.5">
-        <span className="text-[11.5px] font-medium text-slate-600">{title}</span>
-        {hint ? <span className="text-[11px] text-slate-400">{hint}</span> : null}
+        <span className="text-[12px] font-medium text-slate-600">{title}</span>
+        {hint ? <span className="text-[12px] text-slate-400">{hint}</span> : null}
         <div className="ml-auto flex items-center gap-1">
           <button
             type="button"
             onClick={() => setShowRaw((v) => !v)}
             data-tap
-            className="rounded px-1.5 py-1 text-[11px] text-slate-500 hover:bg-slate-200/70"
+            className="rounded px-1.5 py-1 text-[12px] text-slate-500 hover:bg-slate-200/70"
           >
             {showRaw ? "看渲染" : "看源码"}
           </button>
@@ -61,7 +61,7 @@ function Shell({
               window.setTimeout(() => setCopied(false), 1500);
             }}
             data-tap
-            className="rounded px-1.5 py-1 text-[11px] text-slate-500 hover:bg-slate-200/70"
+            className="rounded px-1.5 py-1 text-[12px] text-slate-500 hover:bg-slate-200/70"
           >
             {copied ? "已复制" : "复制"}
           </button>
@@ -105,7 +105,7 @@ function TreeNode({
   if (!node.collapsible) {
     return (
       <div className="flex items-start gap-1.5 py-[1px] font-mono text-[12px] leading-[1.55]" style={{ paddingLeft: pad }}>
-        <span className="shrink-0 text-[11px] text-slate-400">
+        <span className="shrink-0 text-[12px] text-slate-400">
           {node.key === "$" ? "" : node.key}
         </span>
         {node.key !== "$" ? <span className="text-slate-400">:</span> : null}
@@ -163,7 +163,7 @@ export function CsvBlock({ code, delimiter }: { code: string; delimiter: string 
   return (
     <Shell title={delimiter === "\t" ? "TSV" : "CSV"} hint={`${table.rows.length} 行`} raw={code}>
       {table.header.length >= 3 ? (
-        <p className="px-2.5 pt-1 text-[11px] text-slate-400 lg:hidden">← 左右滑动看更多列 →</p>
+        <p className="px-2.5 pt-1 text-[12px] text-slate-400 lg:hidden">← 左右滑动看更多列 →</p>
       ) : null}
       <div className="max-h-[420px] overflow-auto bg-white">
         <table className="w-full border-collapse text-[12px]">
@@ -301,7 +301,7 @@ export function ChartBlock({ code }: { code: string }) {
         {spec.series.length > 1 ? (
           <div className="mt-1 flex flex-wrap gap-3 px-1">
             {spec.series.map((s, i) => (
-              <span key={i} className="inline-flex items-center gap-1.5 text-[11px] text-slate-600">
+              <span key={i} className="inline-flex items-center gap-1.5 text-[12px] text-slate-600">
                 <span className="inline-block h-2 w-2 rounded-sm" style={{ background: color(i) }} />
                 {s.name}
               </span>

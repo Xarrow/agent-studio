@@ -70,6 +70,53 @@ export function McpPanel({ embedded = false }: { embedded?: boolean }) {
     }
   };
 
+  /* ── 粘贴 mcpServers JSON 直接注册 ──────────────────────────────
+     用户从 Claude Desktop / Cursor / 内部平台拿到的那份配置原样粘进来，
+     不用把字段拆成表单手填一遍。有 command 走 stdio、有 url 走 http，
+     后端判；这里只做**本地预览**（名字/形态/连到哪）让人确认，注册和
+     工具清单一律走后端。同名再粘一次是更新不是新增。 */
+  const [pasted, setPasted] = useState("");
+  const [importing, setImporting] = useState(false);
+
+  const pastePreview = (() => {
+    const t = pasted.trim();
+    if (!t) return null;
+    try {
+      const obj = JSON.parse(t) as Record<string, unknown>;
+      const inner = (obj.mcpServers ?? obj) as Record<string, unknown>;
+      if (typeof inner !== "object" || inner === null || Array.isArray(inner))
+        return { error: "没找到 mcpServers 配置：应为 {\"mcpServers\": {\"名字\": {...}}}" };
+      const items = Object.entries(inner).map(([name, cfg]) => {
+        const c = (cfg ?? {}) as Record<string, unknown>;
+        const cmd = String(c.command ?? "").trim();
+        const url = String(c.url ?? "").trim();
+        const kind = cmd ? "stdio" : url ? "http" : "缺 command 和 url";
+        return { name, kind, target: cmd ? `命令 ${cmd}` : url || "—" };
+      });
+      if (!items.length) return { error: "mcpServers 里是空的" };
+      return { items };
+    } catch {
+      return { error: "不是合法的 JSON（先粘到别处校验一下？）" };
+    }
+  })();
+
+  const doImport = async () => {
+    setImporting(true);
+    try {
+      const got = await api.importMcpServers(JSON.parse(pasted));
+      fb.success(
+        `已导入 ${got.length} 个 MCP 服务器`,
+        got.map((s) => `${s.name}（${s.transport}）`).join("、"),
+      );
+      setPasted("");
+      await load();
+    } catch (e) {
+      fb.error("导入失败", e instanceof Error ? e.message : String(e));
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const toggle = async (s: McpServer) => {
     try {
       await api.updateMcpServer(s.id, { enabled: !s.enabled });
@@ -122,10 +169,59 @@ export function McpPanel({ embedded = false }: { embedded?: boolean }) {
         <span className="text-[12px] text-[var(--color-muted)]">
           {loading ? "加载中…" : `${servers.length} 个`}
         </span>
-        <p className="w-full text-[11.5px] text-[var(--color-muted)]">
-          工具清单靠<b>探测</b>得到（连上去问服务器要），不用手填 —— 手填的一定会和实际漂移。
+        <p className="w-full text-[12px] text-[var(--color-muted)]">
+          工具清单靠<b>探测</b>得到（连上去问服务器要），不用手填 —— 手填的一定会和实际漂移
           注册后到「Agents → 某个助手 → 能力」里勾上它，助手才有这些工具。
         </p>
+      </div>
+
+      {/* ── 粘贴 mcpServers JSON（与注册按钮并列，常驻可见） ────── */}
+      <div className="mb-4 rounded-[10px] border p-3 md:p-4" style={{ borderColor: "var(--color-border)" }}>
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <span className="text-[13px] font-medium">粘贴 mcpServers 配置</span>
+          <span className="text-[12px] text-[var(--color-muted)]">
+            Claude Desktop / Cursor / 内部平台给的那份 JSON 原样粘进来，不用拆字段手填
+          </span>
+        </div>
+        <textarea
+          className="input min-h-[64px] w-full font-mono text-[12px]"
+          placeholder={'{\n  "mcpServers": {\n    "名字": { "command": "npx", "args": ["-y", "包名"] }\n  }\n}'}
+          value={pasted}
+          onChange={(e) => setPasted(e.target.value)}
+          spellCheck={false}
+        />
+        {pastePreview && (
+          <div className="mt-2 text-[12px]">
+            {pastePreview.error ? (
+              <p style={{ color: "var(--color-danger, #dc2626)" }}>{pastePreview.error}</p>
+            ) : (
+              <>
+                <p className="mb-1 text-[var(--color-muted)]">
+                  解析出 {pastePreview.items?.length ?? 0} 个服务器（导入后同名是更新）：
+                </p>
+                {(pastePreview.items ?? []).map((it) => (
+                  <p key={it.name} className="truncate">
+                    · <b>{it.name}</b> — {it.kind} · {it.target}
+                  </p>
+                ))}
+              </>
+            )}
+          </div>
+        )}
+        <div className="mt-2 flex items-center gap-2">
+          <button
+            className="btn btn-primary"
+            disabled={importing || !pastePreview || !!pastePreview.error}
+            onClick={() => void doImport()}
+          >
+            {importing ? "导入中…" : "导入"}
+          </button>
+          {pasted && (
+            <button className="btn" onClick={() => setPasted("")} disabled={importing}>
+              清空
+            </button>
+          )}
+        </div>
       </div>
 
       {servers.length === 0 && !loading && (
@@ -182,7 +278,7 @@ export function McpPanel({ embedded = false }: { embedded?: boolean }) {
               </div>
             </div>
 
-            <div className="mt-1.5 text-[11.5px] text-[var(--color-muted)] break-all">
+            <div className="mt-1.5 text-[12px] text-[var(--color-muted)] break-all">
               {s.transport === "stdio" ? (
                 <code className="mono">{[s.command, ...(s.args || [])].filter(Boolean).join(" ")}</code>
               ) : (
@@ -193,7 +289,7 @@ export function McpPanel({ embedded = false }: { embedded?: boolean }) {
               )}
             </div>
             {!s.last_probe_ok && s.last_probe_error && (
-              <p className="mt-1 text-[11.5px]" style={{ color: "var(--color-err)" }}>
+              <p className="mt-1 text-[12px]" style={{ color: "var(--color-err)" }}>
                 {s.last_probe_error}
               </p>
             )}
@@ -316,7 +412,7 @@ function McpDialog({
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="text-[15px] font-semibold">{server ? "编辑 MCP 服务器" : "注册 MCP 服务器"}</h2>
-        <p className="mt-1 text-[11.5px] text-[var(--color-muted)]">
+        <p className="mt-1 text-[12px] text-[var(--color-muted)]">
           只填"怎么连"。工具清单保存后点「重新探测」自动取回来。
         </p>
 
@@ -329,7 +425,7 @@ function McpDialog({
               placeholder="例如 filesystem"
               onChange={(e) => setForm({ ...form, name: e.target.value })}
             />
-            <span className="mt-1 block text-[11px] text-[var(--color-muted)]">
+            <span className="mt-1 block text-[12px] text-[var(--color-muted)]">
               它会成为工具名前缀（<code className="mono">mcp__&lt;名字&gt;__&lt;工具&gt;</code>）。
               用英文字母/数字/下划线/连字符 —— 填中文会自动换成一个稳定的短名。
             </span>
@@ -422,7 +518,7 @@ function McpDialog({
               ) : (
                 <>
                   <b style={{ color: "var(--color-err)" }}>没连上</b>
-                  <p className="mt-0.5 break-all text-[11.5px] text-[var(--color-muted)]">{probed.error}</p>
+                  <p className="mt-0.5 break-all text-[12px] text-[var(--color-muted)]">{probed.error}</p>
                 </>
               )}
             </div>

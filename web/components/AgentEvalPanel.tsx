@@ -171,7 +171,7 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
       <div className="mb-3 flex flex-wrap items-center gap-2">
         {suites.length > 0 ? (
           <select
-            className="rounded-[8px] border px-2 py-1.5 text-[12.5px]"
+            className="rounded-[8px] border px-2 py-1.5 text-[12px]"
             style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
             value={suiteId}
             onChange={(e) => {
@@ -187,14 +187,14 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
             ))}
           </select>
         ) : (
-          <span className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+          <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
             还没有用例集 —— 先写几条"这助手必须答对什么"
           </span>
         )}
         <button
           type="button"
           onClick={startEdit}
-          className="rounded-[8px] border px-2.5 py-1.5 text-[12.5px]"
+          className="rounded-[8px] border px-2.5 py-1.5 text-[12px]"
           style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
         >
           {suite ? "改用例" : "新建用例集"}
@@ -222,7 +222,7 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
                 }
               })();
             }}
-            className="rounded-[8px] border px-2.5 py-1.5 text-[12.5px]"
+            className="rounded-[8px] border px-2.5 py-1.5 text-[12px]"
             style={{
               borderColor: armDelete ? "var(--color-err)" : "var(--color-border)",
               color: armDelete ? "var(--color-err)" : "var(--color-muted)",
@@ -236,7 +236,7 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
             type="button"
             disabled={busy || disabled}
             onClick={() => void runNow()}
-            className="rounded-[8px] border px-2.5 py-1.5 text-[12.5px] disabled:opacity-50"
+            className="rounded-[8px] border px-2.5 py-1.5 text-[12px] disabled:opacity-50"
             style={{ borderColor: "var(--color-accent)", color: "var(--color-accent)" }}
             title={disabled ? "先把这个助手的配置保存好" : "每一例都会真跑一次（算进用量与额度）"}
           >
@@ -248,7 +248,7 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
             value={label}
             onChange={(e) => setLabel(e.target.value)}
             placeholder="这次叫什么（可选，如「改提示词前」）"
-            className="w-[190px] rounded-[8px] border px-2 py-1.5 text-[12.5px] outline-none"
+            className="w-[190px] rounded-[8px] border px-2 py-1.5 text-[12px] outline-none"
             style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
           />
         )}
@@ -261,12 +261,12 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="用例集名字"
-            className="mb-2 w-[240px] rounded-[8px] border px-2 py-1.5 text-[12.5px] outline-none"
+            className="mb-2 w-[240px] rounded-[8px] border px-2 py-1.5 text-[12px] outline-none"
             style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
           />
           {cases.map((c, i) => (
             <div key={i} className="mb-1.5 flex items-center gap-1.5">
-              <span className="w-[26px] shrink-0 text-center text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+              <span className="w-[26px] shrink-0 text-center text-[12px]" style={{ color: "var(--color-muted)" }}>
                 {i + 1}
               </span>
               <input
@@ -275,7 +275,7 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
                   setCases((cur) => cur.map((x, j) => (j === i ? { ...x, input: e.target.value } : x)))
                 }
                 placeholder="问它什么"
-                className="min-w-0 flex-1 rounded-[8px] border px-2 py-1.5 text-[12.5px] outline-none"
+                className="min-w-0 flex-1 rounded-[8px] border px-2 py-1.5 text-[12px] outline-none"
                 style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
               />
               <input
@@ -286,7 +286,7 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
                   )
                 }
                 placeholder="必须包含哪些词（多个用 | 分隔；留空则请模型当裁判）"
-                className="min-w-0 flex-1 rounded-[8px] border px-2 py-1.5 text-[12.5px] outline-none"
+                className="min-w-0 flex-1 rounded-[8px] border px-2 py-1.5 text-[12px] outline-none"
                 style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
               />
               <button
@@ -304,7 +304,7 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
             <button
               type="button"
               onClick={() => setCases((cur) => [...cur, { ...EMPTY }])}
-              className="rounded-[8px] border px-2.5 py-1.5 text-[12.5px]"
+              className="rounded-[8px] border px-2.5 py-1.5 text-[12px]"
               style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
             >
               ＋ 再加一例
@@ -313,7 +313,7 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
               type="button"
               disabled={busy}
               onClick={() => void saveSuite()}
-              className="rounded-[8px] border px-2.5 py-1.5 text-[12.5px] disabled:opacity-50"
+              className="rounded-[8px] border px-2.5 py-1.5 text-[12px] disabled:opacity-50"
               style={{ borderColor: "var(--color-accent)", color: "var(--color-accent)" }}
             >
               保存用例集
@@ -321,7 +321,7 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
             <button
               type="button"
               onClick={() => setEditing(false)}
-              className="rounded-[8px] border px-2.5 py-1.5 text-[12.5px]"
+              className="rounded-[8px] border px-2.5 py-1.5 text-[12px]"
               style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
             >
               取消
@@ -337,7 +337,7 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
             className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2"
             style={{ borderColor: "var(--color-border)" }}
           >
-            <div className="text-[12.5px]">
+            <div className="text-[12px]">
               <span className="font-semibold">
                 {detail.status === "running" ? "正在评测…" : `总分 ${detail.score ?? "—"}`}
               </span>
@@ -347,7 +347,7 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
                 </span>
               )}
             </div>
-            <div className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+            <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>
               {detail.results.length} 例 · {fmt.relative(detail.created_at)}
             </div>
           </div>
@@ -373,13 +373,13 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
                 >
                   {r.status === "pending" || r.status === "running" ? "…" : (r.score ?? "—")}
                 </span>
-                <span className="min-w-0 flex-1 truncate text-[12.5px]">{r.input}</span>
+                <span className="min-w-0 flex-1 truncate text-[12px]">{r.input}</span>
                 {r.status !== "ok" && r.status !== "pending" && r.status !== "running" && (
-                  <span className="shrink-0 text-[11.5px]" style={{ color: "var(--color-err)" }}>
+                  <span className="shrink-0 text-[12px]" style={{ color: "var(--color-err)" }}>
                     {r.status}
                   </span>
                 )}
-                <span className="shrink-0 text-[11px]" style={{ color: "var(--color-muted)" }}>
+                <span className="shrink-0 text-[12px]" style={{ color: "var(--color-muted)" }}>
                   {openCase === r.index ? "收起" : "看产出"}
                 </span>
               </button>
@@ -390,7 +390,7 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
                       {r.checks.map((c) => (
                         <span
                           key={c.keyword}
-                          className="rounded-[6px] px-1.5 py-[2px] text-[11.5px]"
+                          className="rounded-[6px] px-1.5 py-[2px] text-[12px]"
                           style={{
                             color: c.hit ? "var(--color-ok)" : "var(--color-err)",
                             background: `color-mix(in srgb, var(${c.hit ? "--color-ok" : "--color-err"}) 10%, transparent)`,
@@ -402,17 +402,17 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
                     </div>
                   )}
                   {r.judge && (
-                    <div className="mb-2 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                    <div className="mb-2 text-[12px]" style={{ color: "var(--color-muted)" }}>
                       裁判：{r.judge.reason}
                     </div>
                   )}
                   {r.note && (
-                    <div className="mb-2 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                    <div className="mb-2 text-[12px]" style={{ color: "var(--color-muted)" }}>
                       {r.note}
                     </div>
                   )}
                   {r.error && (
-                    <div className="mb-2 text-[11.5px]" style={{ color: "var(--color-err)" }}>
+                    <div className="mb-2 text-[12px]" style={{ color: "var(--color-err)" }}>
                       {r.error}
                     </div>
                   )}
@@ -422,7 +422,7 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
                   >
                     {r.output || "（没有产出）"}
                   </pre>
-                  <div className="mt-1 text-[11px]" style={{ color: "var(--color-muted)" }}>
+                  <div className="mt-1 text-[12px]" style={{ color: "var(--color-muted)" }}>
                     {r.tokens ? `${fmt.int(r.tokens)} token · ` : ""}
                     {r.run_id ? `执行 ${r.run_id}` : ""}
                   </div>
@@ -436,7 +436,7 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
       {/* ── 对比：同一用例集两次，退步的排最前 ───────────────────── */}
       {runs.length >= 2 && (
         <div className="rounded-[10px] border p-3" style={{ borderColor: "var(--color-border)" }}>
-          <div className="mb-2 flex flex-wrap items-center gap-2 text-[12.5px]">
+          <div className="mb-2 flex flex-wrap items-center gap-2 text-[12px]">
             <span className="font-semibold">两版对比</span>
             <select
               className="rounded-[8px] border px-2 py-1.5 text-[12px]"
@@ -483,7 +483,7 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
             </button>
             {cmp && (
               <span
-                className="ml-auto text-[12.5px] font-semibold tabular-nums"
+                className="ml-auto text-[12px] font-semibold tabular-nums"
                 style={{ color: deltaColor(cmp.total_delta) }}
               >
                 总分 {cmp.left.score ?? "—"} → {cmp.right.score ?? "—"}
@@ -508,7 +508,7 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
                   </span>
                 </div>
               ))}
-              <div className="mt-1 text-[11px]" style={{ color: "var(--color-muted)" }}>
+              <div className="mt-1 text-[12px]" style={{ color: "var(--color-muted)" }}>
                 退步的例排在前面 —— 先看这些就够判断这次改动值不值。
               </div>
             </div>

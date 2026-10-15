@@ -284,7 +284,7 @@ export default function EnvironmentPage() {
               </span>
               <span className="text-[13.5px] font-medium">{status.config.driver_label}</span>
               <span
-                className="text-[11.5px]"
+                className="text-[12px]"
                 style={{ color: status.reachable ? "var(--color-ok)" : "var(--color-err)" }}
               >
                 {status.reachable ? "● 连接正常" : "✕ 连不上"}
@@ -295,18 +295,18 @@ export default function EnvironmentPage() {
               {status.runtime.describe}
             </div>
 
-            <div className="flex items-center gap-4 mt-2 flex-wrap text-[11.5px] text-[var(--color-muted)]">
+            <div className="flex items-center gap-4 mt-2 flex-wrap text-[12px] text-[var(--color-muted)]">
               <span>{status.table_count} 张表</span>
               <span>配置文件：{status.config_path}</span>
             </div>
 
             {status.error && (
-              <p className="text-[11.5px] mt-2" style={{ color: "var(--color-err)" }}>
+              <p className="text-[12px] mt-2" style={{ color: "var(--color-err)" }}>
                 {status.error}
               </p>
             )}
             {status.pending_restart && (
-              <p className="text-[11.5px] mt-2" style={{ color: "var(--color-warn)" }}>
+              <p className="text-[12px] mt-2" style={{ color: "var(--color-warn)" }}>
                 配置已改动但还没生效 —— 重启服务后才会用新库。
               </p>
             )}
@@ -350,7 +350,7 @@ export default function EnvironmentPage() {
                     <span className="text-[10px] text-[var(--color-muted)] font-normal">在用</span>
                   )}
                 </div>
-                <div className="text-[11.5px] leading-snug text-[var(--color-muted)]">{d.hint}</div>
+                <div className="text-[12px] leading-snug text-[var(--color-muted)]">{d.hint}</div>
               </button>
             );
           })}
@@ -371,7 +371,7 @@ export default function EnvironmentPage() {
                   setTest(null);
                 }}
               />
-              <p className="text-[11.5px] text-[var(--color-muted)] mt-1">
+              <p className="text-[12px] text-[var(--color-muted)] mt-1">
                 一个文件就是整个数据库，不需要额外服务。适合本地开发和单机使用。
               </p>
             </div>
@@ -448,7 +448,7 @@ export default function EnvironmentPage() {
                       setTest(null);
                     }}
                   />
-                  <p className="text-[11px] text-[var(--color-muted)] mt-1">不存在会自动创建</p>
+                  <p className="text-[12px] text-[var(--color-muted)] mt-1">不存在会自动创建</p>
                 </div>
                 {driver === "mysql" && (
                   <div>
@@ -465,7 +465,7 @@ export default function EnvironmentPage() {
                   </div>
                 )}
                 <div className="flex items-end">
-                  <label className="flex items-center gap-2 text-[12.5px] text-[var(--color-muted)] cursor-pointer pb-2">
+                  <label className="flex items-center gap-2 text-[12px] text-[var(--color-muted)] cursor-pointer pb-2">
                     <input
                       type="checkbox"
                       checked={form.ssl}
@@ -481,7 +481,7 @@ export default function EnvironmentPage() {
               </div>
 
               {!passwordReady && (
-                <p className="text-[11.5px]" style={{ color: "var(--color-warn)" }}>
+                <p className="text-[12px]" style={{ color: "var(--color-warn)" }}>
                   切到另一个驱动需要重新填密码（密码不会跨驱动沿用）。
                 </p>
               )}
@@ -498,11 +498,11 @@ export default function EnvironmentPage() {
               border: `1px solid ${test.ok ? "var(--color-ok)" : "var(--color-err)"}`,
             }}
           >
-            <div className="text-[12.5px] font-medium mb-1.5" style={{ color: test.ok ? "var(--color-ok)" : "var(--color-err)" }}>
+            <div className="text-[12px] font-medium mb-1.5" style={{ color: test.ok ? "var(--color-ok)" : "var(--color-err)" }}>
               {test.ok ? "✓ 测试通过" : "✕ 测试未通过"}
             </div>
             {test.ok ? (
-              <ul className="text-[11.5px] text-[var(--color-muted)] space-y-0.5">
+              <ul className="text-[12px] text-[var(--color-muted)] space-y-0.5">
                 <li>目标：{test.target}</li>
                 <li>
                   表：{test.table_count} 张{test.created_database ? "（数据库是本次自动创建的）" : ""}
@@ -510,7 +510,7 @@ export default function EnvironmentPage() {
                 {test.server_version && <li className="mono break-all">{test.server_version}</li>}
               </ul>
             ) : (
-              <div className="text-[11.5px] text-[var(--color-muted)] space-y-1">
+              <div className="text-[12px] text-[var(--color-muted)] space-y-1">
                 {test.problems.length > 0 && (
                   <ul className="list-disc pl-4">
                     {test.problems.map((p) => (
@@ -537,7 +537,7 @@ export default function EnvironmentPage() {
             {busy === "switch" || switching ? "切换中…" : "保存并切换"}
           </button>
           {!test?.ok && (
-            <span className="text-[11.5px] text-[var(--color-muted)]">
+            <span className="text-[12px] text-[var(--color-muted)]">
               先测试通过才能切换（避免把服务切坏）
             </span>
           )}
@@ -616,7 +616,7 @@ export default function EnvironmentPage() {
         title="几点说明"
         desc="切换数据库的真实行为：数据不搬、服务会重启、密码加密保存、切错会自动退回"
       >
-        <ul className="text-[12.5px] text-[var(--color-muted)] space-y-1.5 leading-relaxed">
+        <ul className="text-[12px] text-[var(--color-muted)] space-y-1.5 leading-relaxed">
           <li>
             <b>数据不会自动搬过去。</b>切到新库后表会自动建好，但里面是空的 ——
             原来的数据还在旧库里。切回来就能看到。

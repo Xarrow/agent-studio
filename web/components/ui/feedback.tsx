@@ -227,7 +227,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
             >
               <div className="flex gap-2.5 p-3">
                 <span
-                  className="shrink-0 w-[18px] h-[18px] rounded-full flex items-center justify-center text-[11px] font-bold mt-[1px]"
+                  className="shrink-0 w-[18px] h-[18px] rounded-full flex items-center justify-center text-[12px] font-bold mt-[1px]"
                   style={{ background: s.accent, color: "var(--color-accent-fg)" }}
                 >
                   {s.icon}
@@ -322,7 +322,7 @@ function ConfirmDialog({
 
         {opt.details && opt.details.length > 0 && (
           <div
-            className="mt-3 rounded-md p-3 text-[12.5px] mono"
+            className="mt-3 rounded-md p-3 text-[12px] mono"
             style={{ background: "var(--color-surface-2)", border: "1px solid var(--color-border)" }}
           >
             {opt.details.map((d, i) => (
@@ -335,7 +335,7 @@ function ConfirmDialog({
         )}
 
         {danger && (
-          <p className="mt-3 text-[12.5px]" style={{ color: "var(--color-err)" }}>
+          <p className="mt-3 text-[12px]" style={{ color: "var(--color-err)" }}>
             此操作不可撤销。
           </p>
         )}
@@ -397,7 +397,7 @@ function PromptDialog({
     onDone(value);
   };
 
-  const inputCls = "input mono text-[12.5px]";
+  const inputCls = "input mono text-[12px]";
   const inputStyle =
     liveErr || err
       ? { borderColor: "var(--color-err)" }

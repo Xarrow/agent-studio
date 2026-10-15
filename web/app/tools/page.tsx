@@ -268,7 +268,7 @@ export default function ToolsPage() {
                 </div>
                 <div className="p-2">
                   {attachAgents.length === 0 ? (
-                    <div className="px-3 py-6 text-center text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+                    <div className="px-3 py-6 text-center text-[12px]" style={{ color: "var(--color-muted)" }}>
                       加载中…
                     </div>
                   ) : (
@@ -281,7 +281,7 @@ export default function ToolsPage() {
                         className="flex min-h-[44px] w-full flex-col items-start justify-center rounded-[8px] px-3 text-left hover:bg-[var(--color-surface-2)] disabled:opacity-50"
                       >
                         <span className="text-[13.5px]">{a.name}</span>
-                        <span className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                        <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
                           {a.description || "没有说明"}
                         </span>
                       </button>
@@ -363,11 +363,11 @@ export default function ToolsPage() {
                 onClear={() => setPicked(new Set())}
                 actions={
                   <>
-                    <button className="btn btn-primary text-[12.5px]" onClick={() => void openAttach()}>
+                    <button className="btn btn-primary text-[12px]" onClick={() => void openAttach()}>
                       加到助手…
                     </button>
                     <button
-                      className="btn text-[12.5px]"
+                      className="btn text-[12px]"
                       style={{ color: "var(--color-err)" }}
                       onClick={() => void bulkRemove()}
                     >
@@ -397,7 +397,7 @@ export default function ToolsPage() {
                         <>
                           <button
                             type="button"
-                            className="btn text-[12.5px]"
+                            className="btn text-[12px]"
                             onClick={() => {
                               setExpanded(t.id);
                               setTesting(null);
@@ -408,7 +408,7 @@ export default function ToolsPage() {
                           </button>
                           <button
                             type="button"
-                            className="btn text-[12.5px]"
+                            className="btn text-[12px]"
                             disabled={unavailable}
                             title={
                               unavailable
@@ -425,7 +425,7 @@ export default function ToolsPage() {
                           {t.kind !== "builtin" && (
                             <button
                               type="button"
-                              className="btn text-[12.5px]"
+                              className="btn text-[12px]"
                               style={{ color: "var(--color-err)" }}
                               onClick={() => void remove(t)}
                             >
@@ -452,7 +452,7 @@ export default function ToolsPage() {
                           {unavailable && <Chip tone="err">当前平台不可用</Chip>}
                         </span>
                         <span
-                          className="mt-0.5 block truncate text-[11.5px]"
+                          className="mt-0.5 block truncate text-[12px]"
                           style={{ color: "var(--color-muted)" }}
                         >
                           {t.description || "没有说明"}
@@ -475,7 +475,7 @@ export default function ToolsPage() {
                           已试跑
                         </Chip>
                       ) : null}
-                      <span className="shrink-0 text-[11px]" style={{ color: "var(--color-muted)" }}>
+                      <span className="shrink-0 text-[12px]" style={{ color: "var(--color-muted)" }}>
                         {open ? "▾" : "▸"}
                       </span>
                     </Row>
@@ -483,7 +483,7 @@ export default function ToolsPage() {
                     {open && (
                       <RowDetail>
                         {unavailable && typeof t.flags?.platform_note === "string" ? (
-                          <div className="mb-2 text-[12.5px]" style={{ color: "var(--color-err)" }}>
+                          <div className="mb-2 text-[12px]" style={{ color: "var(--color-err)" }}>
                             ⚠ {t.flags.platform_note}
                           </div>
                         ) : null}
@@ -528,7 +528,7 @@ export default function ToolsPage() {
                         )}
                         {testOut[t.id] ? (
                           <pre
-                            className="mt-2.5 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-[8px] border p-2.5 text-[11.5px]"
+                            className="mt-2.5 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-[8px] border p-2.5 text-[12px]"
                             style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
                           >
                             {testOut[t.id]}
@@ -658,7 +658,7 @@ function NewToolDialog({
             />
             {urlParams(url).length > 0 && (
               <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                <span className="text-[11px]" style={{ color: "var(--color-muted)" }}>
+                <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
                   URL 里的占位符：
                 </span>
                 {urlParams(url).map((p) => (
@@ -670,7 +670,7 @@ function NewToolDialog({
                 {!urlParams(url).every((p) => params.split(",").map((s) => s.trim()).includes(p)) && (
                   <button
                     type="button"
-                    className="text-[11.5px] underline"
+                    className="text-[12px] underline"
                     style={{ color: "var(--color-accent)" }}
                     onClick={() => {
                       const cur = params.split(",").map((s) => s.trim()).filter(Boolean);
@@ -685,7 +685,7 @@ function NewToolDialog({
               </div>
             )}
           </div>
-          <label className="flex items-center gap-2 text-[12.5px]">
+          <label className="flex items-center gap-2 text-[12px]">
             <input
               type="checkbox"
               checked={readOnly}
@@ -694,7 +694,7 @@ function NewToolDialog({
             />
             只读工具（不产生副作用，可并发）
           </label>
-          {err && <div className="text-[12.5px] text-[var(--color-err)]">{err}</div>}
+          {err && <div className="text-[12px] text-[var(--color-err)]">{err}</div>}
         </div>
 
         <div className="flex justify-end gap-2 mt-5">
@@ -887,7 +887,7 @@ function EditToolDialog({
                 />
               </div>
 
-              <label className="flex items-center gap-2 text-[12.5px]">
+              <label className="flex items-center gap-2 text-[12px]">
                 <input
                   type="checkbox"
                   checked={readOnly}
@@ -902,7 +902,7 @@ function EditToolDialog({
           {/* 高级：直接改 impl */}
           <div className="pt-1 border-t border-[var(--color-border)]">
             <button
-              className="text-[12.5px] text-[var(--color-muted)] mt-3"
+              className="text-[12px] text-[var(--color-muted)] mt-3"
               data-tap
               onClick={() => {
                 setShowImpl(!showImpl);
@@ -920,14 +920,14 @@ function EditToolDialog({
                   onChange={(e) => setImplText(e.target.value)}
                   spellCheck={false}
                 />
-                <p className="text-[11.5px] text-[var(--color-muted)] mt-1">
+                <p className="text-[12px] text-[var(--color-muted)] mt-1">
                   这里改的是原始定义（含超时、字节上限等表单未暴露的字段）。格式必须是合法 JSON。
                 </p>
               </>
             )}
           </div>
 
-          {err && <div className="text-[12.5px] text-[var(--color-err)]">{err}</div>}
+          {err && <div className="text-[12px] text-[var(--color-err)]">{err}</div>}
         </div>
 
         <div className="flex justify-end gap-2 mt-5">

@@ -24,7 +24,7 @@ function Badge({ ok, text, pending }: { ok: boolean; text: string; pending?: boo
   const tone = pending ? "var(--color-muted)" : ok ? "var(--color-ok)" : "var(--color-warn)";
   return (
     <span
-      className="rounded px-1.5 py-0.5 text-[11px]"
+      className="rounded px-1.5 py-0.5 text-[12px]"
       style={{ background: `color-mix(in srgb, ${tone} 14%, transparent)`, color: tone }}
     >
       {text}
@@ -55,7 +55,7 @@ function Row({
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-[13.5px] font-medium">{title}</span>
         <Badge ok={ok} pending={pending} text={pending ? "检测中…" : ok ? "已就绪" : "没找到"} />
-        <span className="mono text-[12.5px]">{header}</span>
+        <span className="mono text-[12px]">{header}</span>
         {action ? <div className="ml-auto">{action}</div> : null}
       </div>
       <div className="mt-1 text-[12px] leading-relaxed" style={{ color: "var(--color-muted)" }}>
@@ -208,7 +208,7 @@ export function RuntimeCard() {
           style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
         >
           <div className="flex items-center gap-2">
-            <span className="text-[12.5px] font-medium">
+            <span className="text-[12px] font-medium">
               安装 {job.target === "node" ? "Node.js" : "Python"}
               {job.version ? ` ${job.version}` : ""}
             </span>

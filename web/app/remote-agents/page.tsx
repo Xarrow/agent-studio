@@ -46,13 +46,13 @@ type Filter = "all" | "ok" | "error" | "off";
 function CallList({ rows }: { rows: RemoteAgentCallRecord[] | null }) {
   if (rows === null)
     return (
-      <p className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+      <p className="text-[12px]" style={{ color: "var(--color-muted)" }}>
         读取中…
       </p>
     );
   if (!rows.length)
     return (
-      <p className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+      <p className="text-[12px]" style={{ color: "var(--color-muted)" }}>
         还没通过它调过远端 —— 助手勾上它之后每调一次，这里就多一条
       </p>
     );
@@ -62,7 +62,7 @@ function CallList({ rows }: { rows: RemoteAgentCallRecord[] | null }) {
         <div key={c.run_id} className="flex flex-col gap-0.5 rounded p-2" style={{ background: "var(--color-surface-2)" }}>
           <div className="flex items-center gap-2">
             <span
-              className="text-[11.5px] font-medium"
+              className="text-[12px] font-medium"
               style={{
                 color:
                   c.status === "ok" ? "var(--color-ok)" : c.status === "error" ? "var(--color-err)" : "var(--color-warn)",
@@ -70,7 +70,7 @@ function CallList({ rows }: { rows: RemoteAgentCallRecord[] | null }) {
             >
               {c.status === "ok" ? "成功" : c.status === "error" ? "失败" : c.status === "aborted" ? "已中止" : c.status}
             </span>
-            <span className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+            <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
               {new Date(c.started_at).toLocaleString()}
               {c.duration_ms != null ? ` · ${(c.duration_ms / 1000).toFixed(1)}s` : ""}
             </span>
@@ -96,13 +96,13 @@ function CallList({ rows }: { rows: RemoteAgentCallRecord[] | null }) {
 function EventList({ rows }: { rows: RemoteAgentEventRecord[] | null }) {
   if (rows === null)
     return (
-      <p className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+      <p className="text-[12px]" style={{ color: "var(--color-muted)" }}>
         读取中…
       </p>
     );
   if (!rows.length)
     return (
-      <p className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+      <p className="text-[12px]" style={{ color: "var(--color-muted)" }}>
         还没有操作记录
       </p>
     );
@@ -132,7 +132,7 @@ function SkillTable({ parsed }: { parsed: RemoteAgentParsed }) {
   const skills = parsed.skills ?? [];
   if (!skills.length) {
     return (
-      <p className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+      <p className="text-[12px]" style={{ color: "var(--color-muted)" }}>
         这个远端没在卡片里声明技能（只给了名字/描述）—— 挂上后靠描述让模型判断。
       </p>
     );
@@ -145,11 +145,11 @@ function SkillTable({ parsed }: { parsed: RemoteAgentParsed }) {
           className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded px-2 py-1"
           style={{ background: "var(--color-surface)" }}
         >
-          <span className="text-[12.5px] font-medium">{s.name || s.id}</span>
+          <span className="text-[12px] font-medium">{s.name || s.id}</span>
           {(s.tags ?? []).map((t) => (
             <span
               key={t}
-              className="rounded px-1 text-[11px]"
+              className="rounded px-1 text-[12px]"
               style={{ background: "var(--color-surface-2)", color: "var(--color-muted)" }}
             >
               {t}
@@ -378,7 +378,7 @@ export default function RemoteAgentsPage() {
                           {r.enabled ? "停用" : "启用"}
                         </button>
                         <button
-                          className="btn ml-auto text-[12.5px]"
+                          className="btn ml-auto text-[12px]"
                           style={{ color: "var(--color-err)" }}
                           title="删除这个远程 agent（会再确认一次）"
                           onClick={() => void onDelete(r)}
@@ -401,7 +401,7 @@ export default function RemoteAgentsPage() {
                       </span>
                     )}
                     <span
-                      className="mono hidden truncate text-[11.5px] sm:inline"
+                      className="mono hidden truncate text-[12px] sm:inline"
                       style={{ color: "var(--color-muted)" }}
                     >
                       {(() => { try { return new URL(r.url).host; } catch { return r.url; } })()}
@@ -452,7 +452,7 @@ export default function RemoteAgentsPage() {
                         </div>
 
                         <div
-                          className="rounded px-2.5 py-2 text-[12.5px]"
+                          className="rounded px-2.5 py-2 text-[12px]"
                           style={{ background: "var(--color-surface-2)", color: "var(--color-muted)" }}
                         >
                           绑定在助手的配置页做：它注册时会自动生成一个同名工具，到
@@ -510,7 +510,7 @@ export default function RemoteAgentsPage() {
               远端用一条 POST 完成注册（body 是它自己的 agent card，url 字段填它的回连地址；重推一次 = 更新技能清单）：
             </span>
             <pre
-              className="mono overflow-x-auto whitespace-pre text-[11.5px]"
+              className="mono overflow-x-auto whitespace-pre text-[12px]"
               style={{ color: "var(--color-muted)" }}
             >{`curl -X POST ${selfRegUrl} \
   -H 'Content-Type: application/json' \
@@ -724,7 +724,7 @@ function RegisterDialog({ onClose, onDone }: { onClose: () => void; onDone: () =
             </div>
           </div>
 
-          <button className="self-start text-[12.5px]" style={{ color: "var(--color-accent)" }} onClick={() => setAdvanced(!advanced)}>
+          <button className="self-start text-[12px]" style={{ color: "var(--color-accent)" }} onClick={() => setAdvanced(!advanced)}>
             {advanced ? "收起凭据设置" : "远端需要鉴权？填凭据"}
           </button>
           {advanced ? (
@@ -746,7 +746,7 @@ function RegisterDialog({ onClose, onDone }: { onClose: () => void; onDone: () =
 
           {err ? (
             <div
-              className="rounded px-2 py-1.5 text-[12.5px]"
+              className="rounded px-2 py-1.5 text-[12px]"
               style={{
                 background: "color-mix(in srgb, var(--color-warn) 12%, transparent)",
                 color: "var(--color-warn)",
@@ -770,10 +770,10 @@ function RegisterDialog({ onClose, onDone }: { onClose: () => void; onDone: () =
                   {` · 技能 ${preview.skills}`}
                 </span>
               </div>
-              <p className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+              <p className="text-[12px]" style={{ color: "var(--color-muted)" }}>
                 {preview.parsed.description || "（远端没写描述）"}
               </p>
-              <p className="mono break-all text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+              <p className="mono break-all text-[12px]" style={{ color: "var(--color-muted)" }}>
                 归一化地址：{preview.base}
               </p>
               <SkillTable parsed={preview.parsed} />

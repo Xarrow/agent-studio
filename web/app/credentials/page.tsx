@@ -219,7 +219,7 @@ export default function CredentialsPage() {
                     <>
                       <button
                         type="button"
-                        className="btn text-[12.5px]"
+                        className="btn text-[12px]"
                         onClick={() => setEditing(c)}
                       >
                         编辑
@@ -227,7 +227,7 @@ export default function CredentialsPage() {
                       {revealed[c.id] ? (
                         <button
                           type="button"
-                          className="btn text-[12.5px]"
+                          className="btn text-[12px]"
                           onClick={() => hide(c.id)}
                         >
                           隐藏密钥
@@ -235,7 +235,7 @@ export default function CredentialsPage() {
                       ) : (
                         <button
                           type="button"
-                          className="btn text-[12.5px]"
+                          className="btn text-[12px]"
                           onClick={() => void reveal(c)}
                         >
                           显示密钥
@@ -243,7 +243,7 @@ export default function CredentialsPage() {
                       )}
                       <button
                         type="button"
-                        className="btn text-[12.5px]"
+                        className="btn text-[12px]"
                         title="直接跟模型聊两句，不经过助手"
                         onClick={() => setChatting(c)}
                       >
@@ -251,7 +251,7 @@ export default function CredentialsPage() {
                       </button>
                       <button
                         type="button"
-                        className="btn text-[12.5px]"
+                        className="btn text-[12px]"
                         disabled={testing === c.id}
                         onClick={() => {
                           setExpanded(c.id);
@@ -262,7 +262,7 @@ export default function CredentialsPage() {
                       </button>
                       <button
                         type="button"
-                        className="btn text-[12.5px]"
+                        className="btn text-[12px]"
                         style={{ color: "var(--color-err)" }}
                         onClick={() => void remove(c)}
                       >
@@ -279,14 +279,14 @@ export default function CredentialsPage() {
                       {c.last_test_ok === false && <Chip tone="err">上次测试失败</Chip>}
                     </span>
                     <span
-                      className="mono mt-0.5 block truncate text-[11.5px]"
+                      className="mono mt-0.5 block truncate text-[12px]"
                       style={{ color: "var(--color-muted)" }}
                     >
                       {revealed[c.id] ? revealed[c.id] : c.masked_key} ·{" "}
                       {c.base_url || "默认端点"} · 默认模型 {c.default_model || "未设置"}
                     </span>
                   </span>
-                  <span className="shrink-0 text-[11px]" style={{ color: "var(--color-muted)" }}>
+                  <span className="shrink-0 text-[12px]" style={{ color: "var(--color-muted)" }}>
                     {open ? "▾" : "▸"}
                   </span>
                 </Row>
@@ -317,14 +317,14 @@ export default function CredentialsPage() {
                         <span className="mono break-all text-[12px]">{revealed[c.id]}</span>
                         <button
                           type="button"
-                          className="btn text-[11.5px] px-2 py-1"
+                          className="btn text-[12px] px-2 py-1"
                           onClick={() => void copyKey(c.id)}
                         >
                           复制
                         </button>
                         <button
                           type="button"
-                          className="btn text-[11.5px] px-2 py-1"
+                          className="btn text-[12px] px-2 py-1"
                           onClick={() => hide(c.id)}
                         >
                           隐藏
@@ -334,14 +334,14 @@ export default function CredentialsPage() {
 
                     {r ? (
                       <div
-                        className="mt-2.5 rounded-[8px] border p-2.5 text-[12.5px]"
+                        className="mt-2.5 rounded-[8px] border p-2.5 text-[12px]"
                         style={{ borderColor: r.ok ? "var(--color-ok)" : "var(--color-err)" }}
                       >
                         {r.ok ? (
                           <>
                             <div style={{ color: "var(--color-ok)" }}>✓ 连接正常</div>
                             <div
-                              className="mt-0.5 text-[11.5px]"
+                              className="mt-0.5 text-[12px]"
                               style={{ color: "var(--color-muted)" }}
                             >
                               延迟 {fmt.ms(r.latency_ms)} · 可用模型 {r.models.length} 个
@@ -400,7 +400,7 @@ export default function CredentialsPage() {
                 <span className="min-w-0 flex-1 basis-[220px]">
                   <span className="block text-[13.5px] font-medium">{meta.display_name}</span>
                   <span
-                    className="mono mt-0.5 block truncate text-[11.5px]"
+                    className="mono mt-0.5 block truncate text-[12px]"
                     style={{ color: "var(--color-muted)" }}
                   >
                     {meta.default_base_url || "（固定端点）"}
@@ -581,14 +581,14 @@ function NewCredentialDialog({
 
           {tested && (
             <div
-              className={`text-[12.5px] ${tested.ok ? "text-[var(--color-ok)]" : "text-[var(--color-err)]"}`}
+              className={`text-[12px] ${tested.ok ? "text-[var(--color-ok)]" : "text-[var(--color-err)]"}`}
             >
               {tested.ok
                 ? `✓ 连接成功 · 延迟 ${fmt.ms(tested.latency_ms)} · 发现 ${tested.models.length} 个模型`
                 : `✗ ${tested.error}`}
             </div>
           )}
-          {err && <div className="text-[12.5px] text-[var(--color-err)]">{err}</div>}
+          {err && <div className="text-[12px] text-[var(--color-err)]">{err}</div>}
         </div>
 
         <div className="flex justify-end gap-2 mt-5">
@@ -841,7 +841,7 @@ function EditCredentialDialog({
             </div>
 
             {probeNote && (
-              <p className="text-[11.5px] text-[var(--color-muted)] mt-1.5">{probeNote}</p>
+              <p className="text-[12px] text-[var(--color-muted)] mt-1.5">{probeNote}</p>
             )}
 
             {found.length > 0 && (
@@ -871,13 +871,13 @@ function EditCredentialDialog({
             )}
 
             {model.trim() === "" && (
-              <p className="text-[11.5px] text-[var(--color-muted)] mt-1.5">
+              <p className="text-[12px] text-[var(--color-muted)] mt-1.5">
                 未选择时，模型由使用它的助手决定（在助手的模型设置里选）。
               </p>
             )}
           </div>
 
-          {err && <div className="text-[12.5px] text-[var(--color-err)]">{err}</div>}
+          {err && <div className="text-[12px] text-[var(--color-err)]">{err}</div>}
         </div>
 
         <div className="flex justify-end gap-2 mt-5">

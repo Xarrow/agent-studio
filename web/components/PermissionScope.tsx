@@ -113,9 +113,9 @@ export function PermissionScope({
   return (
     <div className="mt-4 pt-4 border-t border-[var(--color-border)]">
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-[12.5px] font-medium">权限</span>
+        <span className="text-[12px] font-medium">权限</span>
         <Hint text="工具执行前的许可范围。范围内的操作直接执行，不用每次都问你。">
-          <span className="text-[11.5px] text-[var(--color-muted)]">工具执行前的许可范围</span>
+          <span className="text-[12px] text-[var(--color-muted)]">工具执行前的许可范围</span>
         </Hint>
       </div>
 
@@ -133,11 +133,11 @@ export function PermissionScope({
         </p>
       )}
       {meta && (
-        <p className="text-[11.5px] text-[var(--color-muted)] mt-0.5">{meta.desc}</p>
+        <p className="text-[12px] text-[var(--color-muted)] mt-0.5">{meta.desc}</p>
       )}
       {meta?.warn && (
         <p
-          className="text-[11.5px] mt-1.5 rounded-md px-2 py-1.5"
+          className="text-[12px] mt-1.5 rounded-md px-2 py-1.5"
           style={{
             background: "color-mix(in srgb, var(--color-warn) 10%, transparent)",
             color: "var(--color-warn)",
@@ -149,9 +149,9 @@ export function PermissionScope({
 
       {/* 例外规则 */}
       <div className="flex items-center justify-between mt-3 mb-1.5">
-        <span className="text-[11.5px] text-[var(--color-muted)]">例外规则（可选）</span>
+        <span className="text-[12px] text-[var(--color-muted)]">例外规则（可选）</span>
         <button
-          className="text-[11.5px] text-[var(--color-accent)] hover:underline"
+          className="text-[12px] text-[var(--color-accent)] hover:underline"
           onClick={() =>
             setRows([...rows, { tool: toolNames[0] ?? "", pattern: "", behavior: "deny" }])
           }
@@ -163,7 +163,7 @@ export function PermissionScope({
       </div>
 
       {rows.length === 0 ? (
-        <p className="text-[11.5px] text-[var(--color-muted)]">
+        <p className="text-[12px] text-[var(--color-muted)]">
           {toolNames.length === 0
             ? "这个助手还没挂工具 —— 先在上面勾选工具，再来划权限。"
             : "没有例外规则：按上面的模式统一处理。"}

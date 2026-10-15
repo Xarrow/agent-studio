@@ -42,7 +42,7 @@ function inline(text: string, keyBase: string): React.ReactNode[] {
       out.push(
         <code
           key={key}
-          className="rounded px-1 py-px text-[11.5px]"
+          className="rounded px-1 py-px text-[12px]"
           style={{ background: "var(--color-surface-2)", border: "1px solid var(--color-border)" }}
         >
           {tok.slice(1, -1)}
@@ -199,7 +199,7 @@ function SvgBlock({ code }: { code: string }) {
         <button
           type="button"
           data-tap
-          className="mb-1 text-[11.5px] hover:underline"
+          className="mb-1 text-[12px] hover:underline"
           style={{ color: "var(--color-accent)" }}
           onClick={() => setShowCode(false)}
         >
@@ -212,13 +212,13 @@ function SvgBlock({ code }: { code: string }) {
   return (
     <div className="my-2 rounded-[10px] border" style={{ borderColor: "var(--color-border)" }}>
       <div className="flex items-center gap-2 border-b px-2.5 py-1.5" style={{ borderColor: "var(--color-border)" }}>
-        <span className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+        <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
           图（SVG）
         </span>
         <button
           type="button"
           data-tap
-          className="ml-auto text-[11.5px] hover:underline"
+          className="ml-auto text-[12px] hover:underline"
           style={{ color: "var(--color-accent)" }}
           onClick={() => setShowCode(true)}
         >
@@ -407,7 +407,7 @@ export default function Markdown({ text }: { text: string }) {
           {items.map((it, n) => (
             <li
               key={n}
-              className="flex gap-1.5 text-[12.5px] leading-[1.7]"
+              className="flex gap-1.5 text-[12px] leading-[1.7]"
               style={{ paddingLeft: Math.min(it.indent, 8) * 1.5 }}
             >
               <span className="shrink-0" style={{ color: "var(--color-accent)" }}>
@@ -442,7 +442,7 @@ export default function Markdown({ text }: { text: string }) {
       buf.push(lines[i++]);
     }
     blocks.push(
-      <p key={`p${k++}`} className="my-1.5 text-[12.5px] leading-[1.75] break-words">
+      <p key={`p${k++}`} className="my-1.5 text-[12px] leading-[1.75] break-words">
         {inline(buf.join(" "), `p${k}`)}
       </p>,
     );

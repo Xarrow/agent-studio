@@ -174,7 +174,7 @@ export function ExternalMemoryCard() {
             <Chip tone="muted">未接入</Chip>
           )
         ) : null}
-        <span className="text-[11.5px] text-[var(--color-muted)]">
+        <span className="text-[12px] text-[var(--color-muted)]">
           {cfg.ready ? cfg.base_url : "把你自己已有的记忆库接进来（与内置记忆可混用）"}
         </span>
       </button>
@@ -188,9 +188,9 @@ export function ExternalMemoryCard() {
               checked={draft.enabled}
               onChange={(e) => setDraft((d) => ({ ...d, enabled: e.target.checked }))}
             />
-            <span className="text-[12.5px]">
+            <span className="text-[12px]">
               启用外部记忆（关掉只是不启用，配置会留着）
-              <span className="block text-[11.5px] text-[var(--color-muted)]">
+              <span className="block text-[12px] text-[var(--color-muted)]">
                 启用后还要在「助手 → 记忆 → 高级设置 → 记忆从哪来」里选它才会真正用上。
               </span>
             </span>
@@ -263,7 +263,7 @@ export function ExternalMemoryCard() {
             </div>
           </div>
 
-          <details className="rounded-md bg-[var(--color-surface-2)] px-2.5 py-2 text-[11.5px] text-[var(--color-muted)]">
+          <details className="rounded-md bg-[var(--color-surface-2)] px-2.5 py-2 text-[12px] text-[var(--color-muted)]">
             <summary data-tap-lg className="min-h-[36px] cursor-pointer py-2">对方要实现的两个接口（很简单）</summary>
             <pre className="mt-1.5 whitespace-pre-wrap break-all leading-[1.6]">
 {`搜索  POST {地址}{搜索路径}
@@ -278,7 +278,7 @@ export function ExternalMemoryCard() {
 
           {/* 接口字段映射（高级）——默认收起：标准契约开箱可用，只有对方字段名不一样才需要 */}
           <details className="rounded-[8px] border border-[var(--color-border)]">
-            <summary data-tap-lg className="min-h-[36px] cursor-pointer px-3 py-2 text-[12.5px]">
+            <summary data-tap-lg className="min-h-[36px] cursor-pointer px-3 py-2 text-[12px]">
               接口字段映射（高级）
               <span className="ml-2 text-[12px]" style={{ color: "var(--color-muted)" }}>
                 对方字段名跟标准契约不一样时才填
@@ -358,7 +358,7 @@ export function ExternalMemoryCard() {
             ) : null}
           </div>
           {!cfg.ready ? (
-            <p className="text-[11.5px] text-[var(--color-muted)]">
+            <p className="text-[12px] text-[var(--color-muted)]">
               提示：「测试连接」用的是**已保存**的配置 —— 改完先点保存，再测试。
             </p>
           ) : null}

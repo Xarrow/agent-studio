@@ -117,7 +117,7 @@ export function SlashMenu({
           </span>
           <span className="truncate">{it.label}</span>
           {it.hint && (
-            <span className="ml-auto text-[11.5px] truncate shrink-0 max-w-[45%]" style={{ color: "var(--color-muted)" }}>
+            <span className="ml-auto text-[12px] truncate shrink-0 max-w-[45%]" style={{ color: "var(--color-muted)" }}>
               {it.hint}
             </span>
           )}

@@ -134,7 +134,7 @@ export function CredentialChatDialog({
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="min-w-0">
             <h2 className="text-[16px] font-medium">对话测试 · {credential.name}</h2>
-            <p className="text-[11.5px] text-[var(--color-muted)] mt-0.5">
+            <p className="text-[12px] text-[var(--color-muted)] mt-0.5">
               直接跟模型聊，不经过助手 —— 用来确认「这把 key + 这个模型」本身能通
             </p>
           </div>
@@ -175,7 +175,7 @@ export function CredentialChatDialog({
           style={{ background: "var(--color-surface-2)" }}
         >
           {turns.length === 0 && !busy && (
-            <p className="text-[12.5px] text-[var(--color-muted)] text-center py-10">
+            <p className="text-[12px] text-[var(--color-muted)] text-center py-10">
               随便问一句，看看它答不答得上来。
             </p>
           )}
@@ -199,11 +199,11 @@ export function CredentialChatDialog({
             </div>
           ))}
           {busy && (
-            <div className="text-[12.5px] text-[var(--color-muted)]">思考中…</div>
+            <div className="text-[12px] text-[var(--color-muted)]">思考中…</div>
           )}
         </div>
 
-        {err && <div className="text-[12.5px] text-[var(--color-err)] mt-2">{err}</div>}
+        {err && <div className="text-[12px] text-[var(--color-err)] mt-2">{err}</div>}
 
         {/* 输入 */}
         <div className="flex gap-2 mt-3">

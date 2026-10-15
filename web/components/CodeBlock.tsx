@@ -45,7 +45,7 @@ export function CodeBlock({ code, lang }: { code: string; lang?: string }) {
     <div className="my-2 rounded-[8px] border overflow-hidden" style={{ borderColor: "var(--color-border)" }}>
       {/* 工具条：语言名 + 动作（常驻可见，不藏 hover） */}
       <div
-        className="flex items-center gap-2 px-2.5 py-1 border-b text-[11px]"
+        className="flex items-center gap-2 px-2.5 py-1 border-b text-[12px]"
         style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
       >
         <span className="mono" style={{ color: "var(--color-muted)" }}>
@@ -85,7 +85,7 @@ export function CodeBlock({ code, lang }: { code: string; lang?: string }) {
         />
       ) : (
         <pre
-          className="overflow-auto px-2.5 py-2 text-[11.5px] leading-[1.6] m-0"
+          className="overflow-auto px-2.5 py-2 text-[12px] leading-[1.6] m-0"
           style={{ background: "var(--color-surface-2)" }}
         >
           <code>{code}</code>

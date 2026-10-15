@@ -83,7 +83,7 @@ export function ToolTestForm({ tool, onDone }: { tool: Tool; onDone: (out: strin
         <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => void submit()}>
           {busy ? "测试中…" : "试运行（无参数）"}
         </button>
-        <span className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+        <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
           这个工具不需要参数
         </span>
       </div>
@@ -94,12 +94,12 @@ export function ToolTestForm({ tool, onDone }: { tool: Tool; onDone: (out: strin
     <div className="mt-2.5 border-t pt-2.5" style={{ borderColor: "var(--color-border)" }}>
       <div className="mb-2 flex items-center gap-2">
         <span className="text-[12px] font-medium">试运行参数</span>
-        <span className="text-[11px]" style={{ color: "var(--color-muted)" }}>
+        <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
           按签名自动生成 —— 不用写 JSON
         </span>
         <button
           type="button"
-          className="ml-auto text-[11.5px] underline"
+          className="ml-auto text-[12px] underline"
           style={{ color: "var(--color-muted)" }}
           onClick={() => setJsonMode((v) => !v)}
         >
@@ -129,7 +129,7 @@ export function ToolTestForm({ tool, onDone }: { tool: Tool; onDone: (out: strin
               </span>
               {f.enumValues ? (
                 <select
-                  className="input flex-1 min-w-0 text-[12.5px]"
+                  className="input flex-1 min-w-0 text-[12px]"
                   value={values[f.name] ?? ""}
                   onChange={(e) => setValues((p) => ({ ...p, [f.name]: e.target.value }))}
                 >
@@ -142,7 +142,7 @@ export function ToolTestForm({ tool, onDone }: { tool: Tool; onDone: (out: strin
                 </select>
               ) : f.type === "boolean" ? (
                 <select
-                  className="input flex-1 min-w-0 text-[12.5px]"
+                  className="input flex-1 min-w-0 text-[12px]"
                   value={values[f.name] ?? ""}
                   onChange={(e) => setValues((p) => ({ ...p, [f.name]: e.target.value }))}
                 >
@@ -152,7 +152,7 @@ export function ToolTestForm({ tool, onDone }: { tool: Tool; onDone: (out: strin
                 </select>
               ) : (
                 <input
-                  className="input mono flex-1 min-w-0 text-[12.5px]"
+                  className="input mono flex-1 min-w-0 text-[12px]"
                   type={f.type === "number" ? "number" : "text"}
                   value={values[f.name] ?? ""}
                   placeholder={f.description || (f.required ? "必填" : "可空")}
@@ -168,7 +168,7 @@ export function ToolTestForm({ tool, onDone }: { tool: Tool; onDone: (out: strin
         <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => void submit()}>
           {busy ? "测试中…" : "试运行"}
         </button>
-        <span className="text-[11px]" style={{ color: "var(--color-muted)" }}>
+        <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
           只读工具会真实执行（限制在工作目录内）；写/执行类工具会被跳过。
         </span>
       </div>

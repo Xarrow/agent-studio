@@ -178,7 +178,7 @@ export function AutoRunDialog({
       >
         <div className="flex items-center gap-2 border-b px-4 py-3" style={{ borderColor: "var(--color-border)" }}>
           <span className="text-[15px] font-semibold">自动运行</span>
-          <span className="min-w-0 flex-1 truncate text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+          <span className="min-w-0 flex-1 truncate text-[12px]" style={{ color: "var(--color-muted)" }}>
             {wfName} —— 不用你在界面前，它也能按点跑
           </span>
           <button
@@ -195,7 +195,7 @@ export function AutoRunDialog({
         <div className="min-h-0 flex-1 space-y-4 overflow-auto px-4 py-3.5">
           {/* ── 默认任务 ───────────────────────────────────────────── */}
           <label className="block">
-            <span className="text-[12.5px] font-semibold">默认任务</span>
+            <span className="text-[12px] font-semibold">默认任务</span>
             <span className="ml-1.5 text-[12px]" style={{ color: "var(--color-muted)" }}>
               每次自动跑都用这句（外部调用时可以在请求里临时换掉）
             </span>
@@ -212,7 +212,7 @@ export function AutoRunDialog({
           {/* ── 定时 ───────────────────────────────────────────────── */}
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[12.5px] font-semibold">什么时候跑</span>
+              <span className="text-[12px] font-semibold">什么时候跑</span>
               <select
                 value={mode}
                 onChange={(e) => setMode(e.target.value)}
@@ -287,7 +287,7 @@ export function AutoRunDialog({
           {/* ── 现状：下次 / 上次 ──────────────────────────────────── */}
           {auto && (
             <div
-              className="rounded-[8px] border px-3 py-2 text-[12.5px]"
+              className="rounded-[8px] border px-3 py-2 text-[12px]"
               style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
             >
               <div>
@@ -311,7 +311,7 @@ export function AutoRunDialog({
 
           {/* ── 外部触发 ───────────────────────────────────────────── */}
           <div>
-            <div className="text-[12.5px] font-semibold">外部触发地址</div>
+            <div className="text-[12px] font-semibold">外部触发地址</div>
             <div className="mt-1 text-[12px]" style={{ color: "var(--color-muted)" }}>
               任何系统 POST 或 GET 这个地址，就能让这条流程跑一次；请求里带{" "}
               <span className="mono">{'{"task": "临时任务"}'}</span> 可临时换任务。
@@ -321,7 +321,7 @@ export function AutoRunDialog({
                 readOnly
                 value={hookUrl}
                 onFocus={(e) => e.currentTarget.select()}
-                className="mono min-w-0 flex-1 rounded-[8px] border px-2 py-1.5 text-[11.5px]"
+                className="mono min-w-0 flex-1 rounded-[8px] border px-2 py-1.5 text-[12px]"
                 style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
               />
               <button
@@ -358,7 +358,7 @@ export function AutoRunDialog({
           <button
             type="button"
             onClick={onClose}
-            className="ml-auto rounded-[8px] border px-3 py-1.5 text-[12.5px]"
+            className="ml-auto rounded-[8px] border px-3 py-1.5 text-[12px]"
             style={{ borderColor: "var(--color-border)" }}
           >
             取消
@@ -367,7 +367,7 @@ export function AutoRunDialog({
             type="button"
             onClick={() => void save()}
             disabled={saving}
-            className="rounded-[8px] px-3.5 py-1.5 text-[12.5px] font-medium disabled:opacity-50"
+            className="rounded-[8px] px-3.5 py-1.5 text-[12px] font-medium disabled:opacity-50"
             style={{ background: "var(--color-accent)", color: "var(--color-accent-fg)" }}
           >
             {saving ? "保存中…" : "保存"}

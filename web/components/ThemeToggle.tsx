@@ -69,7 +69,7 @@ export function ThemeToggle({ compact = false }: { compact?: boolean }) {
           onClick={() => apply(value)}
           title={label}
           aria-label={label}
-          className={`flex-1 flex items-center justify-center gap-1 py-2 md:py-1 rounded text-[12px] md:text-[11.5px] transition-colors ${
+          className={`flex-1 flex items-center justify-center gap-1 py-2 md:py-1 rounded text-[12px] md:text-[12px] transition-colors ${
             theme === value
               ? "bg-[var(--color-surface)] text-[var(--color-accent)] font-medium"
               : "text-[var(--color-muted)] hover:text-[var(--color-text)]"

@@ -86,7 +86,7 @@ export function MemoryCopyDialog({
           <div>
             <label className="label">
               内容
-              <span className="text-[11px] text-[var(--color-muted)] font-normal ml-2">
+              <span className="text-[12px] text-[var(--color-muted)] font-normal ml-2">
                 {KIND_LABEL[memory.kind] ?? memory.kind} · 可以直接改
               </span>
             </label>
@@ -120,7 +120,7 @@ export function MemoryCopyDialog({
                 >
                   所有助手共用
                 </div>
-                <div className="text-[11.5px] text-[var(--color-muted)]">
+                <div className="text-[12px] text-[var(--color-muted)]">
                   每个助手都会带上这条（改一处对所有人生效）
                 </div>
               </button>
@@ -152,7 +152,7 @@ export function MemoryCopyDialog({
                       )}
                     </div>
                     {a.description && (
-                      <div className="text-[11.5px] text-[var(--color-muted)] truncate">
+                      <div className="text-[12px] text-[var(--color-muted)] truncate">
                         {a.description}
                       </div>
                     )}
@@ -162,7 +162,7 @@ export function MemoryCopyDialog({
             </div>
           </div>
 
-          {err && <div className="text-[12.5px] text-[var(--color-err)]">{err}</div>}
+          {err && <div className="text-[12px] text-[var(--color-err)]">{err}</div>}
         </div>
 
         <div className="flex justify-end gap-2 mt-5">

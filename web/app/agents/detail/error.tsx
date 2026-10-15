@@ -29,7 +29,7 @@ export default function AgentDetailError({
         <p className="text-[13px] text-[var(--color-muted)] mb-3">
           助手配置页在渲染时出错了。下面是可以带走排查的信息：
         </p>
-        <pre className="rounded-md p-3 bg-[var(--color-surface-2)] text-[11.5px] whitespace-pre-wrap break-all mb-4">
+        <pre className="rounded-md p-3 bg-[var(--color-surface-2)] text-[12px] whitespace-pre-wrap break-all mb-4">
           {error.message || String(error)}
           {error.digest ? `\n\ndigest: ${error.digest}` : ""}
         </pre>

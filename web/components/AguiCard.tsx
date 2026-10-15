@@ -53,18 +53,18 @@ export function AguiCard() {
   return (
     <div className="space-y-2">
       {err ? (
-        <p className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+        <p className="text-[12px]" style={{ color: "var(--color-muted)" }}>
           读取失败：{err}
         </p>
       ) : !info ? (
-        <p className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+        <p className="text-[12px]" style={{ color: "var(--color-muted)" }}>
           读取中…
         </p>
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-2">
             <span
-              className="rounded px-1.5 py-0.5 text-[11px]"
+              className="rounded px-1.5 py-0.5 text-[12px]"
               style={{
                 background: "color-mix(in srgb, var(--color-ok) 14%, transparent)",
                 color: "var(--color-ok)",
@@ -72,12 +72,12 @@ export function AguiCard() {
             >
               已启用
             </span>
-            <span className="mono text-[12.5px]">POST {info.endpoint}</span>
+            <span className="mono text-[12px]">POST {info.endpoint}</span>
             <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
               ag-ui v{info.version} · SSE 传输 · 可用助手 {info.agents.length} 个
             </span>
           </div>
-          <p className="text-[12.5px] leading-relaxed" style={{ color: "var(--color-muted)" }}>
+          <p className="text-[12px] leading-relaxed" style={{ color: "var(--color-muted)" }}>
             {info.notes}
           </p>
           <div>
@@ -86,7 +86,7 @@ export function AguiCard() {
               <button
                 type="button"
                 data-tap
-                className="rounded px-1.5 text-[11px]"
+                className="rounded px-1.5 text-[12px]"
                 style={{ color: "var(--color-accent)" }}
                 onClick={() => {
                   void navigator.clipboard?.writeText(curl);

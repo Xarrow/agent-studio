@@ -283,7 +283,7 @@ export default function MemoriesPage() {
         <div className="card mb-3 p-3">
           <textarea
             autoFocus
-            className="input mono text-[12.5px]"
+            className="input mono text-[12px]"
             rows={2}
             placeholder="例如：用户偏好中文回复，不要 emoji。"
             value={draft}
@@ -295,14 +295,14 @@ export default function MemoriesPage() {
             </button>
             <button
               type="button"
-              className="text-[12.5px]"
+              className="text-[12px]"
               style={{ color: "var(--color-muted)" }}
               data-tap
               onClick={() => setShowMore((v) => !v)}
             >
               {showMore ? "▾" : "▸"} 更多选项
             </button>
-            <span className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+            <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
               默认所有助手共用
             </span>
           </div>
@@ -420,14 +420,14 @@ export default function MemoriesPage() {
           actions={
             <>
               {/* 候选的"确认使用"与在用的"启用"是同一件事，只是说法不同 */}
-              <button className="btn btn-primary text-[12.5px]" onClick={() => void bulk("active")}>
+              <button className="btn btn-primary text-[12px]" onClick={() => void bulk("active")}>
                 {pickedAllCandidates(items, picked) ? "确认使用" : "启用"}
               </button>
-              <button className="btn text-[12.5px]" onClick={() => void bulk("archived")}>
+              <button className="btn text-[12px]" onClick={() => void bulk("archived")}>
                 停用
               </button>
               <button
-                className="btn text-[12.5px]"
+                className="btn text-[12px]"
                 style={{ color: "var(--color-err)" }}
                 onClick={() => void bulkDelete()}
               >
@@ -470,14 +470,14 @@ export default function MemoriesPage() {
                         <>
                           <button
                             type="button"
-                            className="btn btn-primary min-h-[36px] px-2.5 text-[11.5px]"
+                            className="btn btn-primary min-h-[36px] px-2.5 text-[12px]"
                             onClick={() => void setStatusOf(m, "active")}
                           >
                             确认使用
                           </button>
                           <button
                             type="button"
-                            className="btn min-h-[36px] px-2.5 text-[11.5px]"
+                            className="btn min-h-[36px] px-2.5 text-[12px]"
                             onClick={() => void setStatusOf(m, "archived")}
                           >
                             丢弃
@@ -487,7 +487,7 @@ export default function MemoriesPage() {
                       {m.status === "active" && (
                         <button
                           type="button"
-                          className="btn min-h-[36px] px-2.5 text-[11.5px]"
+                          className="btn min-h-[36px] px-2.5 text-[12px]"
                           title="暂时不用它 —— 之后能在「已停用」里找回"
                           onClick={() => void setStatusOf(m, "archived")}
                         >
@@ -497,7 +497,7 @@ export default function MemoriesPage() {
                       {arch && (
                         <button
                           type="button"
-                          className="btn min-h-[36px] px-2.5 text-[11.5px]"
+                          className="btn min-h-[36px] px-2.5 text-[12px]"
                           onClick={() => void setStatusOf(m, "active")}
                         >
                           启用
@@ -505,7 +505,7 @@ export default function MemoriesPage() {
                       )}
                       <button
                         type="button"
-                        className="min-h-[36px] rounded px-2 text-[11.5px] hover:bg-[var(--color-surface-2)]"
+                        className="min-h-[36px] rounded px-2 text-[12px] hover:bg-[var(--color-surface-2)]"
                         style={{ color: "var(--color-err)" }}
                         onClick={() => void remove(m)}
                       >
@@ -535,7 +535,7 @@ export default function MemoriesPage() {
                       </span>
                     </span>
                     <span
-                      className="mt-0.5 block text-[11.5px]"
+                      className="mt-0.5 block text-[12px]"
                       style={{ color: "var(--color-muted)" }}
                     >
                       {m.scope === "global" ? "所有助手共用" : (m.agent_name ?? "（绑定助手已失效）")}
@@ -548,7 +548,7 @@ export default function MemoriesPage() {
                     </span>
                   </span>
 
-                  <span className="shrink-0 text-[11px]" style={{ color: "var(--color-muted)" }}>
+                  <span className="shrink-0 text-[12px]" style={{ color: "var(--color-muted)" }}>
                     {open ? "▾" : "▸"}
                   </span>
                 </Row>
@@ -596,7 +596,7 @@ export default function MemoriesPage() {
                         </span>
                       </KV>
                       <KV k="编号">
-                        <span className="mono text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                        <span className="mono text-[12px]" style={{ color: "var(--color-muted)" }}>
                           {m.id}
                         </span>
                       </KV>
@@ -606,14 +606,14 @@ export default function MemoriesPage() {
                     <div className="mt-3 flex flex-wrap items-center gap-1.5">
                       <button
                         type="button"
-                        className="btn min-h-[36px] px-2.5 text-[11.5px]"
+                        className="btn min-h-[36px] px-2.5 text-[12px]"
                         onClick={() => void edit(m)}
                       >
                         编辑内容
                       </button>
                       <button
                         type="button"
-                        className="btn min-h-[36px] px-2.5 text-[11.5px]"
+                        className="btn min-h-[36px] px-2.5 text-[12px]"
                         title="复制一份并绑定到别的助手（原件不动）"
                         onClick={() => setCopying(m)}
                       >
@@ -628,7 +628,7 @@ export default function MemoriesPage() {
         )}
       </RowList>
 
-      <p className="mt-3 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+      <p className="mt-3 text-[12px]" style={{ color: "var(--color-muted)" }}>
         相关设置在每个 Agent 的「记忆」面板里；长期没被用到的记忆会自动降低优先级。
         <br />
         要让多个助手共用同一条内容，用「复制到别的助手…」—— 复制出的副本单独绑定，原件不受影响。

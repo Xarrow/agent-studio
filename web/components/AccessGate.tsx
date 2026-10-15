@@ -72,7 +72,7 @@ export function AccessGate() {
          style={{ background: "color-mix(in srgb, var(--color-overlay) 85%, transparent)" }}>
       <div className="card w-full max-w-sm p-5">
         <h2 className="text-[16px] font-medium mb-1">需要访问口令</h2>
-        <p className="text-[12.5px] text-[var(--color-muted)] mb-4">
+        <p className="text-[12px] text-[var(--color-muted)] mb-4">
           这个平台对公网访问做了口令保护。输入一次即可，之后会记住。
         </p>
 
@@ -89,7 +89,7 @@ export function AccessGate() {
             if (e.key === "Enter" && !isImeEvent(e)) void submit();
           }}
         />
-        {err && <div className="text-[12.5px] text-[var(--color-err)] mt-2">{err}</div>}
+        {err && <div className="text-[12px] text-[var(--color-err)] mt-2">{err}</div>}
 
         <div className="flex justify-end gap-2 mt-5">
           <button className="btn btn-primary" disabled={busy} onClick={() => void submit()}>

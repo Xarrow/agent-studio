@@ -232,6 +232,8 @@ export const api = {
     post<McpServer>(`/api/mcp/${id}/probe`, {}),
   /** 保存前先试连（不落库）—— 让"连不上"在保存之前就暴露 */
   probeMcpDraft: (body: McpServerInput) => post<McpProbeResult>("/api/mcp/probe", body),
+  /** 直接吃标准 mcpServers JSON（Claude Desktop / Cursor 那份粘进来即可），一次可多条 */
+  importMcpServers: (payload: unknown) => post<McpServer[]>("/api/mcp/import", payload),
 
   // 健康
   health: () =>

@@ -107,11 +107,11 @@ export function RevisionHistory({
       </div>
 
       {loading ? (
-        <div className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+        <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>
           读取中…
         </div>
       ) : items.length === 0 ? (
-        <div className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+        <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>
           还没有历史 —— 改一次就会出现在这里。
         </div>
       ) : (
@@ -122,22 +122,22 @@ export function RevisionHistory({
             return (
               <div key={rev.id} className="py-2" style={{ borderColor: "var(--color-border)" }}>
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <span className="mono text-[12.5px] font-medium">v{rev.version}</span>
+                  <span className="mono text-[12px] font-medium">v{rev.version}</span>
                   {rev.current && (
                     <span
-                      className="rounded px-1.5 py-0.5 text-[11px]"
+                      className="rounded px-1.5 py-0.5 text-[12px]"
                       style={{ background: "color-mix(in srgb, var(--color-ok) 14%, transparent)", color: "var(--color-ok)" }}
                     >
                       当前
                     </span>
                   )}
-                  <span className="min-w-0 flex-1 truncate text-[12.5px]">{rev.label}</span>
-                  <span className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                  <span className="min-w-0 flex-1 truncate text-[12px]">{rev.label}</span>
+                  <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
                     {fmt.time(rev.created_at)}
                   </span>
                   <button
                     type="button"
-                    className="rounded-[6px] border px-2 py-0.5 text-[11.5px]"
+                    className="rounded-[6px] border px-2 py-0.5 text-[12px]"
                     style={{ borderColor: "var(--color-border)" }}
                     onClick={() => setOpenId(expanded ? null : rev.id)}
                   >
@@ -148,7 +148,7 @@ export function RevisionHistory({
                       type="button"
                       disabled={busy}
                       onClick={() => void restore(rev)}
-                      className="rounded-[6px] border px-2 py-0.5 text-[11.5px] disabled:opacity-50"
+                      className="rounded-[6px] border px-2 py-0.5 text-[12px] disabled:opacity-50"
                       style={{
                         borderColor: armId === rev.id ? "var(--color-err)" : "var(--color-border)",
                         color: armId === rev.id ? "var(--color-err)" : undefined,

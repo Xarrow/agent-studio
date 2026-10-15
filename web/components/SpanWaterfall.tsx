@@ -37,7 +37,7 @@ const KIND_COLOR: Record<string, string> = {
 export function SpanWaterfall({ spans }: { spans: Span[] }) {
   if (!spans || spans.length === 0) {
     return (
-      <div className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+      <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>
         这次执行没有留下耗时明细（老记录可能只有汇总）。
       </div>
     );
@@ -112,7 +112,7 @@ export function SpanWaterfall({ spans }: { spans: Span[] }) {
               <div className="w-[70px] shrink-0 text-right text-[12px]" style={{ color: "var(--color-muted)" }}>
                 {fmt.ms(s.duration_ms ?? 0)}
               </div>
-              <div className="w-[52px] shrink-0 text-[11px]" style={{ color: "var(--color-muted)" }}>
+              <div className="w-[52px] shrink-0 text-[12px]" style={{ color: "var(--color-muted)" }}>
                 {KIND_LABEL[s.kind] ?? s.kind}
               </div>
             </div>

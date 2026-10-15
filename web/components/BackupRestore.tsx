@@ -125,7 +125,7 @@ export function BackupRestore() {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+        <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
           按功能挑着导，或者一键全量；导入只新增、不覆盖现有数据
         </span>
         <div className="ml-auto flex flex-wrap items-center gap-2">
@@ -175,7 +175,7 @@ export function BackupRestore() {
               </span>
               {!s.importable ? (
                 <span
-                  className="rounded px-1.5 py-0.5 text-[11px]"
+                  className="rounded px-1.5 py-0.5 text-[12px]"
                   style={{
                     background: "color-mix(in srgb, var(--color-warn) 14%, transparent)",
                     color: "var(--color-warn)",
@@ -202,7 +202,7 @@ export function BackupRestore() {
         </div>
       ) : null}
 
-      <ul className="space-y-1 text-[12.5px] leading-relaxed" style={{ color: "var(--color-muted)" }}>
+      <ul className="space-y-1 text-[12px] leading-relaxed" style={{ color: "var(--color-muted)" }}>
         <li>
           <b>不含密钥</b>：LLM key、访问口令、工具请求头里的 token 都不进包 ——
           它们属于"环境"，换机器后请在「LLM 配置」里重新填（导入结果会列出要重填哪些）。
@@ -215,7 +215,7 @@ export function BackupRestore() {
 
       {result ? (
         <div
-          className="rounded-[8px] border px-3 py-2 text-[12.5px]"
+          className="rounded-[8px] border px-3 py-2 text-[12px]"
           style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
         >
           <div>

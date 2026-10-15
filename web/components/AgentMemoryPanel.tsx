@@ -199,7 +199,7 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
         </div>
 
         <div className="mt-3 pt-3 border-t border-[var(--color-border)] flex items-center gap-3 flex-wrap">
-          <span className="text-[12.5px]">
+          <span className="text-[12px]">
             它当前记得 <strong>{own.length + shared.length}</strong> 条
             {shared.length > 0 && (
               <span className="text-[var(--color-muted)]">
@@ -215,7 +215,7 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
             管理全部记忆 →
           </Link>
           {!memoryOn && (
-            <span className="text-[11.5px] text-[var(--color-muted)]">
+            <span className="text-[12px] text-[var(--color-muted)]">
               已关闭 —— 对话不带记忆，也不会新增
             </span>
           )}
@@ -232,14 +232,14 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
           </button>
         </div>
         {own.length === 0 ? (
-          <p className="text-[12.5px] text-[var(--color-muted)]">
+          <p className="text-[12px] text-[var(--color-muted)]">
             还没有。和它聊几次会自动沉淀，或到「记忆」页添加一条并归给它。
           </p>
         ) : (
           <div className="space-y-1.5">
             {own.map((m) => (
               <div key={m.id} className="p-2.5 rounded-md bg-[var(--color-surface-2)]">
-                <div className="text-[12.5px] break-words">{m.content}</div>
+                <div className="text-[12px] break-words">{m.content}</div>
                 <div className="flex gap-2 mt-1 text-[10.5px] text-[var(--color-muted)] flex-wrap items-center">
                   <span>{KIND_LABEL[m.kind] ?? m.kind}</span>
                   <span>·</span>
@@ -271,19 +271,19 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
       {/* ── 所有助手共用的记忆 ─────────────────────────────────── */}
       <section className="card p-4">
         <h3 className="text-[13px] font-medium mb-1">所有助手共用的记忆（{shared.length}）</h3>
-        <p className="text-[11.5px] text-[var(--color-muted)] mb-3">
+        <p className="text-[12px] text-[var(--color-muted)] mb-3">
           这些它对每个助手都生效。想让某个助手单独拥有一份（可以各自改、互不影响），
           用「复制到它」。
         </p>
         {shared.length === 0 ? (
-          <p className="text-[12.5px] text-[var(--color-muted)]">还没有共用记忆。</p>
+          <p className="text-[12px] text-[var(--color-muted)]">还没有共用记忆。</p>
         ) : (
           <div className="space-y-1.5">
             {shared.map((m) => (
               <div key={m.id} className="p-2.5 rounded-md bg-[var(--color-surface-2)]">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
-                    <div className="text-[12.5px] break-words">{m.content}</div>
+                    <div className="text-[12px] break-words">{m.content}</div>
                     <div className="flex gap-2 mt-1 text-[10.5px] text-[var(--color-muted)] flex-wrap items-center">
                       <span>{KIND_LABEL[m.kind] ?? m.kind}</span>
                       <span>·</span>
@@ -291,7 +291,7 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
                     </div>
                   </div>
                   <button
-                    className="btn text-[11px] px-2 py-1 shrink-0"
+                    className="btn text-[12px] px-2 py-1 shrink-0"
                     disabled={busy}
                     title="复制一份绑定给当前助手，之后可以单独修改"
                     onClick={() => void copyToThisAgent(m)}
@@ -313,7 +313,7 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
         >
           <span className="text-[var(--color-muted)]">{showAdvanced ? "▾" : "▸"}</span>
           高级设置
-          <span className="text-[11.5px] font-normal text-[var(--color-muted)]">一般不用改</span>
+          <span className="text-[12px] font-normal text-[var(--color-muted)]">一般不用改</span>
         </button>
 
         {showAdvanced && (
@@ -334,7 +334,7 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
                 <option value="external">外部记忆服务（接你自己的记忆库）</option>
                 <option value="hybrid">两者都用 · 合并去重</option>
               </select>
-              <p className="text-[11.5px] text-[var(--color-muted)] mt-1">
+              <p className="text-[12px] text-[var(--color-muted)] mt-1">
                 {policy.recall_backend === "local"
                   ? "记忆存在平台数据库里，按关键词 + 最近使用打分。"
                   : policy.recall_backend === "external"
@@ -376,7 +376,7 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
                 style={{ ["--fill" as string]: `${((policy.recall_top_k - 1) / 19) * 100}%` }}
                 onChange={(e) => void patch({ recall_top_k: Number(e.target.value) })}
               />
-              <div className="flex justify-between text-[11px] text-[var(--color-muted)]">
+              <div className="flex justify-between text-[12px] text-[var(--color-muted)]">
                 <span>少（省上下文）</span>
                 <span>多（更靠得住）</span>
               </div>
@@ -403,11 +403,11 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
                 }}
                 onChange={(e) => void patch({ max_inject_chars: Number(e.target.value) })}
               />
-              <div className="flex justify-between text-[11px] text-[var(--color-muted)]">
+              <div className="flex justify-between text-[12px] text-[var(--color-muted)]">
                 <span>少（200 字）</span>
                 <span>多（8000 字）</span>
               </div>
-              <p className="text-[11px] text-[var(--color-muted)] mt-1">
+              <p className="text-[12px] text-[var(--color-muted)] mt-1">
                 超出时优先丢掉最不相关的，避免占用太多对话空间
               </p>
             </div>
@@ -433,7 +433,7 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
                   </option>
                 ))}
               </select>
-              <p className="text-[11px] text-[var(--color-muted)] mt-1">
+              <p className="text-[12px] text-[var(--color-muted)] mt-1">
                 {policy.compress_after_turns === 0
                   ? "一直保留全部原文（对话很长时会占满上下文）"
                   : `每次任务跑完后检查：超过 ${policy.compress_after_turns} 轮就把较早的对话总结成一段话继续带着，最近的原文保留`}
@@ -452,7 +452,7 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
                   if (v !== (policy.extract_model ?? "")) void patch({ extract_model: v || null });
                 }}
               />
-              <p className="text-[11px] text-[var(--color-muted)] mt-1">
+              <p className="text-[12px] text-[var(--color-muted)] mt-1">
                 建议用便宜快速的模型（总结是一次短调用）
               </p>
             </div>

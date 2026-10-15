@@ -260,12 +260,12 @@ export default function AgentsPage() {
                   onToggle={() => toggleRow(a.id)}
                   actions={
                     <>
-                      <Link href={`/agents/detail?id=${a.id}`} className="btn btn-primary text-[12.5px]">
+                      <Link href={`/agents/detail?id=${a.id}`} className="btn btn-primary text-[12px]">
                         设置 / 定义
                       </Link>
                       <button
                         type="button"
-                        className="btn text-[12.5px]"
+                        className="btn text-[12px]"
                         disabled={busy === a.id}
                         onClick={() => {
                           setRenaming(a.id);
@@ -276,7 +276,7 @@ export default function AgentsPage() {
                       </button>
                       <button
                         type="button"
-                        className="btn text-[12.5px]"
+                        className="btn text-[12px]"
                         disabled={busy === a.id}
                         title="按这份配置再建一个助手，改改就能用"
                         onClick={() => void duplicate(a.id)}
@@ -285,7 +285,7 @@ export default function AgentsPage() {
                       </button>
                       <button
                         type="button"
-                        className="btn text-[12.5px]"
+                        className="btn text-[12px]"
                         style={{ color: "var(--color-err)" }}
                         title="删除这个助手（会再确认一次）"
                         disabled={busy === a.id}
@@ -328,7 +328,7 @@ export default function AgentsPage() {
                     {/* 一行摘要：认得出来是谁 + 配了什么 + 最近跑得怎么样。
                         24 位 id 是开发者噪声，卡片上不放（详情页仍完整保留）。 */}
                     <span
-                      className="mt-0.5 block truncate text-[11.5px]"
+                      className="mt-0.5 block truncate text-[12px]"
                       style={{ color: "var(--color-muted)" }}
                     >
                       <span className="mono">{a.slug}</span> · v{a.version} ·{" "}
@@ -361,7 +361,7 @@ export default function AgentsPage() {
                     </span>
                   </span>
                   <Chip tone="muted">{runtime}</Chip>
-                  <span className="shrink-0 text-[11px]" style={{ color: "var(--color-muted)" }}>
+                  <span className="shrink-0 text-[12px]" style={{ color: "var(--color-muted)" }}>
                     {open ? "▾" : "▸"}
                   </span>
                 </Row>
@@ -369,12 +369,12 @@ export default function AgentsPage() {
                 {open && (
                   <RowDetail>
                     {a.description ? (
-                      <div className="mb-2 text-[12.5px] leading-[1.65]">{a.description}</div>
+                      <div className="mb-2 text-[12px] leading-[1.65]">{a.description}</div>
                     ) : null}
                     {/* 血缘：派生自谁 / 派生出哪些 —— 有血缘才显示，没有就不占一行 */}
                     {(a.parent_id || childrenOf(a.id).length > 0) && (
                       <div className="mb-2 rounded-[8px] px-2.5 py-2" style={{ background: "var(--color-surface-2)" }}>
-                        <div className="mb-1 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                        <div className="mb-1 text-[12px]" style={{ color: "var(--color-muted)" }}>
                           fork 血缘（助手之间的派生关系）
                         </div>
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px]">
@@ -459,10 +459,10 @@ export default function AgentsPage() {
                       </KV>
                     </div>
                     <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-                      <Link href={`/agents/detail?id=${a.id}`} className="btn text-[12.5px]">
+                      <Link href={`/agents/detail?id=${a.id}`} className="btn text-[12px]">
                         打开完整设置 →
                       </Link>
-                      <Link href={`/exec?agent=${a.id}`} className="btn text-[12.5px]">
+                      <Link href={`/exec?agent=${a.id}`} className="btn text-[12px]">
                         用这个助手跑一次 →
                       </Link>
                     </div>
@@ -608,7 +608,7 @@ function NewAgentDialog({
         <div className="mb-4 flex items-start gap-3">
           <div className="min-w-0 flex-1">
             <h2 className="text-[16px] font-medium mb-1">新建助手</h2>
-            <p className="text-[12.5px] text-[var(--color-muted)]">
+            <p className="text-[12px] text-[var(--color-muted)]">
               回答三个问题就行，其他的它会自己配好。
             </p>
           </div>
@@ -624,7 +624,7 @@ function NewAgentDialog({
               ✕
             </button>
             {confirmClose && (
-              <span className="text-[11.5px]" style={{ color: "var(--color-err)" }}>
+              <span className="text-[12px]" style={{ color: "var(--color-err)" }}>
                 再点一次关闭，填的内容会丢
               </span>
             )}
@@ -681,7 +681,7 @@ function NewAgentDialog({
                     <div className="text-[13.5px] font-medium">
                       {p.icon} {p.label}
                     </div>
-                    <div className="text-[11.5px] text-[var(--color-muted)] mt-0.5 leading-snug">
+                    <div className="text-[12px] text-[var(--color-muted)] mt-0.5 leading-snug">
                       {p.desc}
                     </div>
                   </button>
@@ -718,13 +718,13 @@ function NewAgentDialog({
                     <div className="text-[13px] font-medium" style={{ color: on ? "var(--color-accent)" : undefined }}>
                       {o.t}
                     </div>
-                    <div className="mt-0.5 text-[11.5px] text-[var(--color-muted)]">{o.d}</div>
+                    <div className="mt-0.5 text-[12px] text-[var(--color-muted)]">{o.d}</div>
                   </button>
                 );
               })}
             </div>
             {newRole === "orchestrator" && (
-              <div className="mt-1.5 text-[11.5px] text-[var(--color-muted)]">
+              <div className="mt-1.5 text-[12px] text-[var(--color-muted)]">
                 建好之后可以在它的详情页看到并修改**编排者的职责定义**。
               </div>
             )}
@@ -734,7 +734,7 @@ function NewAgentDialog({
             <div className="mt-3">
               <label className="label flex items-center gap-1.5" title="这句话会出现在 Playground 选助手的地方，帮你一眼认出它">
                 一句话职责
-                <span className="text-[11.5px] font-normal" style={{ color: "var(--color-muted)" }}>
+                <span className="text-[12px] font-normal" style={{ color: "var(--color-muted)" }}>
                   （选助手时会显示，已按预设自动填好）
                 </span>
               </label>
@@ -778,7 +778,7 @@ function NewAgentDialog({
               </Hint>
             </label>
             {providers.length === 0 ? (
-              <div className="text-[12.5px] text-[var(--color-err)]">
+              <div className="text-[12px] text-[var(--color-err)]">
                 还没有可用的服务商，请先到「LLM 配置」添加一个。
               </div>
             ) : (
@@ -804,7 +804,7 @@ function NewAgentDialog({
                     );
                   })}
                 </select>
-                <p className="text-[11.5px] text-[var(--color-muted)] mt-1.5">
+                <p className="text-[12px] text-[var(--color-muted)] mt-1.5">
                   {selectedCred
                     ? `使用你的密钥：${selectedCred.name}（${selectedCred.masked_key}）`
                     : usableCreds.length === 0
@@ -821,7 +821,7 @@ function NewAgentDialog({
               type="button"
               data-tap
               onClick={() => setShowAdvanced((v) => !v)}
-              className="text-[12.5px] text-[var(--color-accent)] flex items-center gap-1"
+              className="text-[12px] text-[var(--color-accent)] flex items-center gap-1"
             >
               <span>{showAdvanced ? "▾" : "▸"}</span> 高级设置（一般不用改）
             </button>
@@ -872,7 +872,7 @@ function NewAgentDialog({
             )}
           </div>
 
-          {err && <div className="text-[12.5px] text-[var(--color-err)]">{err}</div>}
+          {err && <div className="text-[12px] text-[var(--color-err)]">{err}</div>}
         </div>
 
         {/* 动作条：吸在面板底部（sticky），窗口再小也够得到 */}

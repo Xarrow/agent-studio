@@ -109,12 +109,12 @@ export function StoragePanel() {
       </div>
 
       {loading && !data ? (
-        <div className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+        <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>
           读取中…
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-[12.5px] sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-[12px] sm:grid-cols-3">
             <div>
               <span style={{ color: "var(--color-muted)" }}>库文件</span>{" "}
               <span className="mono">{bytes(data?.db_bytes)}</span>
@@ -158,7 +158,7 @@ export function StoragePanel() {
               type="button"
               disabled={busy}
               onClick={() => void compact()}
-              className="rounded-[8px] border px-3 py-1.5 text-[12.5px] disabled:opacity-50"
+              className="rounded-[8px] border px-3 py-1.5 text-[12px] disabled:opacity-50"
               style={{
                 borderColor: armed ? "var(--color-err)" : "var(--color-border)",
                 color: armed ? "var(--color-err)" : undefined,

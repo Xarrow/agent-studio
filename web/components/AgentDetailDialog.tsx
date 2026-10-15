@@ -35,7 +35,7 @@ export function AgentDetailDialog({
   return (
     <div className="fixed inset-0 z-50 bg-[var(--color-bg)] overflow-y-auto">
       <div className="sticky top-0 z-10 flex items-center justify-between gap-3 px-4 md:px-6 py-2.5 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
-        <span className="text-[12.5px] text-[var(--color-muted)]">
+        <span className="text-[12px] text-[var(--color-muted)]">
           配置助手 —— 关掉就回到刚才的对话，聊天记录不会丢
         </span>
         <button className="btn btn-sm shrink-0" onClick={onClose}>

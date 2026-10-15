@@ -162,7 +162,7 @@ export function LlmCallsPanel({
                       <button
                         type="button"
                         data-tap
-                        className="rounded px-1.5 text-[11px]"
+                        className="rounded px-1.5 text-[12px]"
                         style={{ color: "var(--color-accent)" }}
                         onClick={() => setOpenCall((cur) => (cur === c.id ? null : c.id))}
                       >
@@ -170,7 +170,7 @@ export function LlmCallsPanel({
                       </button>
                     ) : (
                       <span
-                        className="text-[11px]"
+                        className="text-[12px]"
                         style={{ color: "var(--color-muted)" }}
                         title="这条执行早于「原文记录」上线（2026-09-28 06:08 起留存），没有存过原文"
                       >

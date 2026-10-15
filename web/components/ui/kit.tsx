@@ -75,7 +75,7 @@ export function Segmented<T extends string>({
             key={o.key}
             type="button"
             onClick={() => onChange(o.key)}
-            className="min-h-[36px] whitespace-nowrap rounded-[7px] px-2.5 text-[12.5px] transition-colors"
+            className="min-h-[36px] whitespace-nowrap rounded-[7px] px-2.5 text-[12px] transition-colors"
             style={{
               background: on ? "var(--color-accent)" : undefined,
               color: on ? "#fff" : "var(--color-muted)",
@@ -115,7 +115,7 @@ export function Chip({
   return (
     <span
       title={title}
-      className="shrink-0 whitespace-nowrap rounded px-1.5 py-0.5 text-[11px]"
+      className="shrink-0 whitespace-nowrap rounded px-1.5 py-0.5 text-[12px]"
       style={{ background: `color-mix(in srgb, ${c} 12%, transparent)`, color: c }}
     >
       {children}
@@ -217,7 +217,7 @@ export function Empty({
     <div className="px-4 py-10 text-center">
       <div className="text-[14px]">{title}</div>
       {hint ? (
-        <div className="mx-auto mt-1.5 max-w-[420px] text-[12.5px] leading-relaxed" style={{ color: "var(--color-muted)" }}>
+        <div className="mx-auto mt-1.5 max-w-[420px] text-[12px] leading-relaxed" style={{ color: "var(--color-muted)" }}>
           {hint}
         </div>
       ) : null}
@@ -229,7 +229,7 @@ export function Empty({
 /** 键值一行（展开区里用：左边是名目，右边是值）。 */
 export function KV({ k, children }: { k: ReactNode; children: ReactNode }) {
   return (
-    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[12.5px]">
+    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[12px]">
       <span className="shrink-0" style={{ color: "var(--color-muted)" }}>
         {k}
       </span>
@@ -299,11 +299,11 @@ export function SelectionBar({
       className="mb-2 flex flex-wrap items-center gap-2 rounded-[10px] px-3 py-2"
       style={{ background: "color-mix(in srgb, var(--color-accent) 8%, transparent)" }}
     >
-      <span className="text-[12.5px]">已选 {count} 条</span>
+      <span className="text-[12px]">已选 {count} 条</span>
       {actions}
       {onSelectAll ? (
         <button
-          className="btn text-[12.5px]"
+          className="btn text-[12px]"
           style={{ color: "var(--color-muted)" }}
           onClick={onSelectAll}
         >
@@ -312,7 +312,7 @@ export function SelectionBar({
       ) : null}
       {onClear ? (
         <button
-          className="btn text-[12.5px]"
+          className="btn text-[12px]"
           style={{ color: "var(--color-muted)" }}
           onClick={onClear}
         >
@@ -434,7 +434,7 @@ export function Menu({
                 setOpen(false);
                 it.onSelect();
               }}
-              className="flex min-h-[38px] w-full flex-col items-start justify-center px-3 text-left text-[12.5px] hover:bg-[var(--color-surface-2)] disabled:opacity-40"
+              className="flex min-h-[38px] w-full flex-col items-start justify-center px-3 text-left text-[12px] hover:bg-[var(--color-surface-2)] disabled:opacity-40"
               style={it.danger ? { color: "var(--color-err)" } : undefined}
             >
               <span>{it.label}</span>
@@ -489,7 +489,7 @@ export function Section({
           aria-expanded={open}
           className="flex min-h-[36px] min-w-0 flex-1 items-center gap-2 text-left"
         >
-          <span className="text-[11px]" style={{ color: "var(--color-muted)" }}>
+          <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
             {open ? "▾" : "▸"}
           </span>
           <span className="min-w-0">
@@ -502,7 +502,7 @@ export function Section({
               ) : null}
             </span>
             {desc ? (
-              <span className="mt-0.5 block text-[11.5px] leading-snug" style={{ color: "var(--color-muted)" }}>
+              <span className="mt-0.5 block text-[12px] leading-snug" style={{ color: "var(--color-muted)" }}>
                 {desc}
               </span>
             ) : null}
