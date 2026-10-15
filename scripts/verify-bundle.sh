@@ -117,9 +117,9 @@ port_pid() {
 # 取到别的进程就会把解释器判成系统的（曾误报 /root/miniconda3/bin/python3.13）
 PID="$(port_pid "$PORT")"
 # 兜底 2：精简镜像里 ss/lsof 可能都没有、按 cwd 匹配也可能失手。uvicorn 自己会在启动日志里
-# 打印 "Started server process [N]"，而这条日志正是本次验证的 start.sh 写的，最可靠。
-if [ -z "$PID" ] && [ -f "$WORK/start.log" ]; then
-  PID="$(grep -ao 'Started server process \[[0-9]*\]' "$WORK/start.log" 2>/dev/null | grep -o '[0-9]*' | tail -1)"
+# 打印 "Started server process [N]"，而这条日志正是本次验证的 start.sh 写的（$WORK/run.log），最可靠。
+if [ -z "$PID" ] && [ -f "$WORK/run.log" ]; then
+  PID="$(grep -ao 'Started server process \[[0-9]*\]' "$WORK/run.log" 2>/dev/null | grep -o '[0-9]*' | tail -1)"
 fi
 if [ -n "$PID" ]; then
   EXE=$(readlink -f "/proc/$PID/exe" 2>/dev/null || echo unknown)
