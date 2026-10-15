@@ -13,6 +13,7 @@ from . import (
     hooks,
     mcp,
     memories,
+    anthropic_compat,
     openai_compat,
     orchestrations,
     maintenance,
@@ -60,5 +61,7 @@ api_router.include_router(evals.router)           # /api/evals（评测：用例
 # OpenAI 兼容层：任何 OpenAI 客户端都能直接用这些 Agent
 # （model = Agent，messages → 会话历史，text_delta → choices[].delta）
 api_router.include_router(openai_compat.router)  # /v1/models + /v1/chat/completions
+# Anthropic Messages 兼容出口：同一批 Agent，Claude Code / Anthropic SDK 直接可接
+api_router.include_router(anthropic_compat.router)  # /v1/messages + /v1/messages/count_tokens
 
 __all__ = ["api_router"]
