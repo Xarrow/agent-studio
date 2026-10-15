@@ -78,6 +78,10 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   const [history, setHistory] = useState<
     { role: "user" | "assistant"; content: string; run_id: string | null; turn_index: number }[]
   >([]);
+  /** history 的镜像 ref：刷新恢复块要读"刚加载完"的最新历史，
+   *  但不能把它加进 useEffect 依赖（会反复触发）—— 用 ref 桥一下。 */
+  const historyRef = useRef(history);
+  historyRef.current = history;
   /** 当前正在流式生成的内容 */
   const [live, setLive] = useState<LiveMsg | null>(null);
   /** 正在生成的这次执行的**全部事件**（用来实时画分色过程） */
@@ -184,7 +188,40 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
 
   // 切会话：载入历史
   useEffect(() => {
-    void loadMessages(sessionId);
+    void (async () => {
+      await loadMessages(sessionId);
+      // ── 刷新恢复：会话里还有在跑的 run 就重新挂上 SSE ──
+      // 后端没停（事件继续落库），只是页面的 SSE 断了；stream 端点
+      // 先回放已落库事件再推增量，接上即恢复现场，不丢任何内容。
+      if (!sessionId) return;
+      try {
+        const inflight = await api.inFlightRuns(sessionId);
+        const live1 = inflight.find((r) => r.status === "running" || r.status === "pending");
+        const hitl1 = inflight.find((r) => r.status === "waiting_hitl");
+        if (live1) {
+          // 用户输入从这条 run 关联的最后一条用户消息取（输入里可能带附件标记，
+          // 原样传给 attachStream 才能把附件展示和过程时间线对上）
+          const lastUser = [...historyRef.current]
+            .reverse()
+            .find((m) => m.role === "user" && m.run_id === live1.id);
+          const inputText = lastUser?.content ?? "";
+          setBusy(true);
+          attachStream(live1.id, inputText);
+        } else if (hitl1) {
+          // 停在等确认：把确认条恢复出来（现场从历史 + pending_hitl 读）
+          const r = await api.run(hitl1.id).catch(() => null);
+          if (r?.pending_hitl) {
+            const lastUser = [...historyRef.current]
+              .reverse()
+              .find((m) => m.role === "user" && m.run_id === hitl1.id);
+            setHitl({ runId: hitl1.id, payload: r.pending_hitl as Record<string, unknown> });
+            setLiveInput(lastUser?.content ?? "");
+          }
+        }
+      } catch {
+        /* 恢复失败不阻塞会话加载 —— 历史照常显示 */
+      }
+    })();
   }, [sessionId, loadMessages]);
 
   // 自动滚到底

@@ -440,6 +440,9 @@ export const api = {
     request<Run[]>(
       `/api/runs?limit=${limit}${agentId ? `&agent_id=${agentId}` : ""}`,
     ),
+  /** 某会话里还在跑的 run（刷新后重挂 SSE 用） */
+  inFlightRuns: (sessionId: string) =>
+    request<Run[]>(`/api/runs?session_id=${sessionId}&in_flight=true&limit=5`),
   run: (id: string) => request<Run>(`/api/runs/${id}`),
   createRun: (body: {
     agent_id: string;

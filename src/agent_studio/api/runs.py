@@ -132,12 +132,24 @@ async def create_run(payload: RunCreate, session: AsyncSession = Depends(get_ses
 @router.get("", response_model=list[RunRead])
 async def list_runs(
     agent_id: str | None = None,
+    session_id: str | None = None,
+    in_flight: bool = False,
     limit: int = Query(default=50, le=200),
     session: AsyncSession = Depends(get_session),
 ) -> list[RunRead]:
+    """run 列表。
+
+    ``session_id`` + ``in_flight``：页面刷新时前端查"这个会话有没有还在跑的 run"，
+    有就重新挂 SSE（stream 端点先回放已落库事件再推增量，接上即恢复现场）——
+    没有这个查询，刷新后进行中的执行在页面上就"消失"了。
+    """
     stmt = select(Run).order_by(Run.started_at.desc()).limit(limit)
     if agent_id:
         stmt = stmt.where(Run.agent_id == agent_id)
+    if session_id:
+        stmt = stmt.where(Run.session_id == session_id)
+    if in_flight:
+        stmt = stmt.where(Run.status.in_(("pending", "running", "waiting_hitl")))
     rows = (await session.execute(stmt)).scalars().all()
     return [to_read(r) for r in rows]
 
