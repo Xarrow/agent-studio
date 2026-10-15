@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import json
+
 import re
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import delete, select
+from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_session
@@ -235,12 +238,16 @@ async def mount_tool(
     if existing is None:
         session.add(AgentTool(agent_id=agent_id, tool_id=tool_id))
         row = await _get_or_404(session, agent_id)
-        definition = dict(row.definition or {})
+        # 必须深拷贝再赋回 + flag_modified：浅拷贝时嵌套 list/dict 与 ORM 已加载值共享，
+        # SQLAlchemy 的变更检测可能判定"没变"而不发 UPDATE —— 表现为 204 成功但
+        # definition.tools 里根本没有（真机实测抓到过，勾选前端回显对、后端却没存）。
+        definition = json.loads(json.dumps(row.definition or {}))
         tools = definition.get("tools") or []
         if not any(t.get("ref") == tool_id for t in tools):
             tools.append({"ref": tool_id, "enabled": True})
         definition["tools"] = tools
         row.definition = definition
+        flag_modified(row, "definition")
         row.updated_at = now_ms()
         await session.commit()
 
@@ -254,9 +261,10 @@ async def unmount_tool(
     if existing is not None:
         await session.delete(existing)
     row = await _get_or_404(session, agent_id)
-    definition = dict(row.definition or {})
+    definition = json.loads(json.dumps(row.definition or {}))
     definition["tools"] = [t for t in (definition.get("tools") or []) if t.get("ref") != tool_id]
     row.definition = definition
+    flag_modified(row, "definition")
     row.updated_at = now_ms()
     await session.commit()
 

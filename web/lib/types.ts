@@ -104,6 +104,8 @@ export interface Tool {
   flags: Record<string, unknown>;
   created_at: number;
   updated_at: number;
+  /** 哪些助手挂了这个工具（后端反查自 Agent.definition.tools）—— 工具页就地勾选增删 */
+  agents_using?: string[];
 }
 
 export interface Skill {

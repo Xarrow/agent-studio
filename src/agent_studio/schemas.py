@@ -188,6 +188,9 @@ class ToolRead(BaseModel):
     flags: dict[str, Any]
     created_at: int
     updated_at: int
+    #: 哪些助手挂了这个工具（反查自 Agent.definition.tools）。双向同步的展示源：
+    #: 工具页就地勾选增删，助手页能力区同样可改 —— 同一份数据，两个入口。
+    agents_using: list[str] = Field(default_factory=list)
 
 
 class ToolSpec(BaseModel):

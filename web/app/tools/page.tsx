@@ -45,6 +45,9 @@ export default function ToolsPage() {
   const [picked, setPicked] = useState<Set<string>>(new Set());
   /** 「加到助手…」弹窗：null = 没开 */
   const [attachOpen, setAttachOpen] = useState(false);
+  /** id → 助手名（工具展开区「哪些助手在用」就地勾选用；与助手页能力区双向同步同一份数据） */
+  const [agentNames, setAgentNames] = useState<Record<string, string>>({});
+  const [bindBusy, setBindBusy] = useState<string | null>(null);
   const [attachAgents, setAttachAgents] = useState<Agent[]>([]);
   const [attachBusy, setAttachBusy] = useState(false);
   /** 每个页签自己的说法 —— 标题跟着页签走，不再"页签 + 又一个 h1"两层头 */
@@ -75,6 +78,9 @@ export default function ToolsPage() {
   useEffect(() => {
     void load();
   }, [load]);
+  useEffect(() => {
+    void loadAgents();
+  }, []);
 
   const sync = async () => {
     setSyncing(true);
@@ -164,6 +170,16 @@ export default function ToolsPage() {
   };
 
   /** 打开「加到助手…」：一次把选中的工具全挂上去 */
+  /** 拉一次助手名单（展开区勾选要用；attach 弹窗也复用这份） */
+  const loadAgents = async () => {
+    try {
+      const ags = await api.agents();
+      setAgentNames(Object.fromEntries(ags.map((a) => [a.id, a.name])));
+    } catch {
+      /* 名单拉不到不阻塞主列表；展开区会显示 id 兜底 */
+    }
+  };
+
   const openAttach = async () => {
     setAttachOpen(true);
     try {
@@ -187,6 +203,28 @@ export default function ToolsPage() {
       setPicked(new Set());
     } finally {
       setAttachBusy(false);
+    }
+  };
+
+  /** 展开区就地勾选：挂上 / 摘下（与助手页能力区是同一份数据，双向同步） */
+  const toggleAgentBind = async (t: Tool, agentId: string, on: boolean) => {
+    const key = `${t.id}:${agentId}`;
+    setBindBusy(key);
+    try {
+      if (on) await api.mountTool(agentId, t.id);
+      else await api.unmountTool(agentId, t.id);
+      // 本地即时回写，列表不整页刷新
+      setTools((prev) =>
+        prev.map((x) =>
+          x.id === t.id
+            ? { ...x, agents_using: on ? [...(x.agents_using ?? []), agentId] : (x.agents_using ?? []).filter((a) => a !== agentId) }
+            : x,
+        ),
+      );
+    } catch (e) {
+      fb.error(on ? "挂载失败" : "摘下失败", e instanceof Error ? e.message : String(e));
+    } finally {
+      setBindBusy(null);
     }
   };
 
@@ -516,6 +554,43 @@ export default function ToolsPage() {
                             </KV>
                           ) : null}
                           {t.description ? <KV k="说明">{t.description}</KV> : null}
+                        </div>
+                        {/* ── 哪些助手在用：就地勾选增删（与助手页能力区双向同步） ── */}
+                        <div className="mt-2.5">
+                          <div className="mb-1 text-[12px]" style={{ color: "var(--color-muted)" }}>
+                            哪些助手在用（勾选 = 挂给这个助手，去掉勾 = 摘下；和助手页「能力」是同一份数据）
+                          </div>
+                          {Object.keys(agentNames).length === 0 ? (
+                            <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+                              还没有助手 —— 先去 Agents 建一个
+                            </span>
+                          ) : (
+                            <div className="flex flex-wrap gap-1.5">
+                              {Object.entries(agentNames).map(([aid, aname]) => {
+                                const on = (t.agents_using ?? []).includes(aid);
+                                const key = `${t.id}:${aid}`;
+                                const busy = bindBusy === key;
+                                return (
+                                  <label
+                                    key={aid}
+                                    className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-[7px] border px-2.5 text-[12px]"
+                                    style={{
+                                      borderColor: on ? "var(--color-accent)" : "var(--color-border)",
+                                      background: on ? "color-mix(in srgb, var(--color-accent) 8%, transparent)" : "transparent",
+                                    }}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={on}
+                                      disabled={busy}
+                                      onChange={() => void toggleAgentBind(t, aid, !on)}
+                                    />
+                                    {aname}
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
                         {isTesting ? (
                           <div className="mt-2.5">

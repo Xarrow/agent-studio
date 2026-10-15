@@ -41,7 +41,28 @@ async def list_tools(
     if kind:
         stmt = stmt.where(Tool.kind == kind)
     rows = (await session.execute(stmt)).scalars().all()
-    return [to_read(r) for r in rows]
+
+    # 反查哪些助手在用：绑定存在 Agent.definition.tools（ToolRef 列表）里，
+    # 一次把所有助手的定义拉出来建 tool_id → [agent_id] 映射，避免逐工具查库。
+    from ..models import Agent as AgentModel
+
+    usage: dict[str, list[str]] = {}
+    agents = (await session.execute(select(AgentModel))).scalars().all()
+    for a in agents:
+        d = a.definition or {}
+        for ref in d.get("tools") or []:
+            # 绑定形状是 {"ref": "tl_...", "enabled": true} —— 键名是 ref（不是 id），
+            # 取错键反查永远为空（真机实测抓到过）。
+            tid = ref.get("ref") if isinstance(ref, dict) else None
+            if tid:
+                usage.setdefault(tid, []).append(a.id)
+
+    out = []
+    for r in rows:
+        t = to_read(r)
+        t.agents_using = usage.get(r.id, [])
+        out.append(t)
+    return out
 
 
 @router.post("", response_model=ToolRead, status_code=status.HTTP_201_CREATED)
