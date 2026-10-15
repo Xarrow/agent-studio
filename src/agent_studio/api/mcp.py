@@ -14,6 +14,7 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
+from sqlalchemy import select
 
 from ..db import SessionLocal
 from ..models import McpServer, now_ms
@@ -143,6 +144,103 @@ async def list_servers(limit: int = 100) -> list[McpServerRead]:
             )
         ).mappings().all()
     return [_to_read(McpServer(**dict(r))) for r in rows]
+
+
+#: 标准 mcpServers JSON 里的 type → 本平台的 transport（本平台只有 stdio 与 http 两种）
+_TYPE_MAP = {
+    "stdio": "stdio",
+    "http": "http",
+    "sse": "http",
+    "streamable-http": "http",
+    "streamablehttp": "http",
+}
+
+
+def _coerce_env(raw: Any) -> dict[str, str]:
+    """env 有两种写法：对象 ``{"K":"V"}``，或数组 ``["K=V"]``（不少客户端用后者）。"""
+    if isinstance(raw, dict):
+        return {str(k): str(v) for k, v in raw.items()}
+    if isinstance(raw, list):
+        out: dict[str, str] = {}
+        for item in raw:
+            s = str(item)
+            if "=" in s:
+                k, v = s.split("=", 1)
+                out[k.strip()] = v
+        return out
+    return {}
+
+
+def _from_mcp_servers(payload: Any) -> list[McpServerCreate]:
+    """把标准 ``mcpServers`` JSON 解析成注册项（Claude Desktop / Cursor 那一套直接粘）。
+
+    形态一（stdio）：``{"command":"npx","args":[...],"env":{...}}``
+    形态二（http） ：``{"url":"...","type":"http","headers":{"Authorization":"Bearer ..."}}``
+
+    判据是**字段存在性**而不是 type：有 command 走 stdio、有 url 走 http，
+    type 只用来兜底（sse / streamable-http 都归到本平台的 http）。
+    这样即便对方把 type 写错、或者干脆不写 type，也能正确注册。
+    """
+    servers = payload.get("mcpServers") if isinstance(payload, dict) else None
+    if servers is None and isinstance(payload, dict):
+        servers = payload  # 也接受不带 mcpServers 外壳的 {"名字": {...}}
+    if not isinstance(servers, dict) or not servers:
+        raise HTTPException(400, '没找到 mcpServers 配置：应为 {"mcpServers": {"名字": {...}}}')
+
+    out: list[McpServerCreate] = []
+    for name, cfg in servers.items():
+        if not isinstance(cfg, dict):
+            raise HTTPException(400, f"「{name}」的配置不是对象")
+        command = str(cfg.get("command") or "").strip()
+        url = str(cfg.get("url") or "").strip()
+        if not command and not url:
+            raise HTTPException(400, f"「{name}」既没有 command（stdio）也没有 url（http）")
+        transport = "stdio" if command else _TYPE_MAP.get(str(cfg.get("type") or "").lower(), "http")
+        if transport not in ("stdio", "http"):
+            transport = "http"
+        headers = cfg.get("headers") if isinstance(cfg.get("headers"), dict) else {}
+        out.append(
+            McpServerCreate(
+                name=safe_mcp_name(str(name)),
+                transport=transport,
+                command=command,
+                args=[str(a) for a in (cfg.get("args") or [])],
+                url=url,
+                env=_coerce_env(cfg.get("env")),
+                headers={str(k): str(v) for k, v in headers.items()},
+                enabled=True,
+            )
+        )
+    return out
+
+
+@router.post("/import", response_model=list[McpServerRead], status_code=201)
+async def import_servers(payload: dict[str, Any]) -> list[McpServerRead]:
+    """直接吃标准 ``mcpServers`` JSON：一次可多条，逐条落库。
+
+    同名（safe_mcp_name 之后）视为**更新**：改连接，而不是再插一条——
+    同一份配置粘两次不该得到两个同名服务器。
+    """
+    out: list[McpServerRead] = []
+    async with SessionLocal() as session:
+        for it in _from_mcp_servers(payload):
+            row = (
+                await session.execute(select(McpServer).where(McpServer.name == it.name))
+            ).scalar_one_or_none()
+            if row is None:
+                row = McpServer(name=it.name)
+                session.add(row)
+            row.transport = it.transport
+            row.command = it.command
+            row.args = list(it.args)
+            row.url = it.url
+            row.env = dict(it.env)
+            row.headers = dict(it.headers)
+            row.enabled = it.enabled
+            await session.commit()
+            await session.refresh(row)
+            out.append(_to_read(row))
+    return out
 
 
 @router.post("", response_model=McpServerRead, status_code=201)
