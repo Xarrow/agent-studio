@@ -56,7 +56,10 @@ export function CapabilityPicker({
   onToggleMcp: (id: string) => void;
 }) {
   const [q, setQ] = useState("");
-  const [showAll, setShowAll] = useState(false);
+  /** 默认显示全部（不只看已选）：一个没勾过的能力（比如注册远程 A2A agent 自动生成的
+   *  a2a 工具）在"只看已选"模式下永远不可见 = 等于不存在 —— 用户想挂远程 agent
+   *  却根本找不到入口（实测反馈）。已选的在最上面，未选的收在下面，一屏看全。 */
+  const [showAll, setShowAll] = useState(true);
 
   const items: CapabilityItem[] = useMemo(() => {
     const t: CapabilityItem[] = tools.map((x) => ({
@@ -100,9 +103,11 @@ export function CapabilityPicker({
   const kw = q.trim().toLowerCase();
   const filtered = items.filter((i) => {
     if (kw && !i.name.toLowerCase().includes(kw) && !i.description.toLowerCase().includes(kw)) return false;
-    if (!showAll && !kw) return i.on;
     return true;
   });
+  /* 已选的排最上（一眼看到"我挂了什么"），未选的按名字排后面 ——
+     都显示但仍有主次，不需要再靠"只看已选"藏掉另一半。 */
+  filtered.sort((a, b) => Number(b.on) - Number(a.on) || a.name.localeCompare(b.name));
 
   const selectedCount = items.filter((i) => i.on).length;
 
@@ -123,7 +128,7 @@ export function CapabilityPicker({
             setQ("");
           }}
         >
-          {showAll || kw ? `只看已选（${selectedCount}）` : `显示全部 ${items.length} 项`}
+          {showAll ? `只看已选（${selectedCount}）` : `显示全部 ${items.length} 项`}
         </button>
       </div>
 
