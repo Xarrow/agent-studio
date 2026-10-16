@@ -25,7 +25,9 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[1]
-SHIM_SRC = REPO / "src" / "agent_studio" / "data" / "studio-npx.sh"
+# ⚠️ 别放在 src/agent_studio/data/ 下 —— .gitignore 的 `data/` 规则会把脚本一起吞掉
+# （实测：文件在磁盘上、服务能跑，但 repo 和 CI 打的包里都没有）
+SHIM_SRC = REPO / "src" / "agent_studio" / "assets" / "studio-npx.sh"
 
 
 class _Stub(BaseHTTPRequestHandler):

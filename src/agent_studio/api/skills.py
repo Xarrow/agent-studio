@@ -90,7 +90,7 @@ async def list_skills(session: AsyncSession = Depends(get_session)) -> list[Skil
 # npx 影子命令 —— 让「没有 Node 的机器」也能跑 npx skills add …
 # --------------------------------------------------------------------------- #
 _SHIM_CANDIDATES = (
-    Path(__file__).resolve().parents[1] / "data" / "studio-npx.sh",   # 随包走（推荐）
+    Path(__file__).resolve().parents[1] / "assets" / "studio-npx.sh",   # 随包走（推荐）
     Path(__file__).resolve().parents[3] / "scripts" / "studio-npx.sh",  # 源码树
 )
 # 这些名字都装一份：npx/pnpx/bunx 是「别人文档里写的」，skills 是 CLI 自己的名字
