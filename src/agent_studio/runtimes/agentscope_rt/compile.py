@@ -459,6 +459,14 @@ def build_permission_state(defn: AgentDefinition, tools: list[ToolSpec] | None =
     # （真名）来建规则。
     if mode is PermissionMode.DEFAULT and tools:
         covered = set(ask_rules)  # 用户已点名的工具不重复注入
+        # 用户显式放行（allow 段）的工具**不注入 ask**：ask 是 Step 2、allow 是 Step 5，
+        # 注入的 ask 会把用户写的 allow 整个盖掉 —— 表现为"权限表里加了允许却照样每步问"
+        # （现场实测 browser 挂 allow 后仍然 12 连问）。显式 allow 应该赢过严格模式的兜底。
+        covered |= {
+            str(i.get("tool") or "").strip()
+            for i in (conf.get("allow") or [])
+            if isinstance(i, dict)
+        }
         for spec in tools:
             name = BUILTIN_TOOLS.get(spec.name.lower(), spec.name)
             if name in covered:

@@ -582,7 +582,12 @@ NATIVE_TOOLS: dict[str, dict[str, Any]] = {
             "页面内容动态加载（fetch 拿不到）或需要交互时用它。"
         ),
         "schema": BROWSER_SCHEMA,
-        "flags": {"read_only": False, "concurrency_safe": False, "dangerous": True, "native": True},
+        # dangerous=False：不逐次弹 HITL 确认 —— 实测浏览器任务平均 5-10 个动作，
+        # 每步都暂停等确认 = 用户全程点"允许"，体验上等于卡死（现场反馈）。
+        # 安全边界已经在工具内部收口：URL 拦内网（SSRF）、每 run 沙箱实例、
+        # run 结束销毁。用户全程通过直播画面**看得见**它在干什么 —— 这本身就是
+        # 比"事后确认"更强的监督。
+        "flags": {"read_only": False, "concurrency_safe": False, "dangerous": False, "native": True},
     },
 }
 
