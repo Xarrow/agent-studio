@@ -244,20 +244,32 @@ class SkillScanRequest(BaseModel):
     """预览一个仓库里有哪些技能 —— 对应 `npx skills add owner/repo --list`。
 
     ``ref`` 就是用户抄来的那一条：``owner/repo[/目录]``，可带 ``@版本``。
+    ``command`` 可以直接把整条命令粘进来（``npx skills add owner/repo``）——
+    技能仓库 README 给的就是这一行字，不该要求用户自己拆。
     """
 
-    ref: str
+    ref: str | None = None
+    command: str | None = None         # 整条 skills 命令，优先于 ref
     ref_pin: str | None = None         # 页面上单独填的版本（分支/标签/SHA），优先于 @
 
 
 class SkillInstallRequest(BaseModel):
-    """从仓库装技能 —— 对应 `npx skills add owner/repo [--skill x]`。"""
+    """从仓库装技能 —— 对应 `npx skills add owner/repo [--skill x] [--agent 名]`。"""
 
-    ref: str
+    ref: str | None = None
+    command: str | None = None         # 整条 skills 命令，优先于 ref
     ref_pin: str | None = None
     paths: list[str] | None = None     # 勾选的技能（仓库内目录）；给技能名也认
     skill: str | None = None           # 只要一个（等价于 --skill）
     all: bool = False                  # 仓库里多个技能时全装（等价于 --all）
+    agents: list[str] | None = None    # 装完顺手挂到这些助手（等价于 --agent，按名字/slug 找）
+
+
+class CliInstallRequest(BaseModel):
+    """把 npx 影子命令装到这台机器上（部署机零 Node 时的用法）。"""
+
+    dir: str | None = None             # 目标目录，默认 ~/.local/bin
+    force: bool = False                # 已有同名命令时是否替换（会先备份成 .studio-bak）
 
 
 class SkillUpdateRequest(BaseModel):

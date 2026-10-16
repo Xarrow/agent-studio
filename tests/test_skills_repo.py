@@ -16,6 +16,7 @@ from agent_studio.skills_repo import (
     RepoRef,
     parse_repo_ref,
     parse_skill_md,
+    parse_skills_cmd,
     pick_skills,
     scan_tarball,
     tarball_sha,
@@ -188,3 +189,69 @@ def test_frontmatter_缺失时退化成目录名与首行():
     name, desc = parse_skill_md("# 标题\n\n这是一句话说明。\n", "my-skill")
     assert name == "my-skill"
     assert desc == "这是一句话说明。"
+
+
+# --------------------------------------------------------------------------- #
+# 命令行兼容层（npx skills add …）
+# --------------------------------------------------------------------------- #
+def _cmd(s: str):
+    """解析命令并断言认出来了（None 是「不是 skills 命令」那条路）。"""
+    r = parse_skills_cmd(s)
+    assert r is not None, f"应当认得出来：{s}"
+    return r
+
+
+def test_认_README_里那几种写法():
+    a = _cmd("npx skills add tt-a1i/archify")
+    assert (a.action, a.ref, a.runner) == ("add", "tt-a1i/archify", "npx")
+
+    b = _cmd("npx skills@latest add minio/skills/aimem --skill aimem -g -y")
+    assert (b.action, b.ref, b.skill) == ("add", "minio/skills/aimem", "aimem")
+    assert b.global_ and b.yes, "-g / -y 要收下（平台技能本来就是全局的）"
+
+    c = _cmd("pnpm dlx skills add owner/repo --all")
+    assert (c.action, c.runner, c.all) == ("add", "pnpm dlx", True)
+
+    d = _cmd("bunx skills add owner/repo")
+    assert (d.action, d.runner) == ("add", "bunx")
+
+    e = _cmd("skills add owner/repo")      # 已经装过 CLI 的机器
+    assert (e.action, e.ref, e.runner) == ("add", "owner/repo", "skills")
+
+
+def test_agent_参数的两种写法():
+    a = _cmd("npx -y skills add owner/repo --agent 通用助手 --agent 测试")
+    assert a.agents == ["通用助手", "测试"]
+    b = _cmd("npx skills add owner/repo --skill=web-design --agent=x")
+    assert b.skill == "web-design" and b.agents == ["x"]
+
+
+def test_认其他子命令():
+    assert _cmd("npx skills list").action == "list"
+    assert _cmd("npx skills remove foo").target == "foo"
+    assert _cmd("npx skills ls").action == "list"
+    assert _cmd("npx skills find 图表").target == "图表"
+    assert _cmd("npx skills update owner/repo").action == "update"
+
+
+def test_整行粘贴与复合命令都能剥干净():
+    a = _cmd("  $ npx skills add a/b/skills/c@v2 && echo done")
+    assert (a.action, a.ref) == ("add", "a/b/skills/c@v2")
+    b = _cmd("npx skills add 'owner/repo' --skill \"web design\"")
+    assert b.skill == "web design", "引号参数要能切出来"
+
+
+def test_不是_skills_的命令明确返回_None_而不是乱猜():
+    assert parse_skills_cmd("npx cowsay hi") is None
+    assert parse_skills_cmd("npx -p typescript tsc --version") is None
+    assert parse_skills_cmd("npm install") is None
+    assert parse_skills_cmd("") is None
+    assert parse_skills_cmd("owner/repo") is None, "纯引用不是命令 —— 交给引用解析那条路"
+
+
+def test_命令缺参数时报人话():
+    with pytest.raises(ValueError) as ei:
+        parse_skills_cmd("skills add")
+    assert "没给仓库" in str(ei.value)
+    with pytest.raises(ValueError):
+        parse_skills_cmd("npx skills add owner/repo --skill")

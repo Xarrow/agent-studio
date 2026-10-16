@@ -436,15 +436,17 @@ export const api = {
       body,
     ),
   /** 预览仓库里有哪些技能（= `npx skills add owner/repo --list`） */
-  scanSkillRepo: (body: { ref: string; ref_pin?: string }) =>
+  scanSkillRepo: (body: { ref?: string; command?: string; ref_pin?: string }) =>
     post<SkillRepoScan>("/api/skills/scan", body),
   /** 从仓库安装（= `npx skills add owner/repo`，可带选中的 paths / --skill） */
   installSkillRepo: (body: {
-    ref: string;
+    ref?: string;
+    command?: string;
     ref_pin?: string;
     paths?: string[];
     skill?: string;
     all?: boolean;
+    agents?: string[];
   }) =>
     post<{
       repo: string;
@@ -452,7 +454,30 @@ export const api = {
       sha: string | null;
       count: number;
       items: { id: string; name: string; updated: boolean; path: string }[];
+      attached: string[];
+      agents_missing: string[];
     }>("/api/skills/install", body),
+  /** npx 影子命令的内容与用法（部署机零 Node 时用） */
+  skillsCli: () =>
+    request<{
+      dir_default: string;
+      names: string[];
+      usage: string[];
+      env: Record<string, string>;
+      script: string;
+    }>("/api/skills/cli"),
+  /** 把这台机器上的 npx / skills 换成影子命令（只写用户目录，不动系统） */
+  installSkillsCli: (dir?: string, force?: boolean) =>
+    post<{
+      dir: string;
+      written: string[];
+      skipped: string[];      // 已有同名命令且没覆盖
+      unchanged: string[];    // 已经是影子命令
+      backed_up: string[];    // force 替换前的备份
+      on_path: boolean;
+      hint: string;
+      notes: string[];
+    }>("/api/skills/cli/install", { dir, force }),
   /** 按安装时记下的来源重装（= 更新到最新） */
   reinstallSkill: (id: string) =>
     post<{ ok: boolean; id: string; name: string; ref: string; sha: string | null }>(

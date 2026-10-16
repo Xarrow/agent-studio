@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import tempfile
@@ -17,6 +18,7 @@ from ..config import settings
 from ..db import get_session
 from ..models import AgentSkill, Skill, now_ms
 from ..schemas import (
+    CliInstallRequest,
     SkillImportRequest,
     SkillInstallRequest,
     SkillRead,
@@ -26,6 +28,7 @@ from ..schemas import (
 from ..skills_repo import (
     fetch_repo_tarball,
     parse_repo_ref,
+    parse_skills_cmd,
     pick_skills,
     resolve_head,
     scan_tarball,
@@ -81,6 +84,133 @@ def parse_skill_md(text: str, fallback_name: str) -> tuple[str, str]:
 async def list_skills(session: AsyncSession = Depends(get_session)) -> list[SkillRead]:
     rows = (await session.execute(select(Skill).order_by(Skill.updated_at.desc()))).scalars().all()
     return [to_read(r) for r in rows]
+
+
+# --------------------------------------------------------------------------- #
+# npx 影子命令 —— 让「没有 Node 的机器」也能跑 npx skills add …
+# --------------------------------------------------------------------------- #
+_SHIM_CANDIDATES = (
+    Path(__file__).resolve().parents[1] / "data" / "studio-npx.sh",   # 随包走（推荐）
+    Path(__file__).resolve().parents[3] / "scripts" / "studio-npx.sh",  # 源码树
+)
+# 这些名字都装一份：npx/pnpx/bunx 是「别人文档里写的」，skills 是 CLI 自己的名字
+_SHIM_NAMES = ("npx", "pnpx", "bunx", "skills")
+
+
+def _shim_text() -> str:
+    for p in _SHIM_CANDIDATES:
+        if p.is_file():
+            return p.read_text(encoding="utf-8")
+    raise HTTPException(
+        status.HTTP_500_INTERNAL_SERVER_ERROR,
+        "找不到影子命令脚本（studio-npx.sh），这个安装包可能不完整",
+    )
+
+
+def _default_shim_dir() -> Path:
+    """默认装到 ~/.local/bin —— 用户级、不需要 root、多数发行版默认在 PATH 里。"""
+    return Path(os.path.expanduser("~/.local/bin"))
+
+
+@router.get("/cli")
+async def skills_cli() -> dict:
+    """影子命令的脚本内容与用法（给「本机没有 Node」的部署机用）。
+
+    部署机零 Node：技能 README 里的 ``npx skills add …`` 照抄会 not found。
+    把这份脚本装成 ``npx``/``skills`` 就能直接跑 —— 它只认 skills 命令，
+    其它 npm 包会转给 PATH 里真正的 npx（没有就明确报错，不假装成功）。
+    """
+    return {
+        "dir_default": str(_default_shim_dir()),
+        "names": list(_SHIM_NAMES),
+        "usage": [
+            "npx skills add <owner/repo[/目录]> [--skill 名] [--all] [--agent 助手名]",
+            "npx skills list | remove <名> | update <引用> | find <词>",
+        ],
+        "env": {
+            "STUDIO_URL": "平台地址（默认 http://127.0.0.1:8848）",
+            "STUDIO_TOKEN": "公网访问口令（内网不用）",
+            "STUDIO_PY": "自带 Python 路径（没有 curl 时用它发请求）",
+        },
+        "script": _shim_text(),
+    }
+
+
+@router.post("/cli/install")
+async def install_skills_cli(payload: CliInstallRequest) -> dict:
+    """把影子命令写到本机（默认 ~/.local/bin），并告诉用户怎么让 PATH 认它。
+
+    ⚠️ **绝不覆盖已有命令**：机器上可能已经有真的 ``npx``（比如平台上自带
+    Node 运行时，npx 是指向它的软链）—— 默默覆盖会把别人的工具链弄坏。
+    现有同名文件一律跳过并如实报告；真想替换要显式 ``force=true``，
+    替换前会先备份成 ``<名字>.studio-bak``。
+    """
+    target = Path(payload.dir).expanduser() if payload.dir else _default_shim_dir()
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"目录不可写: {target}（{exc}）") from exc
+
+    text = _shim_text()
+    written: list[str] = []
+    skipped: list[str] = []
+    unchanged: list[str] = []
+    backed_up: list[str] = []
+    for name in _SHIM_NAMES:
+        f = target / name
+        if f.exists() or f.is_symlink():
+            try:
+                same = f.is_file() and not f.is_symlink() and f.read_text(encoding="utf-8") == text
+            except OSError:
+                same = False
+            if same:
+                unchanged.append(str(f))
+                continue
+            if not payload.force:
+                skipped.append(str(f))
+                continue
+            try:
+                if f.is_symlink():
+                    f.unlink()
+                else:
+                    bak = f.with_name(f.name + ".studio-bak")
+                    if not bak.exists():
+                        f.rename(bak)
+                        backed_up.append(str(bak))
+                    else:
+                        f.unlink()
+            except OSError as exc:
+                skipped.append(f"{f}（备份失败：{exc}）")
+                continue
+        f.write_text(text, encoding="utf-8")
+        f.chmod(0o755)
+        written.append(str(f))
+
+    on_path = str(target) in os.environ.get("PATH", "").split(os.pathsep)
+    if on_path:
+        hint = f"{target} 已在 PATH 里，直接就能用。"
+    else:
+        hint = f'把这个加进 shell 配置：export PATH="{target}:$PATH"'
+
+    notes: list[str] = []
+    if skipped:
+        notes.append(
+            "这些名字已经存在，**没有覆盖**（装上会顶掉本机已有的命令）："
+            + "、".join(skipped)
+            + "；确实要换成影子命令就带 force"
+        )
+    if unchanged:
+        notes.append("已经是影子命令，没动：" + "、".join(unchanged))
+    return {
+        "dir": str(target),
+        "written": written,
+        "skipped": skipped,
+        "unchanged": unchanged,
+        "backed_up": backed_up,
+        "on_path": on_path,
+        "hint": hint,
+        "notes": notes,
+    }
 
 
 @router.get("/{skill_id}", response_model=SkillRead)
@@ -347,6 +477,32 @@ async def materialize_skill(skill_id: str, session: AsyncSession = Depends(get_s
 # --------------------------------------------------------------------------- #
 # 从仓库安装 —— 「像 npx skills add 那样一条引用装进来」
 # --------------------------------------------------------------------------- #
+_MISSING_REF = "要装什么？给一条引用（owner/repo）或整条命令（npx skills add owner/repo）"
+
+
+def _from_command(command: str | None, ref: str | None, skill: str | None, all_: bool, agents: list[str] | None):
+    """命令优先于引用 —— 用户手里常是 README 里那一行 ``npx skills add …``。
+
+    命令里的 ``--skill/--all/--agent`` 一并采纳；显式给的字段覆盖命令里的。
+    """
+    if not command:
+        return ref, skill, all_, agents
+    try:
+        parsed = parse_skills_cmd(command)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    if parsed is None:
+        # 不是 skills 命令：当成纯引用用（用户可能只粘了 owner/repo）
+        return ref or command.strip(), skill, all_, agents
+    if parsed.action not in ("add", "list", "find"):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"这条命令是 skills {parsed.action} —— 平台上请用「更新」按钮或删除按钮，别用 install 接口",
+        )
+    merged_agents = list(agents or []) + [a for a in parsed.agents if a not in (agents or [])]
+    return parsed.ref or ref, skill or parsed.skill, bool(all_ or parsed.all), merged_agents
+
+
 async def _resolve_and_scan(ref_text: str, ref_pin: str | None):
     """解析引用 → 下 tarball → 扫技能。返回 (RepoRef, [SkillEntry], meta)。"""
     try:
@@ -390,13 +546,62 @@ def _repo_source(meta: dict, entry_path: str) -> dict:
     }
 
 
+async def _attach_to_agents(
+    session: AsyncSession, skill_ids: list[str], names: list[str]
+) -> tuple[list[str], list[str]]:
+    """把技能挂到助手（``--agent <名字>``）。
+
+    返回 (挂上的, 没找到的)。找名字或 slug 都认；找不到只警告不失败 ——
+    技能已经装好了，为了一个拼错的助手名把整条命令判失败不合算。
+
+    ⚠️ 必须改 **definition.skills**，不能只往 agent_skill 关联表里插：
+    平台的关联表是**从定义派生的**（``_sync_relations`` 全量重建），
+    只插表的话，用户下次在页面上点一次保存，这个技能就被抹掉了。
+    """
+    from ..models import Agent
+    from ..revisions import KIND_AGENT, snapshot
+
+    attached: list[str] = []
+    missing: list[str] = []
+    for raw in names:
+        want = (raw or "").strip()
+        if not want:
+            continue
+        row = (await session.execute(select(Agent).where(Agent.name == want))).scalar_one_or_none()
+        if row is None:
+            row = (await session.execute(select(Agent).where(Agent.slug == want))).scalar_one_or_none()
+        if row is None:
+            missing.append(want)
+            continue
+
+        defn = dict(row.definition or {})
+        refs = [r for r in (defn.get("skills") or []) if isinstance(r, dict)]
+        have = {str(r.get("ref")) for r in refs}
+        fresh = [sid for sid in skill_ids if sid not in have]
+        if fresh:
+            defn["skills"] = refs + [{"ref": sid, "enabled": True} for sid in fresh]
+            row.definition = defn
+            row.version = (row.version or 1) + 1
+            row.updated_at = now_ms()
+            for sid in fresh:
+                session.add(AgentSkill(agent_id=row.id, skill_id=sid))
+            await snapshot(session, KIND_AGENT, row.id)
+        attached.append(row.name)
+    if attached:
+        await session.commit()
+    return attached, missing
+
+
 @router.post("/scan")
 async def scan_repo(payload: SkillScanRequest) -> dict:
     """预览仓库里有哪些技能（安装前先看一眼，别装一堆用不上的）。
 
-    对应社区 CLI 的 ``npx skills add owner/repo --list``。
+    对应社区 CLI 的 ``npx skills add owner/repo --list``；``command`` 可直接粘整条命令。
     """
-    ref, entries, meta = await _resolve_and_scan(payload.ref, payload.ref_pin)
+    ref_text, _skill, _all, _agents = _from_command(payload.command, payload.ref, None, False, None)
+    if not ref_text:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, _MISSING_REF)
+    ref, entries, meta = await _resolve_and_scan(ref_text, payload.ref_pin)
     return {
         "repo": meta["slug"],
         "ref": meta["ref"],
@@ -417,19 +622,26 @@ async def install_from_repo(
     """从 GitHub 仓库安装技能。
 
     - ``ref``：``owner/repo``、``owner/repo/skills/foo``、``owner/repo@v1.2.0``
+    - ``command``：整条命令（``npx skills add owner/repo --skill x --agent 通用助手``）；
+      **没有 Node 的机器**跑的就是本接口（见 /api/skills/cli 的影子命令）
     - ``paths``：勾选的技能（仓库内目录）；给技能名也认（等价 ``--skill``）
     - 仓库里有多个技能又没勾选、也没 ``all`` → 409 + 候选清单让用户选：
       **不偷偷全装** —— skill 的 description 会常驻助手提示词，装什么得他点头
     """
-    ref, entries, meta = await _resolve_and_scan(payload.ref, payload.ref_pin)
+    ref_text, skill, all_, agents = _from_command(
+        payload.command, payload.ref, payload.skill, payload.all, payload.agents
+    )
+    if not ref_text:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, _MISSING_REF)
+    _ref, entries, meta = await _resolve_and_scan(ref_text, payload.ref_pin)
 
-    want = payload.paths or ([payload.skill] if payload.skill else None)
+    want = payload.paths or ([skill] if skill else None)
     if want:
         try:
             chosen = pick_skills(entries, paths=want)
         except ValueError as exc:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
-    elif len(entries) == 1 or payload.all:
+    elif len(entries) == 1 or all_:
         chosen = entries
     else:
         raise HTTPException(
@@ -458,12 +670,19 @@ async def install_from_repo(
         if row is not None:
             item["materialized"] = str(await _materialize(row))
 
+    attached: list[str] = []
+    missing: list[str] = []
+    if agents:
+        attached, missing = await _attach_to_agents(session, [i["id"] for i in installed], agents)
+
     return {
         "repo": meta["slug"],
         "ref": meta["ref"],
         "sha": meta.get("sha"),
         "count": len(installed),
         "items": installed,
+        "attached": attached,
+        "agents_missing": missing,
     }
 
 

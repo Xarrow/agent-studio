@@ -267,13 +267,34 @@ function ImportDialog({
   const [picked, setPicked] = useState<string[]>([]);
   /** 不是 GitHub 的老路（任意 git 主机）：默认收起，需要时才露出来 */
   const [legacyGit, setLegacyGit] = useState(false);
+  /** 影子命令（本机没有 Node 时用） */
+  const [cliBusy, setCliBusy] = useState(false);
+  const [cliMsg, setCliMsg] = useState<string | null>(null);
+
+  const installCli = async () => {
+    setCliBusy(true);
+    setCliMsg(null);
+    try {
+      const r = await api.installSkillsCli();
+      const lines = [`已写入 ${r.written.join("、") || "（无）"}`, r.on_path ? r.hint : "还需要一步：" + r.hint];
+      if (r.skipped.length) lines.push("没覆盖（本机已有同名命令）：" + r.skipped.join("、"));
+      setCliMsg(lines.join("\n"));
+      fb.success("影子命令装好了", r.on_path ? "现在就能用 npx skills add …" : "按提示加进 PATH 后可用");
+    } catch (e) {
+      const m = e instanceof Error ? e.message : String(e);
+      setCliMsg(`没装上：${m}`);
+      fb.error("安装影子命令失败", m);
+    } finally {
+      setCliBusy(false);
+    }
+  };
 
   const doScan = async () => {
     setBusy(true);
     setErr(null);
     setScan(null);
     try {
-      const r = await api.scanSkillRepo({ ref: repoRef, ref_pin: repoPin || undefined });
+      const r = await api.scanSkillRepo(skillInput(repoRef, repoPin));
       setScan(r);
       // 只有一个技能就直接勾上（大多数技能仓库就是这个形状）
       setPicked(r.skills.length === 1 ? [r.skills[0].path] : []);
@@ -288,11 +309,7 @@ function ImportDialog({
     setBusy(true);
     setErr(null);
     try {
-      const r = await api.installSkillRepo({
-        ref: repoRef,
-        ref_pin: repoPin || undefined,
-        paths: picked,
-      });
+      const r = await api.installSkillRepo({ ...skillInput(repoRef, repoPin), paths: picked });
       fb.success(
         r.count > 1 ? `装好 ${r.count} 个 Skill` : `装好 Skill：${r.items[0]?.name ?? ""}`,
         `${r.repo} @ ${r.ref}`,
@@ -304,6 +321,17 @@ function ImportDialog({
       setBusy(false);
     }
   };
+
+  /**
+   * 输入框里放的可能是引用（owner/repo）也可能是**整条命令**
+   * （npx skills add owner/repo --skill x）—— 两种都直接发给后端，
+   * 用户从 README 抄哪一行都行。
+   */
+  function skillInput(text: string, pin: string) {
+    const t = text.trim();
+    const isCmd = /^(npx|pnpx|bunx|pnpm|yarn|skills)\b/.test(t);
+    return isCmd ? { command: t } : { ref: t, ref_pin: pin || undefined };
+  }
 
   const submit = async () => {
     setBusy(true);
@@ -384,9 +412,36 @@ function ImportDialog({
                       </button>
                     </div>
                     <p className="text-[11.5px] text-[var(--color-muted)] mt-1">
-                      owner/repo，也可以带仓库内目录（owner/repo/skills/web-design）或版本（@v2.16.0）
+                      owner/repo，也可以带仓库内目录（owner/repo/skills/web-design）或版本（@v2.16.0）；
+                      从 README 抄整条命令（npx skills add …）也行
                     </p>
                   </div>
+
+                  {/* 没有 Node 的机器：把 npx 换成影子命令，README 那一行就能照抄 */}
+                  <div className="flex items-center gap-2 flex-wrap text-[11.5px] text-[var(--color-muted)]">
+                    <span>这台机器没有 Node？</span>
+                    <button
+                      type="button"
+                      data-tap
+                      className="hover:underline"
+                      style={{ color: "var(--color-accent)" }}
+                      disabled={cliBusy}
+                      onClick={() => void installCli()}
+                    >
+                      {cliBusy ? "安装中…" : "装上 npx 影子命令"}
+                    </button>
+                    <span>
+                      装完就能直接跑 <span className="mono">npx skills add …</span>（只认 skills 命令，不碰别的包）
+                    </span>
+                  </div>
+                  {cliMsg && (
+                    <div
+                      className="rounded-lg px-2.5 py-2 text-[11.5px] mono break-all"
+                      style={{ background: "var(--color-surface-2)" }}
+                    >
+                      {cliMsg}
+                    </div>
+                  )}
 
                   {scan && (
                     <div className="rounded-xl border p-3" style={{ borderColor: "var(--color-border)" }}>

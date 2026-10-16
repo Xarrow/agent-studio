@@ -206,3 +206,137 @@ def test_技能名与描述从_frontmatter_解析():
     name, desc = parse_skill_md(ARCHIFY, "fallback")
     assert name == "archify"
     assert desc.startswith("把架构")
+
+
+# --------------------------------------------------------------------------- #
+# 命令行兼容层（没有 Node 的机器照抄 npx skills add 也要能装）
+# --------------------------------------------------------------------------- #
+async def test_直接粘整条命令就能装(client, offline):
+    r = await client.post(
+        "/api/skills/install", json={"command": "npx skills add tt-a1i/archify"}
+    )
+    assert r.status_code == 201, r.text
+    assert offline["ref"].slug == "tt-a1i/archify"
+    assert r.json()["items"][0]["name"] == "archify"
+
+    rows = (await client.get("/api/skills")).json()
+    assert rows[0]["source"]["repo"] == "tt-a1i/archify"
+
+
+async def test_命令里的参数也认(client, offline):
+    offline["payload"] = _tarball(MULTI)
+    r = await client.post(
+        "/api/skills/install",
+        json={"command": "npx skills@latest add vercel-labs/skills/skills/data-viz --skill data-viz -g -y"},
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["items"][0]["name"] == "data-viz"
+    # 命令里写 --all 就全装（不用再传 all=true）
+    r2 = await client.post(
+        "/api/skills/install", json={"command": "pnpm dlx skills add vercel-labs/skills --all"}
+    )
+    assert r2.status_code == 201
+    assert sorted(i["name"] for i in r2.json()["items"]) == ["data-viz", "web-design"]
+
+
+async def test_预览也能粘命令(client, offline):
+    r = await client.post("/api/skills/scan", json={"command": "npx skills add tt-a1i/archify --list"})
+    assert r.status_code == 200
+    assert [s["name"] for s in r.json()["skills"]] == ["archify"]
+
+
+async def test_agent_参数把技能挂到助手(client, offline):
+    agent = (
+        await client.post(
+            "/api/agents",
+            json={
+                "name": "命令行测试助手",
+                "slug": "cli-test",
+                "definition": {"runtime": "agentscope", "name": "命令行测试助手", "system_prompt": "x"},
+            },
+        )
+    ).json()
+    r = await client.post(
+        "/api/skills/install",
+        json={"command": "npx skills add tt-a1i/archify --agent 命令行测试助手"},
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["attached"] == ["命令行测试助手"]
+    # 关键：挂载要落到 **definition.skills**（关联表是派生的，只插表会被下次保存抹掉）
+    detail = (await client.get(f"/api/agents/{agent['id']}")).json()
+    refs = [s.get("ref") for s in (detail["definition"].get("skills") or [])]
+    installed_id = r.json()["items"][0]["id"]
+    assert installed_id in refs, f"定义里应当有这个技能：{refs}"
+    assert detail["version"] > 1, "改动定义要留版本（可回滚）"
+
+    # 再挂一次不会重复
+    again = await client.post(
+        "/api/skills/install",
+        json={"command": "npx skills add tt-a1i/archify --agent cli-test"},
+    )
+    assert again.json()["attached"] == ["命令行测试助手"], "slug 也认"
+    detail2 = (await client.get(f"/api/agents/{agent['id']}")).json()
+    assert [s.get("ref") for s in detail2["definition"]["skills"]].count(installed_id) == 1
+
+    # 名字写错：技能照装，只是提示没找到（不整条失败）
+    r2 = await client.post(
+        "/api/skills/install",
+        json={"command": "npx skills add tt-a1i/archify --agent 并不存在的助手"},
+    )
+    assert r2.status_code == 201
+    assert r2.json()["agents_missing"] == ["并不存在的助手"]
+
+
+async def test_删除类命令不该走安装接口(client, offline):
+    r = await client.post("/api/skills/install", json={"command": "npx skills remove archify"})
+    assert r.status_code == 400
+    assert "别用 install 接口" in r.json()["detail"]
+
+
+async def test_别的_npm_包当引用处理会明确报错(client, offline):
+    r = await client.post("/api/skills/install", json={"command": "npx cowsay hi"})
+    # 不是 skills 命令 → 当纯引用解析 → 说人话的 400，而不是 500
+    assert r.status_code == 400
+    assert "owner/repo" in r.json()["detail"]
+
+
+async def test_影子命令按需下发与安装(client, tmp_path):
+    info = await client.get("/api/skills/cli")
+    assert info.status_code == 200
+    body = info.json()
+    assert body["names"] == ["npx", "pnpx", "bunx", "skills"]
+    assert "Agent Studio 的 npx / skills 影子命令" in body["script"]
+    assert "STUDIO_URL" in body["env"]
+
+    target = tmp_path / "bin"
+    ins = await client.post("/api/skills/cli/install", json={"dir": str(target)})
+    assert ins.status_code == 200, ins.text
+    got = ins.json()
+    assert len(got["written"]) == 4
+    for name in ("npx", "skills"):
+        f = target / name
+        assert f.is_file() and (f.stat().st_mode & 0o111), f"{name} 应当可执行"
+        assert "skills add" in f.read_text(encoding="utf-8")
+    assert got["hint"], "要给 PATH 提示"
+    assert got["skipped"] == []
+
+    # 再装一次：内容一样 → 不动（幂等）
+    again = (await client.post("/api/skills/cli/install", json={"dir": str(target)})).json()
+    assert again["written"] == [] and len(again["unchanged"]) == 4
+
+    # ⚠️ 机器上已有真的 npx（比如平台自带的 Node 运行时）→ 绝不覆盖
+    real = target / "pnpx"
+    real.write_text("#!/bin/sh\necho 我是本机已有的 pnpx\n")
+    real.chmod(0o755)
+    r2 = (await client.post("/api/skills/cli/install", json={"dir": str(target)})).json()
+    assert str(real) in r2["skipped"], r2
+    assert "没有覆盖" in " ".join(r2["notes"])
+    assert real.read_text().endswith("echo 我是本机已有的 pnpx\n"), "原文件必须原样保留"
+
+    # 显式 force 才替换，并且先备份
+    r3 = (
+        await client.post("/api/skills/cli/install", json={"dir": str(target), "force": True})
+    ).json()
+    assert str(real) in r3["written"]
+    assert (target / "pnpx.studio-bak").is_file(), "替换前要备份"
+    assert "skills add" in real.read_text(encoding="utf-8")

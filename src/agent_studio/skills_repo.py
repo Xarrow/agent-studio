@@ -380,3 +380,206 @@ def pick_skills(entries: list[SkillEntry], *, paths: list[str] | None = None) ->
     raise ValueError(
         "没找到指定的技能：" + "、".join(sorted(wanted)) + "；仓库里有：" + "、".join(e.name for e in entries[:12])
     )
+
+
+# --------------------------------------------------------------------------- #
+# 命令行兼容层
+# --------------------------------------------------------------------------- #
+@dataclass
+class SkillsCmd:
+    """``npx skills …`` 这条命令解析后的结果。
+
+    为什么要能解析整条命令：技能仓库 README 里写的安装方式一律是
+    ``npx skills add minio/skills/aimem`` —— 用户（和助手）手里有的就是
+    **这一行字**。让他自己拆成「引用 + 子目录 + 版本」三个字段，等于
+    要求他先把命令读一遍再翻译，徒增出错面。所以平台直接吃整条命令。
+    """
+
+    action: str                      # add | list | remove | update | find
+    ref: str | None = None           # owner/repo[/目录]（可能带 @版本）
+    skill: str | None = None         # --skill
+    all: bool = False                # --all
+    list_only: bool = False          # --list（只看有什么）
+    agents: list[str] = field(default_factory=list)   # --agent（可多次）
+    global_: bool = False            # --global / -g
+    yes: bool = False                # --yes / -y
+    runner: str = "npx"              # npx / pnpm dlx / bunx / skills
+    target: str | None = None        # remove/update 的目标（技能名或引用）
+
+
+# 包执行器：命令可能以其中任何一个开头
+_RUNNERS = ("npx", "pnpx", "bunx", "yarn dlx", "pnpm dlx", "npx --yes", "npx -y")
+# 需要的那个包（可能是 skills / skills@latest / skills@2.1.0）
+_PKG_RE = re.compile(r"^skills(@[\w.\-+]+)?$")
+
+# action 别名：社区 CLI 与 git/npm 的习惯都认
+_ACTIONS = {
+    "add": "add",
+    "i": "add",
+    "install": "add",
+    "list": "list",
+    "ls": "list",
+    "remove": "remove",
+    "rm": "remove",
+    "uninstall": "remove",
+    "update": "update",
+    "up": "update",
+    "upgrade": "update",
+    "find": "find",
+    "search": "find",
+    "browse": "find",
+}
+
+# npx 自己吃掉、不带值的开关
+_NPX_FLAGS = {"-y", "--yes", "-q", "--quiet", "--no-install", "--ignore-existing", "--prefer-online", "-f"}
+# npx 自己吃掉、带值的开关
+_NPX_VALUE_FLAGS = {"-p", "--package", "--registry", "--cache", "--userconfig", "--call", "-c"}
+# skills 子命令的带值开关
+_SKILLS_VALUE_FLAGS = {"--skill": "skill", "-s": "skill", "--agent": "agents", "-a": "agents",
+                       "--category": "category", "--name": "name", "--ref": "ref"}
+# skills 子命令的布尔开关（-g/--global 在平台上默认就成立，收下不报错）
+_SKILLS_BOOL_FLAGS = {"--all": "all", "--list": "list_only", "-l": "list_only",
+                      "--global": "global_", "-g": "global_", "--yes": "yes", "-y": "yes",
+                      "--force": "yes"}
+
+
+def parse_skills_cmd(cmd: str) -> SkillsCmd | None:
+    """把一条命令行解析成动作。不是 skills 命令就返回 ``None``（交给别的路径处理）。
+
+    支持（都是社区文档里真实出现的写法）::
+
+        npx skills add tt-a1i/archify
+        npx skills@latest add minio/skills/aimem --skill aimem -g -y
+        npx -y skills add owner/repo --agent 通用助手
+        pnpm dlx skills add owner/repo --all
+        skills add owner/repo            # 已经装过 CLI 的机器
+        npx skills list / remove x / update / find 关键词
+
+    ⚠️ 非 ``skills`` 的包（``npx cowsay``）我们**帮不了** —— 那需要真的 Node，
+    所以明确返回 ``None``，让调用方把「本机没有 Node」这件事讲清楚，
+    而不是假装成功（静默失败比报错更坏）。
+    """
+    text = (cmd or "").strip()
+    if not text:
+        return None
+    # 允许整段粘进来（含行首 $ 、换行、注释）
+    text = text.splitlines()[0].strip()
+    text = text.lstrip("$").strip()
+    for sep in ("&&", ";", "|"):
+        if sep in text:
+            text = text.split(sep)[0].strip()
+    try:
+        tokens = _split_tokens(text)
+    except ValueError:
+        return None
+    if not tokens:
+        return None
+
+    runner = ""
+    # ① 剥包执行器前缀（npx / pnpx / bunx / pnpm dlx / yarn dlx）
+    while tokens:
+        head = tokens[0]
+        if head in ("npx", "pnpx", "bunx"):
+            runner = head
+            tokens = tokens[1:]
+            break
+        if head in ("pnpm", "yarn") and len(tokens) > 1 and tokens[1] == "dlx":
+            runner = f"{head} dlx"
+            tokens = tokens[2:]
+            break
+        if head == "dlx":            # `npx dlx skills` 这种写法一并容忍
+            tokens = tokens[1:]
+            continue
+        break
+
+    if runner:
+        # ② 剥 npx 自己的开关，直到拿到包名；包名不是 skills 就与我们无关
+        pkg: str | None = None
+        while tokens:
+            head = tokens[0]
+            if head in _NPX_FLAGS:
+                tokens = tokens[1:]
+                continue
+            if head in _NPX_VALUE_FLAGS:
+                tokens = tokens[2:]
+                continue
+            pkg = head
+            tokens = tokens[1:]
+            break
+        if pkg is None or not _PKG_RE.match(pkg):
+            return None      # 别的 npm 包 → 需要真 Node，我们帮不了
+    else:
+        # ③ 直接以 CLI 自己开头：`skills add owner/repo`
+        if not tokens or tokens[0] != "skills":
+            return None
+        runner = "skills"
+        tokens = tokens[1:]
+
+    if not tokens:
+        # 光写 `npx skills` → 当「看有什么」处理
+        return SkillsCmd(action="list", runner=runner)
+
+    action = _ACTIONS.get(tokens[0].lower())
+    if action is None:
+        return None
+    out = SkillsCmd(action=action, runner=runner)
+    rest = tokens[1:]
+
+    i = 0
+    while i < len(rest):
+        tok = rest[i]
+        if tok in _SKILLS_BOOL_FLAGS:
+            setattr(out, _SKILLS_BOOL_FLAGS[tok], True)
+        elif tok in _SKILLS_VALUE_FLAGS:
+            if i + 1 >= len(rest):
+                raise ValueError(f"{tok} 后面要跟一个值")
+            attr = _SKILLS_VALUE_FLAGS[tok]
+            if attr == "agents":
+                out.agents.append(rest[i + 1])
+            elif attr == "skill":
+                out.skill = rest[i + 1]
+            i += 1
+        elif tok.startswith("--") and "=" in tok:
+            key, _, val = tok.partition("=")
+            if key in _SKILLS_VALUE_FLAGS:
+                attr = _SKILLS_VALUE_FLAGS[key]
+                if attr == "agents":
+                    out.agents.append(val)
+                elif attr == "skill":
+                    out.skill = val
+        elif not tok.startswith("-"):
+            if action == "add" and out.ref is None:
+                out.ref = tok
+            elif out.target is None:
+                out.target = tok
+        i += 1
+
+    if action == "add" and not out.ref:
+        raise ValueError("命令里没给仓库，比如：npx skills add tt-a1i/archify")
+    return out
+
+
+def _split_tokens(text: str) -> list[str]:
+    """按空格切词，支持引号（README 里的命令常带引号参数）。"""
+    out: list[str] = []
+    cur = ""
+    quote: str | None = None
+    for ch in text:
+        if quote:
+            if ch == quote:
+                quote = None
+            else:
+                cur += ch
+        elif ch in ("'", '"'):
+            quote = ch
+        elif ch.isspace():
+            if cur:
+                out.append(cur)
+                cur = ""
+        else:
+            cur += ch
+    if quote:
+        raise ValueError("引号没闭合")
+    if cur:
+        out.append(cur)
+    return out
