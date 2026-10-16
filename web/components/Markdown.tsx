@@ -14,6 +14,7 @@
  * 不支持的（表格/脚注/HTML）按普通文本段落渲染 —— 宁可朴素，不要出错。
  */
 
+import { isImagePath, linkifyWorkPaths, workUrl } from "@/lib/work-paths";
 import React from "react";
 import { CodeBlock } from "@/components/CodeBlock";
 import { Mermaid } from "@/components/Mermaid";
@@ -54,15 +55,19 @@ function inline(text: string, keyBase: string): React.ReactNode[] {
     } else if (tok.startsWith("![")) {
       // 图片：模型给链接就直接显示（比一个裸链接有用得多）
       const mm = /^!\[([^\]]*)\]\(([^)]+)\)$/.exec(tok);
+      const src = workUrl(mm ? mm[2] : "");
       out.push(
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          key={key}
-          src={mm ? mm[2] : ""}
-          alt={mm ? mm[1] : ""}
-          className="my-1 max-w-full rounded-md border"
-          style={{ borderColor: "var(--color-border)" }}
-        />,
+        /* 点开看原图：截图这类 1920×1080 的图缩在阅读列里看不清细节 */
+        <a key={key} href={src} target="_blank" rel="noreferrer" title="点开看原图" className="block">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={src}
+            alt={mm ? mm[1] : ""}
+            loading="lazy"
+            className="my-1 max-w-full max-h-[420px] rounded-md border"
+            style={{ borderColor: "var(--color-border)" }}
+          />
+        </a>,
       );
     } else {
       const mm = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(tok);
@@ -236,32 +241,8 @@ function SvgBlock({ code }: { code: string }) {
 }
 
 /** 产物路径 → 页面可看的 URL（后端 /api/work/file）。 */
-const WORK_PATH_RE = /(?:\/[\w.\- ()\u4e00-\u9fff]+)*\/data\/work\/([\w.\-\/ ()\u4e00-\u9fff]+\.(?:png|jpe?g|gif|webp|svg|bmp|pdf|txt|md|markdown|json|csv|tsv|html?|xml|ya?ml|log|py|js|ts|sql|ipynb))/g;
-
-/** 产物路径出现的三种形态，都要变成可看的：
- *  1. 裸路径 → 图片内联 / 文件链接
- *  2. inline code 内的路径（模型习惯 `path` 强调）→ 同样转成链接，
- *     但**去掉反引号** —— code 里渲染不了链接，留着反引号就是把可点
- *     的东西锁进死文本。产物路径是模型抄自工具输出的临时强调，不是
- *     用户需要原样复制的字面量。 */
-function linkifyWorkPaths(text: string): string {
-  return text
-    // 先把「`…data/work/xxx.ext…`」整体（含反引号）替换成链接
-    .replace(/`[^`\n]*?\/data\/work\/([^`\n]*?)`/g, (full, rel: string) => {
-      const m = /\.(png|jpe?g|gif|webp|svg|bmp|pdf|txt|md|markdown|json|csv|tsv|html?|xml|ya?ml|log|py|js|ts|sql|ipynb)$/i.exec(rel.trim());
-      if (!m) return full;
-      const rel2 = rel.trim();
-      const name = rel2.split("/").pop() || rel2;
-      return imgLike(rel2) ? `\n\n![${name}](/api/work/file/${rel2})\n\n` : `[${name}](/api/work/file/${rel2})`;
-    })
-    .replace(WORK_PATH_RE, (full, rel: string) => {
-      const name = rel.split("/").pop() || rel;
-      return imgLike(rel) ? `\n\n![${name}](/api/work/file/${rel})\n\n` : `[${name}](/api/work/file/${rel})`;
-    });
-}
-
 function imgLike(rel: string): boolean {
-  return /\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(rel);
+  return isImagePath(rel);
 }
 
 export default function Markdown({ text }: { text: string }) {

@@ -31,6 +31,8 @@
 import { useState } from "react";
 
 import type { RunEvent } from "@/lib/types";
+import Markdown from "@/components/Markdown";
+import { isImagePath, isProductPath, workImageUrls } from "@/lib/work-paths";
 
 export type StepKind =
   | "input"
@@ -245,9 +247,6 @@ function str(v: unknown): string {
   return typeof v === "string" ? v : "";
 }
 
-/** 产物后缀白名单（与后端 /api/work 一致） */
-const ARTIFACT_SUFFIX_RE =
-  /\.(png|jpe?g|gif|webp|svg|bmp|pdf|txt|md|markdown|json|csv|tsv|html?|xml|ya?ml|log|py|js|ts|sql|ipynb)$/i;
 
 /**
  * 从工具调用里提取产物：Write/Edit（args 的 file_path）落在工作目录内才认。
@@ -265,7 +264,7 @@ function parseArtifact(
     if (!fp) return null;
     const m = /\/data\/work\/(.+)$/.exec(fp);
     const rel = m ? m[1] : fp.replace(/^\//, "");
-    if (!rel || rel.includes("..") || !ARTIFACT_SUFFIX_RE.test(rel)) return null;
+    if (!rel || rel.includes("..") || !isProductPath(rel)) return null;
     return { rel };
   } catch {
     return null;
@@ -353,7 +352,7 @@ function TimelineRow({ s, compact, isLast }: { s: Step; compact: boolean; isLast
             >
               产物 · {s.artifactPath.split("/").pop()}
             </span>
-            {/\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(s.artifactPath) ? (
+            {isImagePath(s.artifactPath) ? (
               /* eslint-disable-next-line @next/next/no-img-element */
               <img
                 src={`/api/work/file/${s.artifactPath}`}
@@ -397,12 +396,56 @@ function TimelineRow({ s, compact, isLast }: { s: Step; compact: boolean; isLast
             </span>
           )}
         </button>
-        <div
-          className={`text-[12px] leading-relaxed whitespace-pre-wrap break-words ${monoBody ? "mono" : ""}`}
-          style={{ color: "var(--color-text)" }}
-        >
-          {long && !open ? bodyLines.slice(0, 6).join("\n") + "\n…" : s.body}
-        </div>
+        {long && !open ? (
+          <div
+            className={`text-[12px] leading-relaxed whitespace-pre-wrap break-words ${monoBody ? "mono" : ""}`}
+            style={{ color: "var(--color-text)" }}
+          >
+            {bodyLines.slice(0, 6).join("\n") + "\n…"}
+          </div>
+        ) : monoBody ? (
+          /* 工具调用 / 工具结果：原样等宽（是日志，重排反而看不清） */
+          <div
+            className="text-[12px] leading-relaxed whitespace-pre-wrap break-words mono"
+            style={{ color: "var(--color-text)" }}
+          >
+            {s.body}
+          </div>
+        ) : (
+          /* 思考 / 回答这类正话：走 Markdown（图片、列表、加粗、公式都能显示） */
+          <div className="text-[12px] leading-relaxed" style={{ color: "var(--color-text)" }}>
+            <Markdown text={s.body} />
+          </div>
+        )}
+        {(() => {
+          // 这一步的输出里提到了工作目录下的图片 → 直接显示（不要只给路径）
+          const urls = workImageUrls(s.body);
+          if (!urls.length) return null;
+          return (
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {urls.map((u) => (
+                <a
+                  key={u}
+                  href={u}
+                  target="_blank"
+                  rel="noreferrer"
+                  data-tap
+                  title="点开看原图"
+                  className="block"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={u}
+                    alt={decodeURIComponent(u.split("/").pop() || "")}
+                    loading="lazy"
+                    className="max-h-40 rounded-md border"
+                    style={{ borderColor: st.border }}
+                  />
+                </a>
+              ))}
+            </div>
+          );
+        })()}
         </>
         )}
       </div>

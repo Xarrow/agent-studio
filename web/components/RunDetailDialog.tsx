@@ -15,6 +15,7 @@
  */
 
 import React, { useCallback, useEffect, useState } from "react";
+import Markdown from "@/components/Markdown";
 import { api, fmt } from "@/lib/api";
 import type {
   ActivityItem,
@@ -405,8 +406,8 @@ export function RunDetailDialog({
               </div>
             </Section>
             <Section title="总结输出">
-              <div className="rounded-md p-2.5 bg-[var(--color-surface-2)] text-[12px] whitespace-pre-wrap break-words">
-                {outputText || "—"}
+              <div className="rounded-md p-2.5 bg-[var(--color-surface-2)] text-[12px]">
+                {outputText ? <Markdown text={outputText} /> : "—"}
               </div>
             </Section>
           </>
@@ -448,8 +449,8 @@ export function RunDetailDialog({
               </div>
             </Section>
             <Section title="输出">
-              <div className="rounded-md p-2.5 bg-[var(--color-surface-2)] text-[12px] whitespace-pre-wrap break-words">
-                {outputText || "—"}
+              <div className="rounded-md p-2.5 bg-[var(--color-surface-2)] text-[12px]">
+                {outputText ? <Markdown text={outputText} /> : "—"}
               </div>
             </Section>
 

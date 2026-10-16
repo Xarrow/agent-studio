@@ -132,3 +132,29 @@ test("快速试跑：Enter 必须有输入法守卫（走 isImeEvent）", () => 
   assert.match(src, /origin: "preview"/, "试跑应当归类为 preview（与对话页的执行区分）");
   assert.doesNotMatch(src, /session_id/, "试跑是单轮 —— 不该带 session_id（那是对话页的事）");
 });
+
+test("图片出现在三处：消息正文 / 执行过程 / 完整记录 都要渲染成图（不是路径）", () => {
+  const md = read("components/Markdown.tsx");
+  assert.match(md, /from "@\/lib\/work-paths"/, "Markdown 应当用共享的路径解析");
+  assert.match(md, /linkifyWorkPaths/, "正文转换要走共享实现");
+  assert.match(md, /<a key=\{key\} href=\{src\}/, "正文里的图片应当可点开看原图");
+  assert.match(md, /max-h-\[420px\]/, "正文图片要有高度上限（1920×1080 截图会顶满整屏）");
+
+  const tl = read("components/ui/run-timeline.tsx");
+  assert.match(tl, /from "@\/lib\/work-paths"/, "时间线应当用共享的路径解析");
+  assert.match(tl, /const urls = workImageUrls\(s\.body\)/, "时间线要把任何步骤输出里的图片显示出来");
+  assert.match(tl, /<Markdown text=\{s\.body\} \/>/, "思考/回答这类正话要用 Markdown 渲染");
+
+  const rd = read("components/RunDetailDialog.tsx");
+  assert.match(rd, /<Markdown text=\{outputText\} \/>/, "完整记录里的输出也要走 Markdown（否则路径还是路径）");
+  assert.match(rd, /from "@\/components\/Markdown"/, "完整记录要引 Markdown 组件");
+});
+
+test("工作表（work-paths）是唯一判定源：组件里不得再各写一份产物匹配正则", () => {
+  for (const f of ["components/Markdown.tsx", "components/ui/run-timeline.tsx", "components/RunDetailDialog.tsx"]) {
+    const src = read(f);
+    // 手写产物的特征：内联的图片后缀表 / 自建 WORK_*_RE
+    assert.doesNotMatch(src, /\.\(png\|jpe\?g/, `${f} 里又手写了一份图片后缀表（应走 lib/work-paths）`);
+    assert.doesNotMatch(src, /const WORK_(IMG|PATH)_RE/, `${f} 里又自建了产物正则（应走 lib/work-paths）`);
+  }
+});
