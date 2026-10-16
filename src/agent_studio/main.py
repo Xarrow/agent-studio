@@ -327,6 +327,11 @@ if _WEB_DIST.is_dir():
 
     @app.get("/{full_path:path}", include_in_schema=False)
     async def serve_web(full_path: str) -> "Response":
+        # API 前缀不进 SPA 兜底：路由没命中（404/405）就该如实报错。
+        # 否则 /api/xxx 打错字会拿到 200 的 index.html，前端只看到
+        # 「Unexpected token '<'」，排障无从下手。
+        if full_path == "api" or full_path.startswith("api/"):
+            raise StarletteHTTPException(status_code=404)
         # 目录形式（/agents → agents.html）：Next 导出的根级 .html 就这么取
         candidate = _WEB_DIST / f"{full_path}.html" if full_path else _WEB_DIST / "index.html"
         target = _WEB_DIST / full_path

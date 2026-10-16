@@ -52,7 +52,9 @@ api_router.include_router(remote_agents.router, prefix="/api/remote-agents")   #
 api_router.include_router(revisions.router)      # /api/revisions（版本历史与回滚）
 api_router.include_router(maintenance.router)    # /api/maintenance（存储体检 + 事件归档）
 api_router.include_router(metrics.router)        # /metrics（Prometheus 文本，监控系统直接抓）
-api_router.include_router(uploads.router)       # /api/uploads（任务卡的上传附件）
+api_router.include_router(uploads.router)       # /api/uploads（任务卡附件）
+from . import work as work_files
+api_router.include_router(work_files.router)    # /api/work（agent 产物展示）
 api_router.include_router(database.router)        # /api/database（环境配置：切换持久化驱动）
 api_router.include_router(environment.router, prefix="/api/environment")
 api_router.include_router(guardrails.router)      # /api/guardrails（护栏：今日额度 + 分派层数）

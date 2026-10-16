@@ -1,0 +1,77 @@
+"""/api/work —— agent 产物展示端点。
+
+背景：agent 的 Write/Bash 工具把产物写进平台工作目录（data/work/），
+此前前端没有任何通道读到它，消息里的产物路径只是一串死文本。
+本文件锁三件事：能取回、取不越界（逃逸/敏感类型）、类型标注正确。
+"""
+from __future__ import annotations
+
+import pathlib
+
+import pytest
+from fastapi.testclient import TestClient
+
+
+@pytest.fixture()
+def work_file(tmp_path, monkeypatch):
+    """把工作目录指到测试沙箱再放产物，测完清掉（不碰平台真实 data/work）。"""
+    from agent_studio.config import settings
+
+    sandbox = tmp_path / "work"
+    sandbox.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(settings, "work_dir", sandbox)
+    p = sandbox / "_test_artifact.png"
+    p.write_bytes(b"\x89PNG\r\n\x1a\nfake")
+    yield p
+    p.unlink(missing_ok=True)
+
+
+def test_work_file_served(work_file):
+    from agent_studio.main import app
+
+    c = TestClient(app)
+    r = c.get("/api/work/file/_test_artifact.png")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("image/png")
+
+
+def test_work_file_rejects_escape():
+    """../ 逃逸（含 URL 编码形态）必须 404，不能读工作目录外的任何文件。"""
+    from agent_studio.main import app
+
+    c = TestClient(app)
+    for probe, expect in (
+        ("/api/work/file/%2e%2e/studio.db", 404),
+        ("/api/work/file/..%2fstudio.db", 404),
+        ("/api/work/file/%2e%2e%2f%2e%2e%2fetc%2fpasswd", 404),
+    ):
+        assert c.get(probe).status_code == expect, probe
+    # 「../studio.db」裸形态在 httpx 层会被规范化成 /api/work/studio.db ——
+    # 修复后 API 前缀 404 不再被 SPA 兜底成 index.html，必须是 404/405
+    assert c.get("/api/work/file/../studio.db").status_code in (404, 405)
+
+
+def test_work_file_rejects_unknown_type():
+    """白名单外的类型（如 sqlite 数据库）一律 404。"""
+    from agent_studio.main import app
+
+    c = TestClient(app)
+    assert c.get("/api/work/file/uploads.config.json").status_code == 404
+
+
+def test_work_file_missing_is_404():
+    from agent_studio.main import app
+
+    c = TestClient(app)
+    assert c.get("/api/work/file/no_such_file.md").status_code == 404
+
+
+def test_work_list_shape():
+    from agent_studio.main import app
+
+    c = TestClient(app)
+    r = c.get("/api/work/list")
+    assert r.status_code == 200
+    for item in r.json()["files"]:
+        assert set(item) == {"path", "size", "mtime", "url"}
+        assert item["url"].startswith("/api/work/file/")
