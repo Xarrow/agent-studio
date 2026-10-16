@@ -771,6 +771,13 @@ class RunService:
             await self._finalize(run_id, collector, compiled, status, error)
             if status != "waiting_hitl":
                 await self._post_run(run_id, definition, context, api_key)
+                # 浏览器会话清理（run 真正结束才清；waiting_hitl 要保住画面和登录态）
+                try:
+                    from ..browser_session import close_all as _close_browser
+
+                    await _close_browser(run_id)
+                except Exception:  # pragma: no cover
+                    logger.debug("浏览器会话清理失败", exc_info=True)
             self.bus.close(run_id)
 
     # ------------------------------------------------------------------ #
@@ -937,6 +944,18 @@ class RunService:
         compiled = None
         status, error = "ok", None
         try:
+            # 续跑的执行也要设 run 上下文 —— native 工具（fork/browser/python）
+            # 靠 contextvar 拿 run_id/workspace；不设的话 browser 在 HITL 恢复后
+            # 一律"缺少 run 上下文"（实测：暂停点允许后 navigate 直接失败）。
+            from .ctx import set_run_ctx
+
+            set_run_ctx(
+                run_id=run_id,
+                agent_id=run.agent_id,
+                node_id=run.node_id,
+                orchestration_id=run.orchestration_id,
+                depth=0,
+            )
             compiled = await runtime.compile(
                 definition, api_key=api_key, tools=tools,
                 agent_id=run.agent_id, work_dir=str(resolve_work_dir(definition)),
@@ -1014,6 +1033,13 @@ class RunService:
             # （暂停时跳过了 append_turn，这里补上）。context 传 None ——
             # 记忆候选在暂停前的首轮已统计过，不重复记。
             await self._post_run(run_id, definition, None, api_key)
+            # 浏览器会话清理（run 真正结束）：杀 Chromium、删 user-data-dir。
+            try:
+                from ..browser_session import close_all as _close_browser
+
+                await _close_browser(run_id)
+            except Exception:  # pragma: no cover
+                logger.debug("浏览器会话清理失败", exc_info=True)
             self.bus.close(run_id)
 
     # ------------------------------------------------------------------ #

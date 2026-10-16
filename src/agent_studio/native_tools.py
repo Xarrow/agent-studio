@@ -446,6 +446,97 @@ async def _memory_save(content: str, tags: list[str] | None = None) -> str:
     return f"已记下（内置存为候选，待人工确认后生效）；{external_note}"
 
 
+# --------------------------------------------------------------------------- #
+# 浏览器（headless Chromium + CDP 直连；画面实时推给页面，用户可接管输入）
+# --------------------------------------------------------------------------- #
+BROWSER_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "action": {
+            "type": "string",
+            "enum": ["navigate", "click", "type", "read", "scroll", "wait", "wait_login"],
+            "description": (
+                "navigate=打开网址；click=点页面元素；type=往输入框打字；"
+                "read=读当前页面文本；scroll=滚动；wait=等页面变化；"
+                "wait_login=打开页面等用户在画面里亲自输入登录（账号密码不经模型）"
+            ),
+        },
+        "url": {"type": "string", "description": "（navigate）要打开的网址，http/https"},
+        "selector": {"type": "string", "description": "（click/type）CSS 选择器，如 #kw、.login-btn"},
+        "value": {"type": "string", "description": "（type）要输入的文本"},
+        "dy": {"type": "integer", "description": "（scroll）滚动的像素，负数向上"},
+        "wait_s": {"type": "number", "description": "（navigate/wait）等待秒数"},
+    },
+    "required": ["action"],
+}
+
+
+async def _browser(
+    action: str,
+    url: str = "",
+    selector: str = "",
+    value: str = "",
+    dy: int = 600,
+    wait_s: float = 3.0,
+) -> str:
+    """操作一个真实浏览器（每个 run 独享、有状态的 Chromium 实例）。
+
+    画面会实时显示在对话页上；需要登录时用 wait_login 让用户自己输入 ——
+    凭证不进模型上下文。
+    """
+    from .browser_session import get_session
+    from .runner.ctx import current_run_ctx
+
+    try:
+        ctx = current_run_ctx()
+    except Exception:
+        ctx = {}
+    run_id = str(ctx.get("run_id") or "adhoc")
+    if not run_id or run_id == "adhoc":
+        return "✗ 浏览器工具只能在助手执行中使用（缺少 run 上下文）"
+
+    # 帧回调：直接发到事件总线（SSE → 前端 <img>；不落库）
+    from .runner.service import bus
+
+    def on_frame(rid: str, data: str, page_url: str, title: str) -> None:
+        bus.publish(
+            rid,
+            {
+                "seq": -1,  # 不占事件序（帧不落库，去重逻辑按 seq<=last_seq 丢掉回放段即可）
+                "type": "browser_frame",
+                "ts": 0,
+                "payload": {"frame": data, "url": page_url, "title": title},
+            },
+        )
+
+    sess = get_session(run_id, on_frame)
+    if action == "navigate":
+        return await sess.navigate(url or "about:blank", wait_s)
+    if action == "click":
+        if not selector:
+            return "✗ click 需要 selector"
+        return await sess.click(selector)
+    if action == "type":
+        if not selector:
+            return "✗ type 需要 selector"
+        return await sess.type_text(selector, value)
+    if action == "read":
+        return await sess.read(selector or "body")
+    if action == "scroll":
+        return await sess.scroll(dy)
+    if action == "wait":
+        return await sess.wait(wait_s)
+    if action == "wait_login":
+        # 暂停执行，等用户在页面的浏览器画面里亲手操作（输入账号密码/验证码）。
+        # 用户点「已登录，继续」后恢复 —— 凭证全程不经模型。
+        await sess.navigate(url, wait_s) if url else None
+        return (
+            "PAUSE_FOR_USER_LOGIN：已在页面上显示浏览器画面，等用户亲自完成登录。"
+            "恢复后先用 browser(read) 确认登录态再继续任务。"
+        )
+    return f"✗ 未知动作: {action}"
+
+
 NATIVE_TOOLS: dict[str, dict[str, Any]] = {
     "fetch": {
         "fn": _fetch,
@@ -479,8 +570,18 @@ NATIVE_TOOLS: dict[str, dict[str, Any]] = {
     },
     "python": {
         "fn": _python,
-        "description": "执行一段 Python 代码（限当前工作目录，超时硬闸）。适合算数、处理数据、写文件。",
+        "description": "执行一段 Python 代码（限当前工作目录，超时硬闸）。适合算数、处理数据、写文件",
         "schema": PYTHON_SCHEMA,
+        "flags": {"read_only": False, "concurrency_safe": False, "dangerous": True, "native": True},
+    },
+    "browser": {
+        "fn": _browser,
+        "description": (
+            "操作一个真实的浏览器：打开网页、点击、输入、读内容、滚动。"
+            "画面会实时显示给用户；页面要登录时用 action=wait_login 让用户自己输入。"
+            "页面内容动态加载（fetch 拿不到）或需要交互时用它。"
+        ),
+        "schema": BROWSER_SCHEMA,
         "flags": {"read_only": False, "concurrency_safe": False, "dangerous": True, "native": True},
     },
 }

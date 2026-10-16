@@ -356,6 +356,11 @@ async def stream_run(run_id: str) -> StreamingResponse:
                     continue
                 if item is None:                   # Run 结束哨兵
                     break
+                # browser_frame 是纯实时直播帧（不落库、seq=-1 占位）——
+                # 不能走 seq 去重（回放段 last_seq>=0 会把它全丢掉）。
+                if item.get("type") == "browser_frame":
+                    yield f"data: {json.dumps(item, ensure_ascii=False)}\n\n"
+                    continue
                 if item.get("seq", 0) <= last_seq:  # 去重
                     continue
                 last_seq = item["seq"]
@@ -1474,3 +1479,37 @@ async def clear_runs(
     rows = list((await session.execute(stmt)).scalars())
     deleted, skipped = await _delete_runs(session, [r.id for r in rows])
     return RunDeleteResponse(deleted=deleted, skipped=skipped)
+
+
+# --------------------------------------------------------------------------- #
+# 浏览器用户输入（用户在页面的浏览器画面里亲自操作 —— 登录/验证码等）
+# --------------------------------------------------------------------------- #
+@router.post("/{run_id}/browser-input")
+async def browser_input(run_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """把用户在浏览器画面上的操作打进该 run 的 Chromium。
+
+    两种输入：
+    · click：{kind:"click", x, y}（画面坐标 → CDP 鼠标事件；前端按显示尺寸等比换算）
+    · text：{kind:"text", text}（配合页面底部的输入条 —— 中文输入法兼容性靠它）
+
+    凭证安全：用户打的字（如密码）只进 Chromium，不进模型上下文、不落库。
+    """
+    from ..browser_session import _SESSIONS
+
+    sess = _SESSIONS.get(run_id)
+    if sess is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "这个执行没有在跑的浏览器会话")
+
+    kind = str(payload.get("kind") or "")
+    try:
+        if kind == "click":
+            x, y = float(payload.get("x", 0)), float(payload.get("y", 0))
+            return {"ok": await sess.user_click(x, y)}
+        if kind == "text":
+            text = str(payload.get("text") or "")
+            return {"ok": await sess.user_type(text)}
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"未知输入类型: {kind}")
+    except HTTPException:
+        raise
+    except Exception as exc:  # pragma: no cover
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, str(exc))

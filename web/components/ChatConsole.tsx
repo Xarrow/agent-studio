@@ -18,6 +18,7 @@ import { api, fmt } from "@/lib/api";
 import type { Agent, RunEvent, Session } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
 import { RunTimeline, eventsToSteps, summarize } from "@/components/ui/run-timeline";
+import { BrowserLive } from "@/components/BrowserLive";
 import { ProcessRail } from "@/components/ProcessRail";
 import { SlashMenu, type CommandItem } from "@/components/SlashMenu";
 import { useImeGuard } from "@/lib/ime";
@@ -86,6 +87,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   const [live, setLive] = useState<LiveMsg | null>(null);
   /** 正在生成的这次执行的**全部事件**（用来实时画分色过程） */
   const [liveEvents, setLiveEvents] = useState<RunEvent[]>([]);
+  /** 浏览器画面（Agent 的 Chromium screencast 直播帧，base64 JPEG —— 不落库，纯实时） */
+  const [browserFrame, setBrowserFrame] = useState<{ data: string; url: string; title: string } | null>(null);
   /** 本次发送的内容（作为执行过程的第一段「输入」） */
   const [liveInput, setLiveInput] = useState("");
   /** 正在跑的这一轮的 run id —— 停止时要拿它去 abort 后端 */
@@ -326,6 +329,13 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
           const t = typeof p.text === "string" ? p.text : typeof p.delta === "string" ? p.delta : "";
           setLive((prev) => (prev ? { role: "assistant", text: prev.text + t } : prev));
         }
+        if (ev.type === "browser_frame" && typeof p.frame === "string") {
+          setBrowserFrame({
+            data: p.frame,
+            url: typeof p.url === "string" ? p.url : "",
+            title: typeof p.title === "string" ? p.title : "",
+          });
+        }
       } catch {
         /* ignore */
       }
@@ -335,6 +345,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
       es.close();
       setBusy(false);
       setLiveRunId("");
+      setBrowserFrame(null);
       const r = await api.run(runId).catch(() => null);
       if (r && r.status === "waiting_hitl") {
         // **不是结束，是暂停等你点头** —— 保留现场（不清 live），
@@ -635,6 +646,27 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               })}
 
               {/* 生成中：实时分色显示执行过程（思考 / 工具 / 结果 / 回答） */}
+              {busy && browserFrame && (
+                <BrowserLive
+                  frame={browserFrame}
+                  onUserClick={async (x, y) => {
+                    if (!liveRunId) return;
+                    await fetch(`/api/runs/${liveRunId}/browser-input`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ kind: "click", x, y }),
+                    }).catch(() => {});
+                  }}
+                  onUserText={async (text) => {
+                    if (!liveRunId) return;
+                    await fetch(`/api/runs/${liveRunId}/browser-input`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ kind: "text", text }),
+                    }).catch(() => {});
+                  }}
+                />
+              )}
               {busy && liveEvents.length > 0 && (
                 <div className="w-full">
                   <div className="text-[12px] text-[var(--color-muted)] mb-2 flex items-center gap-1.5">
