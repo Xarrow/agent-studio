@@ -77,7 +77,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
 
   /** 已落库的历史消息 */
   const [history, setHistory] = useState<
-    { role: "user" | "assistant"; content: string; run_id: string | null; turn_index: number; id?: number }[]
+    { role: "user" | "assistant"; content: string; run_id: string | null; turn_index: number; id?: number; ts?: number }[]
   >([]);
   /** history 的镜像 ref：刷新恢复块要读"刚加载完"的最新历史，
    *  但不能把它加进 useEffect 依赖（会反复触发）—— 用 ref 桥一下。 */
@@ -164,6 +164,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             run_id: m.run_id,
             turn_index: m.turn_index,
             id: m.id,
+            ts: m.ts,
           })),
       );
     } catch {
@@ -627,7 +628,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               两处都能选助手就是两套真相 */}
           {controlledAgentId === undefined && (
             <select
-              className="input w-auto min-w-[160px]"
+              className="input w-auto min-w-[160px] max-w-[240px] shrink-0"
               value={agentId}
               onChange={(e) => setAgentId(e.target.value)}
             >
@@ -643,9 +644,11 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               {currentAgent?.name ?? "（未选助手）"}
             </span>
           )}
-          <span className="text-[12px] text-[var(--color-muted)] truncate">
-            {currentAgent?.description || "runtime-agnostic Agent"}
-          </span>
+          {currentAgent?.description && (
+            <span className="text-[12px] text-[var(--color-muted)] truncate">
+              {currentAgent.description}
+            </span>
+          )}
           <div className="ml-auto flex items-center gap-3">
             {history.length > 0 && history[history.length - 1].run_id && (
               <>
@@ -679,11 +682,45 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
         {/* 消息流 */}
         <div className="flex-1 overflow-auto px-4 py-5" ref={boxRef}>
           {history.length === 0 && !live ? (
-            <div className="max-w-lg mx-auto text-center mt-8">
-              <p className="text-[15px] font-medium">开始和「{currentAgent?.name || "Agent"}」对话</p>
-              <p className="text-[12px] text-[var(--color-muted)] mt-2">
-                它会记住这个对话里说过的内容，也会用上你教过它的长期记忆。
-              </p>
+            /* 空状态：不摆「开始对话」的废话 —— 直接给 3 个可点的开场问题，
+               点了就填进输入框（不自动发，让人改得动）。示例从 agent 的
+               system_prompt 第一段提炼没有意义，用固定通用的三问。 */
+            <div className="max-w-lg mx-auto mt-10 mb-6">
+              <div className="text-center">
+                <div
+                  className="inline-flex items-center justify-center w-10 h-10 rounded-xl text-[18px] mb-3"
+                  style={{ background: "var(--color-surface-2)" }}
+                >
+                  ✦
+                </div>
+                <p className="text-[14px] font-medium">{currentAgent?.name || "Agent"}</p>
+                {currentAgent?.description && (
+                  <p className="text-[12px] text-[var(--color-muted)] mt-1">
+                    {currentAgent.description}
+                  </p>
+                )}
+              </div>
+              <div className="mt-5 flex flex-col gap-1.5">
+                {["帮我分析一个文件或一段数据", "上网查点资料并总结给我", "写一段代码或脚本"].map(
+                  (q) => (
+                    <button
+                      key={q}
+                      data-tap
+                      className="text-left text-[13px] rounded-lg px-3.5 py-2.5 border transition-colors hover:bg-[var(--color-surface-2)]"
+                      style={{
+                        borderColor: "var(--color-border)",
+                        color: "var(--color-text)",
+                      }}
+                      onClick={() => {
+                        setInput(q);
+                        (document.querySelector("section textarea") as HTMLTextAreaElement | null)?.focus();
+                      }}
+                    >
+                      {q}
+                    </button>
+                  ),
+                )}
+              </div>
             </div>
           ) : (
             <div className="max-w-4xl mx-auto space-y-5">
@@ -700,6 +737,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     content={m.content}
                     runId={m.run_id}
                     userInput={prevUser}
+                    ts={m.ts}
                     messageId={m.id}
                     sessionId={sessionId}
                     onEdited={(content2) =>
@@ -814,7 +852,14 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               disabled={busy || uploading}
               onClick={() => fileRef.current?.click()}
             >
-              {uploading ? "…" : "📎"}
+              {uploading ? (
+                "…"
+              ) : (
+                /* 内联 SVG 回形针（禁 emoji 图标） */
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                </svg>
+              )}
             </button>
             <textarea
               className="input flex-1 resize-none text-[13px]"
@@ -881,7 +926,10 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                   ) : (
                     /* 文件：图标 + 名字 + 大小的横卡 */
                     <div className="flex items-center gap-2 px-2.5 py-2 max-w-[220px]">
-                      <span className="text-[20px] leading-none">📄</span>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-[var(--color-muted)]" aria-hidden="true">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                        <path d="M14 2v6h6" />
+                      </svg>
                       <span className="min-w-0">
                         <span className="block truncate text-[12px]">{f.name}</span>
                         <span className="block text-[11px] text-[var(--color-muted)]">
@@ -981,6 +1029,7 @@ function Bubble({
   content,
   runId,
   userInput,
+  ts,
   messageId,
   sessionId,
   onEdited,
@@ -992,6 +1041,8 @@ function Bubble({
   runId?: string | null;
   /** 这一轮里用户说了什么（用于执行过程的第一段「输入」） */
   userInput?: string;
+  /** 消息落库时间（epoch 秒）—— hover 动作条里显示，平时不占视觉 */
+  ts?: number;
   /** 消息在 session_message 表的 id（可编辑的凭证；没 id = 刚发出去还没落库） */
   messageId?: number;
   sessionId?: string;
@@ -1194,7 +1245,10 @@ function Bubble({
                         style={{ background: "rgba(255,255,255,0.16)" }}
                         title="点开下载"
                       >
-                        <span className="text-[16px] leading-none">📄</span>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" aria-hidden="true">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                          <path d="M14 2v6h6" />
+                        </svg>
                         <span className="min-w-0 text-left">
                           <span className="block truncate">{a.name}</span>
                           <span className="block text-[10.5px] opacity-80">{fmt.bytes(a.size)}</span>
@@ -1212,11 +1266,17 @@ function Bubble({
           {streaming && <span className="live-dot ml-0.5">▍</span>}
         </div>
 
-        {/* 动作条：桌面 hover 显形；手机**常驻**（hover 不存在的东西必须常驻） */}
+        {/* 动作条：桌面 hover 显形；手机**常驻**（hover 不存在的东西必须常驻）。
+            时间戳放最左（占位但不抢眼），复制/编辑/重发跟在后面。 */}
         {!streaming && (
           <div
             className={`mt-1 flex items-center gap-0.5 ${isUser ? "justify-end" : ""} lg:opacity-0 lg:group-hover:opacity-100 transition-opacity`}
           >
+            {ts ? (
+              <span className="text-[11px] mr-1.5" style={{ color: "var(--color-muted)" }}>
+                {new Date(ts * 1000).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}
+              </span>
+            ) : null}
             <button
               data-tap
               className="text-[11.5px] px-1.5 py-0.5 rounded"
