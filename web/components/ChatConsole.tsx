@@ -457,7 +457,12 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   useEffect(() => {
     try {
       setSessionsCollapsed(localStorage.getItem("chat.sessionsCollapsed") === "1");
-      setRailCollapsed(localStorage.getItem("chat.railCollapsed") === "1");
+      const savedRail = localStorage.getItem("chat.railCollapsed");
+      // 没有存过偏好时：窄屏（<1440）默认收起右栏 —— 否则 1024 宽只剩 140px
+      // 给对话区，页面无从使用；宽屏（≥1440）默认展开（有空间展示直播画面）。
+      setRailCollapsed(
+        savedRail === null ? window.innerWidth < 1440 : savedRail === "1",
+      );
     } catch {}
   }, []);
   const toggleSessions = () => {
@@ -540,7 +545,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             data-tap
             title="展开会话列表"
             onClick={toggleSessions}
-            className="hidden lg:flex w-9 shrink-0 flex-col items-center gap-2 py-2.5 border-r border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-2)]"
+            className="flex lg:flex-col w-full lg:w-9 shrink-0 items-center justify-center lg:justify-start gap-2 h-9 lg:h-auto py-0 lg:py-2.5 border-b lg:border-b-0 lg:border-r border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-2)]"
           >
             <span className="text-[13px] text-[var(--color-muted)]">»</span>
             <span
@@ -551,17 +556,17 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             </span>
           </button>
         ) : (
-        <aside className="lg:w-64 shrink-0 border-b lg:border-b-0 lg:border-r border-[var(--color-border)] bg-[var(--color-surface)] flex flex-col min-h-0 relative">
-          {/* 收起按钮：列表头部右侧，常驻可见 */}
+        <aside className="lg:w-64 shrink-0 border-b lg:border-b-0 lg:border-r border-[var(--color-border)] bg-[var(--color-surface)] flex flex-col min-h-0 max-h-[40vh] lg:max-h-none relative">
+          {/* 收起按钮：列表头部右侧，常驻可见（手机端也保留——列表可整个收掉） */}
           <button
             data-tap
             title="收起会话列表"
             onClick={toggleSessions}
-            className="hidden lg:flex absolute top-2.5 right-2 z-10 w-7 h-7 items-center justify-center rounded-md text-[12px] text-[var(--color-muted)] hover:bg-[var(--color-surface-2)]"
+            className="flex absolute top-2.5 right-2 z-10 w-7 h-7 items-center justify-center rounded-md text-[12px] text-[var(--color-muted)] hover:bg-[var(--color-surface-2)]"
           >
             «
           </button>
-          <div className="p-3 border-b border-[var(--color-border)] lg:pr-10">
+          <div className="p-3 border-b border-[var(--color-border)] pr-10">
             <button className="btn btn-primary w-full" onClick={() => void newChat()}>
               + 新对话
             </button>
@@ -715,7 +720,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               {/* 手机/平板：画面卡片在消息流里；桌面只在右栏收起时用它顶替
                   （避免同一画面两处重复） */}
               {busy && browserFrame && (
-                <div className={railCollapsed ? "" : "xl:hidden"}>
+                <div className={railCollapsed ? "" : "lg:hidden"}>
                 <BrowserLive
                   frame={browserFrame}
                   onUserClick={async (x, y) => {
@@ -933,7 +938,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
           data-tap
           title="展开 Chrome 操作流"
           onClick={toggleRail}
-          className="hidden xl:flex w-9 shrink-0 flex-col items-center gap-2 py-2.5 border-l border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-2)]"
+          className="hidden lg:flex w-9 shrink-0 flex-col items-center gap-2 py-2.5 border-l border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-2)]"
         >
           <span className="text-[13px] text-[var(--color-muted)]">«</span>
           {busy && browserFrame && (

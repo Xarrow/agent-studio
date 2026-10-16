@@ -48,7 +48,7 @@ export function ProcessRail({
 
   return (
     <aside
-      className="hidden xl:flex w-[420px] shrink-0 border-l flex-col min-h-0"
+      className="hidden lg:flex w-[320px] xl:w-[420px] shrink-0 border-l flex-col min-h-0"
       style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
     >
       <div

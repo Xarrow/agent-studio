@@ -128,6 +128,21 @@ export function Nav() {
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
 
+  // ── 侧栏折叠（lg 及以上：完整栏 ⇄ 图标条）───────────────────────────────
+  // 多栏布局里最左边这栏也让人能收起来，把宽度让给内容；选择写 localStorage。
+  const [navFolded, setNavFolded] = useState(false);
+  useEffect(() => {
+    try {
+      setNavFolded(localStorage.getItem("nav.folded") === "1");
+    } catch {}
+  }, []);
+  const toggleNav = () => {
+    setNavFolded((v) => {
+      try { localStorage.setItem("nav.folded", v ? "0" : "1"); } catch {}
+      return !v;
+    });
+  };
+
   const rowCls = (active: boolean) =>
     `flex items-center gap-2.5 px-3 py-2 rounded-md text-[13px] transition-colors ${
       active
@@ -204,8 +219,19 @@ export function Nav() {
         </>
       )}
 
-      {/* ── 平板：图标条 ───────────────────────────────────── */}
-      <aside className="hidden md:flex lg:hidden w-14 shrink-0 border-r border-[var(--color-border)] bg-[var(--color-surface)] flex-col items-center py-3 gap-1">
+      {/* ── 平板图标条 / 桌面折叠后的图标条 ─────────────────── */}
+      <aside className={`hidden md:flex ${navFolded ? "" : "lg:hidden"} w-14 shrink-0 border-r border-[var(--color-border)] bg-[var(--color-surface)] flex-col items-center py-3 gap-1`}>
+        {/* 折叠态（lg+）的展开按钮：只在这一档出现，平板宽度靠汉堡菜单 */}
+        {navFolded && (
+          <button
+            data-tap
+            title="展开导航栏"
+            onClick={toggleNav}
+            className="hidden lg:flex w-11 h-9 items-center justify-center rounded-md text-[13px] text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] mb-1"
+          >
+            »
+          </button>
+        )}
         {/* 概览页已移除（用户要求）—— 平板图标条上那一条也一起去掉 */}
         {USE_ITEMS.map((l) => (
           <Link
@@ -238,15 +264,26 @@ export function Nav() {
         ))}
       </aside>
 
-      {/* ── 桌面：完整侧边栏 ───────────────────────────────── */}
+      {/* ── 桌面：完整侧边栏（可折叠成上面的图标条）─────────── */}
+      {!navFolded && (
       <aside className="hidden lg:flex w-52 shrink-0 border-r border-[var(--color-border)] bg-[var(--color-surface)] flex-col">
-        <div className="px-4 py-4 border-b border-[var(--color-border)]">
-          <Link href="/" className="font-semibold text-[15px] tracking-tight block">
-            Agent Studio
-          </Link>
-          <div className="text-[10.5px] text-[var(--color-muted)] mt-0.5">
-            runtime-agnostic
+        <div className="px-4 py-4 border-b border-[var(--color-border)] flex items-start">
+          <div className="min-w-0">
+            <Link href="/" className="font-semibold text-[15px] tracking-tight block">
+              Agent Studio
+            </Link>
+            <div className="text-[10.5px] text-[var(--color-muted)] mt-0.5">
+              runtime-agnostic
+            </div>
           </div>
+          <button
+            data-tap
+            title="收起导航栏"
+            onClick={toggleNav}
+            className="ml-auto shrink-0 w-7 h-7 flex items-center justify-center rounded-md text-[12px] text-[var(--color-muted)] hover:bg-[var(--color-surface-2)]"
+          >
+            «
+          </button>
         </div>
 
         <nav className="p-2 flex-1 overflow-auto">
@@ -268,6 +305,7 @@ export function Nav() {
         </nav>
 
       </aside>
+      )}
     </>
   );
 }
