@@ -838,6 +838,52 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               </button>
             </div>
           )}
+          {/* 待发附件 —— 收在输入区顶行（属于输入，不是漂浮在外面）。
+              图片 = 48px 圆角缩略；文件 = 胶囊条（图标+名+大小）；✕ 常驻
+              小圆钮（触屏无 hover，藏起来的删除等于不存在）。 */}
+          {pendingFiles.length > 0 && (
+            <div className="max-w-4xl mx-auto mb-2 flex flex-wrap gap-2">
+              {pendingFiles.map((f, i) => (
+                <div
+                  key={f.path + i}
+                  className="relative rounded-lg border overflow-hidden"
+                  style={{
+                    borderColor: "var(--color-border)",
+                    background: "var(--color-surface-2)",
+                  }}
+                >
+                  {f.kind === "image" ? (
+                    <a href={f.url} target="_blank" rel="noreferrer" className="block">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={f.url} alt={f.name} className="w-12 h-12 object-cover" />
+                    </a>
+                  ) : (
+                    <div className="flex items-center gap-2 pl-2.5 pr-9 py-1.5 max-w-[240px]">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-[var(--color-muted)]" aria-hidden="true">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                        <path d="M14 2v6h6" />
+                      </svg>
+                      <span className="min-w-0">
+                        <span className="block truncate text-[12px] leading-tight">{f.name}</span>
+                        <span className="block text-[10.5px] leading-tight text-[var(--color-muted)]">
+                          {fmt.bytes(f.size)}
+                        </span>
+                      </span>
+                    </div>
+                  )}
+                  <button
+                    data-tap
+                    className="absolute top-0.5 right-0.5 flex h-5 w-5 items-center justify-center rounded-full text-[11px] hover:brightness-110"
+                    style={{ background: "rgba(0,0,0,0.45)", color: "#fff" }}
+                    title="撤掉"
+                    onClick={() => setPendingFiles((p) => p.filter((_, j) => j !== i))}
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="max-w-4xl mx-auto flex gap-2 items-end relative">
             <input
               ref={fileRef}
@@ -908,49 +954,6 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               </button>
             )}
           </div>
-          {/* 待发附件 —— 名字即所见，点 ✕ 撤掉（还没进消息，撤掉零成本） */}
-          {pendingFiles.length > 0 && (
-            <div className="max-w-4xl mx-auto mt-2 flex flex-wrap gap-2">
-              {pendingFiles.map((f, i) => (
-                <div
-                  key={f.path + i}
-                  className="relative rounded-lg border overflow-hidden"
-                  style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
-                >
-                  {f.kind === "image" ? (
-                    /* 图片：缩略图本体可点开大图（新窗口），✕ 撤掉 */
-                    <a href={f.url} target="_blank" rel="noreferrer" className="block">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={f.url} alt={f.name} className="w-24 h-24 object-cover" />
-                    </a>
-                  ) : (
-                    /* 文件：图标 + 名字 + 大小的横卡 */
-                    <div className="flex items-center gap-2 px-2.5 py-2 max-w-[220px]">
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-[var(--color-muted)]" aria-hidden="true">
-                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                        <path d="M14 2v6h6" />
-                      </svg>
-                      <span className="min-w-0">
-                        <span className="block truncate text-[12px]">{f.name}</span>
-                        <span className="block text-[11px] text-[var(--color-muted)]">
-                          {fmt.bytes(f.size)}
-                        </span>
-                      </span>
-                    </div>
-                  )}
-                  <button
-                    data-tap
-                    className="absolute top-1 right-1 flex h-6 w-6 items-center justify-center rounded-full text-[12px]"
-                    style={{ background: "rgba(0,0,0,0.55)", color: "#fff" }}
-                    title="撤掉"
-                    onClick={() => setPendingFiles((p) => p.filter((_, j) => j !== i))}
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
           {/* 存在哪 —— 自托管平台上，用户随时能核对落点（点一下复制路径） */}
           {paths && (
             <div
@@ -1223,7 +1226,7 @@ function Bubble({
           {isUser ? (
             <>
               {attachments.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 justify-end mb-1.5">
+                <div className="flex flex-wrap gap-1.5 justify-end mb-2">
                   {attachments.map((a, i) =>
                     a.kind === "image" ? (
                       <a key={i} href={a.url} target="_blank" rel="noreferrer" className="block">
@@ -1231,7 +1234,7 @@ function Bubble({
                         <img
                           src={a.url}
                           alt={a.name}
-                          className="w-20 h-20 rounded-md object-cover border"
+                          className="max-h-40 rounded-lg object-cover border"
                           style={{ borderColor: "rgba(255,255,255,0.35)" }}
                         />
                       </a>
@@ -1241,8 +1244,8 @@ function Bubble({
                         href={a.url}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex items-center gap-2 rounded-md px-2.5 py-1.5 max-w-[220px] text-[12px]"
-                        style={{ background: "rgba(255,255,255,0.16)" }}
+                        className="inline-flex items-center gap-2 rounded-lg pl-2.5 pr-3 py-2 max-w-[240px] text-[12px] hover:brightness-110"
+                        style={{ background: "rgba(255,255,255,0.16)", border: "1px solid rgba(255,255,255,0.25)" }}
                         title="点开下载"
                       >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" aria-hidden="true">
@@ -1250,8 +1253,8 @@ function Bubble({
                           <path d="M14 2v6h6" />
                         </svg>
                         <span className="min-w-0 text-left">
-                          <span className="block truncate">{a.name}</span>
-                          <span className="block text-[10.5px] opacity-80">{fmt.bytes(a.size)}</span>
+                          <span className="block truncate leading-tight">{a.name}</span>
+                          <span className="block text-[10.5px] opacity-80 leading-tight">{fmt.bytes(a.size)}</span>
                         </span>
                       </a>
                     ),
