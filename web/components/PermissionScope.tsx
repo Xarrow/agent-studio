@@ -151,6 +151,7 @@ export function PermissionScope({
       <div className="flex items-center justify-between mt-3 mb-1.5">
         <span className="text-[12px] text-[var(--color-muted)]">例外规则（可选）</span>
         <button
+          data-tap
           className="text-[12px] text-[var(--color-accent)] hover:underline"
           onClick={() =>
             setRows([...rows, { tool: toolNames[0] ?? "", pattern: "", behavior: "deny" }])
@@ -213,6 +214,7 @@ export function PermissionScope({
                 ))}
               </select>
               <button
+                data-tap
                 className="text-[13px] px-1 text-[var(--color-muted)] hover:text-[var(--color-text)]"
                 onClick={() => setRows(rows.filter((_, j) => j !== i))}
                 title="删掉这条"

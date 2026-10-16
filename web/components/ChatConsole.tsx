@@ -621,7 +621,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
           <header className="h-[52px] px-3 sm:px-4 flex items-center gap-2.5 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
             <button
               data-tap
-              className="lg:hidden w-9 h-9 -ml-1 flex items-center justify-center rounded-lg text-[var(--color-muted)] hover:bg-[var(--color-surface-2)]"
+              className="lg:hidden w-11 h-11 sm:w-9 sm:h-9 -ml-1 flex items-center justify-center rounded-lg text-[var(--color-muted)] hover:bg-[var(--color-surface-2)]"
               title="对话列表"
               onClick={() => setMobileNav(true)}
             >
@@ -880,7 +880,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                   onChange={(e) => void pickFiles(e.target.files)}
                 />
                 <button
-                  className="w-9 h-9 shrink-0 flex items-center justify-center rounded-xl text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
+                  className="w-11 h-11 sm:w-9 sm:h-9 shrink-0 flex items-center justify-center rounded-xl text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
                   title="附件（助手会用 Read 工具读）"
                   disabled={busy || uploading}
                   onClick={() => fileRef.current?.click()}
@@ -921,12 +921,13 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                   }}
                 />
                 {busy ? (
-                  <button className="btn shrink-0" onClick={() => void stop()}>
+                  <button data-tap className="btn shrink-0" onClick={() => void stop()}>
                     停止
                   </button>
                 ) : (
                   <button
                     className="btn btn-primary shrink-0"
+                    data-tap
                     disabled={!input.trim() && pendingFiles.length === 0}
                     onClick={() => void send()}
                   >

@@ -163,6 +163,7 @@ export function AgentQuickRun({
         />
         {busy ? (
           <button
+            data-tap
             className="btn shrink-0"
             onClick={() => {
               if (runId) void api.abortRun(runId);
@@ -171,7 +172,7 @@ export function AgentQuickRun({
             停止
           </button>
         ) : (
-          <button className="btn btn-primary shrink-0" disabled={!input.trim() || disabled} onClick={() => void start()}>
+          <button data-tap className="btn btn-primary shrink-0" disabled={!input.trim() || disabled} onClick={() => void start()}>
             试跑
           </button>
         )}

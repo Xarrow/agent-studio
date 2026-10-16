@@ -100,6 +100,7 @@ export function Hint({
       <button
         ref={btnRef}
         type="button"
+        data-tap
         aria-label="这是什么？"
         aria-expanded={open}
         onClick={(e) => {

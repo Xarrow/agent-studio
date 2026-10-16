@@ -433,6 +433,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
             </span>
           )}
           <button
+            data-tap
             className="btn"
             onClick={async () => {
               const c = await api.duplicateAgent(agentId, {});
@@ -446,7 +447,15 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
           >
             复制为副本
           </button>
-          <button className="btn btn-primary" disabled={saving} onClick={save}>
+          {/* 没改动就禁用：点了会白写一条版本记录（save() 无条件 PUT）——
+                配置页不该因为「手滑点一下保存」多出一版历史 */}
+          <button
+            data-tap
+            className="btn btn-primary"
+            disabled={saving || !dirty}
+            title={dirty ? "把这一版写回去（会记一条历史版本）" : "没有未保存的改动"}
+            onClick={save}
+          >
             {saving ? "保存中…" : dirty ? "保存改动" : "保存"}
           </button>
         </div>
