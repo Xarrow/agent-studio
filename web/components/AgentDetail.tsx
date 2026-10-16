@@ -507,9 +507,19 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
       </section>
 
 
-      {/* ── 基础配置 ─────────────────────────────────────────────
+      {/* ── 主体：桌面双列 ──────────────────────────────────────
+          左列 = 配置（基础 / 运行时 / 能力 / 历史版本）—— 改这东西的地方；
+          右列 = 使用（试跑与观测 / 评测 / 记忆）—— 用这东西的地方。
+          商业产品的对象页范式（Linear / Vercel）：配置在主列定宽可读，
+          操作/观测在侧列 sticky 常驻 —— 「试跑」不再埋在第 5 段，
+          屏幕一进来就能跑。窄屏自动退回单列（右列内容排到配置后面）。
+          内容量宽从 1007px 收到 ~760px：System Prompt 一行不再横扫全屏。 */}
+      <div className="grid gap-4 grid-cols-1 xl:grid-cols-[minmax(0,1fr)_400px] items-start">
+        {/* ══ 左列：配置 ══ */}
+        <div className="min-w-0 space-y-4">
+      {/* ── 基础配置 ──────────────────────────
           布局定稿（用户要求以商业产品/UX 视角重排）：
-          **单列、按心智模型排序** —— 一个 agent = 基础配置 + 能力（工具/MCP/Skill）+ 记忆运行。
+          **单列、按心智模型排序** —— 一个 agent = 基础配置 + 能力（工具/MCP/Skill）
           原来是 2 列 grid 塞 5 个不等高 Fold，视觉错落且顺序对不上心智模型 ✗。 */}
       <div id="sec-define" className="grid gap-4 grid-cols-1 scroll-mt-14">
           <section className="card p-4 space-y-3.5">
@@ -868,8 +878,12 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
         <RevisionHistory kind="agent" targetId={agentId} onRestored={() => void load()} />
         </Fold>
       </div>
+        </div>
+        {/* ══ 左列完 ══ */}
 
-      {/* ── 试跑与观测 ─────────────────────────────────────────── */}
+        {/* ══ 右列：使用（sticky —— 滚配置时试跑面板一直看得见）══ */}
+        <div className="min-w-0 space-y-4 xl:sticky xl:top-4">
+      {/* ── 试跑与观测：主操作提级到侧列首段 ── */}
           <Fold
           title="试跑与观测"
           summary={
@@ -877,6 +891,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
               ? `最近：${ov.lastRun.status} · ${fmt.relative(ov.lastRun.at)}`
               : "还没跑过"
           }
+          defaultOpen
         >
         <RunPanel
           agentId={agentId}
@@ -910,6 +925,10 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
         <AgentMemoryPanel agentId={agentId} />
         </Fold>
       </div>
+        </div>
+        {/* ══ 右列完 ══ */}
+      </div>
+      {/* ══ 双列容器完 ══ */}
     </div>
   );
 }

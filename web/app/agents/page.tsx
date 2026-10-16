@@ -331,16 +331,18 @@ export default function AgentsPage() {
                       className="mt-0.5 block truncate text-[12px]"
                       style={{ color: "var(--color-muted)" }}
                     >
-                      <span className="mono">{a.slug}</span> · v{a.version} ·{" "}
                       <span className="mono">{a.definition?.model?.name || "未指定模型"}</span>
-                      {" · "}工具 {toolNames.length} · Skills {skillNames.length}
-                      {/* fork 血缘：这是谁派生出来的、又派生出几个 —— 排在同一行摘要里，
-                          不额外占位置；点开这一行能看到具体名字 */}
-                      {a.parent_id ? ` · 派生自 ${agents.find((x) => x.id === a.parent_id)?.name ?? "（已删除）"}` : ""}
-                      {childrenOf(a.id).length > 0 ? ` · 派生出了 ${childrenOf(a.id).length} 个` : ""}
+                      {toolNames.length > 0 || skillNames.length > 0 ? (
+                        <> · 工具 {toolNames.length}{skillNames.length > 0 ? ` · Skills ${skillNames.length}` : ""}</>
+                      ) : (
+                        <> · 纯对话</>
+                      )}
+                      {/* 血缘只留有信息量的一侧：派生自谁 或 派生出几个，别两项都占位置 */}
+                      {a.parent_id ? ` · ⇣ ${agents.find((x) => x.id === a.parent_id)?.name ?? "（已删）"}` : ""}
+                      {childrenOf(a.id).length > 0 ? ` · ⇡ ${childrenOf(a.id).length}` : ""}
                       {last ? (
                         <>
-                          {" · 最近 "}
+                          {" · "}
                           {fmt.relative(last.at)}{" "}
                           <span
                             style={{
@@ -459,12 +461,12 @@ export default function AgentsPage() {
                       </KV>
                     </div>
                     <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-                      <Link href={`/agents/detail?id=${a.id}`} className="btn text-[12px]">
-                        打开完整设置 →
-                      </Link>
                       <Link href={`/exec?agent=${a.id}`} className="btn text-[12px]">
                         用这个助手跑一次 →
                       </Link>
+                      <span className="mono text-[11.5px] text-[var(--color-muted)]">
+                        {a.slug} · v{a.version}
+                      </span>
                     </div>
                   </RowDetail>
                 )}
