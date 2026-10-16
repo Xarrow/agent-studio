@@ -21,7 +21,7 @@ import { RunTimeline, eventsToSteps, summarize } from "@/components/ui/run-timel
 import { BrowserLive } from "@/components/BrowserLive";
 import { ProcessRail } from "@/components/ProcessRail";
 import { SlashMenu, type CommandItem } from "@/components/SlashMenu";
-import { useImeGuard } from "@/lib/ime";
+import { useImeGuard, isImeEvent } from "@/lib/ime";
 import Markdown from "@/components/Markdown";
 import { RunDetailById } from "@/components/RunDetailDialog";
 import { AgentDetailDialog } from "@/components/AgentDetailDialog";
@@ -77,7 +77,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
 
   /** 已落库的历史消息 */
   const [history, setHistory] = useState<
-    { role: "user" | "assistant"; content: string; run_id: string | null; turn_index: number }[]
+    { role: "user" | "assistant"; content: string; run_id: string | null; turn_index: number; id?: number }[]
   >([]);
   /** history 的镜像 ref：刷新恢复块要读"刚加载完"的最新历史，
    *  但不能把它加进 useEffect 依赖（会反复触发）—— 用 ref 桥一下。 */
@@ -163,6 +163,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             content: m.content,
             run_id: m.run_id,
             turn_index: m.turn_index,
+            id: m.id,
           })),
       );
     } catch {
@@ -636,11 +637,23 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     : undefined;
                 return (
                   <Bubble
-                    key={i}
+                    key={m.id ?? i}
                     role={m.role}
                     content={m.content}
                     runId={m.run_id}
                     userInput={prevUser}
+                    messageId={m.id}
+                    sessionId={sessionId}
+                    onEdited={(content2) =>
+                      setHistory((h) =>
+                        h.map((x, j) => (j === i ? { ...x, content: content2 } : x)),
+                      )
+                    }
+                    onRetry={
+                      m.role === "user" && !busy
+                        ? () => void send(m.content)
+                        : undefined
+                    }
                   />
                 );
               })}
@@ -885,12 +898,19 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   );
 }
 
-/** 一条消息气泡：用户靠右，助手靠左；助手消息可展开**完整执行过程** */
+/** 一条消息气泡：商业对话产品的标准形态 ——
+ *  · 消息本体（用户右蓝/助手左浅）
+ *  · hover 动作条：复制 / 编辑 / 重试（编辑只对已落库消息；重试只对用户消息）
+ *  · 助手消息下方可折叠「执行过程」（默认收起，点开懒加载） */
 function Bubble({
   role,
   content,
   runId,
   userInput,
+  messageId,
+  sessionId,
+  onEdited,
+  onRetry,
   streaming = false,
 }: {
   role: "user" | "assistant";
@@ -898,6 +918,13 @@ function Bubble({
   runId?: string | null;
   /** 这一轮里用户说了什么（用于执行过程的第一段「输入」） */
   userInput?: string;
+  /** 消息在 session_message 表的 id（可编辑的凭证；没 id = 刚发出去还没落库） */
+  messageId?: number;
+  sessionId?: string;
+  /** 编辑保存成功后的回写（父组件更新本地 history） */
+  onEdited?: (content: string) => void;
+  /** 用户消息的「重试」= 把这条消息原样再发一遍 */
+  onRetry?: () => void;
   streaming?: boolean;
 }) {
   const isUser = role === "user";
@@ -908,8 +935,59 @@ function Bubble({
   const [detailOpen, setDetailOpen] = useState(false);
   /** 这一轮的用量与耗时（展开时顺手拉 run 拿 —— 不展开就不拉） */
   const [meta, setMeta] = useState<{ tokens: number; seconds: number } | null>(null);
+  /** 就地编辑态 */
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const fb = useFeedback();
 
   const hasTrace = !isUser && !!runId && !streaming;
+  const canEdit = isUser && !!messageId && !!sessionId && !!onEdited && !streaming;
+
+  const copy = () => {
+    const done = () => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    };
+    // navigator.clipboard 在非安全上下文（http 内网 IP）可能不存在 → 老式 execCommand 兜底
+    if (navigator.clipboard?.writeText) {
+      void navigator.clipboard.writeText(content).then(done, () => fallbackCopy(content, done));
+    } else {
+      fallbackCopy(content, done);
+    }
+  };
+
+  const fallbackCopy = (text: string, done: () => void) => {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      done();
+    } catch {
+      fb.info("复制失败", text.slice(0, 200));
+    }
+  };
+
+  const saveEdit = async () => {
+    if (!canEdit || !draft.trim() || saving) return;
+    setSaving(true);
+    try {
+      await api.updateSessionMessage(sessionId!, messageId!, draft.trim());
+      onEdited!(draft.trim());
+      setEditing(false);
+      fb.success("已保存");
+    } catch {
+      fb.error("保存失败，请重试");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const toggle = async () => {
     if (open) {
@@ -963,8 +1041,50 @@ function Bubble({
     : content;
 
   return (
-    <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+    <div className={`flex group ${isUser ? "justify-end" : "justify-start"}`}>
       <div className={isUser ? "max-w-[85%]" : "min-w-0 flex-1"}>
+        {/* 编辑态：textarea 就地展开（不用弹窗——上下文不丢） */}
+        {editing ? (
+          <div
+            className="rounded-lg p-2.5"
+            style={{ background: "var(--color-surface-2)", border: "1px solid var(--color-accent)" }}
+          >
+            <textarea
+              className="input w-full text-[13.5px] resize-none"
+              rows={Math.min(10, Math.max(2, draft.split("\n").length))}
+              value={draft}
+              autoFocus
+              disabled={saving}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                // Cmd/Ctrl+Enter 保存；组字中的 Enter 交给输入法
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                  if (isImeEvent(e)) return;
+                  e.preventDefault();
+                  void saveEdit();
+                }
+                if (e.key === "Escape") setEditing(false);
+              }}
+            />
+            <div className="mt-2 flex justify-end gap-2">
+              <button
+                className="btn btn-sm"
+                disabled={saving}
+                onClick={() => setEditing(false)}
+              >
+                取消
+              </button>
+              <button
+                className="btn btn-primary btn-sm"
+                disabled={saving || !draft.trim()}
+                onClick={() => void saveEdit()}
+              >
+                {saving ? "保存中…" : "保存"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
         <div
           className={`rounded-lg px-3.5 py-2.5 text-[13.5px] leading-relaxed break-words ${
             isUser ? "text-white w-fit ml-auto whitespace-pre-wrap" : ""
@@ -1017,6 +1137,50 @@ function Bubble({
           )}
           {streaming && <span className="live-dot ml-0.5">▍</span>}
         </div>
+
+        {/* 动作条：桌面 hover 显形；手机**常驻**（hover 不存在的东西必须常驻） */}
+        {!streaming && (
+          <div
+            className={`mt-1 flex items-center gap-0.5 ${isUser ? "justify-end" : ""} lg:opacity-0 lg:group-hover:opacity-100 transition-opacity`}
+          >
+            <button
+              data-tap
+              className="text-[11.5px] px-1.5 py-0.5 rounded"
+              style={{ color: copied ? "var(--color-ok)" : "var(--color-muted)" }}
+              title="复制"
+              onClick={copy}
+            >
+              {copied ? "已复制" : "复制"}
+            </button>
+            {canEdit && (
+              <button
+                data-tap
+                className="text-[11.5px] px-1.5 py-0.5 rounded hover:text-[var(--color-text)]"
+                style={{ color: "var(--color-muted)" }}
+                title="编辑这条消息（改完保存，之后的对话用它）"
+                onClick={() => {
+                  setDraft(userBody);
+                  setEditing(true);
+                }}
+              >
+                编辑
+              </button>
+            )}
+            {onRetry && (
+              <button
+                data-tap
+                className="text-[11.5px] px-1.5 py-0.5 rounded hover:text-[var(--color-text)]"
+                style={{ color: "var(--color-muted)" }}
+                title="把这条消息原样再发一遍"
+                onClick={onRetry}
+              >
+                重发
+              </button>
+            )}
+          </div>
+        )}
+          </>
+        )}
 
         {hasTrace && (
           <div className="mt-1.5">

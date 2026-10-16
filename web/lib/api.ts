@@ -805,6 +805,12 @@ export const api = {
       body: JSON.stringify(patch),
     }),
   deleteSession: (id: string) => del<{ deleted: number }>(`/api/sessions/${id}`),
+  /** 编辑一条消息的正文（只改平台侧历史；Run 观测记录不动） */
+  updateSessionMessage: (sessionId: string, messageId: number, content: string) =>
+    request<{ id: number; content: string }>(
+      `/api/sessions/${sessionId}/messages/${messageId}`,
+      { method: "PATCH", body: JSON.stringify({ content }) },
+    ),
   clearSessionContext: (id: string, keepSummary = false) =>
     post<{ removed_messages: number }>(`/api/sessions/${id}/clear-context`, {
       keep_summary: keepSummary,

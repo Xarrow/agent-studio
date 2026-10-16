@@ -169,6 +169,30 @@ async def delete_session(
     return {"deleted": 1, "unbound_runs": len(runs)}
 
 
+@router.patch("/{session_id}/messages/{message_id}", response_model=SessionMessageRead)
+async def update_message(
+    session_id: str, message_id: int, payload: dict, session: AsyncSession = Depends(get_session)
+) -> SessionMessageRead:
+    """编辑一条消息的正文。
+
+    只改**平台侧历史**（下一轮注入模型的上下文用它）——已有 Run 的记录不动
+    （那是观测资产，历史的回答改了会与当时的执行过程对不上）。
+    常见场景：用户消息里打错了字/敏感信息，改完不用开新会话。
+    """
+    content = str(payload.get("content") or "").strip()
+    if not content:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "消息内容不能为空")
+    row = await session.get(SessionMessage, message_id)
+    if row is None or row.session_id != session_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"消息不存在: {message_id}")
+    row.content = content
+    await session.commit()
+    return SessionMessageRead(
+        id=row.id, turn_index=row.turn_index, role=row.role,
+        content=row.content, run_id=row.run_id, ts=row.ts,
+    )
+
+
 @router.post("/{session_id}/clear-context")
 async def clear_session_context(
     session_id: str,
