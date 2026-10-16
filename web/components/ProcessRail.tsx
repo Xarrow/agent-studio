@@ -21,12 +21,15 @@ const VIEW_H = 600;
 export function ProcessRail({
   frame,
   busy,
+  onCollapse,
   onUserClick,
   onUserText,
 }: {
   /** 浏览器直播帧（base64 JPEG + 页面 URL/标题）——null = 当前没有活的浏览器画面 */
   frame: { data: string; url: string; title: string } | null;
   busy: boolean;
+  /** 收起整个右栏（对话区变宽） */
+  onCollapse?: () => void;
   onUserClick: (x: number, y: number) => void | Promise<void>;
   onUserText: (text: string) => void | Promise<void>;
 }) {
@@ -53,6 +56,16 @@ export function ProcessRail({
         style={{ borderColor: "var(--color-border)" }}
       >
         <span className="text-[12px] font-medium">Chrome</span>
+        {onCollapse && (
+          <button
+            data-tap
+            title="收起（对话区变宽）"
+            onClick={onCollapse}
+            className="w-7 h-7 -my-1 flex items-center justify-center rounded-md text-[12px] text-[var(--color-muted)] hover:bg-[var(--color-surface-2)]"
+          >
+            »
+          </button>
+        )}
         {busy && frame ? (
           <span className="text-[12px] live-dot" style={{ color: "var(--color-accent)" }}>
             ● 直播

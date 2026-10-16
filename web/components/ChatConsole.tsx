@@ -446,6 +446,32 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   /** 选了文件 → 上传 → 进待发清单（路径注入方案，见 send()） */
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [uploading, setUploading] = useState(false);
+
+  // ── 多栏折叠 ──────────────────────────────────────────────────────────────
+  // 会话列表 / 右栏 Chrome 流各自可收起（把空间还给对话区），localStorage 持久化。
+  // ⚠️ 位置纪律：必须在**所有提前 return 之前**（本组件有 loading / 无助手两条
+  // 提前返回）—— 放在它们之后会让两种情况 hook 数量不同，React 抛 #310
+  // （Rendered more hooks than during the previous render），整页变错误页（踩过两次）。
+  const [sessionsCollapsed, setSessionsCollapsed] = useState(false);
+  const [railCollapsed, setRailCollapsed] = useState(false);
+  useEffect(() => {
+    try {
+      setSessionsCollapsed(localStorage.getItem("chat.sessionsCollapsed") === "1");
+      setRailCollapsed(localStorage.getItem("chat.railCollapsed") === "1");
+    } catch {}
+  }, []);
+  const toggleSessions = () => {
+    setSessionsCollapsed((v) => {
+      try { localStorage.setItem("chat.sessionsCollapsed", v ? "0" : "1"); } catch {}
+      return !v;
+    });
+  };
+  const toggleRail = () => {
+    setRailCollapsed((v) => {
+      try { localStorage.setItem("chat.railCollapsed", v ? "0" : "1"); } catch {}
+      return !v;
+    });
+  };
   const pickFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     setUploading(true);
@@ -503,17 +529,43 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   }
 
   return (
-    <div className="h-full min-h-0 flex flex-col lg:flex-row">
-      {configAgent && (
-        <AgentDetailDialog agentId={configAgent} onClose={() => setConfigAgent(null)} />
-      )}
-      {/* ── 会话列表 ─────────────────────────────────────────── */}
-      <aside className="lg:w-64 shrink-0 border-b lg:border-b-0 lg:border-r border-[var(--color-border)] bg-[var(--color-surface)] flex flex-col max-h-[38vh] lg:max-h-none">
-        <div className="p-3 border-b border-[var(--color-border)]">
-          <button className="btn btn-primary w-full" onClick={() => void newChat()}>
-            + 新对话
+      <div className="h-full min-h-0 flex flex-col lg:flex-row">
+        {configAgent && (
+          <AgentDetailDialog agentId={configAgent} onClose={() => setConfigAgent(null)} />
+        )}
+        {/* ── 会话列表 ───────────────────────────────────────
+            折叠态：只剩一条竖条（展开按钮 + 对话数徽标），点一下弹回。 */}
+        {sessionsCollapsed ? (
+          <button
+            data-tap
+            title="展开会话列表"
+            onClick={toggleSessions}
+            className="hidden lg:flex w-9 shrink-0 flex-col items-center gap-2 py-2.5 border-r border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-2)]"
+          >
+            <span className="text-[13px] text-[var(--color-muted)]">»</span>
+            <span
+              className="text-[10px] tabular-nums px-1.5 rounded-full"
+              style={{ background: "var(--color-surface-2)", color: "var(--color-muted)" }}
+            >
+              {sessions.length}
+            </span>
           </button>
-        </div>
+        ) : (
+        <aside className="lg:w-64 shrink-0 border-b lg:border-b-0 lg:border-r border-[var(--color-border)] bg-[var(--color-surface)] flex flex-col min-h-0 relative">
+          {/* 收起按钮：列表头部右侧，常驻可见 */}
+          <button
+            data-tap
+            title="收起会话列表"
+            onClick={toggleSessions}
+            className="hidden lg:flex absolute top-2.5 right-2 z-10 w-7 h-7 items-center justify-center rounded-md text-[12px] text-[var(--color-muted)] hover:bg-[var(--color-surface-2)]"
+          >
+            «
+          </button>
+          <div className="p-3 border-b border-[var(--color-border)] lg:pr-10">
+            <button className="btn btn-primary w-full" onClick={() => void newChat()}>
+              + 新对话
+            </button>
+          </div>
         <div className="flex-1 overflow-auto p-2 space-y-0.5">
           {sessions.length === 0 ? (
             <p className="text-[12px] text-[var(--color-muted)] p-2">还没有对话</p>
@@ -560,9 +612,10 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             ))
           )}
         </div>
-      </aside>
+        </aside>
+        )}
 
-      {/* ── 对话区 ───────────────────────────────────────────── */}
+        {/* ── 对话区 ───────────────────────────────────────────── */}
       <section className="flex-1 flex flex-col min-h-0 min-w-0">
         <header className="px-4 py-3 border-b border-[var(--color-border)] flex items-center gap-3 flex-wrap">
           {/* 受外层控制时不显示自带的助手下拉 —— 参与者条是唯一入口，
@@ -659,9 +712,10 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               })}
 
               {/* 生成中：实时分色显示执行过程（思考 / 工具 / 结果 / 回答） */}
-              {/* 手机/平板：画面卡片在消息流里（xl 起右栏 Chrome 流是主形态，不重复显示） */}
+              {/* 手机/平板：画面卡片在消息流里；桌面只在右栏收起时用它顶替
+                  （避免同一画面两处重复） */}
               {busy && browserFrame && (
-                <div className="xl:hidden">
+                <div className={railCollapsed ? "" : "xl:hidden"}>
                 <BrowserLive
                   frame={browserFrame}
                   onUserClick={async (x, y) => {
@@ -873,10 +927,24 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
         </div>
       </section>
 
-      {/* 右栏 Chrome 操作流（xl 起常驻；手机/平板用消息流内的浏览器卡片 —— 同一帧两个视口形态） */}
+      {/* 右栏 Chrome 操作流（xl 起常驻，可收起；手机/平板用消息流内的浏览器卡片） */}
+      {railCollapsed ? (
+        <button
+          data-tap
+          title="展开 Chrome 操作流"
+          onClick={toggleRail}
+          className="hidden xl:flex w-9 shrink-0 flex-col items-center gap-2 py-2.5 border-l border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-2)]"
+        >
+          <span className="text-[13px] text-[var(--color-muted)]">«</span>
+          {busy && browserFrame && (
+            <span className="w-2 h-2 rounded-full live-dot" style={{ background: "var(--color-accent)" }} />
+          )}
+        </button>
+      ) : (
       <ProcessRail
         frame={browserFrame}
         busy={busy}
+        onCollapse={toggleRail}
         onUserClick={async (x, y) => {
           if (!liveRunId) return;
           await fetch(`/api/runs/${liveRunId}/browser-input`, {
@@ -894,6 +962,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
           }).catch(() => {});
         }}
       />
+      )}
     </div>
   );
 }
