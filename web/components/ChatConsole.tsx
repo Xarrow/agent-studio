@@ -443,9 +443,52 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     fb.warn("已停止", "这一轮已中止；输入还在，改改再发就行");
   };
 
-  /** 选了文件 → 上传 → 进待发清单（路径注入方案，见 send()） */
+  /** 选了文件 / 粘贴图片 / 拖进来 → 上传 → 进待发清单（路径注入方案，见 send()） */
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [uploading, setUploading] = useState(false);
+  /** 文本域：自动长高用 */
+  const taRef = useRef<HTMLTextAreaElement | null>(null);
+  /** 有文件被拖到输入坞上方（给边框高亮 + 「松手即添加」提示） */
+  const [dragging, setDragging] = useState(false);
+  /** 运行停在等授权时输入坞不可用 —— 否则会又起一轮，和暂停的那一轮抢同一个会话 */
+  const paused = !!hitl;
+
+  /**
+   * 文本域跟着内容长高（1 行起步，最多到视口 40%）。
+   * 不做这个的话长输入会缩在单行里靠内部滚动条看，写法一多就瞎。
+   */
+  useEffect(() => {
+    const el = taRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    const cap = Math.max(160, Math.round(window.innerHeight * 0.4));
+    el.style.height = `${Math.min(el.scrollHeight, cap)}px`;
+  }, [input, paused]);
+
+  /** 统一入口：点「+」/ 粘贴 / 拖拽三条路都走这里 */
+  const addFiles = async (files: FileList | File[] | null) => {
+    const list = files ? [...files] : [];
+    if (list.length === 0) return;
+    setUploading(true);
+    try {
+      const items = await Promise.all(list.map((f) => api.uploadFile(f)));
+      setPendingFiles((prev) => [
+        ...prev,
+        ...items.map((it) => ({
+          name: it.name,
+          path: it.path,
+          kind: (it.kind === "image" ? "image" : "file") as "image" | "file",
+          url: it.url,
+          size: it.size,
+        })),
+      ]);
+    } catch (e) {
+      fb.error("附件上传失败", e instanceof Error ? e.message : String(e));
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
 
   // ── 布局开合状态 ────────────────────────────────────────
   // 三块区域各有明确职责，默认值按「一屏最贵的位置给谁」定：
@@ -492,28 +535,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   useEffect(() => {
     if (browserFrame && !railTouched.current) setRailOpen(true);
   }, [browserFrame]);
-  const pickFiles = async (files: FileList | null) => {
-    if (!files || files.length === 0) return;
-    setUploading(true);
-    try {
-      const items = await Promise.all([...files].map((f) => api.uploadFile(f)));
-      setPendingFiles((prev) => [
-        ...prev,
-        ...items.map((it) => ({
-          name: it.name,
-          path: it.path,
-          kind: (it.kind === "image" ? "image" : "file") as "image" | "file",
-          url: it.url,
-          size: it.size,
-        })),
-      ]);
-    } catch (e) {
-      fb.error("附件上传失败", e instanceof Error ? e.message : String(e));
-    } finally {
-      setUploading(false);
-      if (fileRef.current) fileRef.current.value = "";
-    }
-  };
+  /** 兼容旧调用点：input 的 change 事件给的是 FileList */
+  const pickFiles = (files: FileList | null) => void addFiles(files);
 
   /* ------------------------------- 渲染 ------------------------------- */
 
@@ -802,6 +825,9 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                   onBeforeResume={() => attachStream(hitl.runId, liveInput)}
                   onResumed={() => setBusy(true)}
                   onError={(m) => fb.error("恢复失败", m)}
+                  permissionHref={
+                    agentId ? `/agents/detail?id=${agentId}&focus=permission` : undefined
+                  }
                 />
               </div>
             )}
@@ -868,9 +894,34 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             )}
 
             <div className="max-w-3xl mx-auto relative">
+              {/* ── 输入坞 ────────────────────────────────────────
+                  上下结构（上=正文，下=工具栏），不再左右平铺：多行输入时
+                  按钮不会跟着文字跳。发送键用图标表达状态 —— 空闲是圆箭头、
+                  执行中是方块，同一个位置形状变化，不用读字。
+                  三条投喂路径统一走 addFiles：点附件 / 粘贴截图 / 拖文件进来。 */}
               <div
-                className="flex items-end gap-1.5 rounded-2xl border px-2 py-1.5 transition-colors focus-within:border-[var(--color-accent)]"
-                style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+                className="rounded-[18px] border transition-colors"
+                style={{
+                  borderColor: paused
+                    ? "var(--color-warn)"
+                    : dragging
+                      ? "var(--color-accent)"
+                      : "var(--color-border)",
+                  background: "var(--color-surface)",
+                  boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
+                }}
+                onDragOver={(e) => {
+                  if (e.dataTransfer.types.includes("Files")) {
+                    e.preventDefault();
+                    setDragging(true);
+                  }
+                }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragging(false);
+                  void addFiles(e.dataTransfer.files);
+                }}
               >
                 <input
                   ref={fileRef}
@@ -879,33 +930,31 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                   className="hidden"
                   onChange={(e) => void pickFiles(e.target.files)}
                 />
-                <button
-                  className="w-11 h-11 sm:w-9 sm:h-9 shrink-0 flex items-center justify-center rounded-xl text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
-                  title="附件（助手会用 Read 工具读）"
-                  disabled={busy || uploading}
-                  onClick={() => fileRef.current?.click()}
-                >
-                  {uploading ? (
-                    "…"
-                  ) : (
-                    /* 内联 SVG 回形针（禁 emoji 图标） */
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-                    </svg>
-                  )}
-                </button>
                 <textarea
-                  className="flex-1 resize-none text-[13.5px] py-2 bg-transparent outline-none border-0"
+                  ref={taRef}
                   rows={1}
-                  style={{ maxHeight: "10rem" }}
+                  className="block w-full resize-none bg-transparent border-0 outline-none px-3.5 pt-2.5 pb-1 text-[13.5px] leading-6"
+                  style={{ maxHeight: "40vh" }}
                   placeholder={
-                    pendingFiles.length > 0
-                      ? `附了 ${pendingFiles.length} 个文件，说点什么…`
-                      : "说点什么…（Enter 发送，Shift + Enter 换行）"
+                    paused
+                      ? "运行暂停，先处理上面的授权…"
+                      : busy
+                        ? "执行中…可以继续打字，等它跑完再发"
+                        : pendingFiles.length > 0
+                          ? `附了 ${pendingFiles.length} 个文件，说点什么…`
+                          : "说点什么…"
                   }
                   value={input}
-                  disabled={busy}
+                  disabled={busy || paused}
                   {...ime.props}
+                  onPaste={(e) => {
+                    // 截图直接 Cmd/Ctrl+V —— 比先存成文件再点附件顺手得多
+                    const files = [...(e.clipboardData?.files ?? [])];
+                    if (files.length > 0) {
+                      e.preventDefault();
+                      void addFiles(files);
+                    }
+                  }}
                   onChange={(e) => {
                     setInput(e.target.value);
                     setSlashOpen(e.target.value.startsWith("/"));
@@ -920,20 +969,91 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     }
                   }}
                 />
-                {busy ? (
-                  <button data-tap className="btn shrink-0" onClick={() => void stop()}>
-                    停止
-                  </button>
-                ) : (
+                <div className="flex items-center gap-1 px-1.5 pb-1.5 pt-0.5">
                   <button
-                    className="btn btn-primary shrink-0"
                     data-tap
-                    disabled={!input.trim() && pendingFiles.length === 0}
-                    onClick={() => void send()}
+                    type="button"
+                    className="w-11 h-11 sm:w-8 sm:h-8 shrink-0 flex items-center justify-center rounded-xl text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] disabled:opacity-40"
+                    title="添加附件：也能直接粘贴截图、把文件拖进来"
+                    disabled={busy || paused || uploading}
+                    onClick={() => fileRef.current?.click()}
                   >
-                    发送
+                    {uploading ? (
+                      <span className="text-[13px]">…</span>
+                    ) : (
+                      /* 内联 SVG 回形针（禁 emoji 图标） */
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                      </svg>
+                    )}
                   </button>
-                )}
+                  <span className="hidden sm:block text-[11.5px] truncate text-[var(--color-muted)]">
+                    {dragging
+                      ? "松手即添加为附件"
+                      : paused
+                        ? "运行暂停，等你授权"
+                        : busy
+                          ? "助手正在执行…"
+                          : ""}
+                  </span>
+                  <div className="ml-auto flex items-center gap-1">
+                    {paths && (
+                      <button
+                        data-tap
+                        type="button"
+                        className="w-11 h-11 sm:w-8 sm:h-8 shrink-0 flex items-center justify-center rounded-xl hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
+                        style={{ color: showPaths ? "var(--color-accent)" : "var(--color-muted)" }}
+                        title="对话存在哪、助手在哪干活"
+                        aria-expanded={showPaths}
+                        onClick={() => setShowPaths((v) => !v)}
+                      >
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <circle cx="12" cy="12" r="9" />
+                          <path d="M12 11v5M12 8h.01" />
+                        </svg>
+                      </button>
+                    )}
+                    {busy ? (
+                      <button
+                        data-tap
+                        type="button"
+                        title="停止这一轮"
+                        onClick={() => void stop()}
+                        className="w-11 h-11 sm:w-8 sm:h-8 shrink-0 flex items-center justify-center rounded-full border"
+                        style={{
+                          borderColor: "var(--color-border)",
+                          background: "var(--color-surface-2)",
+                          color: "var(--color-err)",
+                        }}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+                          <rect x="1.5" y="1.5" width="9" height="9" rx="1.5" fill="currentColor" />
+                        </svg>
+                      </button>
+                    ) : (
+                      <button
+                        data-tap
+                        type="button"
+                        title={paused ? "运行暂停，先处理授权" : "发送（Enter）"}
+                        disabled={paused || (!input.trim() && pendingFiles.length === 0)}
+                        onClick={() => void send()}
+                        className="w-11 h-11 sm:w-8 sm:h-8 shrink-0 flex items-center justify-center rounded-full transition-colors disabled:opacity-40"
+                        style={{
+                          background:
+                            input.trim() || pendingFiles.length > 0
+                              ? "var(--color-accent)"
+                              : "var(--color-surface-2)",
+                          color: input.trim() || pendingFiles.length > 0 ? "#fff" : "var(--color-muted)",
+                        }}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M12 19V5" />
+                          <path d="M5 12l7-7 7 7" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
               {slashOpen && !busy && (
                 <SlashMenu
@@ -949,18 +1069,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             </div>
 
             <div className="max-w-3xl mx-auto mt-1.5 flex items-center gap-3 text-[11.5px] text-[var(--color-muted)]">
-              <span className="hidden sm:inline">Enter 发送 · Shift + Enter 换行</span>
-              {paths && (
-                <button
-                  type="button"
-                  data-tap
-                  className="ml-auto hover:text-[var(--color-text)] hover:underline"
-                  title="对话存在哪、助手在哪干活"
-                  onClick={() => setShowPaths((v) => !v)}
-                >
-                  存储位置
-                </button>
-              )}
+              <span className="hidden sm:inline">Enter 发送 · Shift + Enter 换行 · 可直接粘贴截图</span>
+              {paused && <span className="ml-auto">运行暂停中</span>}
             </div>
 
             {showPaths && paths && (

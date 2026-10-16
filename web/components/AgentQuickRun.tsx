@@ -138,16 +138,31 @@ export function AgentQuickRun({
     }
   };
 
+  const taRef = useRef<HTMLTextAreaElement | null>(null);
+  useEffect(() => {
+    const el = taRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    const cap = Math.max(140, Math.round(window.innerHeight * 0.4));
+    el.style.height = `${Math.min(el.scrollHeight, cap)}px`;
+  }, [input]);
+
   const steps = eventsToSteps(events, input);
   const done = !busy && events.length > 0;
 
   return (
     <div className="space-y-3">
-      <div className="flex items-end gap-2">
+      {/* 输入坞：与对话页同一套形态（上下结构 + 右下角动作），
+          不然同一个人在两页里看到两种输入框 */}
+      <div
+        className="rounded-[18px] border"
+        style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+      >
         <textarea
-          className="input flex-1 resize-none text-[13px]"
+          ref={taRef}
+          className="block w-full resize-none bg-transparent border-0 outline-none px-3.5 pt-2.5 pb-1 text-[13.5px] leading-6"
           rows={1}
-          style={{ maxHeight: "6rem" }}
+          style={{ maxHeight: "40vh" }}
           placeholder="给它一句话，看它这一轮怎么干（不存会话）"
           value={input}
           disabled={busy || disabled}
@@ -161,21 +176,33 @@ export function AgentQuickRun({
             }
           }}
         />
-        {busy ? (
-          <button
-            data-tap
-            className="btn shrink-0"
-            onClick={() => {
-              if (runId) void api.abortRun(runId);
-            }}
-          >
-            停止
-          </button>
-        ) : (
-          <button data-tap className="btn btn-primary shrink-0" disabled={!input.trim() || disabled} onClick={() => void start()}>
-            试跑
-          </button>
-        )}
+        <div className="flex items-center gap-2 px-2 pb-2 pt-0.5">
+          <span className="text-[11.5px] truncate text-[var(--color-muted)]">
+            {busy ? "跑着呢…" : "Enter 试跑 · Shift + Enter 换行"}
+          </span>
+          <div className="ml-auto">
+            {busy ? (
+              <button
+                data-tap
+                className="btn btn-sm shrink-0"
+                onClick={() => {
+                  if (runId) void api.abortRun(runId);
+                }}
+              >
+                停止
+              </button>
+            ) : (
+              <button
+                data-tap
+                className="btn btn-sm btn-primary shrink-0"
+                disabled={!input.trim() || disabled}
+                onClick={() => void start()}
+              >
+                试跑
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
       {unsaved && (

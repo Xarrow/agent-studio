@@ -220,6 +220,28 @@ export function AgentDetail({
   }, [def]);
 
   /**
+   * 从对话页的「总是允许？去助手权限里配」跳过来（`?focus=permission`）：
+   * 滚到权限块并高亮一下 —— 不然用户点完链接落在一个几百行长的配置页顶部，
+   * 还得自己找「权限」在哪，等于把问题丢回给他。
+   */
+  useEffect(() => {
+    if (!def) return;
+    const target = new URLSearchParams(window.location.search).get("focus");
+    if (target !== "permission") return;
+    const timer = setTimeout(() => {
+      const el = document.querySelector('[data-focus="permission"]');
+      if (!el) return;
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      (el as HTMLElement).style.transition = "box-shadow .4s";
+      (el as HTMLElement).style.boxShadow = "0 0 0 3px color-mix(in srgb, var(--color-accent) 35%, transparent)";
+      setTimeout(() => {
+        (el as HTMLElement).style.boxShadow = "none";
+      }, 2200);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [def]);
+
+  /**
    * 是否有未保存的改动。
    *
    * ⚠️ 必须定义在**下面这个 effect 之前**：effect 的依赖数组 `[dirty]` 是在
@@ -707,6 +729,9 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
 
               {/* 权限 scope —— 由运行时能力决定是否出现（支持人工确认 = 有权限机制） */}
               {caps?.supports_hitl && (
+                /* data-focus：对话页的「总是允许？去助手权限里配」会带
+                   ?focus=permission 跳过来，靠这个锚点滚到位并高亮一下 */
+                <div data-focus="permission">
                 <PermissionScope
                   conf={permConf}
                   toolNames={selectedToolNames}
@@ -722,6 +747,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                     })
                   }
                 />
+                </div>
               )}
             </div>
 

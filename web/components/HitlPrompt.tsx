@@ -1,15 +1,29 @@
 "use client";
 
 /**
- * 人工确认条 —— 运行暂停、等你授权时出现。
+ * 授权请求条 —— 运行暂停、等你点头时出现
+ * ================================
  *
  * 为什么做成共享组件
  * ----------------
  * 「对话」「多 Agent 编排」「测试 agent（试跑）」本质是同一件事：**运行中途要授权**。
- * 三个地方必须长得一样、点起来也一样。之前只有试跑页有一份实现，重构时丢了 ——
- * 于是三个地方集体卡死：后端一直支持 resume（`POST /api/runs/resume/{id}`，
- * 无状态恢复：重新编译 Agent 再回灌确认结果），但**没有任何界面能点**。
- * 模型只能输出"我在等你的许可"，用户无从下手。
+ * 三个地方必须长得一样、点起来也一样。后端一直支持 resume
+ * （`POST /api/runs/resume/{id}`，无状态恢复：重新编译 Agent 再回灌确认结果），
+ * 界面上少一处就没法继续。
+ *
+ * 设计原则（为什么长这样）
+ * --------------------
+ * 1. **说人话**：标题是「执行命令 / 写入文件」这种动作，不是 `Bash`。
+ *    原始工具名只作小字留着（排查要用）。参数挑要害那一个显示，想看全部再展开
+ *    —— 别一上来把 JSON 摊给用户审。
+ * 2. **风险分级 + 危险操作二次确认**：`rm -rf /`、`sudo`、`DROP TABLE`、
+ *    `curl | sh` 这类标红，允许要**点两下**（第一下是意愿、第二下是确认）。
+ *    正常操作（ls / 读文件）不标红 —— 什么都标红 = 用户闭眼点，护栏就失效了。
+ * 3. **点完就用不了**：提交后整块收成一行状态。resume 之后模型可能立刻又要一次
+ *    授权（先写脚本、再跑脚本是常态），旧条若还能点，用户手快点的就是旧条 ——
+ *    回灌上一轮的 tool_call id，AgentScope 直接拒绝、run 报错（实测过：
+ *    一条 run 连要 5 次确认，第 4 次的确认条点在了第 5 次的等待上）。
+ * 4. **拒绝也要给出路**：总是允许给成真链接（助手配置页的权限段），不是一句空话。
  *
  * 后端交互（三处一致）
  * ------------------
@@ -22,53 +36,7 @@
 import { useState } from "react";
 
 import { api } from "@/lib/api";
-
-type ToolCall = { id?: string; name?: string; input?: unknown };
-
-/** 事件里的 input 可能是**对象**，也可能是**JSON 字符串**（AgentScope 两种都给过） */
-function parseInput(raw: unknown): Record<string, unknown> | null {
-  if (raw && typeof raw === "object") return raw as Record<string, unknown>;
-  if (typeof raw === "string") {
-    try {
-      const parsed = JSON.parse(raw) as unknown;
-      return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
-    } catch {
-      return null; // 不是 JSON，交给调用方按原文显示
-    }
-  }
-  return null;
-}
-
-/**
- * 把待确认的调用提炼成"工具 + 关键参数"，用人话显示出来。
- *
- * 坑：`input` 有时是 JSON **字符串**（`"{\"command\": \"mkdir -p x\"}"`）。
- * 直接当对象用会得到 `0: {` 这种鬼东西 —— 必须先将它解析成对象。
- */
-export function describeHitl(
-  payload: Record<string, unknown> | null | undefined,
-): { tool: string; detail: string }[] {
-  const calls = (payload?.tool_calls as ToolCall[] | undefined) ?? [];
-  return calls.map((tc) => {
-    const tool = tc.name ?? "(未知工具)";
-    const input = parseInput(tc.input);
-    if (!input) {
-      // 解析不出对象就把原文摆出来（宁可丑，也别显示错）
-      const raw = typeof tc.input === "string" ? tc.input : JSON.stringify(tc.input ?? {});
-      return { tool, detail: raw.slice(0, 200) };
-    }
-    // 参数里挑最像"要害"的那个显示；挑不到就把整个入参摊平
-    const key =
-      ["command", "file_path", "path", "url", "query"].find(
-        (k) => typeof input[k] === "string",
-      ) ?? Object.keys(input)[0];
-    const detail =
-      key && input[key] !== undefined
-        ? `${key}: ${String(input[key])}`
-        : JSON.stringify(input).slice(0, 200);
-    return { tool, detail };
-  });
-}
+import { highestRisk, summarizeCalls } from "@/lib/hitl";
 
 export function HitlPrompt({
   runId,
@@ -79,36 +47,38 @@ export function HitlPrompt({
   onResumed,
   /** 恢复请求失败 */
   onError,
+  /** 「总是允许去哪配」的链接（助手配置页的权限段）。不给就不显示这句 */
+  permissionHref,
+  /** 紧凑模式：内嵌在时间线/详情里时用（少些留白） */
+  compact,
 }: {
   runId: string;
   payload: Record<string, unknown> | null | undefined;
   onBeforeResume?: () => void;
   onResumed?: (confirm: boolean) => void;
   onError?: (message: string) => void;
+  permissionHref?: string;
+  compact?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
-  /** 已提交过的那次决定 —— 提交后按钮组变状态条，不能再点第二次。
-   *
-   * 为什么要锁：resume 之后 run 继续、模型可能**又要一次授权**（先写脚本、
-   * 再跑脚本是常态）。旧确认条若还在原地可点，用户看到新提示时手一快点的
-   * 是**旧条**——回灌的是上一轮的 tool_call id，AgentScope 直接拒绝：
-   * "Received UserConfirmResultEvent with tool call ids ... not waiting
-   * for confirmation"，run 就此报 error（实测现场：一条 run 连要 5 次确认，
-   * 第 4 次的确认条点在了第 5 次的等待上）。父组件在 run 再次暂停时会用
-   * **新 payload** 重新挂一张新条，各管各的。 */
+  /** 已提交过的那次决定 —— 提交后整块收成状态行，不能再点第二次（见文件头第 3 条） */
   const [sent, setSent] = useState<null | boolean>(null);
   const [err, setErr] = useState<string | null>(null);
-  const items = describeHitl(payload);
+  /** 危险操作走到第二步了（第一下是意愿，第二下才是确认） */
+  const [confirming, setConfirming] = useState(false);
+  /** 展开看完整参数的那一条 */
+  const [showFull, setShowFull] = useState<number | null>(null);
+  const calls = summarizeCalls(payload);
+  const danger = highestRisk(calls) === "danger";
+  const risky = calls.filter((c) => c.risk?.level === "danger");
 
   const resume = async (confirm: boolean) => {
     if (busy || sent !== null) return;
     setBusy(true);
     setSent(confirm);
     setErr(null);
-    // 先接流，再恢复 —— 顺序不能反
-    onBeforeResume?.();
+    onBeforeResume?.(); // 先接流，再恢复 —— 顺序不能反
     try {
-      // 有明细才回灌；没有就让服务端用它自己存的那份（发 null 没有意义）
       await api.resumeRun(runId, {
         confirm,
         ...(payload && Object.keys(payload).length ? { payload } : {}),
@@ -118,48 +88,201 @@ export function HitlPrompt({
       const msg = e instanceof Error ? e.message : String(e);
       setErr(msg);
       setSent(null); // 没发成功，允许重试
+      setConfirming(false);
       onError?.(msg);
     } finally {
       setBusy(false);
     }
   };
 
+  /* ── 已提交：收成一行状态，不再可点 ───────────────────────── */
+  if (sent !== null) {
+    const color = sent ? "var(--color-ok)" : "var(--color-err)";
+    return (
+      <div
+        className="flex items-center gap-2 rounded-xl border px-3 py-2 text-[12.5px] flex-wrap"
+        style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
+      >
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke={color}
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          {sent ? <path d="M20 6L9 17l-5-5" /> : <><path d="M18 6L6 18" /><path d="M6 6l12 12" /></>}
+        </svg>
+        <span style={{ color }}>{sent ? "已允许，继续执行…" : "已拒绝，等它收尾…"}</span>
+        {calls.length > 0 && (
+          <span className="text-[var(--color-muted)] truncate">
+            {calls.map((c) => c.label).join("、")}
+          </span>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div
-      className="rounded-md p-3"
+      className="rounded-xl overflow-hidden border"
       style={{
-        background: "color-mix(in srgb, var(--color-warn) 10%, transparent)",
-        border: "1px solid var(--color-warn)",
+        borderColor: danger ? "var(--color-err)" : "var(--color-warn)",
+        background: "var(--color-surface)",
+        boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
       }}
     >
-      <div className="text-[12px] font-medium mb-1" style={{ color: "var(--color-warn)" }}>
-        它想执行需要你授权的操作，等你点头才继续
-      </div>
-
-      <div className="space-y-1.5 mb-3">
-        {items.length === 0 ? (
-          <div className="text-[12px] text-[var(--color-muted)]">（没有解析出具体调用）</div>
-        ) : (
-          items.map((it, i) => (
-            <div key={i} className="rounded bg-[var(--color-surface-2)] px-2 py-1.5">
-              <div className="text-[12px] font-medium mono">{it.tool}</div>
-              <div className="text-[12px] text-[var(--color-muted)] mono break-all">
-                {it.detail}
-              </div>
-            </div>
-          ))
+      {/* 顶部：谁在等、几个操作、有没有危险 */}
+      <div
+        className="flex items-center gap-2 px-3 py-2 flex-wrap"
+        style={{
+          background: danger
+            ? "color-mix(in srgb, var(--color-err) 12%, transparent)"
+            : "color-mix(in srgb, var(--color-warn) 14%, transparent)",
+        }}
+      >
+        <svg
+          width="15"
+          height="15"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke={danger ? "var(--color-err)" : "var(--color-warn)"}
+          strokeWidth="1.9"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <rect x="4" y="10.5" width="16" height="10" rx="2" />
+          <path d="M8 10.5V7a4 4 0 0 1 8 0v3.5" />
+        </svg>
+        <span
+          className="text-[13px] font-medium"
+          style={{ color: danger ? "var(--color-err)" : "var(--color-warn)" }}
+        >
+          需要你授权才能继续
+        </span>
+        <span className="text-[12px] text-[var(--color-muted)]">
+          {calls.length > 0 ? `${calls.length} 个操作` : "助手发起了授权请求"}
+        </span>
+        {danger && (
+          <span
+            className="ml-auto rounded-full px-2 py-[2px] text-[11px] font-medium"
+            style={{ background: "var(--color-err)", color: "#fff" }}
+          >
+            危险操作
+          </span>
         )}
       </div>
 
-      {err && <div className="text-[12px] text-[var(--color-err)] mb-2">恢复失败：{err}</div>}
+      {/* 中间：一条一个操作 */}
+      {calls.length > 0 && (
+        <div className={compact ? "px-3 py-2 space-y-2" : "px-3 py-2.5 space-y-2.5"}>
+          {calls.map((c, i) => (
+            <div key={i} className="rounded-lg px-2.5 py-2" style={{ background: "var(--color-surface-2)" }}>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[13px] font-medium">{c.label}</span>
+                {c.raw && c.raw !== c.label && (
+                  <span className="mono text-[10.5px] text-[var(--color-muted)]">{c.raw}</span>
+                )}
+                {c.risk?.level === "danger" && (
+                  <span
+                    className="rounded-full px-1.5 py-[1px] text-[10.5px] font-medium"
+                    style={{
+                      background: "color-mix(in srgb, var(--color-err) 16%, transparent)",
+                      color: "var(--color-err)",
+                    }}
+                  >
+                    危险
+                  </span>
+                )}
+                {c.risk?.level === "caution" && (
+                  <span
+                    className="rounded-full px-1.5 py-[1px] text-[10.5px]"
+                    style={{ background: "var(--color-surface)", color: "var(--color-muted)" }}
+                  >
+                    会改动文件
+                  </span>
+                )}
+              </div>
+              <div className="mono text-[11.5px] mt-1 break-all leading-relaxed">{c.detail}</div>
+              {c.risk?.level === "danger" && (
+                <div className="text-[11.5px] mt-1" style={{ color: "var(--color-err)" }}>
+                  {c.risk.reason}
+                </div>
+              )}
+              <button
+                type="button"
+                data-tap
+                className="text-[11.5px] mt-1 text-[var(--color-muted)] hover:text-[var(--color-text)] hover:underline"
+                onClick={() => setShowFull(showFull === i ? null : i)}
+                aria-expanded={showFull === i}
+              >
+                {showFull === i ? "收起参数" : "看完整参数"}
+              </button>
+              {showFull === i && (
+                <pre
+                  className="mono text-[11px] mt-1.5 rounded-md p-2 overflow-auto max-h-64 whitespace-pre-wrap break-all"
+                  style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)" }}
+                >
+                  {c.full}
+                </pre>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
-      <div className="flex items-center gap-2 flex-wrap">
-        {sent === null ? (
+      {err && (
+        <div className="px-3 pb-1 text-[12px]" style={{ color: "var(--color-err)" }}>
+          恢复失败：{err}
+        </div>
+      )}
+
+      {/* 底部：动作 */}
+      <div
+        className="flex items-center gap-2 px-3 py-2 flex-wrap border-t"
+        style={{ borderColor: "var(--color-border)" }}
+      >
+        {confirming ? (
+          /* 危险操作第二步：先把后果说清楚，再让点 */
+          <div className="flex items-center gap-2 flex-wrap w-full">
+            <span className="text-[12.5px] font-medium" style={{ color: "var(--color-err)" }}>
+              确认要执行{risky.length > 1 ? "这些" : "这个"}危险操作？
+            </span>
+            <span className="text-[12px] text-[var(--color-muted)]">
+              {risky.map((c) => c.risk?.reason).filter(Boolean).join("；")}
+            </span>
+            <div className="ml-auto flex items-center gap-2">
+              <button
+                data-tap
+                className="btn btn-sm"
+                style={{ background: "var(--color-err)", borderColor: "var(--color-err)", color: "#fff" }}
+                disabled={busy}
+                onClick={() => void resume(true)}
+              >
+                {busy ? "执行中…" : "确认执行"}
+              </button>
+              <button data-tap className="btn btn-sm" disabled={busy} onClick={() => setConfirming(false)}>
+                取消
+              </button>
+            </div>
+          </div>
+        ) : (
           <>
-            <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => void resume(true)}>
-              {busy ? "处理中…" : "允许"}
+            <button
+              data-tap
+              className="btn btn-primary btn-sm"
+              disabled={busy}
+              onClick={() => (danger ? setConfirming(true) : void resume(true))}
+              style={danger ? { background: "var(--color-err)", borderColor: "var(--color-err)" } : undefined}
+            >
+              {busy ? "处理中…" : danger ? "允许执行" : "允许"}
             </button>
             <button
+              data-tap
               className="btn btn-sm"
               style={{ color: "var(--color-err)" }}
               disabled={busy}
@@ -167,22 +290,21 @@ export function HitlPrompt({
             >
               拒绝
             </button>
+            <span className="text-[12px] text-[var(--color-muted)]">
+              拒绝后它会拿到结果、自己换个做法。
+            </span>
+            {permissionHref && (
+              <a
+                href={permissionHref}
+                data-tap
+                className="ml-auto text-[12px] hover:underline"
+                style={{ color: "var(--color-accent)" }}
+              >
+                总是允许？去助手权限里配 →
+              </a>
+            )}
           </>
-        ) : (
-          /* 已提交 —— 状态条代替按钮，等待结果期间不可再点 */
-          <span
-            className="rounded-[6px] px-2 py-1 text-[12px] font-medium"
-            style={{
-              background: "var(--color-surface-2)",
-              color: sent ? "var(--color-ok)" : "var(--color-err)",
-            }}
-          >
-            {sent ? "已允许，继续执行…" : "已拒绝，等它收尾…"}
-          </span>
         )}
-        <span className="text-[12px] text-[var(--color-muted)]">
-          不想每次都问？去助手的「权限」里调范围。
-        </span>
       </div>
     </div>
   );

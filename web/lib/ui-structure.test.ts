@@ -158,3 +158,54 @@ test("工作表（work-paths）是唯一判定源：组件里不得再各写一�
     assert.doesNotMatch(src, /const WORK_(IMG|PATH)_RE/, `${f} 里又自建了产物正则（应走 lib/work-paths）`);
   }
 });
+
+test("输入坞：图标化发送/停止 + 自动长高 + 粘贴/拖拽投喂附件", () => {
+  const src = read("components/ChatConsole.tsx");
+  // 发送不再是「一个写字的按钮」，而是同一个位置的圆形箭头（执行中变方块）
+  assert.doesNotMatch(src, />\s*发送\s*</, "发送键应当是图标（形状表达状态），不再占一个写「发送」的按钮");
+  assert.match(src, /title=\{paused \? "运行暂停，先处理授权" : "发送（Enter）"\}/);
+  assert.match(src, /title="停止这一轮"/);
+  // 自动长高：不做的话长输入缩在单行里靠内部滚动条看
+  assert.match(src, /const taRef = useRef<HTMLTextAreaElement \| null>\(null\)/);
+  assert.match(src, /el\.style\.height = `\$\{Math\.min\(el\.scrollHeight, cap\)\}px`/);
+  // 三条投喂路径统一走 addFiles
+  assert.match(src, /const addFiles = async \(files: FileList \| File\[\] \| null\)/);
+  assert.match(src, /onPaste=\{\(e\) => \{/, "应当支持直接粘贴截图");
+  assert.match(src, /onDrop=\{\(e\) => \{/, "应当支持把文件拖进输入坞");
+  assert.match(src, /void addFiles\(e\.dataTransfer\.files\)/);
+});
+
+test("输入坞：运行暂停（等授权）时禁用，避免又起一轮抢同一个会话", () => {
+  const src = read("components/ChatConsole.tsx");
+  assert.match(src, /const paused = !!hitl;/);
+  assert.match(src, /disabled=\{busy \|\| paused\}/);
+  assert.match(src, /运行暂停，先处理上面的授权…/);
+});
+
+test("授权条：判定走 lib/hitl，危险操作要两步，参数可展开，拒绝有出路", () => {
+  const src = read("components/HitlPrompt.tsx");
+  assert.match(src, /from "@\/lib\/hitl"/, "判定要走共享实现，不能各写一份");
+  assert.match(src, /danger \? setConfirming\(true\) : void resume\(true\)/, "危险操作第一下只是进入确认态");
+  assert.match(src, /确认要执行\{risky\.length > 1 \? "这些" : "这个"\}危险操作？/, "第二步要把后果说清楚");
+  assert.match(src, /看完整参数/, "长命令要能展开看全文（不能只给截断的 200 字）");
+  assert.match(src, /permissionHref/, "「总是允许」要给真链接");
+  assert.match(src, /sent !== null/, "提交后要收成状态行，不能还能再点");
+  assert.doesNotMatch(src, /它想执行需要你授权的操作，等你点头才继续/, "旧的整句标题应当被说人话的版本取代");
+});
+
+test("对话页把「总是允许」链接指到配置页权限段，并有滚动定位", () => {
+  const chat = read("components/ChatConsole.tsx");
+  assert.match(chat, /permissionHref=\{/, "对话页要传 permissionHref");
+  assert.match(chat, /focus=permission/);
+  const detail = read("components/AgentDetail.tsx");
+  assert.match(detail, /data-focus="permission"/, "配置页要有锚点");
+  assert.match(detail, /get\("focus"\)/, "配置页要读 focus 参数");
+});
+
+test("试跑页的输入框与对话页同一形态（同一个人不该在两页见到两种输入框）", () => {
+  const src = read("components/AgentQuickRun.tsx");
+  assert.match(src, /rounded-\[18px\]/, "试跑输入框应当是同一个坞形（rounded-[18px]）");
+  assert.match(src, /const taRef = useRef<HTMLTextAreaElement \| null>\(null\)/, "试跑输入框也要自动长高");
+  assert.match(src, /el\.style\.height = `\$\{Math\.min\(el\.scrollHeight, cap\)\}px`/);
+  assert.match(src, /Enter 试跑 · Shift \+ Enter 换行/, "要有快捷键提示（和对话页一个口径）");
+});
