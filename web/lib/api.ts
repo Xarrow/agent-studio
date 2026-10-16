@@ -6,6 +6,7 @@ import type {
   EvalRunRead,
   EvalSuiteRead,
   GuardrailsRead,
+  SkillRepoScan,
   UsageBucket,
   WorkflowAuto,
   ActivityList,
@@ -433,6 +434,29 @@ export const api = {
     post<{ count: number; items: { id: string; name: string }[] }>(
       "/api/skills/import",
       body,
+    ),
+  /** 预览仓库里有哪些技能（= `npx skills add owner/repo --list`） */
+  scanSkillRepo: (body: { ref: string; ref_pin?: string }) =>
+    post<SkillRepoScan>("/api/skills/scan", body),
+  /** 从仓库安装（= `npx skills add owner/repo`，可带选中的 paths / --skill） */
+  installSkillRepo: (body: {
+    ref: string;
+    ref_pin?: string;
+    paths?: string[];
+    skill?: string;
+    all?: boolean;
+  }) =>
+    post<{
+      repo: string;
+      ref: string;
+      sha: string | null;
+      count: number;
+      items: { id: string; name: string; updated: boolean; path: string }[];
+    }>("/api/skills/install", body),
+  /** 按安装时记下的来源重装（= 更新到最新） */
+  reinstallSkill: (id: string) =>
+    post<{ ok: boolean; id: string; name: string; ref: string; sha: string | null }>(
+      `/api/skills/${id}/reinstall`,
     ),
 
   // Run

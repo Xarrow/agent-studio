@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api, fmt } from "@/lib/api";
-import type { Skill } from "@/lib/types";
+import { isImeEvent } from "@/lib/ime";
+import type { Skill, SkillRepoScan } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
 import { Hint, HINTS } from "@/components/ui/hint";
 import { DLG_BACKDROP, DLG_CARD } from "@/components/ui/kit";
@@ -39,6 +40,23 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /** 按安装时记下的来源重新装一遍（公司/社区仓库更新了就能一键拉新版） */
+  const [updating, setUpdating] = useState(false);
+  const update = async (s: Skill) => {
+    setUpdating(true);
+    try {
+      const r = await api.reinstallSkill(s.id);
+      const fresh = await api.skill(s.id);
+      setDetail(fresh);
+      await load();
+      fb.success(`「${s.name}」已更新`, `${r.ref}${r.sha ? " · " + r.sha.slice(0, 7) : ""}`);
+    } catch (e) {
+      fb.error("更新失败", e instanceof Error ? e.message : String(e));
+    } finally {
+      setUpdating(false);
+    }
+  };
 
   const remove = async (s: Skill) => {
     const ok = await fb.confirm({
@@ -131,17 +149,44 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
           {detail ? (
             <>
               <div className="flex items-start justify-between mb-3">
-                <div>
+                <div className="min-w-0">
                   <h2 className="text-[15px] font-medium">{detail.name}</h2>
-                  {typeof detail.source?.url === "string" && (
-                    <div className="text-[12px] text-[var(--color-muted)] mono mt-0.5 truncate">
-                      {detail.source.url}
-                      {typeof detail.source?.sha === "string" &&
-                        ` @ ${detail.source.sha.slice(0, 8)}`}
+                  {String(detail.source?.repo ?? "") !== "" ? (
+                    /* 仓库装的：显示 owner/repo@版本 + commit，并提供「更新」——
+                       来源记全了才有更新可言（内联手写的没有） */
+                    <div className="text-[12px] text-[var(--color-muted)] mt-0.5 flex items-center gap-1.5 flex-wrap">
+                      {typeof detail.source?.url === "string" && (
+                        <a
+                          href={String(detail.source.url)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mono hover:underline"
+                          style={{ color: "var(--color-accent)" }}
+                        >
+                          {String(detail.source.repo)}
+                        </a>
+                      )}
+                      {typeof detail.source?.ref === "string" && <span className="tag">{String(detail.source.ref)}</span>}
+                      {typeof detail.source?.sha === "string" && String(detail.source.sha) && (
+                        <span className="mono text-[11px]">{String(detail.source.sha).slice(0, 7)}</span>
+                      )}
                     </div>
+                  ) : (
+                    typeof detail.source?.url === "string" && (
+                      <div className="text-[12px] text-[var(--color-muted)] mono mt-0.5 truncate">
+                        {detail.source.url}
+                        {typeof detail.source?.sha === "string" &&
+                          ` @ ${detail.source.sha.slice(0, 8)}`}
+                      </div>
+                    )
                   )}
                 </div>
                 <div className="flex gap-2 shrink-0">
+                  {String(detail.source?.repo ?? "") !== "" && (
+                    <button className="btn" disabled={updating} onClick={() => void update(detail)}>
+                      {updating ? "更新中…" : "更新"}
+                    </button>
+                  )}
                   <button className="btn" onClick={() => setEditing(detail)}>
                     编辑
                   </button>
@@ -214,6 +259,52 @@ function ImportDialog({
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // ── 仓库安装：一条引用 → 预览 → 勾选装（对应 npx skills add owner/repo）──
+  /** 引用：owner/repo、owner/repo/skills/名字、owner/repo@v1.2、GitHub 链接都认 */
+  const [repoRef, setRepoRef] = useState("");
+  const [repoPin, setRepoPin] = useState("");
+  const [scan, setScan] = useState<SkillRepoScan | null>(null);
+  const [picked, setPicked] = useState<string[]>([]);
+  /** 不是 GitHub 的老路（任意 git 主机）：默认收起，需要时才露出来 */
+  const [legacyGit, setLegacyGit] = useState(false);
+
+  const doScan = async () => {
+    setBusy(true);
+    setErr(null);
+    setScan(null);
+    try {
+      const r = await api.scanSkillRepo({ ref: repoRef, ref_pin: repoPin || undefined });
+      setScan(r);
+      // 只有一个技能就直接勾上（大多数技能仓库就是这个形状）
+      setPicked(r.skills.length === 1 ? [r.skills[0].path] : []);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const doInstall = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await api.installSkillRepo({
+        ref: repoRef,
+        ref_pin: repoPin || undefined,
+        paths: picked,
+      });
+      fb.success(
+        r.count > 1 ? `装好 ${r.count} 个 Skill` : `装好 Skill：${r.items[0]?.name ?? ""}`,
+        `${r.repo} @ ${r.ref}`,
+      );
+      onDone();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const submit = async () => {
     setBusy(true);
     setErr(null);
@@ -239,12 +330,16 @@ function ImportDialog({
   return (
     <div className={DLG_BACKDROP}>
       <div className={`${DLG_CARD} max-w-2xl p-5`}>
-        <h2 className="text-[16px] font-medium mb-4">导入 Skill</h2>
+        <h2 className="text-[16px] font-medium mb-1">装 Skill</h2>
+        <p className="text-[12px] text-[var(--color-muted)] mb-4">
+          抄一条 GitHub 引用就行（跟 <span className="mono">npx skills add</span> 一样），
+          也可以给单个 SKILL.md 链接、服务器上的目录，或直接手写一份。
+        </p>
 
         <div className="flex gap-1.5 mb-4">
           {(
             [
-              ["git", "Git 仓库"],
+              ["git", "GitHub 仓库"],
               ["url", "单个 URL"],
               ["local", "服务器本地"],
               ["inline", "手写"],
@@ -263,34 +358,174 @@ function ImportDialog({
         <div className="space-y-3.5">
           {source === "git" && (
             <>
-              <div>
-                <label className="label">仓库地址</label>
-                <input
-                  className="input mono"
-                  value={url}
-                  onChange={(e) => setUrl(e.target.value)}
-                  placeholder="https://github.com/user/awesome-skills"
-                />
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="label">分支 / Tag（可空）</label>
-                  <input
-                    className="input mono"
-                    value={ref}
-                    onChange={(e) => setRef(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="label">子目录（可空，自动扫描 SKILL.md）</label>
-                  <input
-                    className="input mono"
-                    value={subpath}
-                    onChange={(e) => setSubpath(e.target.value)}
-                    placeholder="skills/"
-                  />
-                </div>
-              </div>
+              {!legacyGit ? (
+                <>
+                  <div>
+                    <label className="label">仓库引用</label>
+                    <div className="flex gap-2">
+                      <input
+                        className="input mono flex-1"
+                        value={repoRef}
+                        onChange={(e) => setRepoRef(e.target.value)}
+                        placeholder="tt-a1i/archify"
+                        onKeyDown={(e) => {
+                          // 组字中的 Enter 是输入法选字，不是「预览」
+                          if (e.key === "Enter" && !isImeEvent(e)) {
+                            if (repoRef.trim() && !busy) void doScan();
+                          }
+                        }}
+                      />
+                      <button
+                        className="btn shrink-0"
+                        disabled={busy || !repoRef.trim()}
+                        onClick={() => void doScan()}
+                      >
+                        {busy ? "取回中…" : "预览"}
+                      </button>
+                    </div>
+                    <p className="text-[11.5px] text-[var(--color-muted)] mt-1">
+                      owner/repo，也可以带仓库内目录（owner/repo/skills/web-design）或版本（@v2.16.0）
+                    </p>
+                  </div>
+
+                  {scan && (
+                    <div className="rounded-xl border p-3" style={{ borderColor: "var(--color-border)" }}>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <a
+                          href={scan.web_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mono text-[12.5px] hover:underline"
+                          style={{ color: "var(--color-accent)" }}
+                        >
+                          {scan.repo}
+                        </a>
+                        <span className="tag">{scan.ref}</span>
+                        {scan.sha && <span className="mono text-[11px] text-[var(--color-muted)]">{scan.sha.slice(0, 7)}</span>}
+                        {typeof scan.stars === "number" && (
+                          <span className="text-[11.5px] text-[var(--color-muted)]">★ {scan.stars}</span>
+                        )}
+                        {scan.license && <span className="text-[11.5px] text-[var(--color-muted)]">{scan.license}</span>}
+                      </div>
+                      {scan.description && (
+                        <p className="text-[12px] text-[var(--color-muted)] mt-1">{scan.description}</p>
+                      )}
+                      <div className="mt-2 space-y-1">
+                        {scan.skills.map((it) => {
+                          const on = picked.includes(it.path);
+                          return (
+                            <button
+                              key={it.path || it.name}
+                              type="button"
+                              className="w-full text-left rounded-lg px-2 py-1.5 flex items-start gap-2 hover:bg-[var(--color-surface-2)]"
+                              style={{ background: on ? "color-mix(in srgb, var(--color-accent) 8%, transparent)" : undefined }}
+                              onClick={() =>
+                                setPicked((p) => (on ? p.filter((x) => x !== it.path) : [...p, it.path]))
+                              }
+                            >
+                              <span
+                                className="mt-[3px] w-3.5 h-3.5 rounded-[4px] border shrink-0 flex items-center justify-center"
+                                style={{
+                                  borderColor: on ? "var(--color-accent)" : "var(--color-border)",
+                                  background: on ? "var(--color-accent)" : "transparent",
+                                }}
+                              >
+                                {on && (
+                                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                    <path d="M20 6L9 17l-5-5" />
+                                  </svg>
+                                )}
+                              </span>
+                              <span className="min-w-0">
+                                <span className="text-[13px] font-medium">{it.name}</span>
+                                {it.path && (
+                                  <span className="mono text-[11px] text-[var(--color-muted)] ml-1.5">{it.path}</span>
+                                )}
+                                {it.description && (
+                                  <span className="block text-[12px] text-[var(--color-muted)] line-clamp-2">
+                                    {it.description}
+                                  </span>
+                                )}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div className="flex items-center gap-2 mt-2.5">
+                        <span className="text-[11.5px] text-[var(--color-muted)]">
+                          {picked.length === 0
+                            ? "勾一个再装"
+                            : `已选 ${picked.length} 个 · 附件也会一起搬过来`}
+                        </span>
+                        <button
+                          className="btn btn-primary btn-sm ml-auto"
+                          disabled={busy || picked.length === 0}
+                          onClick={() => void doInstall()}
+                        >
+                          {busy ? "装着呢…" : "装进来"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <div>
+                      <label className="label">版本（可空）</label>
+                      <input
+                        className="input mono"
+                        value={repoPin}
+                        onChange={(e) => setRepoPin(e.target.value)}
+                        placeholder="v2.16.0 / main / commit"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      className="text-[11.5px] text-[var(--color-muted)] hover:underline self-end pb-2"
+                      onClick={() => setLegacyGit(true)}
+                    >
+                      不是 GitHub？用克隆地址
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[12px] text-[var(--color-muted)]">任意 Git 主机</span>
+                    <button
+                      type="button"
+                      className="text-[11.5px] hover:underline"
+                      style={{ color: "var(--color-accent)" }}
+                      onClick={() => setLegacyGit(false)}
+                    >
+                      回到 GitHub 引用
+                    </button>
+                  </div>
+                  <div>
+                    <label className="label">仓库地址</label>
+                    <input
+                      className="input mono"
+                      value={url}
+                      onChange={(e) => setUrl(e.target.value)}
+                      placeholder="https://gitlab.com/user/awesome-skills"
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="label">分支 / Tag（可空）</label>
+                      <input className="input mono" value={ref} onChange={(e) => setRef(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="label">子目录（可空）</label>
+                      <input
+                        className="input mono"
+                        value={subpath}
+                        onChange={(e) => setSubpath(e.target.value)}
+                        placeholder="skills/"
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
             </>
           )}
 
@@ -355,11 +590,15 @@ function ImportDialog({
 
         <div className="flex justify-end gap-2 mt-5">
           <button className="btn" onClick={onClose}>
-            取消
+            {source === "git" && !legacyGit ? "关闭" : "取消"}
           </button>
-          <button className="btn btn-primary" disabled={busy} onClick={submit}>
-            {busy ? "导入中…" : "导入"}
-          </button>
+          {/* GitHub 引用这条路是「预览 → 勾选 → 装进来」，动作在预览卡里，
+              底部不再放一个语义重复的「导入」（它会走另一条老接口） */}
+          {(source !== "git" || legacyGit) && (
+            <button className="btn btn-primary" disabled={busy} onClick={submit}>
+              {busy ? "导入中…" : "导入"}
+            </button>
+          )}
         </div>
       </div>
     </div>

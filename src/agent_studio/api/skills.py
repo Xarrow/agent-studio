@@ -16,7 +16,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..config import settings
 from ..db import get_session
 from ..models import AgentSkill, Skill, now_ms
-from ..schemas import SkillImportRequest, SkillRead, SkillUpdateRequest
+from ..schemas import (
+    SkillImportRequest,
+    SkillInstallRequest,
+    SkillRead,
+    SkillScanRequest,
+    SkillUpdateRequest,
+)
+from ..skills_repo import (
+    fetch_repo_tarball,
+    parse_repo_ref,
+    pick_skills,
+    resolve_head,
+    scan_tarball,
+    tarball_sha,
+)
 
 router = APIRouter(prefix="/api/skills", tags=["skills"])
 
@@ -113,13 +127,7 @@ async def update_skill(
     await session.refresh(row)
 
     # 保存即落盘（与 materialize 端点同逻辑 —— 页面编辑不该要求用户再点一次"落盘"）
-    target = settings.work_dir / "skills" / row.name
-    target.mkdir(parents=True, exist_ok=True)
-    (target / "SKILL.md").write_text(row.content or "", encoding="utf-8")
-    for rel, text in (row.files or {}).items():
-        f = target / rel
-        f.parent.mkdir(parents=True, exist_ok=True)
-        f.write_text(text, encoding="utf-8")
+    await _materialize(row)
 
     return to_read(row)
 
@@ -132,6 +140,54 @@ async def delete_skill(skill_id: str, session: AsyncSession = Depends(get_sessio
     await session.execute(delete(AgentSkill).where(AgentSkill.skill_id == skill_id))
     await session.delete(row)
     await session.commit()
+
+
+# --------------------------------------------------------------------------- #
+# 共用：入库 + 落盘
+# --------------------------------------------------------------------------- #
+async def _materialize(row: Skill) -> Path:
+    """把 Skill 落盘到工作目录（运行时 LocalSkillLoader 读的是这里）。
+
+    **只进 DB 不落盘 = 助手看不见这个 skill** —— 所以导入/编辑/安装三处都要调。
+    """
+    target = settings.work_dir / "skills" / row.name
+    target.mkdir(parents=True, exist_ok=True)
+    (target / "SKILL.md").write_text(row.content or "", encoding="utf-8")
+    for rel, text in (row.files or {}).items():
+        f = target / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(text, encoding="utf-8")
+    return target
+
+
+async def _upsert_skill(
+    session: AsyncSession,
+    *,
+    content: str,
+    files: dict[str, str],
+    fallback_name: str,
+    source_meta: dict,
+) -> tuple[Skill, bool]:
+    """按**名字**幂等：同名视为同一技能的新版本（重装/更新都走这里）。"""
+    name, description = parse_skill_md(content, fallback_name)
+    exists = (await session.execute(select(Skill).where(Skill.name == name))).scalar_one_or_none()
+    if exists is not None:
+        exists.content = content
+        exists.description = description
+        exists.files = files
+        exists.source = source_meta
+        exists.updated_at = now_ms()
+        return exists, True
+    row = Skill(
+        name=name,
+        description=description,
+        source=source_meta,
+        content=content,
+        files=files,
+    )
+    session.add(row)
+    await session.flush()
+    return row, False
 
 
 # --------------------------------------------------------------------------- #
@@ -210,25 +266,45 @@ async def import_skill(
         elif payload.source == "git":
             if not payload.url:
                 raise ValueError("git 模式需要 url")
-            with tempfile.TemporaryDirectory() as tmp:
-                cmd = ["git", "clone", "--depth", "1"]
+            # 优先走 tarball（不依赖 git 二进制、不吃代理的亏，也顺带能认出
+            # owner/repo 简写与网页链接）；失败再退回完整 clone。
+            try:
+                ref = parse_repo_ref(payload.url)
                 if payload.ref:
-                    cmd += ["--branch", payload.ref]
-                cmd += [payload.url, tmp]
-                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
-                if proc.returncode != 0:
-                    raise ValueError(f"git clone 失败: {proc.stderr.strip()[:300]}")
-                items = _collect_from_dir(Path(tmp), payload.subpath)
-                sha = subprocess.run(
-                    ["git", "-C", tmp, "rev-parse", "HEAD"], capture_output=True, text=True
-                ).stdout.strip()
-            source_meta = {
-                "type": "git",
-                "url": payload.url,
-                "ref": payload.ref,
-                "subpath": payload.subpath,
-                "sha": sha,
-            }
+                    ref.ref = payload.ref
+                if payload.subpath:
+                    ref.subpath = payload.subpath
+                data, _url, root = await fetch_repo_tarball(ref)
+                entries = scan_tarball(data, subpath=ref.subpath)
+                items = [{"dir": e.path.rsplit("/", 1)[-1] or e.name, "content": e.content, "files": e.files} for e in entries]
+                source_meta = {
+                    "type": "repo",
+                    "repo": ref.slug,
+                    "ref": ref.ref or "HEAD",
+                    "sha": tarball_sha(root),
+                    "path": ref.subpath,
+                    "url": ref.web_url,
+                }
+            except (ValueError, httpx.HTTPError):
+                with tempfile.TemporaryDirectory() as tmp:
+                    cmd = ["git", "clone", "--depth", "1"]
+                    if payload.ref:
+                        cmd += ["--branch", payload.ref]
+                    cmd += [payload.url, tmp]
+                    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+                    if proc.returncode != 0:
+                        raise ValueError(f"git clone 失败: {proc.stderr.strip()[:300]}")
+                    items = _collect_from_dir(Path(tmp), payload.subpath)
+                    sha = subprocess.run(
+                        ["git", "-C", tmp, "rev-parse", "HEAD"], capture_output=True, text=True
+                    ).stdout.strip()
+                source_meta = {
+                    "type": "git",
+                    "url": payload.url,
+                    "ref": payload.ref,
+                    "subpath": payload.subpath,
+                    "sha": sha,
+                }
         else:  # pragma: no cover
             raise ValueError(f"未知来源类型: {payload.source}")
 
@@ -237,42 +313,23 @@ async def import_skill(
 
     imported: list[dict] = []
     for item in items:
-        name, description = parse_skill_md(item["content"], item["dir"])
-        exists = (await session.execute(select(Skill).where(Skill.name == name))).scalar_one_or_none()
-        if exists is not None:
-            exists.content = item["content"]
-            exists.description = description
-            exists.files = item["files"]
-            exists.source = source_meta
-            exists.updated_at = now_ms()
-            imported.append({"id": exists.id, "name": name, "updated": True})
-        else:
-            row = Skill(
-                name=name,
-                description=description,
-                source=source_meta,
-                content=item["content"],
-                files=item["files"],
-            )
-            session.add(row)
-            await session.flush()
-            imported.append({"id": row.id, "name": name, "updated": False})
+        row, updated = await _upsert_skill(
+            session,
+            content=item["content"],
+            files=item["files"],
+            fallback_name=item["dir"],
+            source_meta=source_meta,
+        )
+        imported.append({"id": row.id, "name": row.name, "updated": updated})
 
     await session.commit()
 
-    # 导入即落盘（与 PUT 编辑端点同逻辑）：运行时的 LocalSkillLoader 读的是
-    # data/work/skills/<name>/SKILL.md，只进 DB 不落盘 = 助手看不见这个 skill。
+    # 导入即落盘：运行时的 LocalSkillLoader 读的是 data/work/skills/<name>/SKILL.md，
+    # 只进 DB 不落盘 = 助手看不见这个 skill。
     for item in imported:
         row = await session.get(Skill, item["id"])
-        if row is None:
-            continue
-        target = settings.work_dir / "skills" / row.name
-        target.mkdir(parents=True, exist_ok=True)
-        (target / "SKILL.md").write_text(row.content or "", encoding="utf-8")
-        for rel, text in (row.files or {}).items():
-            f = target / rel
-            f.parent.mkdir(parents=True, exist_ok=True)
-            f.write_text(text, encoding="utf-8")
+        if row is not None:
+            await _materialize(row)
 
     return {"source": payload.source, "count": len(imported), "items": imported}
 
@@ -283,12 +340,159 @@ async def materialize_skill(skill_id: str, session: AsyncSession = Depends(get_s
     row = await session.get(Skill, skill_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Skill 不存在: {skill_id}")
-
-    target = settings.work_dir / "skills" / row.name
-    target.mkdir(parents=True, exist_ok=True)
-    (target / "SKILL.md").write_text(row.content or "", encoding="utf-8")
-    for rel, text in (row.files or {}).items():
-        f = target / rel
-        f.parent.mkdir(parents=True, exist_ok=True)
-        f.write_text(text, encoding="utf-8")
+    target = await _materialize(row)
     return {"ok": True, "path": str(target)}
+
+
+# --------------------------------------------------------------------------- #
+# 从仓库安装 —— 「像 npx skills add 那样一条引用装进来」
+# --------------------------------------------------------------------------- #
+async def _resolve_and_scan(ref_text: str, ref_pin: str | None):
+    """解析引用 → 下 tarball → 扫技能。返回 (RepoRef, [SkillEntry], meta)。"""
+    try:
+        ref = parse_repo_ref(ref_text)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    if ref_pin:
+        ref.ref = ref_pin.strip() or None
+
+    try:
+        data, url_used, root = await fetch_repo_tarball(ref)
+        entries = scan_tarball(data, subpath=ref.subpath)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"仓库下载失败: {exc}") from exc
+
+    meta = await resolve_head(ref)
+    if not meta.get("sha"):
+        meta["sha"] = tarball_sha(root)      # 从包名兜底（archify-<sha>）
+    meta["url_used"] = url_used
+    meta["web_url"] = ref.web_url
+    meta["slug"] = ref.slug
+    meta["ref"] = ref.ref or meta.get("default_branch") or "HEAD"
+    meta["subpath"] = ref.subpath
+    return ref, entries, meta
+
+
+def _repo_source(meta: dict, entry_path: str) -> dict:
+    """来源记录 —— 「更新」按钮靠它回原仓库取新版本，所以字段要齐。"""
+    url = f"https://github.com/{meta['slug']}"
+    if entry_path:
+        url += f"/tree/{meta['ref']}/{entry_path}"
+    return {
+        "type": "repo",
+        "repo": meta["slug"],
+        "ref": meta["ref"],
+        "sha": meta.get("sha"),
+        "path": entry_path,
+        "url": url,
+    }
+
+
+@router.post("/scan")
+async def scan_repo(payload: SkillScanRequest) -> dict:
+    """预览仓库里有哪些技能（安装前先看一眼，别装一堆用不上的）。
+
+    对应社区 CLI 的 ``npx skills add owner/repo --list``。
+    """
+    ref, entries, meta = await _resolve_and_scan(payload.ref, payload.ref_pin)
+    return {
+        "repo": meta["slug"],
+        "ref": meta["ref"],
+        "sha": meta.get("sha"),
+        "description": meta.get("description"),
+        "stars": meta.get("stars"),
+        "license": meta.get("license"),
+        "web_url": meta["web_url"],
+        "download": meta["url_used"],
+        "skills": [e.brief() for e in entries],
+    }
+
+
+@router.post("/install", status_code=status.HTTP_201_CREATED)
+async def install_from_repo(
+    payload: SkillInstallRequest, session: AsyncSession = Depends(get_session)
+) -> dict:
+    """从 GitHub 仓库安装技能。
+
+    - ``ref``：``owner/repo``、``owner/repo/skills/foo``、``owner/repo@v1.2.0``
+    - ``paths``：勾选的技能（仓库内目录）；给技能名也认（等价 ``--skill``）
+    - 仓库里有多个技能又没勾选、也没 ``all`` → 409 + 候选清单让用户选：
+      **不偷偷全装** —— skill 的 description 会常驻助手提示词，装什么得他点头
+    """
+    ref, entries, meta = await _resolve_and_scan(payload.ref, payload.ref_pin)
+
+    want = payload.paths or ([payload.skill] if payload.skill else None)
+    if want:
+        try:
+            chosen = pick_skills(entries, paths=want)
+        except ValueError as exc:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    elif len(entries) == 1 or payload.all:
+        chosen = entries
+    else:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            {
+                "message": f"这个仓库里有 {len(entries)} 个技能，选一个再装",
+                "skills": [e.brief() for e in entries],
+            },
+        )
+
+    installed: list[dict] = []
+    for entry in chosen:
+        row, updated = await _upsert_skill(
+            session,
+            content=entry.content,
+            files=entry.files,
+            fallback_name=entry.path.rsplit("/", 1)[-1] or entry.name,
+            source_meta=_repo_source(meta, entry.path),
+        )
+        installed.append({"id": row.id, "name": row.name, "updated": updated, "path": entry.path})
+
+    await session.commit()
+
+    for item in installed:
+        row = await session.get(Skill, item["id"])
+        if row is not None:
+            item["materialized"] = str(await _materialize(row))
+
+    return {
+        "repo": meta["slug"],
+        "ref": meta["ref"],
+        "sha": meta.get("sha"),
+        "count": len(installed),
+        "items": installed,
+    }
+
+
+@router.post("/{skill_id}/reinstall")
+async def reinstall_skill(skill_id: str, session: AsyncSession = Depends(get_session)) -> dict:
+    """按安装时记下的来源重装一遍（= 更新到最新）。
+
+    没有来源记录（内联手写的）就没有可更新之处 —— 直说，别假装成功。
+    """
+    row = await session.get(Skill, skill_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Skill 不存在: {skill_id}")
+    src = row.source or {}
+    if src.get("type") != "repo" or not src.get("repo"):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "这个技能不是从仓库装的，没有可更新的来源（内联/本地导入的要自己重传）",
+        )
+    ref_text = str(src["repo"]) + (f"/{src['path']}" if src.get("path") else "")
+    _ref, entries, meta = await _resolve_and_scan(ref_text, None)
+    if not entries:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "来源仓库里已经找不到这个技能了")
+    entry = entries[0]
+    row.content = entry.content
+    row.files = entry.files
+    row.description = parse_skill_md(entry.content, row.name)[1]
+    row.source = _repo_source(meta, entry.path)
+    row.updated_at = now_ms()
+    await session.commit()
+    await session.refresh(row)
+    await _materialize(row)
+    return {"ok": True, "id": row.id, "name": row.name, "ref": meta["ref"], "sha": meta.get("sha")}

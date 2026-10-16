@@ -240,6 +240,26 @@ class SkillImportRequest(BaseModel):
     name: str | None = None            # inline 时的名字
 
 
+class SkillScanRequest(BaseModel):
+    """预览一个仓库里有哪些技能 —— 对应 `npx skills add owner/repo --list`。
+
+    ``ref`` 就是用户抄来的那一条：``owner/repo[/目录]``，可带 ``@版本``。
+    """
+
+    ref: str
+    ref_pin: str | None = None         # 页面上单独填的版本（分支/标签/SHA），优先于 @
+
+
+class SkillInstallRequest(BaseModel):
+    """从仓库装技能 —— 对应 `npx skills add owner/repo [--skill x]`。"""
+
+    ref: str
+    ref_pin: str | None = None
+    paths: list[str] | None = None     # 勾选的技能（仓库内目录）；给技能名也认
+    skill: str | None = None           # 只要一个（等价于 --skill）
+    all: bool = False                  # 仓库里多个技能时全装（等价于 --all）
+
+
 class SkillUpdateRequest(BaseModel):
     """页面自定义编辑 —— 全部可选，只改给的字段。
 

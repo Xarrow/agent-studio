@@ -119,6 +119,28 @@ export interface Skill {
   updated_at: number;
 }
 
+/** 仓库里发现的一个技能（安装前的预览项） */
+export interface RepoSkillItem {
+  path: string;          // 仓库内目录（"" = 仓库根就是技能）
+  name: string;
+  description: string;
+  files: number;
+  convention: boolean;   // 是否落在 skills/、.agents/skills/ 这类约定目录
+}
+
+/** `POST /api/skills/scan` 的结果 —— 对应 `npx skills add owner/repo --list` */
+export interface SkillRepoScan {
+  repo: string;          // owner/repo
+  ref: string;           // 实际用的版本（默认分支或 @ 指定的）
+  sha: string | null;
+  description: string | null;
+  stars: number | null;
+  license: string | null;
+  web_url: string;
+  download: string;      // 实际命中的下载地址（直连/镜像，排查用）
+  skills: RepoSkillItem[];
+}
+
 export type RunStatus =
   | "pending"
   | "running"
