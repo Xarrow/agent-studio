@@ -39,7 +39,8 @@ export type StepKind =
   | "tool_response"
   | "output"
   | "error"
-  | "hitl";
+  | "hitl"
+  | "artifact";
 
 export interface Step {
   kind: StepKind;
@@ -47,6 +48,8 @@ export interface Step {
   body: string;
   /** 工具是否执行成功（有 tool_exec_end 时才有） */
   ok?: boolean;
+  /** 产物相对路径（kind=artifact 时有）—— 相对工作目录根 */
+  artifactPath?: string;
 }
 
 /** 每类的图标与配色（浅色主题下都保证可读） */
@@ -71,6 +74,12 @@ export const STEP_STYLE: Record<
     color: "#c2410c",
     bg: "#fff7ed",
     border: "#fed7aa",
+  },
+  artifact: {
+    icon: "▣",
+    color: "#047857",
+    bg: "#ecfdf5",
+    border: "#a7f3d0",
   },
   tool_response: {
     icon: "◀",
@@ -162,9 +171,13 @@ export function eventsToSteps(events: RunEvent[], userInput?: string): Step[] {
       }
     } else if (t === "tool_exec_end") {
       // 标记上一个工具结果的成功/失败
-      const b = lastByTool("tool_res", str(p.tool_call_id) || undefined);
+      const id = str(p.tool_call_id) || undefined;
+      const b = lastByTool("tool_res", id);
       const state = str(p.state);
       if (b) b.ok = state ? state === "success" || state === "ok" : undefined;
+      // tool 块同样记成功态（产物卡要靠它：失败的工具不产出物）
+      const tb = lastByTool("tool", id);
+      if (tb) tb.ok = b ? b.ok : undefined;
     } else if (t === "error") {
       const msg = str(p.message) || str(p.error) || "执行出错";
       blocks.push((cur = { kind: "error", text: msg }));
@@ -198,6 +211,19 @@ export function eventsToSteps(events: RunEvent[], userInput?: string): Step[] {
         label: `调用工具 · ${b.name ?? "工具"}`,
         body: body || "（无参数）",
       });
+      // 写文件类工具 + 落在产物目录 + 执行成功 → 紧跟一张「产物」卡，
+      // 让 agent 写的图片/文件**在对话里直接看**（不用去服务器翻目录）。
+      if (b.ok !== false) {
+        const artifact = parseArtifact(b.name, b.text);
+        if (artifact) {
+          steps.push({
+            kind: "artifact",
+            label: "产物",
+            body: artifact.rel,
+            artifactPath: artifact.rel,
+          });
+        }
+      }
     } else if (b.kind === "tool_res") {
       steps.push({
         kind: "tool_response",
@@ -217,6 +243,33 @@ export function eventsToSteps(events: RunEvent[], userInput?: string): Step[] {
 
 function str(v: unknown): string {
   return typeof v === "string" ? v : "";
+}
+
+/** 产物后缀白名单（与后端 /api/work 一致） */
+const ARTIFACT_SUFFIX_RE =
+  /\.(png|jpe?g|gif|webp|svg|bmp|pdf|txt|md|markdown|json|csv|tsv|html?|xml|ya?ml|log|py|js|ts|sql|ipynb)$/i;
+
+/**
+ * 从工具调用里提取产物：Write/Edit（args 的 file_path）落在工作目录内才认。
+ * args 是流式拼回的 JSON，可能不完整 —— 解析失败返回 null，不出卡（宁缺毋滥）。
+ * 返回相对工作目录的路径（后端 /api/work/file 按这个取）。
+ */
+function parseArtifact(
+  toolName: string | undefined,
+  argsText: string,
+): { rel: string } | null {
+  if (!toolName || !["Write", "Edit"].includes(toolName) || !argsText) return null;
+  try {
+    const args = JSON.parse(argsText) as { file_path?: string };
+    const fp = args.file_path;
+    if (!fp) return null;
+    const m = /\/data\/work\/(.+)$/.exec(fp);
+    const rel = m ? m[1] : fp.replace(/^\//, "");
+    if (!rel || rel.includes("..") || !ARTIFACT_SUFFIX_RE.test(rel)) return null;
+    return { rel };
+  } catch {
+    return null;
+  }
 }
 
 /** 步骤统计（用于折叠时的一行摘要） */
@@ -267,7 +320,6 @@ function TimelineRow({ s, compact, isLast }: { s: Step; compact: boolean; isLast
   const long = bodyLines.length > 6 || s.body.length > 400;
   const [open, setOpen] = useState(false);
   const monoBody = s.kind === "tool" || s.kind === "tool_response";
-
   return (
     <div className="flex gap-2.5">
       {/* 左侧：图标 + 连接线（把"一连串步骤"这件事视觉化） */}
@@ -292,6 +344,37 @@ function TimelineRow({ s, compact, isLast }: { s: Step; compact: boolean; isLast
 
       {/* 右侧：标签 + 内容 */}
       <div className="min-w-0 flex-1 pb-1">
+        {s.kind === "artifact" && s.artifactPath ? (
+          /* 产物卡：图片直接内联显示，其他文件给可点链接（后端 /api/work/file） */
+          <div>
+            <span
+              className="text-[12px] font-medium mb-0.5 block"
+              style={{ color: st.color }}
+            >
+              产物 · {s.artifactPath.split("/").pop()}
+            </span>
+            {/\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(s.artifactPath) ? (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img
+                src={`/api/work/file/${s.artifactPath}`}
+                alt={s.artifactPath.split("/").pop()}
+                className="max-h-56 rounded-md border my-1"
+                style={{ borderColor: st.border }}
+              />
+            ) : (
+              <a
+                href={`/api/work/file/${s.artifactPath}`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[12px] underline underline-offset-2"
+                style={{ color: st.color }}
+              >
+                {s.artifactPath.split("/").pop()}
+              </a>
+            )}
+          </div>
+        ) : (
+        <>
         <button
           type="button"
           data-tap
@@ -320,6 +403,8 @@ function TimelineRow({ s, compact, isLast }: { s: Step; compact: boolean; isLast
         >
           {long && !open ? bodyLines.slice(0, 6).join("\n") + "\n…" : s.body}
         </div>
+        </>
+        )}
       </div>
     </div>
   );
