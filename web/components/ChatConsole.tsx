@@ -50,7 +50,6 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   const [sessionId, setSessionId] = useState<string>("");
   // 执行详情用弹框看，不跳页 —— 聊天上下文（输入框内容、滚动位置）不该
   // 因为「想看一眼这轮到底怎么回事」而丢掉。
-  const [detailRun, setDetailRun] = useState<string | null>(null);
   /** `/` 命令菜单是否打开（输入以 / 开头时） */
   const [slashOpen, setSlashOpen] = useState(false);
   /** 输入法守卫：中文组字没上屏时按 Enter 是「选字」，不能当发送 */
@@ -448,36 +447,51 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [uploading, setUploading] = useState(false);
 
-  // ── 多栏折叠 ──────────────────────────────────────────────────────────────
-  // 会话列表 / 右栏 Chrome 流各自可收起（把空间还给对话区），localStorage 持久化。
+  // ── 布局开合状态 ────────────────────────────────────────
+  // 三块区域各有明确职责，默认值按「一屏最贵的位置给谁」定：
+  //  · 会话栏 navOpen：桌面在流内（260px），窄屏改为**抽屉**（不占高度）
+  //  · 手机抽屉 mobileNav：默认关 —— 之前会话列表在手机上常驻，
+  //    实测吃掉 338/844px（40% 屏高），对话只剩 450px 高 ✗
+  //  · Chrome 直播栏 railOpen：**默认关，真有直播画面时才自动出现** ——
+  //    之前桌面常驻 420px（占主区 34%）显示「没有正在直播的浏览器画面」✗
   // ⚠️ 位置纪律：必须在**所有提前 return 之前**（本组件有 loading / 无助手两条
   // 提前返回）—— 放在它们之后会让两种情况 hook 数量不同，React 抛 #310
   // （Rendered more hooks than during the previous render），整页变错误页（踩过两次）。
-  const [sessionsCollapsed, setSessionsCollapsed] = useState(false);
-  const [railCollapsed, setRailCollapsed] = useState(false);
+  const [navOpen, setNavOpen] = useState(true);
+  const [mobileNav, setMobileNav] = useState(false);
+  const [railOpen, setRailOpen] = useState(false);
+  /** 用户在本次会话里手动关过直播栏吗 —— 关过就不再自动弹回来 */
+  const railTouched = useRef(false);
+  /** 存储位置这类「自托管自证」信息：默认收起，点 ⓘ 才展开（原来是常驻噪声） */
+  const [showPaths, setShowPaths] = useState(false);
   useEffect(() => {
     try {
-      setSessionsCollapsed(localStorage.getItem("chat.sessionsCollapsed") === "1");
-      const savedRail = localStorage.getItem("chat.railCollapsed");
-      // 没有存过偏好时：窄屏（<1440）默认收起右栏 —— 否则 1024 宽只剩 140px
-      // 给对话区，页面无从使用；宽屏（≥1440）默认展开（有空间展示直播画面）。
-      setRailCollapsed(
-        savedRail === null ? window.innerWidth < 1440 : savedRail === "1",
-      );
+      const savedNav = localStorage.getItem("chat.navOpen");
+      const savedRail = localStorage.getItem("chat.railOpen");
+      if (savedNav !== null) setNavOpen(savedNav === "1");
+      if (savedRail !== null) {
+        setRailOpen(savedRail === "1");
+        railTouched.current = true;
+      }
     } catch {}
   }, []);
-  const toggleSessions = () => {
-    setSessionsCollapsed((v) => {
-      try { localStorage.setItem("chat.sessionsCollapsed", v ? "0" : "1"); } catch {}
+  const toggleNav = () => {
+    setNavOpen((v) => {
+      try { localStorage.setItem("chat.navOpen", v ? "0" : "1"); } catch {}
       return !v;
     });
   };
   const toggleRail = () => {
-    setRailCollapsed((v) => {
-      try { localStorage.setItem("chat.railCollapsed", v ? "0" : "1"); } catch {}
+    railTouched.current = true;
+    setRailOpen((v) => {
+      try { localStorage.setItem("chat.railOpen", v ? "0" : "1"); } catch {}
       return !v;
     });
   };
+  // 直播画面一到，右栏自己出来（用户没手动关过的话）
+  useEffect(() => {
+    if (browserFrame && !railTouched.current) setRailOpen(true);
+  }, [browserFrame]);
   const pickFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     setUploading(true);
@@ -535,182 +549,168 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   }
 
   return (
-      <div className="h-full min-h-0 flex flex-col lg:flex-row">
+      <div className="h-full min-h-0 flex">
         {configAgent && (
           <AgentDetailDialog agentId={configAgent} onClose={() => setConfigAgent(null)} />
         )}
-        {/* ── 会话列表 ───────────────────────────────────────
-            折叠态：只剩一条竖条（展开按钮 + 对话数徽标），点一下弹回。 */}
-        {sessionsCollapsed ? (
+
+        {/* ── 会话栏（桌面在流内，可收起；窄屏走抽屉）────────────────────
+            收起后不留空白 —— 只剩 44px 的把手，点一下回来。 */}
+        {navOpen ? (
+          <aside className="hidden lg:flex w-[264px] shrink-0 border-r border-[var(--color-border)] bg-[var(--color-surface)] flex-col min-h-0">
+            <SessionsPane
+              sessions={sessions}
+              sessionId={sessionId}
+              onPick={setSessionId}
+              onNew={() => void newChat()}
+              onRename={(s) => void renameSession(s)}
+              onRemove={(s) => void removeSession(s)}
+              onCollapse={toggleNav}
+            />
+          </aside>
+        ) : (
           <button
             data-tap
-            title="展开会话列表"
-            onClick={toggleSessions}
-            className="flex lg:flex-col w-full lg:w-9 shrink-0 items-center justify-center lg:justify-start gap-2 h-9 lg:h-auto py-0 lg:py-2.5 border-b lg:border-b-0 lg:border-r border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-2)]"
+            title="展开对话列表"
+            onClick={toggleNav}
+            className="hidden lg:flex w-11 shrink-0 flex-col items-center gap-2 py-3 border-r border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-2)]"
           >
-            <span className="text-[13px] text-[var(--color-muted)]">»</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+              <path d="M4 6h16M4 12h16M4 18h10" />
+            </svg>
             <span
-              className="text-[10px] tabular-nums px-1.5 rounded-full"
+              className="text-[10.5px] tabular-nums px-1.5 rounded-full"
               style={{ background: "var(--color-surface-2)", color: "var(--color-muted)" }}
             >
               {sessions.length}
             </span>
           </button>
-        ) : (
-        <aside className="lg:w-64 shrink-0 border-b lg:border-b-0 lg:border-r border-[var(--color-border)] bg-[var(--color-surface)] flex flex-col min-h-0 max-h-[40vh] lg:max-h-none relative">
-          {/* 收起按钮：列表头部右侧，常驻可见（手机端也保留——列表可整个收掉） */}
-          <button
-            data-tap
-            title="收起会话列表"
-            onClick={toggleSessions}
-            className="flex absolute top-2.5 right-2 z-10 w-7 h-7 items-center justify-center rounded-md text-[12px] text-[var(--color-muted)] hover:bg-[var(--color-surface-2)]"
-          >
-            «
-          </button>
-          <div className="p-3 border-b border-[var(--color-border)] pr-10">
-            <button className="btn btn-primary w-full" onClick={() => void newChat()}>
-              + 新对话
-            </button>
-          </div>
-        <div className="flex-1 overflow-auto p-2 space-y-0.5">
-          {sessions.length === 0 ? (
-            <p className="text-[12px] text-[var(--color-muted)] p-2">还没有对话</p>
-          ) : (
-            sessions.map((s) => (
-              <div
-                key={s.id}
-                className={`group flex items-center gap-1 rounded-md px-2 py-2 cursor-pointer transition-colors ${
-                  s.id === sessionId
-                    ? "bg-[var(--color-surface-2)] text-[var(--color-accent)]"
-                    : "text-[var(--color-muted)] hover:bg-[var(--color-surface-2)]"
-                }`}
-                onClick={() => setSessionId(s.id)}
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="text-[12px] truncate">{s.title || "未命名对话"}</div>
-                  <div className="text-[10.5px] opacity-70 truncate">
-                    {s.turn_count} 轮 · {fmt.relative(s.last_active_at)}
-                  </div>
-                </div>
-                <button
-                  className="shrink-0 w-9 h-9 flex items-center justify-center rounded-md text-[13px] text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] lg:w-7 lg:h-7 lg:opacity-0 lg:group-hover:opacity-100"
-                  data-tap-lg
-                  title="重命名"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void renameSession(s);
-                  }}
-                >
-                  ✎
-                </button>
-                <button
-                  className="shrink-0 w-9 h-9 flex items-center justify-center rounded-md text-[13px] text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-err)] lg:w-7 lg:h-7 lg:opacity-0 lg:group-hover:opacity-100"
-                  data-tap-lg
-                  title="删除"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void removeSession(s);
-                  }}
-                >
-                  ✕
-                </button>
-              </div>
-            ))
-          )}
-        </div>
-        </aside>
         )}
 
-        {/* ── 对话区 ───────────────────────────────────────────── */}
-      <section className="flex-1 flex flex-col min-h-0 min-w-0">
-        <header className="px-4 py-3 border-b border-[var(--color-border)] flex items-center gap-3 flex-wrap">
-          {/* 受外层控制时不显示自带的助手下拉 —— 参与者条是唯一入口，
-              两处都能选助手就是两套真相 */}
-          {controlledAgentId === undefined && (
-            <select
-              className="input w-auto min-w-[160px] max-w-[240px] shrink-0"
-              value={agentId}
-              onChange={(e) => setAgentId(e.target.value)}
+        {/* ── 手机会话抽屉：浮在对话之上，不吃对话高度 ─────────────── */}
+        {mobileNav && (
+          <div className="lg:hidden fixed inset-0 z-40 flex">
+            <div className="w-[280px] max-w-[84vw] bg-[var(--color-surface)] border-r border-[var(--color-border)] flex flex-col min-h-0">
+              <SessionsPane
+                sessions={sessions}
+                sessionId={sessionId}
+                onPick={(id) => {
+                  setSessionId(id);
+                  setMobileNav(false);
+                }}
+                onNew={() => {
+                  void newChat();
+                  setMobileNav(false);
+                }}
+                onRename={(s) => void renameSession(s)}
+                onRemove={(s) => void removeSession(s)}
+                onCollapse={() => setMobileNav(false)}
+              />
+            </div>
+            <button
+              aria-label="关闭对话列表"
+              className="flex-1"
+              style={{ background: "var(--color-overlay)" }}
+              onClick={() => setMobileNav(false)}
+            />
+          </div>
+        )}
+
+        {/* ── 对话区 ─────────────────────────────────────────── */}
+        <section className="flex-1 flex flex-col min-h-0 min-w-0">
+          <header className="h-[52px] px-3 sm:px-4 flex items-center gap-2.5 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
+            <button
+              data-tap
+              className="lg:hidden w-9 h-9 -ml-1 flex items-center justify-center rounded-lg text-[var(--color-muted)] hover:bg-[var(--color-surface-2)]"
+              title="对话列表"
+              onClick={() => setMobileNav(true)}
             >
-              {agents.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
-          )}
-          {controlledAgentId !== undefined && (
-            <span className="text-[13.5px] font-medium truncate">
-              {currentAgent?.name ?? "（未选助手）"}
-            </span>
-          )}
-          {currentAgent?.description && (
-            <span className="text-[12px] text-[var(--color-muted)] truncate">
-              {currentAgent.description}
-            </span>
-          )}
-          <div className="ml-auto flex items-center gap-3">
-            {history.length > 0 && history[history.length - 1].run_id && (
-              <>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+                <path d="M4 6h16M4 12h16M4 18h10" />
+              </svg>
+            </button>
+
+            {/* 助手身份：受外层控制时是纯文本（参与者条是唯一入口），
+                否则用下拉 —— 两处都能选助手就是两套真相 */}
+            {controlledAgentId === undefined ? (
+              <select
+                className="input w-auto min-w-[150px] max-w-[220px] shrink-0 text-[13px]"
+                value={agentId}
+                onChange={(e) => setAgentId(e.target.value)}
+              >
+                {agents.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span className="min-w-0 flex items-center gap-2">
+                <span className="text-[13.5px] font-medium truncate">
+                  {currentAgent?.name ?? "（未选助手）"}
+                </span>
+                <span
+                  className="shrink-0 inline-flex items-center gap-1 text-[11.5px]"
+                  style={{ color: busy ? "var(--color-accent)" : "var(--color-muted)" }}
+                >
+                  <span
+                    className={busy ? "live-dot" : ""}
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: 999,
+                      background: busy ? "var(--color-accent)" : "var(--color-ok)",
+                      display: "inline-block",
+                    }}
+                  />
+                  {busy ? "执行中" : "就绪"}
+                </span>
+              </span>
+            )}
+
+            <div className="ml-auto flex items-center gap-1.5 shrink-0">
+              {/* 每条助手消息自己带「执行过程 / 完整记录」—— 顶栏再放一个
+                  「本轮详情」就是同一件事的第二道门（用户反馈过：同一条
+                  信息别两处给），所以这里只留「配置」。 */}
+              {agentId && (
                 <button
                   data-tap
-                  className="text-[12px] hover:underline whitespace-nowrap"
-                  style={{ color: "var(--color-accent)" }}
-                  onClick={() => setDetailRun(history[history.length - 1].run_id ?? null)}
+                  className="btn btn-sm"
+                  onClick={() => setConfigAgent(agentId)}
                 >
-                  查看详情 →
+                  配置
                 </button>
-                {detailRun && (
-                  <RunDetailById runId={detailRun} onClose={() => setDetailRun(null)} />
-                )}
-              </>
-            )}
-            {/* 「配置」用整屏浮层打开，不跳页 —— 正在聊的时候去改配置，
-                回来时对话、输入框、滚动位置都还在（跳页就全丢了） */}
-            {agentId && (
-              <button
-                data-tap
-                className="text-[12px] text-[var(--color-muted)] hover:text-[var(--color-text)] whitespace-nowrap"
-                onClick={() => setConfigAgent(agentId)}
-              >
-                配置
-              </button>
-            )}
-          </div>
-        </header>
+              )}
+            </div>
+          </header>
 
-        {/* 消息流 */}
-        <div className="flex-1 overflow-auto px-4 py-5" ref={boxRef}>
-          {history.length === 0 && !live ? (
-            /* 空状态：不摆「开始对话」的废话 —— 直接给 3 个可点的开场问题，
-               点了就填进输入框（不自动发，让人改得动）。示例从 agent 的
-               system_prompt 第一段提炼没有意义，用固定通用的三问。 */
-            <div className="max-w-lg mx-auto mt-10 mb-6">
-              <div className="text-center">
-                <div
-                  className="inline-flex items-center justify-center w-10 h-10 rounded-xl text-[18px] mb-3"
-                  style={{ background: "var(--color-surface-2)" }}
-                >
-                  ✦
+          {/* 消息流 —— 阅读宽度封顶 768px 居中：一行扫 1000px 是眼睛的负担 */}
+          <div className="flex-1 overflow-auto" ref={boxRef}>
+            {history.length === 0 && !live ? (
+              /* 空状态：不摆「开始对话」的废话 —— 直接给 3 个可点的开场问题，
+                 点了就填进输入框（不自动发，让人改得动）。 */
+              <div className="max-w-md mx-auto mt-16 px-6">
+                <div className="text-center">
+                  <div
+                    className="inline-flex items-center justify-center w-11 h-11 rounded-2xl text-[19px] mb-3"
+                    style={{ background: "var(--color-surface-2)" }}
+                  >
+                    ✦
+                  </div>
+                  <p className="text-[15px] font-medium">{currentAgent?.name || "Agent"}</p>
+                  {currentAgent?.description && (
+                    <p className="text-[12.5px] text-[var(--color-muted)] mt-1.5 leading-relaxed">
+                      {currentAgent.description}
+                    </p>
+                  )}
                 </div>
-                <p className="text-[14px] font-medium">{currentAgent?.name || "Agent"}</p>
-                {currentAgent?.description && (
-                  <p className="text-[12px] text-[var(--color-muted)] mt-1">
-                    {currentAgent.description}
-                  </p>
-                )}
-              </div>
-              <div className="mt-5 flex flex-col gap-1.5">
-                {["帮我分析一个文件或一段数据", "上网查点资料并总结给我", "写一段代码或脚本"].map(
-                  (q) => (
+                <div className="mt-6 flex flex-col gap-1.5">
+                  {["帮我分析一个文件或一段数据", "上网查点资料并总结给我", "写一段代码或脚本"].map((q) => (
                     <button
                       key={q}
                       data-tap
-                      className="text-left text-[13px] rounded-lg px-3.5 py-2.5 border transition-colors hover:bg-[var(--color-surface-2)]"
-                      style={{
-                        borderColor: "var(--color-border)",
-                        color: "var(--color-text)",
-                      }}
+                      className="text-left text-[13px] rounded-xl px-3.5 py-2.5 border transition-colors hover:bg-[var(--color-surface-2)]"
+                      style={{ borderColor: "var(--color-border)", color: "var(--color-text)" }}
                       onClick={() => {
                         setInput(q);
                         (document.querySelector("section textarea") as HTMLTextAreaElement | null)?.focus();
@@ -718,308 +718,411 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     >
                       {q}
                     </button>
-                  ),
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="max-w-3xl mx-auto px-4 sm:px-5 py-5 space-y-4">
+                {history.map((m, i) => {
+                  // 给助手的执行过程带上「用户说了什么」，这样六段里第一段（输入）有着落
+                  const prevUser =
+                    m.role === "assistant"
+                      ? ([...history.slice(0, i)].reverse().find((x) => x.role === "user")?.content ?? undefined)
+                      : undefined;
+                  return (
+                    <Bubble
+                      key={m.id ?? i}
+                      role={m.role}
+                      content={m.content}
+                      runId={m.run_id}
+                      userInput={prevUser}
+                      ts={m.ts}
+                      messageId={m.id}
+                      sessionId={sessionId}
+                      onEdited={(content2) =>
+                        setHistory((h) => h.map((x, j) => (j === i ? { ...x, content: content2 } : x)))
+                      }
+                      onRetry={m.role === "user" && !busy ? () => void send(m.content) : undefined}
+                    />
+                  );
+                })}
+
+                {/* 生成中：实时分色显示执行过程（思考 / 工具 / 结果 / 回答） */}
+                {/* 手机/平板：画面卡片在消息流里；桌面只在右栏收起时用它顶替
+                    （避免同一画面两处重复） */}
+                {busy && browserFrame && (
+                  <div className={railOpen ? "lg:hidden" : ""}>
+                    <BrowserLive
+                      frame={browserFrame}
+                      onUserClick={async (x, y) => {
+                        if (!liveRunId) return;
+                        await fetch(`/api/runs/${liveRunId}/browser-input`, {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ kind: "click", x, y }),
+                        }).catch(() => {});
+                      }}
+                      onUserText={async (text) => {
+                        if (!liveRunId) return;
+                        await fetch(`/api/runs/${liveRunId}/browser-input`, {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ kind: "text", text }),
+                        }).catch(() => {});
+                      }}
+                    />
+                  </div>
+                )}
+                {busy && liveEvents.length > 0 && (
+                  <div className="w-full">
+                    <div className="text-[12px] text-[var(--color-muted)] mb-2 flex items-center gap-1.5">
+                      <span className="live-dot">●</span> 执行中…
+                    </div>
+                    <RunTimeline steps={eventsToSteps(liveEvents, liveInput)} compact />
+                  </div>
+                )}
+                {busy && liveEvents.length === 0 && (
+                  <div className="text-[12px] text-[var(--color-muted)] live-dot">思考中…</div>
                 )}
               </div>
-            </div>
-          ) : (
-            <div className="max-w-4xl mx-auto space-y-5">
-              {history.map((m, i) => {
-                // 给助手的执行过程带上「用户说了什么」，这样六段里第一段（输入）有着落
-                const prevUser =
-                  m.role === "assistant"
-                    ? ([...history.slice(0, i)].reverse().find((x) => x.role === "user")?.content ?? undefined)
-                    : undefined;
-                return (
-                  <Bubble
-                    key={m.id ?? i}
-                    role={m.role}
-                    content={m.content}
-                    runId={m.run_id}
-                    userInput={prevUser}
-                    ts={m.ts}
-                    messageId={m.id}
-                    sessionId={sessionId}
-                    onEdited={(content2) =>
-                      setHistory((h) =>
-                        h.map((x, j) => (j === i ? { ...x, content: content2 } : x)),
-                      )
-                    }
-                    onRetry={
-                      m.role === "user" && !busy
-                        ? () => void send(m.content)
-                        : undefined
-                    }
-                  />
-                );
-              })}
+            )}
+            <div ref={endRef} />
+          </div>
 
-              {/* 生成中：实时分色显示执行过程（思考 / 工具 / 结果 / 回答） */}
-              {/* 手机/平板：画面卡片在消息流里；桌面只在右栏收起时用它顶替
-                  （避免同一画面两处重复） */}
-              {busy && browserFrame && (
-                <div className={railCollapsed ? "" : "lg:hidden"}>
-                <BrowserLive
-                  frame={browserFrame}
-                  onUserClick={async (x, y) => {
-                    if (!liveRunId) return;
-                    await fetch(`/api/runs/${liveRunId}/browser-input`, {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ kind: "click", x, y }),
-                    }).catch(() => {});
+          {/* ── 输入区 ──────────────────────────────────────────
+              一个圆角输入坞包住「附件 / 输入 / 发送」—— 它们是同一件事的
+              三个部分，不该是三个漂浮的控件。存储路径这类自证信息收进
+              底部 ⓘ（原来每次输入都在下面排两行服务器路径，是开发者噪声）。 */}
+          <div className="border-t border-[var(--color-border)] bg-[var(--color-surface)] px-3 sm:px-4 pt-3 pb-2.5">
+            {hitl && (
+              <div className="max-w-3xl mx-auto mb-2">
+                <HitlPrompt
+                  runId={hitl.runId}
+                  payload={hitl.payload}
+                  onBeforeResume={() => attachStream(hitl.runId, liveInput)}
+                  onResumed={() => setBusy(true)}
+                  onError={(m) => fb.error("恢复失败", m)}
+                />
+              </div>
+            )}
+
+            {failed && (
+              <div
+                className="max-w-3xl mx-auto mb-2 rounded-xl px-3 py-2 flex items-start gap-3 flex-wrap text-[12.5px]"
+                style={{
+                  background: "color-mix(in srgb, var(--color-err) 10%, transparent)",
+                  color: "var(--color-err)",
+                }}
+              >
+                <span className="flex-1 min-w-[200px] break-words">
+                  这一轮失败了：{failed.message}
+                </span>
+                <button className="btn btn-sm shrink-0" disabled={busy} onClick={() => void send(failed.text)}>
+                  重试
+                </button>
+                <button className="text-[12px] shrink-0 hover:underline" onClick={() => setFailed(null)}>
+                  忽略
+                </button>
+              </div>
+            )}
+
+            {pendingFiles.length > 0 && (
+              <div className="max-w-3xl mx-auto mb-2 flex flex-wrap gap-2">
+                {pendingFiles.map((f, i) => (
+                  <div
+                    key={f.path + i}
+                    className="relative rounded-lg border overflow-hidden"
+                    style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
+                  >
+                    {f.kind === "image" ? (
+                      <a href={f.url} target="_blank" rel="noreferrer" className="block">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={f.url} alt={f.name} className="w-12 h-12 object-cover" />
+                      </a>
+                    ) : (
+                      <div className="flex items-center gap-2 pl-2.5 pr-9 py-1.5 max-w-[240px]">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-[var(--color-muted)]" aria-hidden="true">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                          <path d="M14 2v6h6" />
+                        </svg>
+                        <span className="min-w-0">
+                          <span className="block truncate text-[12px] leading-tight">{f.name}</span>
+                          <span className="block text-[10.5px] leading-tight text-[var(--color-muted)]">
+                            {fmt.bytes(f.size)}
+                          </span>
+                        </span>
+                      </div>
+                    )}
+                    <button
+                      data-tap
+                      className="absolute top-0.5 right-0.5 flex h-5 w-5 items-center justify-center rounded-full text-[11px] hover:brightness-110"
+                      style={{ background: "rgba(0,0,0,0.45)", color: "#fff" }}
+                      title="撤掉"
+                      onClick={() => setPendingFiles((p) => p.filter((_, j) => j !== i))}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="max-w-3xl mx-auto relative">
+              <div
+                className="flex items-end gap-1.5 rounded-2xl border px-2 py-1.5 transition-colors focus-within:border-[var(--color-accent)]"
+                style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+              >
+                <input
+                  ref={fileRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => void pickFiles(e.target.files)}
+                />
+                <button
+                  className="w-9 h-9 shrink-0 flex items-center justify-center rounded-xl text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
+                  title="附件（助手会用 Read 工具读）"
+                  disabled={busy || uploading}
+                  onClick={() => fileRef.current?.click()}
+                >
+                  {uploading ? (
+                    "…"
+                  ) : (
+                    /* 内联 SVG 回形针（禁 emoji 图标） */
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                    </svg>
+                  )}
+                </button>
+                <textarea
+                  className="flex-1 resize-none text-[13.5px] py-2 bg-transparent outline-none border-0"
+                  rows={1}
+                  style={{ maxHeight: "10rem" }}
+                  placeholder={
+                    pendingFiles.length > 0
+                      ? `附了 ${pendingFiles.length} 个文件，说点什么…`
+                      : "说点什么…（Enter 发送，Shift + Enter 换行）"
+                  }
+                  value={input}
+                  disabled={busy}
+                  {...ime.props}
+                  onChange={(e) => {
+                    setInput(e.target.value);
+                    setSlashOpen(e.target.value.startsWith("/"));
                   }}
-                  onUserText={async (text) => {
-                    if (!liveRunId) return;
-                    await fetch(`/api/runs/${liveRunId}/browser-input`, {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ kind: "text", text }),
-                    }).catch(() => {});
+                  onKeyDown={(e) => {
+                    // Enter 发送，但**组字中的 Enter 是输入法选字**（中文拼音没上屏
+                    // 就回车会把半截拼音发出去）—— 交给输入法，不拦不发。
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      if (ime.blocked(e)) return;
+                      e.preventDefault();
+                      void send();
+                    }
                   }}
                 />
-                </div>
-              )}
-              {busy && liveEvents.length > 0 && (
-                <div className="w-full">
-                  <div className="text-[12px] text-[var(--color-muted)] mb-2 flex items-center gap-1.5">
-                    <span className="live-dot">●</span> 执行中…
-                  </div>
-                  <RunTimeline steps={eventsToSteps(liveEvents, liveInput)} compact />
-                </div>
-              )}
-              {busy && liveEvents.length === 0 && (
-                <div className="text-[12px] text-[var(--color-muted)] live-dot">思考中…</div>
+                {busy ? (
+                  <button className="btn shrink-0" onClick={() => void stop()}>
+                    停止
+                  </button>
+                ) : (
+                  <button
+                    className="btn btn-primary shrink-0"
+                    disabled={!input.trim() && pendingFiles.length === 0}
+                    onClick={() => void send()}
+                  >
+                    发送
+                  </button>
+                )}
+              </div>
+              {slashOpen && !busy && (
+                <SlashMenu
+                  query={input.slice(1)}
+                  items={slashItems}
+                  onPick={(it) => {
+                    setSlashOpen(false);
+                    it.run();
+                  }}
+                  onClose={() => setSlashOpen(false)}
+                />
               )}
             </div>
-          )}
-          <div ref={endRef} />
-        </div>
 
-        {/* 输入区 */}
-        <div className="border-t border-[var(--color-border)] px-4 py-3">
-          {/* 这一轮停在等你授权 —— 就地确认，聊天现场不跳不丢 */}
-          {hitl && (
-            <div className="max-w-3xl mx-auto mb-2">
-              <HitlPrompt
-                runId={hitl.runId}
-                payload={hitl.payload}
-                onBeforeResume={() => attachStream(hitl.runId, liveInput)}
-                onResumed={() => setBusy(true)}
-                onError={(m) => fb.error("恢复失败", m)}
-              />
+            <div className="max-w-3xl mx-auto mt-1.5 flex items-center gap-3 text-[11.5px] text-[var(--color-muted)]">
+              <span className="hidden sm:inline">Enter 发送 · Shift + Enter 换行</span>
+              {paths && (
+                <button
+                  type="button"
+                  data-tap
+                  className="ml-auto hover:text-[var(--color-text)] hover:underline"
+                  title="对话存在哪、助手在哪干活"
+                  onClick={() => setShowPaths((v) => !v)}
+                >
+                  存储位置
+                </button>
+              )}
             </div>
-          )}
 
-          {/* 上一轮失败了 —— 摆出来 + 一键重试（失败后最常见的动作就是再试一次） */}
-          {failed && (
-            <div
-              className="max-w-3xl mx-auto mb-2 rounded-md px-3 py-2 flex items-start gap-3 flex-wrap text-[12px]"
-              style={{
-                background: "color-mix(in srgb, var(--color-err) 10%, transparent)",
-                color: "var(--color-err)",
-              }}
-            >
-              <span className="flex-1 min-w-[200px] break-words">
-                这一轮失败了：{failed.message}
-              </span>
-              <button
-                className="btn btn-sm shrink-0"
-                disabled={busy}
-                onClick={() => void send(failed.text)}
+            {showPaths && paths && (
+              <div
+                className="max-w-3xl mx-auto mt-1.5 rounded-lg px-2.5 py-2 text-[11.5px] flex flex-wrap items-center gap-x-2 gap-y-1"
+                style={{ background: "var(--color-surface-2)", color: "var(--color-muted)" }}
               >
-                重试
-              </button>
-              <button
-                className="text-[12px] shrink-0 hover:underline"
-                onClick={() => setFailed(null)}
-              >
-                忽略
-              </button>
-            </div>
-          )}
-          {/* 待发附件 —— 收在输入区顶行（属于输入，不是漂浮在外面）。
-              图片 = 48px 圆角缩略；文件 = 胶囊条（图标+名+大小）；✕ 常驻
-              小圆钮（触屏无 hover，藏起来的删除等于不存在）。 */}
-          {pendingFiles.length > 0 && (
-            <div className="max-w-4xl mx-auto mb-2 flex flex-wrap gap-2">
-              {pendingFiles.map((f, i) => (
-                <div
-                  key={f.path + i}
-                  className="relative rounded-lg border overflow-hidden"
-                  style={{
-                    borderColor: "var(--color-border)",
-                    background: "var(--color-surface-2)",
+                <span>对话保存在</span>
+                <button
+                  type="button"
+                  data-tap
+                  className="mono hover:underline"
+                  title="点一下复制完整路径"
+                  onClick={() => {
+                    const p = paths.database_file ?? paths.database_url;
+                    void navigator.clipboard?.writeText(p).then(
+                      () => fb.success("已复制路径", p),
+                      () => fb.info("路径", p),
+                    );
                   }}
                 >
-                  {f.kind === "image" ? (
-                    <a href={f.url} target="_blank" rel="noreferrer" className="block">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={f.url} alt={f.name} className="w-12 h-12 object-cover" />
-                    </a>
-                  ) : (
-                    <div className="flex items-center gap-2 pl-2.5 pr-9 py-1.5 max-w-[240px]">
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-[var(--color-muted)]" aria-hidden="true">
-                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                        <path d="M14 2v6h6" />
-                      </svg>
-                      <span className="min-w-0">
-                        <span className="block truncate text-[12px] leading-tight">{f.name}</span>
-                        <span className="block text-[10.5px] leading-tight text-[var(--color-muted)]">
-                          {fmt.bytes(f.size)}
-                        </span>
-                      </span>
-                    </div>
-                  )}
-                  <button
-                    data-tap
-                    className="absolute top-0.5 right-0.5 flex h-5 w-5 items-center justify-center rounded-full text-[11px] hover:brightness-110"
-                    style={{ background: "rgba(0,0,0,0.45)", color: "#fff" }}
-                    title="撤掉"
-                    onClick={() => setPendingFiles((p) => p.filter((_, j) => j !== i))}
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-          <div className="max-w-4xl mx-auto flex gap-2 items-end relative">
-            <input
-              ref={fileRef}
-              type="file"
-              multiple
-              className="hidden"
-              onChange={(e) => void pickFiles(e.target.files)}
-            />
-            <button
-              className="btn shrink-0 w-10 px-0"
-              title="附件（助手会用 Read 工具读）"
-              disabled={busy || uploading}
-              onClick={() => fileRef.current?.click()}
-            >
-              {uploading ? (
-                "…"
-              ) : (
-                /* 内联 SVG 回形针（禁 emoji 图标） */
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-                </svg>
-              )}
-            </button>
-            <textarea
-              className="input flex-1 resize-none text-[13px]"
-              rows={1}
-              style={{ maxHeight: "9rem" }}
-              placeholder={pendingFiles.length > 0 ? `附了 ${pendingFiles.length} 个文件，说点什么…` : "发消息…（Enter 发送，Shift + Enter 换行）"}
-              value={input}
-              disabled={busy}
-              {...ime.props}
-              onChange={(e) => {
-                setInput(e.target.value);
-                setSlashOpen(e.target.value.startsWith("/"));
-              }}
-              onKeyDown={(e) => {
-                // Enter 发送，但**组字中的 Enter 是输入法选字**（中文拼音没上屏
-                // 就回车会把半截拼音发出去）—— 交给输入法，不拦不发。
-                if (e.key === "Enter" && !e.shiftKey) {
-                  if (ime.blocked(e)) return;
-                  e.preventDefault();
-                  void send();
-                }
-              }}
-            />
-            {slashOpen && !busy && (
-              <SlashMenu
-                query={input.slice(1)}
-                items={slashItems}
-                onPick={(it) => {
-                  setSlashOpen(false);
-                  it.run();
-                }}
-                onClose={() => setSlashOpen(false)}
-              />
-            )}
-            {busy ? (
-              <button className="btn text-[var(--color-warn)]" onClick={() => void stop()}>
-                停止
-              </button>
-            ) : (
-              <button
-                className="btn btn-primary"
-                disabled={!input.trim() && pendingFiles.length === 0}
-                onClick={() => void send()}
-              >
-                发送
-              </button>
+                  {paths.database_file ?? paths.database_url}
+                </button>
+                <span>· 助手工作目录</span>
+                <span className="mono">{paths.work_dir}</span>
+              </div>
             )}
           </div>
-          {/* 存在哪 —— 自托管平台上，用户随时能核对落点（点一下复制路径） */}
-          {paths && (
-            <div
-              className="max-w-4xl mx-auto mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px]"
-              style={{ color: "var(--color-muted)" }}
-            >
-              <span>会话保存在服务器</span>
-              <button
-                type="button"
-                data-tap
-                className="mono hover:underline"
-                title="点一下复制完整路径"
-                onClick={() => {
-                  const p = paths.database_file ?? paths.database_url;
-                  void navigator.clipboard?.writeText(p).then(
-                    () => fb.success("已复制路径", p),
-                    () => fb.info("路径", p),
-                  );
-                }}
-              >
-                {paths.database_file ?? paths.database_url}
-              </button>
-              <span>· 助手干活的工作目录</span>
-              <span className="mono">{paths.work_dir}</span>
-            </div>
-          )}
-        </div>
-      </section>
+        </section>
 
-      {/* 右栏 Chrome 操作流（xl 起常驻，可收起；手机/平板用消息流内的浏览器卡片） */}
-      {railCollapsed ? (
+        {/* ── 右栏：Chrome 直播（只在真有画面时出现 / 手动开）────────────
+            没有画面时给 44px 把手；点一下可以手动打开（看历史画面）。 */}
+        {railOpen ? (
+          <ProcessRail
+            frame={browserFrame}
+            busy={busy}
+            onCollapse={toggleRail}
+            onUserClick={async (x, y) => {
+              if (!liveRunId) return;
+              await fetch(`/api/runs/${liveRunId}/browser-input`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ kind: "click", x, y }),
+              }).catch(() => {});
+            }}
+            onUserText={async (text) => {
+              if (!liveRunId) return;
+              await fetch(`/api/runs/${liveRunId}/browser-input`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ kind: "text", text }),
+              }).catch(() => {});
+            }}
+          />
+        ) : (
+          <button
+            data-tap
+            title={browserFrame ? "展开浏览器画面" : "浏览器画面（助手还没上网干活）"}
+            onClick={toggleRail}
+            className="hidden lg:flex w-11 shrink-0 flex-col items-center gap-2 py-3 border-l border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-2)]"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M3 9h18M9 3c-2 3-2 15 0 18M15 3c2 3 2 15 0 18" />
+            </svg>
+            {busy && browserFrame && (
+              <span className="w-2 h-2 rounded-full live-dot" style={{ background: "var(--color-accent)" }} />
+            )}
+          </button>
+        )}
+      </div>
+  );
+}
+
+/** 会话列表 —— 桌面在流内 / 窄屏在抽屉里，同一份实现两处渲染。
+ *  行内动作（改名 / 删除）在桌面 hover 才显形（省视觉噪声），触屏常驻
+ *  （hover 不存在的东西等于不存在）。 */
+function SessionsPane({
+  sessions,
+  sessionId,
+  onPick,
+  onNew,
+  onRename,
+  onRemove,
+  onCollapse,
+}: {
+  sessions: Session[];
+  sessionId: string;
+  onPick: (id: string) => void;
+  onNew: () => void;
+  onRename: (s: Session) => void;
+  onRemove: (s: Session) => void;
+  onCollapse: () => void;
+}) {
+  return (
+    <>
+      <div className="p-3 flex items-center gap-2 border-b border-[var(--color-border)]">
+        <button className="btn btn-primary flex-1" onClick={onNew}>
+          + 新对话
+        </button>
         <button
           data-tap
-          title="展开 Chrome 操作流"
-          onClick={toggleRail}
-          className="hidden lg:flex w-9 shrink-0 flex-col items-center gap-2 py-2.5 border-l border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-2)]"
+          title="收起"
+          onClick={onCollapse}
+          className="w-9 h-9 shrink-0 flex items-center justify-center rounded-lg text-[var(--color-muted)] hover:bg-[var(--color-surface-2)]"
         >
-          <span className="text-[13px] text-[var(--color-muted)]">«</span>
-          {busy && browserFrame && (
-            <span className="w-2 h-2 rounded-full live-dot" style={{ background: "var(--color-accent)" }} />
-          )}
+          «
         </button>
-      ) : (
-      <ProcessRail
-        frame={browserFrame}
-        busy={busy}
-        onCollapse={toggleRail}
-        onUserClick={async (x, y) => {
-          if (!liveRunId) return;
-          await fetch(`/api/runs/${liveRunId}/browser-input`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ kind: "click", x, y }),
-          }).catch(() => {});
-        }}
-        onUserText={async (text) => {
-          if (!liveRunId) return;
-          await fetch(`/api/runs/${liveRunId}/browser-input`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ kind: "text", text }),
-          }).catch(() => {});
-        }}
-      />
-      )}
-    </div>
+      </div>
+      <div className="flex-1 overflow-auto p-1.5 space-y-0.5">
+        {sessions.length === 0 ? (
+          <p className="text-[12.5px] text-[var(--color-muted)] p-2.5 leading-relaxed">
+            还没有对话。点「新对话」开始。
+          </p>
+        ) : (
+          sessions.map((s) => (
+            <div
+              key={s.id}
+              className={`group flex items-center gap-1 rounded-lg px-2.5 py-2 cursor-pointer transition-colors ${
+                s.id === sessionId
+                  ? "bg-[var(--color-surface-2)]"
+                  : "hover:bg-[var(--color-surface-2)]"
+              }`}
+              onClick={() => onPick(s.id)}
+            >
+              <div className="min-w-0 flex-1">
+                <div
+                  className="text-[12.5px] truncate"
+                  style={s.id === sessionId ? { color: "var(--color-accent)", fontWeight: 500 } : undefined}
+                >
+                  {s.title || "未命名对话"}
+                </div>
+                <div className="text-[10.5px] text-[var(--color-muted)] truncate mt-0.5">
+                  {s.turn_count} 轮 · {fmt.relative(s.last_active_at)}
+                </div>
+              </div>
+              <button
+                className="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-[12px] text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-text)] lg:opacity-0 lg:group-hover:opacity-100"
+                data-tap-lg
+                title="重命名"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRename(s);
+                }}
+              >
+                改名
+              </button>
+              <button
+                className="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-[12px] text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-err)] lg:opacity-0 lg:group-hover:opacity-100"
+                data-tap-lg
+                title="删除这个对话"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRemove(s);
+                }}
+              >
+                ✕
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+    </>
   );
 }
 
@@ -1214,14 +1317,12 @@ function Bubble({
         ) : (
           <>
         <div
-          className={`rounded-lg px-3.5 py-2.5 text-[13.5px] leading-relaxed break-words ${
-            isUser ? "text-white w-fit ml-auto whitespace-pre-wrap" : ""
-          }`}
-          style={
+          className={`text-[13.5px] leading-[1.75] break-words ${
             isUser
-              ? { background: "var(--color-accent)" }
-              : { background: "var(--color-surface-2)", color: "var(--color-text)" }
-          }
+              ? "text-white w-fit max-w-[92%] ml-auto whitespace-pre-wrap rounded-2xl px-3.5 py-2.5"
+              : "text-[var(--color-text)]"
+          }`}
+          style={isUser ? { background: "var(--color-accent)" } : undefined}
         >
           {isUser ? (
             <>

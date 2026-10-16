@@ -253,7 +253,11 @@ body {
      桌面 17~18px 的纯文字，手指点不准 → 给 36px 点按区。
      只认 data-tap 标记（不动正文里的普通链接）；inline-flex 保证行高不被撑破、
      图标与文字仍然对齐。 */
-  [data-tap] {
+  /* ⚠️ 必须 :not(.hidden)：这条在 ≤1023 生效，而 `hidden lg:flex`（窄屏藏、
+     宽屏显示）是常见写法 —— 裸的 display:inline-flex 会把 .hidden 盖掉，
+     于是「只在宽屏出现」的控件在手机上照样占位置（实测：对话页右栏把手
+     在 390px 视口硬占 44px，把对话区挤窄）。 */
+  [data-tap]:not(.hidden) {
     display: inline-flex;
     align-items: center;
     min-height: 36px;

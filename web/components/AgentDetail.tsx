@@ -24,7 +24,7 @@ import { RevisionHistory } from "@/components/RevisionHistory";
 import { PermissionScope, type PermConf } from "@/components/PermissionScope";
 import { Hint } from "@/components/ui/hint";
 import { ModelPicker } from "@/components/ModelPicker";
-import { RunPanel } from "@/components/AgentRunPanel";
+import { AgentQuickRun } from "@/components/AgentQuickRun";
 import { useFeedback } from "@/components/ui/feedback";
 
 /** 可折叠分段：**段头常驻 + 一句状态摘要**，内容按需展开 —— 一屏看一段 ✓
@@ -391,9 +391,34 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
           <h1 className="text-[21px] font-semibold tracking-tight mt-1 truncate">
             {agent.name}
           </h1>
-          <div className="text-[12px] text-[var(--color-muted)] mono mt-0.5">
-            {agent.slug} · v{agent.version} · {agent.id}
-            {agent.parent_id && ` · 复制自 ${agent.parent_id}`}
+          {/* 一行说清「这个助手现在是什么状态」—— 原来是**四块等宽格子**
+              （模型 / 工具 / Skills / 记忆）占一屏最贵的位置，而下面每一节
+              又有完整信息 → 同一条信息两处 ✗。并进标题下一行副标题：
+              值在前口径在后，要细看就去各自那一节。 */}
+          <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1 mt-1.5 text-[12px] text-[var(--color-muted)]">
+            <span className="mono break-all" title="这个助手跑在哪个模型上">
+              {def.model.name || "未指定模型"}
+            </span>
+            <span>工具 {def.tools.length}</span>
+            {(def.skills.length > 0 || (def.mcp_servers ?? []).length > 0) && (
+              <span>
+                Skills {def.skills.length}
+                {(def.mcp_servers ?? []).length > 0 ? ` · MCP ${(def.mcp_servers ?? []).length}` : ""}
+              </span>
+            )}
+            {ov.memoryOwn !== null && (
+              <span>记忆 {ov.memoryOwn + (ov.memoryShared ?? 0)}</span>
+            )}
+            {ov.lastRun && (
+              <span className="inline-flex items-center gap-1.5">
+                最近
+                <span className="mono" style={{ color: STATUS_STYLE[ov.lastRun.status as keyof typeof STATUS_STYLE] }}>
+                  {ov.lastRun.status}
+                </span>
+                {fmt.relative(ov.lastRun.at)}
+              </span>
+            )}
+            <span className="mono opacity-70">{agent.slug} · v{agent.version}</span>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -444,67 +469,6 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
         </div>
       )}
 
-      {/* ── 概览：**一行**说清"这个助手现在是什么状态" ───────────────────
-          原来这里是**四块等宽格子**（模型 / 工具 / Skills / 记忆），每块三行（标题 + 值 + 小注）
-          —— 一屏最贵的位置用四格回答四个数字 ✗，而下面「工具」「Skills」「记忆」各有完整章节
-          → 同一条信息被显示了两次 ✗（用户准绳：操作更少、看到更多）
-          改成一行副标题：值在前、口径在后（`工具 7/12` 的"已选/可用"一眼就懂 ✓），
-          要细看就去各自那一节 ✓ */}
-      <section className="card p-4 mb-4">
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px]">
-          <span className="flex items-center gap-1.5">
-            <span className="text-[12px] text-[var(--color-muted)]">模型</span>
-            <span className="mono break-all">{def.model.name || "—"}</span>
-            <span className="text-[12px] text-[var(--color-muted)]">
-              {providers.find((x) => x.name === def.model.provider)?.display_name ??
-                def.model.provider}
-              {usedCred ? ` · ${usedCred.name}` : " · 用环境变量密钥"}
-            </span>
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="text-[12px] text-[var(--color-muted)]">工具</span>
-            <span className="mono">
-              {def.tools.length}
-              <span className="text-[var(--color-muted)]">/{tools.length}</span>
-            </span>
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="text-[12px] text-[var(--color-muted)]">Skills</span>
-            <span className="mono">
-              {def.skills.length}
-              <span className="text-[var(--color-muted)]">/{skills.length}</span>
-            </span>
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="text-[12px] text-[var(--color-muted)]">记忆</span>
-            <span className="mono">
-              {ov.memoryOwn === null || ov.memoryShared === null
-                ? "…"
-                : `${ov.memoryOwn + ov.memoryShared} 条`}
-            </span>
-            {ov.memoryOwn !== null && (
-              <span className="text-[12px] text-[var(--color-muted)]">
-                自己的 {ov.memoryOwn} · 共用 {ov.memoryShared}
-              </span>
-            )}
-          </span>
-        </div>
-        {ov.lastRun && (
-          <div className="mt-3 pt-3 border-t border-[var(--color-border)] text-[12px] text-[var(--color-muted)]">
-            最近一次执行：
-            <span
-              className="mono"
-              style={{ color: STATUS_STYLE[ov.lastRun.status as keyof typeof STATUS_STYLE] }}
-            >
-              {ov.lastRun.status}
-            </span>
-            {" · "}
-            {fmt.ms(ov.lastRun.ms)}
-            {" · "}
-            {fmt.relative(ov.lastRun.at)}
-          </div>
-        )}
-      </section>
 
 
       {/* ── 主体：桌面双列 ──────────────────────────────────────
@@ -514,7 +478,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
           操作/观测在侧列 sticky 常驻 —— 「试跑」不再埋在第 5 段，
           屏幕一进来就能跑。窄屏自动退回单列（右列内容排到配置后面）。
           内容量宽从 1007px 收到 ~760px：System Prompt 一行不再横扫全屏。 */}
-      <div className="grid gap-4 grid-cols-1 xl:grid-cols-[minmax(0,1fr)_400px] items-start">
+      <div className="flex flex-col gap-4 xl:grid xl:grid-cols-[minmax(0,1fr)_400px] xl:items-start">
         {/* ══ 左列：配置 ══ */}
         <div className="min-w-0 space-y-4">
       {/* ── 基础配置 ──────────────────────────
@@ -523,7 +487,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
           原来是 2 列 grid 塞 5 个不等高 Fold，视觉错落且顺序对不上心智模型 ✗。 */}
       <div id="sec-define" className="grid gap-4 grid-cols-1 scroll-mt-14">
           <section className="card p-4 space-y-3.5">
-            <h2 className="text-[14px] font-medium">基础</h2>
+            <h2 className="text-[14px] font-medium">定义</h2>
             <div>
               <label className="label">名称</label>
               {/* 名称：**失焦就自动保存**。
@@ -675,9 +639,11 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 </p>
               </div>
             </div>
-          </section>
-
-          <Fold title="运行时与模型">
+            {/* 模型与运行时并进同一张「定义」卡：两者回答的是同一件事
+                「这个助手是谁、拿什么跑」。原先是两张卡、模型那节还默认收起 ——
+                改个模型要先展开一次，多一道门。 */}
+            <div className="pt-3.5 mt-1 border-t border-[var(--color-border)]">
+              <h3 className="text-[13px] font-medium mb-2.5">模型与运行时</h3>
             <div className="flex items-center justify-between">
               {caps && <span className="tag">{caps.display_name}</span>}
             </div>
@@ -827,7 +793,8 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 }
               />
             </div>
-          </Fold>
+            </div>
+          </section>
 
           {/* ── 能力：工具 + MCP + Skills 一个选择器 ──────────────────
               用户心智是「这个助手会什么」一件事，原来三个 Fold 三套交互 ✗
@@ -869,62 +836,52 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
             )}
           </Fold>
         </div>
-
-      {/* ── 历史版本 ───────────────────────────────────────────────
-          放在"配置"与"使用"之间：它属于配置（改坏了退回去），
-          但又不是每次都看 —— 所以不做成常驻工具条，做成一个可折叠感的区。 */}
-      <div id="sec-revisions" className="scroll-mt-14">
-        <Fold title="历史版本">
-        <RevisionHistory kind="agent" targetId={agentId} onRestored={() => void load()} />
-        </Fold>
-      </div>
         </div>
-        {/* ══ 左列完 ══ */}
+        {/* ══ 左列完（定义 + 能力）══ */}
 
-        {/* ══ 右列：使用（sticky —— 滚配置时试跑面板一直看得见）══ */}
-        <div className="min-w-0 space-y-4 xl:sticky xl:top-4">
-      {/* ── 试跑与观测：主操作提级到侧列首段 ── */}
-          <Fold
-          title="试跑与观测"
-          summary={
-            ov.lastRun
-              ? `最近：${ov.lastRun.status} · ${fmt.relative(ov.lastRun.at)}`
-              : "还没跑过"
-          }
-          defaultOpen
-        >
-        <RunPanel
-          agentId={agentId}
-          agentName={agent.name}
-          disabled={errors.length > 0}
-          unsaved={dirty}
-          onSave={save}
-        />
+        {/* ══ 右列：用这个助手（sticky）══
+            配置页的主操作是「试跑看效果」，所以它是常驻卡片、不进折叠；
+            历史版本 / 评测 / 记忆是偶尔才翻的，统一收进一个「更多」段 ——
+            之前它们是三个并列的折叠段，把主操作挤到了第 5 段之后。 */}
+        <div className="min-w-0 space-y-4 xl:sticky xl:top-4 max-xl:contents">
+          <section className="card p-4 max-xl:order-first">
+            <div className="flex items-center gap-2 mb-3">
+              <h2 className="text-[14px] font-medium">快速试跑</h2>
+              <span className="text-[11.5px] text-[var(--color-muted)]">
+                一句话，看它这一轮干了什么
+              </span>
+            </div>
+            <AgentQuickRun
+              agentId={agentId}
+              disabled={errors.length > 0}
+              unsaved={dirty}
+              onSave={save}
+            />
+          </section>
+
+          <Fold title="更多（历史版本 · 评测 · 记忆）">
+            <div className="space-y-4">
+              <div>
+                <div className="text-[12px] font-medium mb-2">历史版本</div>
+                <RevisionHistory kind="agent" targetId={agentId} onRestored={() => void load()} />
+              </div>
+              <div>
+                <div className="text-[12px] font-medium mb-2">评测</div>
+                <AgentEvalPanel agentId={agentId} disabled={dirty} />
+              </div>
+              <div>
+                <div className="text-[12px] font-medium mb-2">
+                  记忆
+                  {ov.memoryOwn !== null && (
+                    <span className="ml-2 font-normal text-[var(--color-muted)]">
+                      自己的 {ov.memoryOwn} · 共用 {ov.memoryShared}
+                    </span>
+                  )}
+                </div>
+                <AgentMemoryPanel agentId={agentId} />
+              </div>
+            </div>
           </Fold>
-
-      {/* ── 评测 ─────────────────────────────────────────────────
-          "我改了提示词，到底变好了还是变坏了？" —— 用同一套用例跑两次才有答案。
-          放在助手页里（评测是这个助手的事），不新开导航/不加 tab。 */}
-      <div id="sec-evals" className="scroll-mt-14">
-        <Fold title="评测" summary={undefined}>
-          <AgentEvalPanel agentId={agentId} disabled={dirty} />
-        </Fold>
-      </div>
-
-      {/* ── 记忆 ───────────────────────────────────────────────── */}
-      {/* 不另加外层标题：记忆面板的卡片自带「记忆」标题，再加一层就重复了 */}
-      <div id="sec-memory" className="scroll-mt-14">
-        <Fold
-          title="记忆"
-          summary={
-            ov.memoryOwn === null
-              ? undefined
-              : `自己的 ${ov.memoryOwn} · 共用 ${ov.memoryShared}`
-          }
-        >
-        <AgentMemoryPanel agentId={agentId} />
-        </Fold>
-      </div>
         </div>
         {/* ══ 右列完 ══ */}
       </div>
