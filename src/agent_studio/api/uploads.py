@@ -158,6 +158,10 @@ def download(fid: str) -> FileResponse:
     path = Path(item["path"])
     if not path.exists():
         raise HTTPException(status_code=410, detail="文件已被移走或删除")
+    # 图片必须 inline：带 attachment 头的响应 <img> 会拒绝渲染（部分浏览器
+    # 直接当下载处理，缩略图全部裂图）。非图片保持 attachment（点开=下载）。
+    if item.get("kind") == "image":
+        return FileResponse(path)
     return FileResponse(path, filename=item.get("name") or path.name)
 
 

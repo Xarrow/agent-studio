@@ -75,3 +75,29 @@ def test_work_list_shape():
     for item in r.json()["files"]:
         assert set(item) == {"path", "size", "mtime", "url"}
         assert item["url"].startswith("/api/work/file/")
+
+
+def test_upload_image_served_inline():
+    """图片附件必须 inline（无 attachment 头）—— <img> 对 attachment 响应
+    会拒绝渲染，缩略图全裂。非图片保持 attachment（点开=下载）。"""
+    import io
+
+    from agent_studio.main import app
+
+    # 最小合法 PNG（1x1 红像素），不依赖 PIL
+    PNG_1PX = bytes.fromhex(
+        "89504e470d0a1a0a0000000d494844520000000100000001080200000090"
+        "7753de0000000c4944415408d763f8cfc00000030101"
+        "00184fbb610000000049454e44ae426082"
+    )
+    c = TestClient(app)
+    r = c.post("/api/uploads", files={"file": ("_inline_test.png", PNG_1PX, "image/png")})
+    assert r.status_code == 200, r.text
+    fid = r.json()["id"]
+    try:
+        got = c.get(f"/api/uploads/file/{fid}")
+        assert got.status_code == 200
+        assert got.headers["content-type"] == "image/png"
+        assert "attachment" not in got.headers.get("content-disposition", "")
+    finally:
+        c.delete(f"/api/uploads/file/{fid}")
