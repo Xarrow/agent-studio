@@ -75,8 +75,10 @@ export interface AgentDefinition {
   runtime_options: Record<string, Record<string, unknown>>;
   /** 挂哪几台 MCP 服务器（存 id）。工具清单由探测得到，这里只记"用哪几台" */
   mcp_servers?: string[];
-  /** 这个助手自己的工作目录（沙箱内的子目录名；空 = 平台共用那个）。**同时是权限边界** */
+  /** 这个助手自己的工作目录（会话/单跑目录下的子目录名；空 = 直接用会话目录）。**同时是权限边界** */
   workspace?: string;
+  /** 文件目录怎么隔离：session（默认，每个会话一个目录）/ shared（所有会话共用一个） */
+  workspace_isolation?: "session" | "shared";
 }
 
 export interface Agent {

@@ -56,6 +56,23 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   const ime = useImeGuard();
   /** 服务器上的存放路径 —— 界面上说清"这些对话存在哪"（自托管必须让用户能核对） */
   const [paths, setPaths] = useState<Awaited<ReturnType<typeof api.paths>> | null>(null);
+  /** 这个会话的工作目录与产物（会话隔离后按会话列） */
+  const [sessionFiles, setSessionFiles] = useState<Awaited<
+    ReturnType<typeof api.sessionFiles>
+  > | null>(null);
+
+  const loadSessionFiles = useCallback(async () => {
+    if (!sessionId) {
+      setSessionFiles(null);
+      return;
+    }
+    try {
+      setSessionFiles(await api.sessionFiles(sessionId));
+    } catch {
+      setSessionFiles(null); // 打不开就不显示这块 —— 不打扰用户
+    }
+  }, [sessionId]);
+
   /** 正在浮层里配置的助手（从对话页直接打开，不离开对话） */
   const [configAgent, setConfigAgent] = useState<string | null>(null);
   /**
@@ -507,6 +524,10 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   const railTouched = useRef(false);
   /** 存储位置这类「自托管自证」信息：默认收起，点 ⓘ 才展开（原来是常驻噪声） */
   const [showPaths, setShowPaths] = useState(false);
+  // 一轮跑完顺手刷一下（刚产出的文件当场就能看见）
+  useEffect(() => {
+    if (showPaths && !busy) void loadSessionFiles();
+  }, [busy, showPaths, loadSessionFiles]);
   useEffect(() => {
     try {
       const savedNav = localStorage.getItem("chat.navOpen");
@@ -1005,7 +1026,11 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                         style={{ color: showPaths ? "var(--color-accent)" : "var(--color-muted)" }}
                         title="对话存在哪、助手在哪干活"
                         aria-expanded={showPaths}
-                        onClick={() => setShowPaths((v) => !v)}
+                        onClick={() => {
+                          const next = !showPaths;
+                          setShowPaths(next);
+                          if (next) void loadSessionFiles();
+                        }}
                       >
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                           <circle cx="12" cy="12" r="9" />
@@ -1096,6 +1121,64 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 </button>
                 <span>· 助手工作目录</span>
                 <span className="mono">{paths.work_dir}</span>
+              </div>
+            )}
+
+            {/* 这个会话的文件 —— 会话隔离后每个会话一个目录，
+                所以"这个会话产了什么"必须按会话列，别再给一张全局清单 */}
+            {showPaths && sessionFiles && (
+              <div
+                className="max-w-3xl mx-auto mt-1.5 rounded-lg px-2.5 py-2 text-[11.5px]"
+                style={{ background: "var(--color-surface-2)", color: "var(--color-muted)" }}
+              >
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span>这个会话的目录</span>
+                  <button
+                    type="button"
+                    data-tap
+                    className="mono hover:underline truncate"
+                    title="点一下复制完整路径"
+                    onClick={() =>
+                      void navigator.clipboard?.writeText(sessionFiles.work_dir).then(
+                        () => fb.success("已复制路径", sessionFiles.work_dir),
+                        () => fb.info("路径", sessionFiles.work_dir),
+                      )
+                    }
+                  >
+                    {sessionFiles.work_dir}
+                  </button>
+                  <span>· {sessionFiles.count} 个文件</span>
+                  <button
+                    type="button"
+                    data-tap
+                    className="ml-auto hover:underline"
+                    style={{ color: "var(--color-accent)" }}
+                    onClick={() => void loadSessionFiles()}
+                  >
+                    刷新
+                  </button>
+                </div>
+                {sessionFiles.files.length > 0 && (
+                  <div className="mt-1.5 space-y-0.5">
+                    {sessionFiles.files.slice(0, 6).map((f) => (
+                      <div key={f.path} className="flex items-center gap-2">
+                        <a
+                          href={f.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mono truncate hover:underline"
+                          style={{ color: "var(--color-accent)" }}
+                        >
+                          {f.path}
+                        </a>
+                        <span className="shrink-0 ml-auto">{fmt.bytes(f.size)}</span>
+                      </div>
+                    ))}
+                    {sessionFiles.files.length > 6 && (
+                      <div>还有 {sessionFiles.files.length - 6} 个…</div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>

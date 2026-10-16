@@ -3,6 +3,14 @@
 会话是"短期记忆"的载体：Run 记录单次执行，Session 把多次执行串成一段对话。
 两者是一对多（``run.session_id``），删除会话会级联清掉其消息，
 但**不删 Run** —— Run 是观测资产，会话是对话组织方式。
+
+**文件隔离**：会话同时也是文件目录的边界（``<work_dir>/sessions/<会话号>/``，
+见 ``runner.service.resolve_work_dir``）。因此这一层还要负责：
+
+- 会话列表/详情里告诉用户"文件在哪"（``work_dir`` 字段）
+- ``GET /api/sessions/{id}/files`` 列这个会话的产物（别的会话的文件看不到）
+- 删除会话时把它的目录一并清掉 —— 但**只准删 ``sessions/<会话号>``**，
+  路径没对准就跳过（宁可不删，也不能误删沙箱根或别人的目录）
 """
 
 from __future__ import annotations
@@ -11,9 +19,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..config import settings
 from ..context import clear_context
 from ..db import get_session
 from ..models import Agent, Run, Session as ChatSession, SessionMessage, new_id, now_ms
+from ..runner.service import SESSION_DIR_NAME, session_work_dir
 from ..schemas import (
     SessionClearContextRequest,
     SessionCreate,
@@ -35,6 +45,28 @@ async def _agent_names(session: AsyncSession, agent_ids: list[str]) -> dict[str,
     return {r[0]: r[1] for r in rows}
 
 
+def _remove_session_dir(session_id: str) -> str | None:
+    """删掉会话的工作目录。
+
+    **护栏**：只准删 ``<work_dir>/sessions/<会话号>`` 这一层 —— 会话号要像自家
+    生成的、解析后必须**严格在** ``sessions/`` 之下（不是会话根、不是沙箱根、
+    不是别的目录）。对不上就返回 None 不动手：宁可不删，也不能误删别人的文件。
+    """
+    import shutil
+    from pathlib import Path
+
+    root = Path(settings.work_dir).resolve() / SESSION_DIR_NAME
+    target = session_work_dir(session_id)
+    try:
+        resolved = target.resolve()
+    except OSError:
+        return None
+    if resolved.parent != root or resolved == root or not resolved.is_dir():
+        return None
+    shutil.rmtree(resolved, ignore_errors=True)
+    return str(resolved)
+
+
 def _to_read(row: ChatSession, turn_count: int = 0, agent_name: str | None = None) -> SessionRead:
     return SessionRead(
         id=row.id,
@@ -50,6 +82,7 @@ def _to_read(row: ChatSession, turn_count: int = 0, agent_name: str | None = Non
         last_active_at=row.last_active_at,
         turn_count=turn_count,
         agent_name=agent_name,
+        work_dir=str(session_work_dir(row.id)),
     )
 
 
@@ -132,6 +165,45 @@ async def get_session_detail(
     )
 
 
+@router.get("/{session_id}/files")
+async def list_session_files(
+    session_id: str, limit: int = Query(200, ge=1, le=1000), session: AsyncSession = Depends(get_session)
+) -> dict:
+    """这个会话的工作目录里有什么（**别会话的文件不在这里**）。
+
+    前端「这个会话的文件」用它：会话隔离之后，产物按会话分目录，
+    再拿一张全局的清单就等于把隔离又漏回去了。
+    """
+    row = await session.get(ChatSession, session_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"会话不存在: {session_id}")
+    root = session_work_dir(session_id)
+    out: list[dict] = []
+    if root.is_dir():
+        for p in sorted(root.rglob("*"), key=lambda x: x.stat().st_mtime, reverse=True):
+            if not p.is_file():
+                continue
+            rel = p.relative_to(root)
+            if any(part.startswith(".") for part in rel.parts):
+                continue
+            try:
+                stat = p.stat()
+            except OSError:
+                continue
+            out.append(
+                {
+                    "path": str(rel),
+                    "size": stat.st_size,
+                    "mtime": int(stat.st_mtime),
+                    # 取回走既有的产物端点（它本来就只放行沙箱内的路径）
+                    "url": f"/api/work/file/{SESSION_DIR_NAME}/{session_id}/{rel}",
+                }
+            )
+            if len(out) >= limit:
+                break
+    return {"session_id": session_id, "work_dir": str(root), "count": len(out), "files": out}
+
+
 @router.patch("/{session_id}", response_model=SessionRead)
 async def update_session(
     session_id: str, payload: SessionUpdate, session: AsyncSession = Depends(get_session)
@@ -166,7 +238,8 @@ async def delete_session(
         run.session_id = None
     await session.delete(row)
     await session.commit()
-    return {"deleted": 1, "unbound_runs": len(runs)}
+    removed = _remove_session_dir(session_id)
+    return {"deleted": 1, "unbound_runs": len(runs), "removed_dir": removed}
 
 
 @router.patch("/{session_id}/messages/{message_id}", response_model=SessionMessageRead)

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
@@ -50,17 +51,116 @@ async def read_paths() -> dict[str, Any]:
 
     work = Path(settings.work_dir).expanduser()
     backups = Path(settings.db_path).expanduser().parent
+    sessions_dir = work.resolve() / "sessions"
     return {
         "database_file": db_file,
         "database_url": settings.db_url,
         "work_dir": str(work.resolve()) if work.exists() else str(work),
+        "sessions_dir": str(sessions_dir),
         "backup_dir": str(backups.resolve()),
         # 说清"存在哪"的语义，别报一个不存在的路径（原来这里凭空拼了个 runs/ 子目录）
         "note": (
-            "会话与消息存在数据库文件里；助手干活（读写的文件、跑的脚本）落在工作目录里 —— "
-            "默认所有助手共用一个工作目录，助手自己配了「工作目录」则用它的子目录。"
+            "会话与消息存在数据库文件里；助手干活（读写的文件、跑的脚本）落在工作目录下："
+            "每个会话一个子目录（sessions/<会话号>/），会话之间互不可见；"
+            "单轮试跑/定时/编排各有自己的 runs/ 子目录。"
         ),
     }
+
+
+# --------------------------------------------------------------------------- #
+# 会话目录（文件隔离的落地物）
+# --------------------------------------------------------------------------- #
+def _dir_usage(root: Path) -> dict[str, Any]:
+    files = 0
+    size = 0
+    newest = 0
+    for p in root.rglob("*"):
+        st = None
+        try:
+            if p.is_file():
+                st = p.stat()
+        except OSError:
+            st = None
+        if st is None:
+            continue
+        files += 1
+        size += st.st_size
+        newest = max(newest, int(st.st_mtime))
+    return {"files": files, "bytes": size, "mtime": newest}
+
+
+def scan_session_dirs(session_ids: set[str]) -> list[dict[str, Any]]:
+    """列出 ``work_dir/sessions/`` 下的会话目录，并标出"没有主的"。
+
+    没有主 = 磁盘上有目录、库里没有这个会话（手工删过库、或删除时会话目录
+    清理失败）。这些才是可以清的；**有主的目录一个都不动** ——
+    那是用户文件的所在，清掉就是删数据。
+    """
+    root = (Path(settings.work_dir).expanduser().resolve() / "sessions")
+    out: list[dict[str, Any]] = []
+    if not root.is_dir():
+        return out
+    for d in sorted(root.iterdir()):
+        if not d.is_dir() or d.name.startswith("."):
+            continue
+        usage = _dir_usage(d)
+        out.append(
+            {
+                "session_id": d.name,
+                "path": str(d),
+                "orphan": d.name not in session_ids,
+                **usage,
+            }
+        )
+    return out
+
+
+@router.get("/session-dirs", response_model=dict)
+async def read_session_dirs(session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """会话目录体检：几个、占多少、几个没主（可清）。"""
+    from ..models import Session as ChatSession
+
+    rows = (await session.execute(select(ChatSession.id))).scalars().all()
+    dirs = scan_session_dirs(set(rows))
+    return {
+        "root": str(Path(settings.work_dir).expanduser().resolve() / "sessions"),
+        "count": len(dirs),
+        "bytes": sum(d["bytes"] for d in dirs),
+        "orphans": [d for d in dirs if d["orphan"]],
+        "dirs": dirs[:200],
+    }
+
+
+@router.post("/session-dirs/clean", response_model=dict)
+async def clean_session_dirs(
+    payload: dict | None = None, session: AsyncSession = Depends(get_session)
+) -> dict[str, Any]:
+    """清掉**没有主**的会话目录（名单先给用户看，这里只删点名的/全部没主的）。
+
+    有主的目录即使被点名也不删 —— 那是会话的文件，删目录 = 删用户数据；
+    要删数据走「删除会话」，那条路会把会话和目录一起收掉。
+    """
+    from ..models import Session as ChatSession
+
+    rows = (await session.execute(select(ChatSession.id))).scalars().all()
+    dirs = scan_session_dirs(set(rows))
+    wanted = set((payload or {}).get("session_ids") or [])
+    removed: list[str] = []
+    freed = 0
+    import shutil
+
+    for d in dirs:
+        if not d["orphan"]:
+            continue
+        if wanted and d["session_id"] not in wanted:
+            continue
+        try:
+            shutil.rmtree(d["path"], ignore_errors=True)
+        except OSError:
+            continue
+        removed.append(d["session_id"])
+        freed += int(d["bytes"])
+    return {"removed": removed, "count": len(removed), "freed_bytes": freed}
 
 
 @router.get("/storage", response_model=dict)

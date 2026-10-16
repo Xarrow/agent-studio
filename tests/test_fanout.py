@@ -23,6 +23,8 @@ from agent_studio import fanout
 from agent_studio.db import SessionLocal
 from agent_studio.models import Run, now_ms
 from agent_studio.runner.dispatcher import dispatcher
+from agent_studio.runner.service import run_work_dir
+from agent_studio.schemas import AgentDefinition
 
 from test_spans import SpanRuntime  # 会发真事件流的桩运行时（复用，避免两套桩）
 
@@ -1482,14 +1484,22 @@ async def test_isolated_items_do_not_clobber_each_others_files(client):
         [s for s in d["steps"] if s.get("parent_run_id")], key=lambda x: x.get("item_index") or 0
     )
     contents = []
+    dirs = []
     async with SessionLocal() as s:
         for k in kids:
             row = await s.get(Run, k["run_id"])
-            ws = (row.definition_snapshot or {}).get("workspace")
-            p = Path(settings.work_dir) / str(ws) / "result.md"
+            # 目录由平台解析（不再是"沙箱根 + 路名"）：分派出去的路和父执行
+            # 在同一棵树里，各自再占一个以自己命名的子目录。
+            # 解析入口与执行路径**同一个** —— 两边各写一遍就会假红
+            lane = run_work_dir(row.definition_snapshot or {}, row)
+            p = lane / "result.md"
             assert p.exists(), f"第 {k['item_index'] + 1} 路没在自己的目录里写出文件：{p}"
             contents.append(p.read_text(encoding="utf-8"))
+            dirs.append(lane)
     assert len(contents) == 2 and len(set(contents)) == 2, f"两份产物必须各有内容：{contents}"
+    assert dirs[0] != dirs[1], "两路必须是两个目录（不能互相覆盖）"
+    # 而且都在**同一个父执行**的树里 —— 否则编排者读子产物就是"越出工作目录"
+    assert dirs[0].parent == dirs[1].parent, f"两路应当同属一棵树：{dirs}"
 
 
 async def test_rerun_refills_only_the_failed_items(client):

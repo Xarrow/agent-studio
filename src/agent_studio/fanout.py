@@ -212,6 +212,9 @@ async def dispatch_remote(
                 item_index=i,
                 item_label=item_label(item, i),
                 parent_run_id=parent_run.id,
+                # 沿用父执行的会话号：同一个会话的分派、续跑都落在同一棵目录树下
+                # （会话之间才是隔离的边界）
+                session_id=parent_run.session_id,
                 orchestration_id=parent_run.orchestration_id,
                 origin=parent_run.origin,
             )
@@ -390,6 +393,9 @@ async def dispatch(
                 item_index=i,
                 item_label=item_label(item, i),
                 parent_run_id=parent_run.id,
+                # 沿用父执行的会话号：同一个会话的分派、续跑都落在同一棵目录树下
+                # （会话之间才是隔离的边界）
+                session_id=parent_run.session_id,
                 orchestration_id=parent_run.orchestration_id,
                 # 来源沿用父 run（定时/外部触发的分派仍然是"它自己跑的"）
                 origin=parent_run.origin,

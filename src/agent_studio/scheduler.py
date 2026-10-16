@@ -206,6 +206,13 @@ async def loop() -> None:
         except Exception:  # noqa: BLE001
             # 备份失败同样不该拖垮调度（但要留下日志 —— 备份坏了必须有人知道）
             logger.exception("数据库备份这一轮出错（继续下一轮）")
+        try:
+            await _maybe_clean_session_dirs()
+        except asyncio.CancelledError:  # 服务在退出
+            raise
+        except Exception:  # noqa: BLE001
+            # 清理失败不影响自动运行（它只是回收没人要的目录）
+            logger.exception("会话目录清理这一轮出错（继续下一轮）")
         await asyncio.sleep(TICK_SECONDS)
 
 
@@ -264,6 +271,38 @@ async def _maybe_backup_db() -> None:
         await session.commit()
         if made:
             logger.info("数据库副本已留：%s", made)
+
+
+async def _maybe_clean_session_dirs() -> None:
+    """没有主的会话目录（磁盘上有、库里没有）定期收掉 —— 并进同一个调度循环。
+
+    只清"没主"的：会话还在的目录一个都不动（那是用户文件的所在）。
+    正常情况下删除会话就会连目录一起删，这里是兜底（手工删过库、删除时被中断）。
+    """
+    from .config import settings
+
+    interval = max(int(getattr(settings, "session_dir_clean_interval_s", 86400)), 3600)
+    async with SessionLocal() as session:
+        from .settings_store import get_setting, set_setting
+
+        last = int(await get_setting(session, "session_dir_clean_last_at", 0) or 0)
+        if now_ms() - last < interval * 1000:
+            return
+        from .api.maintenance import scan_session_dirs
+        from .models import Session as ChatSession
+
+        rows = (await session.execute(select(ChatSession.id))).scalars().all()
+        orphans = [d for d in scan_session_dirs(set(rows)) if d["orphan"]]
+        if orphans:
+            import shutil
+
+            freed = 0
+            for d in orphans:
+                shutil.rmtree(d["path"], ignore_errors=True)
+                freed += int(d["bytes"])
+            logger.info("清掉 %d 个没有主的会话目录，回收 %d 字节", len(orphans), freed)
+        await set_setting(session, "session_dir_clean_last_at", now_ms())
+        await session.commit()
 
 
 def describe(mode: str | None, at: str | None, weekdays: str | None) -> str:

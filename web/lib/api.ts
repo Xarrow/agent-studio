@@ -846,6 +846,29 @@ export const api = {
   sessions: (agentId?: string) =>
     request<Session[]>(`/api/sessions${agentId ? `?agent_id=${agentId}` : ""}`),
   session: (id: string) => request<SessionDetail>(`/api/sessions/${id}`),
+  /** 这个会话的工作目录里有什么（会话隔离后，产物按会话分目录） */
+  sessionFiles: (id: string, limit = 200) =>
+    request<{
+      session_id: string;
+      work_dir: string;
+      count: number;
+      files: { path: string; size: number; mtime: number; url: string }[];
+    }>(`/api/sessions/${id}/files?limit=${limit}`),
+  /** 会话目录体检：几个、占多少、几个没主（可清） */
+  sessionDirs: () =>
+    request<{
+      root: string;
+      count: number;
+      bytes: number;
+      orphans: { session_id: string; path: string; files: number; bytes: number }[];
+      dirs: { session_id: string; path: string; orphan: boolean; files: number; bytes: number }[];
+    }>("/api/maintenance/session-dirs"),
+  /** 清掉没有主的会话目录（有主的点名也不删） */
+  cleanSessionDirs: (sessionIds?: string[]) =>
+    post<{ removed: string[]; count: number; freed_bytes: number }>(
+      "/api/maintenance/session-dirs/clean",
+      { session_ids: sessionIds },
+    ),
   createSession: (agentId: string, title?: string) =>
     post<Session>("/api/sessions", { agent_id: agentId, title: title ?? null }),
   updateSession: (id: string, patch: { title?: string; status?: string }) =>

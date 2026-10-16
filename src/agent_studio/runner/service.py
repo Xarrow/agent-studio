@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import time
 from pathlib import Path
 import zlib
@@ -234,32 +235,134 @@ bus = EventBus()
 # --------------------------------------------------------------------------- #
 # 辅助
 # --------------------------------------------------------------------------- #
-def resolve_work_dir(definition: Any) -> Path:
-    """把「这个助手的工作目录」解析成绝对路径，需要时建出来。
+#: 会话/单跑的工作目录挂在沙箱根下的这两个子目录里
+SESSION_DIR_NAME = "sessions"
+RUN_DIR_NAME = "runs"
+#: 会话号要能安全当路径段（自家生成的 `ses_xxx` 也走一遍校验，防手改库）
+_SAFE_ID = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 
-    **安全边界就在这里**：workspace 只能是平台沙箱根目录下的子目录名 ——
-    绝对路径、``..``、解析后越出沙箱的，一律记 warning 并回退平台默认目录。
+
+def _attr(defn: Any, key: str, default: Any = "") -> Any:
+    """定义可能是个 pydantic 模型，也可能是**冻结快照 dict** —— 两种都要能读。"""
+    if isinstance(defn, dict):
+        val = defn.get(key, default)
+    else:
+        val = getattr(defn, key, default)
+    return default if val is None else val
+
+
+def workspace_isolation(definition: Any) -> str:
+    """这个助手的文件目录隔离方式：``session``（默认）或 ``shared``。
+
+    - ``session``：**每个会话一个目录** —— 会话之间互不可见，同一个会话里
+      多轮对话、分派出去的每一路都在同一个目录树下（工件能回流给编排者）。
+    - ``shared``：这个助手的所有会话共用一个目录 —— 适合"围绕一个数据项目
+      反复干"的场景，代价是会话之间会互相看见/覆盖同名文件。
+
+    为什么默认按会话隔离：平台是多会话的，共用目录时两个会话同时写
+    ``result.md`` 就是互相覆盖，而且谁也说不清某个文件是哪个会话产的。
+    """
+    raw = str(_attr(definition, "workspace_isolation", "") or "").strip().lower()
+    return raw if raw in ("session", "shared") else "session"
+
+
+def session_work_dir(session_id: str) -> Path:
+    """某个会话的工作目录（绝对路径，不创建）。"""
+    base = Path(settings.work_dir).resolve()
+    return base / SESSION_DIR_NAME / session_id
+
+
+def _safe_segment(raw: str, *, what: str) -> str | None:
+    """名字必须是**单层目录名**：绝对路径、``..``、路径分隔符一律不认。"""
+    name = (raw or "").strip().strip("/")
+    if not name:
+        return None
+    if os.path.isabs(raw) or ".." in Path(name).parts or "/" in name or "\\" in name:
+        logger.warning("%s非法（%r），忽略", what, raw)
+        return None
+    return name
+
+
+def resolve_work_dir(
+    definition: Any,
+    session_id: str | None = None,
+    run_id: str | None = None,
+    orchestration_id: str | None = None,
+    parent_run_id: str | None = None,
+) -> Path:
+    """把「这次执行的工作目录」解析成绝对路径，需要时建出来。
+
+    隔离层级（由外到内）
+    --------------------
+    1. **会话级** ``sessions/<会话号>/``（默认）：同一会话的所有轮次、分派、
+       续跑都在同一棵树下 —— 会话之间互不可见。
+    2. **编排级** ``runs/orc-<编排号>/``（没有会话时的编排）：同一次编排的
+       所有节点共用一个根，**这是必须的** —— 工作目录就是权限边界，
+       分派出去的实例如果各占一个互不相干的目录，编排者读它们的产物
+       就变成"越出工作目录"，无人值守的编排会卡在人工确认上。
+    3. **分派级** ``runs/<父执行号>/``：从一次单跑里分派出去的路 ——
+       跟父执行**同一棵**树（否则父读子产物 = 越出工作目录，要人工确认）。
+    4. **单跑级** ``runs/<执行号>/``：单轮预览、A2A、定时、评测 ——
+       一次一份独立现场，不跟别人共用。
+
+    最后再叠 **助手级**（``workspace`` 名字）：会话/编排/单跑目录下的子目录；
+    ``shared`` 模式下则退回老行为（沙箱根下的单层目录，所有会话共用）。
+
+    **安全边界就在这里**：名字只能是单层目录名 —— 绝对路径、``..``、
+    解析后越出沙箱的，一律记 warning 并回退上一层目录。
     这不是洁癖：目录就是权限边界（accept_edits 放行的正是"工作目录内"），
     能跳出目录，权限 scope 就形同虚设。
     """
     root = Path(settings.work_dir).resolve()
-    raw = str(getattr(definition, "workspace", "") or "").strip()
-    if not raw:
-        return root
-    # 先按**用户原样**判非法，再规整：否则 "/tmp/x" 会被 strip 成 "tmp/x"
-    # 静默当成子目录 —— 没逃出沙箱，但和用户写的语义不符，不如明确拒绝。
-    if os.path.isabs(raw) or ".." in Path(raw).parts:
-        logger.warning("助手工作目录非法（%r），回退平台默认", raw)
-        return root
-    name = raw.strip("/")
-    if not name:
-        return root
-    target = (root / name).resolve()
+    ws = _safe_segment(str(_attr(definition, "workspace", "") or ""), what="助手工作目录")
+
+    if workspace_isolation(definition) == "shared":
+        base = root
+        # 老行为：workspace 就是沙箱根下的单层目录名
+        if ws is None and str(_attr(definition, "workspace", "") or "").strip():
+            logger.warning("助手工作目录非法（%r），回退平台默认", _attr(definition, "workspace", ""))
+        target = (root / ws).resolve() if ws else base
+    else:
+        sid = (session_id or "").strip()
+        orc = (orchestration_id or "").strip()
+        pid_ = (parent_run_id or "").strip()
+        rid = (run_id or "").strip()
+        if sid and _SAFE_ID.match(sid):
+            base = (root / SESSION_DIR_NAME / sid).resolve()
+        elif orc and _SAFE_ID.match(orc):
+            base = (root / RUN_DIR_NAME / f"orc-{orc}").resolve()
+        elif pid_ and _SAFE_ID.match(pid_):
+            base = (root / RUN_DIR_NAME / pid_).resolve()
+        elif rid and _SAFE_ID.match(rid):
+            base = (root / RUN_DIR_NAME / rid).resolve()
+        else:
+            if sid or orc or pid_ or rid:
+                logger.warning(
+                    "执行归属号不像自家生成的（%r/%r/%r/%r），这一跑用共享目录", sid, orc, pid_, rid
+                )
+            base = root
+        target = (base / ws).resolve() if ws else base
+
     if target != root and root not in target.parents:
-        logger.warning("助手工作目录越出沙箱（%r），回退平台默认", name)
-        return root
+        logger.warning("工作目录越出沙箱（%r），回退平台默认", target)
+        target = root
     target.mkdir(parents=True, exist_ok=True)
     return target
+
+
+def run_work_dir(definition: Any, run: Any) -> Path:
+    """按这条执行自己的归属信息解析工作目录。
+
+    **执行路径与测试共用这一个入口** —— 否则"目录该在哪"会被两边各写一遍，
+    改一处忘一处（实测：测试按旧约定拼路径，改了归属规则后假红）。
+    """
+    return resolve_work_dir(
+        definition,
+        session_id=_attr(run, "session_id", "") or "",
+        run_id=_attr(run, "id", "") or "",
+        orchestration_id=_attr(run, "orchestration_id", "") or "",
+        parent_run_id=_attr(run, "parent_run_id", "") or "",
+    )
 
 
 async def resolve_api_key(definition: AgentDefinition, session: Any) -> str | None:
@@ -641,7 +744,9 @@ class RunService:
                 # 都会用错端点（火山引擎 plan key 打 /api/v3 会 401）
                 definition = _with_base_url(definition, cred_base_url)
                 # 工作目录两处都要用：编译时告诉运行时（=权限边界），以及**告诉模型**它在哪
-                work_dir = resolve_work_dir(definition)
+                # 带上会话号：默认按会话隔离（sessions/<会话号>/），没有会话才算
+                # 「这一跑一份」的独立目录 —— 会话之间不共用文件
+                work_dir = run_work_dir(definition, run)
                 run_input = _with_work_dir_hint(run_input, work_dir)
                 # 组装上下文：短期记忆（会话历史）+ 长期记忆（召回注入）
                 # 注意：这里只产出**平台中立**的 TurnContext，不含任何框架对象
@@ -933,6 +1038,11 @@ class RunService:
             seq = (last or -1) + 1
             run = await session.get(Run, run_id)
             tools = await load_tools(session, run.agent_id)
+            # 续跑也要落在**同一个**会话目录里（否则「点了允许」之后模型看到的
+            # 工作目录突然换成另一个，接着写的文件就跟前一轮分家了）
+            _resume_session_id = run.session_id
+            _resume_orchestration_id = run.orchestration_id
+            _resume_parent_run_id = run.parent_run_id
             # 续跑（人工确认之后）也必须**连 base_url 一起**解析凭据：
             # 只看 api_key 的话，凭据上配的端点会被丢掉，退回框架自带默认端点 ——
             # 火山方舟的 Agent Plan key 打到 /api/v3 直接 401，
@@ -958,7 +1068,16 @@ class RunService:
             )
             compiled = await runtime.compile(
                 definition, api_key=api_key, tools=tools,
-                agent_id=run.agent_id, work_dir=str(resolve_work_dir(definition)),
+                agent_id=run.agent_id,
+                work_dir=str(
+                    resolve_work_dir(
+                        definition,
+                        session_id=_resume_session_id,
+                        run_id=run_id,
+                        orchestration_id=_resume_orchestration_id,
+                        parent_run_id=_resume_parent_run_id,
+                    )
+                ),
             )
             # 把暂停那一刻的状态装回去 —— 否则新编译的 agent 不认为自己
             # 有待确认的调用，AgentScope 会直接拒绝确认事件

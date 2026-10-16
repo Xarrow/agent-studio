@@ -47,6 +47,48 @@ export function StoragePanel() {
   const [loading, setLoading] = useState(true);
   const [armed, setArmed] = useState(false);
   const [busy, setBusy] = useState(false);
+  /** 会话目录（文件隔离的落地面）：体检 + 清"没主的" */
+  const [dirs, setDirs] = useState<Awaited<ReturnType<typeof api.sessionDirs>> | null>(null);
+  const [dirsLoading, setDirsLoading] = useState(true);
+  const [dirsArmed, setDirsArmed] = useState(false);
+  const [dirsCleaning, setDirsCleaning] = useState(false);
+
+  const loadDirs = useCallback(async () => {
+    setDirsLoading(true);
+    try {
+      setDirs(await api.sessionDirs());
+    } catch {
+      setDirs(null);
+    } finally {
+      setDirsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadDirs();
+  }, [loadDirs]);
+
+  const cleanDirs = async () => {
+    if (!dirsArmed) {
+      setDirsArmed(true); // 两步确认（不弹原生 confirm）
+      setTimeout(() => setDirsArmed(false), 5000);
+      return;
+    }
+    setDirsArmed(false);
+    setDirsCleaning(true);
+    try {
+      const r = await api.cleanSessionDirs();
+      fb.success(
+        r.count > 0 ? `清掉 ${r.count} 个没有主的目录` : "没有可清理的目录",
+        r.count > 0 ? `回收 ${bytes(r.freed_bytes)}` : undefined,
+      );
+      await loadDirs();
+    } catch (e) {
+      fb.error("清理失败", e instanceof Error ? e.message : String(e));
+    } finally {
+      setDirsCleaning(false);
+    }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -169,6 +211,83 @@ export function StoragePanel() {
             <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
               {armed ? "只影响老记录，7 天内的不动" : "不影响正在跑的执行"}
             </span>
+          </div>
+
+          {/* ── 会话文件目录：会话隔离的落地面 ─────────────────────────────
+              每个会话一个目录（sessions/<会话号>/）。这里只体检 + 清"没主的"：
+              正常的清理走「删除会话」，那是用户的本意；这里兜的是残留。 */}
+          <div
+            className="mt-4 pt-3 border-t"
+            style={{ borderColor: "var(--color-border)" }}
+          >
+            <div className="text-[13px] font-semibold">会话文件目录</div>
+            {dirsLoading ? (
+              <p className="text-[12px] mt-1" style={{ color: "var(--color-muted)" }}>
+                正在数…
+              </p>
+            ) : dirs ? (
+              <>
+                <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[12px]">
+                  <div>
+                    <span style={{ color: "var(--color-muted)" }}>会话目录</span>{" "}
+                    <span className="mono">{fmt.int(dirs.count)}</span>
+                  </div>
+                  <div>
+                    <span style={{ color: "var(--color-muted)" }}>占用</span>{" "}
+                    <span className="mono">{bytes(dirs.bytes)}</span>
+                  </div>
+                  <div>
+                    <span style={{ color: "var(--color-muted)" }}>没有主的</span>{" "}
+                    <span className="mono">{fmt.int(dirs.orphans.length)}</span>
+                  </div>
+                </div>
+                <p className="mt-1.5 text-[12px]" style={{ color: "var(--color-muted)" }}>
+                  每个会话一个目录，会话之间互不可见；删会话时它的目录一起删。
+                  「没有主的」= 盘上有目录、库里已经没有这个会话（手工删过库、或删除被中断）。
+                </p>
+                {dirs.orphans.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {dirs.orphans.slice(0, 5).map((d) => (
+                      <div key={d.session_id} className="text-[11.5px] mono" style={{ color: "var(--color-muted)" }}>
+                        {d.session_id} · {d.files} 个文件 · {bytes(d.bytes)}
+                      </div>
+                    ))}
+                    {dirs.orphans.length > 5 && (
+                      <div className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                        还有 {dirs.orphans.length - 5} 个…
+                      </div>
+                    )}
+                  </div>
+                )}
+                <div className="mt-2 flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={dirsCleaning || dirs.orphans.length === 0}
+                    onClick={() => void cleanDirs()}
+                    className="rounded-[8px] border px-3 py-1.5 text-[12px] disabled:opacity-50"
+                    style={{
+                      borderColor: dirsArmed ? "var(--color-err)" : "var(--color-border)",
+                      color: dirsArmed ? "var(--color-err)" : undefined,
+                    }}
+                  >
+                    {dirsCleaning
+                      ? "清理中…"
+                      : dirsArmed
+                        ? "再点一次就清掉"
+                        : `清掉这 ${dirs.orphans.length} 个没有主的目录`}
+                  </button>
+                  <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+                    {dirs.orphans.length === 0
+                      ? "没有可清理的"
+                      : "有会话在用的目录一个都不会动"}
+                  </span>
+                </div>
+              </>
+            ) : (
+              <p className="text-[12px] mt-1" style={{ color: "var(--color-muted)" }}>
+                读不到会话目录信息。
+              </p>
+            )}
           </div>
         </>
       )}

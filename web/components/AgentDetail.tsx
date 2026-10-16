@@ -25,6 +25,7 @@ import { PermissionScope, type PermConf } from "@/components/PermissionScope";
 import { Hint } from "@/components/ui/hint";
 import { ModelPicker } from "@/components/ModelPicker";
 import { AgentQuickRun } from "@/components/AgentQuickRun";
+import { Segmented } from "@/components/ui/kit";
 import { useFeedback } from "@/components/ui/feedback";
 
 /** 可折叠分段：**段头常驻 + 一句状态摘要**，内容按需展开 —— 一屏看一段 ✓
@@ -716,14 +717,35 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 <input
                   className="input mono mt-2 w-full"
                   value={def.workspace ?? ""}
-                  placeholder="留空 = 用平台共用的那个"
+                  placeholder="留空 = 直接用会话目录"
                   onChange={(e) => patch({ workspace: e.target.value })}
                 />
+                {/* 文件目录隔离 —— 摆成**选择器**而不是让用户填（能枚举的值不给手打），
+                    并且把"会话之间看不看得见文件"这句人话放在它旁边 */}
+                <div className="mt-2.5">
+                  <div className="text-[12.5px] mb-1">文件目录怎么分</div>
+                  <Segmented
+                    value={def.workspace_isolation ?? "session"}
+                    onChange={(v) => patch({ workspace_isolation: v })}
+                    options={[
+                      { key: "session", label: "每个会话一个" },
+                      { key: "shared", label: "所有会话共用一个" },
+                    ]}
+                  />
+                  <p className="mt-1 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                    {(def.workspace_isolation ?? "session") === "shared"
+                      ? "这个助手的多个会话共用一个目录：能干「围绕同一份数据反复干」的活，但会话之间会互相看见、同名文件会互相覆盖。"
+                      : "每个会话一个目录：会话之间互不可见，同一个会话里的多轮、分派出去的每一路都在这棵树下（产物能回流）。"}
+                  </p>
+                </div>
                 {/* 原来这里是一段三行的解释常驻在表单里 ✗ —— 只有**第一次配**才需要读它，
                     每次滚动都要重读一遍是浪费。解释搬到旁边那个 ?（点击可开 ✓ 触屏可用 ✓），
                     只留下**会变的那一段**：实际路径（每改一次名字它就变，必须实时可见 ✓） */}
                 <p className="mt-1 text-[12px] mono" style={{ color: "var(--color-muted)" }}>
-                  实际位置：data/work/{def.workspace?.trim() || "…"}
+                  实际位置：
+                  {(def.workspace_isolation ?? "session") === "shared"
+                    ? `data/work/${def.workspace?.trim() || "（沙箱根）"}`
+                    : `data/work/sessions/<这个会话的号>/${def.workspace?.trim()}`.replace(/\/$/, "")}
                 </p>
               </div>
 

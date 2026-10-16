@@ -209,3 +209,23 @@ test("试跑页的输入框与对话页同一形态（同一个人不该在两�
   assert.match(src, /el\.style\.height = `\$\{Math\.min\(el\.scrollHeight, cap\)\}px`/);
   assert.match(src, /Enter 试跑 · Shift \+ Enter 换行/, "要有快捷键提示（和对话页一个口径）");
 });
+
+test("会话隔离要在界面上看得见：助手配置能选目录分法、对话页按会话列文件", () => {
+  // 助手配置：枚举值用选择器（不让手打），并且把"会话之间看不看得见"讲成人话
+  const ad = read("components/AgentDetail.tsx");
+  assert.match(ad, /workspace_isolation/, "配置页要有「文件目录怎么分」");
+  assert.match(ad, /每个会话一个"|每个会话一个/, "选项要写成用户能懂的话");
+  assert.match(ad, /data\/work\/sessions\//, "要显示真实落点（会话目录）");
+
+  // 对话页：产物必须按**会话**列（再用全局清单就等于把隔离漏回去了）
+  const cc = read("components/ChatConsole.tsx");
+  assert.match(cc, /api\.sessionFiles\(sessionId\)/);
+  assert.match(cc, /这个会话的目录/);
+  assert.doesNotMatch(cc, /api\.workList\(|maintenance\/list/, "对话页不该拉全局产物清单");
+
+  // 存储体检：会话目录体检 + 只清"没主的"
+  const sp = read("components/StoragePanel.tsx");
+  assert.match(sp, /api\.sessionDirs\(\)/);
+  assert.match(sp, /没有主的/);
+  assert.match(sp, /有会话在用的目录一个都不会动/);
+});

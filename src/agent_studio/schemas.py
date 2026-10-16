@@ -98,11 +98,15 @@ class AgentDefinition(BaseModel):
     #: 挂哪几个 MCP 服务器（存的是 McpServer 的 id）。工具清单由**探测**得到，
     #: 这里只记"用哪几台"，改服务器不用动助手。
     mcp_servers: list[str] = Field(default_factory=list)
-    #: 这个助手自己的工作目录（平台沙箱内的**子目录名**；空 = 用平台那个共用的）。
+    #: 这个助手自己的工作目录（会话/单跑目录下的**子目录名**；空 = 直接用会话目录）。
     #: 它同时是**权限的边界**：权限 scope 里"工作目录内直接放行"指的就是这里，
     #: 越出这个目录的操作才需要人工确认。只允许名字，不允许绝对路径 / ``..``
-    #: —— 后端 resolve_work_dir 会强制校验，非法就记 warning 并回退平台默认。
+    #: —— 后端 resolve_work_dir 会强制校验，非法就记 warning 并回退。
     workspace: str = ""
+    #: 文件目录怎么隔离：``session``（默认，**每个会话一个目录**，会话之间互不可见）
+    #: 或 ``shared``（这个助手的所有会话共用一个目录，适合"围绕一个数据项目反复干"）。
+    #: 目录同时是权限边界，所以这也是"会话之间能不能互相看见文件"的开关。
+    workspace_isolation: Literal["session", "shared"] = "session"
 
     @field_validator("system_prompt")
     @classmethod
@@ -726,6 +730,8 @@ class SessionRead(BaseModel):
     turn_count: int = 0
     #: 派生：Agent 名称（列表展示用，避免前端再查一次）
     agent_name: str | None = None
+    #: 派生：这个会话的工作目录（绝对路径）—— 会话的文件隔离边界
+    work_dir: str = ""
 
 
 class SessionMessageRead(BaseModel):

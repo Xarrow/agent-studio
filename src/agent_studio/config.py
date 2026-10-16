@@ -72,6 +72,8 @@ class Settings(BaseSettings):
     db_backup_interval_s: int = 24 * 3600
     #: 自动归档的最小间隔（秒）—— 并进已有的调度 tick，不新建脚本/cron
     event_compact_interval_s: int = 3600
+    #: 没有主的会话目录多久清一次（秒）—— 兜底回收，正常删除会话时就顺手删了
+    session_dir_clean_interval_s: int = 86400
     max_tool_output_bytes: int = 64 * 1024        # 工具结果截断上限
     llm_payload_limit_bytes: int = 256 * 1024     # LLM 请求/响应入库上限（超出截断）
     stream_flush_interval_ms: int = 100           # SSE 批量推送间隔
