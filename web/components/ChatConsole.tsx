@@ -646,7 +646,9 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               })}
 
               {/* 生成中：实时分色显示执行过程（思考 / 工具 / 结果 / 回答） */}
+              {/* 手机/平板：画面卡片在消息流里（xl 起右栏 Chrome 流是主形态，不重复显示） */}
               {busy && browserFrame && (
+                <div className="xl:hidden">
                 <BrowserLive
                   frame={browserFrame}
                   onUserClick={async (x, y) => {
@@ -666,6 +668,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     }).catch(() => {});
                   }}
                 />
+                </div>
               )}
               {busy && liveEvents.length > 0 && (
                 <div className="w-full">
@@ -857,14 +860,26 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
         </div>
       </section>
 
-      {/* 右栏执行过程（xl 起常驻；手机/平板用消息内折叠条 —— 同一数据两个视口形态） */}
+      {/* 右栏 Chrome 操作流（xl 起常驻；手机/平板用消息流内的浏览器卡片 —— 同一帧两个视口形态） */}
       <ProcessRail
-        liveEvents={liveEvents}
+        frame={browserFrame}
         busy={busy}
-        liveInput={liveInput}
-        lastRunId={
-          !busy && history.length > 0 ? history[history.length - 1].run_id : null
-        }
+        onUserClick={async (x, y) => {
+          if (!liveRunId) return;
+          await fetch(`/api/runs/${liveRunId}/browser-input`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ kind: "click", x, y }),
+          }).catch(() => {});
+        }}
+        onUserText={async (text) => {
+          if (!liveRunId) return;
+          await fetch(`/api/runs/${liveRunId}/browser-input`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ kind: "text", text }),
+          }).catch(() => {});
+        }}
       />
     </div>
   );
