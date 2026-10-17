@@ -316,7 +316,7 @@ export default function ToolsPage() {
                         type="button"
                         disabled={attachBusy}
                         onClick={() => void attachTo(a.id, a.name)}
-                        className="flex min-h-[44px] w-full flex-col items-start justify-center rounded-[8px] px-3 text-left hover:bg-[var(--color-surface-2)] disabled:opacity-50"
+                        className="flex min-h-[38px] w-full flex-col items-start justify-center rounded-[8px] px-3 text-left hover:bg-[var(--color-surface-2)] disabled:opacity-50"
                       >
                         <span className="text-[13.5px]">{a.name}</span>
                         <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>

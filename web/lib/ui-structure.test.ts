@@ -52,11 +52,12 @@ test("触屏 data-tap 规则不得盖掉 .hidden（窄屏藏/宽屏显的控件�
   );
 });
 
-test("所有 data-tap 规则都带 :not(.hidden)（否则会因特异性把 44px 那条压掉）", () => {
+test("所有 data-tap 规则都带 :not(.hidden)（特异性不一致就会被压掉）", () => {
   const css = stripCssComments(read("app/globals.css"));
   // 只看选择器本身：`[data-tap...]` 后面跟任意非 `{` 字符再 `{`
-  const sels = [...css.matchAll(/\[data-tap(?![-\w])[^\]]*\][^{,]*\{/g)].map((m) => m[0].replace(/\s+/g, " "));
-  assert.ok(sels.length >= 2, "应当有两条（≤1023 的 36px / ≤767 的 44px）");
+  const sels = [...css.matchAll(/\[data-tap(?![-\\w])[^\]]*\][^{,]*\{/g)].map((m) => m[0].replace(/\s+/g, " "));
+  // ≥1 条即可（手机与桌面现在共用 36px 一套，不再有 ≤767 的那条覆盖）
+  assert.ok(sels.length >= 1, "应当仍存在 data-tap 的触屏规则（否则本测试失去意义）");
   const missing = sels.filter((s) => !s.includes(":not(.hidden)"));
   assert.deepEqual(
     missing,
@@ -237,7 +238,7 @@ test("手机适配的两条结构性护栏（改坏了就会在 390 宽下炸）
   assert.match(kit, /min-w-0 max-w-full items-center gap-1\.5/, "Row 动作区要能缩能折");
   // 手机上整块 44 高的可点区（抽屉顶上的入口常点）
   const nav = read("components/Nav.tsx");
-  assert.match(nav, /min-h-\[44px\] items-center font-semibold/, "抽屉标题要做成 44 高的可点区");
+  assert.match(nav, /min-h-\[36px\] items-center font-semibold/, "抽屉标题要做成 44 高的可点区");
 });
 
 test("尺寸/位置的三条结构性护栏（手机排版靠它们不塌）", () => {

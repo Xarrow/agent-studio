@@ -189,7 +189,7 @@ export function Nav() {
           <aside className="md:hidden fixed inset-y-0 left-0 z-50 w-[17rem] max-w-[82vw] bg-[var(--color-surface)] border-r border-[var(--color-border)] flex flex-col overflow-auto">
             <div className="px-4 py-4 border-b border-[var(--color-border)] flex items-center">
               {/* 手机上整块做成 44 高的可点区（抽屉顶上这一下常点，14px 的字高不够） */}
-              <Link href="/" className="inline-flex min-h-[44px] items-center font-semibold text-[15px] tracking-tight">
+              <Link href="/" className="inline-flex min-h-[36px] items-center font-semibold text-[15px] tracking-tight">
                 Agent Studio
               </Link>
               <button
