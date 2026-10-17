@@ -25,6 +25,7 @@ import { useImeGuard, isImeEvent } from "@/lib/ime";
 import Markdown from "@/components/Markdown";
 import { RunDetailById } from "@/components/RunDetailDialog";
 import { AgentDetailDialog } from "@/components/AgentDetailDialog";
+import { FileOpenerProvider, FileRowButton } from "@/components/FileDialog";
 
 /** 流式渲染期间的一条临时消息 */
 interface LiveMsg {
@@ -593,6 +594,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   }
 
   return (
+    /* 对话里的"文件"（正文路径、工具产物）点开是操作框 —— 这里给它们会话上下文 */
+    <FileOpenerProvider sessionId={sessionId} workDir={sessionFiles?.work_dir}>
       <div className="h-full min-h-0 flex">
         {configAgent && (
           <AgentDetailDialog agentId={configAgent} onClose={() => setConfigAgent(null)} />
@@ -1161,18 +1164,21 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 {sessionFiles.files.length > 0 && (
                   <div className="mt-1.5 space-y-0.5">
                     {sessionFiles.files.slice(0, 6).map((f) => (
-                      <div key={f.path} className="flex items-center gap-2">
-                        <a
-                          href={f.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="mono truncate hover:underline"
+                      /* 点一行 = 打开这个文件的**操作框**（预览 / 下载 / 复制路径），
+                         不再"点一下就跳到新标签页给一堆原始内容" —— 用户要求。 */
+                      <FileRowButton
+                        key={f.path}
+                        file={{ path: f.path, url: f.url, size: f.size, mtime: f.mtime }}
+                        className="flex w-full min-h-[32px] items-center gap-2 rounded px-1 py-0.5 hover:bg-[var(--color-surface-2)]"
+                      >
+                        <span
+                          className="mono min-w-0 truncate"
                           style={{ color: "var(--color-accent)" }}
                         >
                           {f.path}
-                        </a>
+                        </span>
                         <span className="shrink-0 ml-auto">{fmt.bytes(f.size)}</span>
-                      </div>
+                      </FileRowButton>
                     ))}
                     {sessionFiles.files.length > 6 && (
                       <div>还有 {sessionFiles.files.length - 6} 个…</div>
@@ -1225,6 +1231,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
           </button>
         )}
       </div>
+    </FileOpenerProvider>
   );
 }
 
@@ -1534,24 +1541,28 @@ function Bubble({
                         />
                       </a>
                     ) : (
-                      <a
+                      /* 附件也是"文件类显示"：点开同样是那个操作框（预览/下载/复制），
+                         与正文路径、会话文件清单**同一个行为**。 */
+                      <FileRowButton
                         key={i}
-                        href={a.url}
-                        target="_blank"
-                        rel="noreferrer"
+                        file={{ path: a.url, name: a.name, url: a.url, size: a.size }}
                         className="inline-flex items-center gap-2 rounded-lg pl-2.5 pr-3 py-2 max-w-[240px] text-[12px] hover:brightness-110"
                         style={{ background: "rgba(255,255,255,0.16)", border: "1px solid rgba(255,255,255,0.25)" }}
-                        title="点开下载"
                       >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" aria-hidden="true">
-                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                          <path d="M14 2v6h6" />
-                        </svg>
-                        <span className="min-w-0 text-left">
-                          <span className="block truncate leading-tight">{a.name}</span>
-                          <span className="block text-[10.5px] opacity-80 leading-tight">{fmt.bytes(a.size)}</span>
+                        <span
+                          className="inline-flex items-center gap-2"
+                          style={{ background: "transparent" }}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" aria-hidden="true">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                            <path d="M14 2v6h6" />
+                          </svg>
+                          <span className="min-w-0 text-left">
+                            <span className="block truncate leading-tight">{a.name}</span>
+                            <span className="block text-[10.5px] opacity-80 leading-tight">{fmt.bytes(a.size)}</span>
+                          </span>
                         </span>
-                      </a>
+                      </FileRowButton>
                     ),
                   )}
                 </div>

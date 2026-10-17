@@ -16,6 +16,7 @@
 
 import { isImagePath, linkifyWorkPaths, workUrl } from "@/lib/work-paths";
 import React from "react";
+import { FileChip } from "@/components/FileDialog";
 import { CodeBlock } from "@/components/CodeBlock";
 import { Mermaid } from "@/components/Mermaid";
 import { ChartBlock, CsvBlock, DiffBlock, JsonBlock } from "@/components/DataBlocks";
@@ -40,14 +41,22 @@ function inline(text: string, keyBase: string): React.ReactNode[] {
         </strong>,
       );
     } else if (tok.startsWith("`")) {
+      /* 行内代码里如果是**一个路径**，就做成可点的文件卡（点开是操作框：预览/下载/
+         复制路径）—— 用户原话："对话页面如果是文件类显示，用户点击应该是弹出一个框中
+         让用户操作，而不是这直接给出地址"。不是路径的（`npm run build`）原样渲染；
+         没有 FileOpenerProvider 的地方（比如运行详情弹窗）FileChip 返回 null → 也原样。 */
+      const inner = tok.slice(1, -1);
+      const chip = <FileChip key={key} path={inner} />;
       out.push(
-        <code
-          key={key}
-          className="rounded px-1 py-px text-[12px]"
-          style={{ background: "var(--color-surface-2)", border: "1px solid var(--color-border)" }}
-        >
-          {tok.slice(1, -1)}
-        </code>,
+        chip ?? (
+          <code
+            key={key}
+            className="rounded px-1 py-px text-[12px]"
+            style={{ background: "var(--color-surface-2)", border: "1px solid var(--color-border)" }}
+          >
+            {inner}
+          </code>
+        ),
       );
     } else if (tok.startsWith("$")) {
       // 行内公式：$x^2$ / $rac{a}{b}$
