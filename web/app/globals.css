@@ -203,6 +203,14 @@ body {
     padding: 11px 12px;
     font-size: 16px;
   }
+  /* 下拉框（select）不跟 16px：iOS「聚焦自动放大」只发生在**文本输入**上，
+     select 弹的是系统选择器、不放大页面 —— 16px 只让下拉框比周围 12/13px 的字
+     大一圈、11px 的 padding 又厚，看着比旁边控件胖一号（用户："下拉框的尺寸为什么那么大"）。
+     高度仍保 44，手指点得准；字号回到和正文一致的 13.5px。 */
+  select.input {
+    font-size: 13.5px;
+    padding: 10px 11px;
+  }
   /* placeholder 是提示不是输入内容：不必跟着 16px 涨（桌面 13px 的视觉重量），
      压回 13px——::placeholder 字号不影响 iOS 聚焦缩放（那只看 input 自身 font-size） */
   .input::placeholder {
