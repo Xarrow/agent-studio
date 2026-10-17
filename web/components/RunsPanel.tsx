@@ -545,7 +545,7 @@ export function RunsPanel() {
               aria-expanded={menu}
               title="按时间清理 / 清空"
               onClick={() => setMenu((v) => !v)}
-              className="min-h-[36px] rounded-[8px] border px-2.5 text-[13px] hover:bg-[var(--color-surface-2)]"
+              className="min-h-[36px] min-w-[40px] rounded-[8px] border px-2.5 text-[13px] hover:bg-[var(--color-surface-2)]"
               style={{ borderColor: "var(--color-border)" }}
             >
               ⋯
@@ -664,7 +664,7 @@ export function RunsPanel() {
                         并且点击不再冒泡到行上（勾选 ≠ 展开行） */}
                     {!live ? (
                       <label
-                        className="flex h-9 w-6 shrink-0 cursor-pointer items-center justify-center"
+                        className="flex h-11 w-9 shrink-0 cursor-pointer items-center justify-center lg:h-9 lg:w-6"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <input

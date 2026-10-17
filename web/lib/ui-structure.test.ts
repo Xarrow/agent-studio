@@ -229,3 +229,13 @@ test("会话隔离要在界面上看得见：助手配置能选目录分法、�
   assert.match(sp, /没有主的/);
   assert.match(sp, /有会话在用的目录一个都不会动/);
 });
+
+test("手机适配的两条结构性护栏（改坏了就会在 390 宽下炸）", () => {
+  // 一行一对象的动作区必须能折行/能缩：否则五颗按钮在 390 宽下顶出卡片，
+  // 而卡片是 overflow-hidden —— 最后那颗「删除」会被静默裁掉
+  const kit = read("components/ui/kit.tsx");
+  assert.match(kit, /min-w-0 max-w-full items-center gap-1\.5/, "Row 动作区要能缩能折");
+  // 手机上整块 44 高的可点区（抽屉顶上的入口常点）
+  const nav = read("components/Nav.tsx");
+  assert.match(nav, /min-h-\[44px\] items-center font-semibold/, "抽屉标题要做成 44 高的可点区");
+});

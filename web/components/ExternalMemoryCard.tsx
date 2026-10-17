@@ -181,10 +181,10 @@ export function ExternalMemoryCard() {
 
       {open && (
         <div className="space-y-3 border-t border-[var(--color-border)] px-3 py-3">
-          <label className="flex items-start gap-2">
+          <label className="flex min-h-[44px] items-start gap-2 lg:min-h-0">
             <input
               type="checkbox"
-              className="mt-0.5"
+              className="mt-0.5 h-[18px] w-[18px] shrink-0 lg:h-auto lg:w-auto"
               checked={draft.enabled}
               onChange={(e) => setDraft((d) => ({ ...d, enabled: e.target.checked }))}
             />

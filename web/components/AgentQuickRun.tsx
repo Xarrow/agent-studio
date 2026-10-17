@@ -251,7 +251,7 @@ export function AgentQuickRun({
             <span className="text-[11.5px] text-[var(--color-muted)]">最近跑过</span>
             <Link
               href={`/exec?agent=${agentId}`}
-              className="text-[11.5px] hover:underline"
+              className="inline-flex min-h-[36px] items-center text-[11.5px] hover:underline lg:min-h-0"
               style={{ color: "var(--color-accent)" }}
             >
               打开对话（多轮 · 完整现场）→
@@ -263,7 +263,7 @@ export function AgentQuickRun({
                 key={r.id}
                 href={`/exec?agent=${agentId}`}
                 title="去对话页看那一轮的完整执行现场"
-                className="inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11.5px] hover:bg-[var(--color-surface-2)]"
+                className="inline-flex min-h-[36px] items-center gap-1.5 rounded-md border px-2 py-1 text-[11.5px] hover:bg-[var(--color-surface-2)] lg:min-h-0"
                 style={{ borderColor: "var(--color-border)" }}
               >
                 <span style={{ color: STATUS_COLOR[r.status] ?? "var(--color-muted)" }}>●</span>

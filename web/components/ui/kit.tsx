@@ -183,7 +183,14 @@ export function Row({
         </div>
       )}
       {actions ? (
-        <div className={`flex shrink-0 items-center gap-1.5 ${wrapActions ? "flex-wrap" : ""}`}>
+        /* 动作区：手机上**必须能换行**（五颗按钮在 390 宽下会顶到卡片外，
+           而卡片是 overflow-hidden —— 最后那颗「删除」会被直接裁掉）。
+           min-w-0 + max-w-full 让它能缩、能折；桌面仍是右侧一行。 */
+        <div
+          className={`flex min-w-0 max-w-full items-center gap-1.5 ${
+            wrapActions ? "flex-wrap justify-end sm:shrink-0" : "shrink-0"
+          }`}
+        >
           {actions}
         </div>
       ) : null}

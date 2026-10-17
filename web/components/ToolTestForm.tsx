@@ -99,7 +99,7 @@ export function ToolTestForm({ tool, onDone }: { tool: Tool; onDone: (out: strin
         </span>
         <button
           type="button"
-          className="ml-auto text-[12px] underline"
+          className="ml-auto inline-flex min-h-[36px] items-center text-[12px] underline lg:min-h-0"
           style={{ color: "var(--color-muted)" }}
           onClick={() => setJsonMode((v) => !v)}
         >

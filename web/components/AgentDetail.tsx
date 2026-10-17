@@ -407,7 +407,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
       <header className="flex items-start justify-between gap-4 mb-5">
         <div className="min-w-0">
           {!inDialog && (
-            <Link href="/agents" className="text-[12px] text-[var(--color-muted)]">
+            <Link href="/agents" className="inline-flex min-h-[36px] items-center text-[12px] text-[var(--color-muted)] lg:min-h-0">
               ← Agents
             </Link>
           )}

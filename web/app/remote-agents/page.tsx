@@ -724,7 +724,7 @@ function RegisterDialog({ onClose, onDone }: { onClose: () => void; onDone: () =
             </div>
           </div>
 
-          <button className="self-start text-[12px]" style={{ color: "var(--color-accent)" }} onClick={() => setAdvanced(!advanced)}>
+          <button className="self-start inline-flex min-h-[36px] items-center text-[12px] lg:min-h-0" style={{ color: "var(--color-accent)" }} onClick={() => setAdvanced(!advanced)}>
             {advanced ? "收起凭据设置" : "远端需要鉴权？填凭据"}
           </button>
           {advanced ? (

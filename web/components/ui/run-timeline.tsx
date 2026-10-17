@@ -365,7 +365,7 @@ function TimelineRow({ s, compact, isLast }: { s: Step; compact: boolean; isLast
                 href={`/api/work/file/${s.artifactPath}`}
                 target="_blank"
                 rel="noreferrer"
-                className="text-[12px] underline underline-offset-2"
+                className="text-[12px] underline underline-offset-2 inline-flex min-h-[32px] items-center lg:min-h-0"
                 style={{ color: st.color }}
               >
                 {s.artifactPath.split("/").pop()}
@@ -377,7 +377,7 @@ function TimelineRow({ s, compact, isLast }: { s: Step; compact: boolean; isLast
         <button
           type="button"
           data-tap
-          className="text-[12px] font-medium mb-0.5 flex items-center gap-1 text-left"
+          className="text-[12px] font-medium mb-0.5 inline-flex min-h-[32px] items-center gap-1 text-left lg:min-h-0"
           style={{ color: isErr ? "#b91c1c" : st.color }}
           onClick={() => long && setOpen(!open)}
         >

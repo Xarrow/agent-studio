@@ -1151,7 +1151,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                   <button
                     type="button"
                     data-tap
-                    className="ml-auto hover:underline"
+                    className="ml-auto inline-flex min-h-[36px] items-center px-2.5 hover:underline lg:min-h-0"
                     style={{ color: "var(--color-accent)" }}
                     onClick={() => void loadSessionFiles()}
                   >
