@@ -31,11 +31,12 @@ export function PageHead({
   actions?: ReactNode;
 }) {
   return (
-    /* 手机（≤767）：标题一档 20px、说明 12.5px、动作整行落到下面右对齐 ——
-       原来 22px 标题 + 说明 + 右侧动作挤在一行，页面头要吃掉 127~147px（手机屏的 1/6）。
-       桌面不动（items-end 让动作与标题同底）。 */
-    <header className="mb-4 flex flex-wrap items-end justify-between gap-x-3 gap-y-2 max-md:mb-3 max-md:gap-y-2.5">
-      <div className="min-w-0 max-md:w-full">
+    /* 手机（≤767）：标题一档 20px、说明 13px/宽松行距，**动作并到标题同一行的右侧**
+       （原来动作整行落到下面，页头要吃到 145px＝手机屏的 1/6；并到同一行后
+       "标题左 / 主操作右"是手机上最好认的排法，也省下 30~40px）。
+       放不下时 flex-wrap 会自动让动作落到下一行，不会挤爆。桌面不动。 */
+    <header className="mb-4 flex flex-wrap items-start justify-between gap-x-3 gap-y-2 max-md:mb-3 max-md:gap-y-1.5">
+      <div className="min-w-0 flex-1">
         <h1 className="text-[22px] font-semibold tracking-tight max-md:text-[20px]">{title}</h1>
         {desc ? (
           <p
@@ -47,7 +48,7 @@ export function PageHead({
         ) : null}
       </div>
       {actions ? (
-        <div className="flex flex-wrap items-center gap-1.5 max-md:w-full max-md:justify-end">{actions}</div>
+        <div className="flex flex-wrap items-center gap-1.5 max-md:shrink-0 max-md:justify-end">{actions}</div>
       ) : null}
     </header>
   );
@@ -181,23 +182,35 @@ export function Row({
               onToggle();
             }
           }}
-          /* 手机：主体**占满整行**（否则右侧一排按钮把名字/描述挤到一百来像素宽，
-             描述基本读不了）；桌面：占剩余宽度，动作在右。 */
-          className="flex min-h-[32px] min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 max-md:w-full md:flex-1 cursor-pointer"
+          /* 手机：wrapActions 时主体**占满整行**（否则右侧一排文字按钮把名字/描述
+             挤到一百来像素宽）；wrapActions=false（图标按钮）时和桌面一样占剩余宽度。 */
+          className={`flex min-h-[32px] min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 ${
+            wrapActions ? "max-md:w-full md:flex-1" : "flex-1"
+          } cursor-pointer`}
         >
           {children}
         </div>
       ) : (
-        <div className="flex min-h-[32px] min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 max-md:w-full md:flex-1">
+        <div
+          className={`flex min-h-[32px] min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 ${
+            wrapActions ? "max-md:w-full md:flex-1" : "flex-1"
+          }`}
+        >
           {children}
         </div>
       )}
       {actions ? (
-        /* 动作区：手机上一律**落到第二行、整行右对齐**（按钮 44 高，不再和主体抢宽度），
-           桌面恢复右侧一行。绝不用 ⋯ 收起来（用户明确否决过"藏起来"）。 */
+        /* 动作区：
+           · wrapActions（默认）—— 手机上一律**落到第二行、整行右对齐**
+             （文字按钮一排四五个，不落到第二行就会把名字/描述挤没）；
+           · wrapActions=false —— 手机上仍是**同一行**（给图标按钮用：三颗 36×36
+             才 120px，和名字并排放得下，19 行的列表能少滚 800px）。
+           两档都绝不用 ⋯ 收起来（用户明确否决过"藏起来"）。 */
         <div
-          className={`flex min-w-0 max-w-full items-center gap-1.5 max-md:w-full max-md:justify-end max-md:gap-2 ${
-            wrapActions ? "flex-wrap justify-end sm:shrink-0" : "shrink-0"
+          className={`flex min-w-0 max-w-full items-center gap-1.5 ${
+            wrapActions
+              ? "flex-wrap justify-end max-md:w-full max-md:justify-end max-md:gap-2 sm:shrink-0"
+              : "shrink-0"
           }`}
         >
           {actions}

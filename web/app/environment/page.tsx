@@ -320,7 +320,7 @@ export default function EnvironmentPage() {
         desc="换到自己的 MySQL / PostgreSQL：新库的表会自动建好，但里面是空的（旧库数据不动，切回来还能看到）"
       >
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
+        <div className="mb-4 flex flex-col gap-1.5 sm:grid sm:grid-cols-3 sm:gap-2">
           {drivers.map((d) => {
             const on = driver === d.key;
             const inUse = status?.config.driver === d.key;
@@ -349,8 +349,17 @@ export default function EnvironmentPage() {
                   {inUse && (
                     <span className="text-[10px] text-[var(--color-muted)] font-normal">在用</span>
                   )}
+                  {/* 手机：换行后的三张卡本来就只占一行高，选中的那张再给一段说明
+                      —— 三张各带三四行说明时这一节要 500px，现在 ~200px。 */}
+                  {on && <span className="ml-auto text-[11px] sm:hidden">当前选择</span>}
                 </div>
-                <div className="text-[12px] leading-snug text-[var(--color-muted)]">{d.hint}</div>
+                <div
+                  className={`text-[12px] leading-snug text-[var(--color-muted)] max-md:leading-relaxed ${
+                    on || inUse ? "" : "max-md:hidden"
+                  }`}
+                >
+                  {d.hint}
+                </div>
               </button>
             );
           })}

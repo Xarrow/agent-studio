@@ -14,6 +14,7 @@ import type {
   Tool,
 } from "@/lib/types";
 import { Chip, DLG_BACKDROP, DLG_CARD, Empty, KV, PageHead, Row, RowDetail, RowList } from "@/components/ui/kit";
+import { IconCopy, IconPencil, IconTrash } from "@/components/ui/icons";
 import { useFeedback } from "@/components/ui/feedback";
 import { Hint, HINTS } from "@/components/ui/hint";
 import { ModelPicker } from "@/components/ModelPicker";
@@ -260,38 +261,50 @@ export default function AgentsPage() {
                   onToggle={() => toggleRow(a.id)}
                   actions={
                     <>
-                      <Link href={`/agents/detail?id=${a.id}`} className="btn btn-primary text-[12px]">
-                        设置 / 定义
+                      <Link
+                        href={`/agents/detail?id=${a.id}`}
+                        className="btn btn-primary text-[12px] max-md:px-2.5"
+                        title="设置 / 定义：改提示词、模型、工具、权限"
+                      >
+                        <span className="max-md:hidden">设置 / 定义</span>
+                        <span className="md:hidden">设置</span>
                       </Link>
                       <button
                         type="button"
-                        className="btn text-[12px]"
+                        className="btn text-[12px] max-md:w-9 max-md:px-0"
+                        title="改名"
+                        aria-label="改名"
                         disabled={busy === a.id}
                         onClick={() => {
                           setRenaming(a.id);
                           setNameDraft(a.name);
                         }}
                       >
-                        改名
+                        <IconPencil className="md:hidden" />
+                        <span className="max-md:hidden">改名</span>
                       </button>
                       <button
                         type="button"
-                        className="btn text-[12px]"
+                        className="btn text-[12px] max-md:w-9 max-md:px-0"
+                        aria-label="复制一份"
                         disabled={busy === a.id}
                         title="按这份配置再建一个助手，改改就能用"
                         onClick={() => void duplicate(a.id)}
                       >
-                        复制一份
+                        <IconCopy className="md:hidden" />
+                        <span className="max-md:hidden">复制一份</span>
                       </button>
                       <button
                         type="button"
-                        className="btn text-[12px]"
+                        className="btn text-[12px] max-md:w-9 max-md:px-0"
                         style={{ color: "var(--color-err)" }}
+                        aria-label="删除"
                         title="删除这个助手（会再确认一次）"
                         disabled={busy === a.id}
                         onClick={() => void remove(a)}
                       >
-                        删除
+                        <IconTrash className="md:hidden" />
+                        <span className="max-md:hidden">删除</span>
                       </button>
                     </>
                   }

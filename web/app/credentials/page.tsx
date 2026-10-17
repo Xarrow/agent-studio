@@ -5,6 +5,7 @@ import { api, fmt } from "@/lib/api";
 import type { Credential, CredentialTestResult, Provider } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
 import { Chip, DLG_BACKDROP, DLG_CARD, Empty, KV, PageHead, Row, RowDetail, RowList, Section } from "@/components/ui/kit";
+import { IconChat, IconEye, IconLink, IconPencil, IconTrash } from "@/components/ui/icons";
 import { PriceBook } from "@/components/PriceBook";
 import { Hint, HINTS } from "@/components/ui/hint";
 import { CredentialChatDialog } from "@/components/CredentialChatDialog";
@@ -219,54 +220,70 @@ export default function CredentialsPage() {
                     <>
                       <button
                         type="button"
-                        className="btn text-[12px]"
+                        className="btn text-[12px] max-md:w-9 max-md:px-0"
+                        title="编辑"
+                        aria-label="编辑"
                         onClick={() => setEditing(c)}
                       >
-                        编辑
+                        <IconPencil className="md:hidden" />
+                        <span className="max-md:hidden">编辑</span>
                       </button>
                       {revealed[c.id] ? (
                         <button
                           type="button"
-                          className="btn text-[12px]"
+                          className="btn text-[12px] max-md:w-9 max-md:px-0"
+                          title="隐藏密钥"
+                          aria-label="隐藏密钥"
                           onClick={() => hide(c.id)}
                         >
-                          隐藏密钥
+                          <IconEye className="md:hidden" />
+                          <span className="max-md:hidden">隐藏密钥</span>
                         </button>
                       ) : (
                         <button
                           type="button"
-                          className="btn text-[12px]"
+                          className="btn text-[12px] max-md:w-9 max-md:px-0"
+                          title="显示密钥"
+                          aria-label="显示密钥"
                           onClick={() => void reveal(c)}
                         >
-                          显示密钥
+                          <IconEye className="md:hidden" />
+                          <span className="max-md:hidden">显示密钥</span>
                         </button>
                       )}
                       <button
                         type="button"
-                        className="btn text-[12px]"
+                        className="btn text-[12px] max-md:w-9 max-md:px-0"
                         title="直接跟模型聊两句，不经过助手"
+                        aria-label="对话测试"
                         onClick={() => setChatting(c)}
                       >
-                        对话测试
+                        <IconChat className="md:hidden" />
+                        <span className="max-md:hidden">对话测试</span>
                       </button>
                       <button
                         type="button"
-                        className="btn text-[12px]"
+                        className="btn text-[12px] max-md:w-9 max-md:px-0"
+                        aria-label="测试连接"
                         disabled={testing === c.id}
                         onClick={() => {
                           setExpanded(c.id);
                           void test(c.id);
                         }}
                       >
-                        {testing === c.id ? "测试中…" : "测试连接"}
+                        <IconLink className="md:hidden" />
+                        <span className="max-md:hidden">{testing === c.id ? "测试中…" : "测试连接"}</span>
                       </button>
                       <button
                         type="button"
-                        className="btn text-[12px]"
+                        className="btn text-[12px] max-md:w-9 max-md:px-0"
+                        title="删除这条配置"
+                        aria-label="删除"
                         style={{ color: "var(--color-err)" }}
                         onClick={() => void remove(c)}
                       >
-                        删除
+                        <IconTrash className="md:hidden" />
+                        <span className="max-md:hidden">删除</span>
                       </button>
                     </>
                   }

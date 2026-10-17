@@ -18,6 +18,7 @@ import {
   SelectionBar,
   Toolbar,
 } from "@/components/ui/kit";
+import { IconPencil, IconPlay, IconTrash } from "@/components/ui/icons";
 import { SkillsPanel } from "@/components/SkillsPanel";
 import { McpPanel } from "@/components/McpPanel";
 import { ToolTestForm } from "@/components/ToolTestForm";
@@ -431,22 +432,29 @@ export default function ToolsPage() {
                     <Row
                       expanded={open}
                       onToggle={() => setExpanded(open ? null : t.id)}
+                      /* 手机上动作是 3 颗 36×36 图标按钮（120px），和名字并排放得下 ——
+                         不占第二行，19 行的列表能少滚 800px。 */
+                      wrapActions={false}
                       actions={
                         <>
                           <button
                             type="button"
-                            className="btn text-[12px]"
+                            className="btn text-[12px] max-md:w-9 max-md:px-0"
+                            title="编辑"
+                            aria-label="编辑"
                             onClick={() => {
                               setExpanded(t.id);
                               setTesting(null);
                               setEditing(t);
                             }}
                           >
-                            编辑
+                              <IconPencil className="md:hidden" />
+                              <span className="max-md:hidden">编辑</span>
                           </button>
                           <button
                             type="button"
-                            className="btn text-[12px]"
+                            className="btn text-[12px] max-md:w-9 max-md:px-0"
+                            aria-label={isTesting ? "收起试运行" : "试运行"}
                             disabled={unavailable}
                             title={
                               unavailable
@@ -458,16 +466,20 @@ export default function ToolsPage() {
                               setExpanded(t.id);
                             }}
                           >
-                            {isTesting ? "收起" : "试运行"}
+                            <IconPlay className="md:hidden" />
+                            <span className="max-md:hidden">{isTesting ? "收起" : "试运行"}</span>
                           </button>
                           {t.kind !== "builtin" && (
                             <button
                               type="button"
-                              className="btn text-[12px]"
+                              className="btn text-[12px] max-md:w-9 max-md:px-0"
+                              title="删除"
+                              aria-label="删除"
                               style={{ color: "var(--color-err)" }}
                               onClick={() => void remove(t)}
                             >
-                              删除
+                              <IconTrash className="md:hidden" />
+                              <span className="max-md:hidden">删除</span>
                             </button>
                           )}
                         </>

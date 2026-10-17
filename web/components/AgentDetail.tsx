@@ -404,16 +404,26 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
 
   return (
     <div className="p-4 md:p-6 lg:p-7 max-w-[1700px]">
-      <header className="flex items-start justify-between gap-4 mb-5">
-        <div className="min-w-0">
-          {!inDialog && (
-            <Link href="/agents" className="inline-flex min-h-[36px] items-center text-[12px] text-[var(--color-muted)] lg:min-h-0">
-              ← Agents
-            </Link>
-          )}
-          <h1 className="text-[21px] font-semibold tracking-tight mt-1 truncate">
-            {agent.name}
-          </h1>
+      <header className="flex items-start justify-between gap-4 mb-5 max-md:mb-3">
+        <div className="min-w-0 flex-1">
+          {/* 手机：返回键与标题**同一行**（原来是独立一行 36px，加上标题/状态/动作
+              页头吃到 148px）；桌面仍是"返回在上、标题在下"。 */}
+          <div className="flex flex-col max-md:flex-row max-md:items-center max-md:gap-1">
+            {!inDialog && (
+              <Link
+                href="/agents"
+                title="返回 Agents 列表"
+                aria-label="返回 Agents 列表"
+                className="inline-flex min-h-[36px] items-center text-[12px] text-[var(--color-muted)] max-md:-ml-2 max-md:w-9 max-md:shrink-0 max-md:justify-center max-md:rounded-[7px] lg:min-h-0"
+              >
+                <span className="md:hidden">←</span>
+                <span className="max-md:hidden">← Agents</span>
+              </Link>
+            )}
+            <h1 className="text-[21px] font-semibold tracking-tight mt-1 truncate max-md:mt-0">
+              {agent.name}
+            </h1>
+          </div>
           {/* 一行说清「这个助手现在是什么状态」—— 原来是**四块等宽格子**
               （模型 / 工具 / Skills / 记忆）占一屏最贵的位置，而下面每一节
               又有完整信息 → 同一条信息两处 ✗。并进标题下一行副标题：
