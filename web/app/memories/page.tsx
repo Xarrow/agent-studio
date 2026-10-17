@@ -329,7 +329,7 @@ export default function MemoriesPage() {
               <div>
                 <label className="label">归给谁</label>
                 <select
-                  className="input w-48"
+                  className="input input-inline w-48"
                   value={draftOwner}
                   onChange={(e) => setDraftOwner(e.target.value)}
                 >
@@ -391,7 +391,7 @@ export default function MemoriesPage() {
           ))}
         </select>
         <input
-          className="input h-[36px] min-w-0 w-full sm:w-[200px]!"
+          className="input input-inline h-[36px] min-w-0 flex-1 sm:flex-none sm:w-[200px]"
           placeholder="搜索内容…（回车）"
           value={query}
           onChange={(e) => setQuery(e.target.value)}

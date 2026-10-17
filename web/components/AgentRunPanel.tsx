@@ -380,7 +380,7 @@ export function RunPanel({
         <div className="flex items-center gap-2 mb-3 flex-wrap pb-3 border-b border-[var(--color-border)]">
           <span className="text-[12px] text-[var(--color-muted)] whitespace-nowrap">会话</span>
           <select
-            className="input flex-1 min-w-[140px] sm:flex-none sm:w-56"
+            className="input input-inline flex-1 min-w-[140px] sm:flex-none sm:w-56"
             value={sessionId}
             onChange={(e) => {
               setSessionId(e.target.value);

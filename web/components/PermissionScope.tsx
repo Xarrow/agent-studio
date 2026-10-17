@@ -174,7 +174,7 @@ export function PermissionScope({
           {rows.map((r, i) => (
             <div key={i} className="flex items-center gap-1.5 flex-wrap">
               <select
-                className="input flex-1 min-w-[110px] text-[12px]"
+                className="input input-inline flex-1 min-w-[110px] text-[12px]"
                 value={r.tool}
                 onChange={(e) =>
                   setRows(rows.map((x, j) => (j === i ? { ...x, tool: e.target.value } : x)))
@@ -188,7 +188,7 @@ export function PermissionScope({
                 {r.tool && !toolNames.includes(r.tool) && <option value={r.tool}>{r.tool}</option>}
               </select>
               <input
-                className="input flex-1 min-w-[110px] text-[12px]"
+                className="input input-inline flex-1 min-w-[110px] text-[12px]"
                 value={r.pattern ?? ""}
                 placeholder="匹配（可留空）"
                 title="Bash 填命令片段（如 npm install）；Read/Write 填路径（如 src/**）"
@@ -197,7 +197,7 @@ export function PermissionScope({
                 }
               />
               <select
-                className="input w-[84px] text-[12px]"
+                className="input input-inline w-[84px] text-[12px]"
                 value={r.behavior}
                 onChange={(e) =>
                   setRows(

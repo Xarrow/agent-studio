@@ -153,6 +153,15 @@ body {
 .input:focus {
   border-color: var(--color-accent);
 }
+/* 工具条里的输入框/下拉：要**按内容宽度**排，而不是各占一整行。
+   `.input` 是 width:100%（不设宽度就铺满），它和 Tailwind 的 w-auto / w-48 /
+   sm:w-[220px] 不在同一层——工具类永远压不过它，于是「搜索」「状态」在全站
+   都被撑成一整行（/runs 工具条在桌面上因此排成 5 行、168px 高）。
+   这个类与 .input 同层同特异性、写在后面，所以专门用来覆盖宽度。 */
+.input-inline {
+  width: auto;
+}
+
 .label {
   display: block;
   font-size: 12px;

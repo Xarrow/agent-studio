@@ -31,16 +31,24 @@ export function PageHead({
   actions?: ReactNode;
 }) {
   return (
-    <header className="mb-4 flex flex-wrap items-end justify-between gap-x-3 gap-y-2">
-      <div className="min-w-0">
-        <h1 className="text-[22px] font-semibold tracking-tight">{title}</h1>
+    /* 手机（≤767）：标题一档 20px、说明 12.5px、动作整行落到下面右对齐 ——
+       原来 22px 标题 + 说明 + 右侧动作挤在一行，页面头要吃掉 127~147px（手机屏的 1/6）。
+       桌面不动（items-end 让动作与标题同底）。 */
+    <header className="mb-4 flex flex-wrap items-end justify-between gap-x-3 gap-y-2 max-md:mb-3 max-md:gap-y-2.5">
+      <div className="min-w-0 max-md:w-full">
+        <h1 className="text-[22px] font-semibold tracking-tight max-md:text-[20px]">{title}</h1>
         {desc ? (
-          <p className="mt-1 text-[13px]" style={{ color: "var(--color-muted)" }}>
+          <p
+            className="mt-1 text-[13px] leading-snug max-md:text-[12.5px]"
+            style={{ color: "var(--color-muted)" }}
+          >
             {desc}
           </p>
         ) : null}
       </div>
-      {actions ? <div className="flex flex-wrap items-center gap-1.5">{actions}</div> : null}
+      {actions ? (
+        <div className="flex flex-wrap items-center gap-1.5 max-md:w-full max-md:justify-end">{actions}</div>
+      ) : null}
     </header>
   );
 }
@@ -156,7 +164,7 @@ export function Row({
 }) {
   return (
     <div
-      className="flex flex-wrap items-center gap-x-2.5 gap-y-2 border-b px-3 py-2.5 last:border-b-0"
+      className="flex flex-wrap items-center gap-x-2.5 gap-y-2 border-b px-3 py-2.5 last:border-b-0 max-md:gap-y-2"
       style={{
         borderColor: "var(--color-border)",
         background: expanded ? "color-mix(in srgb, var(--color-accent) 5%, transparent)" : undefined,
@@ -173,21 +181,22 @@ export function Row({
               onToggle();
             }
           }}
-          className="flex min-h-[32px] min-w-0 flex-1 cursor-pointer flex-wrap items-center gap-x-2.5 gap-y-1"
+          /* 手机：主体**占满整行**（否则右侧一排按钮把名字/描述挤到一百来像素宽，
+             描述基本读不了）；桌面：占剩余宽度，动作在右。 */
+          className="flex min-h-[32px] min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 max-md:w-full md:flex-1 cursor-pointer"
         >
           {children}
         </div>
       ) : (
-        <div className="flex min-h-[32px] min-w-0 flex-1 flex-wrap items-center gap-x-2.5 gap-y-1">
+        <div className="flex min-h-[32px] min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 max-md:w-full md:flex-1">
           {children}
         </div>
       )}
       {actions ? (
-        /* 动作区：手机上**必须能换行**（五颗按钮在 390 宽下会顶到卡片外，
-           而卡片是 overflow-hidden —— 最后那颗「删除」会被直接裁掉）。
-           min-w-0 + max-w-full 让它能缩、能折；桌面仍是右侧一行。 */
+        /* 动作区：手机上一律**落到第二行、整行右对齐**（按钮 44 高，不再和主体抢宽度），
+           桌面恢复右侧一行。绝不用 ⋯ 收起来（用户明确否决过"藏起来"）。 */
         <div
-          className={`flex min-w-0 max-w-full items-center gap-1.5 ${
+          className={`flex min-w-0 max-w-full items-center gap-1.5 max-md:w-full max-md:justify-end max-md:gap-2 ${
             wrapActions ? "flex-wrap justify-end sm:shrink-0" : "shrink-0"
           }`}
         >

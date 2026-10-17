@@ -239,3 +239,19 @@ test("手机适配的两条结构性护栏（改坏了就会在 390 宽下炸）
   const nav = read("components/Nav.tsx");
   assert.match(nav, /min-h-\[44px\] items-center font-semibold/, "抽屉标题要做成 44 高的可点区");
 });
+
+test("尺寸/位置的三条结构性护栏（手机排版靠它们不塌）", () => {
+  // ① 工具条上"本来想窄"的输入框/下拉：`.input{width:100%}` 不在 Tailwind 层里，
+  //    会压过 w-auto / w-48 / sm:w-[220px]，结果每个控件各占一整行
+  //    （/runs 工具条因此在桌面被撑成 5 行 168px）。必须有 .input-inline 兜住宽度。
+  const css = read("app/globals.css");
+  assert.match(css, /\.input-inline\s*\{[^}]*width:\s*auto/, "要有 .input-inline 覆盖 .input 的 width:100%");
+  const runs = read("components/RunsPanel.tsx");
+  assert.match(runs, /input input-inline h-\[36px\]/, "运行页工具条的下拉/搜索要按内容宽度排");
+  // ② 页面头：手机上标题降一档、动作整行落到下面（否则头吃 127~147px）
+  const kit = read("components/ui/kit.tsx");
+  assert.match(kit, /max-md:text-\[20px\]/, "页面头标题手机上要降一档");
+  assert.match(kit, /max-md:w-full max-md:justify-end/, "页面头动作手机上要整行落下");
+  // ③ 一行一对象：手机上主体占满整行、动作落到第二行（名字/描述不再被按钮挤）
+  assert.match(kit, /max-md:w-full md:flex-1/, "行主体手机上要占满整行");
+});

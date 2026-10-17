@@ -678,7 +678,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 否则用下拉 —— 两处都能选助手就是两套真相 */}
             {controlledAgentId === undefined ? (
               <select
-                className="input w-auto min-w-[150px] max-w-[220px] shrink-0 text-[13px]"
+                className="input input-inline min-w-[150px] max-w-[220px] shrink-0 text-[13px]"
                 value={agentId}
                 onChange={(e) => setAgentId(e.target.value)}
               >

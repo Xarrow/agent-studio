@@ -418,8 +418,22 @@ export function RunsPanel() {
           老版这里是「四张统计卡 + 类型筛选 + 三个下拉 + 三颗按钮」四行；
           收成一行之后，纵向空间全还给列表（操作更少、看到更多）。 */}
       <div className="flex flex-wrap items-center gap-1.5">
+        {/* 手机：五个类型 chip 折成两三行、把列表挤下去 → 换成一个下拉（值一眼可见、
+            点一下就能选，不折行）。桌面仍是并排 chip，行为一致。 */}
+        <select
+          className="input input-inline h-[36px] min-w-0 max-md:order-1 md:hidden"
+          title="只看某一类记录"
+          value={kind}
+          onChange={(e) => setKind(e.target.value as (typeof KIND_TABS)[number]["key"])}
+        >
+          {KIND_TABS.map((t) => (
+            <option key={t.key} value={t.key}>
+              {t.label} {t.key === "all" ? total : (counts[t.key] ?? 0)}
+            </option>
+          ))}
+        </select>
         <div
-          className="flex items-center gap-0.5 rounded-[10px] border p-0.5"
+          className="hidden items-center gap-0.5 rounded-[10px] border p-0.5 md:flex"
           style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
         >
           {KIND_TABS.map((t) => {
@@ -445,13 +459,13 @@ export function RunsPanel() {
         </div>
 
         <input
-          className="input h-[36px] w-full min-w-0 sm:w-[220px]"
+          className="input input-inline h-[36px] min-w-0 flex-1 max-md:order-4 max-md:basis-full sm:flex-none sm:w-[220px]"
           placeholder="搜索：主体 / 模型 / 摘要 / 错误"
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
         <select
-          className="input h-[36px] w-auto min-w-0"
+          className="input input-inline h-[36px] min-w-0 max-md:order-2"
           title="只看某种状态"
           value={status}
           onChange={(e) => setStatus(e.target.value)}
@@ -463,7 +477,7 @@ export function RunsPanel() {
           <option value="aborted">已中断</option>
         </select>
         <select
-          className="input h-[36px] w-auto max-w-[150px] min-w-0"
+          className="input input-inline h-[36px] max-w-[150px] min-w-0 max-md:order-3"
           title="只看某个助手的记录"
           value={agentId}
           onChange={(e) => setAgentId(e.target.value)}
@@ -476,7 +490,7 @@ export function RunsPanel() {
           ))}
         </select>
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2 max-md:order-5">
           {/* 用量一行 —— 老版四张卡的位置。数字一个不少，只是不再各占一张卡。 */}
           {usage && (
             <div

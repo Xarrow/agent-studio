@@ -115,7 +115,7 @@ export function CapabilityPicker({
     <div>
       <div className="mb-2.5 flex flex-wrap items-center gap-2">
         <input
-          className="input flex-1 min-w-[180px] text-[12px]"
+          className="input input-inline flex-1 min-w-[180px] text-[12px]"
           value={q}
           placeholder="搜工具 / MCP / Skill 的名字或说明…"
           onChange={(e) => setQ(e.target.value)}
