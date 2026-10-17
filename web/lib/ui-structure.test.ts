@@ -256,3 +256,15 @@ test("尺寸/位置的三条结构性护栏（手机排版靠它们不塌）", (
   // ③ 一行一对象：手机上主体占满整行、动作落到第二行（名字/描述不再被按钮挤）
   assert.match(kit, /max-md:w-full md:flex-1/, "行主体手机上要占满整行");
 });
+
+test("手机排版的护栏（行距和次要字号别再退回 1.38）", () => {
+  const css = read("app/globals.css");
+  // 中文在手机上要更松的行距：main 上给 1.6，说明类文字里的 leading-snug/tight 也要放宽
+  assert.match(css, /main\s*\{\s*line-height:\s*1\.6;/, "手机上正文行距要 1.6");
+  assert.match(css, /\[class~="leading-snug"\][\s\S]{0,120}?line-height:\s*1\.6/, "说明类的紧凑行距手机上要放宽");
+  // 次要字号 12 → 12.5（12px 的中文在手机上偏小）
+  assert.match(css, /\[class~="text-\[12px\]"\]\s*\{\s*font-size:\s*12\.5px/, "次要字号手机上要抬到 12.5");
+  // 页头说明：手机上 13px + 宽松行距
+  const kit = read("components/ui/kit.tsx");
+  assert.match(kit, /max-md:text-\[13px\] max-md:leading-relaxed/, "页头说明手机上要 13px/宽松行距");
+});

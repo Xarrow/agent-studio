@@ -39,7 +39,7 @@ export function PageHead({
         <h1 className="text-[22px] font-semibold tracking-tight max-md:text-[20px]">{title}</h1>
         {desc ? (
           <p
-            className="mt-1 text-[13px] leading-snug max-md:text-[12.5px]"
+            className="mt-1 text-[13px] leading-snug max-md:text-[13px] max-md:leading-relaxed"
             style={{ color: "var(--color-muted)" }}
           >
             {desc}

@@ -2,8 +2,9 @@
  * 手机适配自检脚本（在浏览器控制台 / CDP 里执行，返回一份体检结果）。
  *
  * 为什么要有它：移动端的问题（横向溢出、手指点不准的小控件、只在 hover 出现的控件）
- * 肉眼在桌面上看不出来，靠"我觉得没问题"必然漏。这个脚本量四件事：
- *   ① 横向溢出（只报真正的元凶层：父元素没溢出的那一层）
+ * 肉眼在桌面上看不出来，靠"我觉得没问题"必然漏。这个脚本量三件事 + 控制台报错：
+ *   ① 横向溢出（只报真正的元凶层：父元素没溢出的那一层；
+ *      父元素是 truncate（overflow:hidden / 省略号）时不算 —— 那是故意裁的）
  *   ② 触屏目标过小（<32px；勾选框按它的 label 算可点区）
  *   ③ 只在 hover 才出现的控件（手机上不存在）
  *   ④ 控制台报错
@@ -46,6 +47,9 @@
     if (p && !hidden(p)) {
       const pr = p.getBoundingClientRect();
       if (Math.max(pr.right - W, -pr.left) > 2) return;
+      // 父元素自己"故意裁掉"（truncate = overflow:hidden + 省略号）→ 不算溢出
+      const ps = getComputedStyle(p);
+      if ((ps.overflowX === "hidden" || ps.textOverflow === "ellipsis") && pr.right <= W + 1 && pr.left >= -1) return;
     }
     res.overflow.push({ p: path(el), left, right: Math.round(r.right), over, w: Math.round(r.width), t: txt(el) });
   });
