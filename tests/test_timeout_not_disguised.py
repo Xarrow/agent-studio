@@ -90,6 +90,24 @@ async def _mk_agent(client, name: str, timeout_s: int) -> str:
     return r.json()["id"]
 
 
+async def _wait_messages(client, session_id: str, want: int = 1, limit_s: float = 4.0) -> list[dict]:
+    """等会话消息落库。
+
+    Run 落终态和「写会话历史」是两步（_finalize 之后才 _post_run），
+    测试不能看到终态就立刻断言消息 —— 会抢在写入之前，偶发空列表。
+    """
+    import time as _t
+
+    deadline = _t.time() + limit_s
+    msgs: list[dict] = []
+    while _t.time() < deadline:
+        msgs = (await client.get(f"/api/sessions/{session_id}")).json()["messages"]
+        if len(msgs) >= want:
+            return msgs
+        await asyncio.sleep(0.05)
+    return msgs
+
+
 async def _pump(client, run_id: str, limit_s: float = 12.0) -> dict:
     import time as _t
 
@@ -131,7 +149,7 @@ async def test_撞满超时上限不会被伪装成正常回答(client):
     assert "1 秒" in (d.get("error") or ""), "得说清撞的是多少秒的上限"
     assert not d.get("output"), "那句「我注意到中断了」不能当回答留下来"
 
-    msgs = (await client.get(f"/api/sessions/{sess['id']}")).json()["messages"]
+    msgs = await _wait_messages(client, sess["id"], want=1)
     assert [m["role"] for m in msgs] == ["user"], "没产出就别写一条空的助手消息"
     assert all("interruption" not in (m["content"] or "") for m in msgs)
 
@@ -177,8 +195,8 @@ async def test_空回答不写助手消息(client):
             s, session_id=sess["id"], run_id=uniq("run"), user_text="问一句", assistant_text=""
         )
 
-    detail = (await client.get(f"/api/sessions/{sess['id']}")).json()
-    assert [m["role"] for m in detail["messages"]] == ["user"], detail["messages"]
+    detail = await _wait_messages(client, sess["id"], want=1)
+    assert [m["role"] for m in detail] == ["user"], detail
 
     # 有内容的照旧写两条
     async with SessionLocal() as s:
@@ -186,5 +204,5 @@ async def test_空回答不写助手消息(client):
             s, session_id=sess["id"], run_id=uniq("run"), user_text="再问一句",
             assistant_text="答上了",
         )
-    detail = (await client.get(f"/api/sessions/{sess['id']}")).json()
-    assert [m["role"] for m in detail["messages"]] == ["user", "user", "assistant"]
+    detail = await _wait_messages(client, sess["id"], want=3)
+    assert [m["role"] for m in detail] == ["user", "user", "assistant"], detail
