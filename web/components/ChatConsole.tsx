@@ -28,6 +28,7 @@ import { AgentDetailDialog } from "@/components/AgentDetailDialog";
 import { FileOpenerProvider, FileRowButton } from "@/components/FileDialog";
 import { copyText } from "@/lib/clipboard";
 import { middleEllipsis, fileTypeKey } from "@/lib/files";
+import { humanizeAssistantText } from "@/lib/messages";
 import { FileTypeIcon } from "@/components/ui/icons";
 
 /** 流式渲染期间的一条临时消息 */
@@ -183,7 +184,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
           .filter((m) => m.role === "user" || m.role === "assistant")
           .map((m) => ({
             role: m.role as "user" | "assistant",
-            content: m.content,
+            // 框架的内部话术（"I notice the interruption…"）不能原样给用户看
+            content: m.role === "assistant" ? humanizeAssistantText(m.content) : m.content,
             run_id: m.run_id,
             turn_index: m.turn_index,
             id: m.id,
@@ -901,14 +903,17 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 }}
               >
                 <span className="flex-1 min-w-[200px] break-words">
-                  {/* 超时不是「模型答错了」，措辞上别让人以为是自己写错了 */}
-                  {/超时/.test(failed.message) ? "这一轮没跑完：" : "这一轮失败了："}
-                  {failed.message}
+                  {/* 超时不是「模型答错了」：话已经说全了（"执行超时：这一轮超过 8 秒…"），
+                      别再套一层"这一轮没跑完"，不然一句话里两个"这一轮" */}
+                  {/超时/.test(failed.message) ? failed.message : `这一轮失败了：${failed.message}`}
                 </span>
                 <button className="btn btn-sm shrink-0" disabled={busy} onClick={() => void send(failed.text)}>
                   {/超时/.test(failed.message) ? "继续" : "重试"}
                 </button>
-                <button className="text-[12px] shrink-0 hover:underline" onClick={() => setFailed(null)}>
+                <button
+                  className="shrink-0 rounded px-1 text-[12px] hover:underline max-md:min-h-[32px] max-md:px-2"
+                  onClick={() => setFailed(null)}
+                >
                   忽略
                 </button>
               </div>

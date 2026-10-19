@@ -511,6 +511,12 @@ def build_configs(defn: AgentDefinition):
     # "模型莫名中断了"，而真正的原因是「这轮撞到了执行超时上限」。
     # 打开之后：超时 → wait_for 抛 TimeoutError（判超时）、停止 → CancelledError（判中断）。
     react_kwargs.setdefault("interruption_raise_cancelled_error", True)
+    # 万一路径漏到外面（比如别的视图直接读框架事件），也别让人看到那句英文：
+    # 这是**给模型**的确认话术，不是给用户看的。中文、说清发生了什么。
+    react_kwargs.setdefault(
+        "interruption_message",
+        "（这一轮被中断了，没有产出内容。可以让我接着做。）",
+    )
 
     model_kwargs = dict(opts.get("model_config") or {})
     context_kwargs = dict(opts.get("context_config") or {})
