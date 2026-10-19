@@ -694,12 +694,16 @@ class RunService:
         status = "ok"
         error: str | None = None
         hitl_payload: dict[str, Any] | None = None
+        #: 这一轮 AgentScope 报的结束原因（`interrupted` 要单独认：可能是超时，也可能用户停了）
+        finished_reason: str = ""
         # 这两个在 try 内赋值，但在 finally 的收尾里要用 —— 先声明避免 unbound
         context: TurnContext | None = None
         api_key: str | None = None
 
         #: 并发闸的槽位拿没拿到（finally 里据此决定要不要还）
         _gated = False
+        #: 这一轮的执行超时（超时分支的提示文案要用；异常可能发生在它算出来之前）
+        timeout: int = 0
         try:
             async with SessionLocal() as session:
                 run = await session.get(Run, run_id)
@@ -786,7 +790,7 @@ class RunService:
                     )
 
                     async def consume() -> None:
-                        nonlocal seq, status, hitl_payload
+                        nonlocal seq, status, hitl_payload, finished_reason
                         async for ev in runtime.run(compiled, run_input):
                             ev = ev.model_copy(update={"run_id": run_id, "seq": seq})
                             seq += 1
@@ -797,15 +801,39 @@ class RunService:
                             # ReplyEndEvent 之后还会 yield 一个最终 Msg
                             # （reply_stream(yield_final_msg=True)），提前退出会丢掉它，
                             # 导致 run.output 为空。让它自然结束即可。
+                            if ev.type == "run_end":
+                                finished_reason = str(ev.payload.get("finished_reason") or "")
                             if ev.type == "hitl_request":
                                 status = "waiting_hitl"
                                 hitl_payload = dict(ev.payload)
 
+                    _t0 = time.monotonic()
                     if timeout and timeout > 0:
                         # 不限（0 / 负数）时**不能**包 wait_for ✗ —— timeout=0 是"立刻超时"，语义正好相反 ✓
                         await asyncio.wait_for(consume(), timeout=timeout)
                     else:
                         await consume()
+
+                    # ── 「被中断」要分清楚是谁断的 ────────────────────────────
+                    # AgentScope 收到取消后**不会**把 CancelledError 抛给我们（它把工具调用
+                    # 标成 interrupted、补一句 "I notice the interruption…"，然后正常结束）。
+                    # 于是超时会被记成 ok、那句插话被当成模型回答写进会话 —— 现场现象就是
+                    # 「聊着聊着忽然说它注意到中断了」。这里按耗时判定：
+                    #   · 撞满上限 → 执行超时（错误，明确告诉用户可以调大）
+                    #   · 没撞满   → 用户主动停止
+                    if status == "ok" and finished_reason == "interrupted":
+                        _elapsed = time.monotonic() - _t0
+                        if timeout > 0 and _elapsed >= timeout - 1.0:
+                            status, error = (
+                                "error",
+                                f"执行超时：这一轮超过 {timeout} 秒上限被停止"
+                                "（可在助手配置里调大「执行超时」，或把这件活拆成几步）",
+                            )
+                        else:
+                            status, error = "aborted", "已停止（你点了停止）"
+                        # 那句自动补的插话不是回答，别当 output 存下来/写进会话
+                        if compiled is not None:
+                            setattr(compiled, "last_output", None)
                     break
                 except asyncio.CancelledError:
                     raise
@@ -843,7 +871,11 @@ class RunService:
         except asyncio.CancelledError:
             status, error = "aborted", "用户中断"
         except TimeoutError:
-            status, error = "error", f"执行超时（>{timeout}s）"
+            status, error = (
+                "error",
+                f"执行超时：这一轮超过 {timeout or '?'} 秒上限被停止"
+                "（可在助手配置里调大「执行超时」，或把这件活拆成几步）",
+            )
         except GateTimeout as exc:
             # 拿不到并发槽位：说清是「排队太久」，别让用户以为是模型不行
             logger.warning("Run %s 排队超时：%s", run_id, exc)
@@ -1031,6 +1063,8 @@ class RunService:
         collector = MetricsCollector(
             provider=definition.model.provider, model=definition.model.name
         )
+        #: 续跑用的超时（超时分支的文案要用）
+        timeout: int = 0
         # 续接已有 seq
         async with SessionLocal() as session:
             stmt = select(RunEvent.seq).where(RunEvent.run_id == run_id).order_by(RunEvent.seq.desc()).limit(1)
@@ -1138,6 +1172,12 @@ class RunService:
                         await session.commit()
         except asyncio.CancelledError:
             status, error = "aborted", "用户中断"
+        except TimeoutError:
+            status, error = (
+                "error",
+                f"执行超时：这一轮超过 {timeout or '?'} 秒上限被停止"
+                "（可在助手配置里调大「执行超时」，或把这件活拆成几步）",
+            )
         except Exception as exc:  # pragma: no cover
             logger.exception("Run %s 恢复失败", run_id)
             status, error = "error", f"{type(exc).__name__}: {exc}"

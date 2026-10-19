@@ -33,7 +33,10 @@ class Settings(BaseSettings):
     ]
 
     # 运行约束
-    default_timeout_s: int = 300
+    # 单轮执行的默认上限。原来 300s —— 实测一个「Bash 二十来次 + 每轮 1~2k tokens」
+    # 的正常活就会撞到它，然后整轮被掐断（现场：用户以为是切页面把对话弄断了）。
+    # 900s 给足一次完整任务的时间；仍嫌不够的在助手配置里单独调。
+    default_timeout_s: int = 900
 
     # ── LLM 客户端（httpx）网络超时 ──────────────────────────────────────
     # 为什么必须显式设：不设时用的是 openai SDK 默认 **connect=5s** ✗

@@ -189,19 +189,23 @@ async def append_turn(
 
     turn = await next_turn_index(session, session_id)
     ts = now_ms()
-    session.add_all(
-        [
-            SessionMessage(
-                session_id=session_id, turn_index=turn, role="user",
-                content=user_text, run_id=run_id, ts=ts,
-            ),
+    rows = [
+        SessionMessage(
+            session_id=session_id, turn_index=turn, role="user",
+            content=user_text, run_id=run_id, ts=ts,
+        )
+    ]
+    # 回答为空 = 这一轮没产出（超时/停止/失败）。**不要**塞一条空的助手消息：
+    # 那会让会话里出现一个空白气泡，用户以为模型答了个空。界面那边有失败条说明原因。
+    if assistant_text.strip():
+        rows.append(
             SessionMessage(
                 session_id=session_id, turn_index=turn, role="assistant",
                 content=assistant_text, run_id=run_id, ts=now_ms(),
-            ),
-        ]
-    )
-    sess.message_count = (sess.message_count or 0) + 2
+            )
+        )
+    session.add_all(rows)
+    sess.message_count = (sess.message_count or 0) + len(rows)
     sess.last_active_at = now_ms()
     if sess.title in ("", None):
         sess.title = (user_text or "").strip()[:60]

@@ -901,10 +901,12 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 }}
               >
                 <span className="flex-1 min-w-[200px] break-words">
-                  这一轮失败了：{failed.message}
+                  {/* 超时不是「模型答错了」，措辞上别让人以为是自己写错了 */}
+                  {/超时/.test(failed.message) ? "这一轮没跑完：" : "这一轮失败了："}
+                  {failed.message}
                 </span>
                 <button className="btn btn-sm shrink-0" disabled={busy} onClick={() => void send(failed.text)}>
-                  重试
+                  {/超时/.test(failed.message) ? "继续" : "重试"}
                 </button>
                 <button className="text-[12px] shrink-0 hover:underline" onClick={() => setFailed(null)}>
                   忽略

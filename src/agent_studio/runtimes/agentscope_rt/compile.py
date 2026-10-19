@@ -503,6 +503,14 @@ def build_configs(defn: AgentDefinition):
         limits.max_iters if limits.max_iters > 0 else UNLIMITED_ITERS_SENTINEL
     )
     react_kwargs.setdefault("max_iters", effective_iters)
+    # 取消（执行超时 / 用户点停止）**必须真的抛出来**。
+    #
+    # AgentScope 默认把这个 CancelledError 吞掉，然后把这轮回复替换成一句
+    # "I notice the interruption. How can I help you?" —— 我们的 wait_for 就再也
+    # 收不到超时信号了：Run 被记成 ok、会话里写进这句假回答，用户看到的是
+    # "模型莫名中断了"，而真正的原因是「这轮撞到了执行超时上限」。
+    # 打开之后：超时 → wait_for 抛 TimeoutError（判超时）、停止 → CancelledError（判中断）。
+    react_kwargs.setdefault("interruption_raise_cancelled_error", True)
 
     model_kwargs = dict(opts.get("model_config") or {})
     context_kwargs = dict(opts.get("context_config") or {})
