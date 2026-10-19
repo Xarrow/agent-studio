@@ -91,10 +91,12 @@ function Shell({
 /* ------------------------------------------------------------------ */
 /* JSON 树                                                             */
 /* ------------------------------------------------------------------ */
+/* 类型配色与代码块的高亮同一套（hl-*）：同一个 JSON 在树里和在源码里
+   不该是两种绿 —— 那会让人以为是不同的东西。 */
 const KIND_COLOR: Record<string, string> = {
-  string: "text-slate-700",
-  number: "text-blue-600",
-  boolean: "text-violet-600",
+  string: "hl-str",
+  number: "hl-num",
+  boolean: "hl-kw",
   null: "text-slate-400",
   object: "text-slate-500",
   array: "text-slate-500",
@@ -137,7 +139,7 @@ function TreeNode({
         <span className="w-3 shrink-0 text-slate-400">{open ? "▾" : "▸"}</span>
         {node.key !== "$" ? (
           <>
-            <span className="text-slate-600">{node.key}</span>
+            <span className="hl-key">{node.key}</span>
             <span className="text-slate-400">:</span>
           </>
         ) : null}

@@ -16,11 +16,12 @@
  * （比如运行详情弹窗）FileChip 退化成普通行内代码，不会点出半截东西。
  */
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { DLG_BACKDROP, DLG_CARD } from "@/components/ui/kit";
 import { api, fmt } from "@/lib/api";
 import { CodeBlock } from "@/components/CodeBlock";
-import { baseName, extOf, fileKind, fileUrlFor, looksLikeFilePath } from "@/lib/files";
+import { FileTypeIcon } from "@/components/ui/icons";
+import { baseName, extOf, fileKind, fileTypeKey, fileUrlFor, looksLikeFilePath } from "@/lib/files";
 import { copyText } from "@/lib/clipboard";
 
 export type FileRef = { path: string; name?: string; url?: string | null; size?: number; mtime?: number };
@@ -157,6 +158,30 @@ export function FileDialog({
   const [copied, setCopied] = useState<"path" | "text" | null>(null);
   /* 删除是不可撤销的：第一下只把按钮变成「确认删除」，4 秒内再点才算（不用原生 confirm —— 它阻塞 JS） */
   const [confirmDel, setConfirmDel] = useState(false);
+  /** 确认态的倒计时（4 → 1），到点自己退回「删除」 */
+  const [delCount, setDelCount] = useState(0);
+  const delTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const countdown = (n: number) => {
+    if (delTimer.current) clearInterval(delTimer.current);
+    setDelCount(n);
+    delTimer.current = setInterval(() => {
+      setDelCount((v) => {
+        if (v <= 1) {
+          if (delTimer.current) clearInterval(delTimer.current);
+          delTimer.current = null;
+          setConfirmDel(false);
+          return 0;
+        }
+        return v - 1;
+      });
+    }, 1000);
+  };
+  useEffect(
+    () => () => {
+      if (delTimer.current) clearInterval(delTimer.current);
+    },
+    [],
+  );
   const [deleting, setDeleting] = useState(false);
   const [delErr, setDelErr] = useState<string | null>(null);
 
@@ -180,6 +205,23 @@ export function FileDialog({
       setConfirmDel(false);
     }
   };
+
+  /* Esc 关闭：桌面看文件时手不用离开键盘；确认态下先退回「删除」再关，别一按就把框关了 */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (confirmDel) {
+        setConfirmDel(false);
+        setDelCount(0);
+        if (delTimer.current) clearInterval(delTimer.current);
+        delTimer.current = null;
+        return;
+      }
+      onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, confirmDel]);
 
   useEffect(() => {
     let alive = true;
@@ -224,14 +266,23 @@ export function FileDialog({
       >
         {/* 标题：文件名 + 类型/大小/时间 */}
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="truncate text-[15px] font-medium mono">{file.name ?? baseName(file.path)}</h2>
-            <p className="mt-0.5 text-[12px]" style={{ color: "var(--color-muted)" }}>
-              {extOf(file.path) ? `${extOf(file.path).toUpperCase()} · ` : ""}
-              {kind === "image" ? "图片 · " : kind === "text" ? "文本 · " : "文件 · "}
-              {file.size != null || bytes != null ? fmt.bytes(bytes ?? file.size ?? 0) : ""}
-              {file.mtime ? ` · ${new Date(file.mtime * 1000).toLocaleString()}` : ""}
-            </p>
+          <div className="flex min-w-0 items-start gap-2">
+            <span className="mt-0.5 shrink-0" style={{ color: "var(--color-muted)" }}>
+              <FileTypeIcon kind={fileTypeKey(file.path)} size={18} />
+            </span>
+            <div className="min-w-0">
+              <h2 className="truncate text-[15px] font-medium mono">{file.name ?? baseName(file.path)}</h2>
+              <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[12px]" style={{ color: "var(--color-muted)" }}>
+                {extOf(file.path) ? (
+                  <span className="mono rounded px-1 py-[1px]" style={{ background: "var(--color-surface-2)" }}>
+                    {extOf(file.path).toUpperCase()}
+                  </span>
+                ) : null}
+                <span>{kind === "image" ? "图片" : kind === "text" ? "文本" : "文件"}</span>
+                {file.size != null || bytes != null ? <span>· {fmt.bytes(bytes ?? file.size ?? 0)}</span> : null}
+                {file.mtime ? <span>· {fmt.stamp(file.mtime * 1000)}</span> : null}
+              </p>
+            </div>
           </div>
           <button
             type="button"
@@ -259,7 +310,16 @@ export function FileDialog({
             />
           ) : kind === "text" ? (
             state === "loading" ? (
-              <p className="p-3 text-[12.5px]" style={{ color: "var(--color-muted)" }}>读取中…</p>
+              /* 骨架：三条灰条，比一句"读取中…"更像在加载（也避免文字跳一下） */
+              <div className="rounded-[10px] border p-3" style={{ borderColor: "var(--color-border)" }}>
+                {[92, 74, 48].map((w) => (
+                  <div
+                    key={w}
+                    className="mb-2 h-[9px] rounded-full last:mb-0"
+                    style={{ width: `${w}%`, background: "var(--color-surface-2)", animation: "pulse 1.4s ease-in-out infinite" }}
+                  />
+                ))}
+              </div>
             ) : state === "fail" ? (
               <p className="rounded-[10px] border p-3 text-[12.5px]" style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}>
                 读不出内容（文件可能已被删掉或移走），可以直接下载试试。
@@ -333,14 +393,14 @@ export function FileDialog({
               onClick={() => {
                 if (!confirmDel) {
                   setConfirmDel(true);
-                  setTimeout(() => setConfirmDel(false), 4000);
+                  countdown(4);
                   return;
                 }
                 void remove();
               }}
               title={confirmDel ? "再点一次就删掉了（不可撤销）" : "删掉这个文件（会再确认一次）"}
             >
-              {deleting ? "删除中…" : confirmDel ? "确认删除" : "删除"}
+              {deleting ? "删除中…" : confirmDel ? `确认删除${delCount > 0 ? ` ${delCount}` : ""}` : "删除"}
             </button>
           ) : null}
         </div>

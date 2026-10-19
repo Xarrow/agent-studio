@@ -1032,6 +1032,18 @@ export const fmt = {
     if (v < 1024 * 1024) return `${(v / 1024).toFixed(1)}KB`;
     return `${(v / 1024 / 1024).toFixed(1)}MB`;
   },
+  /** 文件时间：`10-19 14:45`（中文产品里别出现 10/19/2026, 2:45:12 PM 那种） */
+  stamp(ts: number | null | undefined): string {
+    if (!ts) return "";
+    const d = new Date(ts);
+    const p2 = (n: number) => String(n).padStart(2, "0");
+    const now = new Date();
+    const sameYear = d.getFullYear() === now.getFullYear();
+    const date = sameYear
+      ? `${p2(d.getMonth() + 1)}-${p2(d.getDate())}`
+      : `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
+    return `${date} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+  },
   time(ts: number | null | undefined): string {
     if (!ts) return "—";
     return new Date(ts).toLocaleString("zh-CN", { hour12: false });

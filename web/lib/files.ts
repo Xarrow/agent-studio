@@ -83,3 +83,34 @@ export function fileUrlFor(path: string, sessionId?: string, workDir?: string): 
   if (!rel || rel.includes("..")) return null;
   return `/api/work/file/sessions/${sessionId}/${rel.split("/").map(encodeURIComponent).join("/")}`;
 }
+
+/**
+ * 文件名太长时做**中间省略**，保留扩展名。
+ * 直接 truncate 截尾会把 `.json` / `.md` 切掉 —— 文件类型恰好是最要紧的信息。
+ * 「报告-v2-final.json」→「报告-…-final.json」
+ */
+export function middleEllipsis(name: string, max = 28): string {
+  if (name.length <= max) return name;
+  const dot = name.lastIndexOf(".");
+  const ext = dot > 0 ? name.slice(dot) : "";
+  const stem = ext ? name.slice(0, dot) : name;
+  const keep = Math.max(6, max - ext.length - 1); // 至少留 6 个字的词干
+  const head = Math.ceil((keep - 1) / 2);
+  const tail = keep - 1 - head;
+  return `${stem.slice(0, head)}…${stem.slice(stem.length - tail)}${ext}`;
+}
+
+/** 文件类型（给图标用）：image / text / json / xml / code / archive / sheet / pdf / other */
+export function fileTypeKey(path: string): string {
+  const e = extOf(path);
+  if (!e) return "other";
+  if (IMAGE_EXT.has(e)) return "image";
+  if (e === "json" || e === "jsonl" || e === "ndjson") return "json";
+  if (e === "xml" || e === "html" || e === "htm" || e === "svg") return "xml";
+  if (["csv", "tsv", "xlsx", "xls"].includes(e)) return "sheet";
+  if (["md", "txt", "log", "yml", "yaml", "toml", "ini", "conf"].includes(e)) return "text";
+  if (["pdf"].includes(e)) return "pdf";
+  if (["zip", "tar", "gz", "tgz", "7z", "rar"].includes(e)) return "archive";
+  if (["py", "ts", "tsx", "js", "jsx", "sh", "go", "rs", "java", "c", "cpp", "css"].includes(e)) return "code";
+  return "other";
+}

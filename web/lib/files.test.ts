@@ -8,7 +8,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { baseName, extOf, fileKind, fileUrlFor, looksLikeFilePath } from "./files.ts";
+import { baseName, extOf, fileKind, fileTypeKey, fileUrlFor, looksLikeFilePath, middleEllipsis } from "./files.ts";
 
 test("像文件的才认：绝对路径 / 带目录的相对路径 / 带扩展名的裸文件名", () => {
   for (const s of [
@@ -65,4 +65,28 @@ test("只有本会话工作目录里的文件才给取回地址（别的路径�
   assert.equal(fileUrlFor(`/work/sessions/${sid}/a.md`, undefined, undefined), null);
   // 想往上跳目录的不给
   assert.equal(fileUrlFor(`/work/sessions/${sid}/../../etc/passwd`, sid, `/work/sessions/${sid}`), null);
+});
+
+/* ── 打磨细节用的两个纯函数 ───────────────────────────────────────── */
+test("文件名中间省略：长度没超就原样，超了保留扩展名", () => {
+  assert.equal(middleEllipsis("result.md", 22), "result.md");
+  const long = middleEllipsis("2026-10-19-季度经营分析报告最终版.json", 22);
+  assert.equal(long.length <= 23, true, long);
+  assert.equal(long.endsWith(".json"), true, "扩展名必须留着 —— 它就是文件类型");
+  assert.equal(long.includes("…"), true);
+  // 没有扩展名/带目录也要能处理
+  assert.equal(middleEllipsis("a-very-long-name-without-ext", 12).length <= 13, true);
+  assert.equal(middleEllipsis("out/sub/报告.md", 8).includes("/"), false);
+});
+
+test("文件类型：json/xml/图片/表格/代码分开认", () => {
+  assert.equal(fileTypeKey("a.json"), "json");
+  assert.equal(fileTypeKey("feed.xml"), "xml");
+  assert.equal(fileTypeKey("page.html"), "xml");
+  assert.equal(fileTypeKey("shot.PNG"), "image");
+  assert.equal(fileTypeKey("list.csv"), "sheet");
+  assert.equal(fileTypeKey("main.py"), "code");
+  assert.equal(fileTypeKey("readme.md"), "text");
+  assert.equal(fileTypeKey("pkg.tar.gz"), "archive");
+  assert.equal(fileTypeKey("noext"), "other");
 });

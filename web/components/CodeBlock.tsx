@@ -104,10 +104,13 @@ export function CodeBlock({
         className="flex items-center gap-2 px-2.5 py-1 border-b text-[12px]"
         style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
       >
-        <span className="mono shrink-0" style={{ color: "var(--color-muted)" }}>
+        <span
+          className="mono shrink-0 rounded px-1.5 py-[1px] text-[11px] uppercase tracking-wide"
+          style={{ background: "var(--color-surface)", color: "var(--color-muted)" }}
+        >
           {effective || "text"}
         </span>
-        <span className="shrink-0" style={{ color: "var(--color-muted)" }}>
+        <span className="shrink-0 text-[11px]" style={{ color: "var(--color-muted)" }}>
           {lines.length} 行
         </span>
         <span className="ml-auto flex items-center gap-1.5">
@@ -144,14 +147,16 @@ export function CodeBlock({
               缩进
             </button>
           )}
-          {tooLong && (
+          {/* 展开交给底边那条（它还告诉你剩多少行）；工具条只负责「收起」，
+              两个地方都写「展开全部」会让人以为要做两次 */}
+          {tooLong && expanded && (
             <button
               type="button"
               className="rounded px-1.5 py-0.5 max-md:min-h-[32px] max-md:px-2 hover:bg-[var(--color-surface)]"
               style={{ color: "var(--color-muted)" }}
-              onClick={() => setExpanded((v) => !v)}
+              onClick={() => setExpanded(false)}
             >
-              {expanded ? "收起" : "展开全部"}
+              收起
             </button>
           )}
           {isHtml && (
@@ -168,10 +173,15 @@ export function CodeBlock({
           <button
             type="button"
             data-tap
-            className="rounded px-1.5 py-0.5 max-md:min-h-[32px] max-md:px-2 hover:bg-[var(--color-surface)]"
+            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 max-md:min-h-[32px] max-md:px-2 hover:bg-[var(--color-surface)]"
             style={{ color: copied ? "var(--color-ok)" : "var(--color-muted)" }}
             onClick={() => void copy()}
           >
+            {copied ? (
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M20 6L9 17l-5-5" />
+              </svg>
+            ) : null}
             {copied ? "已复制" : "复制"}
           </button>
         </span>
@@ -189,33 +199,45 @@ export function CodeBlock({
         />
       ) : (
         <>
-          <pre
-            className="hl overflow-auto px-2.5 py-2 text-[12px] leading-[1.6] m-0"
-            style={{ background: "var(--color-surface-2)" }}
-          >
-            <code>
-              {toks
-                ? toks.map((t, i) =>
-                    t.c ? (
-                      <span key={i} className={`hl-${t.c}`}>
-                        {t.t}
-                      </span>
-                    ) : (
-                      <span key={i}>{t.t}</span>
-                    ),
-                  )
-                : visible.join("\n")}
-              {tooLong && !expanded ? "\n…" : ""}
-            </code>
-          </pre>
+          <div className="relative">
+            <pre
+              className="hl overflow-auto px-2.5 py-2 text-[12px] leading-[1.6] m-0"
+              style={{ background: "var(--color-surface-2)" }}
+            >
+              <code>
+                {toks
+                  ? toks.map((t, i) =>
+                      t.c ? (
+                        <span key={i} className={`hl-${t.c}`}>
+                          {t.t}
+                        </span>
+                      ) : (
+                        <span key={i}>{t.t}</span>
+                      ),
+                    )
+                  : visible.join("\n")}
+              </code>
+            </pre>
+            {/* 被折叠时底部压一层渐隐：一眼看出"下面还有"，而不是读到一句"…"就断了 */}
+            {tooLong && !expanded ? (
+              <div
+                className="pointer-events-none absolute inset-x-0 bottom-0 h-9"
+                style={{ background: "linear-gradient(to bottom, rgba(255,255,255,0), var(--color-surface-2))" }}
+              />
+            ) : null}
+          </div>
           {tooLong && !expanded && (
             <button
               type="button"
               onClick={() => setExpanded(true)}
-              className="block w-full border-t py-1.5 text-[12px] max-md:min-h-[36px] hover:bg-[var(--color-surface)]"
+              className="flex w-full items-center justify-center gap-1 border-t py-1.5 text-[12px] max-md:min-h-[36px] hover:bg-[var(--color-surface)]"
               style={{ borderColor: "var(--color-border)", color: "var(--color-accent)" }}
             >
-              展开全部 {lines.length} 行
+              还有 {lines.length - PREVIEW_LINES} 行
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M6 9l6 6 6-6" />
+              </svg>
+              展开全部
             </button>
           )}
         </>

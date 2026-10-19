@@ -27,6 +27,8 @@ import { RunDetailById } from "@/components/RunDetailDialog";
 import { AgentDetailDialog } from "@/components/AgentDetailDialog";
 import { FileOpenerProvider, FileRowButton } from "@/components/FileDialog";
 import { copyText } from "@/lib/clipboard";
+import { middleEllipsis, fileTypeKey } from "@/lib/files";
+import { FileTypeIcon } from "@/components/ui/icons";
 
 /** 流式渲染期间的一条临时消息 */
 interface LiveMsg {
@@ -68,10 +70,13 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
       setSessionFiles(null);
       return;
     }
+    setFilesBusy(true);
     try {
       setSessionFiles(await api.sessionFiles(sessionId));
     } catch {
       setSessionFiles(null); // 打不开就不显示这块 —— 不打扰用户
+    } finally {
+      setFilesBusy(false);
     }
   }, [sessionId]);
 
@@ -530,6 +535,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
      默认：≤3 个就摊开（少的时候看得见才有用），多了先收起（点箭头/标题展开）。
      用户手动点过就记住他的选择（localStorage），别每次刷新都跟他对着来。 */
   const [filesOpenPref, setFilesOpenPref] = useState<boolean | null>(null);
+  /** 刷新会话文件清单时给按钮一个转圈（不然点了没反应，人会连点） */
+  const [filesBusy, setFilesBusy] = useState(false);
   useEffect(() => {
     try {
       const v = localStorage.getItem("chat.filesOpen");
@@ -1013,11 +1020,29 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                   <span className="shrink-0">· {sessionFiles?.count ?? 0} 个</span>
                   <button
                     type="button"
-                    className="ml-auto shrink-0 rounded px-1 hover:underline max-md:inline-flex max-md:min-h-[32px] max-md:min-w-[32px] max-md:items-center max-md:justify-center"
+                    className="ml-auto inline-flex shrink-0 items-center gap-1 rounded px-1 hover:underline max-md:min-h-[32px] max-md:min-w-[32px] max-md:justify-center disabled:opacity-60"
                     style={{ color: "var(--color-accent)" }}
                     onClick={() => void loadSessionFiles()}
+                    disabled={filesBusy}
+                    aria-label="刷新本会话文件"
+                    title="重新读一遍这个会话目录"
                   >
-                    刷新
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                      style={filesBusy ? { animation: "spin 1s linear infinite" } : { opacity: 0.75 }}
+                    >
+                      <path d="M21 12a9 9 0 1 1-3-6.7" />
+                      <path d="M21 3v6h-6" />
+                    </svg>
+                    <span className="max-md:hidden">{filesBusy ? "读取中" : "刷新"}</span>
                   </button>
                 </div>
                 {openFiles &&
@@ -1030,7 +1055,12 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                         className="inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-1 text-[11.5px] hover:bg-[var(--color-surface)] max-md:min-h-[32px]"
                         style={{ borderColor: "var(--color-border)", color: "var(--color-text)" }}
                       >
-                        <span className="mono max-w-[160px] truncate">{f.path}</span>
+                        <FileTypeIcon kind={fileTypeKey(f.path)} size={13} className="shrink-0 opacity-60" />
+                        <span className="mono shrink-0" title={f.path}>
+                          {f.path.includes("/")
+                            ? `${f.path.slice(0, f.path.lastIndexOf("/") + 1)}${middleEllipsis(f.path.slice(f.path.lastIndexOf("/") + 1), 20)}`
+                            : middleEllipsis(f.path, 22)}
+                        </span>
                         <span style={{ color: "var(--color-muted)" }}>{fmt.bytes(f.size)}</span>
                       </FileRowButton>
                     ))}

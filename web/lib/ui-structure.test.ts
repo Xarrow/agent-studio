@@ -279,8 +279,11 @@ test("本会话文件是常驻的一条，不再藏在 ⓘ 开关后面", () => 
   assert.match(chat, /本会话文件/, "要有一句明确的『本会话文件』");
   assert.doesNotMatch(chat, /showPaths && sessionFiles/, "不能再被 showPaths 开关挡住");
   assert.match(chat, /还没有文件 —— 这个会话生成的文档都会存在上面的目录里/, "没有文件时也要说明文件会落在哪");
-  // 点开是文件操作框（预览/下载/复制路径），不是跳新标签页
-  assert.match(chat, /<FileRowButton[\s\S]{0,200}本会话文件|本会话文件[\s\S]{0,2400}<FileRowButton/, "清单行要能点开操作框");
+  // 点开是文件操作框（预览/下载/复制路径），不是跳新标签页：
+  // 断言"这块里用了 FileRowButton"就够 —— 别盯源码里两处相距多少字符（细节一改就误报）
+  const strip = chat.slice(chat.indexOf("本会话文件"), chat.indexOf("还没有文件 ——"));
+  assert.match(strip, /<FileRowButton/, "清单行要能点开操作框");
+  assert.match(strip, /title=\{f\.path\}|onClick=\{/, "胶囊要是可点的按钮");
 });
 
 /**

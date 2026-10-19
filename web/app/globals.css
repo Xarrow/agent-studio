@@ -722,3 +722,5 @@ body {
 .hl .hl-val { color: #047857; }   /* 属性值 */
 .hl .hl-com { color: #6b7280; font-style: italic; } /* 注释 / CDATA */
 .hl .hl-txt { color: inherit; } /* 文本节点：不动颜色，只占位不合并 */
+
+@keyframes spin { to { transform: rotate(360deg); } }
