@@ -20,6 +20,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { DLG_BACKDROP, DLG_CARD } from "@/components/ui/kit";
 import { fmt } from "@/lib/api";
 import { baseName, extOf, fileKind, fileUrlFor, looksLikeFilePath } from "@/lib/files";
+import { copyText } from "@/lib/clipboard";
 
 export type FileRef = { path: string; name?: string; url?: string | null; size?: number; mtime?: number };
 
@@ -158,7 +159,9 @@ export function FileDialog({ file, onClose }: { file: FileRef; onClose: () => vo
 
   const copy = (what: "path" | "text") => {
     const v = what === "path" ? file.path : text ?? "";
-    void navigator.clipboard?.writeText(v).then(() => {
+    /* 内网 http 下 navigator.clipboard 不存在，走 lib/clipboard 的兜底 */
+    void copyText(v).then((ok) => {
+      if (!ok) return;
       setCopied(what);
       setTimeout(() => setCopied(null), 1400);
     });

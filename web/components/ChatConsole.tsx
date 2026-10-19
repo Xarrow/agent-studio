@@ -26,6 +26,7 @@ import Markdown from "@/components/Markdown";
 import { RunDetailById } from "@/components/RunDetailDialog";
 import { AgentDetailDialog } from "@/components/AgentDetailDialog";
 import { FileOpenerProvider, FileRowButton } from "@/components/FileDialog";
+import { copyText } from "@/lib/clipboard";
 
 /** 流式渲染期间的一条临时消息 */
 interface LiveMsg {
@@ -527,8 +528,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   const [showPaths, setShowPaths] = useState(false);
   // 一轮跑完顺手刷一下（刚产出的文件当场就能看见）
   useEffect(() => {
-    if (showPaths && !busy) void loadSessionFiles();
-  }, [busy, showPaths, loadSessionFiles]);
+    if (!busy) void loadSessionFiles();
+  }, [busy, loadSessionFiles]);
   useEffect(() => {
     try {
       const savedNav = localStorage.getItem("chat.navOpen");
@@ -917,6 +918,72 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               </div>
             )}
 
+            {/* ── 本会话的文件（常驻，不再藏在 ⓘ 里）────────────────────
+                用户要求：「每个会话生成的文档应该独立存放，在会话能看到存储的路径和文件」。
+                所以这里**默认就在**：左边是这个会话的目录（点一下复制完整路径），
+                右边是文件数；下面一行是这个会话产出的文件，点开就是文件操作框
+                （预览 / 下载 / 复制路径）。没有文件时也留着这一条 —— 让人知道
+                "以后生成的东西会落在哪"。 */}
+            {sessionId && (
+              <div
+                className="max-w-3xl mx-auto mb-1.5 rounded-[12px] border px-2.5 py-1.5 max-md:px-2"
+                style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
+              >
+                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                  <span className="shrink-0">本会话文件</span>
+                  <button
+                    type="button"
+                    className="mono min-w-0 flex-1 truncate text-left hover:underline max-md:inline-flex max-md:min-h-[32px] max-md:items-center"
+                    title={`点一下复制完整路径\n${sessionFiles?.work_dir ?? ""}`}
+                    onClick={() =>
+                      void copyText(sessionFiles?.work_dir ?? "").then((ok) =>
+                        ok
+                          ? fb.success("已复制会话目录", sessionFiles?.work_dir ?? "")
+                          : fb.info("会话目录", sessionFiles?.work_dir ?? ""),
+                      )
+                    }
+                  >
+                    {sessionFiles ? (
+                      <>
+                        <span className="md:hidden">{`…/sessions/${sessionId}`}</span>
+                        <span className="max-md:hidden">{sessionFiles.work_dir}</span>
+                      </>
+                    ) : (
+                      "…"
+                    )}
+                  </button>
+                  <span className="shrink-0">· {sessionFiles?.count ?? 0} 个</span>
+                  <button
+                    type="button"
+                    className="ml-auto shrink-0 rounded px-1 hover:underline max-md:inline-flex max-md:min-h-[32px] max-md:min-w-[32px] max-md:items-center max-md:justify-center"
+                    style={{ color: "var(--color-accent)" }}
+                    onClick={() => void loadSessionFiles()}
+                  >
+                    刷新
+                  </button>
+                </div>
+                {sessionFiles && sessionFiles.files.length > 0 ? (
+                  <div className="mt-1 flex gap-1.5 overflow-x-auto pb-0.5">
+                    {sessionFiles.files.map((f) => (
+                      <FileRowButton
+                        key={f.path}
+                        file={{ path: `${sessionFiles.work_dir}/${f.path}`, url: f.url, size: f.size, mtime: f.mtime }}
+                        className="inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-1 text-[11.5px] hover:bg-[var(--color-surface)] max-md:min-h-[32px]"
+                        style={{ borderColor: "var(--color-border)", color: "var(--color-text)" }}
+                      >
+                        <span className="mono max-w-[160px] truncate">{f.path}</span>
+                        <span style={{ color: "var(--color-muted)" }}>{fmt.bytes(f.size)}</span>
+                      </FileRowButton>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-0.5 text-[11px]" style={{ color: "var(--color-muted)" }}>
+                    还没有文件 —— 这个会话生成的文档都会存在上面的目录里
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="max-w-3xl mx-auto relative">
               {/* ── 输入坞 ────────────────────────────────────────
                   上下结构（上=正文，下=工具栏），不再左右平铺：多行输入时
@@ -1127,66 +1194,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               </div>
             )}
 
-            {/* 这个会话的文件 —— 会话隔离后每个会话一个目录，
-                所以"这个会话产了什么"必须按会话列，别再给一张全局清单 */}
-            {showPaths && sessionFiles && (
-              <div
-                className="max-w-3xl mx-auto mt-1.5 rounded-lg px-2.5 py-2 text-[11.5px]"
-                style={{ background: "var(--color-surface-2)", color: "var(--color-muted)" }}
-              >
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span>这个会话的目录</span>
-                  <button
-                    type="button"
-                    data-tap
-                    className="mono hover:underline truncate"
-                    title="点一下复制完整路径"
-                    onClick={() =>
-                      void navigator.clipboard?.writeText(sessionFiles.work_dir).then(
-                        () => fb.success("已复制路径", sessionFiles.work_dir),
-                        () => fb.info("路径", sessionFiles.work_dir),
-                      )
-                    }
-                  >
-                    {sessionFiles.work_dir}
-                  </button>
-                  <span>· {sessionFiles.count} 个文件</span>
-                  <button
-                    type="button"
-                    data-tap
-                    className="ml-auto inline-flex min-h-[36px] items-center px-2.5 hover:underline lg:min-h-0"
-                    style={{ color: "var(--color-accent)" }}
-                    onClick={() => void loadSessionFiles()}
-                  >
-                    刷新
-                  </button>
-                </div>
-                {sessionFiles.files.length > 0 && (
-                  <div className="mt-1.5 space-y-0.5">
-                    {sessionFiles.files.slice(0, 6).map((f) => (
-                      /* 点一行 = 打开这个文件的**操作框**（预览 / 下载 / 复制路径），
-                         不再"点一下就跳到新标签页给一堆原始内容" —— 用户要求。 */
-                      <FileRowButton
-                        key={f.path}
-                        file={{ path: f.path, url: f.url, size: f.size, mtime: f.mtime }}
-                        className="flex w-full min-h-[32px] items-center gap-2 rounded px-1 py-0.5 hover:bg-[var(--color-surface-2)]"
-                      >
-                        <span
-                          className="mono min-w-0 truncate"
-                          style={{ color: "var(--color-accent)" }}
-                        >
-                          {f.path}
-                        </span>
-                        <span className="shrink-0 ml-auto">{fmt.bytes(f.size)}</span>
-                      </FileRowButton>
-                    ))}
-                    {sessionFiles.files.length > 6 && (
-                      <div>还有 {sessionFiles.files.length - 6} 个…</div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
+            {/* 这个会话的文件已经常驻在输入坞上方，这里不再重复列一遍 */}
           </div>
         </section>
 

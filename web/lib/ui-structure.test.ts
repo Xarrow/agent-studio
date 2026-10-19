@@ -268,3 +268,17 @@ test("手机排版的护栏（行距和次要字号别再退回 1.38）", () => 
   const kit = read("components/ui/kit.tsx");
   assert.match(kit, /max-md:text-\[13px\] max-md:leading-relaxed/, "页头说明手机上要 13px/宽松行距");
 });
+
+/**
+ * 会话文件可见性：每个会话的文档独立存放，**在会话里就要能看见路径和文件**。
+ * 曾经的错法是把这块塞进 ⓘ 的 showPaths 开关里（默认关着 = 用户根本不知道文件存哪）；
+ * 现在它是输入坞上方常驻的一条，没文件时也留着（告诉人"以后生成的会落在这"）。
+ */
+test("本会话文件是常驻的一条，不再藏在 ⓘ 开关后面", () => {
+  const chat = read("components/ChatConsole.tsx");
+  assert.match(chat, /本会话文件/, "要有一句明确的『本会话文件』");
+  assert.doesNotMatch(chat, /showPaths && sessionFiles/, "不能再被 showPaths 开关挡住");
+  assert.match(chat, /还没有文件 —— 这个会话生成的文档都会存在上面的目录里/, "没有文件时也要说明文件会落在哪");
+  // 点开是文件操作框（预览/下载/复制路径），不是跳新标签页
+  assert.match(chat, /<FileRowButton[\s\S]{0,200}本会话文件|本会话文件[\s\S]{0,2400}<FileRowButton/, "清单行要能点开操作框");
+});
