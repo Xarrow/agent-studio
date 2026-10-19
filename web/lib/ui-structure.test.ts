@@ -282,3 +282,18 @@ test("本会话文件是常驻的一条，不再藏在 ⓘ 开关后面", () => 
   // 点开是文件操作框（预览/下载/复制路径），不是跳新标签页
   assert.match(chat, /<FileRowButton[\s\S]{0,200}本会话文件|本会话文件[\s\S]{0,2400}<FileRowButton/, "清单行要能点开操作框");
 });
+
+/**
+ * 发送气泡的形状口径（用户 2026-10 要求"气泡样式和尺寸激进一点"）：
+ *   · 短消息（一行、无附件）＝ 胶囊；长消息 ＝ 18px 圆角块，右下一角收成 6px（"尾巴"）
+ *   · 气泡自己占满外层 90%（手机）/88%（桌面），不再套一层 92% 才到 78%
+ *   · 字 14px / 行距 1.6（气泡里比正文紧一点），带一点点阴影与内高光
+ */
+test("发送气泡：短消息胶囊、长消息圆角+尾巴，尺寸与字阶定死", () => {
+  const chat = read("components/ChatConsole.tsx");
+  assert.match(chat, /const shortMsg = !userBody\.includes\("\\n"\) && userBody\.length <= 24 && attachments\.length === 0/, "短消息判定口径");
+  assert.match(chat, /rounded-full px-4 py-2 leading-\[1\.6\]/, "短消息 ＝ 胶囊");
+  assert.match(chat, /rounded-\[18px\] rounded-br-\[6px\] px-3\.5 py-2\.5 leading-\[1\.6\]/, "长消息 ＝ 18px + 右下 6px 尾巴");
+  assert.match(chat, /text-white w-fit max-w-full whitespace-pre-wrap ml-auto text-\[14px\]/, "气泡 14px、贴右、宽度撑到外层上限");
+  assert.match(chat, /max-w-\[88%\] max-md:max-w-\[90%\]/, "外层给气泡 88%（桌面）/90%（手机）");
+});

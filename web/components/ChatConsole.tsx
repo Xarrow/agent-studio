@@ -1480,9 +1480,13 @@ function Bubble({
         .trim()
     : content;
 
+  /* 短消息（一行内、没附件）= 胶囊；多行/带附件 = 圆角块（右下角收窄做"尾巴"）。
+     手机上就一句「好」不该占一个 18px 圆角的大方块。 */
+  const shortMsg = !userBody.includes("\n") && userBody.length <= 24 && attachments.length === 0;
+
   return (
     <div className={`flex group ${isUser ? "justify-end" : "justify-start"}`}>
-      <div className={isUser ? "max-w-[85%]" : "min-w-0 flex-1"}>
+      <div className={isUser ? "max-w-[88%] max-md:max-w-[90%]" : "min-w-0 flex-1"}>
         {/* 编辑态：textarea 就地展开（不用弹窗——上下文不丢） */}
         {editing ? (
           <div
@@ -1526,12 +1530,26 @@ function Bubble({
         ) : (
           <>
         <div
-          className={`text-[13.5px] leading-[1.75] break-words ${
+          className={`break-words ${
             isUser
-              ? "text-white w-fit max-w-[92%] ml-auto whitespace-pre-wrap rounded-2xl px-3.5 py-2.5"
-              : "text-[var(--color-text)]"
+              ? `text-white w-fit max-w-full whitespace-pre-wrap ml-auto text-[14px] ${
+                  /* 短消息（一行内、无附件）= 胶囊；长消息 = 18px 圆角块，右下角收成 6px
+                     （气泡"尾巴"角），右边贴齐。用户要求：气泡样式与尺寸激进一点。 */
+                  shortMsg
+                    ? "rounded-full px-4 py-2 leading-[1.6]"
+                    : "rounded-[18px] rounded-br-[6px] px-3.5 py-2.5 leading-[1.6]"
+                }`
+              : "text-[13.5px] leading-[1.75] text-[var(--color-text)]"
           }`}
-          style={isUser ? { background: "var(--color-accent)" } : undefined}
+          style={
+            isUser
+              ? {
+                  background: "var(--color-accent)",
+                  boxShadow:
+                    "0 1px 2px color-mix(in srgb, var(--color-accent) 32%, transparent), inset 0 1px 0 rgba(255,255,255,0.14)",
+                }
+              : undefined
+          }
         >
           {isUser ? (
             <>
