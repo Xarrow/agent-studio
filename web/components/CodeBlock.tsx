@@ -1,61 +1,164 @@
 "use client";
 
 /**
- * 代码块 —— 升级版（exec 页丰富化第一件）：
- * · 复制按钮（零依赖：navigator.clipboard）
- * · ```html 块给「预览」切换 —— OpenGenerativeUI 的核心模式（agent 产出即界面），
- *   沙箱 iframe 渲染（no scripts 之外的能力、不允许同源），零第三方依赖
+ * 代码块：语言标签 + 语法着色 + 格式化/压缩 + 折叠 + 复制（+ HTML 沙箱预览）。
+ *
+ * 用户要求：「会话内容中 json，xml 支持格式化高亮，和小工具操作」。
+ * 三件事：
+ *   1. **看**得懂 —— JSON/XML 自动格式化（紧凑的一整行 → 2 空格缩进）并着色；
+ *   2. **切**得动 —— 格式化 / 压缩 一键来回，超过 30 行默认折叠，可展开看全；
+ *   3. **拿**得走 —— 复制复的是**当前看到的内容**（格式化的那份），不是原文。
+ * 其它语言不硬凑着色（没有可靠的零依赖 tokenizer 就别硬上），仍旧原样显示。
+ * ```html 块保留「预览」—— OpenGenerativeUI 的核心模式（agent 产出即界面），
+ * 沙箱 iframe 渲染，零第三方依赖。
  */
 
-import React, { useState } from "react";
+import { useMemo, useState } from "react";
+import { copyText } from "@/lib/clipboard";
+import { formatJson, formatXml, guessLang, looksMinifiedJson, tokenizerFor } from "@/lib/highlight";
 
-export function CodeBlock({ code, lang }: { code: string; lang?: string }) {
+const PREVIEW_LINES = 30;
+
+export function CodeBlock({
+  code,
+  lang,
+  bare = false,
+}: {
+  code: string;
+  lang?: string;
+  /** bare：只给高亮正文（嵌在别处的「原文」视图里复用，不重复外框与工具条） */
+  bare?: boolean;
+}) {
   const [copied, setCopied] = useState(false);
   const [preview, setPreview] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const language = (lang || "").toLowerCase();
   const isHtml = language === "html" || /^\s*<!DOCTYPE html/i.test(code);
 
+  /* 没写语言标签时按内容猜（模型经常只给 ``` 空标签）：一眼是 JSON / XML 的照样处理 */
+  const effective = language || guessLang(code) || "";
+  const kind = effective === "json" || effective === "jsonl" ? "json" : effective === "xml" ? "xml" : "";
+
+  const formatted = useMemo(() => {
+    if (kind === "json") return formatJson(code);
+    if (kind === "xml") return formatXml(code);
+    return { text: code, ok: false };
+  }, [code, kind]);
+
+  /* 默认显示形态：能格式化的就格式化（紧凑 JSON 尤其需要），已经好看的不动 */
+  const [showFormatted, setShowFormatted] = useState(() => {
+    if (kind === "json") return formatted.ok && looksMinifiedJson(code);
+    if (kind === "xml") return formatted.ok && !/\n\s{2,}</.test(code);
+    return false;
+  });
+
+  const shown = showFormatted && formatted.ok ? formatted.text : code;
+  const lines = useMemo(() => shown.split("\n"), [shown]);
+  const tooLong = lines.length > PREVIEW_LINES;
+  const visible = tooLong && !expanded ? lines.slice(0, PREVIEW_LINES) : lines;
+
+  const toks = useMemo(() => {
+    const tk = tokenizerFor(kind || language);
+    if (!tk) return null;
+    return tk((bare ? lines : visible).join("\n"));
+  }, [visible, lines, kind, language, bare]);
+
   const copy = async () => {
-    let ok = false;
-    try {
-      await navigator.clipboard.writeText(code);
-      ok = true;
-    } catch {
-      // clipboard API 不可用（非安全上下文/旧内核 WebView）→ textarea 兜底
-      try {
-        const ta = document.createElement("textarea");
-        ta.value = code;
-        ta.style.position = "fixed";
-        ta.style.opacity = "0";
-        document.body.appendChild(ta);
-        ta.select();
-        ok = document.execCommand("copy");
-        document.body.removeChild(ta);
-      } catch {
-        ok = false;
-      }
-    }
-    if (ok) {
+    if (await copyText(shown)) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1600);
     }
   };
 
+  const canFormat = kind === "json" && formatted.ok && !showFormatted;
+  const canCompress = kind === "json" && showFormatted;
+  const canIndent = kind === "xml" && formatted.ok && !showFormatted;
+
+  if (bare) {
+    return (
+      <pre
+        className="hl overflow-auto px-3 py-2 text-[12px] leading-[1.6] m-0"
+        style={{ background: "var(--color-surface-2)" }}
+      >
+        <code>
+          {toks
+            ? toks.map((t, i) =>
+                t.c ? (
+                  <span key={i} className={`hl-${t.c}`}>
+                    {t.t}
+                  </span>
+                ) : (
+                  <span key={i}>{t.t}</span>
+                ),
+              )
+            : lines.join("\n")}
+        </code>
+      </pre>
+    );
+  }
+
   return (
     <div className="my-2 rounded-[8px] border overflow-hidden" style={{ borderColor: "var(--color-border)" }}>
-      {/* 工具条：语言名 + 动作（常驻可见，不藏 hover） */}
+      {/* 工具条：语言名 + 行数 + 动作（常驻可见，不藏 hover） */}
       <div
         className="flex items-center gap-2 px-2.5 py-1 border-b text-[12px]"
         style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
       >
-        <span className="mono" style={{ color: "var(--color-muted)" }}>
-          {language || "text"}
+        <span className="mono shrink-0" style={{ color: "var(--color-muted)" }}>
+          {effective || "text"}
+        </span>
+        <span className="shrink-0" style={{ color: "var(--color-muted)" }}>
+          {lines.length} 行
         </span>
         <span className="ml-auto flex items-center gap-1.5">
+          {canFormat && (
+            <button
+              type="button"
+              className="rounded px-1.5 py-0.5 max-md:min-h-[32px] max-md:px-2 hover:bg-[var(--color-surface)]"
+              style={{ color: "var(--color-accent)" }}
+              onClick={() => setShowFormatted(true)}
+              title="展开成缩进格式（更容易看清层级）"
+            >
+              格式化
+            </button>
+          )}
+          {canCompress && (
+            <button
+              type="button"
+              className="rounded px-1.5 py-0.5 max-md:min-h-[32px] max-md:px-2 hover:bg-[var(--color-surface)]"
+              style={{ color: "var(--color-muted)" }}
+              onClick={() => setShowFormatted(false)}
+              title="压回一行（复制给程序用）"
+            >
+              压缩
+            </button>
+          )}
+          {canIndent && (
+            <button
+              type="button"
+              className="rounded px-1.5 py-0.5 max-md:min-h-[32px] max-md:px-2 hover:bg-[var(--color-surface)]"
+              style={{ color: "var(--color-accent)" }}
+              onClick={() => setShowFormatted(true)}
+              title="按标签层级缩进"
+            >
+              缩进
+            </button>
+          )}
+          {tooLong && (
+            <button
+              type="button"
+              className="rounded px-1.5 py-0.5 max-md:min-h-[32px] max-md:px-2 hover:bg-[var(--color-surface)]"
+              style={{ color: "var(--color-muted)" }}
+              onClick={() => setExpanded((v) => !v)}
+            >
+              {expanded ? "收起" : "展开全部"}
+            </button>
+          )}
           {isHtml && (
             <button
+              type="button"
               data-tap
-              className="rounded px-1.5 py-0.5 hover:bg-[var(--color-surface)]"
+              className="rounded px-1.5 py-0.5 max-md:min-h-[32px] max-md:px-2 hover:bg-[var(--color-surface)]"
               style={{ color: preview ? "var(--color-accent)" : "var(--color-muted)" }}
               onClick={() => setPreview((v) => !v)}
             >
@@ -63,8 +166,9 @@ export function CodeBlock({ code, lang }: { code: string; lang?: string }) {
             </button>
           )}
           <button
+            type="button"
             data-tap
-            className="rounded px-1.5 py-0.5 hover:bg-[var(--color-surface)]"
+            className="rounded px-1.5 py-0.5 max-md:min-h-[32px] max-md:px-2 hover:bg-[var(--color-surface)]"
             style={{ color: copied ? "var(--color-ok)" : "var(--color-muted)" }}
             onClick={() => void copy()}
           >
@@ -84,12 +188,37 @@ export function CodeBlock({ code, lang }: { code: string; lang?: string }) {
           style={{ height: 320, background: "#fff", border: "none" }}
         />
       ) : (
-        <pre
-          className="overflow-auto px-2.5 py-2 text-[12px] leading-[1.6] m-0"
-          style={{ background: "var(--color-surface-2)" }}
-        >
-          <code>{code}</code>
-        </pre>
+        <>
+          <pre
+            className="hl overflow-auto px-2.5 py-2 text-[12px] leading-[1.6] m-0"
+            style={{ background: "var(--color-surface-2)" }}
+          >
+            <code>
+              {toks
+                ? toks.map((t, i) =>
+                    t.c ? (
+                      <span key={i} className={`hl-${t.c}`}>
+                        {t.t}
+                      </span>
+                    ) : (
+                      <span key={i}>{t.t}</span>
+                    ),
+                  )
+                : visible.join("\n")}
+              {tooLong && !expanded ? "\n…" : ""}
+            </code>
+          </pre>
+          {tooLong && !expanded && (
+            <button
+              type="button"
+              onClick={() => setExpanded(true)}
+              className="block w-full border-t py-1.5 text-[12px] max-md:min-h-[36px] hover:bg-[var(--color-surface)]"
+              style={{ borderColor: "var(--color-border)", color: "var(--color-accent)" }}
+            >
+              展开全部 {lines.length} 行
+            </button>
+          )}
+        </>
       )}
     </div>
   );

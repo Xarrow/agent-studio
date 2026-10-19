@@ -15,6 +15,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -163,6 +165,47 @@ async def get_session_detail(
             for r in rows
         ],
     )
+
+
+@router.delete("/{session_id}/files")
+async def delete_session_file(
+    session_id: str,
+    path: str = Query(..., min_length=1, max_length=500),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """删掉本会话工作目录里的**一个文件**。
+
+    为什么只能在这个目录里：会话目录就是权限边界（sessions/<会话号>/）。
+    路径一律当成"相对会话目录"，含 `..`、绝对路径、想跳到会话外的一律拒 ——
+    删文件是不可撤销的操作，边界宁可严一点。
+    """
+    row = await session.get(ChatSession, session_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"会话不存在: {session_id}")
+    root = session_work_dir(session_id).resolve()
+    rel = path.strip().lstrip("/")
+    if not rel:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "路径不能为空")
+    parts = Path(rel).parts
+    if ".." in parts or Path(rel).is_absolute():
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "路径不合法")
+    target = (root / rel).resolve()
+    if target != root and root not in target.parents:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "只能删本会话目录里的文件")
+    if not target.exists():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "文件不存在（可能已经被删了）")
+    if not target.is_file():
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "只能删文件，不能删目录")
+    target.unlink()
+    # 顺手清掉因此变空的子目录（只清到会话根为止，会话根自己留着）
+    parent = target.parent
+    while parent != root and root in parent.parents:
+        try:
+            parent.rmdir()  # 非空会抛 OSError，正好停下
+        except OSError:
+            break
+        parent = parent.parent
+    return {"deleted": str(Path(rel)), "session_id": session_id}
 
 
 @router.get("/{session_id}/files")

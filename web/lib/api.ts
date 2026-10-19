@@ -854,6 +854,11 @@ export const api = {
       count: number;
       files: { path: string; size: number; mtime: number; url: string }[];
     }>(`/api/sessions/${id}/files?limit=${limit}`),
+  /** 删掉本会话目录里的一个文件（路径是相对会话目录的；越界后端会拒） */
+  deleteSessionFile: (id: string, path: string) =>
+    del<{ deleted: string; session_id: string }>(
+      `/api/sessions/${id}/files?path=${encodeURIComponent(path)}`,
+    ),
   /** 会话目录体检：几个、占多少、几个没主（可清） */
   sessionDirs: () =>
     request<{

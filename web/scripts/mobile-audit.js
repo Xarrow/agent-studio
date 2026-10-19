@@ -50,6 +50,9 @@
       // 父元素自己"故意裁掉"（truncate = overflow:hidden + 省略号）→ 不算溢出
       const ps = getComputedStyle(p);
       if ((ps.overflowX === "hidden" || ps.textOverflow === "ellipsis") && pr.right <= W + 1 && pr.left >= -1) return;
+      /* 父级是横向滚动容器（代码块 pre、表格外框）→ 不算溢出：
+         长代码行本来就该横向滑，不是布局被撑破。 */
+      if (ps.overflowX === "auto" || ps.overflowX === "scroll") return;
     }
     res.overflow.push({ p: path(el), left, right: Math.round(r.right), over, w: Math.round(r.width), t: txt(el) });
   });

@@ -219,3 +219,68 @@ def test_体检扫到的目录必须都是_sessions_下的(tmp_path):
     for d in mine:
         assert d["path"].startswith(str(root))
         assert d["orphan"] is False
+
+
+# --------------------------------------------------------------------------- #
+# 会话文件删除（界面上"本会话文件"里的删除）
+# --------------------------------------------------------------------------- #
+async def test_删会话文件只删自己目录里的那一个(client):
+    agent = (
+        await client.post(
+            "/api/agents",
+            json={"name": "删文件助手", "definition": {"runtime": "agentscope", "name": "删文件助手", "system_prompt": "x"}},
+        )
+    ).json()
+    a = (await client.post("/api/sessions", json={"agent_id": agent["id"], "title": "A"})).json()
+    b = (await client.post("/api/sessions", json={"agent_id": agent["id"], "title": "B"})).json()
+    da, db_ = session_work_dir(a["id"]), session_work_dir(b["id"])
+    (da / "out").mkdir(parents=True, exist_ok=True)
+    (da / "out" / "a.json").write_text('{"a":1}', encoding="utf-8")
+    (da / "keep.md").write_text("留着", encoding="utf-8")
+    db_.mkdir(parents=True, exist_ok=True)
+    (db_ / "b.txt").write_text("B", encoding="utf-8")
+
+    r = await client.delete(f"/api/sessions/{a['id']}/files", params={"path": "out/a.json"})
+    assert r.status_code == 200, r.text
+    assert r.json()["deleted"] == "out/a.json"
+    assert not (da / "out" / "a.json").exists()
+    assert not (da / "out").exists(), "删空了的子目录要顺手收掉"
+    assert (da / "keep.md").exists(), "别的文件不能动"
+    assert (db_ / "b.txt").exists(), "别的会话的文件不能动"
+
+    listed = (await client.get(f"/api/sessions/{a['id']}/files")).json()
+    assert [f["path"] for f in listed["files"]] == ["keep.md"]
+
+
+async def test_删会话文件的边界(client):
+    agent = (
+        await client.post(
+            "/api/agents",
+            json={"name": "删文件边界", "definition": {"runtime": "agentscope", "name": "删文件边界", "system_prompt": "x"}},
+        )
+    ).json()
+    a = (await client.post("/api/sessions", json={"agent_id": agent["id"], "title": "A"})).json()
+    b = (await client.post("/api/sessions", json={"agent_id": agent["id"], "title": "B"})).json()
+    da, db_ = session_work_dir(a["id"]), session_work_dir(b["id"])
+    for d in (da, db_):
+        d.mkdir(parents=True, exist_ok=True)
+    (db_ / "secret.txt").write_text("别人的", encoding="utf-8")
+
+    # 想往上跳目录 → 400
+    r = await client.delete(f"/api/sessions/{a['id']}/files", params={"path": "../x.txt"})
+    assert r.status_code == 400
+    # 想删别的会话里的文件 → 400（解析后不在自己这台目录下）
+    r = await client.delete(
+        f"/api/sessions/{a['id']}/files", params={"path": f"../{b['id']}/secret.txt"}
+    )
+    assert r.status_code == 400
+    assert (db_ / "secret.txt").exists(), "别人的文件必须还在"
+    # 文件不存在 → 404
+    r = await client.delete(f"/api/sessions/{a['id']}/files", params={"path": "nope.txt"})
+    assert r.status_code == 404
+    # 会话不存在 → 404
+    r = await client.delete("/api/sessions/ses_nope/files", params={"path": "a.txt"})
+    assert r.status_code == 404
+    # 空路径 → 422（Query min_length）
+    r = await client.delete(f"/api/sessions/{a['id']}/files", params={"path": ""})
+    assert r.status_code in (400, 422)

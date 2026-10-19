@@ -596,7 +596,11 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
 
   return (
     /* 对话里的"文件"（正文路径、工具产物）点开是操作框 —— 这里给它们会话上下文 */
-    <FileOpenerProvider sessionId={sessionId} workDir={sessionFiles?.work_dir}>
+    <FileOpenerProvider
+      sessionId={sessionId}
+      workDir={sessionFiles?.work_dir}
+      onFileChanged={() => void loadSessionFiles()}
+    >
       <div className="h-full min-h-0 flex">
         {configAgent && (
           <AgentDetailDialog agentId={configAgent} onClose={() => setConfigAgent(null)} />
@@ -963,8 +967,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                   </button>
                 </div>
                 {sessionFiles && sessionFiles.files.length > 0 ? (
-                  <div className="mt-1 flex gap-1.5 overflow-x-auto pb-0.5">
-                    {sessionFiles.files.map((f) => (
+                  <div className="mt-1 flex flex-wrap gap-1.5 pb-0.5">
+                    {sessionFiles.files.slice(0, 6).map((f) => (
                       <FileRowButton
                         key={f.path}
                         file={{ path: `${sessionFiles.work_dir}/${f.path}`, url: f.url, size: f.size, mtime: f.mtime }}
@@ -975,6 +979,11 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                         <span style={{ color: "var(--color-muted)" }}>{fmt.bytes(f.size)}</span>
                       </FileRowButton>
                     ))}
+                    {sessionFiles.files.length > 6 && (
+                      <span className="inline-flex items-center px-1 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                        还有 {sessionFiles.files.length - 6} 个…
+                      </span>
+                    )}
                   </div>
                 ) : (
                   <div className="mt-0.5 text-[11px]" style={{ color: "var(--color-muted)" }}>

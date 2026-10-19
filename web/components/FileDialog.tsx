@@ -18,7 +18,8 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { DLG_BACKDROP, DLG_CARD } from "@/components/ui/kit";
-import { fmt } from "@/lib/api";
+import { api, fmt } from "@/lib/api";
+import { CodeBlock } from "@/components/CodeBlock";
 import { baseName, extOf, fileKind, fileUrlFor, looksLikeFilePath } from "@/lib/files";
 import { copyText } from "@/lib/clipboard";
 
@@ -37,10 +38,13 @@ export function FileOpenerProvider({
   sessionId,
   workDir,
   children,
+  onFileChanged,
 }: {
   sessionId?: string;
   workDir?: string;
   children: ReactNode;
+  /** 文件被删掉后通知外面刷新（会话里那条文件清单要跟着变） */
+  onFileChanged?: () => void;
 }) {
   const [file, setFile] = useState<FileRef | null>(null);
   const open = useCallback((f: FileRef | string) => setFile(typeof f === "string" ? { path: f } : f), []);
@@ -49,7 +53,16 @@ export function FileOpenerProvider({
     <Ctx.Provider value={api}>
       <SessionCtx.Provider value={{ sessionId, workDir }}>
         {children}
-        {file ? <FileDialog file={file} onClose={() => setFile(null)} /> : null}
+        {file ? (
+          <FileDialog
+            file={file}
+            onClose={() => setFile(null)}
+            onDeleted={() => {
+              onFileChanged?.();
+              setFile(null);
+            }}
+          />
+        ) : null}
       </SessionCtx.Provider>
     </Ctx.Provider>
   );
@@ -125,7 +138,16 @@ export function FileRowButton({
 
 const PREVIEW_BYTES = 6000;
 
-export function FileDialog({ file, onClose }: { file: FileRef; onClose: () => void }) {
+export function FileDialog({
+  file,
+  onClose,
+  onDeleted,
+}: {
+  file: FileRef;
+  onClose: () => void;
+  /** 删成功之后：外面要刷新文件清单 */
+  onDeleted?: () => void;
+}) {
   const { sessionId, workDir } = useContext(SessionCtx);
   const url = file.url ?? fileUrlFor(file.path, sessionId, workDir);
   const kind = fileKind(file.path);
@@ -133,6 +155,31 @@ export function FileDialog({ file, onClose }: { file: FileRef; onClose: () => vo
   const [bytes, setBytes] = useState<number | null>(file.size ?? null);
   const [state, setState] = useState<"idle" | "loading" | "done" | "fail">(url ? "loading" : "idle");
   const [copied, setCopied] = useState<"path" | "text" | null>(null);
+  /* 删除是不可撤销的：第一下只把按钮变成「确认删除」，4 秒内再点才算（不用原生 confirm —— 它阻塞 JS） */
+  const [confirmDel, setConfirmDel] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [delErr, setDelErr] = useState<string | null>(null);
+
+  /* 后端只认"相对会话目录"的路径；这里把绝对路径折回相对 */
+  const relPath = (() => {
+    const root = (workDir ?? "").replace(/\/+$/, "");
+    if (root && file.path.startsWith(root + "/")) return file.path.slice(root.length + 1);
+    return file.path.replace(/^\/+/, "");
+  })();
+
+  const remove = async () => {
+    if (!sessionId || deleting) return;
+    setDeleting(true);
+    setDelErr(null);
+    try {
+      await api.deleteSessionFile(sessionId, relPath);
+      onDeleted?.();
+    } catch (e) {
+      setDelErr(e instanceof Error ? e.message : "删除失败");
+      setDeleting(false);
+      setConfirmDel(false);
+    }
+  };
 
   useEffect(() => {
     let alive = true;
@@ -218,16 +265,15 @@ export function FileDialog({ file, onClose }: { file: FileRef; onClose: () => vo
                 读不出内容（文件可能已被删掉或移走），可以直接下载试试。
               </p>
             ) : (
-              <div className="rounded-[10px] border" style={{ borderColor: "var(--color-border)" }}>
-                <pre
-                  className="mono max-h-[46dvh] overflow-auto whitespace-pre-wrap break-all p-3 text-[12px]"
-                  style={{ background: "var(--color-surface-2)" }}
-                >
-                  {text || "（空文件）"}
-                </pre>
+              <div>
+                {/* 文本/代码：直接上 CodeBlock —— JSON/XML 自动格式化 + 着色，
+                    还能一键格式化/压缩/复制（与对话正文里那块是同一个组件） */}
+                <div className="max-h-[46dvh] overflow-auto">
+                  <CodeBlock code={text || ""} lang={extOf(file.path)} />
+                </div>
                 <div
-                  className="flex flex-wrap items-center gap-2 border-t px-3 py-2 text-[12px]"
-                  style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
+                  className="flex flex-wrap items-center gap-2 px-1 pt-1 text-[12px]"
+                  style={{ color: "var(--color-muted)" }}
                 >
                   只显示前 {Math.round(PREVIEW_BYTES / 1000)}KB{truncated ? "（内容更长，下载看全文）" : ""}
                   <button
@@ -259,7 +305,7 @@ export function FileDialog({ file, onClose }: { file: FileRef; onClose: () => vo
           </div>
         </div>
 
-        {/* 动作：主操作蓝色（下载），次级安静（新窗口），关闭在最右 */}
+        {/* 动作：主操作蓝色（下载）· 次级安静（新窗口）· 危险红（删除，最右隔开）· 关闭 */}
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {url ? (
             <a className="btn btn-primary" href={url} download={file.name ?? baseName(file.path)}>
@@ -274,7 +320,35 @@ export function FileDialog({ file, onClose }: { file: FileRef; onClose: () => vo
           <button type="button" className="btn ml-auto max-md:min-h-[36px]" onClick={onClose}>
             关闭
           </button>
+          {sessionId ? (
+            <button
+              type="button"
+              className="btn max-md:min-h-[36px]"
+              style={{
+                color: confirmDel ? "#fff" : "var(--color-err)",
+                background: confirmDel ? "var(--color-err)" : "transparent",
+                borderColor: "var(--color-err)",
+              }}
+              disabled={deleting}
+              onClick={() => {
+                if (!confirmDel) {
+                  setConfirmDel(true);
+                  setTimeout(() => setConfirmDel(false), 4000);
+                  return;
+                }
+                void remove();
+              }}
+              title={confirmDel ? "再点一次就删掉了（不可撤销）" : "删掉这个文件（会再确认一次）"}
+            >
+              {deleting ? "删除中…" : confirmDel ? "确认删除" : "删除"}
+            </button>
+          ) : null}
         </div>
+        {delErr ? (
+          <p className="mt-2 text-[12px]" style={{ color: "var(--color-err)" }}>
+            删除失败：{delErr}
+          </p>
+        ) : null}
       </div>
     </div>
   );

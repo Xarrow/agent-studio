@@ -703,6 +703,22 @@ body {
     min-height: 36px;
   }
   [data-jsonrow] {
-    min-height: 28px;
+    min-height: 32px; /* JSON 树的折叠行：整行可点，32px 才够稳 */
   }
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   代码高亮配色（JSON / XML / HTML）—— lib/highlight.ts 切 token，这里只给颜色。
+   固定浅色一套：平台主题默认固定浅色（深色变量保留但没开切换器），
+   这些颜色在浅底上都过 4.5:1，够看清；不用 CSS 变量是为了少一层间接。
+   ────────────────────────────────────────────────────────────────────────── */
+.hl .hl-key { color: #1d4ed8; }   /* 对象的键 */
+.hl .hl-str { color: #047857; }   /* 字符串值 */
+.hl .hl-num { color: #b45309; }   /* 数字 */
+.hl .hl-kw  { color: #7c3aed; }   /* true / false / null */
+.hl .hl-punct { color: #6b7280; } /* 括号 逗号 冒号 尖括号 */
+.hl .hl-tag { color: #1d4ed8; }   /* 标签名 */
+.hl .hl-attr { color: #b45309; }  /* 属性名 */
+.hl .hl-val { color: #047857; }   /* 属性值 */
+.hl .hl-com { color: #6b7280; font-style: italic; } /* 注释 / CDATA */
+.hl .hl-txt { color: inherit; } /* 文本节点：不动颜色，只占位不合并 */

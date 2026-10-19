@@ -14,6 +14,7 @@
 import React, { useMemo, useState } from "react";
 
 import { CodeBlock } from "./CodeBlock";
+import { copyText } from "@/lib/clipboard";
 import {
   layoutChart,
   parseChartSpec,
@@ -30,11 +31,14 @@ function Shell({
   title,
   hint,
   raw,
+  rawLang,
   children,
 }: {
   title: string;
   hint?: string;
   raw: string;
+  /** 看源码时的语言：给了就用高亮+格式化（JSON/XML），没给就纯文本 */
+  rawLang?: string;
   children: React.ReactNode;
 }) {
   const [showRaw, setShowRaw] = useState(false);
@@ -56,7 +60,7 @@ function Shell({
           <button
             type="button"
             onClick={() => {
-              void navigator.clipboard?.writeText(raw);
+              void copyText(raw);
               setCopied(true);
               window.setTimeout(() => setCopied(false), 1500);
             }}
@@ -68,9 +72,15 @@ function Shell({
         </div>
       </div>
       {showRaw ? (
-        <pre className="max-h-[420px] overflow-auto bg-white px-3 py-2 text-[12px] leading-[1.6] text-slate-800">
-          {raw}
-        </pre>
+        rawLang ? (
+          <div className="max-h-[420px] overflow-auto">
+            <CodeBlock code={raw} lang={rawLang} bare />
+          </div>
+        ) : (
+          <pre className="max-h-[420px] overflow-auto bg-white px-3 py-2 text-[12px] leading-[1.6] text-slate-800">
+            {raw}
+          </pre>
+        )
       ) : (
         children
       )}
@@ -146,7 +156,7 @@ export function JsonBlock({ code }: { code: string }) {
   const tree = useMemo(() => parseJsonTree(code), [code]);
   if (!tree) return <CodeBlock code={code} lang="json" />;
   return (
-    <Shell title="JSON" hint={tree.collapsible ? "点行首箭头折叠/展开" : undefined} raw={code}>
+    <Shell title="JSON" hint={tree.collapsible ? "点行首箭头折叠/展开" : undefined} raw={code} rawLang="json">
       <div className="max-h-[420px] overflow-auto bg-white px-2 py-1.5">
         <TreeNode node={tree} depth={0} defaultOpen />
       </div>
