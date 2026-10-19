@@ -297,3 +297,18 @@ test("发送气泡：短消息胶囊、长消息圆角+尾巴，尺寸与字阶�
   assert.match(chat, /text-white w-fit max-w-full whitespace-pre-wrap ml-auto text-\[14px\]/, "气泡 14px、贴右、宽度撑到外层上限");
   assert.match(chat, /max-w-\[88%\] max-md:max-w-\[90%\]/, "外层给气泡 88%（桌面）/90%（手机）");
 });
+
+/**
+ * 会话文件清单的折叠（用户 2026-10 反馈：文件一多就遮住对话区）。
+ * 口径：≤3 个默认摊开（少的时候看得见才有用），多了默认收起；
+ * 手动点过就记住选择（localStorage），展开时最多 6 个胶囊 + 高度上限。
+ */
+test("会话文件清单可折叠：默认按数量、手动选择要记住", () => {
+  const chat = read("components/ChatConsole.tsx");
+  assert.match(chat, /const openFiles = filesOpenPref \?\? fileCount <= 3/, "默认口径：≤3 个展开");
+  assert.match(chat, /localStorage\.setItem\("chat\.filesOpen"/, "手动选择要记住");
+  assert.match(chat, /localStorage\.getItem\("chat\.filesOpen"\)/, "刷新后要读回来");
+  assert.match(chat, /\{openFiles &&/, "胶囊行必须跟着折叠状态走");
+  assert.match(chat, /max-h-\[96px\][^"]*overflow-y-auto/, "展开时高度要有上限，别无限长");
+  assert.match(chat, /slice\(0, 6\)/, "最多列 6 个胶囊，其余用『还有 N 个』");
+});

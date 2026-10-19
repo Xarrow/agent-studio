@@ -526,6 +526,30 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   const railTouched = useRef(false);
   /** 存储位置这类「自托管自证」信息：默认收起，点 ⓘ 才展开（原来是常驻噪声） */
   const [showPaths, setShowPaths] = useState(false);
+  /* 会话文件清单能不能折叠 —— 文件一多这条会占掉对话区；
+     默认：≤3 个就摊开（少的时候看得见才有用），多了先收起（点箭头/标题展开）。
+     用户手动点过就记住他的选择（localStorage），别每次刷新都跟他对着来。 */
+  const [filesOpenPref, setFilesOpenPref] = useState<boolean | null>(null);
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem("chat.filesOpen");
+      if (v === "1") setFilesOpenPref(true);
+      else if (v === "0") setFilesOpenPref(false);
+    } catch {
+      /* 隐私模式下 localStorage 会抛，忽略 */
+    }
+  }, []);
+  const fileCount = sessionFiles?.count ?? 0;
+  const openFiles = filesOpenPref ?? fileCount <= 3;
+  const toggleFiles = () => {
+    const next = !openFiles;
+    setFilesOpenPref(next);
+    try {
+      localStorage.setItem("chat.filesOpen", next ? "1" : "0");
+    } catch {
+      /* 同上 */
+    }
+  };
   // 一轮跑完顺手刷一下（刚产出的文件当场就能看见）
   useEffect(() => {
     if (!busy) void loadSessionFiles();
@@ -934,7 +958,37 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
               >
                 <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
-                  <span className="shrink-0">本会话文件</span>
+                  <button
+                    type="button"
+                    onClick={toggleFiles}
+                    aria-expanded={openFiles}
+                    title={openFiles ? "收起文件清单（把地方让给对话）" : "展开文件清单"}
+                    className="shrink-0 rounded p-0.5 hover:bg-[var(--color-surface)] max-md:inline-flex max-md:min-h-[32px] max-md:min-w-[32px] max-md:items-center max-md:justify-center"
+                    style={{ color: "var(--color-muted)" }}
+                  >
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                      style={{ transform: openFiles ? "rotate(90deg)" : "rotate(0deg)", transition: "transform .15s ease" }}
+                    >
+                      <path d="M9 6l6 6-6 6" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={toggleFiles}
+                    className="shrink-0 hover:underline max-md:inline-flex max-md:min-h-[32px] max-md:items-center"
+                    title={openFiles ? "收起文件清单" : "展开文件清单"}
+                  >
+                    本会话文件
+                  </button>
                   <button
                     type="button"
                     className="mono min-w-0 flex-1 truncate text-left hover:underline max-md:inline-flex max-md:min-h-[32px] max-md:items-center"
@@ -966,8 +1020,9 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     刷新
                   </button>
                 </div>
-                {sessionFiles && sessionFiles.files.length > 0 ? (
-                  <div className="mt-1 flex flex-wrap gap-1.5 pb-0.5">
+                {openFiles &&
+                  (sessionFiles && sessionFiles.files.length > 0 ? (
+                  <div className="mt-1 flex max-h-[96px] flex-wrap gap-1.5 overflow-y-auto pb-0.5">
                     {sessionFiles.files.slice(0, 6).map((f) => (
                       <FileRowButton
                         key={f.path}
@@ -989,7 +1044,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                   <div className="mt-0.5 text-[11px]" style={{ color: "var(--color-muted)" }}>
                     还没有文件 —— 这个会话生成的文档都会存在上面的目录里
                   </div>
-                )}
+                ))}
               </div>
             )}
 
