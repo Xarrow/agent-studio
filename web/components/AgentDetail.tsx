@@ -942,6 +942,23 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
             title="能力（工具 · MCP · Skills）"
             summary={`${def.tools.length + (def.mcp_servers ?? []).length + def.skills.length} 已选 / ${tools.length + mcpServers.length + skills.length} 可用`}
           >
+            {/* 工具按需加载 —— 摆在这里而不是"更多设置"里：它影响的正是这一节的工具数量，
+                用户看到"已选 27 个"时最该知道"这 27 个是不是每轮都发给模型" */}
+            <label className="flex items-start gap-2 mb-3 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={def.tools_lazy !== false}
+                onChange={(e) => patch({ tools_lazy: e.target.checked })}
+              />
+              <span className="text-[12.5px] leading-relaxed">
+                工具按需加载
+                <span className="block text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                  只把常用工具（读写文件、跑命令、算数据、查资料）的完整定义发给模型；其余只在提示里列名字，
+                  模型需要时自己取用。工具越多省得越多（接了 MCP 尤其明显）；关掉 = 全部一次性下发。
+                </span>
+              </span>
+            </label>
             {tools.length === 0 && skills.length === 0 && mcpServers.length === 0 ? (
               <div className="space-y-2.5">
                 <p className="text-[12px] text-[var(--color-muted)]">

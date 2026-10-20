@@ -94,6 +94,11 @@ class AgentDefinition(BaseModel):
     #: 留空 = 不兜底（出错就出错）。备用模型可以挂另一家 provider（凭据各自解析）。
     fallback: ModelSpec | None = None
     tools: list[ToolRef] = Field(default_factory=list)
+    #: 工具按需加载：只把**常用工具**的完整定义发给模型，其余只在提示里列名字，
+    #: 由 tool_search / tool_describe / tool_call 三步取用。
+    #: 为什么默认开：27~30 个工具的 schema 实测约 1.7 万 token，光工具定义就比正文贵几倍。
+    #: 关掉 = 回到「全部工具一次性下发」（工具少、或模型不擅长 tool_call 时用）。
+    tools_lazy: bool = True
     skills: list[SkillRef] = Field(default_factory=list)
     middlewares: list[dict[str, Any]] = Field(default_factory=list)
     limits: Limits = Field(default_factory=Limits)

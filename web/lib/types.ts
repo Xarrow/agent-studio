@@ -81,6 +81,9 @@ export interface AgentDefinition {
   workspace?: string;
   /** 文件目录怎么隔离：session（默认，每个会话一个目录）/ shared（所有会话共用一个） */
   workspace_isolation?: "session" | "shared";
+  /** 工具按需加载：只下发常用工具的完整定义，其余用 tool_search/tool_describe/tool_call 取用。
+   *  缺省（undefined）= 开 —— 与后端 schema 默认一致。 */
+  tools_lazy?: boolean;
 }
 
 export interface Agent {

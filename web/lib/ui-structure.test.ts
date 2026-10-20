@@ -194,7 +194,12 @@ test("输入坞：等授权时禁用；执行中可用（回车是插话，不�
 test("授权条：判定走 lib/hitl，危险操作要两步，参数可展开，拒绝有出路", () => {
   const src = read("components/HitlPrompt.tsx");
   assert.match(src, /from "@\/lib\/hitl"/, "判定要走共享实现，不能各写一份");
-  assert.match(src, /danger \? setConfirming\(true\) : void resume\(true\)/, "危险操作第一下只是进入确认态");
+  assert.match(
+    src,
+    /danger \? setConfirming\(true\) : void resume\(true, remember\)/,
+    "危险操作第一下只是进入确认态；普通询问直接放行",
+  );
+  assert.match(src, /本会话内不再问/, "授权条要能「本会话内不再问」（否则同类操作问十遍）");
   assert.match(src, /确认要执行\{risky\.length > 1 \? "这些" : "这个"\}危险操作？/, "第二步要把后果说清楚");
   assert.match(src, /看完整参数/, "长命令要能展开看全文（不能只给截断的 200 字）");
   assert.match(src, /permissionHref/, "「总是允许」要给真链接");

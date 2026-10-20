@@ -330,18 +330,57 @@ def build_tools(specs: list[ToolSpec], cwd: str | None = None) -> list[Any]:
 # --------------------------------------------------------------------------- #
 # Toolkit / Skill
 # --------------------------------------------------------------------------- #
-def build_toolkit(
-    specs: list[ToolSpec],
-    skills_dir: Path | None = None,
-    extra_tools: list[Any] | None = None,
-    cwd: str | None = None,
-):
-    """构造 Toolkit（工具 + Skill 的唯一注册源）。
+#: 直接下发给模型的「常用工具」—— 其余的只在提示里列名字，用 tool_* 三步取用。
+#: 判据：**一个正常任务前两步就会用到**（看文件、改文件、跑命令、算数据、查资料、沉淀技能、派活）。
+#: 不放进来的是「偶尔才用」的（后台进程、记忆、浏览器、会话检索、MCP 远端、powershell…）——
+#: 它们的定义照样在，只是不占每一轮的提示。
+CORE_TOOL_NAMES: frozenset[str] = frozenset(
+    {
+        "Read",
+        "Write",
+        "Edit",
+        "Glob",
+        "Grep",
+        "Bash",
+        "Skill",  # 运行时自动挂的那个技能工具
+        "read",
+        "write",
+        "edit",
+        "glob",
+        "grep",
+        "bash",
+        "python",
+        "fetch",
+        "web_search",
+        "skill_save",
+        "fork",
+    }
+)
 
-    ``extra_tools`` 是已经构造好的工具对象（目前只有 MCP 的）——
-    它们的定义不在平台里，而是在远端服务器上，所以只能"探测回来直接塞进去"，
-    不能走 ``ToolSpec`` 那条路（那条路要求平台先知道工具长什么样）。
-    """
+
+def tool_catalog(tools: list[Any]) -> str:
+    """把「按需加载」的工具列成清单拼进提示：名字 + 一句话，不占 schema 的钱。"""
+    from ...native_tools import tool_desc, tool_name
+
+    rows = []
+    for t in tools:
+        n = tool_name(t)
+        if not n:
+            continue
+        rows.append(f"- {n}：{tool_desc(t)[:110]}")
+    if not rows:
+        return ""
+    return (
+        "## 还可以用的工具（按需加载）\n"
+        "为了省上下文，下面这些工具的**完整定义**没有一并发给你。要用时三步：\n"
+        "1. `tool_search` 按关键词找名字；2. `tool_describe` 看参数；3. `tool_call` 传参执行。\n"
+        "不确定有没有对应工具时，先 tool_search，别自己造。\n"
+        + "\n".join(rows)
+    )
+
+
+def assemble_toolkit(tools: list[Any], skills_dir: Path | None = None):
+    """用**已构造好的**工具对象装配 Toolkit（工具与 Skill 的唯一注册源）。"""
     from agentscope.tool import Toolkit
 
     skills_or_loaders = []
@@ -362,8 +401,7 @@ def build_toolkit(
 
     return Toolkit(
         tools=[
-            *build_tools(specs, cwd=cwd),
-            *(extra_tools or []),
+            *tools,
             TaskCreate(),
             TaskGet(),
             TaskList(),
@@ -371,6 +409,21 @@ def build_toolkit(
         ],
         skills_or_loaders=skills_or_loaders,
     )
+
+
+def build_toolkit(
+    specs: list[ToolSpec],
+    skills_dir: Path | None = None,
+    extra_tools: list[Any] | None = None,
+    cwd: str | None = None,
+):
+    """构造 Toolkit（老入口，保持兼容）：specs → 工具对象 → 装配。
+
+    ``extra_tools`` 是已经构造好的工具对象（目前只有 MCP 的）——
+    它们的定义不在平台里，而是在远端服务器上，所以只能"探测回来直接塞进去"，
+    不能走 ``ToolSpec`` 那条路（那条路要求平台先知道工具长什么样）。
+    """
+    return assemble_toolkit([*build_tools(specs, cwd=cwd), *(extra_tools or [])], skills_dir)
 
 
 # --------------------------------------------------------------------------- #
@@ -697,6 +750,7 @@ def build_agent(
     mcp_tools: list[Any] | None = None,
     cwd: str | None = None,
     session_allow: list[str] | tuple[str, ...] = (),
+    run_id: str | None = None,
 ):
     """编译出 ``(agent, model)`` —— 二者都需在 dispose 时收尾。
 
@@ -709,7 +763,26 @@ def build_agent(
     model = build_model(defn.model, api_key)
     # ``work_dir`` 也要落到 Bash 的 cwd 上：不给的话命令在服务进程的当前目录
     # （源码仓库根）里跑 —— 助手嘴里的"当前目录"是错的，`rm -rf .` 删的也是仓库。
-    toolkit = build_toolkit(tools, skills_dir, extra_tools=mcp_tools, cwd=cwd)
+    raw_tools = [*build_tools(tools, cwd=cwd), *(mcp_tools or [])]
+    deferred: list[Any] = []
+    if bool(getattr(defn, "tools_lazy", True)):
+        from ...native_tools import build_native_tool, register_lazy_tools, tool_name
+
+        core: list[Any] = []
+        for t in raw_tools:
+            if tool_name(t) in CORE_TOOL_NAMES:
+                core.append(t)
+            else:
+                deferred.append(t)
+        if deferred:
+            register_lazy_tools(run_id, deferred)
+            raw_tools = core + [
+                build_native_tool("tool_search"),
+                build_native_tool("tool_describe"),
+                build_native_tool("tool_call"),
+            ]
+        logger.info("工具按需加载：直接下发 %d 个，按需 %d 个", len(raw_tools), len(deferred))
+    toolkit = assemble_toolkit(raw_tools, skills_dir)
     model_cfg, context_cfg, react_cfg, injection_cfg = build_configs(defn)
 
     system_prompt = defn.system_prompt or ""
@@ -719,6 +792,10 @@ def build_agent(
     catalog = skill_catalog(skills_dir)
     if catalog:
         system_prompt = f"{system_prompt.rstrip()}\n\n{catalog}".strip()
+    # 按需加载的工具清单：告诉模型「还有这些能用、怎么取」，否则它只会用眼前这几个
+    tool_list = tool_catalog(deferred)
+    if tool_list:
+        system_prompt = f"{system_prompt.rstrip()}\n\n{tool_list}".strip()
 
     # 记录器：把每次模型调用的**完整请求与响应**落库（llm_call.request_blob/
     # response_blob）。以前这两列一直是空的 —— 只能看到"花了多少 token"，

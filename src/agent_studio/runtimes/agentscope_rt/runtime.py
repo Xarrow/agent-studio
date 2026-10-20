@@ -333,6 +333,10 @@ class AgentScopeRuntime(AgentRuntime):
                         pass
                 mcp_clients, mcp_tools = [], []
 
+        from ...runner.ctx import current_run_ctx
+
+        _run_ctx = current_run_ctx()
+
         # 会话级「这个工具别再问了」—— 编译前读一次，交给守卫与权限引擎
         session_allow: list[str] = []
         _sid = str((ctx.get("context").session_id if ctx.get("context") else "") or "")
@@ -363,6 +367,7 @@ class AgentScopeRuntime(AgentRuntime):
             mcp_tools=mcp_tools,
             cwd=str(work_dir) if work_dir else None,
             session_allow=session_allow,
+            run_id=str(_run_ctx.get("run_id") or "") or None,
         )
 
         # 多轮会话：把历史消息预置进 Agent。

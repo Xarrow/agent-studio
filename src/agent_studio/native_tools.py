@@ -906,12 +906,218 @@ async def _session_search(query: str, limit: int = 6, mine_only: bool = False) -
     return f"在历史对话里找到 {len(hits)} 条：\n" + "\n".join(lines)
 
 
+# --------------------------------------------------------------------------- #
+# 工具按需加载（lazy tools）
+# --------------------------------------------------------------------------- #
+#: 为什么要有这块：助手动辄挂 27~30 个工具，每轮请求都把**全部工具的完整 schema**
+#: 发给模型 —— 实测 23 个工具约 1.7 万 token，光工具定义就比正文贵几倍，还拖慢首字。
+#: 做法（与 Hermes 同一套路）：常用工具直接给；其余先只在提示里列「名字 + 一句话」，
+#: 模型判断要用时 tool_search → tool_describe → tool_call 三步取用。
+#: 注册表按 **run_id** 存放（不是全局）：同一进程里并行跑多个助手/子任务时互不串味。
+_LAZY_BY_RUN: dict[str, dict[str, Any]] = {}
+_LAZY_MAX_RUNS = 200
+
+
+def tool_name(tool: Any) -> str:
+    return str(getattr(tool, "name", "") or getattr(tool, "__name__", "") or "")
+
+
+def tool_desc(tool: Any) -> str:
+    d = getattr(tool, "description", "") or ""
+    if not d:
+        doc = getattr(tool, "__doc__", "") or ""
+        d = doc
+    return " ".join(str(d).split())
+
+
+def tool_schema(tool: Any) -> dict[str, Any]:
+    for attr in ("input_schema", "json_schema", "parameters"):
+        v = getattr(tool, attr, None)
+        if isinstance(v, dict) and v:
+            return v
+    return {"type": "object", "properties": {}}
+
+
+def register_lazy_tools(run_id: str | None, tools: list[Any]) -> dict[str, Any]:
+    """把「这一轮没直接给模型」的工具登记起来，供 tool_* 三个入口按名字取用。"""
+    table: dict[str, Any] = {}
+    for t in tools:
+        n = tool_name(t)
+        if n:
+            table[n] = t
+    if run_id:
+        _LAZY_BY_RUN[str(run_id)] = table
+        while len(_LAZY_BY_RUN) > _LAZY_MAX_RUNS:
+            _LAZY_BY_RUN.pop(next(iter(_LAZY_BY_RUN)), None)
+    return table
+
+
+def drop_lazy_tools(run_id: str | None) -> None:
+    if run_id:
+        _LAZY_BY_RUN.pop(str(run_id), None)
+
+
+def _current_lazy() -> dict[str, Any]:
+    try:
+        from .runner.ctx import current_run_ctx
+
+        rid = str(current_run_ctx().get("run_id") or "")
+    except Exception:  # noqa: BLE001 —— 取不到上下文就当没有懒加载工具
+        return {}
+    return _LAZY_BY_RUN.get(rid, {}) if rid else {}
+
+
+TOOL_SEARCH_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "queries": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "要做的事，用几个关键词，例如 [\"后台进程\", \"定时任务\"]",
+        },
+        "limit": {"type": "integer", "description": "最多返回几条（默认 8）"},
+    },
+    "required": ["queries"],
+}
+
+TOOL_DESCRIBE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "names": {"type": "array", "items": {"type": "string"}, "description": "工具名列表"}
+    },
+    "required": ["names"],
+}
+
+TOOL_CALL_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "name": {"type": "string", "description": "工具名（先 tool_describe 确认参数）"},
+        # 只声明 object：某些 provider 不接受 Union 类型（实测直接 TypeError）。
+        # 模型硬塞字符串也没关系 —— _tool_call 会尝试解析。
+        "arguments": {
+            "description": "这个工具的参数，JSON 对象",
+            "type": "object",
+        },
+    },
+    "required": ["name"],
+}
+
+
+async def _tool_search(queries: list[str] | None = None, limit: int = 8) -> str:
+    table = _current_lazy()
+    if not table:
+        return "这一轮没有按需加载的工具：所有工具都已经直接给到你，直接调用即可。"
+    qs = [str(q).strip().lower() for q in (queries or []) if str(q).strip()]
+    scored: list[tuple[int, str, str]] = []
+    for name, t in table.items():
+        hay = f"{name} {tool_desc(t)}".lower()
+        score = sum(1 for q in qs if q and q in hay)
+        if score:
+            scored.append((score, name, tool_desc(t)))
+    if not scored:
+        listing = "\n".join(f"- {n}：{d[:90]}" for n, d in sorted((n, tool_desc(t)) for n, t in table.items()))
+        return "没匹配到关键词。当前可按需取用的工具全集：\n" + listing[:3000]
+    scored.sort(key=lambda x: (-x[0], x[1]))
+    lines = ["匹配到的工具（先 tool_describe 看参数，再 tool_call 调用）："]
+    for _, n, d in scored[: max(1, min(int(limit or 8), 20))]:
+        lines.append(f"- {n}：{d[:130]}")
+    return "\n".join(lines)
+
+
+async def _tool_describe(names: list[str] | None = None) -> str:
+    table = _current_lazy()
+    wanted = [str(n).strip() for n in (names or []) if str(n).strip()]
+    if not table:
+        return "这一轮没有按需加载的工具。"
+    out: dict[str, Any] = {}
+    missing: list[str] = []
+    for n in wanted:
+        t = table.get(n) or next((v for k, v in table.items() if k.lower() == n.lower()), None)
+        if t is None:
+            missing.append(n)
+            continue
+        out[tool_name(t) or n] = {"description": tool_desc(t), "parameters": tool_schema(t)}
+    text = json.dumps(out, ensure_ascii=False, indent=2) if out else ""
+    if missing:
+        text += f"\n\n没有这些工具：{', '.join(missing)}（用 tool_search 查名字）"
+    return text
+
+
+def _render_tool_result(res: Any) -> str:
+    content = getattr(res, "content", None)
+    if isinstance(content, list):
+        parts = []
+        for b in content:
+            txt = getattr(b, "text", None)
+            if txt is None and isinstance(b, dict):
+                txt = b.get("text")
+            if txt:
+                parts.append(str(txt))
+        if parts:
+            return "\n".join(parts)
+    return str(res)
+
+
+async def _tool_call(name: str, arguments: Any = None) -> str:
+    table = _current_lazy()
+    if not table:
+        return "这一轮没有按需加载的工具。"
+    tool = table.get(str(name or "").strip())
+    if tool is None:
+        return f"没有叫 {name} 的工具。先用 tool_search 查一下名字。"
+
+    args: dict[str, Any] = {}
+    if isinstance(arguments, str) and arguments.strip():
+        try:
+            parsed = json.loads(arguments)
+            args = parsed if isinstance(parsed, dict) else {"value": parsed}
+        except json.JSONDecodeError:
+            return '参数不是合法 JSON：请传 JSON 对象，例如 {"query": "..."}'
+    elif isinstance(arguments, dict):
+        args = arguments
+
+    try:
+        fn = getattr(tool, "call", None) or tool
+        res = fn(**args)
+        if asyncio.iscoroutine(res) or hasattr(res, "__await__"):
+            res = await res
+    except TypeError as exc:
+        return f"参数不对（{exc}）。先用 tool_describe 看这个工具要什么参数。"
+    except Exception as exc:  # noqa: BLE001 —— 工具自己的异常原样交回模型
+        return f"{name} 执行出错：{type(exc).__name__}: {exc}"
+    return _render_tool_result(res)
+
+
 NATIVE_TOOLS: dict[str, dict[str, Any]] = {
     "fetch": {
         "fn": _fetch,
         "description": "抓取一个网页或接口，返回文本（HTML 自动转成可读文本）。不能访问内网地址。",
         "schema": FETCH_SCHEMA,
         "flags": {"read_only": True, "concurrency_safe": True, "dangerous": False, "native": True},
+    },
+    "tool_search": {
+        "fn": _tool_search,
+        "description": (
+            "按关键词查「这一轮按需加载的工具」清单，返回名字 + 一句话用途。"
+            "平台默认只把常用工具直接给你，其它工具这样查出来再用。"
+        ),
+        "schema": TOOL_SEARCH_SCHEMA,
+        "flags": {"read_only": True, "concurrency_safe": True, "dangerous": False, "native": True},
+    },
+    "tool_describe": {
+        "fn": _tool_describe,
+        "description": "看某个按需加载工具的参数定义（调用前用它确认参数，别猜）。",
+        "schema": TOOL_DESCRIBE_SCHEMA,
+        "flags": {"read_only": True, "concurrency_safe": True, "dangerous": False, "native": True},
+    },
+    "tool_call": {
+        "fn": _tool_call,
+        "description": (
+            "调用一个按需加载的工具：name + arguments(JSON)。"
+            "先用 tool_search 找名字、tool_describe 看参数，再这里传参执行。"
+        ),
+        "schema": TOOL_CALL_SCHEMA,
+        "flags": {"read_only": False, "concurrency_safe": False, "dangerous": False, "native": True},
     },
     "web_search": {
         "fn": _web_search,
