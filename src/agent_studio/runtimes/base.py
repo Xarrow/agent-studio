@@ -44,6 +44,8 @@ EventType = Literal[
     "tool_result_delta",
     "tool_exec_end",
     "hitl_request",
+    #: 主模型不可用，已整轮切到备用模型重跑（payload: from / to / reason）
+    "model_fallback",
     "error",
     "run_end",
 ]

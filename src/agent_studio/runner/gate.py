@@ -127,6 +127,49 @@ def is_transient(exc: BaseException) -> bool:
     return bool(_TRANSIENT.search(text))
 
 
+#: 这些字样代表"模型这一侧坏了，换一个模型才有可能好"：
+#: key 失效 / 模型下线 / 端点错 / 参数不被支持 / 持续限流（重试也没用）
+_MODEL_FAULT = re.compile(
+    r"api ?key|unauthorized|forbidden|permission|authenticat|invalid_?api|401|403|"
+    r"model[_ ]?not[_ ]?found|does not exist|no such model|invalid model|unknown model|404|"
+    r"not supported|unsupported|invalid_request|invalid parameter|400|422|"
+    r"insufficient|quota|payment|balance|"
+    r"rate ?limit|429|"
+    r"\b50[0234]\b|bad gateway|service unavailable|overload|"
+    r"timed out|timeout|connection (reset|aborted|closed|error)|apitimeout|apiconnection",
+    re.I,
+)
+
+
+def is_model_error(exc: BaseException) -> bool:
+    """这个错误该不该**换备用模型**再试一次？
+
+    和 ``is_transient``（等一等再试同一个模型）是两件事：
+      · 429 / 5xx / 连接断：重试能救，救不回来通常说明这家真的挂了 → 也该换
+      · key 失效 / 模型下线 / 参数不支持：重试**永远**不会好 → 只能换模型
+
+    明确**不换**的：
+      · 用户设的执行超时（``TimeoutError``）—— 那是预算，换了模型只会跑更久
+      · 用户主动取消
+      · 排队太久（``GateTimeout``）—— 是我们自己忙，不是模型的问题
+      · 工具/配置类错误（tool schema 之类）—— 换了模型一样错
+    """
+    if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
+        return False
+    if isinstance(exc, asyncio.CancelledError):
+        return False
+    if isinstance(exc, GateTimeout):
+        return False
+    name = type(exc).__name__
+    text = f"{name}: {exc}"
+    # 工具/配置类：换了模型也白搭
+    if re.search(r"tool|schema|validation|pydantic", text, re.I) and not re.search(
+        r"api ?key|model|401|403|429|50[0234]", text, re.I
+    ):
+        return False
+    return bool(_MODEL_FAULT.search(text))
+
+
 def backoff_s(attempt: int, base: float = 1.5) -> float:
     """第 ``attempt`` 次重试前等多久（指数退避，封顶 30s）。"""
     return min(30.0, max(0.0, base) * (2 ** max(0, attempt - 1)))

@@ -131,7 +131,22 @@ def build_model(spec: ModelSpec, api_key: str | None):
     params = dict(spec.params or {})
     kwargs: dict[str, Any] = {"credential": cred, "model": spec.name, "stream": True}
     if params:
-        kwargs["parameters"] = params
+        # AgentScope 2.x 的 ``parameters`` 要的是 ``<Model>.Parameters`` 对象，
+        # **不是 dict** —— 直接塞 dict 会在真正调用时报
+        # ``AttributeError: 'dict' object has no attribute 'max_tokens'``（实测踩到：
+        # 界面上只要填了 temperature 就会复现，而默认 parametrs 为空的助手看不出来）。
+        # 老版本没有 Parameters 类时才退回 dict。
+        _P = getattr(model_cls, "Parameters", None)
+        if _P is not None:
+            _allowed = set(getattr(_P, "model_fields", {}) or {})
+            _known = {k: v for k, v in params.items() if not _allowed or k in _allowed}
+            try:
+                kwargs["parameters"] = _P(**_known)
+            except Exception:  # noqa: BLE001 —— 字段对不上就原样传，别把可跑的配置拦死
+                logger.warning("parameters 无法映射到 %s.Parameters，原样传递：%s", model_cls.__name__, params)
+                kwargs["parameters"] = params
+        else:
+            kwargs["parameters"] = params
 
     # **显式指定网络超时**（不设 = SDK 默认 connect 5s ✗ 跨境太紧，见 config 里的说明 ✓）
     # 经 AgentScope 的 client_kwargs 透传给 `openai.AsyncClient(...)` ✓

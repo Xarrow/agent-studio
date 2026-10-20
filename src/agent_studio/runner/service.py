@@ -45,7 +45,7 @@ from ..runtimes import get_runtime
 from ..runtimes.base import HitlResponse, TurnContext, UnifiedEvent
 from ..schemas import AgentDefinition, MemoryPolicyRead, ToolSpec
 from ..security.crypto import decrypt
-from .gate import GateTimeout, backoff_s, gate, is_transient
+from .gate import GateTimeout, backoff_s, gate, is_model_error, is_transient
 from .metrics import MetricsCollector
 
 logger = logging.getLogger(__name__)
@@ -776,94 +776,154 @@ class RunService:
                 run.status = "running"
                 await session.commit()
 
-            # ── 重试：429 / 5xx / 连接断 / provider 侧读超时，都是「等一下就好」的事 ——
-            #    不该让这一步直接报废（用户看到的会是「模型不行」，其实是我们在限流里）。
-            #    **用户自己设的执行超时不在重试之列**（is_transient 会拒掉）：
-            #    那是用户的上限，重试只会让它更慢，还会掩盖真正的问题。
-            for _attempt in range(1, settings.run_retry_max + 2):
+            # ── 两档执行：主模型 →（可选）备用模型。
+            #    重试能解决"等一会就好"（429 / 5xx / 连接断）；但 key 失效、模型下线、
+            #    这家整体挂了，重试永远是同一个结果 —— 那时整轮换到备用模型再跑一次，
+            #    而不是让这条执行废掉（用户看到的只会是"模型不行"）。
+            _stages: list[tuple[AgentDefinition, str]] = [(definition, "primary")]
+            if definition.fallback is not None:
+                _stages.append(
+                    (
+                        definition.model_copy(
+                            update={"model": definition.fallback, "fallback": None}
+                        ),
+                        "fallback",
+                    )
+                )
+
+            for _stage_def, _stage_name in _stages:
+                if _stage_name == "fallback":
+                    # 换模型可能换 provider / 端点 / key，必须重新解析（备用模型常挂另一家）
+                    async with SessionLocal() as _s2:
+                        api_key, _fb_url = await resolve_credential(_stage_def, _s2)
+                    _stage_def = _with_base_url(_stage_def, _fb_url)
+                definition = _stage_def
+                collector.provider = definition.model.provider
+                collector.model = definition.model.name
                 try:
-                    compiled = await runtime.compile(
-                        definition,
-                        api_key=api_key,
-                        tools=tools,
-                        agent_id=run.agent_id,
-                        work_dir=str(work_dir),
-                        context=context,
-                    )
 
-                    # 这一步要「派出去并等结果」时，等子执行的时间也算进执行超时 ——
-                    # 否则节点上写「最长等多久 15 分钟」、助手超时 2 分钟，执行超时先到，
-                    # 那句配置就是假的（现场：编排者 + 6 项批次整步超时，看不出是分派在等）。
-                    timeout = resolve_timeout(
-                        definition.limits.timeout_s,
-                        settings.default_timeout_s,
-                        int((run.input or {}).get("fanout_wait_s") or 0),
-                    )
-
-                    async def consume() -> None:
-                        nonlocal seq, status, hitl_payload, finished_reason
-                        async for ev in runtime.run(compiled, run_input):
-                            ev = ev.model_copy(update={"run_id": run_id, "seq": seq})
-                            seq += 1
-                            collector.on_event(ev)
-                            await self._persist_event(run_id, ev)
-                            self.bus.publish(run_id, ev.model_dump(mode="json", exclude={"raw"}))
-                            # 注意：**不能**在 run_end 时提前 return —— AgentScope 在
-                            # ReplyEndEvent 之后还会 yield 一个最终 Msg
-                            # （reply_stream(yield_final_msg=True)），提前退出会丢掉它，
-                            # 导致 run.output 为空。让它自然结束即可。
-                            if ev.type == "run_end":
-                                finished_reason = str(ev.payload.get("finished_reason") or "")
-                            if ev.type == "hitl_request":
-                                status = "waiting_hitl"
-                                hitl_payload = dict(ev.payload)
-
-                    _t0 = time.monotonic()
-                    if timeout and timeout > 0:
-                        # 不限（0 / 负数）时**不能**包 wait_for ✗ —— timeout=0 是"立刻超时"，语义正好相反 ✓
-                        await asyncio.wait_for(consume(), timeout=timeout)
-                    else:
-                        await consume()
-
-                    # ── 「被中断」要分清楚是谁断的 ────────────────────────────
-                    # AgentScope 收到取消后**不会**把 CancelledError 抛给我们（它把工具调用
-                    # 标成 interrupted、补一句 "I notice the interruption…"，然后正常结束）。
-                    # 于是超时会被记成 ok、那句插话被当成模型回答写进会话 —— 现场现象就是
-                    # 「聊着聊着忽然说它注意到中断了」。这里按耗时判定：
-                    #   · 撞满上限 → 执行超时（错误，明确告诉用户可以调大）
-                    #   · 没撞满   → 用户主动停止
-                    if status == "ok" and finished_reason == "interrupted":
-                        _elapsed = time.monotonic() - _t0
-                        if timeout > 0 and _elapsed >= timeout - 1.0:
-                            status, error = (
-                                "error",
-                                f"执行超时：这一轮超过 {timeout} 秒上限被停止"
-                                "（可在助手配置里调大「执行超时」，或把这件活拆成几步）",
+                    # ── 重试：429 / 5xx / 连接断 / provider 侧读超时，都是「等一下就好」的事 ——
+                    #    不该让这一步直接报废（用户看到的会是「模型不行」，其实是我们在限流里）。
+                    #    **用户自己设的执行超时不在重试之列**（is_transient 会拒掉）：
+                    #    那是用户的上限，重试只会让它更慢，还会掩盖真正的问题。
+                    for _attempt in range(1, settings.run_retry_max + 2):
+                        try:
+                            compiled = await runtime.compile(
+                                definition,
+                                api_key=api_key,
+                                tools=tools,
+                                agent_id=run.agent_id,
+                                work_dir=str(work_dir),
+                                context=context,
                             )
-                        else:
-                            status, error = "aborted", "已停止（你点了停止）"
-                        # 那句自动补的插话不是回答，别当 output 存下来/写进会话
-                        if compiled is not None:
-                            setattr(compiled, "last_output", None)
-                    break
+
+                            # 这一步要「派出去并等结果」时，等子执行的时间也算进执行超时 ——
+                            # 否则节点上写「最长等多久 15 分钟」、助手超时 2 分钟，执行超时先到，
+                            # 那句配置就是假的（现场：编排者 + 6 项批次整步超时，看不出是分派在等）。
+                            timeout = resolve_timeout(
+                                definition.limits.timeout_s,
+                                settings.default_timeout_s,
+                                int((run.input or {}).get("fanout_wait_s") or 0),
+                            )
+
+                            async def consume() -> None:
+                                nonlocal seq, status, hitl_payload, finished_reason
+                                async for ev in runtime.run(compiled, run_input):
+                                    ev = ev.model_copy(update={"run_id": run_id, "seq": seq})
+                                    seq += 1
+                                    collector.on_event(ev)
+                                    await self._persist_event(run_id, ev)
+                                    self.bus.publish(run_id, ev.model_dump(mode="json", exclude={"raw"}))
+                                    # 注意：**不能**在 run_end 时提前 return —— AgentScope 在
+                                    # ReplyEndEvent 之后还会 yield 一个最终 Msg
+                                    # （reply_stream(yield_final_msg=True)），提前退出会丢掉它，
+                                    # 导致 run.output 为空。让它自然结束即可。
+                                    if ev.type == "run_end":
+                                        finished_reason = str(ev.payload.get("finished_reason") or "")
+                                    if ev.type == "hitl_request":
+                                        status = "waiting_hitl"
+                                        hitl_payload = dict(ev.payload)
+
+                            _t0 = time.monotonic()
+                            if timeout and timeout > 0:
+                                # 不限（0 / 负数）时**不能**包 wait_for ✗ —— timeout=0 是"立刻超时"，语义正好相反 ✓
+                                await asyncio.wait_for(consume(), timeout=timeout)
+                            else:
+                                await consume()
+
+                            # ── 「被中断」要分清楚是谁断的 ────────────────────────────
+                            # AgentScope 收到取消后**不会**把 CancelledError 抛给我们（它把工具调用
+                            # 标成 interrupted、补一句 "I notice the interruption…"，然后正常结束）。
+                            # 于是超时会被记成 ok、那句插话被当成模型回答写进会话 —— 现场现象就是
+                            # 「聊着聊着忽然说它注意到中断了」。这里按耗时判定：
+                            #   · 撞满上限 → 执行超时（错误，明确告诉用户可以调大）
+                            #   · 没撞满   → 用户主动停止
+                            if status == "ok" and finished_reason == "interrupted":
+                                _elapsed = time.monotonic() - _t0
+                                if timeout > 0 and _elapsed >= timeout - 1.0:
+                                    status, error = (
+                                        "error",
+                                        f"执行超时：这一轮超过 {timeout} 秒上限被停止"
+                                        "（可在助手配置里调大「执行超时」，或把这件活拆成几步）",
+                                    )
+                                else:
+                                    status, error = "aborted", "已停止（你点了停止）"
+                                # 那句自动补的插话不是回答，别当 output 存下来/写进会话
+                                if compiled is not None:
+                                    setattr(compiled, "last_output", None)
+                            break
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception as _exc:  # noqa: BLE001
+                            if _attempt > settings.run_retry_max or not is_transient(_exc):
+                                raise
+                            collector.retries = _attempt
+                            _wait = backoff_s(_attempt, settings.run_retry_backoff_s)
+                            logger.warning(
+                                "执行 %s 第 %s 次遇到临时错误（%s: %s），%.1fs 后重试",
+                                run_id, _attempt, type(_exc).__name__, _exc, _wait,
+                            )
+                            if compiled is not None:
+                                try:
+                                    await runtime.dispose(compiled)
+                                except Exception:  # noqa: BLE001, pragma: no cover
+                                    logger.debug("重试前 dispose 失败", exc_info=True)
+                                compiled = None
+                            await asyncio.sleep(_wait)
                 except asyncio.CancelledError:
                     raise
                 except Exception as _exc:  # noqa: BLE001
-                    if _attempt > settings.run_retry_max or not is_transient(_exc):
+                    _to = _stages[1][0].model.name if len(_stages) > 1 else ""
+                    if not (_stage_name == "primary" and _to and is_model_error(_exc)):
                         raise
-                    collector.retries = _attempt
-                    _wait = backoff_s(_attempt, settings.run_retry_backoff_s)
-                    logger.warning(
-                        "执行 %s 第 %s 次遇到临时错误（%s: %s），%.1fs 后重试",
-                        run_id, _attempt, type(_exc).__name__, _exc, _wait,
+                    # 记一笔：界面与记录里都看得见"这一轮是备用模型救回来的"
+                    _from = definition.model.name
+                    async with SessionLocal() as _s3:
+                        _r = await _s3.get(Run, run_id)
+                        if _r is not None:
+                            _u = dict(_r.usage or {})
+                            _u["fallback"] = {
+                                "from": _from,
+                                "to": _to,
+                                "reason": f"{type(_exc).__name__}: {_exc}"[:300],
+                            }
+                            _r.usage = _u
+                            await _s3.commit()
+                    _ev = UnifiedEvent(
+                        run_id=run_id,
+                        seq=seq,
+                        type="model_fallback",
+                        ts=now_ms(),
+                        payload={"from": _from, "to": _to, "reason": str(_exc)[:300]},
                     )
-                    if compiled is not None:
-                        try:
-                            await runtime.dispose(compiled)
-                        except Exception:  # noqa: BLE001, pragma: no cover
-                            logger.debug("重试前 dispose 失败", exc_info=True)
-                        compiled = None
-                    await asyncio.sleep(_wait)
+                    seq += 1
+                    collector.on_event(_ev)
+                    await self._persist_event(run_id, _ev)
+                    self.bus.publish(run_id, _ev.model_dump(mode="json", exclude={"raw"}))
+                    logger.warning("执行 %s 主模型失败（%s），改用备用模型 %s", run_id, _exc, _to)
+                    continue
+                else:
+                    break
 
             if status == "waiting_hitl":
                 async with SessionLocal() as session:

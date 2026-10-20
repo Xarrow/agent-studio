@@ -12,6 +12,7 @@ import type {
   McpServer,
   Memory,
   MemoryPolicy,
+  ModelSpec,
   Provider,
   RunEvent,
   RuntimeCapabilities,
@@ -839,6 +840,55 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 value={def.model.name}
                 onChange={(v) => patch({ model: { ...def.model, name: v } })}
               />
+            </div>
+
+            {/* 备用模型：主模型的 key 失效 / 模型下线 / 这家整体 503 时，
+                整轮换它重跑一次 —— 否则这条执行直接报废（用户只看到"模型不行"）。
+                留空就是"不兜底"，行为和以前一样。 */}
+            <div>
+              <label className="label">备用模型（可选）</label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <select
+                  className="input"
+                  value={def.fallback?.provider ?? ""}
+                  onChange={(e) => {
+                    const name = e.target.value;
+                    if (!name) {
+                      patch({ fallback: null });
+                      return;
+                    }
+                    const p = providers.find((x) => x.name === name);
+                    patch({
+                      fallback: {
+                        provider: name,
+                        name: p?.models?.[0] ?? "",
+                        credential_ref: null,
+                      },
+                    });
+                  }}
+                >
+                  <option value="">不设 —— 主模型出问题就报错</option>
+                  {providers.map((p) => (
+                    <option key={p.name} value={p.name}>
+                      {p.display_name}
+                    </option>
+                  ))}
+                </select>
+                {def.fallback && (
+                  <ModelPicker
+                    providers={providers}
+                    provider={def.fallback.provider}
+                    credentialId={def.fallback.credential_ref ?? null}
+                    value={def.fallback.name}
+                    onChange={(v) =>
+                      patch({ fallback: { ...(def.fallback as ModelSpec), name: v } })
+                    }
+                  />
+                )}
+              </div>
+              <p className="mt-1 text-[11.5px] text-[var(--color-muted)]">
+                主模型的 key 失效、模型下线或这家整体 5xx 时，这一轮会换它重跑一次（运行记录里会写明换过）。
+              </p>
             </div>
 
             <div>

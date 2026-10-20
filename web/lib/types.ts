@@ -68,6 +68,8 @@ export interface AgentDefinition {
   orchestrator_brief?: string;
   system_prompt: string;
   model: ModelSpec;
+  /** 备用模型：主模型不可用（key 失效 / 下线 / 持续 5xx）时整轮换它重跑一次 */
+  fallback?: ModelSpec | null;
   tools: ToolRef[];
   skills: SkillRef[];
   middlewares: Record<string, unknown>[];

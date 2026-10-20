@@ -549,3 +549,23 @@ test("定时任务：枚举频率 + 两选一投递 + 空态不占位", () => {
   assert.match(api, /sessionJobs: \(sessionId: string\)/, "按会话取任务");
   assert.match(api, /runJobNow: \(id: string\)/, "能立刻跑一次");
 });
+
+/**
+ * 备用模型（2026-10）：主模型的 key 失效 / 下线 / 持续 5xx 时，整轮换备用模型重跑一次。
+ * 口径：
+ *   · 配置页可以设一个备用模型，也可以不设（不设 = 行为不变）
+ *   · 过程条上必须看得见"换模型"这一步 —— 否则答案是凭空出现的
+ */
+test("备用模型：配置页可设 + 过程条认「换模型」", () => {
+  const agent = read("components/AgentDetail.tsx");
+  assert.match(agent, /备用模型（可选）/, "配置页有入口");
+  assert.match(agent, /不设 —— 主模型出问题就报错/, "不设 = 不兜底，行为不变");
+  assert.match(agent, /patch\(\{ fallback: null \}\)/, "能取消");
+
+  const tl = read("components/ui/run-timeline.tsx");
+  assert.match(tl, /"model_fallback"/, "事件流里认这个事件");
+  assert.match(tl, /kind: "fallback", label: "换模型"/, "过程条上有一行");
+  assert.match(tl, /主模型 \$\{from\} 不可用/, "说清是谁换成了谁");
+  const types = read("lib/types.ts");
+  assert.match(types, /fallback\?: ModelSpec \| null/, "定义里带 fallback");
+});

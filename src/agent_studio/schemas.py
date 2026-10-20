@@ -90,6 +90,9 @@ class AgentDefinition(BaseModel):
     orchestrator_brief: str = ""
     system_prompt: str = "You are a helpful assistant."
     model: ModelSpec = Field(default_factory=ModelSpec)
+    #: 备用模型：主模型不可用（key 失效 / 模型下线 / 持续限流）时整轮换它重跑一次。
+    #: 留空 = 不兜底（出错就出错）。备用模型可以挂另一家 provider（凭据各自解析）。
+    fallback: ModelSpec | None = None
     tools: list[ToolRef] = Field(default_factory=list)
     skills: list[SkillRef] = Field(default_factory=list)
     middlewares: list[dict[str, Any]] = Field(default_factory=list)

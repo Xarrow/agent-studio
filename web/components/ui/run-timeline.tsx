@@ -42,6 +42,7 @@ export type StepKind =
   | "output"
   | "error"
   | "hitl"
+  | "fallback"
   | "artifact";
 
 export interface Step {
@@ -70,6 +71,12 @@ export const STEP_STYLE: Record<
     color: "#6d28d9",
     bg: "#f5f3ff",
     border: "#ddd6fe",
+  },
+  fallback: {
+    icon: "⇄",
+    color: "#b45309",
+    bg: "#fffbeb",
+    border: "#fde68a",
   },
   tool: {
     icon: "⚙",
@@ -111,7 +118,7 @@ export const STEP_STYLE: Record<
 
 /** 内部：把连续的事件压成"块" */
 interface Blk {
-  kind: "text" | "think" | "tool" | "tool_res" | "error" | "hitl";
+  kind: "text" | "think" | "tool" | "tool_res" | "error" | "hitl" | "fallback";
   text: string;
   name?: string;
   toolId?: string;
@@ -183,6 +190,14 @@ export function eventsToSteps(events: RunEvent[], userInput?: string): Step[] {
     } else if (t === "error") {
       const msg = str(p.message) || str(p.error) || "执行出错";
       blocks.push((cur = { kind: "error", text: msg }));
+    } else if (t === "model_fallback") {
+      const from = str(p.from) || "主模型";
+      const to = str(p.to) || "备用模型";
+      const why = str(p.reason) || "";
+      blocks.push({
+        kind: "fallback",
+        text: `主模型 ${from} 不可用${why ? `（${why}）` : ""}，已改用 ${to} 重跑这一轮`,
+      });
     } else if (t === "hitl_request") {
       const q = str(p.question) || str(p.message) || str(p.prompt) || "等待你确认后才能继续";
       blocks.push((cur = { kind: "hitl", text: q }));
@@ -237,6 +252,8 @@ export function eventsToSteps(events: RunEvent[], userInput?: string): Step[] {
       steps.push({ kind: "error", label: "出错", body: b.text });
     } else if (b.kind === "hitl") {
       steps.push({ kind: "hitl", label: "等待确认", body: b.text });
+    } else if (b.kind === "fallback") {
+      steps.push({ kind: "fallback", label: "换模型", body: b.text });
     }
   });
 
@@ -530,6 +547,13 @@ function KindIcon({ kind, size = 12 }: { kind: StepKind; size?: number }) {
         <svg {...common}>
           <path d="M9 10 4 15l5 5" />
           <path d="M20 4v7a4 4 0 0 1-4 4H4" />
+        </svg>
+      );
+    case "fallback":
+      return (
+        <svg {...common}>
+          <path d="M4 8h13l-3-3" />
+          <path d="M20 16H7l3 3" />
         </svg>
       );
     case "artifact":
