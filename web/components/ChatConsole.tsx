@@ -1885,7 +1885,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
         ) : (
           <button
             data-tap
-            title={browserFrame ? "展开浏览器画面" : "浏览器画面（助手还没上网干活）"}
+            title="浏览器"
             onClick={toggleRail}
             className="hidden lg:flex w-11 shrink-0 flex-col items-center gap-2 py-3 border-l border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-2)]"
           >

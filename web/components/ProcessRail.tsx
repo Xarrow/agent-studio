@@ -85,7 +85,7 @@ export function ProcessRail({
           />
         ) : (
           <div className="px-3 py-8 text-center text-[12px]" style={{ color: "var(--color-muted)" }}>
-            {busy ? "它还没打开浏览器…" : "助手用浏览器干活时，这里实时显示画面 —— 你也可以直接点。"}
+            {busy ? "正在启动…" : "助手用浏览器时，这里显示画面"}
           </div>
         )}
       </div>

@@ -41,7 +41,7 @@ export function hostOf(url: string): string {
 }
 
 function prettyUrl(url: string, max = 46): string {
-  if (!url) return "还没打开页面";
+  if (!url) return "未打开";
   const s = url.replace(/^https?:\/\//, "");
   return s.length > max ? s.slice(0, max - 1) + "…" : s;
 }
@@ -75,7 +75,7 @@ function ChromeBar({
       <button
         type="button"
         onClick={onCopy}
-        title={url ? `点击复制：${url}` : "还没打开页面"}
+        title={url ? `复制网址：${url}` : "未打开"}
         className="mono min-w-0 flex-1 truncate rounded px-1.5 py-0.5 text-left text-[11px] hover:bg-[var(--color-surface-3)]"
         style={{ color: "var(--color-muted)" }}
       >
@@ -106,7 +106,7 @@ function ActionLine({ actions }: { actions: BrowserAction[] }) {
           className="inline-block h-[6px] w-[6px] shrink-0 rounded-full"
           style={{ background: "var(--color-accent)" }}
         />
-        <span className="truncate">{last ? last.summary : "启动浏览器…"}</span>
+        <span className="truncate">{last ? last.summary : "启动中…"}</span>
       </div>
       {history.length > 0 && (
         <div className="mt-0.5 truncate text-[10.5px]" style={{ color: "var(--color-muted)" }}>
@@ -217,7 +217,7 @@ export function BrowserStage({
         onClick={onOpen}
         className="my-1.5 flex w-full max-w-[88%] items-center gap-2.5 rounded-[12px] border px-2 py-1.5 text-left max-md:max-w-[92%]"
         style={{ borderColor: "var(--color-border-strong)", background: "var(--color-surface-3)" }}
-        title="点开看浏览器画面和它每一步在干什么"
+        title="看画面与步骤"
       >
         <span
           className="relative h-[54px] w-[80px] shrink-0 overflow-hidden rounded-md border"
@@ -232,7 +232,7 @@ export function BrowserStage({
             />
           ) : (
             <span className="flex h-full w-full items-center justify-center text-[10px]" style={{ color: "var(--color-muted)" }}>
-              等待画面
+              无画面
             </span>
           )}
           {busy && !waiting ? (
@@ -260,7 +260,7 @@ export function BrowserStage({
           </span>
           <span className="mt-0.5 block truncate text-[11px]" style={{ color: "var(--color-muted)" }}>
             {waiting
-              ? "登录要你自己来，账号密码不进模型"
+              ? "需要你登录"
               : last?.summary ?? lastStep?.summary ?? "准备中…"}
           </span>
         </span>
@@ -302,7 +302,7 @@ export function BrowserStage({
           className="flex items-center gap-1.5 px-2.5 py-1 text-[11px]"
           style={{ background: "color-mix(in srgb, #b45309 10%, var(--color-surface))", color: "#b45309" }}
         >
-          <span className="live-dot">●</span> 需要你在这里登录 / 确认 —— 助手暂停等你，完成后会自动继续
+          <span className="live-dot">●</span> 需要你登录，完成后自动继续
         </div>
       ) : null}
 
@@ -347,7 +347,7 @@ export function BrowserStage({
           </>
         ) : (
           <div className="flex h-full min-h-[160px] items-center justify-center text-[12px]" style={{ color: "#94a3b8" }}>
-            助手还没打开网页
+            还未打开网页
           </div>
         )}
       </div>
@@ -417,14 +417,14 @@ export function BrowserStage({
 
       {onUserText && !busy ? (
         <div className="px-2.5 py-2 text-[11px]" style={{ background: "var(--color-surface)", color: "var(--color-muted)" }}>
-          这轮已经结束，画面只可查看 —— 每一步的截图都留在会话文件的 browser/ 下。
+          本轮已结束 · 仅可查看
         </div>
       ) : null}
       {onUserText && busy ? (
         <div className="flex gap-1.5 px-2.5 py-2" style={{ background: "var(--color-surface)" }}>
           <input
             className="input flex-1 text-[13px]"
-            placeholder="点画面里的输入框，然后在这里打字（回车送入浏览器）"
+            placeholder="点页面里的输入框，在这里打字，回车送入"
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
