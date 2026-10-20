@@ -724,3 +724,216 @@ body {
 .hl .hl-txt { color: inherit; } /* 文本节点：不动颜色，只占位不合并 */
 
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   执行过程条（ProcessBar）—— 对话页里「思考 / 工具 / 结果」的家
+   ---------------------------------------------------------------------------
+   口径（用户 2026-10 要求）：
+     · 过程默认收起，只把**结果**摊开；想追过程自己点开
+     · 过程与结果是两种东西，不能长得像：过程＝灰底细行 + 小字 + 彩色图标，
+       结果＝白底正文（Markdown 正常字号，不加任何底色）
+     · 每类动作一个颜色：思考紫、工具蓝、工具结果青、产物绿、出错红、等待黄
+     · 执行中**每类动效不同**（思考呼吸 / 工具扫光 + 转圈 / 结果落定闪一下），
+       看动作光的形态就知道它在干什么
+     · 动效可关：条内开关写 localStorage["chat.procAnim"]；系统「减少动态效果」
+       也一律关掉
+   ──────────────────────────────────────────────────────────────────────────── */
+.proc {
+  --proc-bg: #f6f7f9;
+  --proc-border: #e4e7ec;
+  border: 1px solid var(--proc-border);
+  background: var(--proc-bg);
+  border-radius: 10px;
+  overflow: hidden;
+  transition: border-color 0.16s ease;
+}
+.proc:hover {
+  border-color: #d3d8e0;
+}
+
+/* 收起态：一行。36px 是手机与桌面共同的下限（点得中） */
+.proc-head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 36px;
+  padding: 0 10px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.proc-title {
+  font-size: 12.5px;
+  color: #414651;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.proc-time {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: #8b93a1;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+.proc-chev {
+  color: #8b93a1;
+  transition: transform 0.18s ease;
+  flex-shrink: 0;
+}
+.proc[data-open="1"] .proc-chev {
+  transform: rotate(90deg);
+}
+
+/* 三类活动的小圆点（收起态也能看出它现在在干嘛） */
+.proc-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+.proc-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.45;
+}
+.proc[data-running="1"] .proc-dots .proc-dot {
+  animation: proc-dot-pulse 1.3s ease-in-out infinite;
+}
+.proc[data-running="1"] .proc-dots .proc-dot:nth-child(2) {
+  animation-delay: 0.16s;
+}
+.proc[data-running="1"] .proc-dots .proc-dot:nth-child(3) {
+  animation-delay: 0.32s;
+}
+@keyframes proc-dot-pulse {
+  0%, 100% { opacity: 0.28; transform: scale(0.8); }
+  40% { opacity: 1; transform: scale(1.15); }
+}
+
+/* 跑起来时顶上一条来回的光带（不确定进度 = 一条跑的线，不是假进度条） */
+.proc[data-running="1"] .proc-head::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--color-accent), transparent);
+  background-size: 38% 100%;
+  background-repeat: no-repeat;
+  animation: proc-runbar 1.6s ease-in-out infinite;
+}
+@keyframes proc-runbar {
+  from { background-position: -40% 0; }
+  to { background-position: 140% 0; }
+}
+
+/* 展开后的身体：左边一条竖色轨，越往下越"旧" */
+.proc-body {
+  border-top: 1px solid var(--proc-border);
+  background: #fbfbfc;
+  padding: 8px 10px 10px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+/* 正在跑的那一行：一条从左到右的扫光（"正在动"的手感，不抢文字） */
+.proc-row[data-active="1"] {
+  position: relative;
+  border-radius: 6px;
+}
+.proc-row[data-active="1"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 6px;
+  background: linear-gradient(
+    100deg,
+    transparent 0%,
+    color-mix(in srgb, var(--proc-kind-color, #2563eb) 16%, transparent) 45%,
+    transparent 80%
+  );
+  background-size: 220% 100%;
+  animation: proc-sweep 1.5s linear infinite;
+  pointer-events: none;
+}
+@keyframes proc-sweep {
+  from { background-position: 140% 0; }
+  to { background-position: -60% 0; }
+}
+
+/* 工具结果那一行「正在到达」：不扫光，给一块静态淡色（结果是"落地"，不是"在动"） */
+.proc-row[data-active="1"][data-kind="tool_response"]::after,
+.proc-row[data-active="1"][data-kind="artifact"]::after {
+  animation: none;
+  background: color-mix(in srgb, var(--proc-kind-color, #0d9488) 12%, transparent);
+}
+
+/* 思考：三个小点呼吸（和"工具在转"区分开） */
+.proc-think-dots {
+  display: inline-flex;
+  gap: 2px;
+  align-items: center;
+}
+.proc-think-dots i {
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: currentColor;
+  animation: proc-think 1.1s ease-in-out infinite;
+}
+.proc-think-dots i:nth-child(2) { animation-delay: 0.15s; }
+.proc-think-dots i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes proc-think {
+  0%, 100% { opacity: 0.25; transform: translateY(0); }
+  50% { opacity: 1; transform: translateY(-2px); }
+}
+
+/* 工具在跑：图标外面一圈虚线转（"这步在动"） */
+.proc-run-ring {
+  position: absolute;
+  inset: -2px;
+  border-radius: 8px;
+  border: 1.5px dashed currentColor;
+  opacity: 0.55;
+  animation: spin 2.4s linear infinite;
+}
+
+/* 工具结果落定：一次性闪一下（到达感，不循环） */
+.proc-row[data-flash="1"] {
+  animation: proc-flash 0.55s ease-out 1;
+}
+@keyframes proc-flash {
+  from { background: color-mix(in srgb, var(--proc-kind-color, #0d9488) 22%, transparent); }
+  to { background: transparent; }
+}
+
+/* 关掉动效（条内开关 / 系统偏好） */
+.proc[data-anim="off"] .proc-head::before,
+.proc[data-anim="off"] .proc-dot,
+.proc[data-anim="off"] .proc-think-dots i,
+.proc[data-anim="off"] .proc-run-ring,
+.proc[data-anim="off"] .proc-row[data-active="1"]::after,
+.proc[data-anim="off"] .proc-row[data-flash="1"] {
+  animation: none !important;
+}
+.proc[data-anim="off"] .proc-row[data-active="1"]::after {
+  opacity: 0.5;
+  background: color-mix(in srgb, var(--proc-kind-color, #2563eb) 10%, transparent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .proc .proc-head::before,
+  .proc .proc-dot,
+  .proc .proc-think-dots i,
+  .proc .proc-run-ring,
+  .proc .proc-row[data-active="1"]::after,
+  .proc .proc-row[data-flash="1"] {
+    animation: none !important;
+  }
+}

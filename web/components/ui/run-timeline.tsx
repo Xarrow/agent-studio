@@ -28,7 +28,7 @@
  *   error / hitl_request              → 出错 / 等待确认
  */
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type { RunEvent } from "@/lib/types";
 import Markdown from "@/components/Markdown";
@@ -73,9 +73,9 @@ export const STEP_STYLE: Record<
   },
   tool: {
     icon: "⚙",
-    color: "#c2410c",
-    bg: "#fff7ed",
-    border: "#fed7aa",
+    color: "#2563eb",
+    bg: "#eff6ff",
+    border: "#bfdbfe",
   },
   artifact: {
     icon: "▣",
@@ -295,16 +295,25 @@ export function summarize(steps: Step[]): string {
 export function RunTimeline({
   steps,
   compact = false,
+  running = false,
 }: {
   steps: Step[];
   compact?: boolean;
+  /** 还在跑：最后一步按类型给动效 */
+  running?: boolean;
 }) {
   if (steps.length === 0) return null;
 
   return (
     <div className={compact ? "space-y-1" : "space-y-2"}>
       {steps.map((s, i) => (
-        <TimelineRow key={i} s={s} compact={compact} isLast={i === steps.length - 1} />
+        <TimelineRow
+          key={i}
+          s={s}
+          compact={compact}
+          isLast={i === steps.length - 1}
+          active={running && i === steps.length - 1}
+        />
       ))}
     </div>
   );
@@ -312,7 +321,18 @@ export function RunTimeline({
 
 /** 单条：长的折叠（点开看全文），正文按性质选字体 —— 人看思考用正文字体，
  *  工具参数/结果才用 mono。失败的工具红框标出来，扫一眼就知道哪步坏了。 */
-function TimelineRow({ s, compact, isLast }: { s: Step; compact: boolean; isLast: boolean }) {
+function TimelineRow({
+  s,
+  compact,
+  isLast,
+  active = false,
+}: {
+  s: Step;
+  compact: boolean;
+  isLast: boolean;
+  /** 正在跑的就是这一行（只给最新一步）→ 按类型给不同动效 */
+  active?: boolean;
+}) {
   const st = STEP_STYLE[s.kind];
   const isErr = s.kind === "tool" && s.ok === false;
   const bodyLines = s.body ? s.body.split("\n") : [];
@@ -320,18 +340,34 @@ function TimelineRow({ s, compact, isLast }: { s: Step; compact: boolean; isLast
   const [open, setOpen] = useState(false);
   const monoBody = s.kind === "tool" || s.kind === "tool_response";
   return (
-    <div className="flex gap-2.5">
+    <div
+      className="proc-row flex gap-2.5"
+      data-active={active ? "1" : "0"}
+      data-kind={s.kind}
+      style={{ ["--proc-kind-color" as string]: st.color }}
+    >
       {/* 左侧：图标 + 连接线（把"一连串步骤"这件事视觉化） */}
       <div className="flex flex-col items-center shrink-0">
         <div
-          className="w-6 h-6 rounded-md flex items-center justify-center text-[12px] shrink-0"
+          className="relative w-6 h-6 rounded-md flex items-center justify-center text-[12px] shrink-0"
           style={{
             background: isErr ? "#fef2f2" : st.bg,
             color: isErr ? "#b91c1c" : st.color,
             border: `1px solid ${isErr ? "#fecaca" : st.border}`,
           }}
         >
-          {st.icon}
+          {/* 工具在跑：虚线环转起来（"这步在动"）；思考：三个点呼吸；
+              两者形态不同，一眼分得清是"在想"还是"在做" */}
+          {active && s.kind === "tool" && <span className="proc-run-ring" aria-hidden="true" />}
+          {active && s.kind === "think" ? (
+            <span className="proc-think-dots" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+            </span>
+          ) : (
+            <KindIcon kind={s.kind} />
+          )}
         </div>
         {!isLast && !compact && (
           <div
@@ -377,7 +413,7 @@ function TimelineRow({ s, compact, isLast }: { s: Step; compact: boolean; isLast
         <button
           type="button"
           data-tap
-          className="text-[12px] font-medium mb-0.5 inline-flex min-h-[32px] items-center gap-1 text-left lg:min-h-0"
+          className="text-[12px] font-medium mb-0.5 inline-flex min-h-[32px] min-w-[32px] items-center gap-1 text-left lg:min-h-0"
           style={{ color: isErr ? "#b91c1c" : st.color }}
           onClick={() => long && setOpen(!open)}
         >
@@ -451,4 +487,331 @@ function TimelineRow({ s, compact, isLast }: { s: Step; compact: boolean; isLast
       </div>
     </div>
   );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   过程条（ProcessBar）—— 对话页里执行过程的**唯一**入口
+   ---------------------------------------------------------------------------
+   用户 2026-10 要求：think / tool / 过程**默认隐藏，只给结果**；
+   过程与结果要用不同颜色和样式拉开距离；执行中不同类型的动效也不一样。
+   所以这里是「一行摘要 + 点开才看细节」，收起时也能看出它在干什么。
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/** 每类动作的描边图标（12px、1.8 线宽，和全站一致；不用 emoji） */
+function KindIcon({ kind, size = 12 }: { kind: StepKind; size?: number }) {
+  const common = {
+    width: size,
+    height: size,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.8,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    "aria-hidden": true,
+  };
+  switch (kind) {
+    case "think":
+      return (
+        <svg {...common}>
+          <path d="M12 3a5 5 0 0 0-3 9v3h6v-3a5 5 0 0 0-3-9Z" />
+          <path d="M10 20h4" />
+        </svg>
+      );
+    case "tool":
+      return (
+        <svg {...common}>
+          <path d="m4 17 4.5-4.5" />
+          <path d="M14 4a4 4 0 0 0 5 5l-9.5 9.5a2.5 2.5 0 0 1-3.5-3.5L14 4Z" />
+        </svg>
+      );
+    case "tool_response":
+      return (
+        <svg {...common}>
+          <path d="M9 10 4 15l5 5" />
+          <path d="M20 4v7a4 4 0 0 1-4 4H4" />
+        </svg>
+      );
+    case "artifact":
+      return (
+        <svg {...common}>
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+          <path d="M14 2v6h6" />
+        </svg>
+      );
+    case "error":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 8v4" />
+          <path d="M12 16h.01" />
+        </svg>
+      );
+    case "hitl":
+      return (
+        <svg {...common}>
+          <path d="M9 11V6a2 2 0 1 1 4 0v5" />
+          <path d="M13 11V5a2 2 0 1 1 4 0v7" />
+          <path d="M17 12v-1a2 2 0 1 1 4 0v4a6 6 0 0 1-6 6h-2a6 6 0 0 1-6-6v-3a2 2 0 1 1 4 0" />
+        </svg>
+      );
+    default:
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="8" />
+        </svg>
+      );
+  }
+}
+
+/** 过程条里的「步骤」＝ 除输入和最终回答之外的一切（回答是结果，不在过程里） */
+export function processSteps(steps: Step[]): Step[] {
+  return steps.filter((s) => s.kind !== "input" && s.kind !== "output");
+}
+
+/** 按类型数一下（收起态的摘要就靠它） */
+function tally(steps: Step[]) {
+  const n = { think: 0, tool: 0, tool_response: 0, artifact: 0, error: 0, hitl: 0 };
+  for (const s of steps) {
+    if (s.kind in n) n[s.kind as keyof typeof n] += 1;
+  }
+  return n;
+}
+
+/** 正在跑的时候说人话：先给动作，不给术语 */
+function phaseText(steps: Step[], running: boolean): string {
+  const n = tally(steps);
+  if (running) {
+    const last = steps[steps.length - 1];
+    if (!last) return "正在启动…";
+    // 工具调用还没等到结果 = 正在跑它
+    if (last.kind === "tool") {
+      const name = last.label.replace(/^调用工具\s*·\s*/, "").trim();
+      return name ? `正在运行 ${name}…` : "正在调用工具…";
+    }
+    if (last.kind === "tool_response") return "工具返回了，继续推进…";
+    if (last.kind === "think") return "正在思考…";
+    if (last.kind === "artifact") return "写出了一个文件…";
+    if (last.kind === "hitl") return "等你在下面确认…";
+    if (last.kind === "error") return "这一步失败了…";
+    return "正在推进…";
+  }
+  const parts: string[] = [];
+  if (n.think) parts.push(`${n.think} 段思考`);
+  if (n.tool) parts.push(`${n.tool} 次工具`);
+  if (n.tool_response) parts.push(`${n.tool_response} 条结果`);
+  if (n.artifact) parts.push(`${n.artifact} 个产物`);
+  if (!parts.length) return "这次执行没有可展示的过程";
+  return parts.join(" · ");
+}
+
+/**
+ * 过程条：默认收起（只看结果），点开看每一步。
+ *
+ * @param steps       eventsToSteps() 的结果（内部会剔掉输入与回答）
+ * @param running     是否正在执行
+ * @param elapsedMs   已耗时 / 总耗时（收起态右侧那个数字）
+ * @param detail      展开后在底部的附加动作（例如「完整记录 →」）
+ * @param defaultOpen 默认是否展开（一般 false）
+ */
+export function ProcessBar({
+  steps,
+  running = false,
+  elapsedMs,
+  detail,
+  defaultOpen = false,
+  className = "",
+  open: openProp,
+  onToggle,
+  loading = false,
+}: {
+  steps: Step[];
+  running?: boolean;
+  elapsedMs?: number;
+  detail?: React.ReactNode;
+  defaultOpen?: boolean;
+  className?: string;
+  /** 受控展开（历史消息要懒加载事件，展开动作由外层发起） */
+  open?: boolean;
+  onToggle?: () => void;
+  /** 展开态正在拉事件 */
+  loading?: boolean;
+}) {
+  const [openState, setOpenState] = useState(defaultOpen);
+  const controlled = typeof openProp === "boolean";
+  const open = controlled ? (openProp as boolean) : openState;
+  const [anim, setAnim] = useState(true);
+
+  // 动效开关（localStorage 记住）。读放在 effect 里，避免 SSR/首帧不一致
+  useEffect(() => {
+    try {
+      setAnim(localStorage.getItem("chat.procAnim") !== "0");
+    } catch {
+      /* 隐私模式下拿不到 localStorage，就当开着 */
+    }
+  }, []);
+
+  const proc = useMemo(() => processSteps(steps), [steps]);
+  const n = tally(proc);
+  const failures = proc.filter((s) => s.kind === "tool" && s.ok === false).length;
+
+  // 受控时（历史消息）即使还没拉到事件也要露出这一行 —— 它自己就是"点开"的入口
+  if (proc.length === 0 && !running && !controlled) return null;
+
+  const toggle = () => {
+    if (controlled) onToggle?.();
+    else setOpenState((v) => !v);
+  };
+  const saveAnim = (on: boolean) => {
+    setAnim(on);
+    try {
+      localStorage.setItem("chat.procAnim", on ? "1" : "0");
+    } catch {
+      /* 忽略 */
+    }
+  };
+
+  return (
+    <div
+      className={`proc ${className}`}
+      data-open={open ? "1" : "0"}
+      data-running={running ? "1" : "0"}
+      data-anim={anim ? "on" : "off"}
+    >
+      <button
+        type="button"
+        data-tap
+        className="proc-head"
+        onClick={toggle}
+        aria-expanded={open}
+      >
+        {/* 三个小点表示"过程"本身；跑起来会呼吸，停下就静止 */}
+        <span
+          className="proc-dots"
+          style={{ color: running ? "var(--color-accent)" : "#8b93a1" }}
+          aria-hidden="true"
+        >
+          <span className="proc-dot" />
+          <span className="proc-dot" />
+          <span className="proc-dot" />
+        </span>
+
+        <span className="proc-title">
+          {running
+            ? phaseText(proc, true)
+            : proc.length === 0
+              ? loading
+                ? "执行过程 · 加载中…"
+                : "执行过程 · 点开看每一步"
+              : `执行过程 · ${phaseText(proc, false)}`}
+        </span>
+
+        {failures > 0 && (
+          <span
+            className="shrink-0 rounded px-1 text-[10.5px] font-medium"
+            style={{ background: "#fef2f2", color: "#b91c1c", border: "1px solid #fecaca" }}
+          >
+            {failures} 步失败
+          </span>
+        )}
+
+        {typeof elapsedMs === "number" && elapsedMs > 0 && (
+          <span className="proc-time">{fmtDuration(elapsedMs)}</span>
+        )}
+
+        <svg
+          className="proc-chev"
+          width={12}
+          height={12}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.8}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="m9 6 6 6-6 6" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="proc-body">
+          {loading && proc.length === 0 ? (
+            <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+              正在加载这一步的过程…
+            </div>
+          ) : (
+            <RunTimeline steps={proc} running={running} />
+          )}
+          <div className="mt-2 flex items-center gap-3 flex-wrap">
+            {detail}
+            <button
+              type="button"
+              data-tap
+              className="ml-auto text-[11.5px] inline-flex items-center gap-1.5"
+              style={{ color: anim ? "var(--color-accent)" : "var(--color-muted)" }}
+              onClick={() => saveAnim(!anim)}
+              title="执行时的动效（思考呼吸 / 工具转圈 / 结果闪一下）"
+            >
+              <span
+                className="relative inline-flex items-center rounded-full transition-colors"
+                style={{
+                  width: 26,
+                  height: 15,
+                  background: anim ? "var(--color-accent)" : "#cbd2dc",
+                }}
+              >
+                <span
+                  className="absolute rounded-full bg-white transition-transform"
+                  style={{
+                    width: 11,
+                    height: 11,
+                    left: 2,
+                    transform: anim ? "translateX(11px)" : "translateX(0)",
+                  }}
+                />
+              </span>
+              动效
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 刚跑完的那一轮，摘要先放内存里。
+ *
+ * 历史消息的事件是**点开才拉**的（一进对话页不发 N 个请求），所以收起态只有
+ * 「点开看每一步」；可用户刚看着它跑完，这一行立刻变成没有信息量的字样很怪。
+ * 这里把刚结束那轮的结果记一下，气泡首帧就能显示"2 段思考 · 2 次工具 · 7.0s"。
+ * 刷新页面后没有了也无所谓 —— 点开照样能拉到。
+ */
+const PROC_MEMO = new Map<string, { steps: Step[]; ms: number }>();
+
+export function rememberProc(runId: string, steps: Step[], ms: number): void {
+  if (!runId) return;
+  PROC_MEMO.set(runId, { steps, ms });
+  if (PROC_MEMO.size > 50) {
+    // 只要最近几十轮，别无限长
+    const oldest = PROC_MEMO.keys().next().value;
+    if (oldest) PROC_MEMO.delete(oldest);
+  }
+}
+
+export function recallProc(runId: string): { steps: Step[]; ms: number } | null {
+  return PROC_MEMO.get(runId) ?? null;
+}
+
+/** 毫秒 → 1.2s / 12s / 2m03s（收起态那个数字，别给 ms） */
+function fmtDuration(ms: number): string {
+  const s = ms / 1000;
+  if (s < 0.1) return "0.1s";
+  if (s < 10) return `${s.toFixed(1)}s`;
+  if (s < 60) return `${Math.round(s)}s`;
+  const m = Math.floor(s / 60);
+  const rest = Math.round(s % 60);
+  return `${m}m${String(rest).padStart(2, "0")}s`;
 }

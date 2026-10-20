@@ -17,7 +17,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, fmt } from "@/lib/api";
 import type { Agent, RunEvent, Session } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
-import { RunTimeline, eventsToSteps, summarize } from "@/components/ui/run-timeline";
+import { ProcessBar, eventsToSteps, recallProc, rememberProc } from "@/components/ui/run-timeline";
 import { BrowserLive } from "@/components/BrowserLive";
 import { ProcessRail } from "@/components/ProcessRail";
 import { SlashMenu, type CommandItem } from "@/components/SlashMenu";
@@ -111,6 +111,9 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   const [live, setLive] = useState<LiveMsg | null>(null);
   /** 正在生成的这次执行的**全部事件**（用来实时画分色过程） */
   const [liveEvents, setLiveEvents] = useState<RunEvent[]>([]);
+  /** 最新事件与开始时间的镜像 —— settle 在闭包里跑，读 state 会拿到旧值 */
+  const liveEventsRef = useRef<RunEvent[]>([]);
+  const runStartRef = useRef<number>(0);
   /** 浏览器画面（Agent 的 Chromium screencast 直播帧，base64 JPEG —— 不落库，纯实时） */
   const [browserFrame, setBrowserFrame] = useState<{ data: string; url: string; title: string } | null>(null);
   /** 本次发送的内容（作为执行过程的第一段「输入」） */
@@ -122,6 +125,16 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     { name: string; path: string; kind: "image" | "file"; url: string; size: number }[]
   >([]);
   const [busy, setBusy] = useState(false);
+  /** 本轮开始时间（毫秒）——过程条右侧那个秒数用它算 */
+  const [runStart, setRunStart] = useState<number>(0);
+  /** 每秒跳一次，只为让耗时数字动起来 */
+  const [, setClock] = useState(0);
+  useEffect(() => {
+    if (!busy) return;
+    const t = setInterval(() => setClock((v) => v + 1), 1000);
+    return () => clearInterval(t);
+  }, [busy]);
+  const liveElapsed = runStart ? Date.now() - runStart : 0;
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -381,7 +394,11 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
         const ev = JSON.parse(e.data) as RunEvent;
         // 收下**全部**事件：不只文本，还包括思考与工具调用，
         // 这样执行过程能实时按颜色分段显示出来
-        setLiveEvents((prev) => [...prev, ev]);
+        setLiveEvents((prev) => {
+          const next = [...prev, ev];
+          liveEventsRef.current = next;
+          return next;
+        });
         const p = ev.payload as Record<string, unknown>;
         if (ev.type === "text_delta") {
           const t = typeof p.text === "string" ? p.text : typeof p.delta === "string" ? p.delta : "";
@@ -419,6 +436,17 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
         return;
       }
       setHitl(null);
+      // 刚跑完这一轮的过程摘要留在内存里 —— 气泡收起态立刻能显示"2 段思考 · 7.0s"，
+      // 而不是退化成"点开看每一步"（事件是点开才拉的）
+      try {
+        rememberProc(
+          runId,
+          eventsToSteps(liveEventsRef.current, sentText),
+          Date.now() - (runStartRef.current || Date.now()),
+        );
+      } catch {
+        /* 摘要只是锦上添花，失败不影响收尾 */
+      }
       setLive(null);
       // 用服务端的权威历史覆盖（包含刚写入的这一轮）
       await loadMessages(sessionId);
@@ -451,6 +479,9 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     setInput("");
     setPendingFiles([]);
     setBusy(true);
+    setRunStart(Date.now());
+    runStartRef.current = Date.now();
+    liveEventsRef.current = [];
     setLive({ role: "user", text: composed });
     // 直接进入助手流式态（user 消息由 live 显示，完成后由 history 接管）
     const userEcho = { role: "user" as const, content: composed, run_id: null, turn_index: 0 };
@@ -889,16 +920,22 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     />
                   </div>
                 )}
-                {busy && liveEvents.length > 0 && (
-                  <div className="w-full">
-                    <div className="text-[12px] text-[var(--color-muted)] mb-2 flex items-center gap-1.5">
-                      <span className="live-dot">●</span> 执行中…
-                    </div>
-                    <RunTimeline steps={eventsToSteps(liveEvents, liveInput)} compact />
+                {/* 生成中：只给一条**收起**的过程条 + 下面正常流的回答。
+                    想看它每一步在干嘛，点开这一行（默认不摊开，
+                    否则一屏全是"思考/调用工具"，结果反而被挤到看不见）。 */}
+                {busy && (
+                  <div className="w-full max-w-[88%] max-md:max-w-[90%]">
+                    <ProcessBar
+                      steps={eventsToSteps(liveEvents, liveInput)}
+                      running
+                      elapsedMs={liveElapsed}
+                    />
                   </div>
                 )}
-                {busy && liveEvents.length === 0 && (
-                  <div className="text-[12px] text-[var(--color-muted)] live-dot">思考中…</div>
+                {/* 流式回答：过程条在上面（它现在在干嘛），结果在下面实时长出来。
+                    过程默认收起，所以"只看结果"成立；要看细节点那一行。 */}
+                {live?.role === "assistant" && (
+                  <Bubble role="assistant" content={live.text} streaming />
                 )}
               </div>
             )}
@@ -1593,7 +1630,9 @@ function Bubble({
     }
   };
 
-  const steps = events ? eventsToSteps(events, userInput) : [];
+  // 事件是点开才拉的；刚跑完那一轮先用内存里的摘要顶上（刷新后没有就等点开）
+  const memo = runId ? recallProc(runId) : null;
+  const steps = events ? eventsToSteps(events, userInput) : (memo?.steps ?? []);
 
   /* 用户消息里的附件展示：从 content 里解析 [attach:kind:url:name:size] 标记行，
      还原成缩略图/文件卡片；正文去掉附件标记行只留人话。 */
@@ -1661,6 +1700,38 @@ function Bubble({
           </div>
         ) : (
           <>
+        {/* 过程在上、结果在下（和实时态同一个顺序）：过程默认收起，
+            只露这一行；结果就是下面这段正文，不带任何过程底色。 */}
+        {hasTrace && (
+          <div className="mb-1.5">
+            <ProcessBar
+              steps={steps}
+              open={open}
+              onToggle={() => void toggle()}
+              loading={loadingEv}
+              elapsedMs={
+                meta?.seconds ? meta.seconds * 1000 : memo?.ms ? memo.ms : undefined
+              }
+              detail={
+                <>
+                  <button
+                    data-tap
+                    onClick={() => setDetailOpen(true)}
+                    className="text-[12px] text-[var(--color-muted)] hover:text-[var(--color-text)]"
+                  >
+                    完整记录 →
+                  </button>
+                  {meta && (
+                    <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+                      {meta.tokens > 0 ? `${fmt.int(meta.tokens)} tokens · ` : ""}
+                      {fmt.ms(meta.seconds * 1000)}
+                    </span>
+                  )}
+                </>
+              }
+            />
+          </div>
+        )}
         <div
           className={`break-words ${
             isUser
@@ -1783,60 +1854,9 @@ function Bubble({
           </>
         )}
 
-        {hasTrace && (
-          <div className="mt-1.5">
-            <div className="flex items-center gap-3 flex-wrap">
-              <button
-                data-tap
-                onClick={() => void toggle()}
-                className="text-[12px] text-[var(--color-accent)] hover:underline flex items-center gap-1"
-              >
-                <span>{open ? "▾" : "▸"}</span>
-                执行过程
-                {events && events.length > 0 && (
-                  <span className="text-[var(--color-muted)]">
-                    （{summarize(steps)}）
-                  </span>
-                )}
-              </button>
-              <button
-                data-tap
-                onClick={() => setDetailOpen(true)}
-                className="text-[12px] text-[var(--color-muted)] hover:text-[var(--color-text)]"
-              >
-                完整记录 →
-              </button>
-              {meta && (
-                <span className="text-[12px] text-[var(--color-muted)]">
-                  {meta.tokens > 0 ? `${fmt.int(meta.tokens)} tokens · ` : ""}
-                  {fmt.ms(meta.seconds * 1000)}
-                </span>
-              )}
-              {detailOpen && runId && (
-                <RunDetailById runId={runId} onClose={() => setDetailOpen(false)} />
-              )}
-            </div>
-
-            {open && (
-              <div
-                className="mt-2 p-3 rounded-lg"
-                style={{
-                  background: "var(--color-surface)",
-                  border: "1px solid var(--color-border)",
-                }}
-              >
-                {loadingEv ? (
-                  <div className="text-[12px] text-[var(--color-muted)]">加载执行过程…</div>
-                ) : steps.length === 0 ? (
-                  <div className="text-[12px] text-[var(--color-muted)]">
-                    这次执行没有可展示的步骤。
-                  </div>
-                ) : (
-                  <RunTimeline steps={steps} />
-                )}
-              </div>
-            )}
-          </div>
+        {/* 完整记录弹框：位置无关（是浮层），过程条已经在正文上方 */}
+        {hasTrace && detailOpen && runId && (
+          <RunDetailById runId={runId} onClose={() => setDetailOpen(false)} />
         )}
       </div>
     </div>

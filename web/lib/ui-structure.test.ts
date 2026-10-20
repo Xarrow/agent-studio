@@ -338,3 +338,63 @@ test("确认弹框支持红色警告块", () => {
   assert.match(fb, /\{opt\.warning && \(/, "要真的渲染出来");
   assert.match(fb, /strokeWidth=\{1\.8\}/, "警告图标按全站口径 1.8 描边、不用 emoji");
 });
+
+/**
+ * 执行过程（think / 工具 / 过程）默认收起，只把结果摊开（用户 2026-10 要求）。
+ * 口径：
+ *   · 对话页只能用 ProcessBar（默认收起），不能把 RunTimeline 直接摊在消息流里
+ *   · 过程里不含「回答」——回答是结果，出现在气泡正文；两处都给就是同一件事说两遍
+ *   · 每类一个颜色（思考紫 / 工具蓝 / 工具结果青），与结果（白底正文）拉开
+ *   · 执行中不同类型不同动效；动效可关（localStorage）且尊重系统偏好
+ */
+test("对话页：过程默认收起，只露结果", () => {
+  const chat = read("components/ChatConsole.tsx");
+  assert.match(chat, /<ProcessBar/, "对话页必须用过程条");
+  assert.doesNotMatch(
+    chat,
+    /<RunTimeline steps=\{eventsToSteps/,
+    "不许再把完整时间线摊在消息流里（默认只给结果）",
+  );
+  assert.match(chat, /running\n\s*elapsedMs=\{liveElapsed\}/, "执行中要带 running + 耗时");
+});
+
+test("过程条：剔掉输入和回答，默认收起", () => {
+  const tl = read("components/ui/run-timeline.tsx");
+  assert.match(
+    tl,
+    /export function processSteps\(steps: Step\[\]\): Step\[\] \{\s*return steps\.filter\(\(s\) => s\.kind !== "input" && s\.kind !== "output"\);/,
+    "过程不含输入与回答",
+  );
+  assert.match(tl, /defaultOpen = false/, "默认收起");
+  assert.match(tl, /data-open=\{open \? "1" : "0"\}/, "收起/展开要能在样式里区分");
+  assert.match(tl, /data-running=\{running \? "1" : "0"\}/, "跑没跑也要能区分");
+});
+
+test("过程与结果：颜色分得开", () => {
+  const tl = read("components/ui/run-timeline.tsx");
+  const css = read("app/globals.css");
+  // 三类动作的色值必须互不相同（思考 / 工具 / 工具结果）
+  assert.match(tl, /think: \{\s*icon: "◆",\s*color: "#6d28d9"/, "思考＝紫");
+  assert.match(tl, /tool: \{\s*icon: "⚙",\s*color: "#2563eb"/, "工具＝蓝");
+  assert.match(tl, /tool_response: \{\s*icon: "◀",\s*color: "#0e7490"/, "工具结果＝青");
+  // 结果（回答）用正文颜色，不带过程那套底色
+  assert.match(css, /\.proc \{/, "过程有自己的壳");
+  assert.match(css, /\.proc-body \{\s*border-top: 1px solid var\(--proc-border\);/, "过程展开有分隔与灰底");
+});
+
+test("执行中：不同类型不同动效，且可关", () => {
+  const tl = read("components/ui/run-timeline.tsx");
+  const css = read("app/globals.css");
+  assert.match(tl, /s\.kind === "tool" && <span className="proc-run-ring"/, "工具＝转圈");
+  assert.match(tl, /s\.kind === "think" \? \(\s*<span className="proc-think-dots"/, "思考＝呼吸点");
+  assert.match(css, /\.proc-row\[data-active="1"\]::after/, "跑着的那行有扫光");
+  assert.match(css, /@keyframes proc-think/, "思考动效");
+  assert.match(css, /@keyframes proc-sweep/, "扫光动效");
+  assert.match(css, /@keyframes proc-flash/, "结果落定闪一下");
+  // 可关 + 系统偏好
+  assert.match(tl, /localStorage\.setItem\("chat\.procAnim"/, "开关要记住");
+  assert.match(css, /\.proc\[data-anim="off"\]/, "关掉时不动");
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)/, "尊重系统减少动效");
+  // 手机点得中
+  assert.match(css, /\.proc-head \{[^}]*min-height: 36px/s, "收起态 36px 点击高度");
+});
