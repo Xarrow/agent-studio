@@ -46,6 +46,8 @@ export interface ConfirmOptions {
   details?: string[];
   confirmText?: string;
   cancelText?: string;
+  /** 红色警告块：说清"还会牵连什么"，比 details 更醒目（会话连带文件夹、批量删除等） */
+  warning?: string;
   /** 危险操作用红色主按钮 */
   danger?: boolean;
   /** 危险操作主按钮延迟可点（防误触连点），单位毫秒 */
@@ -331,6 +333,28 @@ function ConfirmDialog({
                 <span className="break-all">{d}</span>
               </div>
             ))}
+          </div>
+        )}
+
+        {opt.warning && (
+          <div
+            className="mt-3 flex items-start gap-2 rounded-md px-3 py-2 text-[12.5px] leading-relaxed"
+            style={{
+              background: "color-mix(in srgb, var(--color-err) 10%, transparent)",
+              border: "1px solid color-mix(in srgb, var(--color-err) 35%, transparent)",
+              color: "var(--color-err)",
+            }}
+          >
+            <svg
+              width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"
+              className="mt-[2px] shrink-0" aria-hidden="true"
+            >
+              <path d="M12 9v4" />
+              <path d="M12 17h.01" />
+              <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+            </svg>
+            <span className="break-words">{opt.warning}</span>
           </div>
         )}
 

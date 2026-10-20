@@ -315,3 +315,26 @@ test("会话文件清单可折叠：默认按数量、手动选择要记住", ()
   assert.match(chat, /max-h-\[96px\][^"]*overflow-y-auto/, "展开时高度要有上限，别无限长");
   assert.match(chat, /slice\(0, 6\)/, "最多列 6 个胶囊，其余用『还有 N 个』");
 });
+
+/**
+ * 删会话必须告诉用户「文件夹也一起删」（用户 2026-10 要求）。
+ * 口径：弹框里点名文件夹路径（sessions/<会话号>/）+ 文件数与体积；
+ * 有文件时主按钮写「连文件夹一起删」，别只写「删除」让人以为只删聊天记录。
+ */
+test("删会话：说清会话文件夹会一起删", () => {
+  const chat = read("components/ChatConsole.tsx");
+  const block = chat.slice(chat.indexOf("const removeSession"), chat.indexOf("const renameSession"));
+  assert.match(block, /api\.sessionFiles\(s\.id/, "删之前先数文件夹里有什么");
+  assert.match(block, /warning:/, "用红色警告块，不是埋在 details 里");
+  assert.match(block, /文件夹/, "必须点名文件夹");
+  assert.match(block, /个文件/, "有文件要说有几个");
+  assert.match(block, /连文件夹一起删/, "有文件时主按钮不能只写『删除』");
+  assert.match(block, /fmt\.bytes\(fileBytes\)/, "还要说占多少体积");
+});
+
+test("确认弹框支持红色警告块", () => {
+  const fb = read("components/ui/feedback.tsx");
+  assert.match(fb, /warning\?: string/, "ConfirmOptions 要有 warning");
+  assert.match(fb, /\{opt\.warning && \(/, "要真的渲染出来");
+  assert.match(fb, /strokeWidth=\{1\.8\}/, "警告图标按全站口径 1.8 描边、不用 emoji");
+});

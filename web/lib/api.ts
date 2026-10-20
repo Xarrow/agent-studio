@@ -881,7 +881,11 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(patch),
     }),
-  deleteSession: (id: string) => del<{ deleted: number }>(`/api/sessions/${id}`),
+  /** 删会话：会**连会话文件夹一起删**（removed_dir 是删掉的绝对路径，没删是 null） */
+  deleteSession: (id: string) =>
+    del<{ deleted: number; unbound_runs: number; removed_dir: string | null }>(
+      `/api/sessions/${id}`,
+    ),
   /** 编辑一条消息的正文（只改平台侧历史；Run 观测记录不动） */
   updateSessionMessage: (sessionId: string, messageId: number, content: string) =>
     request<{ id: number; content: string }>(

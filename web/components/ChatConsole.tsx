@@ -295,21 +295,52 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   };
 
   const removeSession = async (s: Session) => {
+    // 先数一下这个会话的文件夹里有什么 —— 删会话会**连文件夹一起删**，
+    // 不提前说清楚，用户以为只是删掉聊天记录，产物就没了。
+    let fileCount = 0;
+    let fileBytes = 0;
+    let dirLabel = `sessions/${s.id}`;
+    try {
+      const fl = await api.sessionFiles(s.id, 1000);
+      fileCount = fl.count;
+      fileBytes = (fl.files || []).reduce((a, f) => a + (f.size || 0), 0);
+      if (fl.work_dir) {
+        // 展示给人看的短路径：只留 `sessions/<会话号>` 这一段（绝对路径太长）
+        const seg = fl.work_dir.split("/").filter(Boolean);
+        if (seg.length >= 2) dirLabel = seg.slice(-2).join("/");
+      }
+    } catch {
+      /* 数不到文件不影响删除本身，就退化成只说"文件夹会一起删" */
+    }
+
     const ok = await fb.confirm({
       title: `删除对话「${s.title || s.id}」？`,
       description: "对话记录会被删除，但执行记录（Runs）会保留，可在调试台查看。",
-      details: [`${s.turn_count} 轮对话`, `${s.message_count} 条消息`],
+      details: [
+        `${s.turn_count} 轮对话 · ${s.message_count} 条消息`,
+        `${dirLabel}/ 文件夹`,
+      ],
+      warning:
+        fileCount > 0
+          ? `这个会话的文件夹里有 ${fileCount} 个文件（共 ${fmt.bytes(fileBytes)}），会跟对话一起删掉，删了找不回来。`
+          : "这个会话的文件夹会跟对话一起删掉。现在里面是空的，不会有文件丢失。",
       danger: true,
-      confirmText: "删除",
+      confirmText: fileCount > 0 ? "连文件夹一起删" : "删除",
     });
     if (!ok) return;
     try {
-      await api.deleteSession(s.id);
+      const res = await api.deleteSession(s.id);
       const list = await loadSessions(agentId);
       if (s.id === sessionId) {
         setSessionId(list.length > 0 ? list[0].id : "");
       }
-      fb.success("已删除");
+      fb.success(
+        res?.removed_dir
+          ? fileCount > 0
+            ? `已删除（含文件夹里的 ${fileCount} 个文件）`
+            : "已删除（会话文件夹也清掉了）"
+          : "已删除",
+      );
     } catch (e) {
       fb.error("删除失败", e instanceof Error ? e.message : String(e));
     }
