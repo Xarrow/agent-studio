@@ -122,6 +122,7 @@ WORKER_TOOLS = (
     "fetch",
     "web_search",
     "python",
+    "session_search",
     "proc_start",
     "proc_poll",
     "proc_log",

@@ -292,6 +292,10 @@ app.include_router(api_router)
 from .api import procs as procs_api  # noqa: E402
 
 app.include_router(procs_api.router)
+# 跨会话检索（标题 + 对话内容）—— 与助手的 session_search 工具同一实现
+from .api import search as search_api  # noqa: E402
+
+app.include_router(search_api.router)
 # A2A（Agent2Agent）协议入口 —— 根路径 /a2a + /.well-known/agent-card.json
 app.include_router(a2a.router)
 

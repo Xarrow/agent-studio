@@ -15,7 +15,7 @@ import Link from "next/link";
 import { HitlPrompt } from "@/components/HitlPrompt";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, fmt } from "@/lib/api";
-import type { Agent, RunEvent, Session } from "@/lib/types";
+import type { Agent, RunEvent, Session, SearchHit } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
 import { ProcessBar, eventsToSteps, recallProc, rememberProc } from "@/components/ui/run-timeline";
 import BgProcsStrip from "@/components/BgProcsStrip";
@@ -1581,6 +1581,38 @@ function SessionsPane({
   const [q, setQ] = useState("");
   /** 打开菜单的会话 id（一次只开一个） */
   const [menuFor, setMenuFor] = useState<string | null>(null);
+  /** 对话**内容**命中的结果（标题命中在本地即时过滤，内容命中要问后端） */
+  const [hits, setHits] = useState<SearchHit[]>([]);
+  const [hitBusy, setHitBusy] = useState(false);
+
+  // 输入停下来 300ms 再搜（打一个字发一次请求既慢又抖）
+  useEffect(() => {
+    const kw = q.trim();
+    if (kw.length < 2) {
+      setHits([]);
+      setHitBusy(false);
+      return;
+    }
+    let alive = true;
+    setHitBusy(true);
+    const t = setTimeout(() => {
+      void api
+        .search(kw, { limit: 12 })
+        .then((r) => {
+          if (alive) setHits(r.messages);
+        })
+        .catch(() => {
+          if (alive) setHits([]);
+        })
+        .finally(() => {
+          if (alive) setHitBusy(false);
+        });
+    }, 300);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, [q]);
 
   const kw = q.trim().toLowerCase();
   const list = kw
@@ -1653,13 +1685,16 @@ function SessionsPane({
           <p className="text-[12.5px] text-[var(--color-muted)] p-2.5 leading-relaxed">
             还没有对话。点「新对话」开始。
           </p>
-        ) : list.length === 0 ? (
-          <p className="text-[12.5px] text-[var(--color-muted)] p-2.5 leading-relaxed">
-            没有叫「{q.trim()}」的对话。
-          </p>
         ) : (
-          groups.map((g) =>
-            g.items.length === 0 ? null : (
+          <>
+            {/* 标题和内容都没有命中时才说"没有" —— 只要有一边命中就照常列 */}
+            {list.length === 0 && hits.length === 0 && !hitBusy && (
+              <p className="text-[12.5px] text-[var(--color-muted)] p-2.5 leading-relaxed">
+                没有叫「{q.trim()}」的对话，内容里也没有。
+              </p>
+            )}
+            {groups.map((g) =>
+              g.items.length === 0 ? null : (
               <div key={g.label} className="mb-1">
                 <div className="px-2 pt-2 pb-1 text-[11px] font-medium tracking-wide text-[var(--color-muted)]">
                   {g.label}
@@ -1761,7 +1796,43 @@ function SessionsPane({
                 </div>
               </div>
             ),
-          )
+            )}
+
+            {/* ── 对话内容命中（跨会话检索）──────────────────────────
+                标题只是第一段；真正的"以前聊过"在正文里。标题命中在本地过滤，
+                内容命中要问后端（300ms 防抖）。点一条 = 打开那个会话。 */}
+            {q.trim().length >= 2 && (
+              <div className="mt-1 border-t pt-1" style={{ borderColor: "var(--color-border)" }}>
+                <div className="px-2 pt-1 pb-1 text-[11px] font-medium tracking-wide text-[var(--color-muted)]">
+                  对话内容{hitBusy ? " · 搜索中…" : hits.length ? ` · ${hits.length} 条` : ""}
+                </div>
+                {!hitBusy && hits.length === 0 && list.length > 0 && (
+                  <p className="px-2 pb-1 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                    没有在对话内容里找到「{q.trim()}」。
+                  </p>
+                )}
+                {hits.map((h) => (
+                  <button
+                    key={h.message_id}
+                    type="button"
+                    data-tap
+                    onClick={() => onPick(h.session_id)}
+                    className="w-full text-left rounded-lg px-2 py-1.5 hover:bg-[var(--color-surface-2)] max-md:min-h-[36px]"
+                    title={h.snippet}
+                  >
+                    <span className="flex items-center gap-1.5 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                      <span className="truncate">{h.session_title}</span>
+                      <span className="shrink-0">· {fmt.relative(h.ts)}</span>
+                      <span className="shrink-0">· {h.role === "assistant" ? "我" : "你"}</span>
+                    </span>
+                    <span className="mt-0.5 block text-[12px] leading-snug line-clamp-2">
+                      {h.snippet}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
     </>

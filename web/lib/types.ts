@@ -573,6 +573,19 @@ export interface BgProcInfo {
   tail?: string;
 }
 
+/** 跨会话检索的一条命中（消息级） */
+export interface SearchHit {
+  message_id: number;
+  session_id: string;
+  session_title: string;
+  agent_id: string;
+  role: "user" | "assistant" | "system";
+  turn_index: number;
+  ts: number;
+  score: number;
+  snippet: string;
+}
+
 export interface SessionMessage {
   id: number;
   turn_index: number;

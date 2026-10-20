@@ -504,3 +504,22 @@ test("后台任务接口：一律按会话过滤（会话之间不互看）", ()
   assert.match(api, /api\/procs\/\$\{id\}\/log\?session_id=/, "日志带会话");
   assert.match(api, /api\/procs\/\$\{id\}\/kill\?session_id=/, "停止带会话");
 });
+
+/**
+ * 跨会话检索（2026-10，对标 Hermes 的 session_search）：
+ * 侧栏搜索框不只是过滤标题 —— 还要能搜到**对话内容**，并且点一条就进那个会话。
+ * 口径：≥2 个字才搜、300ms 防抖、标题与内容都空才说"没有"。
+ */
+test("侧栏搜索：标题 + 对话内容两段，内容命中可点进会话", () => {
+  const chat = read("components/ChatConsole.tsx");
+  assert.match(chat, /const \[hits, setHits\] = useState<SearchHit\[\]>\(\[\]\)/, "要有内容命中状态");
+  assert.match(chat, /if \(kw\.length < 2\)/, "太短不搜（单字噪声大）");
+  assert.match(chat, /\}, 300\);/, "300ms 防抖");
+  assert.match(chat, /api\s*\.search\(kw, \{ limit: 12 \}\)/, "调检索接口");
+  assert.match(chat, /对话内容\{hitBusy \? " · 搜索中…"/, "内容命中要单独一段");
+  assert.match(chat, /onClick=\{\(\) => onPick\(h\.session_id\)\}/, "点一条进那个会话");
+  assert.match(chat, /没有叫「\{q\.trim\(\)\}」的对话，内容里也没有。/, "标题与内容都空才说没有");
+  // 接口两侧同一实现
+  const api = read("lib/api.ts");
+  assert.match(api, /search: \(q: string/, "前端检索方法");
+});

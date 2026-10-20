@@ -2,6 +2,7 @@
 
 import type {
   BgProcInfo,
+  SearchHit,
   EvalCompareRead,
   EvalRunDetail,
   EvalRunRead,
@@ -848,6 +849,16 @@ export const api = {
     request<Session[]>(`/api/sessions${agentId ? `?agent_id=${agentId}` : ""}`),
   session: (id: string) => request<SessionDetail>(`/api/sessions/${id}`),
   /** 这个会话的工作目录里有什么（会话隔离后，产物按会话分目录） */
+  /** 跨会话检索：标题命中 + 对话内容命中（与助手的 session_search 同一实现） */
+  search: (q: string, opts: { limit?: number; agentId?: string } = {}) => {
+    const qs = new URLSearchParams({ q, limit: String(opts.limit ?? 12) });
+    if (opts.agentId) qs.set("agent_id", opts.agentId);
+    return request<{
+      query: string;
+      sessions: { session_id: string; title: string; ts: number }[];
+      messages: SearchHit[];
+    }>(`/api/search?${qs.toString()}`);
+  },
   /** 后台进程（会话级）：列表 / 日志 / 停止 —— 起进程只能由助手在会话里做 */
   procs: (sessionId: string) =>
     request<{

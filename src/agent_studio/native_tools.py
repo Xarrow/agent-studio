@@ -27,6 +27,7 @@ import os
 import re
 import socket
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -717,6 +718,46 @@ async def _proc_list() -> str:
     return "\n".join(lines)
 
 
+# --------------------------------------------------------------------------- #
+# 跨会话检索（session_search）
+# --------------------------------------------------------------------------- #
+SESSION_SEARCH_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "query": {
+            "type": "string",
+            "description": "要找的内容（几个关键词，空格分开；不用打完整句子）",
+        },
+        "limit": {"type": "integer", "description": "最多几条（默认 6，上限 20）"},
+        "mine_only": {
+            "type": "boolean",
+            "description": "只搜你自己（当前助手）聊过的会话；默认 false = 搜全部会话",
+        },
+    },
+    "required": ["query"],
+}
+
+
+async def _session_search(query: str, limit: int = 6, mine_only: bool = False) -> str:
+    """在**以前的会话**里找原话（跨会话检索）。"""
+    from .search import search_messages
+
+    _, _, agent_id, _ = _proc_ctx()
+    hits = await search_messages(
+        query,
+        limit=max(1, min(int(limit or 6), 20)),
+        agent_id=agent_id if mine_only else None,
+    )
+    if not hits:
+        return f"没有在历史对话里找到「{query}」。换个说法或更短的关键词再试。"
+    lines = []
+    for h in hits:
+        when = time.strftime("%Y-%m-%d %H:%M", time.localtime(h["ts"] / 1000))
+        who = "我" if h["role"] == "assistant" else "用户"
+        lines.append(f"[{when}｜{h['session_title']}｜{who}] {h['snippet']}")
+    return f"在历史对话里找到 {len(hits)} 条：\n" + "\n".join(lines)
+
+
 NATIVE_TOOLS: dict[str, dict[str, Any]] = {
     "fetch": {
         "fn": _fetch,
@@ -747,6 +788,15 @@ NATIVE_TOOLS: dict[str, dict[str, Any]] = {
         ),
         "schema": MEMORY_SAVE_SCHEMA,
         "flags": {"read_only": False, "concurrency_safe": True, "dangerous": False, "native": True},
+    },
+    "session_search": {
+        "fn": _session_search,
+        "description": (
+            "在**以前的会话**里搜原话（跨会话检索）。用户问「我们之前是不是聊过 / 那次最后怎么定的 / "
+            "你以前说过什么」时用它 —— 长期记忆只记事实，具体经过在历史对话里。"
+        ),
+        "schema": SESSION_SEARCH_SCHEMA,
+        "flags": {"read_only": True, "concurrency_safe": True, "dangerous": False, "native": True},
     },
     "proc_start": {
         "fn": _proc_start,
