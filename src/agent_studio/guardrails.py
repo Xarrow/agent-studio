@@ -417,6 +417,13 @@ def classify_command(command: str, workspace: str | None = None) -> Verdict:
     return worst
 
 
+#: 代码里出现这些词就值得从它开始截一段当命令看
+_DANGER_WORD_RE = re.compile(
+    r"\b(rm|rmdir|unlink|srm|trash|dd|mkfs\S*|shutdown|reboot|crontab|chmod|chown|"
+    r"pkill|killall|kill|curl|wget|git)\b"
+)
+
+
 def classify_code(code: str, workspace: str | None = None) -> Verdict:
     """判一段 Python 代码。
 
@@ -439,6 +446,32 @@ def classify_code(code: str, workspace: str | None = None) -> Verdict:
         return worst
     if re.search(r"shutil\.rmtree\s*\(\s*['\"](/|~|\$HOME)", text):
         return Verdict(RISK_DENY, "代码里要 shutil.rmtree 删系统目录，已拒绝", "py-rmtree-root", _short(text))
+    # 把括号、引号、逗号抹成空格再扫一遍：`subprocess.run(["rm","-rf","./x"])` 这种
+    # 逐字面量扫不出来（'rm' 后面跟的是另一个字面量 '-rf'，中间隔了引号逗号），
+    # 但抹平之后就是一句完整的 `rm -rf ./x`。现场就是靠这条路绕过闸门把目录删掉的。
+    flat = re.sub(r"[\[\]()'\",=]", " ", text)
+    worst = _worse(worst, classify_command(flat, workspace))
+    if worst.risk == RISK_DENY:
+        return worst
+    # 代码里危险命令前面常带着别的词（`import subprocess subprocess.run rm -rf x`），
+    # 整段交给命令解析时命令名认不出来。所以按行从"危险命令名"处截一段再判。
+    for line in flat.splitlines():
+        m = re.search(_DANGER_WORD_RE, line)
+        if m:
+            worst = _worse(worst, classify_command(line[m.start() :], workspace))
+            if worst.risk == RISK_DENY:
+                return worst
+    if re.search(r"shutil\.rmtree\s*\(", text):
+        return Verdict(
+            RISK_ASK,
+            "代码里要递归删掉一个目录（shutil.rmtree），删掉就找不回来",
+            "py-rmtree",
+            _short(text),
+        )
+    if re.search(r"os\.(rmdir|removedirs)\s*\(", text):
+        return Verdict(
+            RISK_ASK, "代码里要删掉一个目录（os.rmdir），删掉就找不回来", "py-rmdir", _short(text)
+        )
     if re.search(r"open\s*\(\s*['\"](/etc/|/usr/|/boot/|/root/)", text):
         return Verdict(RISK_ASK, "代码要写系统目录下的文件", "py-write-system", _short(text))
     if re.search(r"os\.(remove|unlink|rmdir)\s*\(\s*['\"](/etc/|/usr/|/boot/|/root/)", text):

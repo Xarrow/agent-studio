@@ -150,7 +150,9 @@ async def test_撞满超时上限不会被伪装成正常回答(client):
     assert not d.get("output"), "那句「我注意到中断了」不能当回答留下来"
 
     msgs = await _wait_messages(client, sess["id"], want=1)
-    assert [m["role"] for m in msgs] == ["user"], "没产出就别写一条空的助手消息"
+    # 没产出就别写一条空的助手消息；但**可以**留一行系统说明（刷新后才知道这轮为什么没回）
+    assert "assistant" not in [m["role"] for m in msgs], "没产出就别写一条空的助手消息"
+    assert [m["role"] for m in msgs][0] == "user"
     assert all("interruption" not in (m["content"] or "") for m in msgs)
 
 

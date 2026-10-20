@@ -74,6 +74,11 @@ async def _write_row(proc_id: str, **fields: Any) -> None:
         await session.commit()
 
 
+#: 正在被用户停掉的进程 —— 退出码看不出"是不是我们杀的"，只能靠这层标记。
+#: 不加就会写成 failed，界面上显示「失败」，用户以为它自己崩了。
+_KILLING: set[str] = set()
+
+
 async def _watch(proc_id: str, proc: asyncio.subprocess.Process) -> None:
     """等它退出，然后落状态。进程死掉/被杀都走这里（不用轮询）。"""
     try:
@@ -84,6 +89,15 @@ async def _watch(proc_id: str, proc: asyncio.subprocess.Process) -> None:
     status = "exited" if code == 0 else "failed"
     if code is None:
         status = "unknown"
+    # 用户点了停止：`kill()` 已经写成 killed，这里不能再盖成 failed
+    # （SIGTERM 的退出码是 -15，从 returncode 看不出来"是被谁停的"）
+    if proc_id in _KILLING:
+        status = "killed"
+        _KILLING.discard(proc_id)
+    async with SessionLocal() as session:
+        row = await session.get(BgProc, proc_id)
+        if row is not None and row.status == "killed":
+            status = "killed"
     await _write_row(proc_id, status=status, exit_code=code, ended_at=int(time.time() * 1000))
     _LIVE.pop(proc_id, None)
     _WATCHERS.pop(proc_id, None)
@@ -255,6 +269,7 @@ async def kill(proc_id: str, *, session_id: str | None = None) -> dict[str, Any]
     if status != "running":
         return {"ok": True, "status": status, "note": "它已经结束了"}
 
+    _KILLING.add(proc_id)
     proc = _LIVE.get(proc_id)
     killed = False
     if proc is not None and proc.returncode is None:

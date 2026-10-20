@@ -83,7 +83,10 @@ async def load_history(
         used += cost
 
     picked.reverse()  # 还原为旧→新
-    return [TurnMessage(role=r.role, content=_clip(r.content)) for r in picked if r.role in ("user", "assistant", "system")]
+    # 只把用户说的和助手说的喂给模型。`system` 是平台自己写的话
+    # （心跳、「本轮未完成」这类提示）—— 拼进上下文会被模型当成"我说的"，
+    # 而且中间插一条 system 消息有些运行时会直接拒（实测 AgentScope：Invalid message）。
+    return [TurnMessage(role=r.role, content=_clip(r.content)) for r in picked if r.role in ("user", "assistant")]
 
 
 def recall_render(items: list[tuple[str, float]]) -> str | None:

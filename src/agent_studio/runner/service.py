@@ -706,6 +706,8 @@ class RunService:
         _gated = False
         #: 这一轮的执行超时（超时分支的提示文案要用；异常可能发生在它算出来之前）
         timeout: int = 0
+        #: 被拒绝的工具调用（收尾文案要用；先声明避免 unbound）
+        denied: list[str] = []
         try:
             async with SessionLocal() as session:
                 run = await session.get(Run, run_id)
@@ -840,23 +842,49 @@ class RunService:
                                 int((run.input or {}).get("fanout_wait_s") or 0),
                             )
 
+                            #: 本轮被拒绝的工具调用（用户点了拒绝，或权限引擎不放行）
+                            denied: list[str] = []
+
                             async def consume() -> None:
-                                nonlocal seq, status, hitl_payload, finished_reason
-                                async for ev in runtime.run(compiled, run_input):
-                                    ev = ev.model_copy(update={"run_id": run_id, "seq": seq})
-                                    seq += 1
-                                    collector.on_event(ev)
-                                    await self._persist_event(run_id, ev)
-                                    self.bus.publish(run_id, ev.model_dump(mode="json", exclude={"raw"}))
-                                    # 注意：**不能**在 run_end 时提前 return —— AgentScope 在
-                                    # ReplyEndEvent 之后还会 yield 一个最终 Msg
-                                    # （reply_stream(yield_final_msg=True)），提前退出会丢掉它，
-                                    # 导致 run.output 为空。让它自然结束即可。
-                                    if ev.type == "run_end":
-                                        finished_reason = str(ev.payload.get("finished_reason") or "")
-                                    if ev.type == "hitl_request":
-                                        status = "waiting_hitl"
-                                        hitl_payload = dict(ev.payload)
+                                nonlocal seq, status, hitl_payload, finished_reason, denied
+                                # 显式持有生成器：中途 break 时**必须** aclose —— 只是 break 出去
+                                # 它会在后台一直挂着，模型那头的循环还在跑，下一轮就抢不到资源。
+                                agen = runtime.run(compiled, run_input)
+                                _me = asyncio.current_task()
+                                try:
+                                    async for ev in agen:
+                                        ev = ev.model_copy(update={"run_id": run_id, "seq": seq})
+                                        seq += 1
+                                        collector.on_event(ev)
+                                        await self._persist_event(run_id, ev)
+                                        self.bus.publish(run_id, ev.model_dump(mode="json", exclude={"raw"}))
+                                        # 注意：**不能**在 run_end 时提前 return —— AgentScope 在
+                                        # ReplyEndEvent 之后还会 yield 一个最终 Msg
+                                        # （reply_stream(yield_final_msg=True)），提前退出会丢掉它，
+                                        # 导致 run.output 为空。让它自然结束即可。
+                                        if ev.type == "run_end":
+                                            finished_reason = str(ev.payload.get("finished_reason") or "")
+                                        if ev.type == "hitl_request":
+                                            status = "waiting_hitl"
+                                            hitl_payload = dict(ev.payload)
+                                        # 被拒绝就**停在这里**：不拦的话模型会换个工具再试一遍
+                                        # （实测：拒绝 proc_start 之后它改用 python 删同一个目录），
+                                        # 用户得连点两次拒绝 —— 拒绝的意思本来就是"这条别做"。
+                                        if ev.type == "tool_exec_end" and str(
+                                            (ev.payload or {}).get("state") or ""
+                                        ) == "denied":
+                                            denied.append(
+                                                str((ev.payload or {}).get("tool_call_name") or "")
+                                            )
+                                            # 用「取消自己」收尾，不要 break + aclose：
+                                            # 半路关掉 AgentScope 的异步生成器会把这一轮吊住
+                                            # （实测：同一会话随后再发一条，永远停在 running、零事件）。
+                                            # 取消跟用户点停止走同一条路，框架自己收拾干净。
+                                            if _me is not None:
+                                                asyncio.get_running_loop().call_soon(_me.cancel)
+                                finally:
+                                    if not denied:
+                                        await agen.aclose()
 
                             # 这一轮现在能接收「运行中插话」了。收尾一律摘下 ——
                             # 不摘的话，run 结束后再插话会塞进一个已经没人用的 agent 里。
@@ -894,7 +922,27 @@ class RunService:
                             # 「聊着聊着忽然说它注意到中断了」。这里按耗时判定：
                             #   · 撞满上限 → 执行超时（错误，明确告诉用户可以调大）
                             #   · 没撞满   → 用户主动停止
-                            if status == "ok" and finished_reason == "interrupted":
+                            if denied:
+                                _what = "、".join(dict.fromkeys(denied))
+                                _who = f" {_what} " if _what else "这一步"
+                                status, finished_reason = "aborted", "denied"
+                                if run.origin == "schedule":
+                                    # 没人看着的时候，危险动作是被安全规则挡下的 ——
+                                    # 说"你拒绝了"会让人摸不着头脑（他当时不在）。
+                                    status = "error"
+                                    error = (
+                                        f"这条活需要人点头才能做（{_what or '工具调用'}），"
+                                        "定时任务里没人能点，本轮停下了。"
+                                        "要跑就自己在对话里发一次。"
+                                    )
+                                else:
+                                    error = (
+                                        f"你拒绝了{_who}，本轮就停在这里"
+                                        "（不会换个工具再试一遍；要继续就再发一条消息，把做法说清楚）"
+                                    )
+                                if compiled is not None:
+                                    setattr(compiled, "last_output", None)
+                            elif status == "ok" and finished_reason == "interrupted":
                                 _elapsed = time.monotonic() - _t0
                                 if timeout > 0 and _elapsed >= timeout - 1.0:
                                     status, error = (
@@ -976,7 +1024,23 @@ class RunService:
                 return
 
         except asyncio.CancelledError:
-            status, error = "aborted", "用户中断"
+            status = "aborted"
+            if denied:
+                _what = "、".join(dict.fromkeys(denied))
+                _who = f" {_what} " if _what else "这一步"
+                if run.origin == "schedule":
+                    status = "error"
+                    error = (
+                        f"这条活需要人点头才能做（{_what or '工具调用'}），"
+                        "定时任务里没人能点，本轮停下了。要跑就自己在对话里发一次。"
+                    )
+                else:
+                    error = (
+                        f"你拒绝了{_who}，本轮就停在这里"
+                        "（不会换个工具再试一遍；要继续就再发一条消息，把做法说清楚）"
+                    )
+            else:
+                error = "用户中断"
         except TimeoutError:
             status, error = (
                 "error",
@@ -1012,7 +1076,7 @@ class RunService:
             # waiting_hitl 是**暂停**不是结束：此刻 output 是 AgentScope 的占位文案
             # （"I'm waiting for your permission..."），不能当正式回答写进会话历史；
             # resume 真正结束后 _resume_execute 的收尾里补写。
-            await self._finalize(run_id, collector, compiled, status, error)
+            await self._finalize(run_id, collector, compiled, status, error, clear_output=bool(denied))
             if status != "waiting_hitl":
                 await self._post_run(run_id, definition, context, api_key)
                 # 浏览器会话清理（run 真正结束才清；waiting_hitl 要保住画面和登录态）
@@ -1057,6 +1121,27 @@ class RunService:
                         # 用户说过的那句补充就凭空消失了（模型还记得，人却看不见）
                         steer_texts=steer_registry.take_texts(run_id),
                     )
+                    # 3) 这一轮没跑完（被拒/超时/出错）且模型没留下话 —— 在历史里留一行说明。
+                    #    不写的话，刷新页面这一轮就"凭空消失"了：用户消息孤零零挂着，
+                    #    既看不出来为什么没做完，也不知道该不该再问一次。
+                    if not assistant_text and run.status in ("aborted", "error") and run.error:
+                        from ..models import SessionMessage as _SM
+
+                        session.add(
+                            _SM(
+                                session_id=run.session_id,
+                                turn_index=run.turn_index or 0,
+                                role="system",
+                                content=f"〔本轮未完成〕{run.error}",
+                                run_id=run_id,
+                                ts=now_ms(),
+                            )
+                        )
+                        try:
+                            await session.commit()
+                        except Exception:  # pragma: no cover
+                            await session.rollback()
+                            logger.warning("写「本轮未完成」提示失败", exc_info=True)
                     # 2) 轮次超阈值时压缩较早历史（防上下文爆炸）。
                     #    **在任务跑完之后做**：一次执行的中间态不该被动（压缩要花一次
                     #    LLM 调用，而且中途改上下文会让正在跑的这轮前后不一致）。
@@ -1257,19 +1342,34 @@ class RunService:
             )
 
             hitl_payload: dict[str, Any] = {}
+            denied: list[str] = []
 
             async def consume() -> None:
-                nonlocal seq, status, hitl_payload
-                async for ev in runtime.resume(compiled, hitl):
-                    ev = ev.model_copy(update={"run_id": run_id, "seq": seq})
-                    seq += 1
-                    collector.on_event(ev)
-                    await self._persist_event(run_id, ev)
-                    self.bus.publish(run_id, ev.model_dump(mode="json", exclude={"raw"}))
-                    # 同上：不提前 return，保证最终 Msg 被消费
-                    if ev.type == "hitl_request":
-                        status = "waiting_hitl"
-                        hitl_payload = dict(ev.payload)
+                nonlocal seq, status, hitl_payload, denied
+                agen = runtime.resume(compiled, hitl)
+                _me = asyncio.current_task()
+                try:
+                    async for ev in agen:
+                        ev = ev.model_copy(update={"run_id": run_id, "seq": seq})
+                        seq += 1
+                        collector.on_event(ev)
+                        await self._persist_event(run_id, ev)
+                        self.bus.publish(run_id, ev.model_dump(mode="json", exclude={"raw"}))
+                        # 同上：不提前 return，保证最终 Msg 被消费
+                        if ev.type == "hitl_request":
+                            status = "waiting_hitl"
+                            hitl_payload = dict(ev.payload)
+                        # 续跑时被拒绝 → 同样停住（否则它会换个工具再试一遍）
+                        if ev.type == "tool_exec_end" and str(
+                            (ev.payload or {}).get("state") or ""
+                        ) == "denied":
+                            denied.append(str((ev.payload or {}).get("tool_call_name") or ""))
+                            # 同主路径：取消自己，别 break + aclose（会把会话吊住）
+                            if _me is not None:
+                                asyncio.get_running_loop().call_soon(_me.cancel)
+                finally:
+                    if not denied:
+                        await agen.aclose()
 
             # 恢复后同样是"正在跑"，一样要能插话
             async def _on_steer(_t: str) -> None:
@@ -1297,6 +1397,17 @@ class RunService:
                     _resume_session_id, runtime.snapshot_plan(compiled)
                 )
 
+            if denied and status != "waiting_hitl":
+                _what = "、".join(dict.fromkeys(denied))
+                _who = f" {_what} " if _what else "这一步"
+                status, error = (
+                    "aborted",
+                    f"你拒绝了{_who}，本轮就停在这里"
+                    "（不会换个工具再试一遍；要继续就再发一条消息，把做法说清楚）",
+                )
+                if compiled is not None:
+                    setattr(compiled, "last_output", None)
+
             # 恢复之后**又**要授权（模型连着要两步是常事：先写脚本、再跑脚本）：
             # 这里必须和正常执行路径一样，把待确认内容 + 状态快照一起落库。
             # 少了这一步会留下一条"状态在等确认、内容却是空的"运行 ——
@@ -1313,7 +1424,16 @@ class RunService:
                         )
                         await session.commit()
         except asyncio.CancelledError:
-            status, error = "aborted", "用户中断"
+            status = "aborted"
+            if denied:
+                _what = "、".join(dict.fromkeys(denied))
+                _who = f" {_what} " if _what else "这一步"
+                error = (
+                    f"你拒绝了{_who}，本轮就停在这里"
+                    "（不会换个工具再试一遍；要继续就再发一条消息，把做法说清楚）"
+                )
+            else:
+                error = "用户中断"
         except TimeoutError:
             status, error = (
                 "error",
@@ -1329,7 +1449,7 @@ class RunService:
                     await runtime.dispose(compiled)
                 except Exception:  # pragma: no cover
                     pass
-            await self._finalize(run_id, collector, compiled, status, error)
+            await self._finalize(run_id, collector, compiled, status, error, clear_output=bool(denied))
             # 恢复后的收尾：把这轮**真正的最终回答**写进会话历史
             # （暂停时跳过了 append_turn，这里补上）。context 传 None ——
             # 记忆候选在暂停前的首轮已统计过，不重复记。
@@ -1365,6 +1485,7 @@ class RunService:
         compiled: Any,
         status: str,
         error: str | None,
+        clear_output: bool = False,
     ) -> None:
         ts = now_ms()
         collector.flush_open(ts)
@@ -1386,7 +1507,11 @@ class RunService:
                          if isinstance(usage.get(k), (int, float)) and k != "ttft_ms_avg"
                          else usage.get(k, prev.get(k))
                          for k in set(prev) | set(usage)}
-            if output:
+            if clear_output:
+                # 被拒/被打断的这一轮**没有回答**。不清的话，暂停时存的那句
+                # "I'm waiting for your permission…" 会被当成它的回答写进会话（现场踩到）。
+                run.output = None
+            elif output:
                 run.output = output
             if run.status != "waiting_hitl":
                 run.ended_at = ts

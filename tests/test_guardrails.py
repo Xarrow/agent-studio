@@ -108,3 +108,33 @@ def test_无人值守时确认降级成拒绝() -> None:
     # deny / allow 不受影响
     assert downgrade_if_unattended(classify_command("rm -rf /", WS)).risk == RISK_DENY
     assert downgrade_if_unattended(classify_command("ls", WS)).risk == RISK_ALLOW
+
+
+# --------------------------------------------------------------------------- #
+# 代码里绕道删除（现场：拒绝 proc_start rm -rf 之后，模型改用 python 删同一个目录）
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "import shutil\nshutil.rmtree('./victim')",
+        "import shutil; shutil.rmtree('./victim', ignore_errors=True)",
+        "import subprocess\nsubprocess.run(['rm','-rf','./victim'])",
+        'import subprocess\nsubprocess.run(["rm", "-rf", "./victim"])',
+        "import os\nos.system('rm -rf ./victim')",
+        "import os\nos.rmdir('./victim')",
+    ],
+)
+def test_代码里删目录要问一句(code: str):
+    from agent_studio.guardrails import RISK_ASK, classify_code
+
+    v = classify_code(code)
+    assert v.risk == RISK_ASK, (code, v)
+
+
+def test_普通文件操作不打扰():
+    from agent_studio.guardrails import RISK_ALLOW, classify_code
+
+    assert classify_code("import os\nos.remove('a.txt')").risk == RISK_ALLOW
+    assert classify_code("print('hello rm world')").risk == RISK_ALLOW

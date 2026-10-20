@@ -355,3 +355,38 @@ async def test_跳过之后的状态不会被上一轮的成功覆盖():
     async with SessionLocal() as db:
         fresh = await db.get(SessionJob, jid)
         assert fresh.last_status == "skipped", "跳过不能被上一轮的 ok 盖回去"
+
+
+async def test_用户点了停止就记成killed不被退出码盖成失败():
+    """现场：kill 之后界面显示「失败」—— 用户以为它自己崩了。"""
+    sid = await _seed("停止状态")
+    async with SessionLocal() as db:
+        db.add(
+            BgProc(
+                id="bg_killme",
+                session_id=sid,
+                label="被停的任务",
+                command="sleep 600",
+                status="killed",          # kill() 已经写过
+                log_path="/tmp/bg_killme.log",
+                started_at=now_ms(),
+                exit_code=-15,           # SIGTERM 留下的码
+            )
+        )
+        await db.commit()
+
+    # 模拟 _watch 收尾（进程确实退了，退出码非 0）
+    async def _fake_wait():
+        return -15
+
+    class _P:
+        returncode = -15
+
+        async def wait(self):
+            return -15
+
+    procs._KILLING.add("bg_killme")  # kill() 在发 SIGTERM 前会打这个标记
+    await procs._watch("bg_killme", _P())
+    async with SessionLocal() as db:
+        row = await db.get(BgProc, "bg_killme")
+        assert row.status == "killed", row.status

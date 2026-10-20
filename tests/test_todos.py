@@ -246,3 +246,25 @@ async def test_第二轮会装回上一轮的清单(client, monkeypatch):
     await _pump(client, r2.json()["id"])
     assert rt.compiled[-1].restored is not None, "第二轮没装回清单 —— 它会装作没列过"
     assert rt.compiled[-1].restored["tasks"][0]["subject"] == "第一步"
+
+
+async def test_平台的系统提示不进模型上下文():
+    """心跳/「本轮未完成」是给人看的，进了上下文会被模型当成自己说的话，
+    而且中间插一条 system 消息，AgentScope 直接报 Invalid message（实测）。"""
+    from agent_studio.context import load_history
+    from agent_studio.models import SessionMessage
+
+    sid = await _seed("上下文过滤")
+    async with SessionLocal() as db:
+        now = now_ms()
+        db.add_all(
+            [
+                SessionMessage(session_id=sid, turn_index=1, role="user", content="你好", ts=now),
+                SessionMessage(session_id=sid, turn_index=1, role="assistant", content="在", ts=now),
+                SessionMessage(session_id=sid, turn_index=2, role="system", content="〔本轮未完成〕你拒绝了 rm", ts=now),
+            ]
+        )
+        await db.commit()
+    async with SessionLocal() as db:
+        msgs = await load_history(db, sid)
+    assert [m.role for m in msgs] == ["user", "assistant"], msgs
