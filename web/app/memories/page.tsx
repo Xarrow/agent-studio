@@ -540,7 +540,7 @@ export default function MemoriesPage() {
                     >
                       {m.scope === "global" ? "所有助手共用" : (m.agent_name ?? "（绑定助手已失效）")}
                       {" · "}
-                      {m.source === "auto" ? "自动提炼" : "手动录入"}
+                      {m.source === "auto" ? "自动提炼" : m.source === "agent" ? "助手记的" : "手动录入"}
                       {" · 用过 "}
                       {m.hits} 次
                       {" · "}
@@ -565,7 +565,13 @@ export default function MemoriesPage() {
                         {m.scope === "global" ? "所有助手共用" : (m.agent_name ?? "（绑定助手已失效）")}
                       </KV>
                       <KV k="来源">
-                        {m.source === "auto" ? "自动提炼" : m.source === "import" ? "导入" : "手动录入"}
+                        {m.source === "auto"
+                          ? "自动提炼"
+                          : m.source === "agent"
+                            ? "助手记的"
+                            : m.source === "import"
+                              ? "导入"
+                              : "手动录入"}
                         {m.source_run_id ? (
                           <>
                             {" "}

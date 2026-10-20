@@ -648,7 +648,8 @@ export interface Memory {
   session_id: string | null;
   kind: MemoryKind;
   content: string;
-  source: "manual" | "auto" | "import";
+  //: agent = 助手在对话里自己记的（memory_save，存完即用）
+  source: "manual" | "auto" | "import" | "agent";
   source_run_id: string | null;
   status: MemoryStatus;
   importance: number;

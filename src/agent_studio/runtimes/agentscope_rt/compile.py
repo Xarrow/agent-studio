@@ -379,6 +379,62 @@ def tool_catalog(tools: list[Any]) -> str:
     )
 
 
+#: 项目上下文文件：放在工作目录里，助手每次开工自动读 —— 相当于 Hermes 的 AGENTS.md。
+#: 为什么要有：助手的 system_prompt 是"我是谁"，项目规矩是"这个目录里该怎么做"
+#: （用什么命令跑测试、产物放哪、别碰哪些文件）。混进 system_prompt 就改不动了；
+#: 放在目录里，换项目就换规矩，还能跟着仓库走。
+PROJECT_CONTEXT_FILE = "AGENTS.md"
+#: 上限：它会被拼进每一轮请求，太长等于每轮都在交同样的钱
+PROJECT_CONTEXT_LIMIT = 8000
+
+
+def project_context(cwd: str | None) -> str:
+    """从工作目录往上找最近的 AGENTS.md（不越过沙箱根），读进来。
+
+    只读**最近的一份**：谁离得近听谁的 —— 与 Hermes 一致。
+    坏文件（读不了/是目录）一律当没有，绝不因为一个 md 拖垮整轮。
+    """
+    if not cwd:
+        return ""
+    try:
+        from ...config import settings
+
+        root = Path(settings.work_dir).resolve()
+        cur = Path(cwd).resolve()
+    except Exception:  # noqa: BLE001
+        return ""
+
+    chain: list[Path] = []
+    node = cur
+    while True:
+        chain.append(node)
+        if node == root or node.parent == node:
+            break
+        # 别跑出沙箱：不在 root 底下就停
+        if root != node and root not in node.parents:
+            break
+        node = node.parent
+
+    for folder in chain:
+        cand = folder / PROJECT_CONTEXT_FILE
+        try:
+            if cand.is_file():
+                text = cand.read_text(encoding="utf-8", errors="replace").strip()
+                if not text:
+                    return ""
+                if len(text) > PROJECT_CONTEXT_LIMIT:
+                    text = text[:PROJECT_CONTEXT_LIMIT] + "\n…（文件太长，已截断）"
+                where = str(cand)
+                return (
+                    "## 这个目录的规矩（自动读取）\n"
+                    f"来源：`{where}`。它比一般习惯优先；与用户当轮的要求冲突时听用户的。\n\n"
+                    f"{text}"
+                )
+        except OSError:
+            return ""
+    return ""
+
+
 def assemble_toolkit(tools: list[Any], skills_dir: Path | None = None):
     """用**已构造好的**工具对象装配 Toolkit（工具与 Skill 的唯一注册源）。"""
     from agentscope.tool import Toolkit
@@ -764,6 +820,16 @@ def build_agent(
     # ``work_dir`` 也要落到 Bash 的 cwd 上：不给的话命令在服务进程的当前目录
     # （源码仓库根）里跑 —— 助手嘴里的"当前目录"是错的，`rm -rf .` 删的也是仓库。
     raw_tools = [*build_tools(tools, cwd=cwd), *(mcp_tools or [])]
+
+    # 「助手自己排班」的三个工具**总是**带上（不用用户去 Agents 页一个个勾）：
+    # 它们只作用于当前会话、且有明确边界（没有会话就报错），风险等同于对话本身。
+    # 反正默认走按需加载 —— 只占提示里一行，不占 schema 的钱。
+    from ...native_tools import build_native_tool as _bnt, tool_name as _tname
+
+    _have = {_tname(t) for t in raw_tools}
+    for _extra in ("job_create", "job_list", "job_cancel"):
+        if _extra not in _have:
+            raw_tools.append(_bnt(_extra))
     deferred: list[Any] = []
     if bool(getattr(defn, "tools_lazy", True)):
         from ...native_tools import build_native_tool, register_lazy_tools, tool_name
@@ -788,6 +854,11 @@ def build_agent(
     system_prompt = defn.system_prompt or ""
     if memory_text:
         system_prompt = f"{system_prompt.rstrip()}\n\n{memory_text}".strip()
+    # 项目上下文：工作目录里的 AGENTS.md（"这个目录该怎么做"）
+    proj = project_context(cwd)
+    if proj:
+        system_prompt = f"{system_prompt.rstrip()}\n\n{proj}".strip()
+
     # 技能清单：让模型知道「平台里到底有哪些做法」，否则挂载了也发现不了
     catalog = skill_catalog(skills_dir)
     if catalog:

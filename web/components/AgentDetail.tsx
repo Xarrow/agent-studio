@@ -774,6 +774,12 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 {/* 原来这里是一段三行的解释常驻在表单里 ✗ —— 只有**第一次配**才需要读它，
                     每次滚动都要重读一遍是浪费。解释搬到旁边那个 ?（点击可开 ✓ 触屏可用 ✓），
                     只留下**会变的那一段**：实际路径（每改一次名字它就变，必须实时可见 ✓） */}
+                {/* 项目上下文：放在目录里的 AGENTS.md 会被自动读进来 ——
+                    这是"这个项目该怎么做"的地方，不该混进上面那个 system prompt（换项目就不适用了） */}
+                <p className="mt-1.5 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                  在目录里放一个 <span className="mono">AGENTS.md</span>，写这个项目的规矩（跑什么命令、产物放哪、别碰哪些文件），
+                  助手每次开工都会自动读它（最多 8000 字）。
+                </p>
                 <p className="mt-1 text-[12px] mono" style={{ color: "var(--color-muted)" }}>
                   实际位置：
                   {(def.workspace_isolation ?? "session") === "shared"

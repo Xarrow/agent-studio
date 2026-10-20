@@ -538,10 +538,12 @@ async def _skill_save(
 
 
 async def _memory_save(content: str, tags: list[str] | None = None) -> str:
-    """**主动记一条**：内置存为「候选」（等你确认才生效）+ 配了外部就同时写外部。
+    """**主动记一条**：内置直接生效（store-and-use）+ 配了外部就同时写外部。
 
-    为什么内置存成候选而不是直接生效：自动沉淀的东西必须有人过一眼 ——
-    这是平台一贯的闸门（记忆只涨不消、越攒越脏是这类系统的通病）。
+    为什么改成直接生效（原来的候选制）：
+    "记了但没生效"等于没记 —— 助手说完"我记住了"，下一轮照样不知道，
+    用户还得去记忆页逐条点确认。Hermes 就是存完即用，这里对齐。
+    退出机制仍然在：记忆页能逐条归档/删掉，来源标 agent 便于回查。
     """
     from .db import SessionLocal
     from .memory import external
@@ -564,9 +566,9 @@ async def _memory_save(content: str, tags: list[str] | None = None) -> str:
                 scope="agent" if agent_id else "global",
                 kind="fact",
                 content=stored,
-                source="auto",
+                source="agent",
                 source_run_id=run_id,
-                status="candidate",
+                status="active",
                 importance=0.6,
                 created_at=now_ms(),
                 updated_at=now_ms(),
@@ -583,7 +585,7 @@ async def _memory_save(content: str, tags: list[str] | None = None) -> str:
         except external.ExternalMemoryError as exc:
             external_note = f"外部记忆写入失败：{exc}"
 
-    return f"已记下（内置存为候选，待人工确认后生效）；{external_note}"
+    return f"已记住（下一轮起就会带上这条；记多了可在记忆页归档）；{external_note}"
 
 
 # --------------------------------------------------------------------------- #
@@ -907,6 +909,186 @@ async def _session_search(query: str, limit: int = 6, mine_only: bool = False) -
 
 
 # --------------------------------------------------------------------------- #
+# 定时任务（助手自己排班）
+# --------------------------------------------------------------------------- #
+#: 为什么助手要能自己排班：Hermes 的日常用法有一半是「每天/每周自动跑一次」。
+#: 以前平台只能人在界面上挂任务 —— 用户在对话里说「每天早上帮我汇总新闻」，
+#: 助手只能说"我做不到"，或者答应用户明天再问它一遍。
+#: 归属仍是**会话**（结果回到对话里，能接着追问），复用既有 SessionJob / tick / 投递队列。
+JOB_CREATE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "prompt": {
+            "type": "string",
+            "description": "每次到点替你做的事（写清楚要什么、产出什么格式、多少条以内）",
+        },
+        "mode": {
+            "type": "string",
+            "enum": ["hourly", "daily", "weekly"],
+            "description": "频率：每小时 / 每天 / 每周",
+        },
+        "at": {"type": "string", "description": "每天或每周几点几分，HH:MM（例如 09:00）；hourly 时忽略"},
+        "weekdays": {
+            "type": "string",
+            "description": "每周几跑：1=周一 … 7=周日，可多选如 \"1,3,5\"（仅 weekly 用）",
+        },
+        "deliver": {
+            "type": "string",
+            "enum": ["session", "webhook"],
+            "description": "结果送到哪：session=回到这个对话（默认）；webhook=推到一个地址",
+        },
+        "webhook_url": {"type": "string", "description": "deliver=webhook 时的地址（http/https）"},
+    },
+    "required": ["prompt"],
+}
+
+JOB_LIST_SCHEMA: dict[str, Any] = {"type": "object", "properties": {}, "required": []}
+
+JOB_CANCEL_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {"id": {"type": "string", "description": "任务 id（job_list 里拿到的 sj_…）"}},
+    "required": ["id"],
+}
+
+_MODE_WORD = {"hourly": "每小时的整点", "daily": "每天", "weekly": "每周"}
+
+
+async def _job_create(
+    prompt: str,
+    mode: str = "daily",
+    at: str = "09:00",
+    weekdays: str = "1",
+    deliver: str = "session",
+    webhook_url: str = "",
+) -> str:
+    """在这个会话上排一个定时任务（到点自动跑一轮，结果回到这里）。"""
+    from .db import SessionLocal
+    from .jobs import describe_schedule, next_for, normalise_deliver
+    from .models import Session, SessionJob, now_ms
+    from .scheduler import SCHEDULE_MODES
+
+    session_id, _, _, _ = _proc_ctx()
+    if not session_id:
+        return "错误：当前不在会话里，排不了班（定时任务必须挂在某个会话上）。"
+
+    text = (prompt or "").strip()
+    if not text:
+        return "要写清楚每次到点替你做什么（一句话），否则跑起来也是空的。"
+
+    m = (mode or "daily").strip().lower()
+    if m not in SCHEDULE_MODES:
+        return "频率只能是 hourly（每小时）/ daily（每天）/ weekly（每周）。"
+
+    conf: dict[str, Any] = {"channel": (deliver or "session").strip().lower()}
+    if conf["channel"] == "webhook":
+        url = (webhook_url or "").strip()
+        if not url.startswith(("http://", "https://")):
+            return "推到 webhook 必须给 http/https 地址。"
+        conf["url"] = url
+        conf["format"] = "generic"
+
+    try:
+        deliver_conf = normalise_deliver(conf)
+    except ValueError as exc:
+        return f"投递配置不合法：{exc}"
+
+    async with SessionLocal() as db:
+        chat = await db.get(Session, session_id)
+        if chat is None:
+            return "会话不存在，排不了班。"
+        job = SessionJob(
+            session_id=session_id,
+            agent_id=chat.agent_id,
+            prompt=text,
+            mode=m,
+            at=(at or "09:00").strip(),
+            weekdays=(weekdays or "1").strip(),
+            enabled=1,
+            deliver=deliver_conf,
+            monitor_kind="",
+            monitor="",
+            monitor_last="",
+            created_at=now_ms(),
+            updated_at=now_ms(),
+        )
+        job.next_run_at = next_for(job)
+        db.add(job)
+        await db.commit()
+        await db.refresh(job)
+
+    when = describe_schedule(job.mode, job.at, job.weekdays)
+    where = "这个对话" if deliver_conf.get("channel") == "session" else f"webhook（{deliver_conf.get('url', '')}）"
+    return (
+        f"已排好：{job.id}\n"
+        f"时间：{when}（下一次 {_fmt_ts(job.next_run_at)}）\n"
+        f"每次做的事：{text[:80]}\n"
+        f"结果送到：{where}\n"
+        "提醒：定时任务是**无人值守**的 —— 需要你点头才能做的操作会被直接拒绝，"
+        "所以任务描述里别让它等你确认，能做多少做多少。"
+    )
+
+
+def _fmt_ts(ms: int | None) -> str:
+    if not ms:
+        return "（还没排上）"
+    try:
+        return time.strftime("%m-%d %H:%M", time.localtime(ms / 1000))
+    except (ValueError, OSError):  # pragma: no cover
+        return str(ms)
+
+
+async def _job_list() -> str:
+    """看这个会话排了哪些定时任务。"""
+    from sqlalchemy import select
+
+    from .db import SessionLocal
+    from .jobs import describe_schedule
+    from .models import SessionJob
+
+    session_id, _, _, _ = _proc_ctx()
+    if not session_id:
+        return "错误：当前不在会话里。"
+    async with SessionLocal() as db:
+        rows = list(
+            (
+                await db.execute(
+                    select(SessionJob)
+                    .where(SessionJob.session_id == session_id)
+                    .order_by(SessionJob.created_at.desc())
+                )
+            ).scalars()
+        )
+    if not rows:
+        return "这个会话还没排过定时任务。"
+    lines = [f"这个会话有 {len(rows)} 个定时任务："]
+    for j in rows:
+        state = "开着" if j.enabled else "已停"
+        lines.append(
+            f"- {j.id}｜{describe_schedule(j.mode, j.at, j.weekdays)}｜{state}｜"
+            f"下次 {_fmt_ts(j.next_run_at)}｜{j.prompt[:50]}"
+        )
+    return "\n".join(lines)
+
+
+async def _job_cancel(id: str = "") -> str:
+    """删掉一个定时任务（id 从 job_list 里拿）。"""
+    from .db import SessionLocal
+    from .models import SessionJob
+
+    session_id, _, _, _ = _proc_ctx()
+    job_id = (id or "").strip()
+    if not job_id:
+        return "要给任务 id（先 job_list 看）。"
+    async with SessionLocal() as db:
+        job = await db.get(SessionJob, job_id)
+        if job is None or job.session_id != session_id:
+            return f"这个会话里没有任务 {job_id}。"
+        await db.delete(job)
+        await db.commit()
+    return f"已删掉定时任务 {job_id}。"
+
+
+# --------------------------------------------------------------------------- #
 # 工具按需加载（lazy tools）
 # --------------------------------------------------------------------------- #
 #: 为什么要有这块：助手动辄挂 27~30 个工具，每轮请求都把**全部工具的完整 schema**
@@ -1095,6 +1277,27 @@ NATIVE_TOOLS: dict[str, dict[str, Any]] = {
         "schema": FETCH_SCHEMA,
         "flags": {"read_only": True, "concurrency_safe": True, "dangerous": False, "native": True},
     },
+    "job_create": {
+        "fn": _job_create,
+        "description": (
+            "在这个会话上排一个定时任务：到点自动跑一轮（「每天早上 9 点汇总三条新闻」）。"
+            "结果默认回到这个对话。注意定时执行是无人值守的，需要人工确认的操作会被拒绝。"
+        ),
+        "schema": JOB_CREATE_SCHEMA,
+        "flags": {"read_only": False, "concurrency_safe": True, "dangerous": False, "native": True},
+    },
+    "job_list": {
+        "fn": _job_list,
+        "description": "看这个会话排了哪些定时任务（时间、下次跑点、开着还是停了）。",
+        "schema": JOB_LIST_SCHEMA,
+        "flags": {"read_only": True, "concurrency_safe": True, "dangerous": False, "native": True},
+    },
+    "job_cancel": {
+        "fn": _job_cancel,
+        "description": "删掉一个定时任务（id 从 job_list 拿）。",
+        "schema": JOB_CANCEL_SCHEMA,
+        "flags": {"read_only": False, "concurrency_safe": True, "dangerous": True, "native": True},
+    },
     "tool_search": {
         "fn": _tool_search,
         "description": (
@@ -1137,7 +1340,7 @@ NATIVE_TOOLS: dict[str, dict[str, Any]] = {
     "memory_save": {
         "fn": _memory_save,
         "description": (
-            "把值得长期记住的一句话存进记忆（内置存为候选，等你确认才生效；"
+            "把值得长期记住的一句话存进记忆，**存完立刻生效**（下一轮就能用上；"
             "配了外部记忆服务会同时写过去）。适合用户明确说「记住…」时。"
         ),
         "schema": MEMORY_SAVE_SCHEMA,
