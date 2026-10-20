@@ -101,3 +101,35 @@ def test_upload_image_served_inline():
         assert "attachment" not in got.headers.get("content-disposition", "")
     finally:
         c.delete(f"/api/uploads/file/{fid}")
+
+
+def test_media_types_preview_inline(tmp_path, monkeypatch):
+    """音视频要在对话里能直接播 —— 后缀白名单得放行，且 Content-Type 对得上。"""
+    from agent_studio.config import settings
+
+    sandbox = tmp_path / "work"
+    sandbox.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(settings, "work_dir", sandbox)
+    (sandbox / "tone.mp3").write_bytes(b"ID3fake")
+    (sandbox / "clip.mp4").write_bytes(b"\x00\x00\x00\x18ftypmp42")
+    (sandbox / "doc.pdf").write_bytes(b"%PDF-1.4 fake")
+    (sandbox / "note.md").write_text("# 标题", encoding="utf-8")
+    (sandbox / "page.html").write_text("<h1>hi</h1>", encoding="utf-8")
+    (sandbox / "evil.exe").write_bytes(b"MZ")
+
+    from agent_studio.main import app
+
+    c = TestClient(app)
+    expect = {
+        "tone.mp3": "audio/",
+        "clip.mp4": "video/",
+        "doc.pdf": "application/pdf",
+        "note.md": "text/markdown",
+        "page.html": "text/html",
+    }
+    for name, ctype in expect.items():
+        r = c.get(f"/api/work/file/{name}")
+        assert r.status_code == 200, name
+        assert r.headers["content-type"].startswith(ctype), (name, r.headers["content-type"])
+    # 可执行文件永远不放行
+    assert c.get("/api/work/file/evil.exe").status_code == 404

@@ -8,8 +8,13 @@
  *
  * 所以：正文/工具里的路径 → 一个小卡片（FileChip）→ 点开是这个对话框：
  *   · 图片：直接显示
- *   · 文本/代码：显示前几 KB，可复制全文
- *   · 其它：说明"不能在页面里预览"，给下载
+ *   · PDF：内嵌阅读（浏览器自带阅读器）
+ *   · 音频/视频：原生播放器
+ *   · Markdown：渲染成排版（可切源码）
+ *   · CSV/TSV：出表格（可切原文）
+ *   · 代码/纯文本/JSON/HTML 源码：等宽着色，可复制全文
+ *   · Word/Excel/压缩包这类：老实说"页面里看不了"，给下载
+ * 分类规则统一在 lib/files.ts 里（正文里能不能点、点开给什么，必须是同一套判定）。
  * 三件事永远在：**下载 / 复制路径 / 新窗口打开**。路径本身也照常显示（信息不藏）。
  *
  * 会话上下文（哪个会话、工作目录在哪）从 Provider 拿；没挂 Provider 的地方
@@ -20,8 +25,17 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { DLG_BACKDROP, DLG_CARD } from "@/components/ui/kit";
 import { api, fmt } from "@/lib/api";
 import { CodeBlock } from "@/components/CodeBlock";
+import Markdown from "@/components/Markdown";
 import { FileTypeIcon } from "@/components/ui/icons";
-import { baseName, extOf, fileKind, fileTypeKey, fileUrlFor, looksLikeFilePath } from "@/lib/files";
+import {
+  baseName,
+  extOf,
+  fileKind,
+  fileTypeKey,
+  fileUrlFor,
+  isTextishKind,
+  looksLikeFilePath,
+} from "@/lib/files";
 import { copyText } from "@/lib/clipboard";
 
 export type FileRef = { path: string; name?: string; url?: string | null; size?: number; mtime?: number };
@@ -138,6 +152,114 @@ export function FileRowButton({
 }
 
 const PREVIEW_BYTES = 6000;
+/** Markdown/表格要渲染完整结构，多给一些（仍远小于把整个文件读进内存） */
+const PREVIEW_BYTES_RICH = 200_000;
+/** 表格最多铺多少行（再多就该下载用表格软件看了） */
+const TABLE_MAX_ROWS = 300;
+
+/** 弹层标题旁边那句"这是什么" —— 用中文，别让人去认 .tsv */
+const KIND_LABEL: Record<string, string> = {
+  image: "图片",
+  pdf: "PDF",
+  audio: "音频",
+  video: "视频",
+  markdown: "Markdown",
+  table: "表格",
+  html: "网页",
+  text: "文本",
+  other: "文件",
+};
+
+/**
+ * 极简 CSV/TSV 解析：支持引号包裹、引号内逗号与换行、"" 转义。
+ * 不引第三方库的理由：只为预览，300 行 × 几十列足够；引库要多 40KB 还得为它的 bug 兜底。
+ */
+function parseDelimited(text: string, sep: string, maxRows = TABLE_MAX_ROWS): string[][] {
+  const rows: string[][] = [];
+  let field = "";
+  let row: string[] = [];
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else inQuotes = false;
+      } else field += ch;
+      continue;
+    }
+    if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === sep) {
+      row.push(field);
+      field = "";
+    } else if (ch === "\n") {
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = "";
+      if (rows.length > maxRows) return rows;
+    } else if (ch !== "\r") {
+      field += ch;
+    }
+  }
+  if (field !== "" || row.length > 0) {
+    row.push(field);
+    rows.push(row);
+  }
+  return rows;
+}
+
+/** CSV/TSV 表格预览：首行当表头（大多数导出的都这样），行数封顶并明说 */
+function TablePreview({ text, path }: { text: string; path: string }) {
+  const sep = extOf(path) === "tsv" ? "\t" : ",";
+  const rows = useMemo(() => parseDelimited(text, sep), [text, sep]);
+  const head = rows[0] ?? [];
+  const body = rows.slice(1);
+  if (rows.length === 0) {
+    return (
+      <p className="rounded-[10px] border p-3 text-[12.5px]" style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}>
+        这个表是空的。
+      </p>
+    );
+  }
+  return (
+    <div className="max-h-[52dvh] overflow-auto rounded-[10px] border" style={{ borderColor: "var(--color-border)" }}>
+      <table className="w-full border-collapse text-[12.5px]">
+        <thead className="sticky top-0" style={{ background: "var(--color-surface-2)" }}>
+          <tr>
+            {head.map((h, i) => (
+              // eslint-disable-next-line react/no-array-index-key
+              <th key={i} className="whitespace-nowrap border-b px-2 py-1.5 text-left font-medium" style={{ borderColor: "var(--color-border)" }}>
+                {h || "—"}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {body.map((r, i) => (
+            // eslint-disable-next-line react/no-array-index-key
+            <tr key={i} className="hover:bg-[var(--color-surface-2)]">
+              {head.map((_, j) => (
+                // eslint-disable-next-line react/no-array-index-key
+                <td key={j} className="max-w-[320px] truncate border-b px-2 py-1" style={{ borderColor: "var(--color-border)" }} title={r[j] ?? ""}>
+                  {r[j] ?? ""}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {body.length >= TABLE_MAX_ROWS ? (
+        <p className="px-2 py-1.5 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+          只显示前 {TABLE_MAX_ROWS} 行，完整内容请下载。
+        </p>
+      ) : null}
+    </div>
+  );
+}
 
 export function FileDialog({
   file,
@@ -156,6 +278,8 @@ export function FileDialog({
   const [bytes, setBytes] = useState<number | null>(file.size ?? null);
   const [state, setState] = useState<"idle" | "loading" | "done" | "fail">(url ? "loading" : "idle");
   const [copied, setCopied] = useState<"path" | "text" | null>(null);
+  /** Markdown / 表格的"看排版"与"看原文"切换（默认看排版） */
+  const [rawView, setRawView] = useState(false);
   /* 删除是不可撤销的：第一下只把按钮变成「确认删除」，4 秒内再点才算（不用原生 confirm —— 它阻塞 JS） */
   const [confirmDel, setConfirmDel] = useState(false);
   /** 确认态的倒计时（4 → 1），到点自己退回「删除」 */
@@ -225,7 +349,7 @@ export function FileDialog({
 
   useEffect(() => {
     let alive = true;
-    if (!url || kind !== "text") return;
+    if (!url || !isTextishKind(kind)) return;
     setState("loading");
     fetch(url)
       .then((r) => {
@@ -237,7 +361,8 @@ export function FileDialog({
       })
       .then((t) => {
         if (!alive) return;
-        setText(t.slice(0, PREVIEW_BYTES));
+        /* Markdown/表格要完整结构（否则表格被切在半行上），代码保持小窗口 */
+        setText(t.slice(0, isTextishKind(kind) && kind !== "text" ? PREVIEW_BYTES_RICH : PREVIEW_BYTES));
         setState("done");
       })
       .catch(() => alive && setState("fail"));
@@ -278,7 +403,7 @@ export function FileDialog({
                     {extOf(file.path).toUpperCase()}
                   </span>
                 ) : null}
-                <span>{kind === "image" ? "图片" : kind === "text" ? "文本" : "文件"}</span>
+                <span>{KIND_LABEL[kind]}</span>
                 {file.size != null || bytes != null ? <span>· {fmt.bytes(bytes ?? file.size ?? 0)}</span> : null}
                 {file.mtime ? <span>· {fmt.stamp(file.mtime * 1000)}</span> : null}
               </p>
@@ -308,7 +433,42 @@ export function FileDialog({
               className="max-h-[52dvh] w-full rounded-[10px] border object-contain"
               style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
             />
-          ) : kind === "text" ? (
+          ) : kind === "pdf" ? (
+            /* PDF：直接用浏览器自带的阅读器（不引第三方 viewer，体积与安全都省） */
+            <iframe
+              src={url}
+              title={file.name ?? baseName(file.path)}
+              className="h-[62dvh] w-full rounded-[10px] border"
+              style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
+            />
+          ) : kind === "audio" ? (
+            <div
+              className="rounded-[10px] border p-4"
+              style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
+            >
+              <audio src={url} controls className="w-full" />
+              <p className="mt-2 text-[12px]" style={{ color: "var(--color-muted)" }}>
+                浏览器不支持这个音频编码时，用下面的「下载」本机播放。
+              </p>
+            </div>
+          ) : kind === "video" ? (
+            <video
+              src={url}
+              controls
+              playsInline
+              className="max-h-[62dvh] w-full rounded-[10px] border"
+              style={{ borderColor: "var(--color-border)", background: "#000" }}
+            />
+          ) : kind === "html" ? (
+            /* HTML 用沙箱 iframe：不给脚本、不给同源 —— 别人的页面不能在我们的域里跑代码 */
+            <iframe
+              src={url}
+              sandbox=""
+              title={file.name ?? baseName(file.path)}
+              className="h-[52dvh] w-full rounded-[10px] border"
+              style={{ borderColor: "var(--color-border)", background: "#fff" }}
+            />
+          ) : isTextishKind(kind) ? (
             state === "loading" ? (
               /* 骨架：三条灰条，比一句"读取中…"更像在加载（也避免文字跳一下） */
               <div className="rounded-[10px] border p-3" style={{ borderColor: "var(--color-border)" }}>
@@ -326,16 +486,38 @@ export function FileDialog({
               </p>
             ) : (
               <div>
-                {/* 文本/代码：直接上 CodeBlock —— JSON/XML 自动格式化 + 着色，
-                    还能一键格式化/压缩/复制（与对话正文里那块是同一个组件） */}
-                <div className="max-h-[46dvh] overflow-auto">
-                  <CodeBlock code={text || ""} lang={extOf(file.path)} />
-                </div>
+                {/* Markdown：默认渲染成排版（看文档就该像文档），可一键切源码 */}
+                {kind === "markdown" && !rawView ? (
+                  <div
+                    className="max-h-[52dvh] overflow-auto rounded-[10px] border p-4"
+                    style={{ borderColor: "var(--color-border)" }}
+                  >
+                    <Markdown text={text || ""} />
+                  </div>
+                ) : kind === "table" && !rawView ? (
+                  <TablePreview text={text || ""} path={file.path} />
+                ) : (
+                  /* 代码/纯文本：CodeBlock —— JSON/XML 自动格式化 + 着色 */
+                  <div className="max-h-[46dvh] overflow-auto">
+                    <CodeBlock code={text || ""} lang={extOf(file.path)} />
+                  </div>
+                )}
                 <div
                   className="flex flex-wrap items-center gap-2 px-1 pt-1 text-[12px]"
                   style={{ color: "var(--color-muted)" }}
                 >
-                  只显示前 {Math.round(PREVIEW_BYTES / 1000)}KB{truncated ? "（内容更长，下载看全文）" : ""}
+                  {(kind === "markdown" || kind === "table") && (
+                    <button
+                      type="button"
+                      className="btn px-2 py-0.5 text-[12px] max-md:min-h-[32px]"
+                      onClick={() => setRawView((v) => !v)}
+                    >
+                      {rawView ? (kind === "table" ? "看表格" : "看排版") : "看源码"}
+                    </button>
+                  )}
+                  只显示前{" "}
+                  {kind === "text" ? Math.round(PREVIEW_BYTES / 1000) : Math.round(PREVIEW_BYTES_RICH / 1000)}KB
+                  {truncated ? "（内容更长，下载看全文）" : ""}
                   <button
                     type="button"
                     className="btn ml-auto px-2.5 max-md:min-h-[36px]"
@@ -350,6 +532,7 @@ export function FileDialog({
           ) : (
             <p className="rounded-[10px] border p-3 text-[12.5px]" style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}>
               这类文件（{extOf(file.path) || "无扩展名"}）不能在页面里预览 —— 下载后用本机程序打开。
+              能直接看的有：图片、PDF、音频、视频、Markdown、CSV/TSV、代码与纯文本。
             </p>
           )}
         </div>

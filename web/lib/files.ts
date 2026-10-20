@@ -15,7 +15,28 @@ const TEXT_EXT = new Set([
   "rs", "java", "c", "h", "cpp", "hpp", "rb", "php", "lua", "swift", "kt", "mermaid", "diff", "patch",
 ]);
 
-export type FileKind = "image" | "text" | "other";
+/**
+ * 对话里点开文件时，按"能不能在这台设备上直接看"分类 —— 分类决定弹层里放什么：
+ * 图片/PDF/音频/视频用原生控件，Markdown 渲染，CSV 出表格，代码走 CodeBlock，
+ * 其余（Word/Excel/压缩包）老实说"预览不了"，只给下载。
+ */
+export type FileKind =
+  | "image"
+  | "pdf"
+  | "audio"
+  | "video"
+  | "markdown"
+  | "table"
+  | "html"
+  | "text"
+  | "other";
+
+const PDF_EXT = new Set(["pdf"]);
+const AUDIO_EXT = new Set(["mp3", "wav", "ogg", "m4a", "flac", "aac", "opus"]);
+const VIDEO_EXT = new Set(["mp4", "webm", "mov", "m4v", "ogv"]);
+const MD_EXT = new Set(["md", "markdown", "mdx"]);
+const TABLE_EXT = new Set(["csv", "tsv"]);
+const HTML_EXT = new Set(["html", "htm"]);
 
 export function extOf(name: string): string {
   const base = name.split("/").pop() || name;
@@ -26,8 +47,24 @@ export function extOf(name: string): string {
 export function fileKind(name: string): FileKind {
   const e = extOf(name);
   if (IMAGE_EXT.has(e)) return "image";
+  if (PDF_EXT.has(e)) return "pdf";
+  if (AUDIO_EXT.has(e)) return "audio";
+  if (VIDEO_EXT.has(e)) return "video";
+  if (MD_EXT.has(e)) return "markdown";
+  if (TABLE_EXT.has(e)) return "table";
+  if (HTML_EXT.has(e)) return "html";
   if (TEXT_EXT.has(e)) return "text";
   return "other";
+}
+
+/** 需要先取回文本才能预览的那几类（Markdown 渲染、表格解析、代码高亮） */
+export function isTextishKind(kind: FileKind): boolean {
+  return kind === "text" || kind === "markdown" || kind === "table";
+}
+
+/** 这个文件在这台设备上能不能直接看（决定弹层里给预览还是给下载） */
+export function canPreview(kind: FileKind): boolean {
+  return kind !== "other";
 }
 
 export function baseName(p: string): string {

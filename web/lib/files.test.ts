@@ -8,7 +8,17 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { baseName, extOf, fileKind, fileTypeKey, fileUrlFor, looksLikeFilePath, middleEllipsis } from "./files.ts";
+import {
+  baseName,
+  canPreview,
+  extOf,
+  fileKind,
+  fileTypeKey,
+  fileUrlFor,
+  isTextishKind,
+  looksLikeFilePath,
+  middleEllipsis,
+} from "./files.ts";
 
 test("像文件的才认：绝对路径 / 带目录的相对路径 / 带扩展名的裸文件名", () => {
   for (const s of [
@@ -44,6 +54,16 @@ test("扩展名与类型判定", () => {
   assert.equal(extOf("noext"), "");
   assert.equal(fileKind("shot.PNG"), "image");
   assert.equal(fileKind("data.json"), "text");
+  // 常见格式各有各的预览方式（PDF 内嵌、音视频原生控件、md 渲染、表格出表）
+  assert.equal(fileKind("报告.pdf"), "pdf");
+  assert.equal(fileKind("录音.mp3"), "audio");
+  assert.equal(fileKind("demo.mp4"), "video");
+  assert.equal(fileKind("README.md"), "markdown");
+  assert.equal(fileKind("表.csv"), "table");
+  assert.equal(fileKind("page.html"), "html");
+  assert.equal(isTextishKind("markdown"), true);
+  assert.equal(canPreview("pdf"), true);
+  assert.equal(canPreview("other"), false);
   assert.equal(fileKind("pkg.zip"), "other");
   assert.equal(baseName("/a/b/result.md"), "result.md");
   assert.equal(baseName("/a/b/"), "b");

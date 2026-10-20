@@ -43,7 +43,10 @@ _ALLOWED_SUFFIXES = {
     ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp",
     ".pdf", ".txt", ".md", ".markdown", ".json", ".csv", ".tsv",
     ".html", ".htm", ".xml", ".yaml", ".yml", ".log", ".py", ".js",
-    ".ts", ".sql", ".ipynb",
+    ".ts", ".sql", ".ipynb", ".mdx",
+    # 音视频：对话里能直接播（浏览器原生控件），只放行 Web 能解的容器/编码
+    ".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac", ".opus",
+    ".mp4", ".webm", ".mov", ".m4v", ".ogv",
 }
 
 #: 路径合法性粗校验（resolve 已挡逃逸，这里挡空段/怪字符）
