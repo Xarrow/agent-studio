@@ -43,6 +43,13 @@ async def lifespan(_app: FastAPI):
     boot_ms = int(time.time() * 1000)
     await init_db()
     await reap_orphan_runs(boot_ms)
+    # 后台进程对账：标着 running 但进程已不在的（服务重启过）改成 unknown，
+    # 否则界面永远挂一个"正在运行"，点停止还告诉你"它已经结束了"。
+    from . import procs as _procs
+
+    _fixed = await _procs.reconcile()
+    if _fixed:
+        logger.info("后台进程：%s 个已不在的进程标记为 unknown", _fixed)
     # 给早就存在的助手/流程补一条起点版本（幂等）—— 否则老对象点进去是"还没有历史"
     from .db import SessionLocal
     from .revisions import backfill_initial
@@ -281,6 +288,10 @@ async def access_log(request: "Request", call_next):
 
 
 app.include_router(api_router)
+# 后台进程（会话级：列表 / 日志 / 停止）—— 起进程只能由助手在会话里做
+from .api import procs as procs_api  # noqa: E402
+
+app.include_router(procs_api.router)
 # A2A（Agent2Agent）协议入口 —— 根路径 /a2a + /.well-known/agent-card.json
 app.include_router(a2a.router)
 

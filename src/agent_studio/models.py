@@ -497,6 +497,34 @@ class MemoryPolicy(Base):
 # --------------------------------------------------------------------------- #
 # 编排（Playground）—— 多个助手协作完成一件事
 # --------------------------------------------------------------------------- #
+class BgProc(Base):
+    """后台进程（会话级）。
+
+    为什么不挂 run：run 是"这一轮"，后台进程的意义就是**活过这一轮**。
+    用户关页面、run 结束、API 重启，进程都还在跑 —— 所以归属是 session。
+    会话之间互相看不见（与文件隔离同一个口径）。
+    """
+
+    __tablename__ = "bg_proc"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("bg_"))
+    session_id: Mapped[str] = mapped_column(String(32), index=True)
+    #: 哪一轮起的（只用于"这是谁起的"，不用于归属/权限）
+    run_id: Mapped[str | None] = mapped_column(String(32), default=None, index=True)
+    agent_id: Mapped[str | None] = mapped_column(String(32), default=None)
+    #: 人话名字（模型可以起，比如"构建前端"）
+    label: Mapped[str] = mapped_column(String(120), default="")
+    command: Mapped[str] = mapped_column(Text, default="")
+    cwd: Mapped[str] = mapped_column(String(500), default="")
+    pid: Mapped[int] = mapped_column(Integer, default=0)
+    #: running | exited（退出码 0）| failed（非 0）| killed | unknown（重启后对不上）
+    status: Mapped[str] = mapped_column(String(16), default="running", index=True)
+    exit_code: Mapped[int | None] = mapped_column(Integer, default=None)
+    log_path: Mapped[str] = mapped_column(String(500), default="")
+    started_at: Mapped[int] = mapped_column(Integer, default=now_ms, index=True)
+    ended_at: Mapped[int | None] = mapped_column(BigInteger, default=None)
+
+
 class Orchestration(Base):
     """一次多助手协作。
 

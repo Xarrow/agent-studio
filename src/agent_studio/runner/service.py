@@ -751,6 +751,17 @@ class RunService:
                 # 带上会话号：默认按会话隔离（sessions/<会话号>/），没有会话才算
                 # 「这一跑一份」的独立目录 —— 会话之间不共用文件
                 work_dir = run_work_dir(definition, run)
+                # 工具靠 contextvar 拿"我在哪个目录干活"（python/proc_* 都读它）。
+                # 这里必须补一次：work_dir 是上面才算出来的，而 set_run_ctx 是**整体覆盖**。
+                set_run_ctx(
+                    run_id=run_id,
+                    agent_id=run.agent_id,
+                    node_id=run.node_id,
+                    orchestration_id=run.orchestration_id,
+                    depth=_depth,
+                    workspace=str(work_dir),
+                    session_id=str(run.session_id or ""),
+                )
                 run_input = _with_work_dir_hint(run_input, work_dir)
                 # 组装上下文：短期记忆（会话历史）+ 长期记忆（召回注入）
                 # 注意：这里只产出**平台中立**的 TurnContext，不含任何框架对象
@@ -1093,12 +1104,21 @@ class RunService:
             # 一律"缺少 run 上下文"（实测：暂停点允许后 navigate 直接失败）。
             from .ctx import set_run_ctx
 
+            _resume_work_dir = resolve_work_dir(
+                definition,
+                session_id=_resume_session_id,
+                run_id=run_id,
+                orchestration_id=_resume_orchestration_id,
+                parent_run_id=_resume_parent_run_id,
+            )
             set_run_ctx(
                 run_id=run_id,
                 agent_id=run.agent_id,
                 node_id=run.node_id,
                 orchestration_id=run.orchestration_id,
                 depth=0,
+                workspace=str(_resume_work_dir),
+                session_id=str(_resume_session_id or ""),
             )
             compiled = await runtime.compile(
                 definition, api_key=api_key, tools=tools,

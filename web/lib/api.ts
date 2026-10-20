@@ -1,6 +1,7 @@
 /** 后端 API 客户端（类型化 fetch 封装）。 */
 
 import type {
+  BgProcInfo,
   EvalCompareRead,
   EvalRunDetail,
   EvalRunRead,
@@ -847,6 +848,21 @@ export const api = {
     request<Session[]>(`/api/sessions${agentId ? `?agent_id=${agentId}` : ""}`),
   session: (id: string) => request<SessionDetail>(`/api/sessions/${id}`),
   /** 这个会话的工作目录里有什么（会话隔离后，产物按会话分目录） */
+  /** 后台进程（会话级）：列表 / 日志 / 停止 —— 起进程只能由助手在会话里做 */
+  procs: (sessionId: string) =>
+    request<{
+      items: BgProcInfo[];
+      running: number;
+    }>(`/api/procs?session_id=${encodeURIComponent(sessionId)}`),
+  procLog: (id: string, sessionId: string, lines = 200) =>
+    request<{ id: string; text: string }>(
+      `/api/procs/${id}/log?session_id=${encodeURIComponent(sessionId)}&lines=${lines}`,
+    ),
+  procKill: (id: string, sessionId: string) =>
+    post<{ ok: boolean; status: string }>(
+      `/api/procs/${id}/kill?session_id=${encodeURIComponent(sessionId)}`,
+      {},
+    ),
   sessionFiles: (id: string, limit = 200) =>
     request<{
       session_id: string;

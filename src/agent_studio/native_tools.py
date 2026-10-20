@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import logging
+import os
 import re
 import socket
 import tempfile
@@ -537,6 +538,185 @@ async def _browser(
     return f"✗ 未知动作: {action}"
 
 
+# --------------------------------------------------------------------------- #
+# 后台进程（proc_*）—— 跑得住比一轮对话更久的活
+# --------------------------------------------------------------------------- #
+# 为什么需要：bash / python 都是同步带超时的，一轮 run 有 timeout_s，
+# 一个 build、一次训练、一批下载超过它就被掐死且无法补救。
+# 归属是**会话**（不是 run）：关页面、run 结束、API 重启，进程照样在跑。
+PROC_START_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "command": {"type": "string", "description": "要执行的 shell 命令（可含管道、&&）"},
+        "label": {
+            "type": "string",
+            "description": "给这次任务起个人话名字（界面上显示，比如「构建前端」）；不填就用命令",
+        },
+        "cwd": {
+            "type": "string",
+            "description": "工作目录（默认就是当前会话目录；相对路径按它解析）",
+        },
+    },
+    "required": ["command"],
+}
+
+PROC_POLL_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "id": {"type": "string", "description": "proc_start 返回的 id；不填 = 看这个会话最新那个"},
+    },
+    "required": [],
+}
+
+PROC_LOG_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "id": {"type": "string", "description": "后台进程 id"},
+        "lines": {"type": "integer", "description": "看最后多少行（默认 200，上限 2000）"},
+    },
+    "required": ["id"],
+}
+
+PROC_KILL_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {"id": {"type": "string", "description": "要停掉的后台进程 id"}},
+    "required": ["id"],
+}
+
+PROC_LIST_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {},
+    "required": [],
+}
+
+
+def _proc_ctx() -> tuple[str, str, str, str]:
+    """从 run 上下文取 (session_id, run_id, agent_id, workspace)。
+
+    session_id 必须有 —— 后台进程的归属是会话；没有它我们宁可报错，
+    也不猜"最近那个会话"（猜错就是 A 的进程跑到 B 的页面里）。
+    """
+    from .runner.ctx import current_run_ctx
+
+    ctx = current_run_ctx()
+    return (
+        str(ctx.get("session_id") or ""),
+        str(ctx.get("run_id") or ""),
+        str(ctx.get("agent_id") or ""),
+        str(ctx.get("workspace") or ""),
+    )
+
+
+async def _proc_start(command: str, label: str = "", cwd: str = "") -> str:
+    """起一个后台进程，立刻返回（不等它跑完）。"""
+    from . import procs
+
+    session_id, run_id, agent_id, workspace = _proc_ctx()
+    if not session_id:
+        return "错误：当前不在会话里，后台进程起不了（它必须挂在某个会话上）。"
+
+    work = workspace or ""
+    if cwd:
+        base = Path(work) if work else Path.cwd()
+        cand = (base / cwd).resolve() if not os.path.isabs(cwd) else Path(cwd).resolve()
+        work = str(cand)
+
+    try:
+        info = await procs.start(
+            session_id=session_id,
+            command=command,
+            cwd=work or None,
+            label=label,
+            run_id=run_id or None,
+            agent_id=agent_id or None,
+        )
+    except Exception as exc:
+        return f"起后台进程失败：{exc}"
+    return (
+        f"已启动：{info['id']}（pid {info['pid']}，{info['label']}）\n"
+        f"它会在后台继续跑，你现在可以接着干别的；用 proc_poll 看进度（别用同步命令等它）。"
+    )
+
+
+async def _proc_poll(id: str = "") -> str:
+    """看后台进程的状态 + 尾部输出。"""
+    from . import procs
+
+    session_id, _, _, _ = _proc_ctx()
+    if not session_id:
+        return "错误：当前不在会话里。"
+    if not id:
+        items = await procs.list_for_session(session_id, limit=1)
+        if not items:
+            return "这个会话还没有起过后台进程。"
+        id = items[0]["id"]
+    row = await procs.poll(id, session_id=session_id)
+    if row is None:
+        return f"找不到后台进程 {id}（可能不是这个会话起的）。"
+    status_cn = {
+        "running": "正在跑",
+        "exited": "已完成",
+        "failed": "失败",
+        "killed": "已停止",
+        "unknown": "状态不明（服务重启过）",
+    }.get(row["status"], row["status"])
+    head = f"{row['id']}｜{row['label']}｜{status_cn}"
+    if row["status"] != "running":
+        head += f"（退出码 {row['exit_code']}）"
+    head += f"｜已跑 {row['elapsed_s']}s"
+    tail = (row.get("tail") or "").strip()
+    body = tail[-1600:] if tail else "（还没有输出）"
+    return f"{head}\n--- 输出尾部 ---\n{body}"
+
+
+async def _proc_log(id: str, lines: int = 200) -> str:
+    """读后台进程的日志（默认最后 200 行）。"""
+    from . import procs
+
+    session_id, _, _, _ = _proc_ctx()
+    if not session_id:
+        return "错误：当前不在会话里。"
+    n = max(1, min(int(lines or 200), 2000))
+    text = (await procs.log_text(id, session_id=session_id, lines=n)).strip()
+    if not text:
+        return f"{id} 还没有输出（或者不是这个会话起的）。"
+    return text[-(n * 220) :]
+
+
+async def _proc_kill(id: str) -> str:
+    """停掉一个后台进程（连同它的子进程）。"""
+    from . import procs
+
+    session_id, _, _, _ = _proc_ctx()
+    if not session_id:
+        return "错误：当前不在会话里。"
+    res = await procs.kill(id, session_id=session_id)
+    if not res.get("ok"):
+        return res.get("error") or "没停掉"
+    return f"{id} 已停止（{res.get('status')}）。"
+
+
+async def _proc_list() -> str:
+    """列出这个会话起过的后台进程。"""
+    from . import procs
+
+    session_id, _, _, _ = _proc_ctx()
+    if not session_id:
+        return "错误：当前不在会话里。"
+    items = await procs.list_for_session(session_id, limit=20)
+    if not items:
+        return "这个会话没有后台进程。"
+    lines = []
+    for r in items:
+        mark = {"running": "▶", "exited": "✓", "failed": "✕", "killed": "■"}.get(r["status"], "?")
+        lines.append(
+            f"{mark} {r['id']}｜{r['label']}｜{r['status']}"
+            f"{'' if r['status'] == 'running' else f'（{r['exit_code']}）'}"
+            f"｜{r['elapsed_s']}s"
+        )
+    return "\n".join(lines)
+
+
 NATIVE_TOOLS: dict[str, dict[str, Any]] = {
     "fetch": {
         "fn": _fetch,
@@ -567,6 +747,39 @@ NATIVE_TOOLS: dict[str, dict[str, Any]] = {
         ),
         "schema": MEMORY_SAVE_SCHEMA,
         "flags": {"read_only": False, "concurrency_safe": True, "dangerous": False, "native": True},
+    },
+    "proc_start": {
+        "fn": _proc_start,
+        "description": (
+            "起一个后台进程（跑得住比一轮对话更久的活：构建、训练、批量下载、长时间脚本）。"
+            "立刻返回，不阻塞这一轮；跑完状态留在会话里，之后随时 proc_poll 看。"
+        ),
+        "schema": PROC_START_SCHEMA,
+        "flags": {"read_only": False, "concurrency_safe": False, "dangerous": True, "native": True},
+    },
+    "proc_poll": {
+        "fn": _proc_poll,
+        "description": "看后台进程现在的状态和输出尾部（正在跑 / 完成 / 失败 / 退出码 / 已跑多久）。",
+        "schema": PROC_POLL_SCHEMA,
+        "flags": {"read_only": True, "concurrency_safe": True, "dangerous": False, "native": True},
+    },
+    "proc_log": {
+        "fn": _proc_log,
+        "description": "读后台进程的完整日志（默认最后 200 行），要看更早的输出时用。",
+        "schema": PROC_LOG_SCHEMA,
+        "flags": {"read_only": True, "concurrency_safe": True, "dangerous": False, "native": True},
+    },
+    "proc_kill": {
+        "fn": _proc_kill,
+        "description": "停掉一个后台进程（整棵进程树一起停）。",
+        "schema": PROC_KILL_SCHEMA,
+        "flags": {"read_only": False, "concurrency_safe": False, "dangerous": True, "native": True},
+    },
+    "proc_list": {
+        "fn": _proc_list,
+        "description": "列出这个会话起过的后台进程（谁在跑、谁完事了、退出码多少）。",
+        "schema": PROC_LIST_SCHEMA,
+        "flags": {"read_only": True, "concurrency_safe": True, "dangerous": False, "native": True},
     },
     "python": {
         "fn": _python,

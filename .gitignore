@@ -71,3 +71,6 @@ hello_world.py
 
 # 长会话交接快照（工作文档，不进版本库）
 HANDOFF.md
+
+# gh / 工具态的本地状态目录（不该进仓库）
+.local/

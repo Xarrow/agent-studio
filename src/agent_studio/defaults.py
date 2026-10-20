@@ -111,7 +111,23 @@ ORCHESTRATOR_TOOLS = ("fork", "read", "glob", "grep", "fetch", "web_search")
 #: 需要跑命令时自己在 Agents 页加上 —— 那时按平台规矩确认即可。
 #: fetch/web_search/python 是平台原生内核工具（见 native_tools.py）：
 #: 查资料、算数据是"通用"助手的底座能力。
-WORKER_TOOLS = ("read", "write", "edit", "glob", "grep", "fetch", "web_search", "python")
+#: proc_* 是后台进程（跑得住比一轮对话更久的活）——"能跑长任务"是通用助手的底座，
+#: 所以默认给上：模型看到 proc_start 的描述就知道长活该往后台放。
+WORKER_TOOLS = (
+    "read",
+    "write",
+    "edit",
+    "glob",
+    "grep",
+    "fetch",
+    "web_search",
+    "python",
+    "proc_start",
+    "proc_poll",
+    "proc_log",
+    "proc_kill",
+    "proc_list",
+)
 
 
 async def ensure_default_agents(session: Any) -> dict[str, Any]:

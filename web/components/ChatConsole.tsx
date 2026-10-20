@@ -18,6 +18,7 @@ import { api, fmt } from "@/lib/api";
 import type { Agent, RunEvent, Session } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
 import { ProcessBar, eventsToSteps, recallProc, rememberProc } from "@/components/ui/run-timeline";
+import BgProcsStrip from "@/components/BgProcsStrip";
 import { BrowserLive } from "@/components/BrowserLive";
 import { ProcessRail } from "@/components/ProcessRail";
 import { SlashMenu, type CommandItem } from "@/components/SlashMenu";
@@ -1161,6 +1162,11 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 ))}
               </div>
             )}
+
+            {/* ── 后台任务（跑得住比一轮更久的活）────────────────────
+                助手用 proc_start 起的进程挂在这个会话上：关页面、run 结束都不影响。
+                没有任务时整条不渲染；有的话显示谁在跑、跑了多久、完事没有。 */}
+            {sessionId && <BgProcsStrip sessionId={sessionId} busy={busy} />}
 
             {/* ── 本会话的文件（常驻，不再藏在 ⓘ 里）────────────────────
                 用户要求：「每个会话生成的文档应该独立存放，在会话能看到存储的路径和文件」。

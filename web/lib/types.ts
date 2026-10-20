@@ -556,6 +556,23 @@ export interface Session {
   agent_name: string | null;
 }
 
+/** 后台进程（会话级）。状态：running 在跑 / exited 正常结束 / failed 非零退出 / killed 被停 / unknown 重启后对不上 */
+export interface BgProcInfo {
+  id: string;
+  session_id: string;
+  run_id: string | null;
+  label: string;
+  command: string;
+  cwd: string;
+  pid: number;
+  status: "running" | "exited" | "failed" | "killed" | "unknown";
+  exit_code: number | null;
+  started_at: number;
+  ended_at: number | null;
+  elapsed_s: number;
+  tail?: string;
+}
+
 export interface SessionMessage {
   id: number;
   turn_index: number;
