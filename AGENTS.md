@@ -111,6 +111,7 @@ FastAPI + SQLite（后端 `src/agent_studio/`）+ Next.js（前端 `web/`）。
    画布那一列必须有 `min-h-0`（`min-h-0 min-w-0 flex-1`），让内部 `overflow-auto` 自己滚。
    **横向溢出为 0 ≠ 移动端没问题** —— 浮动控件要在 390×844 真机视口量 `rect.bottom ≤ innerHeight`。
 | 做法要沉淀成技能 | 助手在对话里摸出来的多步做法（部署、抓数、排查、批量改文件），用 `skill_save` 存成一个**全局技能**：写「什么时候用 / 步骤 / 命令 / 坑」，不写这次的具体数字。技能落在 `data/work/skills/<名字>/SKILL.md` + `skill` 表，**只进库不落盘助手看不见**；同名默认不覆盖（技能是长期资产）；存完自动挂给发起它的助手。技能页来源显示「助手沉淀 · 谁写的」 |
+| 工具按需加载 | 默认只下发「常用工具」（读写/Bash/python/fetch/web_search/fork/Skill/skill_save）+ tool_search/tool_describe/tool_call 三个入口；其余工具列在提示里按需取；注册表按 run_id 存；助手配置页「能力」里有开关（`tools_lazy`） |
 | 会话级授权 | HITL 允许条上的「本会话内不再问这个工具」→ `session_allow` 表；只降级 ASK，DENY 永不降级；换会话重新问 |
 | 花费上限 | `limits.max_cost_usd` 由 `_budget_watch` 每 3 秒对账（`cost_of` 按 model_price，模型名模糊匹配）；超了取消执行 → aborted + 人话；空白库启动时补 14 条参考价 |
 | 子任务隔离 | `Run.isolated=True` 的子执行**不写会话历史**，只把汇总交回父执行；fork/A2A 创建时置 True |
