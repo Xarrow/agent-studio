@@ -15,6 +15,8 @@
 
 from __future__ import annotations
 
+import re
+
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -318,6 +320,9 @@ async def list_session_files(
             if not p.is_file():
                 continue
             rel = p.relative_to(root)
+            # 浏览器过程目录里的 _index.json 是元数据（时间线索引），不是产物
+            if p.name == "_index.json":
+                continue
             # 细节目录是**真产物**（archify 把架构图放在 .archify/ 下），必须能看能删；
             # 要挡的只是工程噪音（.git / node_modules 这类一进去几百个文件，把清单淹了）。
             if any(part in _NOISE_DIRS for part in rel.parts[:-1]):
@@ -338,6 +343,41 @@ async def list_session_files(
             if len(out) >= limit:
                 break
     return {"session_id": session_id, "work_dir": str(root), "count": len(out), "files": out}
+
+
+@router.get("/{session_id}/browser")
+async def list_browser_runs(session_id: str, session: AsyncSession = Depends(get_session)) -> dict:
+    """这个会话跑过几次浏览器（每次 = 一个 run 的过程目录）。"""
+    row = await session.get(ChatSession, session_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"会话不存在: {session_id}")
+    from ..browser_trace import list_runs
+
+    root = session_work_dir(session_id)
+    return {"session_id": session_id, "runs": list_runs(root)}
+
+
+@router.get("/{session_id}/browser/{run_id}")
+async def browser_steps(session_id: str, run_id: str, session: AsyncSession = Depends(get_session)) -> dict:
+    """一次浏览器执行的过程：每步的动作 + 那张画面（没存图的步 file 为空）。
+
+    前端用它画时间线：点一步看当时看到的页面 —— 复盘"它在哪一步走错了"靠的就是这个。
+    """
+    row = await session.get(ChatSession, session_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"会话不存在: {session_id}")
+    # run 号是单段目录名 —— 不允许分隔符/上跳，别让路径从这里逃出会话目录
+    if not re.fullmatch(r"[\w.\-]+", run_id or "") or ".." in run_id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "run 号不合法")
+    from ..browser_trace import read_index
+
+    root = session_work_dir(session_id)
+    steps = read_index(root, run_id)
+    for it in steps:
+        it["url_file"] = (
+            f"/api/work/file/sessions/{session_id}/browser/{run_id}/{it['file']}" if it.get("file") else ""
+        )
+    return {"session_id": session_id, "run_id": run_id, "steps": steps, "count": len(steps)}
 
 
 @router.patch("/{session_id}", response_model=SessionRead)

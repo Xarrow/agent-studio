@@ -1182,3 +1182,26 @@ export interface TranscodeResult {
   size: number;
   probe: WorkProbe;
 }
+
+
+/** 浏览器执行过程的一步：动作 + 当时那张画面 */
+export type BrowserStep = {
+  n: number;
+  action: string;
+  summary: string;
+  url: string;
+  title: string;
+  ts: number;
+  /** 会话目录里的文件名；这步没存图时为空 */
+  file: string;
+  /** 可直接 <img> 的地址 */
+  url_file: string;
+};
+
+export type BrowserRun = {
+  run_id: string;
+  steps: number;
+  first_url: string;
+  last_url: string;
+  started_at: number;
+};

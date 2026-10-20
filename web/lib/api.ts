@@ -2,6 +2,8 @@
 
 import type {
   BgProcInfo,
+  BrowserRun,
+  BrowserStep,
   SearchHit,
   SessionJob,
   EvalCompareRead,
@@ -917,6 +919,14 @@ export const api = {
     del<{ deleted: string; session_id: string }>(
       `/api/sessions/${id}/files?path=${encodeURIComponent(path)}`,
     ),
+  /** 一次浏览器执行的过程（每步动作 + 那张画面）—— 回看用 */
+  browserSteps: (sessionId: string, runId: string) =>
+    request<{ session_id: string; run_id: string; steps: BrowserStep[]; count: number }>(
+      `/api/sessions/${sessionId}/browser/${runId}`,
+    ),
+  /** 这个会话跑过哪几次浏览器 */
+  browserRuns: (sessionId: string) =>
+    request<{ session_id: string; runs: BrowserRun[] }>(`/api/sessions/${sessionId}/browser`),
   /** 一次删多个（文件区「管理」用）：路径全部相对会话目录，有一个不合规矩就整体拒 */
   deleteSessionFiles: (id: string, paths: string[]) =>
     post<{ deleted: string[]; count: number; session_id: string }>(

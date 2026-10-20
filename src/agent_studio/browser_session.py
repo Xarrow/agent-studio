@@ -372,6 +372,24 @@ class BrowserSession:
         await asyncio.sleep(0.4)
         return f"已滚动 {int(dy)}px"
 
+    async def snapshot(self, quality: int = 50) -> str | None:
+        """抓一张当前画面（base64 JPEG）—— 执行过程留档用。
+
+        screencast 的帧只进内存（seq<0、不落库），刷新就没了；用户要"回看它当时
+        看到了什么"，就必须在**每个动作之后**主动存一张。
+        """
+        if self._cdp is None:
+            return None
+        try:
+            r = await self._cdp.send(
+                "Page.captureScreenshot", {"format": "jpeg", "quality": quality, "captureBeyondViewport": False}
+            )
+            data = (r.get("result") or {}).get("data") or ""
+            return data or None
+        except Exception:  # pragma: no cover
+            logger.debug("截图失败", exc_info=True)
+            return None
+
     async def user_click(self, x: float, y: float) -> str:
         """用户在画面上点了一下（坐标已由前端换算成视口坐标）。"""
         await self._ensure()
@@ -426,23 +444,14 @@ def get_session(run_id: str, on_frame: Any, proxy: str | None = None) -> Browser
     return sess
 
 
-async def close_all(run_id: str, keep_frame: Path | None = None) -> None:
+async def close_all(run_id: str) -> None:
     """run 结束时收尾：杀进程 + 删 user-data-dir（不留全局状态）。
 
-    keep_frame 指向一个文件时，把最后一张画面写过去（会话目录下的 browser/<run>.jpg）——
-    实时帧本来不落库，刷新就没了；留一张"最后停在哪儿"是最省事的回看方式。
+    画面留档在**每一步**就已经写进会话目录了（见 browser_trace），
+    所以这里不必再单独存"最后一张"。
     """
     sess = _SESSIONS.pop(run_id, None)
     if sess is not None:
-        frame = getattr(sess, "_last_frame", "")
-        if keep_frame is not None and frame:
-            try:
-                import base64
-
-                keep_frame.parent.mkdir(parents=True, exist_ok=True)
-                keep_frame.write_bytes(base64.b64decode(frame))
-            except Exception:  # pragma: no cover
-                logger.debug("保存最后一帧失败", exc_info=True)
         await sess.close()
     import shutil
 

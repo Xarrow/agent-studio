@@ -31,6 +31,7 @@ import { FileOpenerProvider, FileRowButton } from "@/components/FileDialog";
 import { copyText } from "@/lib/clipboard";
 import { middleEllipsis, fileTypeKey, shortFilePath } from "@/lib/files";
 import { BrowserStage, type BrowserAction } from "@/components/BrowserStage";
+import type { BrowserStep } from "@/lib/types";
 import { humanizeAssistantText } from "@/lib/messages";
 import { FileTypeIcon } from "@/components/ui/icons";
 
@@ -129,6 +130,9 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   /* 浏览器动作字幕 + 打开面板 —— 帧只说"现在长什么样"，动作才说"它在干什么" */
   const [browserActions, setBrowserActions] = useState<BrowserAction[]>([]);
   const [browserOpen, setBrowserOpen] = useState(false);
+  /* 执行过程留档：每步动作 + 当时那一屏（后端写在会话目录 browser/<run>/ 下） */
+  const [browserSteps, setBrowserSteps] = useState<BrowserStep[]>([]);
+  const lastBrowserRun = useRef<string>("");
   /* 「需要你上手」只在最后一个动作是 wait_login 时为真 —— 不用后端再加标记，
      动作流本身就是真相来源（登录完成后助手会继续 navigate/click，状态自然解除）。 */
   const browserWaiting =
@@ -461,6 +465,43 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
    */
   /** 在画面上做的动作（点击/打字/滚动）→ 打进那个 run 的 Chromium。
    *  凭证只走这条路进浏览器，不进模型、不落库。 */
+  /** 拉这一次浏览器执行的步骤留档 */
+  const loadBrowserSteps = useCallback(async () => {
+    const runId = lastBrowserRun.current || liveRunId;
+    if (!sessionId || !runId) return;
+    try {
+      const r = await api.browserSteps(sessionId, runId);
+      setBrowserSteps(r.steps ?? []);
+    } catch {
+      /* 没有留档就是空的，不打扰用户 */
+    }
+  }, [sessionId, liveRunId]);
+
+  /* 刷新之后内存里的帧和动作都没了 —— 从会话目录里把最近一次的留档捞回来，
+     这样"它上次在网上干了什么"这个入口不会消失（点开就是时间线 + 每步截图）。 */
+  useEffect(() => {
+    if (!sessionId) return;
+    let alive = true;
+    void api
+      .browserRuns(sessionId)
+      .then((r) => {
+        if (!alive) return;
+        const first = r.runs?.[0];
+        if (!first) return;
+        if (!lastBrowserRun.current) lastBrowserRun.current = first.run_id;
+        void loadBrowserSteps();
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (browserOpen) void loadBrowserSteps();
+  }, [browserOpen, loadBrowserSteps]);
+
   const sendBrowser = useCallback(
     async (body: Record<string, unknown>) => {
       if (!liveRunId) return;
@@ -478,6 +519,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     esRef.current = es;
     setLiveRunId(runId);
     setBrowserActions([]);
+    setBrowserSteps([]);
+    lastBrowserRun.current = runId;
 
     es.onmessage = (e: MessageEvent) => {
       try {
@@ -531,6 +574,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
       setLiveRunId("");
       // 帧**不清**：这轮浏览停在哪一页，用户事后再点开还能看见（开新 run 时才重置）。
       // 画面只进内存、不落库；持久的那一张在会话文件的 browser/<run>.jpg 里。
+      void loadBrowserSteps();
       const r = await api.run(runId).catch(() => null);
       if (r && r.status === "waiting_hitl") {
         // **不是结束，是暂停等你点头** —— 保留现场（不清 live），
@@ -1171,7 +1215,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 {/* 生成中：实时分色显示执行过程（思考 / 工具 / 结果 / 回答） */}
                 {/* 手机/平板：画面卡片在消息流里；桌面只在右栏收起时用它顶替
                     （避免同一画面两处重复） */}
-                {(browserFrame || browserActions.length > 0) && (
+                {(browserFrame || browserActions.length > 0 || browserSteps.length > 0) && (
                   <BrowserStage
                     variant="inline"
                     frame={browserFrame}
@@ -1179,6 +1223,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     busy={busy}
                     waiting={browserWaiting}
                     onOpen={() => setBrowserOpen(true)}
+                    steps={browserSteps}
                   />
                 )}
                 {/* 生成中：只给一条**收起**的过程条 + 下面正常流的回答。
@@ -1834,6 +1879,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             onUserClick={async (x, y) => sendBrowser({ kind: "click", x, y })}
             onUserText={async (text) => sendBrowser({ kind: "text", text })}
             onUserScroll={async (dy) => sendBrowser({ kind: "scroll", dy })}
+            steps={browserSteps}
+            onLoadSteps={() => void loadBrowserSteps()}
           />
         ) : (
           <button
@@ -1877,6 +1924,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               onUserText={async (text) => sendBrowser({ kind: "text", text })}
               onUserScroll={async (dy) => sendBrowser({ kind: "scroll", dy })}
               onClose={() => setBrowserOpen(false)}
+              steps={browserSteps}
+              onLoadSteps={() => void loadBrowserSteps()}
             />
           </div>
         </div>

@@ -675,29 +675,70 @@ async def _browser(
         except Exception:
             return u
 
+    # 执行过程留档：动作执行完把"当时的画面 + 这一步是什么"存进会话目录。
+    # 直播帧只进内存（seq<0），不存的话刷新就没了 —— 用户没法复盘它当时看到了什么。
+    # 步号跨工具调用递增：`_browser` 每调一次是新函数执行，局部计数会一直从 1 开始
+    # （实测三张图全叫 01-xxx.jpg）
+    _step = {"n": int(getattr(sess, "_step_n", 0))}
+
+    async def _record(summary: str, res: str) -> None:
+        if str(res).startswith("✗"):
+            return  # 失败的一步也值得记，但没画面（动作没生效）—— 索引里留不了图，跳过
+        try:
+            from .browser_trace import record_step
+            from .runner.service import session_work_dir as _swd
+
+            sid = str(ctx.get("session_id") or "")
+            if not sid:
+                return
+            _step["n"] += 1
+            sess._step_n = _step["n"]
+            frame = await sess.snapshot()
+            record_step(
+                _swd(sid),
+                run_id,
+                _step["n"],
+                action,
+                summary,
+                url=str(getattr(sess, "_last_url", "") or url),
+                title=str(getattr(sess, "_last_title", "") or ""),
+                frame_b64=frame,
+            )
+        except Exception:  # pragma: no cover
+            logger.debug("记录浏览器步骤失败", exc_info=True)
+
     def _short(v: str, n: int = 24) -> str:
         v = (v or "").replace("\n", " ").strip()
         return v if len(v) <= n else v[: n - 1] + "…"
 
     if action == "navigate":
         _emit(f"打开 {_host(url)}")
-        return await sess.navigate(url or "about:blank", wait_s)
+        _res = await sess.navigate(url or "about:blank", wait_s)
+        await _record(f"打开 {_host(url)}", _res)
+        return _res
     if action == "click":
         if not selector:
             return "✗ click 需要 selector"
         _emit(f"点击 {_short(selector)}", selector)
-        return await sess.click(selector)
+        _res = await sess.click(selector)
+        await _record(f"点击 {_short(selector)}", _res)
+        return _res
     if action == "type":
         if not selector:
             return "✗ type 需要 selector"
         _emit(f"输入「{_short(value, 16)}」", selector)
-        return await sess.type_text(selector, value)
+        _res = await sess.type_text(selector, value)
+        # 输入的内容不进留档（可能是密码/手机号）—— 只记"输入了 16 个字符"
+        await _record(f"输入了 {len(value or '')} 个字符", _res)
+        return _res
     if action == "read":
         _emit("读页面内容")
-        return await sess.read(selector or "body")
+        return await sess.read(selector or "body")  # 读不产生画面变化，不留档
     if action == "scroll":
         _emit("往下滚" if dy >= 0 else "往上滚")
-        return await sess.scroll(dy)
+        _res = await sess.scroll(dy)
+        await _record("往下滚" if dy >= 0 else "往上滚", _res)
+        return _res
     if action == "wait":
         _emit(f"等页面 {wait_s:g}s")
         return await sess.wait(wait_s)

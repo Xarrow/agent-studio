@@ -13,6 +13,7 @@
  */
 
 import { BrowserStage, type BrowserAction, type BrowserFrameData } from "@/components/BrowserStage";
+import type { BrowserStep } from "@/lib/types";
 
 export function ProcessRail({
   frame,
@@ -23,6 +24,8 @@ export function ProcessRail({
   onUserClick,
   onUserText,
   onUserScroll,
+  steps,
+  onLoadSteps,
 }: {
   /** 浏览器直播帧（base64 JPEG + 页面 URL/标题）——null = 当前没有活的浏览器画面 */
   frame: BrowserFrameData | null;
@@ -35,6 +38,8 @@ export function ProcessRail({
   onUserClick: (x: number, y: number) => void | Promise<void>;
   onUserText: (text: string) => void | Promise<void>;
   onUserScroll?: (dy: number) => void | Promise<void>;
+  steps?: BrowserStep[];
+  onLoadSteps?: () => void;
 }) {
   return (
     <aside
@@ -75,6 +80,8 @@ export function ProcessRail({
             onUserClick={onUserClick}
             onUserText={onUserText}
             onUserScroll={onUserScroll}
+            steps={steps}
+            onLoadSteps={onLoadSteps}
           />
         ) : (
           <div className="px-3 py-8 text-center text-[12px]" style={{ color: "var(--color-muted)" }}>
