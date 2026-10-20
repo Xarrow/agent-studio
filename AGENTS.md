@@ -111,6 +111,7 @@ FastAPI + SQLite（后端 `src/agent_studio/`）+ Next.js（前端 `web/`）。
    画布那一列必须有 `min-h-0`（`min-h-0 min-w-0 flex-1`），让内部 `overflow-auto` 自己滚。
    **横向溢出为 0 ≠ 移动端没问题** —— 浮动控件要在 390×844 真机视口量 `rect.bottom ≤ innerHeight`。
 | 做法要沉淀成技能 | 助手在对话里摸出来的多步做法（部署、抓数、排查、批量改文件），用 `skill_save` 存成一个**全局技能**：写「什么时候用 / 步骤 / 命令 / 坑」，不写这次的具体数字。技能落在 `data/work/skills/<名字>/SKILL.md` + `skill` 表，**只进库不落盘助手看不见**；同名默认不覆盖（技能是长期资产）；存完自动挂给发起它的助手。技能页来源显示「助手沉淀 · 谁写的」 |
+| 视频播放 | 文件名白名单只挡控制字符与 `/ \\ : * ? " < > |`（**别挡方括号**——bilibili 名字带 `[BVxxx]`，收紧了就 404，表现为"播不了"）；`/api/work/probe` 判编码（浏览器只认 H.264/VP8/VP9，AV1 手机常不行），`/api/work/transcode` 转 H.264 存同目录 `xxx.可播.mp4`；文件端点必须同时接 **HEAD**（iOS 先探测）；probe/transcode 用**相对 data/work** 的路径，别拿删除接口那个相对会话目录的 |
 | 对话文件预览 | `lib/files.ts::fileKind` 9 类（image/pdf/audio/video/markdown/table/html/text/other），判定与取回口径唯一；弹层分流：PDF/音视频原生、md 渲染可切源码、CSV 出表可切原文（300 行封顶）、HTML 用 `sandbox=""` iframe；后端 `/api/work/file` 白名单放行音视频 |
 | 技能生命周期 | 计数口径=模型用 `Skill` 工具真读过一次 +1（只列在提示里不算）；钩子打在 `SkillViewer` **类**上（实例赋 `__call__` 不生效）；三档 active→stale(30d)→archived(90d)；**只动 source.type=agent**、只挪不删（归档到 `skills-archive/`，正文仍在库、可恢复重建）、pinned 全豁免；整理并入既有调度循环 |
 | 会话回滚 / 分支 | `POST /api/sessions/{id}/rewind` 真删某轮及之后（留着模型看得见=没回滚），摘要覆盖范围同步退；`/branch` 另起会话、原会话不动、副本 `run_id` 置空；界面「重来」两步确认、「分支」建完自动切换 |
