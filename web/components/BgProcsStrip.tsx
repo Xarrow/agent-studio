@@ -161,8 +161,7 @@ export default function BgProcsStrip({
 
   return (
     <div
-      className="max-w-3xl mx-auto mb-1.5 rounded-[12px] border px-2.5 py-1.5 max-md:px-2"
-      style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
+      className={`panel-strip max-w-3xl mx-auto mb-1.5 px-2.5 py-1.5 max-md:px-2 ${running > 0 ? "is-live" : ""}`}
     >
       <div
         className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px]"
@@ -193,7 +192,7 @@ export default function BgProcsStrip({
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="shrink-0 hover:underline max-md:inline-flex max-md:min-h-[32px] max-md:items-center"
+          className="panel-title shrink-0 hover:underline max-md:inline-flex max-md:min-h-[32px] max-md:items-center"
         >
           后台任务
         </button>

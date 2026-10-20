@@ -448,17 +448,14 @@ export default function SessionJobs({
     <>
       {/* 常驻条：只在有定时任务时出现（空条是噪声） */}
       {items.length > 0 && (
-        <div
-          className="max-w-3xl mx-auto mb-1.5 rounded-[12px] border px-2.5 py-1.5 max-md:px-2"
-          style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
-        >
+        <div className="panel-strip max-w-3xl mx-auto mb-1.5 px-2.5 py-1.5 max-md:px-2">
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px]">
-            <span className="inline-flex items-center gap-1" style={{ color: "var(--color-muted)" }}>
+            <span className="panel-title inline-flex items-center gap-1">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <circle cx="12" cy="12" r="9" />
                 <path d="M12 7v5l3 2" />
               </svg>
-              定时
+              定时任务
             </span>
             <span style={{ color: "var(--color-muted)" }}>
               {items.filter((j) => j.enabled).length} 个在跑

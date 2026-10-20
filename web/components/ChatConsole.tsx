@@ -1320,8 +1320,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 "以后生成的东西会落在哪"。 */}
             {sessionId && (
               <div
-                className="max-w-3xl mx-auto mb-1.5 rounded-[12px] border px-2.5 py-1.5 max-md:px-2"
-                style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
+                className={`panel-strip max-w-3xl mx-auto mb-1.5 px-2.5 py-1.5 max-md:px-2 ${managing ? "is-active" : ""}`}
               >
                 <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
                   <button
@@ -1350,7 +1349,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                   <button
                     type="button"
                     onClick={toggleFiles}
-                    className="shrink-0 hover:underline max-md:inline-flex max-md:min-h-[32px] max-md:items-center"
+                    className="panel-title shrink-0 hover:underline max-md:inline-flex max-md:min-h-[32px] max-md:items-center"
                     title={openFiles ? "收起文件清单" : "展开文件清单"}
                   >
                     本会话文件
@@ -1463,8 +1462,10 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                           aria-pressed={picked.includes(f.path)}
                           className="inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-1 text-[11.5px] max-md:min-h-[32px]"
                           style={{
-                            borderColor: picked.includes(f.path) ? "var(--color-accent)" : "var(--color-border)",
-                            background: picked.includes(f.path) ? "var(--color-surface-2)" : "transparent",
+                            borderColor: picked.includes(f.path) ? "var(--color-accent)" : "var(--color-border-strong)",
+                            background: picked.includes(f.path)
+                              ? "color-mix(in srgb, var(--color-accent) 12%, var(--color-surface))"
+                              : "var(--color-surface)",
                             color: "var(--color-text)",
                           }}
                         >
@@ -1493,8 +1494,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                         <FileRowButton
                           key={f.path}
                           file={{ path: `${sessionFiles.work_dir}/${f.path}`, url: f.url, size: f.size, mtime: f.mtime }}
-                          className="inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-1 text-[11.5px] hover:bg-[var(--color-surface)] max-md:min-h-[32px]"
-                          style={{ borderColor: "var(--color-border)", color: "var(--color-text)" }}
+                          className="inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-1 text-[11.5px] hover:brightness-[0.98] max-md:min-h-[32px]"
+                          style={{ borderColor: "var(--color-border-strong)", background: "var(--color-surface)", color: "var(--color-text)" }}
                         >
                           <FileTypeIcon kind={fileTypeKey(f.path)} size={13} className="shrink-0 opacity-60" />
                           <span className="mono shrink-0" title={f.path}>

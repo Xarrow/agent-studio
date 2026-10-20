@@ -11,7 +11,10 @@
   --color-bg: #f7f9fc;
   --color-surface: #ffffff;
   --color-surface-2: #eef2f8;
+  /* 工具面板（后台任务 / 定时 / 文件）比对话底再深一档 —— 白对白会糊成一片 */
+  --color-surface-3: #e3ebf7;
   --color-border: #dce4ee;
+  --color-border-strong: #c8d6e8;
   --color-text: #14181f;
   --color-muted: #5f6b7a;
   --color-accent: #2563eb;
@@ -31,7 +34,9 @@
   --color-bg: #0d1017;
   --color-surface: #151a22;
   --color-surface-2: #1c232c;
+  --color-surface-3: #222b37;
   --color-border: #28313d;
+  --color-border-strong: #37455a;
   --color-text: #e6ebf2;
   --color-muted: #8894a4;
   --color-accent: #3b82f6;
@@ -140,6 +145,38 @@ body {
   opacity: 0.45;
   cursor: not-allowed;
 }
+/* ---------------------------------------------------------------------------
+   会话页的「工具面板」：后台任务 / 定时任务 / 本会话文件
+   这几块和对话正文不是一回事 —— 它们是**管理区**。以前用 surface-2 + 浅边框，
+   在白底页面上几乎看不出来（用户：「和会话主页面白色混合一起了」）。
+   现在统一成：更深一档的底 + 明确的左边色条 + 更实的标题字。
+   --------------------------------------------------------------------------- */
+.panel-strip {
+  background: var(--color-surface-3);
+  border: 1px solid var(--color-border-strong);
+  border-left: 3px solid color-mix(in srgb, var(--color-accent) 55%, var(--color-border-strong));
+  border-radius: 12px;
+  /* 轻微内高光：让它在白底上"浮"起来，而不是贴平 */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+[data-theme="dark"] .panel-strip {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+/* 正在跑的后台任务：左边色条变实色，一眼看出这块是"活着的" */
+.panel-strip.is-live {
+  border-left-color: var(--color-accent);
+}
+/* 文件管理态：底染一层淡淡的主色，明确"现在在挑文件" */
+.panel-strip.is-active {
+  background: color-mix(in srgb, var(--color-accent) 7%, var(--color-surface-3));
+  border-color: color-mix(in srgb, var(--color-accent) 38%, var(--color-border-strong));
+  border-left-color: var(--color-accent);
+}
+/* 面板里的标题比正文的次要字更实一点 —— 它是"这块是什么"，不是补充说明 */
+.panel-strip .panel-title {
+  color: var(--color-text);
+}
+
 .input {
   width: 100%;
   padding: 8px 11px;
