@@ -475,3 +475,32 @@ test("Esc 停止这一轮（且输入框里按 Esc 不算）", () => {
   assert.match(chat, /el\.tagName === "TEXTAREA"/, "输入框里的 Esc 不触发停止");
   assert.match(chat, /void stop\(\);/, "Esc → stop()");
 });
+
+/**
+ * 后台任务（2026-10）：助手能把长活丢后台跑，界面必须有一处常驻的地方
+ * 回答"在跑什么 / 多久 / 完事没"。口径：
+ *   · 没有任务时整条不渲染（空常驻条是噪声）
+ *   · 有任务在跑 → 3 秒一轮；**一轮执行期间也要盯**（否则首轮起的任务不出现）
+ *   · 跑完弹一次提示（只在状态变化时，不是每次刷新都弹）
+ *   · 归属会话：接口必须带 session_id
+ */
+test("后台任务条：无任务不渲染、执行中也轮询、跑完只提示一次", () => {
+  const src = read("components/BgProcsStrip.tsx");
+  assert.match(src, /if \(items\.length === 0\) return null;/, "没有任务时整条不出现");
+  assert.match(src, /if \(running === 0 && !busy\) return;/, "有任务或执行中才轮询");
+  assert.match(src, /const t = setInterval\(\(\) => void load\(\), 3000\);/, "3 秒一拍");
+  assert.match(src, /const was = prevStatus\.current\[it\.id\];/, "只在状态变化时提示");
+  assert.match(src, /fb\.success\(\s*`后台任务完成/, "完成给提示");
+  assert.match(src, /api\.procLog\(it\.id, sessionId, 200\)/, "日志按会话取");
+  assert.match(src, /api\.procKill\(it\.id, sessionId\)/, "停止按会话发");
+  // 对话页必须接上它，并且传 busy
+  const chat = read("components/ChatConsole.tsx");
+  assert.match(chat, /<BgProcsStrip sessionId=\{sessionId\} busy=\{busy\} \/>/, "对话页接入且带执行中标记");
+});
+
+test("后台任务接口：一律按会话过滤（会话之间不互看）", () => {
+  const api = read("lib/api.ts");
+  assert.match(api, /procs: \(sessionId: string\)/, "列表按会话");
+  assert.match(api, /api\/procs\/\$\{id\}\/log\?session_id=/, "日志带会话");
+  assert.match(api, /api\/procs\/\$\{id\}\/kill\?session_id=/, "停止带会话");
+});

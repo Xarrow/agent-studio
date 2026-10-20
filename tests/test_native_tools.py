@@ -28,10 +28,19 @@ def test_builtin_registry_shape():
         "memory_search",
         "memory_save",
         "browser",
+        # 后台进程（2026-10）：跑得住比一轮对话更久的活
+        "proc_start",
+        "proc_poll",
+        "proc_log",
+        "proc_kill",
+        "proc_list",
     }
+    #: 无参工具（proc_list）的 required 本来就该是空的
+    NO_ARG = {"proc_list", "proc_poll"}  # 都不填参数也合法（默认看最新那个）
     for name, entry in NATIVE_TOOLS.items():
         assert entry["description"], name
-        assert entry["schema"].get("required"), name
+        if name not in NO_ARG:
+            assert entry["schema"].get("required"), name
         assert "read_only" in entry["flags"], name
 
 
