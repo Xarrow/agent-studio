@@ -41,6 +41,29 @@ def to_read(row: Agent) -> AgentRead:
 
 async def _sync_relations(session: AsyncSession, agent_id: str, definition) -> None:
     """按定义里的 tools/skills 重建关联表（全量替换语义，简单可预测）。"""
+    # 先把不存在的引用挡在门外。不校验的话，插入关联表会撞外键约束，
+    # 用户看到的是 "Internal Server Error"（实测：换到另一套环境的库里技能 id
+    # 不存在，创建助手直接 500，谁也猜不到是哪个 id 写错了）。
+    tool_refs = [r.ref for r in definition.tools if r.enabled]
+    if tool_refs:
+        found = set(
+            (await session.execute(select(Tool.id).where(Tool.id.in_(tool_refs)))).scalars().all()
+        )
+        missing = [r for r in tool_refs if r not in found]
+        if missing:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, f"工具不存在：{'、'.join(missing)}（可能来自另一套环境的库）"
+            )
+    skill_refs = [r.ref for r in definition.skills]
+    if skill_refs:
+        found = set(
+            (await session.execute(select(Skill.id).where(Skill.id.in_(skill_refs)))).scalars().all()
+        )
+        missing = [r for r in skill_refs if r not in found]
+        if missing:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, f"技能不存在：{'、'.join(missing)}（可能来自另一套环境的库）"
+            )
     await session.execute(delete(AgentTool).where(AgentTool.agent_id == agent_id))
     await session.execute(delete(AgentSkill).where(AgentSkill.agent_id == agent_id))
     for ref in definition.tools:
