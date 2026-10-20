@@ -104,7 +104,7 @@ WORKER_PROMPT = """你负责把交给你的**这一件事**做扎实、做完。
 """
 
 #: 编排者默认挂的工具（分派是核心，其余是"干活前先看一眼"的只读工具）
-ORCHESTRATOR_TOOLS = ("fork", "read", "glob", "grep", "fetch", "web_search")
+ORCHESTRATOR_TOOLS = ("fork", "read", "glob", "grep", "fetch", "web_search", "skill_save")
 #: 通用助手默认挂的工具（干活的那套）。
 #: **刻意不含 bash**：平台的权限引擎对"跑命令"一律要求人工点头（`accept_edits` 只自动放行
 #: **工作目录内**的读写），默认挂上它 = 无人值守的第一步就卡在等确认。
@@ -128,6 +128,8 @@ WORKER_TOOLS = (
     "proc_log",
     "proc_kill",
     "proc_list",
+    # 把对话里摸出来的做法沉淀成全局技能
+    "skill_save",
 )
 
 

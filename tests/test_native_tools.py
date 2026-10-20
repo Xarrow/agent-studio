@@ -36,6 +36,8 @@ def test_builtin_registry_shape():
         "proc_log",
         "proc_kill",
         "proc_list",
+        # 把对话里摸出来的做法沉淀成全局技能（2026-10）
+        "skill_save",
     }
     #: 无参工具（proc_list）的 required 本来就该是空的
     NO_ARG = {"proc_list", "proc_poll"}  # 都不填参数也合法（默认看最新那个）

@@ -19,6 +19,21 @@ type Source = "git" | "url" | "local" | "inline";
  *
  * ``embedded``：嵌进工具页时把页级标题收起来（页签已经写了 Skills，别重复）。
  */
+/** 来源用人话说：`agent` 这种类型名对用户没意义，他只关心「谁弄进来的」。 */
+function sourceLabel(source: unknown): string {
+  const src = (source ?? {}) as Record<string, unknown>;
+  const type = String(src.type ?? "").toLowerCase();
+  if (type === "agent") {
+    const who = String(src.agent_name ?? "").trim();
+    return who ? `助手沉淀 · ${who}` : "助手沉淀";
+  }
+  if (type === "repo" || type === "git") return "仓库安装";
+  if (type === "url") return "网址导入";
+  if (type === "import" || type === "zip") return "压缩包导入";
+  if (type === "manual" || type === "local" || type === "inline") return "手写";
+  return type || "—";
+}
+
 export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
   const fb = useFeedback();
   const [skills, setSkills] = useState<Skill[]>([]);
@@ -129,7 +144,7 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-medium text-[13.5px] truncate">{s.name}</span>
-                    <span className="tag shrink-0">{String(s.source?.type ?? "—")}</span>
+                    <span className="tag shrink-0">{sourceLabel(s.source)}</span>
                   </div>
                   {s.description && (
                     <p className="text-[12px] text-[var(--color-muted)] mt-1 line-clamp-2">

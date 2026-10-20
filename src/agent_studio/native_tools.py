@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+import json
 import logging
 import os
 import re
@@ -397,6 +398,143 @@ async def _memory_search(query: str, top_k: int = 5) -> str:
     if ext_lines:
         parts.append("【外部记忆服务】\n" + "\n".join(ext_lines))
     return "\n\n".join(parts) + note
+
+
+SKILL_SAVE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "name": {
+            "type": "string",
+            "description": "技能名（短横线小写英文最好，如 deploy-static-site；中文也能用，别带斜杠）",
+        },
+        "description": {
+            "type": "string",
+            "description": "一句话说明**什么时候该用它** —— 以后助手就是靠这句话认出它的",
+        },
+        "body": {
+            "type": "string",
+            "description": "技能正文 Markdown：适用场景、步骤、命令、坑。写做法，别写这次的具体数据",
+        },
+        "overwrite": {
+            "type": "boolean",
+            "description": "同名技能已存在时是否覆盖（默认 false，会提示你换个名字或显式覆盖）",
+        },
+    },
+    "required": ["name", "description", "body"],
+}
+
+#: 技能正文上限。技能是给下一次看的「做法」，不是这次的报告 —— 太长就没人读了。
+SKILL_BODY_LIMIT = 20000
+
+
+def _skill_slug(name: str) -> str:
+    """名字 → 目录名。允许中文（Linux 上没问题），去掉路径符号，压掉多余横线。"""
+    raw = (name or "").strip().lower()
+    slug = re.sub(r"[^\w\u4e00-\u9fff-]+", "-", raw, flags=re.UNICODE)
+    slug = re.sub(r"-{2,}", "-", slug).strip("-.")
+    return slug[:64]
+
+
+async def _skill_save(
+    name: str, description: str, body: str, overwrite: bool = False
+) -> str:
+    """**把这次的做法沉淀成一个全局技能**。
+
+    为什么给 Agent 这个工具
+    ----------------------
+    以前技能只能从「技能」页导入或从仓库装 —— 助手在对话里摸出来的做法（先查什么、
+    跑哪条命令、哪个坑要绕）聊完就散了，下次换一个人还得从头踩一遍。
+    这个工具让它当场把做法写下来，落在**全局技能目录**里：任何挂了这个技能的助手
+    下一轮就能读到。
+
+    边界：同名默认不覆盖（技能是长期资产，不能被随手冲掉）；正文有长度上限；
+    名字里的路径符号会被清掉（不允许写出目录）。
+    """
+    from sqlalchemy import select
+
+    from .api.skills import _materialize
+    from .db import SessionLocal
+    from .models import Agent, AgentSkill, Skill
+    from .runner.ctx import current_run_ctx
+
+    slug = _skill_slug(name)
+    desc = (description or "").strip()
+    text = (body or "").strip()
+    if not slug:
+        return "技能名不能用（空名、或者只有符号）。用短横线小写英文，比如 deploy-static-site。"
+    if not desc:
+        return "缺一句话说明「什么时候用它」—— 没有这句，以后没人认得出这个技能。"
+    if not text:
+        return "正文是空的，没存。"
+    if len(text) > SKILL_BODY_LIMIT:
+        return (
+            f"正文 {len(text)} 字，超过上限 {SKILL_BODY_LIMIT}。"
+            "技能要短：写关键步骤和坑，细节留给下一次现场判断。"
+        )
+
+    content = f"---\nname: {slug}\ndescription: {desc}\n---\n\n{text}\n"
+    ctx = current_run_ctx()
+    agent_id = str(ctx.get("agent_id") or "")
+    source = {
+        "type": "agent",
+        "agent_id": agent_id,
+        "session_id": str(ctx.get("session_id") or ""),
+        "run_id": str(ctx.get("run_id") or ""),
+    }
+
+    async with SessionLocal() as session:
+        row = (
+            await session.execute(select(Skill).where(Skill.name == slug))
+        ).scalar_one_or_none()
+        if row is not None and not overwrite:
+            return (
+                f"已经有同名技能「{slug}」（{row.id}）。"
+                "要更新它就再调一次并把 overwrite 设成 true；想留一份新的就换个名字。"
+            )
+
+        if agent_id:
+            agent = await session.get(Agent, agent_id)
+            if agent is not None:
+                source["agent_name"] = agent.name
+
+        if row is None:
+            row = Skill(name=slug, description=desc, content=content, files={}, source=source)
+            session.add(row)
+            await session.flush()
+            action = "新建"
+        else:
+            row.content = content
+            row.description = desc
+            row.source = source
+            from .models import now_ms
+
+            row.updated_at = now_ms()
+            action = "更新"
+
+        mounted = False
+        if agent_id:
+            if await session.get(AgentSkill, {"agent_id": agent_id, "skill_id": row.id}) is None:
+                session.add(AgentSkill(agent_id=agent_id, skill_id=row.id))
+                mounted = True
+        await session.commit()
+
+        path = await _materialize(row)
+        return json.dumps(
+            {
+                "ok": True,
+                "action": action,
+                "id": row.id,
+                "name": slug,
+                "path": str(path),
+                "mounted_to_caller": mounted,
+                "scope": "全局：出现在「技能」页，任何助手都能挂",
+                "note": (
+                    "这一轮已生效于技能目录（下一次工具调用就能读到）；"
+                    "同名再存要带 overwrite=true"
+                ),
+            },
+            ensure_ascii=False,
+        )
 
 
 async def _memory_save(content: str, tags: list[str] | None = None) -> str:
@@ -798,6 +936,16 @@ NATIVE_TOOLS: dict[str, dict[str, Any]] = {
         ),
         "schema": MEMORY_SAVE_SCHEMA,
         "flags": {"read_only": False, "concurrency_safe": True, "dangerous": False, "native": True},
+    },
+    "skill_save": {
+        "fn": _skill_save,
+        "description": (
+            "把这次摸出来的做法沉淀成一个**全局技能**（出现在「技能」页，别的助手也能用）："
+            "写清什么时候用它、步骤、命令、坑。用户说「把这个流程记成技能 / 下次照这个做」时用它；"
+            "你自己做完一件以后还会再干的多步操作，也主动存一次。正文写做法，不要写这次的具体数据。"
+        ),
+        "schema": SKILL_SAVE_SCHEMA,
+        "flags": {"read_only": False, "concurrency_safe": False, "dangerous": False, "native": True},
     },
     "session_search": {
         "fn": _session_search,
