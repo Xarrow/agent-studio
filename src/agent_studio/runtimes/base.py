@@ -204,6 +204,17 @@ class AgentRuntime(ABC):
     def run(self, agent: CompiledAgent, run_input: Any) -> AsyncIterator[UnifiedEvent]:
         """执行并产出统一事件流。"""
 
+    def snapshot_plan(self, agent: CompiledAgent) -> dict[str, Any] | None:
+        """导出这一轮的"任务清单"（跨轮 todo）。
+
+        默认 None = 这个运行时没有清单概念；平台就不存也不装。
+        """
+        return None
+
+    async def restore_plan(self, agent: CompiledAgent, plan: dict[str, Any]) -> None:
+        """把上一轮留下的清单装回新编译的 agent。默认什么都不做。"""
+        return None
+
     async def steer(self, agent: CompiledAgent, text: str) -> None:
         """把用户的一句话塞进**正在跑**的这一轮上下文。
 

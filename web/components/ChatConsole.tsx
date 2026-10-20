@@ -19,6 +19,7 @@ import type { Agent, RunEvent, Session, SearchHit } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
 import { ProcessBar, eventsToSteps, recallProc, rememberProc } from "@/components/ui/run-timeline";
 import BgProcsStrip from "@/components/BgProcsStrip";
+import TodoStrip from "@/components/TodoStrip";
 import SessionJobs, { JobButton } from "@/components/SessionJobs";
 import { BrowserLive } from "@/components/BrowserLive";
 import { ProcessRail } from "@/components/ProcessRail";
@@ -136,6 +137,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   const [busy, setBusy] = useState(false);
   /** 定时任务弹框（这个对话按时自己跑） */
   const [jobOpen, setJobOpen] = useState(false);
+  // 清单在"一轮结束"时才整体刷新（跑的过程中由 TodoStrip 自己按 busy 轮询）
+  const [todoTick, setTodoTick] = useState(0);
   const [jobCount, setJobCount] = useState(0);
   /** 本轮开始时间（毫秒）——过程条右侧那个秒数用它算 */
   const [runStart, setRunStart] = useState<number>(0);
@@ -483,6 +486,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
         /* 摘要只是锦上添花，失败不影响收尾 */
       }
       setLive(null);
+      // 这一轮可能改了清单（新建/勾掉），刷新清单条
+      setTodoTick((n) => n + 1);
       // 用服务端的权威历史覆盖（包含刚写入的这一轮）
       await loadMessages(sessionId);
       await loadSessions(agentId);
@@ -1227,6 +1232,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 onCount={setJobCount}
               />
             )}
+
+            {sessionId && <TodoStrip sessionId={sessionId} busy={busy} refreshKey={todoTick} />}
 
             {sessionId && <BgProcsStrip sessionId={sessionId} busy={busy} />}
 

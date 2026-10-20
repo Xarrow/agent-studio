@@ -208,6 +208,26 @@ async def delete_session_file(
     return {"deleted": str(Path(rel)), "session_id": session_id}
 
 
+@router.get("/{session_id}/todos")
+async def get_session_todos(
+    session_id: str, session: AsyncSession = Depends(get_session)
+) -> dict[str, Any]:
+    """这个会话的任务清单（助手自己列的，跨轮保留）。
+
+    只回最小结构（id/标题/状态）—— 具体的块依赖、owner 这些是运行时的事，
+    界面不该跟着某个框架的数据结构走。
+    """
+    from .. import todos as todo_store
+
+    row = await session.get(ChatSession, session_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"会话不存在: {session_id}")
+    plan = await todo_store.load(session_id)
+    tasks = todo_store.summarise(plan)
+    done = sum(1 for t in tasks if t["state"] == "completed")
+    return {"tasks": tasks, "total": len(tasks), "done": done}
+
+
 @router.get("/{session_id}/files")
 async def list_session_files(
     session_id: str, limit: int = Query(200, ge=1, le=1000), session: AsyncSession = Depends(get_session)

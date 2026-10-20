@@ -347,8 +347,20 @@ def build_toolkit(
         except Exception as exc:  # pragma: no cover
             logger.warning("Skill loader 初始化失败: %s", exc)
 
+    # 任务清单工具（跨轮 todo）：AgentScope 自带一套 TaskCreate/List/Get/Update，
+    # 状态挂在 agent.state.tasks_context 上 —— 平台负责"每轮开始前装回来、
+    # 跑完存回去"，它负责把未完成的清单注入 prompt（用户不用再提醒它做到哪了）。
+    from agentscope.tool import TaskCreate, TaskGet, TaskList, TaskUpdate
+
     return Toolkit(
-        tools=[*build_tools(specs, cwd=cwd), *(extra_tools or [])],
+        tools=[
+            *build_tools(specs, cwd=cwd),
+            *(extra_tools or []),
+            TaskCreate(),
+            TaskGet(),
+            TaskList(),
+            TaskUpdate(),
+        ],
         skills_or_loaders=skills_or_loaders,
     )
 

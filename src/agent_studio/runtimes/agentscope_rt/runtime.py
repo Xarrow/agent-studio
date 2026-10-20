@@ -412,6 +412,28 @@ class AgentScopeRuntime(AgentRuntime):
             if unified is not None:
                 yield unified
 
+    def snapshot_plan(self, agent: CompiledAgent) -> dict[str, Any] | None:
+        """导出任务清单（state.tasks_context）—— 平台据此做跨轮 todo。"""
+        assert isinstance(agent, AgentScopeCompiled)
+        try:
+            ctx = agent.agent.state.tasks_context
+            data = ctx.model_dump(mode="json")
+            return data if data.get("tasks") else None
+        except Exception:  # pragma: no cover
+            logger.warning("导出任务清单失败", exc_info=True)
+            return None
+
+    async def restore_plan(self, agent: CompiledAgent, plan: dict[str, Any]) -> None:
+        """把上一轮的清单装回来 —— 不然新编译的 agent 每轮都是"从零开始"，
+        用户上一轮看它列的五步，下一轮它自己忘了。"""
+        from agentscope.state import TaskContext
+
+        assert isinstance(agent, AgentScopeCompiled)
+        try:
+            agent.agent.state.tasks_context = TaskContext.model_validate(plan)
+        except Exception:  # pragma: no cover
+            logger.warning("装回任务清单失败（忽略，按空清单跑）", exc_info=True)
+
     async def steer(self, agent: CompiledAgent, text: str) -> None:
         """插话：把用户的话 observe 进 agent 的上下文。
 

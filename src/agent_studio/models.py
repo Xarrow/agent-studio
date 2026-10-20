@@ -602,6 +602,23 @@ class BgProc(Base):
     last_beat_at: Mapped[int | None] = mapped_column(BigInteger, default=None)
 
 
+class SessionPlan(Base):
+    """会话的任务清单（跨轮 todo）—— 助手自己列的步骤，下一轮还记得。
+
+    为什么不挂在 runs 上：清单纯粹是"这一个对话里的事做到哪了"，
+    跨轮存活才有意义（用户上一轮看它列的五步，下一轮它不该装作没列过）。
+    """
+
+    __tablename__ = "session_plan"
+
+    session_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("session.id", ondelete="CASCADE"), primary_key=True
+    )
+    #: 运行时导出的清单快照（各框架结构不同，平台只存不解释）
+    plan: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    updated_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+
+
 class Orchestration(Base):
     """一次多助手协作。
 

@@ -695,6 +695,11 @@ export const api = {
   },
   runTrace: (id: string) => request<RunTrace>(`/api/runs/trace/${id}`),
   abortRun: (id: string) => post<{ aborted: boolean }>(`/api/runs/abort/${id}`),
+  /** 这个会话的跨轮任务清单（助手自己列的） */
+  sessionTodos: (sessionId: string) =>
+    request<{ tasks: { id: string; subject: string; state: string }[]; total: number; done: number }>(
+      `/api/sessions/${sessionId}/todos`,
+    ),
   /** 运行中插话：塞进正在跑的这一轮（不重跑、不打断当前这一步） */
   steerRun: (id: string, text: string) =>
     post<{ delivered: boolean; message: string }>(`/api/runs/${id}/steer`, { text }),

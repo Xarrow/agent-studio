@@ -18,6 +18,7 @@ from ..config import settings
 from ..quota import check_daily_quota, get_depth_limit
 from ..context import append_turn, build_turn_context, compress_if_needed, run_dialogue
 from .. import steer as steer_registry
+from .. import todos as todo_store
 from ..db import SessionLocal
 from ..memory import (
     get_policy,
@@ -824,6 +825,11 @@ class RunService:
                                 work_dir=str(work_dir),
                                 context=context,
                             )
+                            # 跨轮 todo：把上一轮留下的清单装回来。不装的话，
+                            # 用户上一轮看它列的五步，下一轮它自己完全不记得。
+                            _plan = await todo_store.load(run.session_id)
+                            if _plan:
+                                await runtime.restore_plan(compiled, _plan)
 
                             # 这一步要「派出去并等结果」时，等子执行的时间也算进执行超时 ——
                             # 否则节点上写「最长等多久 15 分钟」、助手超时 2 分钟，执行超时先到，
@@ -876,6 +882,10 @@ class RunService:
                                     await consume()
                             finally:
                                 await steer_registry.detach(run_id)
+                                # 清单要**在 dispose 之前**导出（dispose 会收掉 agent）
+                                await todo_store.save(
+                                    run.session_id, runtime.snapshot_plan(compiled)
+                                )
 
                             # ── 「被中断」要分清楚是谁断的 ────────────────────────────
                             # AgentScope 收到取消后**不会**把 CancelledError 抛给我们（它把工具调用
@@ -1282,6 +1292,10 @@ class RunService:
                     await consume()
             finally:
                 await steer_registry.detach(run_id)
+                # 续跑也会改动清单（确认完继续做下一步）—— 同样在 dispose 前存回去
+                await todo_store.save(
+                    _resume_session_id, runtime.snapshot_plan(compiled)
+                )
 
             # 恢复之后**又**要授权（模型连着要两步是常事：先写脚本、再跑脚本）：
             # 这里必须和正常执行路径一样，把待确认内容 + 状态快照一起落库。

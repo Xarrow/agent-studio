@@ -621,3 +621,20 @@ test("心跳：平台自己的提示在对话里有一行灰字（关掉页面�
   const tools = read("../src/agent_studio/native_tools.py");
   assert.match(tools, /heartbeat_s/, "proc_start 能开心跳");
 });
+
+/**
+ * 跨轮清单（2026-10）：助手列的五步，下一轮不许装作没列过。
+ */
+test("跨轮清单：有清单才出现，一行给进度，点开看每一步", () => {
+  const strip = read("components/TodoStrip.tsx");
+  assert.match(strip, /if \(tasks\.length === 0\) return null;/, "没清单不占地方");
+  assert.match(strip, /清单 \{done\}\/\{tasks\.length\}/, "一行给进度");
+  assert.match(strip, /正在做：/, "正在做哪一步看得见");
+  assert.match(strip, /api\.sessionTodos\(sessionId\)/, "数据来自平台（跨轮存的那份）");
+  assert.match(strip, /max-md:min-h-\[38px\]/, "手机点击高度（38px）");
+  assert.doesNotMatch(strip, /✅|⬜|🔲/, "不用 emoji 图标");
+
+  const chat = read("components/ChatConsole.tsx");
+  assert.match(chat, /<TodoStrip sessionId=\{sessionId\} busy=\{busy\} refreshKey=\{todoTick\} \/>/);
+  assert.match(chat, /setTodoTick\(\(n\) => n \+ 1\)/, "一轮结束要刷新清单");
+});
