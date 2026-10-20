@@ -283,7 +283,10 @@ class AgentScopeRuntime(AgentRuntime):
         api_key = ctx.get("api_key")
         specs = ctx.get("tools") or []
         work_dir = Path(ctx.get("work_dir") or settings.work_dir)
-        skills_dir = work_dir / "skills" if work_dir else None
+        # 技能是**平台级**资产（data/work/skills，界面里导入/沉淀的都在那），
+        # 不是每个会话目录里的私货 —— 以前这里拼的是 work_dir/"skills"（会话目录），
+        # 目录不存在 ⇒ LocalSkillLoader 空转 ⇒ 技能从来没进过助手的手里。
+        skills_dir = Path(settings.work_dir) / "skills"
         context: TurnContext | None = ctx.get("context")
 
         # ── MCP：把挂在这个助手上的服务器的工具**探测回来**并进 toolkit ──

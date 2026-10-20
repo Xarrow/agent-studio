@@ -280,6 +280,12 @@ def build_tools(specs: list[ToolSpec], cwd: str | None = None) -> list[Any]:
     tools = []
     for spec in specs:
         try:
+            if spec.kind == "builtin" and spec.name == "skill_viewer":
+                # AgentScope 2.0.8 已经没有 SkillViewer 类了：它在 Toolkit 里**自动**
+                # 注册成名为 `Skill` 的工具（前提是 skills_or_loaders 里真有技能）。
+                # 这里再建一次只会抛 ValueError 被静默跳过 —— 干脆按「已由运行时提供」处理。
+                logger.info("skill_viewer 由运行时自动提供（Toolkit 内置 Skill 工具），跳过显式构造")
+                continue
             if spec.kind == "builtin":
                 tools.append(build_builtin_tool(spec.name, cwd=cwd))
             elif spec.kind == "http":
@@ -343,7 +349,9 @@ def build_toolkit(
         try:
             from agentscope.skill import LocalSkillLoader
 
-            skills_or_loaders.append(LocalSkillLoader(str(skills_dir)))
+            # scan_subdir=True 是必须的：技能是「一个技能一个子目录」（<名字>/SKILL.md），
+            # 默认 False 只扫顶层 —— 实测返回空列表，等于技能全丢（Skill 工具也不会出现）。
+            skills_or_loaders.append(LocalSkillLoader(str(skills_dir), scan_subdir=True))
         except Exception as exc:  # pragma: no cover
             logger.warning("Skill loader 初始化失败: %s", exc)
 
@@ -363,6 +371,62 @@ def build_toolkit(
         ],
         skills_or_loaders=skills_or_loaders,
     )
+
+
+# --------------------------------------------------------------------------- #
+# Skill 目录清单
+# --------------------------------------------------------------------------- #
+#: 清单上限：技能再多，也不能把 system prompt 撑爆（每个技能只占一行）。
+SKILL_CATALOG_LIMIT = 60
+
+
+def _skill_meta(skill_md: Path) -> tuple[str, str]:
+    """从 SKILL.md 读 (名字, 一句话用途)。解析失败就用目录名，绝不抛异常。"""
+    name, desc = skill_md.parent.name, ""
+    try:
+        text = skill_md.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return name, desc
+    if text.startswith("---"):
+        end = text.find("\n---", 3)
+        if end > 0:
+            try:
+                import yaml
+
+                meta = yaml.safe_load(text[3:end]) or {}
+                if isinstance(meta, dict):
+                    name = str(meta.get("name") or name)
+                    desc = str(meta.get("description") or "")
+            except Exception:  # noqa: BLE001 —— 坏 frontmatter 不该拖垮整轮
+                pass
+    return name, " ".join(desc.split())
+
+
+def skill_catalog(skills_dir: Path | None) -> str:
+    """把技能目录渲染成「名字：一句话用途」，拼进 system prompt。
+
+    为什么必须拼：AgentScope 只是把技能注册进 Toolkit，**不会**自动写进提示词；
+    以前平台只把 SKILL.md 放在磁盘上，模型不主动 glob 就永远发现不了 ——
+    用户看到「技能已挂载」，助手却完全不知道有这回事。
+    """
+    if skills_dir is None or not skills_dir.is_dir():
+        return ""
+    rows: list[tuple[str, str]] = []
+    for child in sorted(skills_dir.iterdir()):
+        skill_md = child / "SKILL.md"
+        if child.is_dir() and skill_md.is_file():
+            name, desc = _skill_meta(skill_md)
+            rows.append((name, desc or "（没有写用途）"))
+    if not rows:
+        return ""
+    lines = ["## 可用技能", "", "动手之前先扫一眼这张表：命中就用 `Skill` 工具读全文，照着做，不要临场发挥。"]
+    for name, desc in rows[:SKILL_CATALOG_LIMIT]:
+        # 一行一个技能：用途超过 120 字就截断（真要看全文用 Skill 工具，别把提示词撑爆）
+        short = desc if len(desc) <= 120 else desc[:119].rstrip() + "…"
+        lines.append(f"- {name}：{short}")
+    if len(rows) > SKILL_CATALOG_LIMIT:
+        lines.append(f"- ……还有 {len(rows) - SKILL_CATALOG_LIMIT} 个（用 Skill 工具按名字读）")
+    return "\n".join(lines)
 
 
 # --------------------------------------------------------------------------- #
@@ -628,6 +692,10 @@ def build_agent(
     system_prompt = defn.system_prompt or ""
     if memory_text:
         system_prompt = f"{system_prompt.rstrip()}\n\n{memory_text}".strip()
+    # 技能清单：让模型知道「平台里到底有哪些做法」，否则挂载了也发现不了
+    catalog = skill_catalog(skills_dir)
+    if catalog:
+        system_prompt = f"{system_prompt.rstrip()}\n\n{catalog}".strip()
 
     # 记录器：把每次模型调用的**完整请求与响应**落库（llm_call.request_blob/
     # response_blob）。以前这两列一直是空的 —— 只能看到"花了多少 token"，
