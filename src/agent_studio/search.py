@@ -42,9 +42,30 @@ def _tokens(q: str) -> list[str]:
     return toks or parts
 
 
+def _plain(md: str) -> str:
+    """把 Markdown 抹平成能直接读的句子。
+
+    片段是给人一眼看的：表格竖线、代码围栏、** 加粗、反引号这些符号留在里面
+    只会让人以为"搜索结果坏了"（实测第一条命中的就是一张表格）。
+    """
+    s = md or ""
+    s = re.sub(r"```.*?```", " ", s, flags=re.S)  # 代码块 → 留个空隙
+    s = re.sub(r"`([^`]*)`", r"\1", s)  # 行内代码
+    s = re.sub(r"!\[[^\]]*\]\([^)]*\)", " ", s)  # 图片
+    s = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", s)  # 链接 → 文字
+    s = re.sub(r"^\s*#{1,6}\s*", "", s, flags=re.M)  # 标题井号
+    s = re.sub(r"^\s*[-*+]\s+", "", s, flags=re.M)  # 列表符号
+    s = s.replace("**", "").replace("__", "")
+    # 表格的分隔行（|---|---| / :--: ）整行去掉，别在片段里剩一串横线
+    s = re.sub(r"^\s*\|?[\s:|-]{4,}\|?\s*$", " ", s, flags=re.M)
+    s = s.replace("|", " ")  # 表格竖线
+    s = re.sub(r"^-{3,}$", " ", s, flags=re.M)  # 分割线
+    return re.sub(r"\s+", " ", s).strip()
+
+
 def _snippet(text: str, toks: list[str]) -> str:
     """截命中位置附近的一段（命中词尽量居中）。"""
-    s = re.sub(r"\s+", " ", text or "").strip()
+    s = _plain(text or "")
     if not s:
         return ""
     low = s.lower()
