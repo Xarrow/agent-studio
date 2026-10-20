@@ -736,6 +736,11 @@ class RunService:
                     node_id=run.node_id,
                     orchestration_id=run.orchestration_id,
                     depth=_depth,
+                    origin=run.origin,
+                    # 只有定时任务是"确实没人看"：它自己发起、跑完才通知。
+                    # 其余（对话/试跑/接口调试/origin 为空的旧数据）都当有人在 ——
+                    # 否则手动发起的一次运行里，连 `rm -rf ./build` 都会被判成无人值守。
+                    interactive=(run.origin != "schedule"),
                 )
 
                 tools = await load_tools(session, run.agent_id)
@@ -761,6 +766,8 @@ class RunService:
                     depth=_depth,
                     workspace=str(work_dir),
                     session_id=str(run.session_id or ""),
+                    origin=run.origin,
+                    interactive=(run.origin != "schedule"),
                 )
                 run_input = _with_work_dir_hint(run_input, work_dir)
                 # 组装上下文：短期记忆（会话历史）+ 长期记忆（召回注入）
@@ -1179,6 +1186,9 @@ class RunService:
                 depth=0,
                 workspace=str(_resume_work_dir),
                 session_id=str(_resume_session_id or ""),
+                origin=run.origin,
+                # 能走到续跑这一步，说明刚才就有人在点「允许」
+                interactive=True,
             )
             compiled = await runtime.compile(
                 definition, api_key=api_key, tools=tools,

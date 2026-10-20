@@ -100,3 +100,20 @@ test("空/坏 payload 不炸", () => {
   assert.match(bad[0].detail, /既不是JSON/, "解析不了就把原文摆出来（宁可丑也别显示错）");
   assert.equal(highestRisk([]), null);
 });
+
+test("后端给了理由就听后端的（它知道为什么问）", () => {
+  const calls = summarizeCalls({
+    tool_calls: [{ id: "tc_9", name: "bash", input: { command: "rm -rf ./build" } }],
+    guard_reasons: { tc_9: "要递归删除 ./build，删掉就找不回来" },
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].risk?.level, "danger");
+  assert.match(calls[0].risk!.reason, /递归删除/);
+});
+
+test("没给理由时仍然按前端指纹判（老数据/别的运行时）", () => {
+  const calls = summarizeCalls({
+    tool_calls: [{ id: "tc_1", name: "bash", input: { command: "rm -rf /" } }],
+  });
+  assert.equal(calls[0].risk?.level, "danger");
+});

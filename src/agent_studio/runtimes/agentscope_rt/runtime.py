@@ -335,6 +335,7 @@ class AgentScopeRuntime(AgentRuntime):
             skills_dir,
             memory_text=context.memory_text if context else None,
             mcp_tools=mcp_tools,
+            cwd=str(work_dir) if work_dir else None,
         )
 
         # 多轮会话：把历史消息预置进 Agent。

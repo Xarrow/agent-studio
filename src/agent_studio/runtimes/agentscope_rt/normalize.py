@@ -86,6 +86,19 @@ def normalize_event(ev: Any, run_id: str = "", seq: int = 0) -> UnifiedEvent | N
     raw = ev.model_dump(mode="json")
     payload = {k: v for k, v in raw.items() if k not in _STRIP_KEYS}
 
+    if etype == "hitl_request":
+        # 把危险动作闸门给的理由挂上（AgentScope 的确认事件只有工具名和参数）。
+        # 授权条上要能回答"为什么拦我"，否则用户只能自己审命令。
+        from .guard import guard_reasons
+
+        reasons = guard_reasons()
+        if reasons:
+            payload["guard_reasons"] = {
+                str(tc.get("id")): reasons[str(tc.get("id"))]
+                for tc in (raw.get("tool_calls") or [])
+                if isinstance(tc, dict) and str(tc.get("id")) in reasons
+            }
+
     return UnifiedEvent(
         run_id=run_id,
         seq=seq,

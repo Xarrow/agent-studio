@@ -146,11 +146,18 @@ function riskOf(label: string, args: Record<string, unknown> | null, rawText: st
   return null;
 }
 
-/** 把待确认的 tool_calls 提炼成可读的几条 */
+/** 把待确认的 tool_calls 提炼成可读的几条。
+ *
+ * ``payload.guard_reasons``（后端危险动作闸门给的逐条理由）优先于前端猜的：
+ * 后端知道**为什么**要问（"要递归删除 ./build，删掉就找不回来"），
+ * 前端只能从参数字符串上猜。两边都有时听后端的 —— 它的理由更具体。
+ */
 export function summarizeCalls(payload: Record<string, unknown> | null | undefined): CallView[] {
   const calls = (payload?.tool_calls as ToolCall[] | undefined) ?? [];
+  const guardReasons = (payload?.guard_reasons as Record<string, string> | undefined) ?? {};
   return calls.map((tc) => {
     const raw = tc.name ?? "";
+    const guardReason = tc.id ? guardReasons[tc.id] : undefined;
     const label = toolLabel(raw);
     const input = parseToolInput(tc.input);
     const full =
@@ -165,7 +172,10 @@ export function summarizeCalls(payload: Record<string, unknown> | null | undefin
           ? `${key}: ${String(input[key]).slice(0, 240)}`
           : JSON.stringify(input).slice(0, 240);
     }
-    return { raw, label, detail, full, risk: riskOf(label, input, detail) };
+    const risk = guardReason
+      ? ({ level: "danger", reason: guardReason } as const)
+      : riskOf(label, input, detail);
+    return { raw, label, detail, full, risk };
   });
 }
 

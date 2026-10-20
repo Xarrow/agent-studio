@@ -172,8 +172,13 @@ def build_model(spec: ModelSpec, api_key: str | None):
 # --------------------------------------------------------------------------- #
 # 工具
 # --------------------------------------------------------------------------- #
-def build_builtin_tool(name: str):
-    """按名字构造 AgentScope 内置工具实例。"""
+def build_builtin_tool(name: str, cwd: str | None = None):
+    """按名字构造 AgentScope 内置工具实例。
+
+    ``cwd`` 会传给 Bash/PowerShell：不给的话命令是在**服务进程的当前目录**
+    （也就是源码仓库根）里跑的 —— 助手说"当前目录"其实是我们的代码目录，
+    ``rm -rf .`` 删的也是它。会话目录必须在这里生效。
+    """
     import agentscope.tool as tool_module
 
     class_name = BUILTIN_TOOLS.get(name)
@@ -182,6 +187,8 @@ def build_builtin_tool(name: str):
     cls = getattr(tool_module, class_name, None)
     if cls is None:
         raise ValueError(f"AgentScope 未导出内置工具类: {class_name}")
+    if cwd and class_name in {"Bash", "PowerShell"}:
+        return cls(cwd=cwd)
     return cls()
 
 
@@ -264,7 +271,7 @@ def build_http_tool(spec: ToolSpec):
     )
 
 
-def build_tools(specs: list[ToolSpec]) -> list[Any]:
+def build_tools(specs: list[ToolSpec], cwd: str | None = None) -> list[Any]:
     """把**平台中立**的工具描述批量编译为 AgentScope 工具实例。
 
     注意：入参是 ``ToolSpec``（平台 DTO），不是数据库行 —— 适配器不感知存储。
@@ -274,7 +281,7 @@ def build_tools(specs: list[ToolSpec]) -> list[Any]:
     for spec in specs:
         try:
             if spec.kind == "builtin":
-                tools.append(build_builtin_tool(spec.name))
+                tools.append(build_builtin_tool(spec.name, cwd=cwd))
             elif spec.kind == "http":
                 tools.append(build_http_tool(spec))
             elif spec.kind == "fork":
@@ -321,6 +328,7 @@ def build_toolkit(
     specs: list[ToolSpec],
     skills_dir: Path | None = None,
     extra_tools: list[Any] | None = None,
+    cwd: str | None = None,
 ):
     """构造 Toolkit（工具 + Skill 的唯一注册源）。
 
@@ -340,7 +348,7 @@ def build_toolkit(
             logger.warning("Skill loader 初始化失败: %s", exc)
 
     return Toolkit(
-        tools=[*build_tools(specs), *(extra_tools or [])],
+        tools=[*build_tools(specs, cwd=cwd), *(extra_tools or [])],
         skills_or_loaders=skills_or_loaders,
     )
 
@@ -589,6 +597,7 @@ def build_agent(
     skills_dir: Path | None = None,
     memory_text: str | None = None,
     mcp_tools: list[Any] | None = None,
+    cwd: str | None = None,
 ):
     """编译出 ``(agent, model)`` —— 二者都需在 dispose 时收尾。
 
@@ -599,7 +608,9 @@ def build_agent(
     from agentscope.agent import Agent
 
     model = build_model(defn.model, api_key)
-    toolkit = build_toolkit(tools, skills_dir, extra_tools=mcp_tools)
+    # ``work_dir`` 也要落到 Bash 的 cwd 上：不给的话命令在服务进程的当前目录
+    # （源码仓库根）里跑 —— 助手嘴里的"当前目录"是错的，`rm -rf .` 删的也是仓库。
+    toolkit = build_toolkit(tools, skills_dir, extra_tools=mcp_tools, cwd=cwd)
     model_cfg, context_cfg, react_cfg, injection_cfg = build_configs(defn)
 
     system_prompt = defn.system_prompt or ""
@@ -615,12 +626,24 @@ def build_agent(
         provider=defn.model.provider or "", model=defn.model.name or ""
     )
 
+    # 危险动作闸门：夹在 AgentScope 权限引擎**之前**。
+    # 引擎只认"在不在工作目录内"，工作目录里 `rm -rf .` 是放行的 —— 用户真正怕的
+    # 那批不可逆命令必须另有判据。配置形如::
+    #     runtime_options.agentscope.guard = {"enabled": true, "allow": ["rm -rf ./build"]}
+    from .guard import DangerousActionGuard
+
+    _gconf = defn.options_for("agentscope").get("guard") or {}
+    _guard = DangerousActionGuard(
+        enabled=bool(_gconf.get("enabled", True)),
+        allow=tuple(_gconf.get("allow") or ()),
+    )
+
     agent = Agent(
         name=defn.name,
         system_prompt=system_prompt,
         model=model,
         toolkit=toolkit,
-        middlewares=[recorder],
+        middlewares=[_guard, recorder],
         # 权限 scope：不注入的话 AgentScope 用自己的默认（每个操作都要确认），
         # 而平台没有中途审批界面 → 运行会停在等待人工确认上。
         state=build_permission_state(
