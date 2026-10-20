@@ -13,7 +13,7 @@
 
 import Link from "next/link";
 import { HitlPrompt } from "@/components/HitlPrompt";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, fmt } from "@/lib/api";
 import type { Agent, RunEvent, Session, SearchHit } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
@@ -717,6 +717,41 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   }, []);
   const fileCount = sessionFiles?.count ?? 0;
   const openFiles = filesOpenPref ?? fileCount <= 3;
+
+  /* ---- 文件查询 / 删除 ----
+     文件多了要能找、能一次删掉几个。搜索只在本会话目录里过滤（名字或后缀），
+     管理态才把文件变成可勾选的 —— 平时点一下还是打开预览，不改变原有习惯。 */
+  const [fileQuery, setFileQuery] = useState("");
+  const [managing, setManaging] = useState(false);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [bulkConfirm, setBulkConfirm] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const shownFiles = useMemo(() => {
+    const all = sessionFiles?.files ?? [];
+    const q = fileQuery.trim().toLowerCase();
+    if (!q) return all;
+    return all.filter(
+      (f) => f.path.toLowerCase().includes(q) || middleEllipsis(f.path, 60).toLowerCase().includes(q),
+    );
+  }, [sessionFiles, fileQuery]);
+  const togglePick = (path: string) =>
+    setPicked((cur) => (cur.includes(path) ? cur.filter((p) => p !== path) : [...cur, path]));
+  const bulkDelete = async () => {
+    if (!sessionId || picked.length === 0 || bulkBusy) return;
+    setBulkBusy(true);
+    try {
+      const r = await api.deleteSessionFiles(sessionId, picked);
+      fb.success(`删掉了 ${r.count} 个文件`, picked.length ? picked.slice(0, 3).join("、") + (picked.length > 3 ? " 等" : "") : "");
+      setPicked([]);
+      setBulkConfirm(false);
+      setManaging(false);
+      await loadSessionFiles();
+    } catch (e) {
+      fb.error("删除失败", e instanceof Error ? e.message : String(e));
+    } finally {
+      setBulkBusy(false);
+    }
+  };
   const toggleFiles = () => {
     const next = !openFiles;
     setFilesOpenPref(next);
@@ -1342,9 +1377,26 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     )}
                   </button>
                   <span className="shrink-0">· {sessionFiles?.count ?? 0} 个</span>
+                  {/* 管理：把文件变成可勾选，用来批量删。常驻可见（不藏进 ⋯），但只在有文件时出现 */}
+                  {fileCount > 0 ? (
+                    <button
+                      type="button"
+                      className="ml-auto shrink-0 rounded px-1 text-[12px] hover:underline max-md:min-h-[32px] max-md:min-w-[36px]"
+                      style={{ color: managing ? "var(--color-err)" : "var(--color-accent)" }}
+                      onClick={() => {
+                        setManaging((v) => !v);
+                        setPicked([]);
+                        setBulkConfirm(false);
+                        if (!openFiles) toggleFiles();
+                      }}
+                      title="勾选多个文件一起删"
+                    >
+                      {managing ? "退出管理" : "管理"}
+                    </button>
+                  ) : null}
                   <button
                     type="button"
-                    className="ml-auto inline-flex shrink-0 items-center gap-1 rounded px-1 hover:underline max-md:min-h-[32px] max-md:min-w-[32px] max-md:justify-center disabled:opacity-60"
+                    className="inline-flex shrink-0 items-center gap-1 rounded px-1 hover:underline max-md:min-h-[32px] max-md:min-w-[32px] max-md:justify-center disabled:opacity-60"
                     style={{ color: "var(--color-accent)" }}
                     onClick={() => void loadSessionFiles()}
                     disabled={filesBusy}
@@ -1371,26 +1423,144 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 </div>
                 {openFiles &&
                   (sessionFiles && sessionFiles.files.length > 0 ? (
-                  /* 文件全列出来（以前只摆 6 个、剩下写成"还有 N 个…"点不到 —— 等于没给）。
-                     高度封在 40vh 并允许滚动：文件再多也不会把输入坞顶到屏幕外。 */
+                  <>
+                  {/* 查询：文件一多就靠它找。只在超过 6 个时出现 —— 少的时候摆个搜索框纯属噪音。 */}
+                  {fileCount > 6 && (
+                    <div className="mt-1 flex items-center gap-1.5">
+                      {/* 不写死 height：手机会把 12px 的字撑成 30px 高的小方块，
+                          iOS 还会因为字号 <16px 聚焦放大整页。交给 .input 自己按断点收。 */}
+                      <input
+                        className="input input-inline flex-1 text-[13px]"
+                        value={fileQuery}
+                        onChange={(e) => setFileQuery(e.target.value)}
+                        placeholder="按文件名找（输入就过滤）"
+                        aria-label="在本会话文件里查找"
+                      />
+                      {fileQuery ? (
+                        <button
+                          type="button"
+                          className="btn shrink-0 px-2 py-0.5 text-[12px] max-md:min-h-[32px]"
+                          onClick={() => setFileQuery("")}
+                        >
+                          清空
+                        </button>
+                      ) : null}
+                      <span className="shrink-0 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                        {shownFiles.length}/{fileCount}
+                      </span>
+                    </div>
+                  )}
+                  {/* 文件全列出来（以前只摆 6 个、剩下写成"还有 N 个…"点不到 —— 等于没给）。
+                      高度封在 40vh 并允许滚动：文件再多也不会把输入坞顶到屏幕外。 */}
                   <div className="mt-1 flex max-h-[40vh] flex-wrap gap-1.5 overflow-y-auto pb-0.5">
-                    {sessionFiles.files.map((f) => (
-                      <FileRowButton
-                        key={f.path}
-                        file={{ path: `${sessionFiles.work_dir}/${f.path}`, url: f.url, size: f.size, mtime: f.mtime }}
-                        className="inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-1 text-[11.5px] hover:bg-[var(--color-surface)] max-md:min-h-[32px]"
-                        style={{ borderColor: "var(--color-border)", color: "var(--color-text)" }}
-                      >
-                        <FileTypeIcon kind={fileTypeKey(f.path)} size={13} className="shrink-0 opacity-60" />
-                        <span className="mono shrink-0" title={f.path}>
-                          {f.path.includes("/")
-                            ? `${f.path.slice(0, f.path.lastIndexOf("/") + 1)}${middleEllipsis(f.path.slice(f.path.lastIndexOf("/") + 1), 20)}`
-                            : middleEllipsis(f.path, 22)}
-                        </span>
-                        <span style={{ color: "var(--color-muted)" }}>{fmt.bytes(f.size)}</span>
-                      </FileRowButton>
-                    ))}
+                    {shownFiles.map((f) =>
+                      managing ? (
+                        /* 管理态：点一下是勾选（不是打开预览）—— 这时的目的就是删 */
+                        <button
+                          key={f.path}
+                          type="button"
+                          onClick={() => togglePick(f.path)}
+                          aria-pressed={picked.includes(f.path)}
+                          className="inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-1 text-[11.5px] max-md:min-h-[32px]"
+                          style={{
+                            borderColor: picked.includes(f.path) ? "var(--color-accent)" : "var(--color-border)",
+                            background: picked.includes(f.path) ? "var(--color-surface-2)" : "transparent",
+                            color: "var(--color-text)",
+                          }}
+                        >
+                          <span
+                            aria-hidden
+                            className="inline-flex h-[13px] w-[13px] shrink-0 items-center justify-center rounded-[3px] border"
+                            style={{
+                              borderColor: picked.includes(f.path) ? "var(--color-accent)" : "var(--color-border)",
+                              background: picked.includes(f.path) ? "var(--color-accent)" : "transparent",
+                            }}
+                          >
+                            {picked.includes(f.path) ? (
+                              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                                <path d="M20 6 9 17l-5-5" />
+                              </svg>
+                            ) : null}
+                          </span>
+                          <span className="mono" title={f.path}>
+                            {f.path.includes("/")
+                              ? `${f.path.slice(0, f.path.lastIndexOf("/") + 1)}${middleEllipsis(f.path.slice(f.path.lastIndexOf("/") + 1), 20)}`
+                              : middleEllipsis(f.path, 22)}
+                          </span>
+                          <span style={{ color: "var(--color-muted)" }}>{fmt.bytes(f.size)}</span>
+                        </button>
+                      ) : (
+                        <FileRowButton
+                          key={f.path}
+                          file={{ path: `${sessionFiles.work_dir}/${f.path}`, url: f.url, size: f.size, mtime: f.mtime }}
+                          className="inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-1 text-[11.5px] hover:bg-[var(--color-surface)] max-md:min-h-[32px]"
+                          style={{ borderColor: "var(--color-border)", color: "var(--color-text)" }}
+                        >
+                          <FileTypeIcon kind={fileTypeKey(f.path)} size={13} className="shrink-0 opacity-60" />
+                          <span className="mono shrink-0" title={f.path}>
+                            {f.path.includes("/")
+                              ? `${f.path.slice(0, f.path.lastIndexOf("/") + 1)}${middleEllipsis(f.path.slice(f.path.lastIndexOf("/") + 1), 20)}`
+                              : middleEllipsis(f.path, 22)}
+                          </span>
+                          <span style={{ color: "var(--color-muted)" }}>{fmt.bytes(f.size)}</span>
+                        </FileRowButton>
+                      ),
+                    )}
+                    {shownFiles.length === 0 && fileQuery ? (
+                      <span className="inline-flex items-center px-1 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                        没有匹配「{fileQuery}」的文件
+                      </span>
+                    ) : null}
                   </div>
+                  {/* 管理态的动作条：就地出现，不占平时的位置 */}
+                  {managing && (
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-[12px]">
+                      <span style={{ color: "var(--color-muted)" }}>已选 {picked.length} 个</span>
+                      <button
+                        type="button"
+                        className="btn px-2 py-0.5 text-[12px] max-md:min-h-[32px]"
+                        onClick={() => setPicked(shownFiles.map((f) => f.path))}
+                      >
+                        全选
+                      </button>
+                      <button
+                        type="button"
+                        className="btn px-2 py-0.5 text-[12px] max-md:min-h-[32px]"
+                        disabled={bulkBusy}
+                        style={{
+                          color: bulkConfirm ? "#fff" : "var(--color-err)",
+                          background: bulkConfirm ? "var(--color-err)" : "transparent",
+                          borderColor: "var(--color-err)",
+                        }}
+                        onClick={() => {
+                          if (picked.length === 0) return;
+                          if (!bulkConfirm) {
+                            setBulkConfirm(true);
+                            return;
+                          }
+                          void bulkDelete();
+                        }}
+                      >
+                        {bulkBusy
+                          ? "删除中…"
+                          : bulkConfirm
+                            ? `确认删除 ${picked.length} 个（不可撤销）`
+                            : `删除选中${picked.length ? `（${picked.length}）` : ""}`}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn ml-auto px-2 py-0.5 text-[12px] max-md:min-h-[32px]"
+                        onClick={() => {
+                          setManaging(false);
+                          setPicked([]);
+                          setBulkConfirm(false);
+                        }}
+                      >
+                        完成
+                      </button>
+                    </div>
+                  )}
+                  </>
                 ) : (
                   <div className="mt-0.5 text-[11px]" style={{ color: "var(--color-muted)" }}>
                     还没有文件 —— 这个会话生成的文档都会存在上面的目录里

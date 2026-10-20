@@ -332,7 +332,13 @@ test("会话文件清单可折叠：默认按数量、手动选择要记住", ()
      现在全部列出（换行 + 滚动兜高度），不许再出现截断与「还有」提示。 */
   assert.doesNotMatch(chat, /slice\(0, 6\)/, "不许再截断成 6 个");
   assert.doesNotMatch(chat, /还有 \{sessionFiles\.files\.length - 6\}/, "不许再有『还有 N 个』这种点不到的提示");
-  assert.match(chat, /sessionFiles\.files\.map\(/, "全部文件都要列出来");
+  assert.match(chat, /shownFiles\.map\(/, "全部（过滤后）文件都要列出来");
+  /* 文件查询与管理：文件多时要能按名字找、能一次删几个（删除仍要两步确认） */
+  assert.match(chat, /const \[fileQuery, setFileQuery\]/, "要有按文件名查询");
+  assert.match(chat, /const shownFiles = useMemo/, "查询是就地过滤，不去打扰后端");
+  assert.match(chat, /if \(!bulkConfirm\) \{/, "批量删除必须先确认一次（不可撤销）");
+  assert.match(chat, /api\.deleteSessionFiles\(sessionId, picked\)/, "批量删除走专用接口");
+  assert.match(chat, /fileCount > 6 && \(/, "文件少的时候不摆搜索框（噪音）");
 });
 
 /**

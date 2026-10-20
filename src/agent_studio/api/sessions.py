@@ -168,6 +168,33 @@ async def get_session_detail(
     )
 
 
+def _resolve_in_session(root: Path, raw: str) -> tuple[Path, str]:
+    """把"相对会话目录"的路径解析成真实文件；不合规矩一律 400。
+
+    会话目录就是权限边界：含 `..`、绝对路径、指向目录外面，全部拒。
+    """
+    rel = (raw or "").strip().lstrip("/")
+    if not rel:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "路径不能为空")
+    parts = Path(rel).parts
+    if ".." in parts or Path(rel).is_absolute():
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "路径不合法")
+    target = (root / rel).resolve()
+    if target != root and root not in target.parents:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "只能删本会话目录里的文件")
+    return target, str(Path(rel))
+
+
+def _prune_empty(root: Path, parent: Path) -> None:
+    """删完顺手收掉变空的子目录（只收到会话根为止，会话根自己留着）。"""
+    while parent != root and root in parent.parents:
+        try:
+            parent.rmdir()  # 非空会抛 OSError，正好停下
+        except OSError:
+            break
+        parent = parent.parent
+
+
 @router.delete("/{session_id}/files")
 async def delete_session_file(
     session_id: str,
@@ -184,29 +211,65 @@ async def delete_session_file(
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"会话不存在: {session_id}")
     root = session_work_dir(session_id).resolve()
-    rel = path.strip().lstrip("/")
-    if not rel:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "路径不能为空")
-    parts = Path(rel).parts
-    if ".." in parts or Path(rel).is_absolute():
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "路径不合法")
-    target = (root / rel).resolve()
-    if target != root and root not in target.parents:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "只能删本会话目录里的文件")
+    target, rel = _resolve_in_session(root, path)
     if not target.exists():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "文件不存在（可能已经被删了）")
     if not target.is_file():
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "只能删文件，不能删目录")
     target.unlink()
-    # 顺手清掉因此变空的子目录（只清到会话根为止，会话根自己留着）
-    parent = target.parent
-    while parent != root and root in parent.parents:
+    _prune_empty(root, target.parent)
+    return {"deleted": rel, "session_id": session_id}
+
+
+#: 单次批量删除的上限 —— 再多就是"清空目录"，那该走删会话，不该是误点一下
+_BATCH_DELETE_MAX = 200
+
+
+class DeleteFilesIn(BaseModel):
+    """批量删：只收相对会话目录的路径，一个都不合规矩就整体拒（不做"删一半"）。"""
+
+    paths: list[str] = []
+
+
+@router.post("/{session_id}/files/delete")
+async def delete_session_files(
+    session_id: str,
+    payload: DeleteFilesIn,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """一次删多个文件（文件区「管理 → 删除选中」用的）。
+
+    为什么先全部校验再动手：半截失败最讨厌 —— 用户不知道删掉了哪几个。
+    所以要么全删成，要么一个不删并说清是哪个路径不合规矩。
+    """
+    row = await session.get(ChatSession, session_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"会话不存在: {session_id}")
+    if not payload.paths:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "没有要删的文件")
+    if len(payload.paths) > _BATCH_DELETE_MAX:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"一次最多删 {_BATCH_DELETE_MAX} 个")
+    root = session_work_dir(session_id).resolve()
+
+    targets: list[tuple[Path, str]] = []
+    for raw in payload.paths:
         try:
-            parent.rmdir()  # 非空会抛 OSError，正好停下
-        except OSError:
-            break
-        parent = parent.parent
-    return {"deleted": str(Path(rel)), "session_id": session_id}
+            targets.append((*_resolve_in_session(root, raw),))
+        except HTTPException as exc:
+            detail = exc.detail if isinstance(exc.detail, str) else "路径不合法"
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"{raw}：{detail}") from None
+    for target, rel in targets:
+        if not target.is_file():
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"{rel}：不是文件")
+
+    deleted: list[str] = []
+    for target, rel in targets:
+        if target.exists():
+            target.unlink()
+            deleted.append(rel)
+    for _, rel in targets:
+        _prune_empty(root, (root / rel).parent)
+    return {"deleted": deleted, "count": len(deleted), "session_id": session_id}
 
 
 @router.get("/{session_id}/todos")

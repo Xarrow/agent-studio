@@ -917,6 +917,12 @@ export const api = {
     del<{ deleted: string; session_id: string }>(
       `/api/sessions/${id}/files?path=${encodeURIComponent(path)}`,
     ),
+  /** 一次删多个（文件区「管理」用）：路径全部相对会话目录，有一个不合规矩就整体拒 */
+  deleteSessionFiles: (id: string, paths: string[]) =>
+    post<{ deleted: string[]; count: number; session_id: string }>(
+      `/api/sessions/${id}/files/delete`,
+      { paths },
+    ),
   /** 会话目录体检：几个、占多少、几个没主（可清） */
   sessionDirs: () =>
     request<{
