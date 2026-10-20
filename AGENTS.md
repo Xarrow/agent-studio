@@ -111,6 +111,8 @@ FastAPI + SQLite（后端 `src/agent_studio/`）+ Next.js（前端 `web/`）。
    画布那一列必须有 `min-h-0`（`min-h-0 min-w-0 flex-1`），让内部 `overflow-auto` 自己滚。
    **横向溢出为 0 ≠ 移动端没问题** —— 浮动控件要在 390×844 真机视口量 `rect.bottom ≤ innerHeight`。
 | 做法要沉淀成技能 | 助手在对话里摸出来的多步做法（部署、抓数、排查、批量改文件），用 `skill_save` 存成一个**全局技能**：写「什么时候用 / 步骤 / 命令 / 坑」，不写这次的具体数字。技能落在 `data/work/skills/<名字>/SKILL.md` + `skill` 表，**只进库不落盘助手看不见**；同名默认不覆盖（技能是长期资产）；存完自动挂给发起它的助手。技能页来源显示「助手沉淀 · 谁写的」 |
+| 会话回滚 / 分支 | `POST /api/sessions/{id}/rewind` 真删某轮及之后（留着模型看得见=没回滚），摘要覆盖范围同步退；`/branch` 另起会话、原会话不动、副本 `run_id` 置空；界面「重来」两步确认、「分支」建完自动切换 |
+| MCP 凭据加密 | `env_enc`/`headers_enc` 两列（Fernet 同 LLM 主密钥），写入只进密文、明文列清空；读回落兼容老库；覆盖新建/修改/probe/导入；启动幂等迁移明文行；运行时 `open_io` 解密 |
 | 助手自己排班 | `job_create` / `job_list` / `job_cancel` 三个内核工具，作用于**当前会话**（没有会话就报错）；编译时总是挂上，默认按需加载；定时执行是无人值守（需要点头的操作会被拒） |
 | 项目上下文 | 工作目录里的 `AGENTS.md` 自动读进 system prompt（往上找最近一份，不越沙箱，上限 8000 字）：prompt 管"我是谁"，AGENTS.md 管"这个目录该怎么做" |
 | 记忆存完即用 | `memory_save` 直接 active（source=agent），不再落候选；退出机制=记忆页归档/删除 |
