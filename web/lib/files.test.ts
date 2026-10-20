@@ -18,6 +18,7 @@ import {
   isTextishKind,
   looksLikeFilePath,
   middleEllipsis,
+  shortFilePath,
 } from "./files.ts";
 
 test("像文件的才认：绝对路径 / 带目录的相对路径 / 带扩展名的裸文件名", () => {
@@ -109,4 +110,17 @@ test("文件类型：json/xml/图片/表格/代码分开认", () => {
   assert.equal(fileTypeKey("readme.md"), "text");
   assert.equal(fileTypeKey("pkg.tar.gz"), "archive");
   assert.equal(fileTypeKey("noext"), "other");
+});
+
+
+test("短路径：深目录只留最后一级，文件名不丢", () => {
+  // 浅目录：原样（够短就别省略，省得人认不出来）
+  assert.equal(shortFilePath("reports/q1.md"), "reports/q1.md");
+  // 深目录：…/最后一级/文件名（完整路径在 title 里）
+  const deep = shortFilePath(".archify/architecture-jvm-memory-20261020-1401/jvm-memory.html");
+  assert.ok(deep.startsWith("…/"), deep);
+  assert.ok(deep.endsWith("jvm-memory.html"), deep);
+  assert.ok(deep.length < 40, deep);
+  // 单文件
+  assert.equal(shortFilePath("a.md"), "a.md");
 });

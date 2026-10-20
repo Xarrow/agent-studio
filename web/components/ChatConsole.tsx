@@ -30,7 +30,7 @@ import { RunDetailById } from "@/components/RunDetailDialog";
 import { AgentDetailDialog } from "@/components/AgentDetailDialog";
 import { FileOpenerProvider, FileRowButton } from "@/components/FileDialog";
 import { copyText } from "@/lib/clipboard";
-import { middleEllipsis, fileTypeKey } from "@/lib/files";
+import { middleEllipsis, fileTypeKey, shortFilePath } from "@/lib/files";
 import { humanizeAssistantText } from "@/lib/messages";
 import { FileTypeIcon } from "@/components/ui/icons";
 
@@ -1484,9 +1484,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                             ) : null}
                           </span>
                           <span className="mono" title={f.path}>
-                            {f.path.includes("/")
-                              ? `${f.path.slice(0, f.path.lastIndexOf("/") + 1)}${middleEllipsis(f.path.slice(f.path.lastIndexOf("/") + 1), 20)}`
-                              : middleEllipsis(f.path, 22)}
+                            {shortFilePath(f.path)}
                           </span>
                           <span style={{ color: "var(--color-muted)" }}>{fmt.bytes(f.size)}</span>
                         </button>
@@ -1499,9 +1497,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                         >
                           <FileTypeIcon kind={fileTypeKey(f.path)} size={13} className="shrink-0 opacity-60" />
                           <span className="mono shrink-0" title={f.path}>
-                            {f.path.includes("/")
-                              ? `${f.path.slice(0, f.path.lastIndexOf("/") + 1)}${middleEllipsis(f.path.slice(f.path.lastIndexOf("/") + 1), 20)}`
-                              : middleEllipsis(f.path, 22)}
+                            {shortFilePath(f.path)}
                           </span>
                           <span style={{ color: "var(--color-muted)" }}>{fmt.bytes(f.size)}</span>
                         </FileRowButton>

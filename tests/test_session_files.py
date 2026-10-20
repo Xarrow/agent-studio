@@ -131,3 +131,29 @@ async def test_single_delete_still_works(client):
     # 删目录不许
     (d / "adir").mkdir(exist_ok=True)
     assert (await client.delete(f"/api/sessions/{sid}/files", params={"path": "adir"})).status_code == 400
+
+
+async def test_hidden_product_dirs_are_listed(client):
+    """助手把产物放隐藏目录（archify 的 `.archify/`）也要能看见、能删 ——
+    这不是"隐藏文件"，是它的输出。要挡的只有 .git / node_modules 这类工程噪音。"""
+    sid = await _make_session(client)
+    d = _session_files_dir(sid)
+    (d / ".archify" / "run-1").mkdir(parents=True, exist_ok=True)
+    (d / ".archify" / "run-1" / "diagram.html").write_text("<h1>x</h1>", encoding="utf-8")
+    (d / ".git").mkdir(exist_ok=True)
+    (d / ".git" / "config").write_text("[core]", encoding="utf-8")
+    (d / "node_modules" / "pkg").mkdir(parents=True, exist_ok=True)
+    (d / "node_modules" / "pkg" / "index.js").write_text("1", encoding="utf-8")
+
+    got = (await client.get(f"/api/sessions/{sid}/files")).json()
+    paths = [f["path"] for f in got["files"]]
+    assert ".archify/run-1/diagram.html" in paths, paths
+    assert not any(p.startswith(".git/") for p in paths), paths
+    assert not any(p.startswith("node_modules/") for p in paths), paths
+
+    # 也能删（管理里勾选后走批量删除）
+    r = await client.post(
+        f"/api/sessions/{sid}/files/delete", json={"paths": [".archify/run-1/diagram.html"]}
+    )
+    assert r.status_code == 200, r.text
+    assert not (d / ".archify").exists(), "删完变空的 .archify 也要收掉"

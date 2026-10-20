@@ -122,6 +122,24 @@ export function fileUrlFor(path: string, sessionId?: string, workDir?: string): 
 }
 
 /**
+ * 文件 chip 上显示什么：目录太长时只留最后一级目录 + 文件名。
+ *
+ * 会话产物会藏在深目录里（`.archify/architecture-jvm-memory-20261020-1401/x.html`），
+ * 整条铺在胶囊里会撑爆一行、还把文件名挤到看不见。完整路径仍在 title 里。
+ */
+export function shortFilePath(p: string, maxName = 22, maxDir = 16): string {
+  const parts = p.split("/").filter(Boolean);
+  if (parts.length === 0) return p;
+  const base = middleEllipsis(parts[parts.length - 1], maxName);
+  if (parts.length === 1) return base;
+  const dirs = parts.slice(0, -1);
+  const dirStr = dirs.join("/");
+  if (dirStr.length <= maxDir) return `${dirStr}/${base}`;
+  const last = middleEllipsis(dirs[dirs.length - 1], maxDir);
+  return `…/${last}/${base}`;
+}
+
+/**
  * 文件名太长时做**中间省略**，保留扩展名。
  * 直接 truncate 截尾会把 `.json` / `.md` 切掉 —— 文件类型恰好是最要紧的信息。
  * 「报告-v2-final.json」→「报告-…-final.json」

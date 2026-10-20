@@ -133,8 +133,10 @@ async def test_会话文件列表只看自己那一个(client):
     assert fa["files"][0]["url"].startswith("/api/work/file/sessions/")
 
     fb = (await client.get(f"/api/sessions/{b['id']}/files")).json()
-    assert [f["path"] for f in fb["files"]] == ["result.md"], "别会话的文件不许出现"
-    assert ".hidden" not in json.dumps(fb)
+    # 2026-10 改口径：点开头的产物**要列**（archify 把图放在 .archify/ 下，
+    # 以前整段跳过，用户就看不到自己的图）。要挡的只是 .git/node_modules 这类工程噪音。
+    assert sorted(f["path"] for f in fb["files"]) == [".hidden", "result.md"], "别会话的文件不许出现"
+    assert "A 的报告" not in json.dumps(fb, ensure_ascii=False)
 
     # 产物取回端点也能按会话路径取（图片/报告点得开）
     got = await client.get(fa["files"][0]["url"])

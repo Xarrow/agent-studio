@@ -168,6 +168,13 @@ async def get_session_detail(
     )
 
 
+#: 这些目录里的东西不进文件清单（不是产物，是工程残留；列出来只会淹没真产物）
+_NOISE_DIRS = {
+    ".git", ".hg", ".svn", "node_modules", "__pycache__", ".mypy_cache",
+    ".pytest_cache", ".ruff_cache", ".next", ".nuxt", ".cache", ".venv", "venv",
+}
+
+
 def _resolve_in_session(root: Path, raw: str) -> tuple[Path, str]:
     """把"相对会话目录"的路径解析成真实文件；不合规矩一律 400。
 
@@ -311,7 +318,9 @@ async def list_session_files(
             if not p.is_file():
                 continue
             rel = p.relative_to(root)
-            if any(part.startswith(".") for part in rel.parts):
+            # 细节目录是**真产物**（archify 把架构图放在 .archify/ 下），必须能看能删；
+            # 要挡的只是工程噪音（.git / node_modules 这类一进去几百个文件，把清单淹了）。
+            if any(part in _NOISE_DIRS for part in rel.parts[:-1]):
                 continue
             try:
                 stat = p.stat()
