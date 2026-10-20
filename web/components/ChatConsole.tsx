@@ -345,6 +345,36 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     }
   };
 
+  /** 从这里重来：删掉这轮及之后，原文回到输入框（不自动发送 —— 让人先改） */
+  const rewindTo = async (turnIndex: number, text: string) => {
+    if (!sessionId) return;
+    try {
+      const r = await api.rewindSession(sessionId, turnIndex);
+      await loadMessages(sessionId);
+      await loadSessions(agentId);
+      setInput(text);
+      fb.success(
+        "已回到这一轮",
+        `删掉 ${r.deleted} 条消息，剩 ${r.remaining} 条。原文在输入框里，改完直接发。`,
+      );
+    } catch (e) {
+      fb.error("回滚失败", e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  /** 从这轮之前另起会话（原会话不动） */
+  const branchFrom = async (turnIndex: number) => {
+    if (!sessionId) return;
+    try {
+      const s = await api.branchSession(sessionId, turnIndex);
+      await loadSessions(agentId);
+      setSessionId(s.id);
+      fb.success("已另起一个会话", `「${s.title}」：这一轮之前的对话都带过去了，原来的会话没动。`);
+    } catch (e) {
+      fb.error("分支失败", e instanceof Error ? e.message : String(e));
+    }
+  };
+
   const removeSession = async (s: Session) => {
     // 先数一下这个会话的文件夹里有什么 —— 删会话会**连文件夹一起删**，
     // 不提前说清楚，用户以为只是删掉聊天记录，产物就没了。
@@ -1047,6 +1077,16 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                         setHistory((h) => h.map((x, j) => (j === i ? { ...x, content: content2 } : x)))
                       }
                       onRetry={m.role === "user" && !busy ? () => void send(m.content) : undefined}
+                      onRewind={
+                        m.role === "user" && m.turn_index && !busy
+                          ? () => void rewindTo(m.turn_index!, m.content)
+                          : undefined
+                      }
+                      onBranch={
+                        m.role === "user" && m.turn_index && !busy
+                          ? () => void branchFrom(m.turn_index!)
+                          : undefined
+                      }
                     />
                   );
                 })}
@@ -1935,6 +1975,8 @@ function Bubble({
   sessionId,
   onEdited,
   onRetry,
+  onRewind,
+  onBranch,
   streaming = false,
 }: {
   role: "user" | "assistant";
@@ -1951,6 +1993,10 @@ function Bubble({
   onEdited?: (content: string) => void;
   /** 用户消息的「重试」= 把这条消息原样再发一遍 */
   onRetry?: () => void;
+  /** 从这一轮之前重来：截断历史 + 把用户原文填回输入框（父组件做） */
+  onRewind?: () => void;
+  /** 从这一轮之前另起会话（原会话不动） */
+  onBranch?: () => void;
   streaming?: boolean;
 }) {
   const isUser = role === "user";
@@ -1966,6 +2012,8 @@ function Bubble({
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
+  /** 重来的二次确认：删历史是不可逆的，点一下就删太狠（取消不花任何成本） */
+  const [confirmRewind, setConfirmRewind] = useState(false);
   const fb = useFeedback();
 
   const hasTrace = !isUser && !!runId && !streaming;
@@ -2271,6 +2319,56 @@ function Bubble({
                 onClick={onRetry}
               >
                 重发
+              </button>
+            )}
+            {/* 重来 vs 重发：重发 = 叠在新一轮（历史还在）；重来 = 把这轮及之后擦掉，
+                改完再发。想留原答案试另一条路就用「分支」——它开新会话，这边一个字不动。 */}
+            {onRewind && !confirmRewind && (
+              <button
+                data-tap
+                className="text-[11.5px] px-1.5 py-0.5 rounded hover:text-[var(--color-text)]"
+                style={{ color: "var(--color-muted)" }}
+                title="回到这一轮之前（这轮和之后的消息会删掉，原文回到输入框）"
+                onClick={() => setConfirmRewind(true)}
+              >
+                重来
+              </button>
+            )}
+            {onRewind && confirmRewind && (
+              <span className="inline-flex items-center gap-1">
+                <span className="text-[11.5px]" style={{ color: "var(--color-danger)" }}>
+                  删掉这轮和之后的消息？
+                </span>
+                <button
+                  data-tap
+                  className="text-[11.5px] px-1.5 py-0.5 rounded font-medium"
+                  style={{ color: "var(--color-danger)" }}
+                  onClick={() => {
+                    setConfirmRewind(false);
+                    onRewind();
+                  }}
+                >
+                  确认重来
+                </button>
+                <button
+                  data-tap
+                  className="text-[11.5px] px-1.5 py-0.5 rounded"
+                  style={{ color: "var(--color-muted)" }}
+                  onClick={() => setConfirmRewind(false)}
+                >
+                  取消
+                </button>
+              </span>
+            )}
+            {onBranch && (
+              <button
+                data-tap
+                className="text-[11.5px] px-1.5 py-0.5 rounded hover:text-[var(--color-text)]"
+                style={{ color: "var(--color-muted)" }}
+                title="从这一轮之前另起一个会话（当前会话保持原样）"
+                onClick={onBranch}
+              >
+                分支
               </button>
             )}
           </div>

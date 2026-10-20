@@ -947,6 +947,15 @@ export const api = {
       `/api/sessions/${sessionId}/messages/${messageId}`,
       { method: "PATCH", body: JSON.stringify({ content }) },
     ),
+  /** 从这里重来：删掉这一轮及之后的消息（Run 记录保留，仍可在执行页翻到） */
+  rewindSession: (id: string, turnIndex: number) =>
+    post<{ deleted: number; remaining: number; turn_index: number }>(
+      `/api/sessions/${id}/rewind`,
+      { turn_index: turnIndex },
+    ),
+  /** 从这一轮之前另起会话（原会话不动）—— 想试试另一条路时用 */
+  branchSession: (id: string, turnIndex: number) =>
+    post<Session>(`/api/sessions/${id}/branch`, { turn_index: turnIndex }),
   clearSessionContext: (id: string, keepSummary = false) =>
     post<{ removed_messages: number }>(`/api/sessions/${id}/clear-context`, {
       keep_summary: keepSummary,

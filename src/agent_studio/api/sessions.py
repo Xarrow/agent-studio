@@ -18,6 +18,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -327,6 +328,134 @@ async def update_message(
         id=row.id, turn_index=row.turn_index, role=row.role,
         content=row.content, run_id=row.run_id, ts=row.ts,
     )
+
+
+class RewindIn(BaseModel):
+    """从这里重来：``turn_index`` 是那轮用户消息的轮次号。"""
+
+    turn_index: int = Field(..., ge=1)
+
+
+@router.post("/{session_id}/rewind")
+async def rewind_session(
+    session_id: str, body: RewindIn, session: AsyncSession = Depends(get_session)
+) -> dict:
+    """回到某一轮之前：**删掉**这一轮及之后的所有消息。
+
+    为什么是删而不是标记作废：会话历史会原样喂给模型，留着"废弃轮次"它照样看得见，
+    等于没回滚（还会被当成已经发生的事实去引用）。
+    Run 记录不删 —— 那是观测资产，「执行」页照样能翻到当时发生了什么。
+    """
+    chat = await session.get(ChatSession, session_id)
+    if chat is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"会话不存在: {session_id}")
+
+    doomed = list(
+        (
+            await session.execute(
+                select(SessionMessage)
+                .where(
+                    SessionMessage.session_id == session_id,
+                    SessionMessage.turn_index >= body.turn_index,
+                )
+                .order_by(SessionMessage.turn_index)
+            )
+        ).scalars()
+    )
+    if not doomed:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"没有第 {body.turn_index} 轮")
+    # 被点名的这一轮必须是从用户开始的（防止把半轮删成"助手自说自话"）
+    if not any(m.role == "user" and m.turn_index == body.turn_index for m in doomed):
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "只能从「用户消息」那一轮回滚，别指向助手的回复",
+        )
+
+    for m in doomed:
+        await session.delete(m)
+    left = int(
+        (
+            await session.execute(
+                select(func.count())
+                .select_from(SessionMessage)
+                .where(SessionMessage.session_id == session_id)
+            )
+        ).scalar_one()
+        or 0
+    )
+    # delete 还没 flush，先 flush 再数
+    await session.flush()
+    left = int(
+        (
+            await session.execute(
+                select(func.count())
+                .select_from(SessionMessage)
+                .where(SessionMessage.session_id == session_id)
+            )
+        ).scalar_one()
+        or 0
+    )
+    chat.message_count = left
+    # 摘要覆盖范围跟着退：摘要里若还写着"被删掉的轮次"，下一轮就会带着幽灵上下文
+    chat.summarized_upto = min(int(chat.summarized_upto or 0), max(0, body.turn_index - 1))
+    if chat.summarized_upto == 0:
+        chat.summary = None
+    await session.commit()
+    return {"deleted": len(doomed), "remaining": left, "turn_index": body.turn_index}
+
+
+@router.post("/{session_id}/branch", response_model=SessionRead, status_code=status.HTTP_201_CREATED)
+async def branch_session(
+    session_id: str, body: RewindIn, session: AsyncSession = Depends(get_session)
+) -> SessionRead:
+    """从某一轮之前**另起一个会话**（原会话一个字都不动）。
+
+    和回滚的分工：回滚 = 我错了，擦掉重写；分支 = 想试试另一条路，但原来的答案还要留着。
+    """
+    chat = await session.get(ChatSession, session_id)
+    if chat is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"会话不存在: {session_id}")
+
+    new = ChatSession(
+        id=new_id("ses_"),
+        workspace_id=chat.workspace_id,
+        agent_id=chat.agent_id,
+        title=(chat.title or "新对话") + " · 分支",
+        status="active",
+        summary=None,
+        summarized_upto=0,
+        message_count=0,
+        usage={},
+        created_at=now_ms(),
+    )
+    session.add(new)
+    copied = list(
+        (
+            await session.execute(
+                select(SessionMessage)
+                .where(
+                    SessionMessage.session_id == session_id,
+                    SessionMessage.turn_index < body.turn_index,
+                )
+                .order_by(SessionMessage.turn_index, SessionMessage.id)
+            )
+        ).scalars()
+    )
+    for m in copied:
+        session.add(
+            SessionMessage(
+                session_id=new.id,
+                turn_index=m.turn_index,
+                role=m.role,
+                content=m.content,
+                run_id=None,  # 副本不指向别人的 run（点进"执行过程"会看到另一条对话的现场）
+                ts=m.ts,
+            )
+        )
+    new.message_count = len(copied)
+    await session.commit()
+    await session.refresh(new)
+    return SessionRead.model_validate(new, from_attributes=True)
 
 
 @router.post("/{session_id}/clear-context")
