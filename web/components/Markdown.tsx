@@ -254,7 +254,14 @@ function imgLike(rel: string): boolean {
   return isImagePath(rel);
 }
 
-export default function Markdown({ text }: { text: string }) {
+/**
+ * Markdown 渲染器。
+ *
+ * `chat` = 对话正文这一档：15px / 行高 1.8（对标主流 Agent 对话的阅读宽度与
+ * 呼吸感）；面板、抽屉、运行详情里仍然用紧凑的 12px —— 那边是表格化的信息。
+ * 之前只有一档 12px，对话里读大段文字像看脚注。
+ */
+export default function Markdown({ text, chat = false }: { text: string; chat?: boolean }) {
   const src = linkifyWorkPaths((text || "").replace(/\r\n/g, "\n"));
   if (!src.trim()) return null;
 
@@ -374,11 +381,23 @@ export default function Markdown({ text }: { text: string }) {
     const h = /^(#{1,4})\s+(.*)$/.exec(line);
     if (h) {
       const lvl = h[1].length;
-      const size = lvl === 1 ? 14.5 : lvl === 2 ? 13.5 : 12.5;
+      const size = chat
+        ? lvl === 1
+          ? 20
+          : lvl === 2
+            ? 17.5
+            : lvl === 3
+              ? 16
+              : 15.5
+        : lvl === 1
+          ? 14.5
+          : lvl === 2
+            ? 13.5
+            : 12.5;
       blocks.push(
         <div
           key={`h${k++}`}
-          className="mt-2.5 mb-1 font-semibold first:mt-0"
+          className={chat ? "mt-4 mb-1.5 font-semibold first:mt-0" : "mt-2.5 mb-1 font-semibold first:mt-0"}
           style={{ fontSize: size, lineHeight: 1.5 }}
         >
           {inline(h[2], `h${k}`)}
@@ -404,7 +423,11 @@ export default function Markdown({ text }: { text: string }) {
       blocks.push(
         <div
           key={`q${k++}`}
-          className="my-2 border-l-2 pl-2.5 text-[12px] leading-[1.7]"
+          className={
+            chat
+              ? "my-2 border-l-2 pl-3 text-[14.5px] leading-[1.75]"
+              : "my-2 border-l-2 pl-2.5 text-[12px] leading-[1.7]"
+          }
           style={{ borderColor: "var(--color-accent)", color: "var(--color-muted)" }}
         >
           {inline(buf.join(" "), `q${k}`)}
@@ -422,11 +445,13 @@ export default function Markdown({ text }: { text: string }) {
         i++;
       }
       blocks.push(
-        <ul key={`ul${k++}`} className="my-1.5 flex flex-col gap-1">
+        <ul key={`ul${k++}`} className={chat ? "my-2 flex flex-col gap-1.5" : "my-1.5 flex flex-col gap-1"}>
           {items.map((it, n) => (
             <li
               key={n}
-              className="flex gap-1.5 text-[12px] leading-[1.7]"
+              className={
+                chat ? "flex gap-2 text-[15px] leading-[1.8]" : "flex gap-1.5 text-[12px] leading-[1.7]"
+              }
               style={{ paddingLeft: Math.min(it.indent, 8) * 1.5 }}
             >
               <span className="shrink-0" style={{ color: "var(--color-accent)" }}>
@@ -461,7 +486,14 @@ export default function Markdown({ text }: { text: string }) {
       buf.push(lines[i++]);
     }
     blocks.push(
-      <p key={`p${k++}`} className="my-1.5 text-[12px] leading-[1.75] break-words">
+      <p
+        key={`p${k++}`}
+        className={
+          chat
+            ? "my-2 text-[15px] leading-[1.8] break-words"
+            : "my-1.5 text-[12px] leading-[1.75] break-words"
+        }
+      >
         {inline(buf.join(" "), `p${k}`)}
       </p>,
     );

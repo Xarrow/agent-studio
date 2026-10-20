@@ -98,7 +98,7 @@ test("对话页：Chrome 直播栏默认收起，只在有画面时自动展开"
 
 test("对话页：消息流阅读列封顶（一行横扫整屏是阅读负担）", () => {
   const src = read("components/ChatConsole.tsx");
-  assert.match(src, /max-w-3xl mx-auto px-4 sm:px-5 py-5/, "消息流缺 max-w-3xl 阅读列");
+  assert.match(src, /max-w-3xl mx-auto px-4 sm:px-5 py-6 space-y-5/, "消息流缺 max-w-3xl 阅读列");
 });
 
 test("对话页：不能有「同一件事的第二道门」（顶栏本轮详情 vs 消息自带记录）", () => {
@@ -297,7 +297,9 @@ test("发送气泡：短消息胶囊、长消息圆角+尾巴，尺寸与字阶�
   assert.match(chat, /const shortMsg = !userBody\.includes\("\\n"\) && userBody\.length <= 24 && attachments\.length === 0/, "短消息判定口径");
   assert.match(chat, /rounded-full px-4 py-2 leading-\[1\.6\]/, "短消息 ＝ 胶囊");
   assert.match(chat, /rounded-\[18px\] rounded-br-\[6px\] px-3\.5 py-2\.5 leading-\[1\.6\]/, "长消息 ＝ 18px + 右下 6px 尾巴");
-  assert.match(chat, /text-white w-fit max-w-full whitespace-pre-wrap ml-auto text-\[14px\]/, "气泡 14px、贴右、宽度撑到外层上限");
+  // 2026-10 对标主流对话：正文统一 15px / 行高 1.8
+  assert.match(chat, /text-white w-fit max-w-full whitespace-pre-wrap ml-auto text-\[15px\]/, "气泡 15px、贴右、宽度撑到外层上限");
+  assert.match(chat, /text-\[15px\] leading-\[1\.8\] text-\[var\(--color-text\)\] max-w-\[46rem\]/, "助手正文 15px/1.8 且封顶 46rem");
   assert.match(chat, /max-w-\[88%\] max-md:max-w-\[90%\]/, "外层给气泡 88%（桌面）/90%（手机）");
 });
 
@@ -422,4 +424,54 @@ test("过程条收起态：think 与 tool 各有各的动画", () => {
   assert.match(css, /@keyframes proc-pop/, "落定弹一下");
   assert.match(css, /\.proc\[data-anim="off"\] \.proc-spin,/, "可关：转圈");
   assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{\s*\.proc \.proc-head::before,\s*\.proc \.proc-spin,/, "可关：系统偏好");
+});
+
+/**
+ * 对标主流 Agent 对话（2026-10 用户要求）的四件事，逐条钉住：
+ *  1. 正文 15px/1.8、阅读列封顶；Markdown 有 chat 档（面板仍是 12px 紧凑档）
+ *  2. 自动跟随只在贴底时生效 —— 往上翻历史时新内容不许把人拽回去
+ *  3. 会话侧栏：搜索 + 时间分组 + 「⋯」菜单（改名/删除）
+ *  4. Esc 停止这一轮
+ */
+test("对话正文：15px/1.8，Markdown 走 chat 档", () => {
+  const chat = read("components/ChatConsole.tsx");
+  const md = read("components/Markdown.tsx");
+  assert.match(chat, /<Markdown text=\{content\} chat \/>/, "对话正文用 chat 档");
+  assert.match(md, /chat = false \}: \{ text: string; chat\?: boolean \}/, "Markdown 要能切档");
+  assert.match(md, /chat\s*\?\s*"my-2 text-\[15px\] leading-\[1\.8\] break-words"/, "chat 档段落 15px/1.8");
+  assert.match(md, /: "my-1\.5 text-\[12px\] leading-\[1\.75\] break-words"/, "面板档保持 12px");
+});
+
+test("自动跟随：贴底才跟，否则给「最新」", () => {
+  const chat = read("components/ChatConsole.tsx");
+  assert.match(chat, /const followRef = useRef\(true\)/, "跟随状态放 ref（scroll 回调要读最新值）");
+  assert.match(chat, /if \(!followRef\.current\) return;/, "不贴底就不滚动");
+  assert.match(chat, /el\.scrollHeight - el\.scrollTop - el\.clientHeight < 80/, "80px 以内算贴底");
+  assert.match(chat, /const jumpLatest = \(\) => \{/, "要有回到最新");
+  assert.match(chat, /\{!atBottom && \(/, "离开底部才露出浮标");
+  // 旧的“每次都滚到底”必须消失（那就是把人拽回去的写法）
+  assert.doesNotMatch(chat, /endRef\.current\?\.scrollIntoView/, "不许无条件 scrollIntoView");
+});
+
+test("会话侧栏：搜索、分组、⋯ 菜单", () => {
+  const chat = read("components/ChatConsole.tsx");
+  assert.match(chat, /placeholder="搜索对话"/, "要有搜索框");
+  assert.match(chat, /label: "今天"/, "今天分组");
+  assert.match(chat, /label: "昨天"/, "昨天分组");
+  assert.match(chat, /label: "过去 7 天"/, "7 天分组");
+  assert.match(chat, /label: "更早"/, "更早分组");
+  assert.match(chat, /title="更多"/, "每行一个 ⋯");
+  assert.match(chat, /role="menu"/, "菜单本体");
+  assert.match(chat, /onRename\(s\)/, "菜单里能改名");
+  assert.match(chat, /onRemove\(s\)/, "菜单里能删除");
+  // 行内那两个常驻文字按钮已收进菜单（原来每行三个可点目标，误删风险高）
+  assert.doesNotMatch(chat, /title="重命名"/, "改名不该再常驻在每行");
+  assert.doesNotMatch(chat, /title="删除这个对话"/, "删除不该再常驻在每行");
+});
+
+test("Esc 停止这一轮（且输入框里按 Esc 不算）", () => {
+  const chat = read("components/ChatConsole.tsx");
+  assert.match(chat, /if \(e\.key !== "Escape"\) return;/, "监听 Esc");
+  assert.match(chat, /el\.tagName === "TEXTAREA"/, "输入框里的 Esc 不触发停止");
+  assert.match(chat, /void stop\(\);/, "Esc → stop()");
 });

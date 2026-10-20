@@ -267,10 +267,31 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     })();
   }, [sessionId, loadMessages]);
 
-  // 自动滚到底
+  /* 自动跟随（对标主流对话）：只有「已经在底部附近」才跟着新内容走。
+     用户往上翻看历史时，新的 token 不许把他拽回去 —— 这是聊天界面最容易
+     惹人烦的毛病。离开底部时右下浮一个「回到最新」。 */
+  const followRef = useRef(true);
+  const [atBottom, setAtBottom] = useState(true);
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (!followRef.current) return;
+    const el = boxRef.current;
+    if (!el) return;
+    // 流式时用瞬时滚动（smooth 会被每帧的新内容打断，反而抖）
+    el.scrollTop = el.scrollHeight;
   }, [history, live]);
+  const onScroll = () => {
+    const el = boxRef.current;
+    if (!el) return;
+    const near = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    followRef.current = near;
+    setAtBottom(near);
+  };
+  const jumpLatest = () => {
+    followRef.current = true;
+    setAtBottom(true);
+    const el = boxRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  };
 
   useEffect(() => () => esRef.current?.close(), []);
 
@@ -530,6 +551,20 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     setBusy(false);
     fb.warn("已停止", "这一轮已中止；输入还在，改改再发就行");
   };
+
+  /* Esc 停止这一轮（对标主流：想停手时不用去够按钮）。
+     只在执行中生效，且组字/菜单里按 Esc 不算。 */
+  useEffect(() => {
+    if (!busy) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) return;
+      void stop();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [busy]);
 
   /** 选了文件 / 粘贴图片 / 拖进来 → 上传 → 进待发清单（路径注入方案，见 send()） */
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -832,7 +867,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
           </header>
 
           {/* 消息流 —— 阅读宽度封顶 768px 居中：一行扫 1000px 是眼睛的负担 */}
-          <div className="flex-1 overflow-auto" ref={boxRef}>
+          <div className="relative flex-1 min-h-0 flex flex-col">
+          <div className="flex-1 overflow-auto" ref={boxRef} onScroll={onScroll}>
             {history.length === 0 && !live ? (
               /* 空状态：不摆「开始对话」的废话 —— 直接给 3 个可点的开场问题，
                  点了就填进输入框（不自动发，让人改得动）。 */
@@ -851,25 +887,89 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     </p>
                   )}
                 </div>
-                <div className="mt-6 flex flex-col gap-1.5">
-                  {["帮我分析一个文件或一段数据", "上网查点资料并总结给我", "写一段代码或脚本"].map((q) => (
+                {/* 开场建议：主流对话的做法是给"能直接点的事"，不是一堆空提示。
+                    点了只填进输入框（不自动发），人还能改。 */}
+                <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {[
+                    {
+                      icon: (
+                        <>
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                          <path d="M14 2v6h6" />
+                        </>
+                      ),
+                      q: "帮我分析一个文件或一段数据",
+                      hint: "看目录里的东西，给结论",
+                    },
+                    {
+                      icon: (
+                        <>
+                          <circle cx="11" cy="11" r="7" />
+                          <path d="m20 20-3.5-3.5" />
+                        </>
+                      ),
+                      q: "上网查点资料并总结给我",
+                      hint: "搜索、读页面、说重点",
+                    },
+                    {
+                      icon: (
+                        <>
+                          <path d="m8 6-5 6 5 6" />
+                          <path d="m16 6 5 6-5 6" />
+                        </>
+                      ),
+                      q: "写一段代码或脚本",
+                      hint: "写完直接跑一遍验证",
+                    },
+                    {
+                      icon: (
+                        <>
+                          <path d="M4 5h16" />
+                          <path d="M4 12h16" />
+                          <path d="M4 19h10" />
+                        </>
+                      ),
+                      q: "把这件活整理成一份文档",
+                      hint: "输出 Markdown 或表格",
+                    },
+                  ].map((it) => (
                     <button
-                      key={q}
+                      key={it.q}
                       data-tap
-                      className="text-left text-[13px] rounded-xl px-3.5 py-2.5 border transition-colors hover:bg-[var(--color-surface-2)]"
+                      className="group text-left rounded-xl px-3 py-2.5 border transition-colors hover:bg-[var(--color-surface-2)] flex items-start gap-2.5"
                       style={{ borderColor: "var(--color-border)", color: "var(--color-text)" }}
                       onClick={() => {
-                        setInput(q);
+                        setInput(it.q);
                         (document.querySelector("section textarea") as HTMLTextAreaElement | null)?.focus();
                       }}
                     >
-                      {q}
+                      <svg
+                        width="15"
+                        height="15"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="shrink-0 mt-0.5"
+                        style={{ color: "var(--color-muted)" }}
+                        aria-hidden="true"
+                      >
+                        {it.icon}
+                      </svg>
+                      <span className="min-w-0">
+                        <span className="block text-[13px] leading-snug">{it.q}</span>
+                        <span className="block text-[11.5px] mt-0.5" style={{ color: "var(--color-muted)" }}>
+                          {it.hint}
+                        </span>
+                      </span>
                     </button>
                   ))}
                 </div>
               </div>
             ) : (
-              <div className="max-w-3xl mx-auto px-4 sm:px-5 py-5 space-y-4">
+              <div className="max-w-3xl mx-auto px-4 sm:px-5 py-6 space-y-5">
                 {history.map((m, i) => {
                   // 给助手的执行过程带上「用户说了什么」，这样六段里第一段（输入）有着落
                   const prevUser =
@@ -940,6 +1040,40 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               </div>
             )}
             <div ref={endRef} />
+          </div>
+            {/* 离开底部才出现：圆按钮贴在输入坞上方右侧，点一下回到最新 */}
+            {!atBottom && (
+              <button
+                type="button"
+                data-tap
+                onClick={jumpLatest}
+                title="回到最新"
+                className="absolute bottom-3 right-3 lg:right-5 inline-flex items-center gap-1.5 rounded-full pl-2.5 pr-3 h-8 text-[12px] shadow-md transition-opacity"
+                style={{
+                  background: "var(--color-surface)",
+                  border: "1px solid var(--color-border)",
+                  color: "var(--color-text)",
+                }}
+              >
+                {busy && (
+                  <span
+                    className="live-dot"
+                    style={{
+                      width: 5,
+                      height: 5,
+                      borderRadius: 999,
+                      background: "var(--color-accent)",
+                      display: "inline-block",
+                    }}
+                  />
+                )}
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M12 5v14" />
+                  <path d="m19 12-7 7-7-7" />
+                </svg>
+                最新
+              </button>
+            )}
           </div>
 
           {/* ── 输入区 ──────────────────────────────────────────
@@ -1413,8 +1547,14 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
 }
 
 /** 会话列表 —— 桌面在流内 / 窄屏在抽屉里，同一份实现两处渲染。
- *  行内动作（改名 / 删除）在桌面 hover 才显形（省视觉噪声），触屏常驻
- *  （hover 不存在的东西等于不存在）。 */
+ *
+ *  对标主流 Agent 对话的侧栏（ChatGPT / Claude 那一套）：
+ *   · 顶部一个搜索框 —— 几十个会话时靠翻是翻不到的
+ *   · 按时间分组：今天 / 昨天 / 过去 7 天 / 更早（比一排"3 天前"好扫）
+ *   · 每行 hover 出一个「⋯」，改名和删除收进菜单（原来俩文字按钮一直占着，
+ *     一行里三个可点目标，误删风险高）
+ *   · 当前会话左侧一条竖色条 + 淡底，一眼知道在哪
+ */
 function SessionsPane({
   sessions,
   sessionId,
@@ -1432,9 +1572,36 @@ function SessionsPane({
   onRemove: (s: Session) => void;
   onCollapse: () => void;
 }) {
+  const [q, setQ] = useState("");
+  /** 打开菜单的会话 id（一次只开一个） */
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+
+  const kw = q.trim().toLowerCase();
+  const list = kw
+    ? sessions.filter((s) => (s.title || "未命名对话").toLowerCase().includes(kw))
+    : sessions;
+
+  // 按最近活跃分组（今天 / 昨天 / 7 天内 / 更早）
+  const dayStart = new Date();
+  dayStart.setHours(0, 0, 0, 0);
+  const today = dayStart.getTime();
+  const groups: { label: string; items: Session[] }[] = [
+    { label: "今天", items: [] },
+    { label: "昨天", items: [] },
+    { label: "过去 7 天", items: [] },
+    { label: "更早", items: [] },
+  ];
+  for (const s of list) {
+    const t = s.last_active_at || 0;
+    if (t >= today) groups[0].items.push(s);
+    else if (t >= today - 86_400_000) groups[1].items.push(s);
+    else if (t >= today - 7 * 86_400_000) groups[2].items.push(s);
+    else groups[3].items.push(s);
+  }
+
   return (
     <>
-      <div className="p-3 flex items-center gap-2 border-b border-[var(--color-border)]">
+      <div className="p-2.5 pb-1.5 flex items-center gap-1.5">
         <button className="btn btn-primary flex-1" onClick={onNew}>
           + 新对话
         </button>
@@ -1442,62 +1609,153 @@ function SessionsPane({
           data-tap
           title="收起"
           onClick={onCollapse}
-          className="w-9 h-9 shrink-0 flex items-center justify-center rounded-lg text-[var(--color-muted)] hover:bg-[var(--color-surface-2)]"
+          className="w-9 h-9 shrink-0 hidden lg:flex items-center justify-center rounded-lg text-[var(--color-muted)] hover:bg-[var(--color-surface-2)]"
         >
           «
         </button>
       </div>
-      <div className="flex-1 overflow-auto p-1.5 space-y-0.5">
+
+      {/* 搜索：会话多了不靠翻 */}
+      <div className="px-2.5 pb-1.5">
+        <div className="relative">
+          <svg
+            className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="var(--color-muted)"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            aria-hidden="true"
+          >
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.5-3.5" />
+          </svg>
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="搜索对话"
+            className="input pl-8 h-9 text-[13px]"
+            data-tap
+          />
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-auto px-1.5 pb-2">
         {sessions.length === 0 ? (
           <p className="text-[12.5px] text-[var(--color-muted)] p-2.5 leading-relaxed">
             还没有对话。点「新对话」开始。
           </p>
+        ) : list.length === 0 ? (
+          <p className="text-[12.5px] text-[var(--color-muted)] p-2.5 leading-relaxed">
+            没有叫「{q.trim()}」的对话。
+          </p>
         ) : (
-          sessions.map((s) => (
-            <div
-              key={s.id}
-              className={`group flex items-center gap-1 rounded-lg px-2.5 py-2 cursor-pointer transition-colors ${
-                s.id === sessionId
-                  ? "bg-[var(--color-surface-2)]"
-                  : "hover:bg-[var(--color-surface-2)]"
-              }`}
-              onClick={() => onPick(s.id)}
-            >
-              <div className="min-w-0 flex-1">
-                <div
-                  className="text-[12.5px] truncate"
-                  style={s.id === sessionId ? { color: "var(--color-accent)", fontWeight: 500 } : undefined}
-                >
-                  {s.title || "未命名对话"}
+          groups.map((g) =>
+            g.items.length === 0 ? null : (
+              <div key={g.label} className="mb-1">
+                <div className="px-2 pt-2 pb-1 text-[11px] font-medium tracking-wide text-[var(--color-muted)]">
+                  {g.label}
                 </div>
-                <div className="text-[10.5px] text-[var(--color-muted)] truncate mt-0.5">
-                  {s.turn_count} 轮 · {fmt.relative(s.last_active_at)}
+                <div className="space-y-0.5">
+                  {g.items.map((s) => {
+                    const active = s.id === sessionId;
+                    return (
+                      <div
+                        key={s.id}
+                        className={`group relative flex items-center gap-1 rounded-lg pl-2 pr-1 py-1.5 cursor-pointer transition-colors ${
+                          active ? "bg-[var(--color-surface-2)]" : "hover:bg-[var(--color-surface-2)]"
+                        }`}
+                        onClick={() => onPick(s.id)}
+                      >
+                        {/* 当前会话：左边一条竖色条 */}
+                        <span
+                          className="absolute left-0 top-1.5 bottom-1.5 w-[2.5px] rounded-full"
+                          style={{ background: active ? "var(--color-accent)" : "transparent" }}
+                          aria-hidden="true"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div
+                            className="text-[12.5px] truncate"
+                            style={
+                              active
+                                ? { color: "var(--color-accent)", fontWeight: 500 }
+                                : undefined
+                            }
+                          >
+                            {s.title || "未命名对话"}
+                          </div>
+                          <div className="text-[10.5px] text-[var(--color-muted)] truncate mt-0.5">
+                            {s.turn_count} 轮 · {fmt.relative(s.last_active_at)}
+                          </div>
+                        </div>
+                        <button
+                          className="shrink-0 w-7 h-7 flex items-center justify-center rounded-md text-[var(--color-muted)] hover:bg-[var(--color-surface)] hover:text-[var(--color-text)] lg:opacity-0 lg:group-hover:opacity-100"
+                          data-tap-lg
+                          title="更多"
+                          aria-haspopup="menu"
+                          aria-expanded={menuFor === s.id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setMenuFor(menuFor === s.id ? null : s.id);
+                          }}
+                        >
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                            <circle cx="5" cy="12" r="1.6" />
+                            <circle cx="12" cy="12" r="1.6" />
+                            <circle cx="19" cy="12" r="1.6" />
+                          </svg>
+                        </button>
+
+                        {menuFor === s.id && (
+                          <>
+                            {/* 点哪儿都关（比监听 document 更省事，也不怕漏解绑） */}
+                            <div
+                              className="fixed inset-0 z-40"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setMenuFor(null);
+                              }}
+                            />
+                            <div
+                              className="absolute right-1 top-8 z-50 w-[124px] rounded-lg py-1 shadow-lg"
+                              style={{
+                                background: "var(--color-surface)",
+                                border: "1px solid var(--color-border)",
+                              }}
+                              role="menu"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <button
+                                className="w-full text-left px-2.5 py-1.5 text-[12.5px] hover:bg-[var(--color-surface-2)]"
+                                onClick={() => {
+                                  setMenuFor(null);
+                                  onRename(s);
+                                }}
+                              >
+                                改名
+                              </button>
+                              <button
+                                className="w-full text-left px-2.5 py-1.5 text-[12.5px] hover:bg-[var(--color-surface-2)]"
+                                style={{ color: "var(--color-err)" }}
+                                onClick={() => {
+                                  setMenuFor(null);
+                                  onRemove(s);
+                                }}
+                              >
+                                删除
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
-              <button
-                className="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-[12px] text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-text)] lg:opacity-0 lg:group-hover:opacity-100"
-                data-tap-lg
-                title="重命名"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onRename(s);
-                }}
-              >
-                改名
-              </button>
-              <button
-                className="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-[12px] text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-err)] lg:opacity-0 lg:group-hover:opacity-100"
-                data-tap-lg
-                title="删除这个对话"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onRemove(s);
-                }}
-              >
-                ✕
-              </button>
-            </div>
-          ))
+            ),
+          )
         )}
       </div>
     </>
@@ -1735,14 +1993,14 @@ function Bubble({
         <div
           className={`break-words ${
             isUser
-              ? `text-white w-fit max-w-full whitespace-pre-wrap ml-auto text-[14px] ${
+              ? `text-white w-fit max-w-full whitespace-pre-wrap ml-auto text-[15px] ${
                   /* 短消息（一行内、无附件）= 胶囊；长消息 = 18px 圆角块，右下角收成 6px
                      （气泡"尾巴"角），右边贴齐。用户要求：气泡样式与尺寸激进一点。 */
                   shortMsg
                     ? "rounded-full px-4 py-2 leading-[1.6]"
                     : "rounded-[18px] rounded-br-[6px] px-3.5 py-2.5 leading-[1.6]"
                 }`
-              : "text-[13.5px] leading-[1.75] text-[var(--color-text)]"
+              : "text-[15px] leading-[1.8] text-[var(--color-text)] max-w-[46rem]"
           }`}
           style={
             isUser
@@ -1799,7 +2057,7 @@ function Bubble({
               {userBody}
             </>
           ) : (
-            <Markdown text={content} />
+            <Markdown text={content} chat />
           )}
           {streaming && <span className="live-dot ml-0.5">▍</span>}
         </div>
