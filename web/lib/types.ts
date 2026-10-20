@@ -573,6 +573,25 @@ export interface BgProcInfo {
   tail?: string;
 }
 
+/** 会话上的定时任务（跑完结果回到对话里，或推 webhook） */
+export interface SessionJob {
+  id: string;
+  session_id: string;
+  agent_id: string;
+  prompt: string;
+  mode: "hourly" | "daily" | "weekly";
+  at: string;
+  weekdays: string;
+  enabled: boolean;
+  deliver: { channel: "session" | "webhook"; url?: string; format?: string };
+  schedule_text: string;
+  next_run_at: number | null;
+  last_run_at: number | null;
+  last_run_id: string | null;
+  last_status: "ok" | "error" | "aborted" | "skipped" | null;
+  created_at: number;
+}
+
 /** 跨会话检索的一条命中（消息级） */
 export interface SearchHit {
   message_id: number;

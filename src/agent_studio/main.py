@@ -296,6 +296,10 @@ app.include_router(procs_api.router)
 from .api import search as search_api  # noqa: E402
 
 app.include_router(search_api.router)
+# 会话定时任务 + 结果投递（定时跑到点上，结果回到对话里 / 推到 webhook）
+from .api import jobs as jobs_api  # noqa: E402
+
+app.include_router(jobs_api.router)
 # A2A（Agent2Agent）协议入口 —— 根路径 /a2a + /.well-known/agent-card.json
 app.include_router(a2a.router)
 

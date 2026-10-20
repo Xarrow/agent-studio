@@ -62,6 +62,11 @@ def to_read(run: Run) -> RunRead:
     )
 
 
+#: 一次 run 的来源（决定"运行记录"里归到哪一类）
+#: schedule = 定时任务替你发起的那一轮（和"你自己点的"要能分开看）
+RUN_ORIGINS = ("chat", "preview", "playground", "schedule")
+
+
 async def _get_or_404(session: AsyncSession, run_id: str) -> Run:
     row = await session.get(Run, run_id)
     if row is None:
@@ -72,6 +77,45 @@ async def _get_or_404(session: AsyncSession, run_id: str) -> Run:
 # --------------------------------------------------------------------------- #
 # 发起执行
 # --------------------------------------------------------------------------- #
+async def _start_session_turn(
+    db: AsyncSession,
+    *,
+    agent_id: str,
+    session_id: str,
+    text: str,
+    origin: str | None = None,
+) -> str | None:
+    """在会话里开一轮 run（对话页、定时任务、补跑共用这一个入口）。
+
+    定时任务和"人点发送"走同一条路，区别只在 ``origin``：
+    这样两边不会各自长出一套会话/轮次/快照逻辑（迟早对不上）。
+    """
+    agent = await db.get(Agent, agent_id)
+    if agent is None:
+        return None
+    definition = AgentDefinition.model_validate(agent.definition)
+    from ..context import next_turn_index
+
+    turn_index = await next_turn_index(db, session_id)
+    run = Run(
+        agent_id=agent.id,
+        agent_version=agent.version,
+        runtime=definition.runtime,
+        status="pending",
+        input={"text": text},
+        definition_snapshot=definition.model_dump(mode="json", exclude={"model": {"api_key"}}),
+        started_at=now_ms(),
+        session_id=session_id,
+        turn_index=turn_index,
+        origin=origin if origin in RUN_ORIGINS else None,
+    )
+    db.add(run)
+    await db.commit()
+    await db.refresh(run)
+    await run_service.start(run.id, definition, text)
+    return run.id
+
+
 @router.post("", response_model=RunRead, status_code=status.HTTP_201_CREATED)
 async def create_run(payload: RunCreate, session: AsyncSession = Depends(get_session)) -> RunRead:
     agent = await session.get(Agent, payload.agent_id)
@@ -115,7 +159,7 @@ async def create_run(payload: RunCreate, session: AsyncSession = Depends(get_ses
         session_id=session_id,
         turn_index=turn_index,
         # 来源决定它在「运行记录」里归到哪一类（对话 / 试跑 / 编排）
-        origin=payload.origin if payload.origin in ("chat", "preview", "playground") else None,
+        origin=payload.origin if payload.origin in RUN_ORIGINS else None,
     )
     session.add(run)
     await session.commit()

@@ -193,6 +193,22 @@ async def loop() -> None:
         except Exception:  # noqa: BLE001
             logger.exception("调度器这一轮出错（继续下一轮）")
         try:
+            # 会话定时任务：到点的发起一轮，跑完的投递出去（同一个 tick，不另起循环）
+            from . import jobs as _jobs
+
+            fired = await _jobs.fire_due()
+            if fired:
+                logger.info("会话定时任务发起 %s 个", len(fired))
+            await _jobs.sync_last_status()
+            sent = await _jobs.deliver_pending()
+            if sent:
+                logger.info("定时结果已投递 %s 条", sent)
+        except asyncio.CancelledError:  # 服务在退出
+            raise
+        except Exception:  # noqa: BLE001
+            # 定时任务出错不影响别的自动运行
+            logger.exception("会话定时任务这一轮出错（继续下一轮）")
+        try:
             await _maybe_compact()
         except asyncio.CancelledError:  # 服务在退出
             raise

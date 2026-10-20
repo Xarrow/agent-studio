@@ -3,6 +3,7 @@
 import type {
   BgProcInfo,
   SearchHit,
+  SessionJob,
   EvalCompareRead,
   EvalRunDetail,
   EvalRunRead,
@@ -849,6 +850,25 @@ export const api = {
     request<Session[]>(`/api/sessions${agentId ? `?agent_id=${agentId}` : ""}`),
   session: (id: string) => request<SessionDetail>(`/api/sessions/${id}`),
   /** 这个会话的工作目录里有什么（会话隔离后，产物按会话分目录） */
+  /** 会话定时任务：让这个对话按时自己跑（结果回到对话里 / 推 webhook） */
+  sessionJobs: (sessionId: string) =>
+    request<{ items: SessionJob[] }>(`/api/sessions/${sessionId}/jobs`),
+  createSessionJob: (
+    sessionId: string,
+    body: {
+      prompt: string;
+      mode: string;
+      at: string;
+      weekdays: string;
+      enabled: boolean;
+      deliver: Record<string, string>;
+    },
+  ) => post<SessionJob>(`/api/sessions/${sessionId}/jobs`, body),
+  updateSessionJob: (id: string, body: Record<string, unknown>) =>
+    request<SessionJob>(`/api/jobs/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  deleteSessionJob: (id: string) =>
+    request<{ deleted: boolean }>(`/api/jobs/${id}`, { method: "DELETE" }),
+  runJobNow: (id: string) => post<{ run_id: string }>(`/api/jobs/${id}/run-now`, {}),
   /** 跨会话检索：标题命中 + 对话内容命中（与助手的 session_search 同一实现） */
   search: (q: string, opts: { limit?: number; agentId?: string } = {}) => {
     const qs = new URLSearchParams({ q, limit: String(opts.limit ?? 12) });

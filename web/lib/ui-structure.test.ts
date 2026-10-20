@@ -523,3 +523,29 @@ test("侧栏搜索：标题 + 对话内容两段，内容命中可点进会话",
   const api = read("lib/api.ts");
   assert.match(api, /search: \(q: string/, "前端检索方法");
 });
+
+/**
+ * 定时任务（2026-10）：让这个对话在你不看着的时候也跑，结果回到对话里或推到群里。
+ * 口径：
+ *   · 频率是枚举（每小时/每天/每周），不让用户写 cron
+ *   · 投递两选一：本对话（零配置）/ webhook（飞书/企业微信/钉钉都是 POST 一个 JSON）
+ *   · 没有定时任务时不出常驻条（只在输入框下面留一个安静的「定时」）
+ */
+test("定时任务：枚举频率 + 两选一投递 + 空态不占位", () => {
+  const src = read("components/SessionJobs.tsx");
+  assert.match(src, /key: "hourly", label: "每小时"/, "频率枚举");
+  assert.match(src, /key: "session" as const, label: "这个对话"/, "默认投递=本对话");
+  assert.match(src, /key: "feishu", label: "飞书"/, "webhook 支持飞书");
+  assert.match(src, /key: "wecom", label: "企业微信"/, "webhook 支持企业微信");
+  assert.match(src, /\{items\.length > 0 && \(/, "没有任务时不出常驻条");
+  assert.match(src, /保存后立刻跑一次看看/, "可以先跑一次验证");
+  assert.match(src, /j\.enabled \? "暂停" : "恢复"/, "能开关");
+  // 对话页必须接上：按钮 + 常驻条
+  const chat = read("components/ChatConsole.tsx");
+  assert.match(chat, /<JobButton count=\{jobCount\} onClick=\{\(\) => setJobOpen\(true\)\} \/>/, "输入框下有定时入口");
+  assert.match(chat, /<SessionJobs[\s\S]{0,160}onCount=\{setJobCount\}/, "常驻条与计数接上");
+  // 接口
+  const api = read("lib/api.ts");
+  assert.match(api, /sessionJobs: \(sessionId: string\)/, "按会话取任务");
+  assert.match(api, /runJobNow: \(id: string\)/, "能立刻跑一次");
+});

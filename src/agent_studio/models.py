@@ -497,6 +497,71 @@ class MemoryPolicy(Base):
 # --------------------------------------------------------------------------- #
 # 编排（Playground）—— 多个助手协作完成一件事
 # --------------------------------------------------------------------------- #
+class SessionJob(Base):
+    """会话上的定时任务 —— 「每天早上 9 点用这个对话跑一次日报」。
+
+    为什么挂在**会话**上而不是 Workflow 上：定时跑出来的东西得回到一个能读的地方。
+    Workflow 的定时只把结果留在编排记录里，用户不会去翻；挂在会话上，
+    结果就是对话里的下一轮 —— 打开就是上下文，还能接着追问。
+
+    ``deliver`` 是一次投递配置（JSON）：
+      ``{"channel": "session"}`` 或
+      ``{"channel": "webhook", "url": "...", "format": "feishu|wecom|dingtalk|generic"}``
+    """
+
+    __tablename__ = "session_job"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("sj_"))
+    session_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("session.id", ondelete="CASCADE"), index=True
+    )
+    agent_id: Mapped[str] = mapped_column(String(32), index=True)
+    #: 每次跑的时候替用户说的话（"汇总今天的新闻，三条以内"）
+    prompt: Mapped[str] = mapped_column(LongText, default="")
+
+    #: hourly | daily | weekly（与 Workflow 用同一套枚举 —— 界面上是下拉，不是表达式）
+    mode: Mapped[str] = mapped_column(String(16), default="daily")
+    at: Mapped[str] = mapped_column(String(8), default="09:00")
+    weekdays: Mapped[str] = mapped_column(String(32), default="1")
+
+    enabled: Mapped[int] = mapped_column(Integer, default=1, index=True)
+    deliver: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+    next_run_at: Mapped[int | None] = mapped_column(Integer, default=None, index=True)
+    last_run_at: Mapped[int | None] = mapped_column(Integer, default=None)
+    last_run_id: Mapped[str | None] = mapped_column(String(32), default=None)
+    #: ok / error / skipped（"上一轮结果"，界面上直接显示，不用点进去）
+    last_status: Mapped[str | None] = mapped_column(String(16), default=None)
+
+    created_at: Mapped[int] = mapped_column(Integer, default=now_ms)
+    updated_at: Mapped[int] = mapped_column(Integer, default=now_ms)
+
+
+class JobDelivery(Base):
+    """定时任务的投递队列（一条 = 一次要送出去的运行结果）。
+
+    单独一张表而不是"跑完直接 push"：服务重启、webhook 临时挂掉都不该丢消息。
+    tick 会扫 ``status='pending'`` 且运行已结束的，补送；失败的记 attempts/error，
+    超过次数标 failed（界面上能看到"为什么没收到"）。
+    """
+
+    __tablename__ = "job_delivery"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("jd_"))
+    job_id: Mapped[str] = mapped_column(String(32), index=True)
+    run_id: Mapped[str] = mapped_column(String(32), index=True)
+    session_id: Mapped[str] = mapped_column(String(32), index=True)
+    #: pending | sent | failed | skipped
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    channel: Mapped[str] = mapped_column(String(16), default="session")
+    target: Mapped[str] = mapped_column(String(500), default="")
+    format: Mapped[str] = mapped_column(String(16), default="generic")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str | None] = mapped_column(LongText, default=None)
+    created_at: Mapped[int] = mapped_column(Integer, default=now_ms)
+    sent_at: Mapped[int | None] = mapped_column(Integer, default=None)
+
+
 class BgProc(Base):
     """后台进程（会话级）。
 

@@ -19,6 +19,7 @@ import type { Agent, RunEvent, Session, SearchHit } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
 import { ProcessBar, eventsToSteps, recallProc, rememberProc } from "@/components/ui/run-timeline";
 import BgProcsStrip from "@/components/BgProcsStrip";
+import SessionJobs, { JobButton } from "@/components/SessionJobs";
 import { BrowserLive } from "@/components/BrowserLive";
 import { ProcessRail } from "@/components/ProcessRail";
 import { SlashMenu, type CommandItem } from "@/components/SlashMenu";
@@ -126,6 +127,9 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     { name: string; path: string; kind: "image" | "file"; url: string; size: number }[]
   >([]);
   const [busy, setBusy] = useState(false);
+  /** 定时任务弹框（这个对话按时自己跑） */
+  const [jobOpen, setJobOpen] = useState(false);
+  const [jobCount, setJobCount] = useState(0);
   /** 本轮开始时间（毫秒）——过程条右侧那个秒数用它算 */
   const [runStart, setRunStart] = useState<number>(0);
   /** 每秒跳一次，只为让耗时数字动起来 */
@@ -1166,6 +1170,17 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             {/* ── 后台任务（跑得住比一轮更久的活）────────────────────
                 助手用 proc_start 起的进程挂在这个会话上：关页面、run 结束都不影响。
                 没有任务时整条不渲染；有的话显示谁在跑、跑了多久、完事没有。 */}
+            {/* ── 定时（这个对话按时自己跑）────────────────────────
+                没有任务时只有输入框下面那个「定时」按钮；有任务时多这一条。 */}
+            {sessionId && (
+              <SessionJobs
+                sessionId={sessionId}
+                open={jobOpen}
+                onOpenChange={setJobOpen}
+                onCount={setJobCount}
+              />
+            )}
+
             {sessionId && <BgProcsStrip sessionId={sessionId} busy={busy} />}
 
             {/* ── 本会话的文件（常驻，不再藏在 ⓘ 里）────────────────────
@@ -1474,6 +1489,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
 
             <div className="max-w-3xl mx-auto mt-1.5 flex items-center gap-3 text-[11.5px] text-[var(--color-muted)]">
               <span className="hidden sm:inline">Enter 发送 · Shift + Enter 换行 · 可直接粘贴截图</span>
+              {sessionId && <JobButton count={jobCount} onClick={() => setJobOpen(true)} />}
               {paused && <span className="ml-auto">运行暂停中</span>}
             </div>
 
