@@ -111,6 +111,7 @@ FastAPI + SQLite（后端 `src/agent_studio/`）+ Next.js（前端 `web/`）。
    画布那一列必须有 `min-h-0`（`min-h-0 min-w-0 flex-1`），让内部 `overflow-auto` 自己滚。
    **横向溢出为 0 ≠ 移动端没问题** —— 浮动控件要在 390×844 真机视口量 `rect.bottom ≤ innerHeight`。
 | 做法要沉淀成技能 | 助手在对话里摸出来的多步做法（部署、抓数、排查、批量改文件），用 `skill_save` 存成一个**全局技能**：写「什么时候用 / 步骤 / 命令 / 坑」，不写这次的具体数字。技能落在 `data/work/skills/<名字>/SKILL.md` + `skill` 表，**只进库不落盘助手看不见**；同名默认不覆盖（技能是长期资产）；存完自动挂给发起它的助手。技能页来源显示「助手沉淀 · 谁写的」 |
+| 工具面板配色 | 会话页的「后台任务 / 定时任务 / 本会话文件」是管理区，用 `.panel-strip`（`--color-surface-3` 深一档底 + 左 3px 主色条 + 内高光），标题用 `.panel-title` 实色；`.is-live` 跑着、`.is-active` 管理态染主色。别再退回到 surface-2 + 浅边框（白对白糊成一片，用户会指出来） |
 | 文件查询/删除 | 搜索只在本会话内就地过滤（>6 个才出框，别摆噪音）；批量删 `POST /api/sessions/{id}/files/delete`：**先全部校验再动手**（不留删一半）、边界=相对会话目录、单次≤200、删完收空子目录；删除必须两步确认 |
 | 视频播放 | 文件名白名单只挡控制字符与 `/ \\ : * ? " < > |`（**别挡方括号**——bilibili 名字带 `[BVxxx]`，收紧了就 404，表现为"播不了"）；`/api/work/probe` 判编码（浏览器只认 H.264/VP8/VP9，AV1 手机常不行），`/api/work/transcode` 转 H.264 存同目录 `xxx.可播.mp4`；文件端点必须同时接 **HEAD**（iOS 先探测）；probe/transcode 用**相对 data/work** 的路径，别拿删除接口那个相对会话目录的 |
 | 对话文件预览 | `lib/files.ts::fileKind` 9 类（image/pdf/audio/video/markdown/table/html/text/other），判定与取回口径唯一；弹层分流：PDF/音视频原生、md 渲染可切源码、CSV 出表可切原文（300 行封顶）、HTML 用 `sandbox=""` iframe；后端 `/api/work/file` 白名单放行音视频 |
