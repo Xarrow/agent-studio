@@ -28,6 +28,7 @@ AgentScope、不碰事件流。所以：
 from __future__ import annotations
 
 import asyncio
+import time
 from contextvars import ContextVar
 import json
 import logging
@@ -39,6 +40,10 @@ from ..models import Agent, Orchestration, Run, now_ms
 from ..schemas import AgentDefinition
 
 logger = logging.getLogger(__name__)
+
+#: 编排里"等你在结果里点允许"最多等多久 —— 人可能在开会，但也不能无限挂着
+#: （超过就判中止，原因写清"没人确认"，用户随时可以重跑）。
+HITL_WAIT_S = 900
 
 #: **编排者（Orchestrator）的固定交代** —— 用户给的四项能力。
 #:
@@ -778,6 +783,11 @@ class Orchestrator:
         # 直接把 run 交回去：编排标 partial 结束，而那条 run 永远停在
         # waiting_hitl —— 用户看到的就是"子任务一直挂着，主任务又没拿到它"。
         if run.status == "waiting_hitl":
+            # 两种口径（编排发起时定，默认「等你在结果里点允许」）：
+            #   wait  → 编排整体停在「等你确认」，结果页给出允许/拒绝；点了就继续
+            #   abort → 编排不做中途确认，当场判中止（无人值守/定时场景）
+            if await self._hitl_policy(run) == "wait":
+                return await self._wait_for_human(run)
             tool = ""
             try:
                 tcs = (run.pending_hitl or {}).get("tool_calls") or []
@@ -806,6 +816,87 @@ class Orchestrator:
                     return row
             return run
         return run
+
+    # ------------------------------------------------------------------ #
+    # 中途人工确认（编排里就地允许/拒绝）
+    # ------------------------------------------------------------------ #
+    async def _hitl_policy(self, run: Run) -> str:
+        """这次编排遇到"要你确认"时怎么处理 —— ``wait``（默认）| ``abort``。"""
+        oid = str(getattr(run, "orchestration_id", "") or "")
+        if not oid:
+            return "abort"
+        async with SessionLocal() as session:
+            orc = await session.get(Orchestration, oid)
+        spec = (orc.spec or {}) if orc is not None else {}
+        policy = str(spec.get("on_hitl") or "wait").strip().lower()
+        return policy if policy in ("wait", "abort") else "wait"
+
+    async def _wait_for_human(self, run: Run) -> Run:
+        """停在这一步，等用户在结果里点允许/拒绝；点了就接着跑完。
+
+        为什么不再"立刻判中止"：用户现场的原话是「子任务一直存在，主控又没拿到结果」——
+        那时的做法是编排标 partial 收尾、那条 run 永远停在 waiting_hitl，谁也不管它。
+        现在把选择权交回去：编排自己也标 ``waiting_hitl``（列表/详情一眼看得见在等你），
+        结果页直接给允许/拒绝；没人理会则 :data:`HITL_WAIT_S` 后判中止（写清原因）。
+        """
+        from ..runner import run_service
+
+        oid = str(getattr(run, "orchestration_id", "") or "")
+        if oid:
+            await self._patch(oid, status="waiting_hitl")
+        deadline = time.monotonic() + HITL_WAIT_S
+        while True:
+            await asyncio.sleep(1.0)
+            async with SessionLocal() as session:
+                fresh = await session.get(Run, run.id)
+            if fresh is None:  # pragma: no cover
+                return run
+            if fresh.status == "waiting_hitl":
+                if time.monotonic() > deadline:
+                    why = (
+                        f"等了 {HITL_WAIT_S // 60} 分钟没人确认（要执行 {self._hitl_tool(fresh) or '某个操作'}），"
+                        "这一步已中止 —— 可到对话页单独跑，或把它改成「允许改目录内文件」后再跑一次。"
+                    )
+                    return await self._abort_step(fresh.id, why)
+                continue
+            if oid:
+                # 用户点了允许 → 它继续跑：编排回到 running，别一直显示「等你确认」
+                await self._patch(oid, status="running")
+            if fresh.status in ("pending", "running"):
+                try:
+                    return await run_service.wait(fresh.id, timeout=max(1.0, deadline - time.monotonic()))
+                except TimeoutError:
+                    return await self._abort_step(
+                        fresh.id, f"确认后它跑了超过 {HITL_WAIT_S // 60} 分钟还没结束，已中止"
+                    )
+            return fresh
+
+    @staticmethod
+    def _hitl_tool(run: Run) -> str:
+        try:
+            calls = (run.pending_hitl or {}).get("tool_calls") or []
+            if calls and isinstance(calls[0], dict):
+                return str(calls[0].get("name") or "")
+        except Exception:  # pragma: no cover
+            pass
+        return ""
+
+    async def _abort_step(self, run_id: str, why: str) -> Run:
+        """把这一步判为中止（清掉待确认请求，否则界面上还留着可点的允许/拒绝）。"""
+        from ..runner import run_service
+
+        await run_service.abort(run_id)
+        async with SessionLocal() as session:
+            row = await session.get(Run, run_id)
+            if row is not None:
+                row.status = "aborted"
+                row.error = why
+                row.pending_hitl = None
+                if not row.ended_at:
+                    row.ended_at = now_ms()
+                await session.commit()
+                return row
+        return run  # type: ignore[return-value]
 
     # ------------------------------------------------------------------ #
     # 输入拼装

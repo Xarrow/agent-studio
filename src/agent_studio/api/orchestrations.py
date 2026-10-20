@@ -75,6 +75,7 @@ def _step_read(run: Run) -> OrchestrationStepRead:
         item_label=run.item_label,
         parent_run_id=run.parent_run_id,
         status=run.status,
+        hitl=(run.pending_hitl if run.status == "waiting_hitl" else None),
         usage=run.usage or {},
         error=run.error,
         started_at=run.started_at,
@@ -154,6 +155,8 @@ async def create_orchestration(
         "master_agent_id": payload.master_agent_id,
         "steps": [s.model_dump() for s in payload.steps],
         "task": task,
+        # 中途要确认时：等人点（默认）还是直接中止（无人值守传 abort）
+        "on_hitl": (payload.on_hitl or "wait").strip().lower(),
     }
 
     orc = Orchestration(

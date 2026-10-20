@@ -987,6 +987,9 @@ class OrchestrationCreate(BaseModel):
     task: str
     #: 显示名（可空，服务端按模式自动起一个）
     name: str | None = None
+    #: 中途要人工确认时怎么办：wait（默认，结果页给允许/拒绝）| abort（直接中止）
+    #: 定时/外部触发这类无人值守场景传 abort —— 没人能点，等着只是白等
+    on_hitl: str = "wait"
 
 
 class OrchestrationStepRead(BaseModel):
@@ -1008,6 +1011,8 @@ class OrchestrationStepRead(BaseModel):
     error: str | None = None
     started_at: int
     ended_at: int | None = None
+    #: 这一步正等你确认时的请求（工具名 + 入参）；没人等确认时为空
+    hitl: dict[str, Any] | None = None
     #: 这个助手**领到的任务**（串行/主从模式下会和原任务不同：可能带了上一步的
     #: 产出，也可能是主控拆出来的子任务）。前端用它显示"它在做什么"。
     input_text: str = ""

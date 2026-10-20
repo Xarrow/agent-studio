@@ -28,6 +28,7 @@ import type {
 } from "@/lib/types";
 import { RunTimeline, eventsToSteps } from "@/components/ui/run-timeline";
 import { HitlPrompt } from "@/components/HitlPrompt";
+import { summarizeCalls } from "@/lib/hitl";
 import { useFeedback } from "@/components/ui/feedback";
 import { SpanWaterfall } from "@/components/SpanWaterfall";
 import { DLG_BACKDROP, DLG_CARD } from "@/components/ui/kit";
@@ -103,8 +104,8 @@ export function RunDetailDialog({
 
   const [orch, setOrch] = useState<OrchestrationDetail | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     setErr(null);
     try {
       if (isTest) {
@@ -124,6 +125,14 @@ export function RunDetailDialog({
   useEffect(() => {
     void load();
   }, [load]);
+
+  /* 编排在跑 / 停在等你确认时轮询 —— 点了允许，界面要能看见它继续跑完 */
+  useEffect(() => {
+    if (!isOrch || !orch) return;
+    if (!["pending", "running", "waiting_hitl"].includes(orch.status)) return;
+    const t = setInterval(() => void load(true), 2500);
+    return () => clearInterval(t);
+  }, [isOrch, orch, load]);
 
   // Esc 关闭 —— 弹框该有的基本键位
   useEffect(() => {
@@ -381,8 +390,8 @@ export function RunDetailDialog({
             <Section title={`执行步骤（${orch.steps.length} 步）`}>
               <div className="space-y-1.5">
                 {orch.steps.map((st, i) => (
+                  <div key={st.run_id} className="space-y-1.5">
                   <div
-                    key={st.run_id}
                     className="rounded-md p-2.5 bg-[var(--color-surface-2)] flex items-center gap-2.5 text-[12px]"
                   >
                     <span className="text-[var(--color-muted)] mono w-5 shrink-0">{i + 1}</span>
@@ -401,6 +410,18 @@ export function RunDetailDialog({
                         {st.error}
                       </span>
                     )}
+                  </div>
+                  {/* 这一步停在「要你确认」：就地给允许/拒绝，点了编排继续跑完
+                      （以前编排会把这种步骤静默收成 partial，界面上没有任何入口） */}
+                  {st.status === "waiting_hitl" && st.hitl ? (
+                    <HitlPrompt
+                      runId={st.run_id}
+                      payload={st.hitl}
+                      compact
+                      onResumed={() => void load(true)}
+                      onError={(m) => fb.error("恢复失败", m)}
+                    />
+                  ) : null}
                   </div>
                 ))}
               </div>

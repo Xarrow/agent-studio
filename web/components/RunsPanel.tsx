@@ -39,6 +39,8 @@ import type { Span } from "@/lib/types";
 import { RunTimeline, eventsToSteps, type Step } from "@/components/ui/run-timeline";
 import { Mermaid } from "@/components/Mermaid";
 import { LlmCallsPanel, ModelTestDetail } from "@/components/LlmCallsPanel";
+import { HitlPrompt } from "@/components/HitlPrompt";
+import type { OrchestrationDetail } from "@/lib/types";
 
 /**
  * 把一次分派画成调用链（Mermaid 源码）。
@@ -108,6 +110,8 @@ type Evts = Awaited<ReturnType<typeof api.runEvents>>;
 /** 就地展开的执行过程 + 耗时瀑布（懒加载：点了才拉，不点不请求） */
 type Detail = {
   loading: boolean;
+  /** 编排（kind=playground）：展开看的是步骤清单 + 待确认请求，不是 run 事件流 */
+  orch?: OrchestrationDetail;
   steps?: Step[];
   spans?: Span[];
   /** 每次模型调用的元数据（原文按需拉，见 LlmCallsPanel） */
@@ -280,6 +284,22 @@ export function RunsPanel() {
       return;
     }
     setDetails((d) => ({ ...d, [it.id]: { loading: true } }));
+    // 编排行的 id 是 orchestration_id —— 拿它去查 run 事件流只会得到「Run 不存在」。
+    // 编排该看的是步骤清单（哪一步在等你确认、哪一步失败了），走编排端点。
+    if (it.id.startsWith("orc_")) {
+      void (async () => {
+        try {
+          const o = await api.orchestration(it.id);
+          setDetails((d) => ({ ...d, [it.id]: { loading: false, orch: o } }));
+        } catch (e) {
+          setDetails((d) => ({
+            ...d,
+            [it.id]: { loading: false, note: e instanceof Error ? e.message : String(e) },
+          }));
+        }
+      })();
+      return;
+    }
     void (async () => {
       try {
         // 两个请求一起发：事件流（分色过程）+ trace（耗时瀑布）。瀑布在旧详情
@@ -305,6 +325,26 @@ export function RunsPanel() {
       }
     })();
   };
+
+  /** 重新取一次编排（点了允许之后它还在跑，得能看见进度） */
+  const reloadOrchRow = useCallback(async (id: string) => {
+    try {
+      const o = await api.orchestration(id);
+      setDetails((d) => (d[id] ? { ...d, [id]: { ...d[id], orch: o } } : d));
+    } catch {
+      /* 拉不到就保持原样，别把已展开的内容清空 */
+    }
+  }, []);
+
+  /* 展开着的编排还在跑 / 等你确认 → 轮询刷新（点了允许能立刻看到它继续跑完） */
+  useEffect(() => {
+    const liveIds = Object.entries(details)
+      .filter(([, d]) => d.orch && ["pending", "running", "waiting_hitl"].includes(d.orch.status))
+      .map(([id]) => id);
+    if (liveIds.length === 0) return;
+    const t = setInterval(() => liveIds.forEach((id) => void reloadOrchRow(id)), 2500);
+    return () => clearInterval(t);
+  }, [details, reloadOrchRow]);
 
   const report = (label: string, r: RunDeleteResult) => {
     const skipped = r.skipped.filter((s) => s.reason !== "dry_run（未删除）").length;
@@ -806,6 +846,62 @@ export function RunsPanel() {
                           {it.summary}
                         </div>
                       )}
+
+                      {/* 编排：步骤清单 + 待你确认的那一步（就地允许/拒绝，点了编排接着跑） */}
+                      {d?.orch ? (
+                        <div className="mb-2.5 space-y-1.5">
+                          <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+                            执行步骤（{d.orch.steps.length} 步）
+                          </div>
+                          {d.orch.steps.map((st, i) => (
+                            <div key={st.run_id} className="space-y-1.5">
+                              <div
+                                className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[6px] border px-2 py-1 text-[12px]"
+                                style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+                              >
+                                <span className="mono w-5 shrink-0" style={{ color: "var(--color-muted)" }}>
+                                  {i + 1}
+                                </span>
+                                <span className="shrink-0" style={{ color: STATUS_STYLE[st.status] ?? "" }}>
+                                  {STATUS_LABEL[st.status] ?? st.status}
+                                </span>
+                                <span className="truncate">{st.agent_name}</span>
+                                {st.item_label && (
+                                  <span className="truncate" style={{ color: "var(--color-muted)" }}>
+                                    · {st.item_label}
+                                  </span>
+                                )}
+                                {st.error && (
+                                  <span
+                                    className="ml-auto min-w-0 truncate"
+                                    style={{ color: "var(--color-err)" }}
+                                    title={st.error}
+                                  >
+                                    {st.error}
+                                  </span>
+                                )}
+                              </div>
+                              {st.status === "waiting_hitl" && st.hitl ? (
+                                <HitlPrompt
+                                  runId={st.run_id}
+                                  payload={st.hitl}
+                                  compact
+                                  onResumed={() => void reloadOrchRow(it.id)}
+                                  onError={(m) => fb.error("恢复失败", m)}
+                                />
+                              ) : null}
+                            </div>
+                          ))}
+                          {typeof d.orch.output?.content === "string" && d.orch.output.content.trim() ? (
+                            <div
+                              className="whitespace-pre-wrap break-words rounded-[6px] border p-2 text-[12px]"
+                              style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+                            >
+                              {String(d.orch.output.content)}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
                       {it.error && (
                         <div className="mb-2 whitespace-pre-wrap break-words text-[12px] leading-[1.65]" style={{ color: "var(--color-err)" }}>
                           ✗ {it.error}
@@ -908,7 +1004,8 @@ export function RunsPanel() {
                         </div>
                       )}
 
-                      {/* 执行过程：点开这一行时才去拉事件（懒加载） */}
+                      {/* 编排已经有上面那份「步骤清单」了，这里不再摆一条空的执行过程 */}
+                      {d?.orch ? null : (
                       <div className="rounded-[8px] border" style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}>
                         <div
                           className="flex items-center gap-2 border-b px-2.5 py-1.5"
@@ -939,6 +1036,7 @@ export function RunsPanel() {
                           )}
                         </div>
                       </div>
+                      )}
 
                       {/* 耗时瀑布（谁在吃时间）—— 与执行过程并列，懒加载、有 span 才显示 */}
                       {d?.spans && d.spans.length > 0 && (
