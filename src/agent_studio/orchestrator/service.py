@@ -504,7 +504,7 @@ class Orchestrator:
 
         # ── 第三步：主控汇总（这一步的产出就是整个编排的最终结果）─────
         parts = "\n\n".join(
-            f"【{self._agent_name_of(r)}】\n{self._text(r) or '（无产出）'}"
+            f"【{self._agent_name_of(r)}】\n{self._text(r) or ('（这一步中断：' + r.error + '）' if (r.status != 'ok' and r.error) else '（无产出）')}"
             for r in worker_runs
         )
         summary_payload = _SUMMARY_PROMPT.format(task=task, parts=parts or "（各位助手都没有产出）")
@@ -761,7 +761,7 @@ class Orchestrator:
         # -1 = 不限：给一个足够大的上限（别让一次编排永久挂住）
         t = STEP_TIMEOUT_S if wait_s is None else (365 * 24 * 3600 if wait_s < 0 else wait_s)
         try:
-            return await run_service.wait(run_id, timeout=t)
+            run = await run_service.wait(run_id, timeout=t)
         except TimeoutError:
             logger.warning("子 Run %s 等待超时", run_id)
             async with SessionLocal() as session:
@@ -772,6 +772,40 @@ class Orchestrator:
                     await session.commit()
                     return run
             raise
+
+        # ── 卡在人工确认的这一步：判掉，别让它变成"永远存在的子任务" ──────
+        # 编排界面没有"点允许"的地方（确认入口在对话页/运行记录）。以前这里是
+        # 直接把 run 交回去：编排标 partial 结束，而那条 run 永远停在
+        # waiting_hitl —— 用户看到的就是"子任务一直挂着，主任务又没拿到它"。
+        if run.status == "waiting_hitl":
+            tool = ""
+            try:
+                tcs = (run.pending_hitl or {}).get("tool_calls") or []
+                if tcs:
+                    tool = str(tcs[0].get("name") or "")
+            except Exception:  # pragma: no cover
+                tool = ""
+            why = (
+                f"这一步要你确认（{tool or '某个操作'}）—— 编排不做中途确认，已中止。"
+                "到对话页单独跑这一步，或把这个助手的权限调成「允许改目录内文件」。"
+            )
+            # 分派出来的那一路自带更精确的原因（第 N 项在等确认）—— 别把它冲掉
+            if (run.error or "").strip():
+                why = f"{run.error.strip()}；编排不做中途确认，已中止。"
+            logger.info("编排：%s 停在人工确认，判为中止（%s）", run_id, tool)
+            await run_service.abort(run_id)
+            async with SessionLocal() as session:
+                row = await session.get(Run, run_id)
+                if row is not None:
+                    row.status = "aborted"
+                    row.error = why
+                    row.pending_hitl = None
+                    if not row.ended_at:
+                        row.ended_at = now_ms()
+                    await session.commit()
+                    return row
+            return run
+        return run
 
     # ------------------------------------------------------------------ #
     # 输入拼装
