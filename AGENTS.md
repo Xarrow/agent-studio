@@ -111,6 +111,7 @@ FastAPI + SQLite（后端 `src/agent_studio/`）+ Next.js（前端 `web/`）。
    画布那一列必须有 `min-h-0`（`min-h-0 min-w-0 flex-1`），让内部 `overflow-auto` 自己滚。
    **横向溢出为 0 ≠ 移动端没问题** —— 浮动控件要在 390×844 真机视口量 `rect.bottom ≤ innerHeight`。
 | 做法要沉淀成技能 | 助手在对话里摸出来的多步做法（部署、抓数、排查、批量改文件），用 `skill_save` 存成一个**全局技能**：写「什么时候用 / 步骤 / 命令 / 坑」，不写这次的具体数字。技能落在 `data/work/skills/<名字>/SKILL.md` + `skill` 表，**只进库不落盘助手看不见**；同名默认不覆盖（技能是长期资产）；存完自动挂给发起它的助手。技能页来源显示「助手沉淀 · 谁写的」 |
+| 编排的等人确认（已升级） | `on_hitl` 默认 `wait`：编排整体标 `waiting_hitl`、结果页给允许/拒绝（HitlPrompt 复用）、点了继续跑完；`HITL_WAIT_S=900` 没人理才判中止。无人值守传 `abort`。⚠ 运行记录里编排行 id 是 `orc_xxx`，**不能**拿它查 run 事件流（会「Run 不存在」）——按 id 前缀/kind 走编排端点 |
 | 编排的等人确认 | 编排里**不做中途确认**（确认入口在对话页/运行记录）：`_await` 遇 `waiting_hitl` 必须当场判 `aborted` + 清 `pending_hitl` + 写清原因（哪个工具、去哪跑、怎么调权限），否则那条子 run 永久挂着、主控只拿到"（无产出）"。分派场景保留"第 N 项在等你确认"的原因再接一句 |
 | CI 发布门禁 | `release` 作业的 if 必须按触发方式分流：tag 推送时 `inputs.*` 是 null（表达式里按 0 算），`inputs.publish != false` 恒假 → 九个作业全绿发布却 skipped。写成 `github.event_name == 'push' || (inputs.skip_verify != true && inputs.publish != false)` |
 | 提示文案 | 状态提示只写一句短语（「本轮已结束 · 仅可查看」「需要你登录」），别写成说明书 —— 留档在哪、怎么回看，界面元素本身摆着；要解释就放 title |
