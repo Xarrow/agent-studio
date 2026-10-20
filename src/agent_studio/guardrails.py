@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Sequence
 import shlex
 from dataclasses import dataclass
 
@@ -120,15 +121,31 @@ def _short(segment: str, limit: int = 160) -> str:
     return s if len(s) <= limit else s[: limit - 1] + "…"
 
 
-def _is_inside(path: str, workspace: str | None) -> bool:
+def _is_inside(path: str, workspace: str | Sequence[str] | None) -> bool:
+    """是否落在允许的目录里。
+
+    ``workspace`` 可以是一个目录，也可以是一串（会话目录 + 助手自己申请的
+    额外根目录）。里面出现 ``/`` 表示"整个文件系统都算自己的地盘" —— 那是
+    「跟 Hermes 一样的全盘权限」这个口径，破坏性命令仍然由后面的规则单独拦。
+    """
     if not workspace:
         return False
     if not path.startswith("/"):
         return True  # 相对路径按"就在工作目录里"算
-    try:
-        return os.path.commonpath([os.path.abspath(path), os.path.abspath(workspace)]) == os.path.abspath(workspace)
-    except ValueError:
-        return False
+    roots = [workspace] if isinstance(workspace, str) else list(workspace)
+    target = os.path.abspath(path)
+    for root in roots:
+        if not root:
+            continue
+        base = os.path.abspath(root)
+        if base == os.sep:
+            return True
+        try:
+            if os.path.commonpath([target, base]) == base:
+                return True
+        except ValueError:
+            continue
+    return False
 
 
 def _out_of_workspace_paths(tokens: list[str], workspace: str | None) -> list[str]:

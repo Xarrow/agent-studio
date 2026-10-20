@@ -110,3 +110,4 @@ FastAPI + SQLite（后端 `src/agent_studio/`）+ Next.js（前端 `web/`）。
    右下角缩放键 / 左下角「整理」落到 y=898（视口 844）且页面不可滚 = **够不到**。
    画布那一列必须有 `min-h-0`（`min-h-0 min-w-0 flex-1`），让内部 `overflow-auto` 自己滚。
    **横向溢出为 0 ≠ 移动端没问题** —— 浮动控件要在 390×844 真机视口量 `rect.bottom ≤ innerHeight`。
+| 助手的「地盘」可配 | 默认只有自己的会话目录，写 /tmp 之类要问一句。要配出「和 Hermes 一样能动手」的助手，在 `runtime_options.agentscope.guard.roots` 里加 `"/"`（或几个具体目录）。这只放宽「越界写」这一类 ASK —— 递归删除、凭据文件、提权照样问、照样拦，`rm -rf /` 仍然直接拒 |

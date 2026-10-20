@@ -648,6 +648,9 @@ def build_agent(
     _guard = DangerousActionGuard(
         enabled=bool(_gconf.get("enabled", True)),
         allow=tuple(_gconf.get("allow") or ()),
+        # 额外地盘：默认只有会话目录；助手要"像 Hermes 一样能动手"就配 ["/"]。
+        # 只放宽"越界写"这一类 ASK，递归删除/凭据/提权照样问、照样拦。
+        roots=tuple(_gconf.get("roots") or ()),
     )
 
     agent = Agent(

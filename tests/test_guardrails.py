@@ -138,3 +138,19 @@ def test_普通文件操作不打扰():
 
     assert classify_code("import os\nos.remove('a.txt')").risk == RISK_ALLOW
     assert classify_code("print('hello rm world')").risk == RISK_ALLOW
+
+
+def test_越界写默认要问_全盘授权后不问():
+    """默认只认会话目录：写 /tmp 要问。助手配了 roots=["/"] 就当自己家 —— 
+    这是"和 Hermes 一样能动手"的口径，但破坏性命令的判定不受影响。"""
+    from agent_studio.guardrails import RISK_ALLOW, RISK_ASK, classify_command
+
+    cmd = "echo hi > /tmp/x.txt"
+    assert classify_command(cmd, "/srv/work/ses_1").risk == RISK_ASK
+    assert classify_command(cmd, ["/srv/work/ses_1", "/"]).risk == RISK_ALLOW
+
+
+def test_全盘授权也拦递归删根():
+    from agent_studio.guardrails import RISK_DENY, classify_command
+
+    assert classify_command("rm -rf /", ["/srv/w", "/"]).risk == RISK_DENY

@@ -57,11 +57,15 @@ class DangerousActionGuard(MiddlewareBase):
         enabled: bool = True,
         allow: list[str] | tuple[str, ...] = (),
         workspace: str | None = None,
+        roots: list[str] | tuple[str, ...] = (),
     ) -> None:
         self.enabled = enabled
         #: 用户显式放行的模式（只对 ask 生效，deny 永不放行）
         self.allow = tuple(a for a in allow if a)
         self._workspace = workspace
+        #: 这个助手额外申请的地盘（会话目录之外）。``"/"`` = 全盘，
+        #: 用来配出「和 Hermes 一样的权限」；破坏性命令的判定不受影响。
+        self._roots = tuple(r for r in roots if r)
 
     # ------------------------------------------------------------------ #
     def _allowed_by_user(self, text: str) -> bool:
@@ -96,7 +100,10 @@ class DangerousActionGuard(MiddlewareBase):
 
         # 工作目录优先取本 run 的（compile 时还不知道会话目录），退到编译期给的
         ws = current_run_ctx().get("workspace") or self._workspace
-        verdict = guardrails.classify_tool_call(name, tool_input, ws)
+        scope: str | list[str] = ([ws] if ws else []) + list(self._roots)
+        if len(scope) == 1:
+            scope = scope[0]
+        verdict = guardrails.classify_tool_call(name, tool_input, scope)
         if verdict is None or verdict.risk == guardrails.RISK_ALLOW:
             return await next_handler()
 
