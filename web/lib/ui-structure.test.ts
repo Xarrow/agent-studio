@@ -647,3 +647,16 @@ test("跨轮清单：有清单才出现，一行给进度，点开看每一步",
   assert.match(chat, /<TodoStrip sessionId=\{sessionId\} busy=\{busy\} refreshKey=\{todoTick\} \/>/);
   assert.match(chat, /setTodoTick\(\(n\) => n \+ 1\)/, "一轮结束要刷新清单");
 });
+
+
+/**
+ * 视频预览：编码不支持时不能只丢黑框（用户原话「mp4视频播放不了」）。
+ * 口径：开视频先 probe；播不了/可能播不了 → 明说原因 + 一键转 H.264。
+ */
+test("视频预览：先探编码，播不了给转码入口", () => {
+  const dlg = read("components/FileDialog.tsx");
+  assert.match(dlg, /api\s*\.\s*probeWorkFile\(workRel\)|api\.probeWorkFile\(workRel\)/, "打开视频先问后端编码");
+  assert.match(dlg, /转成能播的版本（H\.264）/, "播不了要给一键转码");
+  assert.match(dlg, /const workRel = /, "probe/transcode 用相对 data/work 的路径（不是会话目录那层）");
+  assert.match(dlg, /onError=\{\(\) => setVideoFailed\(true\)\}/, "浏览器自己解不开时也要切成提示态");
+});

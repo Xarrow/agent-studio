@@ -10,6 +10,8 @@ import type {
   EvalSuiteRead,
   GuardrailsRead,
   SkillLifecycle,
+  TranscodeResult,
+  WorkProbe,
   SkillRepoScan,
   UsageBucket,
   WorkflowAuto,
@@ -961,6 +963,12 @@ export const api = {
     post<{ removed_messages: number }>(`/api/sessions/${id}/clear-context`, {
       keep_summary: keepSummary,
     }),
+
+  /* ------------------------- 视频能不能播 / 转码 ------------------------- */
+  probeWorkFile: (path: string) =>
+    request<WorkProbe>(`/api/work/probe?path=${encodeURIComponent(path)}`),
+  transcodeWorkFile: (path: string) =>
+    post<TranscodeResult>("/api/work/transcode", { path }),
 
   /* -------------------------- 技能生命周期（整理） -------------------------- */
   skillLifecycle: () => request<SkillLifecycle>("/api/skills/lifecycle"),

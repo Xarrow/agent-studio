@@ -72,6 +72,7 @@ export function FileOpenerProvider({
           <FileDialog
             file={file}
             onClose={() => setFile(null)}
+            onFileAdded={() => onFileChanged?.()}
             onDeleted={() => {
               onFileChanged?.();
               setFile(null);
@@ -265,11 +266,14 @@ export function FileDialog({
   file,
   onClose,
   onDeleted,
+  onFileAdded,
 }: {
   file: FileRef;
   onClose: () => void;
   /** 删成功之后：外面要刷新文件清单 */
   onDeleted?: () => void;
+  /** 转码生成了新文件之后：外面要刷新文件清单 */
+  onFileAdded?: () => void;
 }) {
   const { sessionId, workDir } = useContext(SessionCtx);
   const url = file.url ?? fileUrlFor(file.path, sessionId, workDir);
@@ -278,6 +282,14 @@ export function FileDialog({
   const [bytes, setBytes] = useState<number | null>(file.size ?? null);
   const [state, setState] = useState<"idle" | "loading" | "done" | "fail">(url ? "loading" : "idle");
   const [copied, setCopied] = useState<"path" | "text" | null>(null);
+  /* ---- 视频：能不能播、要不要转码 ----
+     真实踩到：bilibili 下的 mp4 是 AV1，手机和微信内置浏览器根本解不了；
+     直接丢一个 <video> 只会得到黑框。所以先问后端"这编码能不能播"，不能就明说原因并给一键转码。 */
+  const [probe, setProbe] = useState<Awaited<ReturnType<typeof api.probeWorkFile>> | null>(null);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [videoFailed, setVideoFailed] = useState(false);
+  const [converting, setConverting] = useState(false);
+  const [convErr, setConvErr] = useState<string | null>(null);
   /** Markdown / 表格的"看排版"与"看原文"切换（默认看排版） */
   const [rawView, setRawView] = useState(false);
   /* 删除是不可撤销的：第一下只把按钮变成「确认删除」，4 秒内再点才算（不用原生 confirm —— 它阻塞 JS） */
@@ -346,6 +358,59 @@ export function FileDialog({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose, confirmDel]);
+
+  /**
+   * 相对 **data/work** 的路径 —— /api/work/probe、/api/work/transcode 都是这个口径。
+   * 注意别跟上面的 relPath 混：relPath 是相对**会话目录**的（删除文件那个接口要的是它），
+   * 拿它去 probe 会 404（实测就踩了这个，界面显示"探测失败"）。
+   */
+  const workRel = (() => {
+    const marker = "/api/work/file/";
+    const u = url ?? "";
+    const i = u.indexOf(marker);
+    if (i >= 0) {
+      try {
+        return decodeURIComponent(u.slice(i + marker.length));
+      } catch {
+        return u.slice(i + marker.length);
+      }
+    }
+    return sessionId ? `sessions/${sessionId}/${relPath}` : relPath;
+  })();
+
+  /* 视频：先探编码（几毫秒，ffprobe 只读文件头），决定放播放器还是放转码入口 */
+  useEffect(() => {
+    let alive = true;
+    setProbe(null);
+    setVideoUrl(null);
+    setVideoFailed(false);
+    setConvErr(null);
+    if (!url || kind !== "video" || !sessionId) return;
+    void api
+      .probeWorkFile(workRel)
+      .then((p) => alive && setProbe(p))
+      .catch(() => alive && setProbe({ ok: false, reason: "探测失败（后端没有 ffprobe？）" }));
+    return () => {
+      alive = false;
+    };
+  }, [url, kind, workRel, sessionId]);
+
+  const convert = async () => {
+    if (!sessionId || converting) return;
+    setConverting(true);
+    setConvErr(null);
+    try {
+      const r = await api.transcodeWorkFile(workRel);
+      setVideoUrl(r.url);
+      setProbe(r.probe);
+      setVideoFailed(false);
+      onFileAdded?.(); // 转出的新文件要出现在会话文件清单里
+    } catch (e) {
+      setConvErr(e instanceof Error ? e.message : "转换失败");
+    } finally {
+      setConverting(false);
+    }
+  };
 
   useEffect(() => {
     let alive = true;
@@ -452,13 +517,64 @@ export function FileDialog({
               </p>
             </div>
           ) : kind === "video" ? (
-            <video
-              src={url}
-              controls
-              playsInline
-              className="max-h-[62dvh] w-full rounded-[10px] border"
-              style={{ borderColor: "var(--color-border)", background: "#000" }}
-            />
+            (() => {
+              const playUrl = videoUrl ?? url;
+              /* probe 失败（没有 ffprobe 之类）时不能假装"能播" —— 归到"试试转码"这一档 */
+              const verdict = probe?.playable ?? (probe ? "maybe" : "yes");
+              const warn = videoFailed
+                ? "这个视频在你的设备上解不开（多半是编码不支持）"
+                : verdict === "no"
+                  ? probe?.reason || "浏览器解不了这个视频的编码"
+                  : verdict === "maybe"
+                    ? probe?.reason || "这段视频的编码在部分设备上放不出来"
+                    : "";
+              return (
+                <div>
+                  <video
+                    key={playUrl}
+                    src={playUrl}
+                    controls
+                    autoPlay={Boolean(videoUrl)}
+                    playsInline
+                    preload="metadata"
+                    onError={() => setVideoFailed(true)}
+                    className="max-h-[62dvh] w-full rounded-[10px] border"
+                    style={{ borderColor: "var(--color-border)", background: "#000" }}
+                  />
+                  {(warn || converting || convErr) && (
+                    <div
+                      className="mt-2 rounded-[10px] border p-2.5 text-[12.5px]"
+                      style={{ borderColor: warn ? "var(--color-warn, #b45309)" : "var(--color-border)" }}
+                    >
+                      {warn ? (
+                        <p className="leading-relaxed" style={{ color: "var(--color-warn, #b45309)" }}>
+                          {warn}
+                          {probe?.video ? `（当前编码 ${probe.video.toUpperCase()}）` : ""}
+                        </p>
+                      ) : null}
+                      <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          className="btn btn-primary px-2.5 max-md:min-h-[36px]"
+                          disabled={converting}
+                          onClick={() => void convert()}
+                        >
+                          {converting ? "转换中…（大文件要等一会儿）" : videoUrl ? "重新转一份" : "转成能播的版本（H.264）"}
+                        </button>
+                        <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+                          转完存到同一目录，再打开直接播
+                        </span>
+                      </div>
+                      {convErr ? (
+                        <p className="mt-1 text-[12px]" style={{ color: "var(--color-err)" }}>
+                          转换失败：{convErr}
+                        </p>
+                      ) : null}
+                    </div>
+                  )}
+                </div>
+              );
+            })()
           ) : kind === "html" ? (
             /* HTML 用沙箱 iframe：不给脚本、不给同源 —— 别人的页面不能在我们的域里跑代码 */
             <iframe

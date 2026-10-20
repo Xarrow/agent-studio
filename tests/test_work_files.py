@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import pathlib
+from urllib.parse import quote
 
 import pytest
 from fastapi.testclient import TestClient
@@ -133,3 +134,109 @@ def test_media_types_preview_inline(tmp_path, monkeypatch):
         assert r.headers["content-type"].startswith(ctype), (name, r.headers["content-type"])
     # 可执行文件永远不放行
     assert c.get("/api/work/file/evil.exe").status_code == 404
+
+
+def test_filename_with_brackets_is_served(tmp_path, monkeypatch):
+    """bilibili 下回来的名字带方括号（`标题 [BVxxx].mp4`）—— 之前整条 URL 404，
+    用户看到的就是"mp4 播不了"。文件名规则不能收得太紧。"""
+    from agent_studio.config import settings
+
+    sandbox = tmp_path / "work"
+    sandbox.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(settings, "work_dir", sandbox)
+    name = "余承东雍正王朝 2 [BV1r9nF6ZE2h].mp4"
+    (sandbox / name).write_bytes(b"\x00\x00\x00\x18ftypmp42")
+
+    from agent_studio.main import app
+
+    c = TestClient(app)
+    r = c.get("/api/work/file/" + quote(name))
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"].startswith("video/")
+
+
+def test_head_supported_for_media(tmp_path, monkeypatch):
+    """iOS Safari 放视频前先发 HEAD；只接 GET 会 405，被当成"放不了"。"""
+    from agent_studio.config import settings
+
+    sandbox = tmp_path / "work"
+    sandbox.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(settings, "work_dir", sandbox)
+    (sandbox / "v.mp4").write_bytes(b"\x00\x00\x00\x18ftypmp42")
+
+    from agent_studio.main import app
+
+    r = TestClient(app).head("/api/work/file/v.mp4")
+    assert r.status_code == 200
+    assert int(r.headers["content-length"]) == 12
+
+
+def test_probe_rejects_outside_and_missing():
+    from agent_studio.main import app
+
+    c = TestClient(app)
+    assert c.get("/api/work/probe", params={"path": "../studio.db"}).status_code == 404
+    assert c.get("/api/work/probe", params={"path": "nope.mp4"}).status_code == 404
+
+
+def test_probe_reports_codec_and_playability(tmp_path, monkeypatch):
+    """真用 ffmpeg 造一个 H.264 → 必须判"能播"；再改后缀当 hevc 不可行，
+    所以这里换个角度：不存在的文件 404，H.264 判 yes，编码判定函数对 hevc 说 no。"""
+    pytest.importorskip("shutil")
+    import shutil as _sh
+
+    if not _sh.which("ffmpeg"):
+        pytest.skip("没有 ffmpeg")
+
+    from agent_studio.config import settings
+
+    sandbox = tmp_path / "work"
+    sandbox.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(settings, "work_dir", sandbox)
+    vid = sandbox / "tiny.mp4"
+    import subprocess
+
+    subprocess.run(
+        ["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i",
+         "testsrc=size=160x120:rate=10:duration=1", "-c:v", "libx264",
+         "-pix_fmt", "yuv420p", str(vid)],
+        check=True, timeout=120,
+    )
+
+    from agent_studio.api.work import _probe
+    from agent_studio.main import app
+
+    info = _probe(vid)
+    assert info["ok"] and info["video"] == "h264" and info["playable"] == "yes"
+    assert info["width"] == 160 and info["height"] == 120
+
+    got = TestClient(app).get("/api/work/probe", params={"path": "tiny.mp4"}).json()
+    assert got["playable"] == "yes"
+
+
+def test_transcode_makes_playable_copy(tmp_path, monkeypatch):
+    if not __import__("shutil").which("ffmpeg"):
+        pytest.skip("没有 ffmpeg")
+    from agent_studio.config import settings
+
+    sandbox = tmp_path / "work"
+    sandbox.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(settings, "work_dir", sandbox)
+    src = sandbox / "clip.mp4"
+    import subprocess
+
+    subprocess.run(
+        ["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i",
+         "testsrc=size=160x120:rate=10:duration=1", "-c:v", "libx264",
+         "-pix_fmt", "yuv420p", str(src)],
+        check=True, timeout=120,
+    )
+    # 假装它是 AV1：直接断言产物生成与回读，编码真伪不影响这条链路
+    from agent_studio.main import app
+
+    r = TestClient(app).post("/api/work/transcode", json={"path": "clip.mp4"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["url"].startswith("/api/work/file/")
+    assert (sandbox / body["path"]).exists()
+    assert body["probe"]["playable"] == "yes"

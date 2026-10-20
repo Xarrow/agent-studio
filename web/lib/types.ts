@@ -1160,3 +1160,25 @@ export type UploadConfigRead = {
   writable: boolean;
   error?: string;
 };
+
+/** 视频能不能在浏览器里直接播（后端 ffprobe 判定） */
+export interface WorkProbe {
+  ok: boolean;
+  playable?: "yes" | "maybe" | "no";
+  reason?: string;
+  container?: string;
+  video?: string;
+  audio?: string;
+  duration?: number;
+  width?: number;
+  height?: number;
+  size?: number;
+}
+
+/** 转成 H.264 的结果（同目录新文件） */
+export interface TranscodeResult {
+  path: string;
+  url: string;
+  size: number;
+  probe: WorkProbe;
+}
