@@ -398,3 +398,28 @@ test("执行中：不同类型不同动效，且可关", () => {
   // 手机点得中
   assert.match(css, /\.proc-head \{[^}]*min-height: 36px/s, "收起态 36px 点击高度");
 });
+
+/**
+ * 「不同动画」要落在**收起的**那一行上（用户 2026-10 澄清：指 think / tool 的动画）。
+ * 收起态左侧那颗图标就是心跳：思考＝紫点波浪，工具＝蓝圈转，工具结果＝青点弹一下。
+ */
+test("过程条收起态：think 与 tool 各有各的动画", () => {
+  const tl = read("components/ui/run-timeline.tsx");
+  const css = read("app/globals.css");
+  assert.match(tl, /const activeKind: StepKind \| null = running/, "当前动作类型要算出来");
+  assert.match(
+    tl,
+    /\["--proc-active-color" as string\]: STEP_STYLE\[activeKind \?\? "think"\]\.color/,
+    "收起态整行染成当前动作的颜色",
+  );
+  assert.match(tl, /activeKind === "tool" \? \(/, "工具走转圈那条分支");
+  assert.match(tl, /className="proc-spin"/, "工具＝圆弧转圈");
+  assert.match(tl, /<span className="proc-think-dots">/, "思考＝三个点波浪");
+  assert.match(tl, /activeKind === "tool_response" \|\| activeKind === "artifact"/, "结果＝落定");
+  // CSS 三套动效都在，且关动效/系统偏好能一次覆盖
+  assert.match(css, /\.proc-act \{/, "收起态活动图标");
+  assert.match(css, /\.proc-spin \{\s*animation: spin/, "转圈");
+  assert.match(css, /@keyframes proc-pop/, "落定弹一下");
+  assert.match(css, /\.proc\[data-anim="off"\] \.proc-spin,/, "可关：转圈");
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{\s*\.proc \.proc-head::before,\s*\.proc \.proc-spin,/, "可关：系统偏好");
+});

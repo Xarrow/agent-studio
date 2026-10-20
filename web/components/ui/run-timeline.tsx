@@ -653,6 +653,10 @@ export function ProcessBar({
 
   const proc = useMemo(() => processSteps(steps), [steps]);
   const n = tally(proc);
+  /** 当前这一步的类型 —— 收起态的动画和颜色都跟着它走 */
+  const activeKind: StepKind | null = running
+    ? (proc[proc.length - 1]?.kind ?? "think")
+    : null;
   const failures = proc.filter((s) => s.kind === "tool" && s.ok === false).length;
 
   // 受控时（历史消息）即使还没拉到事件也要露出这一行 —— 它自己就是"点开"的入口
@@ -684,17 +688,77 @@ export function ProcessBar({
         className="proc-head"
         onClick={toggle}
         aria-expanded={open}
+        style={
+          running
+            ? ({ ["--proc-active-color" as string]: STEP_STYLE[activeKind ?? "think"].color } as React.CSSProperties)
+            : undefined
+        }
       >
-        {/* 三个小点表示"过程"本身；跑起来会呼吸，停下就静止 */}
-        <span
-          className="proc-dots"
-          style={{ color: running ? "var(--color-accent)" : "#8b93a1" }}
-          aria-hidden="true"
-        >
-          <span className="proc-dot" />
-          <span className="proc-dot" />
-          <span className="proc-dot" />
-        </span>
+        {/* 收起态左侧这枚图标 = 当前动作的"心跳"：
+              思考 → 紫色三个点波浪；工具 → 蓝色圆弧转圈；工具结果 → 青色弹一下；
+              停下 → 三个灰点（静态）。这就是"think / tool 各有各的动画"。 */}
+        {running ? (
+          <span className="proc-act" aria-hidden="true">
+            {activeKind === "tool" ? (
+              <>
+                <svg
+                  className="proc-spin"
+                  width={13}
+                  height={13}
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                >
+                  <circle cx="12" cy="12" r="9" strokeDasharray="4 4" opacity="0.9" />
+                </svg>
+                <span className="proc-spin-dot" />
+              </>
+            ) : activeKind === "tool_response" || activeKind === "artifact" ? (
+              <svg
+                className="proc-pop"
+                width={13}
+                height={13}
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={1.8}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M9 10 4 15l5 5" />
+                <path d="M20 4v7a4 4 0 0 1-4 4H4" />
+              </svg>
+            ) : activeKind === "error" ? (
+              <svg
+                width={13}
+                height={13}
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={1.8}
+                strokeLinecap="round"
+              >
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 8v4" />
+                <path d="M12 16h.01" />
+              </svg>
+            ) : (
+              <span className="proc-think-dots">
+                <i />
+                <i />
+                <i />
+              </span>
+            )}
+          </span>
+        ) : (
+          <span className="proc-dots" style={{ color: "#8b93a1" }} aria-hidden="true">
+            <span className="proc-dot" />
+            <span className="proc-dot" />
+            <span className="proc-dot" />
+          </span>
+        )}
 
         <span className="proc-title">
           {running
