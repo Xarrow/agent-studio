@@ -80,7 +80,7 @@ export function ModelPicker({
         if (r.models?.length) {
           setNote(`✓ 探测到 ${r.models.length} 个可用模型`);
         } else if (r.suggested?.length) {
-          setNote("该服务商不支持列出模型，下面是推荐清单，可先选一个试跑");
+          setNote("该服务商不列模型，下面是推荐清单");
         } else {
           setNote("没能取到模型清单，可用「手动填写」");
         }
@@ -183,7 +183,7 @@ export function ModelPicker({
             className="btn shrink-0"
             type="button"
             disabled={probing}
-            title="重新探测该配置下可用的模型"
+            title="重新探测可用模型"
             onClick={() => void doProbe(true)}
           >
             {probing ? "…" : "重新探测"}

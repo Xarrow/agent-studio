@@ -110,7 +110,7 @@ export function AutoRunDialog({
       return;
     }
     if (mode && !task.trim()) {
-      fb.error("还差「默认任务」", "没有任务描述，定时到点了也不知道该让它做什么");
+      fb.error("还差「默认任务」", "没有描述，到点不知道做什么");
       return;
     }
     setSaving(true);

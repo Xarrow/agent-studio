@@ -162,7 +162,7 @@ export default function SessionJobs({
   const save = async () => {
     const text = prompt.trim();
     if (!text) {
-      fb.info("还差一句", "写清楚每次让它做什么（比如「汇总三条 AI 新闻」）");
+      fb.info("还差一句", "写清每次让它做什么");
       return;
     }
     if (channel === "webhook" && !/^https?:\/\//.test(url.trim())) {
@@ -222,7 +222,7 @@ export default function SessionJobs({
   const remove = async (j: SessionJob) => {
     const ok = await fb.confirm({
       title: "删掉这个定时？",
-      description: `「${scheduleText(j)}」就不再自动跑了。已经跑出来的对话内容不受影响。`,
+      description: `不再自动跑；已跑出的内容不受影响`,
       confirmText: "删掉",
       danger: true,
     });

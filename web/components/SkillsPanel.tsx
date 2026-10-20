@@ -99,7 +99,7 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
       await api.archiveSkill(s.id);
       await load();
       setDetail(await api.skill(s.id));
-      fb.success(`已归档「${s.name}」`, "助手那边不再提供它；内容留在库里，点「恢复」就能回来。");
+      fb.success(`已归档「${s.name}」`, "助手那边撤下，内容还在库里");
     } catch (e) {
       fb.error("归档失败", e instanceof Error ? e.message : String(e));
     }
@@ -126,7 +126,7 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
       const parts: string[] = [];
       if (r.stale?.length) parts.push(`${r.stale.length} 个标记闲置`);
       if (r.archived?.length) parts.push(`${r.archived.length} 个已归档`);
-      fb.success(parts.length ? `整理完成：${parts.join("，")}` : "整理完成：没有需要动的技能");
+      fb.success(parts.length ? `整理完成：${parts.join("，")}` : "没有需要整理的技能");
     } catch (e) {
       fb.error("整理失败", e instanceof Error ? e.message : String(e));
     } finally {
@@ -295,7 +295,7 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
                   )}
                   <button
                     className="btn"
-                    title={detail.pinned ? "取消固定（之后允许自动整理）" : "固定：任何自动整理都不碰它"}
+                    title={detail.pinned ? "取消固定，允许自动整理" : "固定：自动整理不碰它"}
                     onClick={() => void togglePin(detail)}
                   >
                     {detail.pinned ? "取消固定" : "固定"}
@@ -307,7 +307,7 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
                   ) : (
                     <button
                       className="btn"
-                      title="从助手那边撤下（内容仍留在库里，随时能恢复）"
+                      title="从助手撤下，库里还有"
                       onClick={() => void archive(detail)}
                     >
                       归档
@@ -636,7 +636,7 @@ function ImportDialog({
                         <span className="text-[11.5px] text-[var(--color-muted)]">
                           {picked.length === 0
                             ? "勾一个再装"
-                            : `已选 ${picked.length} 个 · 附件也会一起搬过来`}
+                            : `已选 ${picked.length} 个 · 附件一起搬`}
                         </span>
                         <button
                           className="btn btn-primary btn-sm ml-auto"
@@ -821,7 +821,7 @@ function SkillEditor({
 
   const save = async () => {
     if (!hasFrontmatter) {
-      fb.error("缺 frontmatter", "开头要有 --- 包住的 name 和 description（照模板改）");
+      fb.error("缺 frontmatter", "开头用 --- 包住 name 和 description");
       return;
     }
     setBusy(true);

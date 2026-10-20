@@ -145,7 +145,7 @@ export function RuntimeCard() {
               type="button"
               className="btn"
               disabled={busy}
-              title="用 uv 装一个独立解释器（不动平台自身的 Python）"
+              title="uv 装独立解释器，不动平台 Python"
               onClick={() => void install("python")}
             >
               装一个独立解释器
@@ -187,7 +187,7 @@ export function RuntimeCard() {
               type="button"
               className="btn"
               disabled={busy}
-              title="从 npmmirror 下载并校验后装到平台目录（不动系统、不改 PATH）"
+              title="从 npmmirror 下载校验后装到平台目录"
               onClick={() => void install("node")}
             >
               {node.found ? `再装一个 ${info?.default_node_version ?? ""}` : "下载安装"}

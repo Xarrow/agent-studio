@@ -603,7 +603,7 @@ test("备用模型：配置页可设 + 过程条认「换模型」", () => {
 test("运行中插话：执行中输入框可用 + 回车即插话 + 历史里标记出来", () => {
   const chat = read("components/ChatConsole.tsx");
   assert.match(chat, /api\.steerRun\(liveRunId, text\)/, "走插话接口");
-  assert.match(chat, /执行中 · 直接回车就是插话/, "提示语说清楚回车是插话");
+  assert.match(chat, /执行中 · 回车即插话/, "提示语说清楚回车是插话");
   assert.match(chat, /void \(busy \? steer\(\) : send\(\)\)/, "执行中回车走插话");
   assert.match(chat, /disabled=\{paused\}/, "执行中输入框不能禁掉");
   assert.match(chat, /插话：塞进这一轮，不打断当前这一步/, "按钮常驻可点");

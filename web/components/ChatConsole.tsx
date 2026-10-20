@@ -366,7 +366,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
       setInput(text);
       fb.success(
         "已回到这一轮",
-        `删掉 ${r.deleted} 条消息，剩 ${r.remaining} 条。原文在输入框里，改完直接发。`,
+        `删了 ${r.deleted} 条，剩 ${r.remaining} 条`,
       );
     } catch (e) {
       fb.error("回滚失败", e instanceof Error ? e.message : String(e));
@@ -380,7 +380,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
       const s = await api.branchSession(sessionId, turnIndex);
       await loadSessions(agentId);
       setSessionId(s.id);
-      fb.success("已另起一个会话", `「${s.title}」：这一轮之前的对话都带过去了，原来的会话没动。`);
+      fb.success("已另起一个会话", `「${s.title}」：已带过去，原会话没动`);
     } catch (e) {
       fb.error("分支失败", e instanceof Error ? e.message : String(e));
     }
@@ -407,15 +407,15 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
 
     const ok = await fb.confirm({
       title: `删除对话「${s.title || s.id}」？`,
-      description: "对话记录会被删除，但执行记录（Runs）会保留，可在调试台查看。",
+      description: "对话删掉，执行记录保留",
       details: [
         `${s.turn_count} 轮对话 · ${s.message_count} 条消息`,
         `${dirLabel}/ 文件夹`,
       ],
       warning:
         fileCount > 0
-          ? `这个会话的文件夹里有 ${fileCount} 个文件（共 ${fmt.bytes(fileBytes)}），会跟对话一起删掉，删了找不回来。`
-          : "这个会话的文件夹会跟对话一起删掉。现在里面是空的，不会有文件丢失。",
+          ? `文件夹里 ${fileCount} 个文件（${fmt.bytes(fileBytes)}）会一起删掉，找不回来`
+          : "会话文件夹会一起删，现在是空的",
       danger: true,
       confirmText: fileCount > 0 ? "连文件夹一起删" : "删除",
     });
@@ -1089,7 +1089,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                           <path d="M14 2v6h6" />
                         </>
                       ),
-                      q: "帮我分析一个文件或一段数据",
+                      q: "分析一个文件或一段数据",
                       hint: "看目录里的东西，给结论",
                     },
                     {
@@ -1401,7 +1401,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     type="button"
                     onClick={toggleFiles}
                     aria-expanded={openFiles}
-                    title={openFiles ? "收起文件清单（把地方让给对话）" : "展开文件清单"}
+                    title={openFiles ? "收起文件清单" : "展开文件清单"}
                     className="shrink-0 rounded p-0.5 hover:bg-[var(--color-surface)] max-md:inline-flex max-md:min-h-[32px] max-md:min-w-[32px] max-md:items-center max-md:justify-center"
                     style={{ color: "var(--color-muted)" }}
                   >
@@ -1686,7 +1686,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     paused
                       ? "运行暂停，先处理上面的授权…"
                       : busy
-                        ? "执行中 · 直接回车就是插话（它下一步就看到）"
+                        ? "执行中 · 回车即插话"
                         : pendingFiles.length > 0
                           ? `附了 ${pendingFiles.length} 个文件，说点什么…`
                           : "说点什么…"
@@ -1721,7 +1721,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     data-tap
                     type="button"
                     className="w-11 h-11 sm:w-8 sm:h-8 shrink-0 flex items-center justify-center rounded-xl text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] disabled:opacity-40"
-                    title="添加附件：也能直接粘贴截图、把文件拖进来"
+                    title="添加附件（可粘贴截图、拖入文件）"
                     disabled={busy || paused || uploading}
                     onClick={() => fileRef.current?.click()}
                   >
@@ -2561,7 +2561,7 @@ function Bubble({
                 data-tap
                 className="text-[11.5px] px-1.5 py-0.5 rounded hover:text-[var(--color-text)]"
                 style={{ color: "var(--color-muted)" }}
-                title="编辑这条消息（改完保存，之后的对话用它）"
+                title="编辑这条消息"
                 onClick={() => {
                   setDraft(userBody);
                   setEditing(true);
@@ -2588,7 +2588,7 @@ function Bubble({
                 data-tap
                 className="text-[11.5px] px-1.5 py-0.5 rounded hover:text-[var(--color-text)]"
                 style={{ color: "var(--color-muted)" }}
-                title="回到这一轮之前（这轮和之后的消息会删掉，原文回到输入框）"
+                title="回到这一轮之前，原文回到输入框"
                 onClick={() => setConfirmRewind(true)}
               >
                 重来
@@ -2625,7 +2625,7 @@ function Bubble({
                 data-tap
                 className="text-[11.5px] px-1.5 py-0.5 rounded hover:text-[var(--color-text)]"
                 style={{ color: "var(--color-muted)" }}
-                title="从这一轮之前另起一个会话（当前会话保持原样）"
+                title="从这一轮之前另起会话"
                 onClick={onBranch}
               >
                 分支

@@ -174,7 +174,7 @@ export default function EnvironmentPage() {
     // ① 先测试（建库建表也会在这一步完成），失败就不允许切
     const r = await runTest(true);
     if (!r?.ok) {
-      fb.warn("没有切换", "先让连接测试通过 —— 现在切换只会把服务弄坏。");
+      fb.warn("没有切换", "连接测试通过后才能切换");
       return;
     }
 
@@ -185,10 +185,10 @@ export default function EnvironmentPage() {
 
     const okToGo = await fb.confirm({
       title: `确认切换到 ${target}？`,
-      description: "原库里的数据不会自动搬过去 —— 新库的表会自动建好，但里面是空的。",
+      description: "原库数据不会自动搬过去",
       details: [
         "服务会重启几秒，正在跑的 Agent 任务会被中断",
-        "老数据仍留在原库，想换回来随时可以切回去",
+        "老数据留在原库，随时能切回",
         "连接测试已通过，目标库和表都已就绪",
       ],
       confirmText: "切换",
@@ -254,13 +254,13 @@ export default function EnvironmentPage() {
     <div className="flex max-w-3xl flex-col gap-4 p-4 md:p-6 lg:p-7">
       <PageHead
         title="环境配置"
-        desc="平台把数据存在哪里。本地开发用默认的 SQLite 就够了；要多人共用或跑在服务器上，可以切到自己的 MySQL / PostgreSQL。"
+        desc="数据存哪：默认 SQLite，多人共用可换 MySQL / PostgreSQL"
       />
 
       {/* ── 运行环境：这台机器有什么、缺了能装 ─────────────── */}
       <Section
         title="运行环境"
-        desc="检测这台机器上的 Python 与 Node.js。缺了可以一键装到平台自己的目录 —— 不动系统、不改 PATH，只走国内镜像，下载校验 sha256、装完真跑一次版本号才算成功"
+        desc="检测本机 Python / Node，缺了一键装到平台目录"
       >
         <RuntimeCard />
       </Section>
@@ -268,7 +268,7 @@ export default function EnvironmentPage() {
       {/* ── 当前使用 ─────────────────────────────────────────── */}
       <Section
         title="当前使用"
-        desc="平台此刻真正的数据落点 —— 下面「切换」改的是下一份配置，改完要重启才生效"
+        desc="当前真实落点；改完要重启才生效"
       >
         {status && (
           <>
@@ -317,7 +317,7 @@ export default function EnvironmentPage() {
       {/* ── 切换 ─────────────────────────────────────────────── */}
       <Section
         title="切换到其他数据库"
-        desc="换到自己的 MySQL / PostgreSQL：新库的表会自动建好，但里面是空的（旧库数据不动，切回来还能看到）"
+        desc="新库自动建表，里面是空的；旧库不动"
       >
 
         <div className="mb-4 flex flex-col gap-1.5 sm:grid sm:grid-cols-3 sm:gap-2">
@@ -604,7 +604,7 @@ export default function EnvironmentPage() {
       {/* 对外接入：把平台当 AG-UI 端点用（任何 AG-UI 客户端都能驱动这些助手） */}
       <Section
         title="对外接入 · AG-UI"
-        desc="按 AG-UI 协议暴露一个 SSE 端点，外部客户端（CopilotKit 那类）可以直接驱动平台里的助手"
+        desc="暴露 AG-UI SSE 端点，外部客户端可直接驱动助手"
       >
         <AguiCard />
       </Section>
@@ -615,7 +615,7 @@ export default function EnvironmentPage() {
 
       <Section
         title="配置导入导出"
-        desc="助手 / 自定义工具 / 技能 / 编排流程 / 记忆策略 / 长期记忆 / 模型单价 / LLM 配置，可以按功能单独导出，也可以一键全量；导入只新增、不覆盖"
+        desc="按功能导出或全量导出；导入只新增"
       >
         <BackupRestore />
       </Section>
@@ -623,7 +623,7 @@ export default function EnvironmentPage() {
       {/* ── 说明 ─────────────────────────────────────────────── */}
       <Section
         title="几点说明"
-        desc="切换数据库的真实行为：数据不搬、服务会重启、密码加密保存、切错会自动退回"
+        desc="数据不搬、要重启、切错自动退回"
       >
         <ul className="text-[12px] text-[var(--color-muted)] space-y-1.5 leading-relaxed">
           <li>

@@ -30,12 +30,12 @@ export type PermConf = { mode?: string; allow?: Omit<PermRule, "behavior">[]; de
 const MODES: { value: string; label: string; result: string; desc: string; warn?: string }[] = [
   {
     value: "accept_edits",
-    label: "允许改工作目录内的文件（推荐）",
-    result: "能改这个目录里的文件；只读命令任何档位都放行",
-    desc: "工作目录内的文件读写、以及 mkdir / cp / mv / rm 这类目录操作，路径都在工作目录内时直接执行。只读命令（ls / cat / pwd / git status…）任何档位都自动放行。",
+    label: "允许改目录内文件（推荐）",
+    result: "能改目录内文件；只读命令始终放行",
+    desc: "目录内读写与 mkdir / cp / mv / rm 直接执行；只读命令始终放行",
     // 这一档最容易误解成"命令也不问了" —— 实测过：路径在工作目录外（比如 /tmp）就会停下，
     // 用户看到的现象是"权限明明调过，怎么还每次都弹"。所以这里把边界写死，别让人靠猜。
-    warn: "命令执行（bash）只有**路径全部落在工作目录内**时才直接放行；写到 /tmp 之类目录外仍会停下来问。另外，动态展开 $(...)、删系统目录、改敏感配置文件属于安全兜底，**任何档位都会问**，这是拦不掉的。想彻底不问就选「全部放行」。",
+    warn: "bash 只有路径全在目录内才放行；动态展开 $(...)、删系统目录、改敏感配置任何档位都会问",
   },
   {
     value: "explore",
@@ -47,22 +47,22 @@ const MODES: { value: string; label: string; result: string; desc: string; warn?
     value: "dont_ask",
     label: "需要确认的一律拒绝（不卡住）",
     result: "要问的一律拒绝（无人值守友好）",
-    desc: "把「要问一句」的操作直接判为拒绝。适合无人值守。",
-    warn: "助手会因权限不足而放弃某些操作，表现为「做不了」，而不是卡住。",
+    desc: "要问的一律判为拒绝，适合无人值守",
+    warn: "拒了就放弃，不会卡住",
   },
   {
     value: "default",
     label: "严格：每个操作都要确认",
     result: "每个操作都停下来问一下",
     desc: "AgentScope 的原生默认，最保守。",
-    warn: "最保守：每个操作都会停下来问。停下来时对话/试跑/编排里会出现「允许 / 拒绝」，点一下才继续 —— 所以它不会卡死，只是需要你盯着。想省事就换成上面几档。",
+    warn: "每个操作都要你点头；不会卡死，只是要盯着",
   },
   {
     value: "bypass",
     label: "全部放行（危险）",
-    result: "什么都不问（危险，只在沙箱里用）",
-    desc: "跳过所有权限检查，只保留你显式写的拒绝规则。",
-    warn: "连删除文件、改 ~/.bashrc 这类危险操作也不再拦。**少数安全兜底仍会问**（动态展开 $(...)、删系统目录、改敏感配置文件）—— 这类是防手滑的最后一道，任何档位都拦不掉。只在沙箱/容器里用。",
+    result: "什么都不问（危险，仅沙箱）",
+    desc: "跳过检查，只保留显式拒绝规则",
+    warn: "危险操作也不再拦；动态展开、删系统目录、改敏感配置仍会问。仅限沙箱",
   },
 ];
 
@@ -114,7 +114,7 @@ export function PermissionScope({
     <div className="mt-4 pt-4 border-t border-[var(--color-border)]">
       <div className="flex items-center gap-2 mb-2">
         <span className="text-[12px] font-medium">权限</span>
-        <Hint text="工具执行前的许可范围。范围内的操作直接执行，不用每次都问你。">
+        <Hint text="范围内直接执行，不用每次问">
           <span className="text-[12px] text-[var(--color-muted)]">工具执行前的许可范围</span>
         </Hint>
       </div>
@@ -166,8 +166,8 @@ export function PermissionScope({
       {rows.length === 0 ? (
         <p className="text-[12px] text-[var(--color-muted)]">
           {toolNames.length === 0
-            ? "这个助手还没挂工具 —— 先在上面勾选工具，再来划权限。"
-            : "没有例外规则：按上面的模式统一处理。"}
+            ? "先勾选工具，再来划权限"
+            : "没有例外规则"}
         </p>
       ) : (
         <div className="space-y-1.5">

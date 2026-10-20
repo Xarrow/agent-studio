@@ -40,7 +40,7 @@ const USE_ITEMS: Item[] = [
     label: "Agent 执行",
     icon: "exec",
     // 对话式干活入口（画布已退役）：选一个助手、说话、看它怎么想怎么做。
-    tip: "干活的地方：选一个助手，把任务说给它听（可带文件）；它每一步怎么想、调了什么工具、结果是什么，全程看得见。",
+    tip: "选助手，说任务，全程可见",
   },
 ];
 
@@ -50,43 +50,43 @@ const SETUP_ITEMS: Item[] = [
     href: "/runs",
     label: "管理",
     icon: "manage",
-    tip: "全部运行记录：每次执行（LLM 测试 / 助手试跑 / Agent 执行）点一行就地展开，看它怎么想、调了什么、耗时花在哪。",
+    tip: "每次执行一行，点开看过程与耗时",
   },
   {
     href: "/agents",
     label: "Agents",
     icon: "agents",
-    tip: "「助手」：一个会自己想办法帮你做事的 AI。你可以给不同的助手不同的分工。",
+    tip: "一个会自己想办法做事的 AI",
   },
   {
     href: "/memories",
     label: "记忆",
     icon: "memory",
-    tip: "跨对话的长期记性：值得记住的事存下来，以后聊天会自动想起来。",
+    tip: "跨对话的长期记性",
   },
   {
     href: "/tools",
     label: "工具",
     icon: "tools",
-    tip: "给助手加「手」：能查网页、读文件、跑命令之类。不加就只能聊天。",
+    tip: "能查网页、读文件、跑命令；不加只能聊天",
   },
     {
     href: "/remote-agents",
     label: "远程 Agent 管理",
     icon: "exchange",
-    tip: "接入别处的 A2A agent：粘地址注册或把注册地址给对方，看清它会什么，挂到助手上直接调用。",
+    tip: "接入外部 A2A agent，挂到助手调用",
   },
   {
     href: "/environment",
     label: "环境配置",
     icon: "database",
-    tip: "选择平台把数据存在哪里：默认是本地文件（SQLite），也可以切到你自己的 MySQL 或 PostgreSQL。切换时新库会自动建好表。",
+    tip: "数据存哪：默认 SQLite，也可换 MySQL / PostgreSQL",
   },
   {
     href: "/credentials",
     label: "LLM 配置",
     icon: "key",
-    tip: "让 AI 能工作的「钥匙」（模型服务商的密钥）。加密保存，不会明文显示。",
+    tip: "模型服务商的密钥，本机加密保存",
   },
 ];
 

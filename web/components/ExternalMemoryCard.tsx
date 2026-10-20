@@ -175,7 +175,7 @@ export function ExternalMemoryCard() {
           )
         ) : null}
         <span className="text-[12px] text-[var(--color-muted)]">
-          {cfg.ready ? cfg.base_url : "把你自己已有的记忆库接进来（与内置记忆可混用）"}
+          {cfg.ready ? cfg.base_url : "接自己的记忆库（可与内置混用）"}
         </span>
       </button>
 
@@ -191,7 +191,7 @@ export function ExternalMemoryCard() {
             <span className="text-[12px]">
               启用外部记忆（关掉只是不启用，配置会留着）
               <span className="block text-[12px] text-[var(--color-muted)]">
-                启用后还要在「助手 → 记忆 → 高级设置 → 记忆从哪来」里选它才会真正用上。
+                启用后还要在助手的记忆设置里选它
               </span>
             </span>
           </label>
@@ -264,7 +264,7 @@ export function ExternalMemoryCard() {
           </div>
 
           <details className="rounded-md bg-[var(--color-surface-2)] px-2.5 py-2 text-[12px] text-[var(--color-muted)]">
-            <summary data-tap-lg className="min-h-[36px] cursor-pointer py-2">对方要实现的两个接口（很简单）</summary>
+            <summary data-tap-lg className="min-h-[36px] cursor-pointer py-2">对方要实现两个接口</summary>
             <pre className="mt-1.5 whitespace-pre-wrap break-all leading-[1.6]">
 {`搜索  POST {地址}{搜索路径}
       请求 {"query": "...", "top_k": 5, "agent_id": "..."}

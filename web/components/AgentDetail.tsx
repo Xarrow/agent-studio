@@ -461,7 +461,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
             <span
               className="text-[12px] flex items-center gap-1"
               style={{ color: "var(--color-warn)" }}
-              title="改动还没写回去 —— 点「保存改动」，或离开前会被提醒"
+              title="还没保存，点「保存改动」"
             >
               <span className="live-dot">●</span> 有未保存的改动
             </span>
@@ -571,7 +571,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
             <div>
               <label
                 className="label flex items-center gap-1.5"
-                title="这句话会出现在 Playground 选助手的地方，帮你一眼认出这个助手；留空则自动取 System Prompt 的第一句"
+                title="Playground 列表里显示这句；留空取提示词首句"
               >
                 一句话职责
               </label>
@@ -579,7 +579,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 className="input"
                 value={desc}
                 onChange={(e) => setDesc(e.target.value)}
-                placeholder="例如：查服务状态；帮你写代码、找 bug（留空则自动取提示词首句）"
+                placeholder="例如：查服务状态；写代码、找 bug（留空取首句）"
                 maxLength={140}
               />
             </div>
@@ -589,7 +589,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
             <div>
               <label
                 className="label flex items-center gap-1.5"
-                title="决定它在流程里扮演什么角色。干活：做完自己这一步就交给下一个。编排者：对整条流程负责 —— 先把目标分析清楚、管好上下文，最后验证结果并归纳总结（适合放在流程的最开始或最后）。"
+                title="干活：做完交下一步。编排者：管整条流程，最后验证归纳"
               >
                 流程里的角色
               </label>
@@ -598,13 +598,13 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 value={def.role ?? "worker"}
                 onChange={(e) => patch({ role: e.target.value as "worker" | "orchestrator" })}
               >
-                <option value="worker">干活（默认）—— 做完这一步，交给下一个</option>
-                <option value="orchestrator">编排者 —— 分析任务 / 管理上下文 / 验证结果 / 归纳总结</option>
+                <option value="worker">干活（默认）· 做完交给下一个</option>
+                <option value="orchestrator">编排者 · 分析 → 上下文 → 验证 → 归纳</option>
               </select>
               {def.role === "orchestrator" && (
                 <div className="mt-2 rounded-[8px] border p-2.5" style={{ borderColor: "var(--color-border)" }}>
                   {/* 两行解释常驻 ✗ → 收进 ?（内容一字未删 ✓ 只是不再每次都占视觉） */}
-                  <Hint text="选「编排者」后，这个助手自带四项职责：分析任务 → 管理上下文 → 验证结果 → 归纳总结。下面是它运行时会拿到的定义（可以按这个助手改；留空就用平台默认那份）。" />
+                  <Hint text="编排者自带四件事：分析 → 管上下文 → 验证 → 归纳" />
                   <textarea
                     className="input mono mt-2"
                     rows={8}
@@ -615,7 +615,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                   />
                   <div className="mt-1.5 flex items-center gap-2">
                     <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
-                      {def.orchestrator_brief ? "正在使用：这个助手自己的定义" : "正在使用：平台默认定义（占位文字就是它）"}
+                      {def.orchestrator_brief ? "正在使用：助手自己的定义" : "正在使用：平台默认定义（占位文字就是它）"}
                     </span>
                     {def.orchestrator_brief ? (
                       <button
@@ -678,7 +678,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                   }
                 />
                 <p className="text-[12px] text-[var(--color-muted)] mt-1">
-                  默认 60 秒，可自定义
+                  默认 60 秒
                 </p>
               </div>
               <div>
@@ -700,7 +700,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                   }
                 />
                 <p className="text-[12px] text-[var(--color-muted)] mt-1">
-                  跑到这个金额就停下（按「模型单价」里填的价格算）
+                  超过就停（按模型单价算）
                 </p>
               </div>
             </div>
@@ -745,7 +745,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
               >
                 <div className="flex items-center gap-1.5">
                   <span className="text-[13px] font-semibold">工作目录</span>
-                  <Hint text="这个助手读写文件、跑命令时落东西的目录。它建在平台沙箱里面，出不了沙箱；下面权限里说的「工作目录内」，指的就是它。 只填一个名字（例如 报价调研），不要写路径 —— 写了会被拒绝并退回平台默认。它与下面的权限配合：目录内按权限放行，出目录一律要你点头。" />
+                  <Hint text="产物落这里，出不了沙箱。只填名字（如 报价调研），不要写路径" />
                 </div>
                 <input
                   className="input mono mt-2 w-full"
@@ -767,8 +767,8 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                   />
                   <p className="mt-1 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
                     {(def.workspace_isolation ?? "session") === "shared"
-                      ? "这个助手的多个会话共用一个目录：能干「围绕同一份数据反复干」的活，但会话之间会互相看见、同名文件会互相覆盖。"
-                      : "每个会话一个目录：会话之间互不可见，同一个会话里的多轮、分派出去的每一路都在这棵树下（产物能回流）。"}
+                      ? "多会话共用这个目录：互相可见、同名会覆盖"
+                      : "每会话一个目录：互不可见，产物可回流"}
                   </p>
                 </div>
                 {/* 原来这里是一段三行的解释常驻在表单里 ✗ —— 只有**第一次配**才需要读它，
@@ -777,8 +777,8 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 {/* 项目上下文：放在目录里的 AGENTS.md 会被自动读进来 ——
                     这是"这个项目该怎么做"的地方，不该混进上面那个 system prompt（换项目就不适用了） */}
                 <p className="mt-1.5 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
-                  在目录里放一个 <span className="mono">AGENTS.md</span>，写这个项目的规矩（跑什么命令、产物放哪、别碰哪些文件），
-                  助手每次开工都会自动读它（最多 8000 字）。
+                  放一个 <span className="mono">AGENTS.md</span> 写项目规矩（跑什么命令、产物放哪、别碰哪些文件），
+                  每次开工自动读（≤8000 字）。
                 </p>
                 <p className="mt-1 text-[12px] mono" style={{ color: "var(--color-muted)" }}>
                   实际位置：

@@ -30,17 +30,17 @@ const PRESETS = [
     key: "orchestrator",
     icon: "✦",
     label: "编排、统筹",
-    desc: "对整条流程负责：分析任务、管理上下文、验证结果、归纳总结",
+    desc: "管整条流程：分析 → 管上下文 → 验证 → 归纳",
     prompt:
-      "你负责统筹与把关，而不是只做完手里这一小步：先把目标分析清楚并明确交付标准；把上游产出整理成结构化上下文；对结果做核验（缺项/矛盾/未做）；最后给出结论性交付并列出待确认项与风险。",
+      "你负责统筹与把关：分析目标与交付标准，整理上游产出，核验结果（缺项/矛盾/未做），最后给出结论与待确认项。",
   },
   {
     key: "code",
     icon: "💻",
     label: "写代码、查错",
-    desc: "帮你写代码、找 bug、解释代码怎么跑",
+    desc: "写代码、找 bug、解释代码",
     prompt:
-      "你是一个编程助手。帮用户写代码、排查错误、解释代码逻辑。回答时直接给出可运行的代码，并简要说明关键点；不确定的地方要明确说出来。",
+      "你是一个编程助手。帮用户写代码、排查错误、解释逻辑。直接给可运行的代码并说明关键点；不确定就明说。",
   },
   {
     key: "qa",
@@ -48,15 +48,15 @@ const PRESETS = [
     label: "答疑解惑",
     desc: "回答各种问题，把概念讲明白",
     prompt:
-      "你是一个知识助手。用通俗易懂的话回答问题，必要时举例说明。不确定的地方要明确说不确定，不要编造。",
+      "你是一个知识助手。用通俗的话回答，必要时举例。不确定就说不确定，不要编造。",
   },
   {
     key: "research",
     icon: "🔍",
     label: "查资料、做整理",
-    desc: "搜信息、提炼要点、做结构化总结",
+    desc: "查信息、提炼要点、做总结",
     prompt:
-      "你是一个资料整理助手。帮用户查找信息、提炼要点、做结构化总结。优先给出结论，再给依据；引用信息时说明来源。",
+      "你是一个资料整理助手。查信息、提炼要点、做结构化总结。先结论后依据，引用要说明来源。",
   },
   {
     key: "custom",
@@ -171,7 +171,7 @@ export default function AgentsPage() {
   const remove = async (agent: Agent) => {
     const ok = await fb.confirm({
       title: `删除 Agent「${agent.name}」？`,
-      description: "该 Agent 的记忆绑定与挂载关系将一并清理。",
+      description: "记忆绑定与挂载关系一并清理",
       danger: true,
       confirmText: "删除",
     });
@@ -203,7 +203,7 @@ export default function AgentsPage() {
     <div className="p-4 md:p-6 lg:p-7 max-w-6xl">
       <PageHead
         title="Agents"
-        desc={`${agents.length} 个 Agent · 点一行就地看清它配了什么：一句话职责、挂了哪些工具与 Skills、最近一次跑得怎么样`}
+        desc={`${agents.length} 个 Agent · 点一行看清配置与最近一次`}
         actions={
           <button className="btn btn-primary" onClick={() => setShowNew(true)}>
             + 新建 Agent
@@ -236,7 +236,7 @@ export default function AgentsPage() {
         <div className="card">
           <Empty
             title="还没有 Agent"
-            hint="创建一个，然后在页面里定义、试跑并观测完整的思考与工具调用过程。"
+            hint="创建一个，然后定义、试跑、看全过程"
             action={
               <button className="btn btn-primary" onClick={() => setShowNew(true)}>
                 创建第一个 Agent
@@ -288,7 +288,7 @@ export default function AgentsPage() {
                         className="btn text-[12px] max-md:w-9 max-md:px-0"
                         aria-label="复制一份"
                         disabled={busy === a.id}
-                        title="按这份配置再建一个助手，改改就能用"
+                        title="按这份配置再建一个"
                         onClick={() => void duplicate(a.id)}
                       >
                         <IconCopy className="md:hidden" />
@@ -332,7 +332,7 @@ export default function AgentsPage() {
                       <span className="flex min-w-0 items-center gap-2">
                         <span className="truncate text-[14.5px] font-medium">{a.name}</span>
                         {a.definition?.role === "orchestrator" && (
-                          <Chip tone="accent" title="编排者：分析任务 → 管理上下文 → 验证结果 → 归纳总结">
+                          <Chip tone="accent" title="编排者：分析 → 管上下文 → 验证 → 归纳">
                             ✦ 编排者
                           </Chip>
                         )}
@@ -508,7 +508,7 @@ function NewAgentDialog({
   const [presetKey, setPresetKey] = useState<string | null>(null);
   /** 它在流程里扮演什么角色 —— 枚举用**选择**，不问不填。
    *  编排者（Orchestrator）自带四项职责：分析任务 / 管理上下文 / 验证结果 / 归纳总结；
-   *  在这里就能定下来，省掉"先建一个普通助手、再回详情页改成编排者"那一步。 */
+   *  在这里就能定下来，省掉"先建普通助手，再改成编排者"那一步。 */
   const [newRole, setNewRole] = useState<"worker" | "orchestrator">("worker");
   const [runtime, setRuntime] = useState(runtimes[0]?.name ?? "agentscope");
   const [provider, setProvider] = useState("");
@@ -708,7 +708,7 @@ function NewAgentDialog({
           <div>
             <label
               className="label flex items-center gap-1.5"
-              title="干活：做完自己这一步就交给下一个。编排者：对整条流程负责 —— 先把目标分析清楚、管好上下文，最后验证结果并归纳总结；适合放在流程的最开始或最后。"
+              title="干活：做完交下一步。编排者：管整条流程，最后验证归纳"
             >
               <span className="text-[var(--color-accent)] font-semibold">③</span>
               它在流程里扮演什么角色？
@@ -716,7 +716,7 @@ function NewAgentDialog({
             <div className="grid grid-cols-2 gap-2">
               {([
                 { v: "worker" as const, t: "干活", d: "做完这一步，交给下一个" },
-                { v: "orchestrator" as const, t: "编排者", d: "分析任务 / 管上下文 / 验结果 / 归纳" },
+                { v: "orchestrator" as const, t: "编排者", d: "分析 / 上下文 / 验证 / 归纳" },
               ]).map((o) => {
                 const on = newRole === o.v;
                 return (
@@ -747,7 +747,7 @@ function NewAgentDialog({
             {/* 一句话职责：不在"三个问题"里 —— 选预设时自动带出来，想改才改。
                 它决定了用户在选助手时能不能一眼认出这个助手。 */}
             <div className="mt-3">
-              <label className="label flex items-center gap-1.5" title="这句话会出现在 Playground 选助手的地方，帮你一眼认出它">
+              <label className="label flex items-center gap-1.5" title="Playground 列表里显示这句话">
                 一句话职责
                 <span className="text-[12px] font-normal" style={{ color: "var(--color-muted)" }}>
                   （选助手时会显示，已按预设自动填好）
@@ -757,7 +757,7 @@ function NewAgentDialog({
                 className="input"
                 value={desc}
                 onChange={(e) => setDesc(e.target.value)}
-                placeholder="例如：查服务状态；帮你写代码、找 bug"
+                placeholder="例如：查服务状态；写代码、找 bug"
                 maxLength={60}
               />
             </div>
@@ -776,7 +776,7 @@ function NewAgentDialog({
                   onChange={(e) => setPrompt(e.target.value)}
                   placeholder={
                     isCustom
-                      ? "例如：你是我的读书笔记助手，帮我把读到的内容整理成要点，语气简洁。"
+                      ? "例如：你是我的读书笔记助手，整理成要点，语气简洁。"
                       : undefined
                   }
                 />
@@ -788,7 +788,7 @@ function NewAgentDialog({
           <div>
             <label className="label flex items-center gap-1.5">
               <span className="text-[var(--color-accent)] font-semibold">④</span>
-              <Hint text="不同服务商的 AI 有不同脾气和价格。已经替你选好了推荐项，不用改。">
+              <Hint text="已替你选好推荐项，不用改">
                 用哪个 AI
               </Hint>
             </label>
@@ -873,7 +873,7 @@ function NewAgentDialog({
                 </div>
                 <div>
                   <label className="label flex items-center gap-1.5">
-                    <Hint text="同一家服务商里有不同档位，贵的更聪明、便宜的更快。">模型</Hint>
+                    <Hint text="贵的更聪明，便宜的更快">模型</Hint>
                   </label>
                   <ModelPicker
                     providers={providers}

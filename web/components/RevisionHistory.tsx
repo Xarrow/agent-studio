@@ -71,7 +71,7 @@ export function RevisionHistory({
     setBusy(true);
     try {
       const res = (await api.restoreRevision(rev.id)) as { restored_from: number; version: number };
-      fb.success(`已回到第 ${res.restored_from} 版`, "退回也算一次改动，历史里多了一条「回滚」记录");
+      fb.success(`已回到第 ${res.restored_from} 版`, "退回也算一次改动");
       await load();
       onRestored?.();
     } catch (e) {
@@ -153,7 +153,7 @@ export function RevisionHistory({
                         borderColor: armId === rev.id ? "var(--color-err)" : "var(--color-border)",
                         color: armId === rev.id ? "var(--color-err)" : undefined,
                       }}
-                      title="回到这一版（会新增一条记录，不改写历史）"
+                      title="回到这一版（新增一条记录）"
                     >
                       {armId === rev.id ? "再点一次就退回" : "回到这一版"}
                     </button>

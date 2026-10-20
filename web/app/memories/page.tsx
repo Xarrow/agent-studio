@@ -185,7 +185,7 @@ export default function MemoriesPage() {
   const remove = async (m: Memory) => {
     const ok = await fb.confirm({
       title: "删除这条记忆？",
-      description: "删除后就彻底没了。只是暂时不想用它的话，改成「停用」更合适。",
+      description: "删了就没了；暂时不用请改「停用」",
       details: [m.content.slice(0, 120) + (m.content.length > 120 ? "…" : "")],
       danger: true,
       confirmText: "删除",
@@ -208,7 +208,7 @@ export default function MemoriesPage() {
       description:
         next === "active"
           ? "确认后它会在后续对话里被用到。"
-          : "丢弃后不再被使用（之后能在「已停用」里找回）。",
+          : "丢弃后不再用（可在「已停用」找回）",
       danger: next !== "active",
       confirmText: label,
     });
@@ -228,7 +228,7 @@ export default function MemoriesPage() {
     const rows = items.filter((m) => picked.has(m.id));
     const ok = await fb.confirm({
       title: `删除选中的 ${rows.length} 条记忆？`,
-      description: "删除后就彻底没了。只是暂时不想用的话，改成「停用」更合适（之后还能找回）。",
+      description: "删了就没了；暂时不用请改「停用」",
       details: rows.slice(0, 8).map((m) => m.content.slice(0, 60) + (m.content.length > 60 ? "…" : "")),
       danger: true,
       confirmText: "删除",
@@ -257,7 +257,7 @@ export default function MemoriesPage() {
         title="记忆"
         desc={
           <>
-            跨会话的长期记忆 —— 对话前自动回忆起相关的内容。
+            跨会话的长期记忆，对话前自动回忆
             {stats ? (
               <>
                 {" "}
@@ -447,7 +447,7 @@ export default function MemoriesPage() {
         ) : items.length === 0 ? (
           <Empty
             title="这里还没有记忆"
-            hint="点右上「+ 记一条」手动新增；或打开任意一次执行记录（运行记录 / 对话页 / 助手页都能点开）点「沉淀为记忆」。"
+            hint="点「+ 记一条」新增，或在执行记录里「沉淀为记忆」"
             action={
               <button className="btn btn-primary" onClick={() => setComposeOpen(true)}>
                 + 记一条

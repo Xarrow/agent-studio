@@ -231,7 +231,7 @@ export function RunPanel({
     if (!sessionId) return;
     const ok = await fb.confirm({
       title: "清空当前会话的上下文？",
-      description: "保留会话本身，但丢弃此前的对话历史。下一次执行将不再带上这些内容。",
+      description: "保留会话，丢弃此前历史",
       details: [
         `会话：${currentSession?.title || sessionId}`,
         `将丢弃 ${currentSession?.message_count ?? 0} 条消息记录`,
@@ -433,7 +433,7 @@ export function RunPanel({
           )}
           {events.length > 0 && (
             <span className="text-[12px] text-[var(--color-muted)] flex items-center gap-1">
-              <Hint text="它这一步一步都干了什么。数字越大说明它想得越多。">
+              <Hint text="每一步干了什么，数字 = 想了几轮">
                 {events.length} 个事件
               </Hint>
             </span>
@@ -452,10 +452,10 @@ export function RunPanel({
                 key={k}
                 title={
                   k === "chat"
-                    ? "用人话看：它到底说了什么、调了什么工具"
+                    ? "用人话看它说了什么、调了什么"
                     : k === "table"
-                      ? "逐步列表：每一步的类型、耗时、摘要（排查问题用）"
-                      : "协议层原始数据：每个事件的完整内容（对接调试用）"
+                      ? "每步的类型、耗时、摘要"
+                      : "协议层原始事件（调试用）"
                 }
                 onClick={() => setView(k)}
                 className={`px-2.5 py-1 rounded text-[12px] whitespace-nowrap transition-colors ${

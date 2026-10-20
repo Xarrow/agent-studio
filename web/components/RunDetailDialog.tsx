@@ -53,11 +53,11 @@ export const KIND_LABEL: Record<ActivityItem["kind"], string> = {
 };
 
 const KIND_HINT: Record<ActivityItem["kind"], string> = {
-  llm_test: "在「LLM 配置」里直接跟模型聊的两句 —— 用来确认这把 key 和这个模型本身能通。",
-  preview: "在助手详情页「试跑与观测」里发起的执行 —— 配置时验证助手用的。",
+  llm_test: "直接跟模型聊，确认这把 key 能通",
+  preview: "助手详情页「试跑与观测」发起的执行",
   chat: "在「Agent 执行」页跟助手干活的一轮。",
-  a2a: "派给**远端** A2A agent 执行的一路 —— 跑在别的平台上，本平台只拿结果。",
-  playground: "在「对话 → 多 Agent 编排」里由编排发起的执行。",
+  a2a: "派给远端 A2A 执行，本平台只拿结果",
+  playground: "编排发起的执行",
 };
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -156,7 +156,7 @@ export function RunDetailDialog({
       }
       const ok = await fb.confirm({
         title: `提炼出 ${r.candidates.length} 条候选记忆，保存？`,
-        description: "保存后会在后续执行时按相关度召回，并注入 System Prompt。",
+        description: "保存后按相关度召回，注入 System Prompt",
         details: r.candidates.map((c) => `[${c.kind}] ${c.content}`),
         confirmText: "保存为记忆",
       });
@@ -455,7 +455,7 @@ export function RunDetailDialog({
             </Section>
 
             {steps.length > 0 && (
-              <Section title="对话过程（它想了什么、做了什么）">
+              <Section title="它想了什么、做了什么">
                 <div className="rounded-md p-3 bg-[var(--color-surface-2)]">
                   <RunTimeline steps={steps} />
                 </div>
@@ -519,7 +519,7 @@ export function RunDetailDialog({
             <button
               className="btn btn-sm"
               disabled={sinking}
-              title="用模型从这次执行里提炼候选记忆，确认后保存"
+              title="从这次执行里提炼候选记忆"
               onClick={() => void sink()}
             >
               {sinking ? "提炼中…" : "沉淀为记忆"}

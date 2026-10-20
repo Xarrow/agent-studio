@@ -318,7 +318,7 @@ export function RunsPanel() {
     const ok = await fb.confirm({
       title: `删除选中的 ${ids.length} 条记录？`,
       description:
-        "助手执行会连同它的事件流、模型调用与工具调用明细一并清理；LLM 测试记录直接删除。",
+        "执行记录连同事件流与调用明细一起清；LLM 测试直接删",
       details: [...ids.slice(0, 6), ...(ids.length > 6 ? [`…另有 ${ids.length - 6} 条`] : [])],
       danger: true,
       confirmText: `删除 ${ids.length} 条`,
@@ -344,7 +344,7 @@ export function RunsPanel() {
       label: "清理多少天前的记录",
       defaultValue: "7",
       placeholder: "7",
-      hint: "只清理已结束的记录，运行中的会自动跳过。",
+      hint: "只清已结束的，运行中的跳过",
       validate: (v) => {
         const n = Number(v);
         if (!Number.isFinite(n) || n <= 0) return "请输入大于 0 的天数";
@@ -392,10 +392,10 @@ export function RunsPanel() {
     const word = await fb.prompt({
       title: `清空全部助手执行记录（${agentId ? "当前 Agent" : "所有 Agent"}）`,
       description:
-        "不可撤销，会连同全部事件流与调用明细一并删除。LLM 测试记录请用「删除选中」。",
+        "不可撤销，连同事件流与调用明细一起删",
       label: "请输入 DELETE 确认",
       placeholder: "DELETE",
-      hint: "输入完全匹配才可执行。建议优先用「按时间清理」保留近期记录。",
+      hint: "输入要完全匹配；建议用「按时间清理」",
       validate: (v) => (v === "DELETE" ? null : "需输入大写 DELETE 才能继续"),
       danger: true,
       confirmText: "清空",
@@ -722,7 +722,7 @@ export function RunsPanel() {
                           title={
                             it.trigger === "schedule"
                               ? "定时自动发起的执行（不是人点的）"
-                              : "外部系统调用触发地址发起的执行"
+                              : "外部系统调用发起的执行"
                           }
                         >
                           {it.trigger === "schedule" ? "定时" : "外部"}
@@ -782,8 +782,8 @@ export function RunsPanel() {
                       title={
                         it.cost == null
                           ? it.model
-                            ? `${it.model} 还没填单价 —— 去「LLM 配置 → 单价」填两个数就会显示金额`
-                            : "这条没有模型信息，算不出金额"
+                            ? `${it.model} 没填单价（LLM 配置 → 单价）`
+                            : "没有模型信息，算不出金额"
                           : "按「LLM 配置 → 单价」里的价格折算"
                       }
                       style={{ color: it.cost == null ? "var(--color-muted)" : "var(--color-text)" }}

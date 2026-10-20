@@ -172,7 +172,7 @@ export function LlmCallsPanel({
                       <span
                         className="text-[12px]"
                         style={{ color: "var(--color-muted)" }}
-                        title="这条执行早于「原文记录」上线（2026-09-28 06:08 起留存），没有存过原文"
+                        title="这条执行早于原文记录上线，没存原文"
                       >
                         —
                       </span>

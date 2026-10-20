@@ -163,7 +163,7 @@ export function AgentQuickRun({
           className="block w-full resize-none bg-transparent border-0 outline-none px-3.5 pt-2.5 pb-1 text-[13.5px] leading-6"
           rows={1}
           style={{ maxHeight: "40vh" }}
-          placeholder="给它一句话，看它这一轮怎么干（不存会话）"
+          placeholder="给它一句话试跑，不存会话"
           value={input}
           disabled={busy || disabled}
           onChange={(e) => setInput(e.target.value)}

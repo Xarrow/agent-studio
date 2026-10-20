@@ -129,7 +129,7 @@ export function McpPanel({ embedded = false }: { embedded?: boolean }) {
   const remove = async (s: McpServer) => {
     const ok = await fb.confirm({
       title: `删除 MCP 服务器「${s.name}」？`,
-      description: "挂在它上面的助手会少掉这些工具。重新注册可以恢复。",
+      description: "助手会少掉这些工具，重新注册可恢复",
       danger: true,
       confirmText: "删除",
     });
@@ -150,7 +150,7 @@ export function McpPanel({ embedded = false }: { embedded?: boolean }) {
           <header className="flex items-start justify-between mb-6">
             <div>
               <h1 className="text-[22px] font-semibold tracking-tight flex items-center gap-1.5">
-                <Hint text="MCP 是一套标准协议：别人写好的工具服务，用这个协议接进来就能给助手用。">
+                <Hint text="标准协议：把别人写的工具服务接进来">
                   MCP 服务器
                 </Hint>
               </h1>

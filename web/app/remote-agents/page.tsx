@@ -259,8 +259,8 @@ export default function RemoteAgentsPage() {
       title: `删除远程 agent「${r.name}」？`,
       description:
         (r.bound_agents ?? []).length > 0
-          ? `它还被 ${r.bound_agents.length} 个助手挂着 —— 先在那些助手的「工具」里取消勾选，再删除。`
-          : "只删平台里的注册项，不影响远端那台 agent。",
+          ? `还被 ${r.bound_agents.length} 个助手挂着，先取消勾选再删`
+          : "只删平台里的注册项，不影响远端",
       confirmText: "删除",
       danger: true,
     });
@@ -272,7 +272,7 @@ export default function RemoteAgentsPage() {
     <div className="p-4 md:p-6 lg:p-7 max-w-5xl">
       <PageHead
         title="远程 Agent 管理"
-        desc={`注册外部 A2A agent —— 解析能力、治理与调用观测 · 挂载 ${stats.bound} / ${stats.total}（在助手的「能力」里勾选绑定）`}
+        desc={`注册外部 A2A agent · 已挂载 ${stats.bound} / ${stats.total}`}
         actions={
           <>
             <button className="btn btn-primary" onClick={() => setRegistering(true)}>
@@ -326,7 +326,7 @@ export default function RemoteAgentsPage() {
         ) : !shown.length ? (
           <Empty
             title={stats.total ? "这个筛选下没有远端" : "还没有接入任何远程 agent"}
-            hint="两种接法：粘对方的地址注册进来（拉），或把自注册地址发给对方、它推卡片进来（推）。远端需实现 A2A 协议。"
+            hint="粘地址注册（拉），或把自注册地址给对方（推）；远端需支持 A2A"
             action={
               <div className="flex flex-wrap gap-2">
                 <button className="btn btn-primary" onClick={() => setRegistering(true)}>
@@ -372,7 +372,7 @@ export default function RemoteAgentsPage() {
                           disabled={busy === `toggle:${r.id}`}
                           onClick={() =>
                             void run(`toggle:${r.id}`, () => api.patchRemoteAgent(r.id, { enabled: !r.enabled }),
-                              r.enabled ? "已停用（挂它的助手不再能调它）" : "已启用")
+                              r.enabled ? "已停用（助手不再能调它）" : "已启用")
                           }
                         >
                           {r.enabled ? "停用" : "启用"}
@@ -487,7 +487,7 @@ export default function RemoteAgentsPage() {
 
       <Section
         title="远端自注册（A2A 推送）"
-        desc="把这个地址给远端 —— 它把自己的 agent card 推过来就完成了注册；重推一次 = 更新技能清单"
+        desc="把地址给远端，它推卡片过来即注册；重推 = 更新"
         defaultOpen={false}
       >
         <div className="flex flex-col gap-2">
@@ -575,7 +575,7 @@ function EditRow({
           <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
         </div>
         <div>
-          <FieldLabel hint="远端平台认这个字段来选具体助手；留空用它的默认助手">远端助手 id</FieldLabel>
+          <FieldLabel hint="远端据此选助手；留空用默认">远端助手 id</FieldLabel>
           <input
             className="input"
             value={remoteAgentId}
@@ -584,11 +584,11 @@ function EditRow({
           />
         </div>
         <div>
-          <FieldLabel hint="远端跑多久由远端决定，这里只是「别无限等」">单次上限（秒）</FieldLabel>
+          <FieldLabel hint="超时只保证别无限等，快慢由远端定">单次上限（秒）</FieldLabel>
           <input className="input" value={timeoutS} onChange={(e) => setTimeoutS(e.target.value)} />
         </div>
         <div>
-          <FieldLabel hint={r.has_token ? "已配凭据；留空 = 不改，填内容 = 覆盖" : "远端要鉴权就填（加密存）"}>
+          <FieldLabel hint={r.has_token ? "已配凭据；留空不改，填写覆盖" : "远端要鉴权就填（加密存）"}>
             访问令牌
           </FieldLabel>
           <input

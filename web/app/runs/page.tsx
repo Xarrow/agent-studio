@@ -20,7 +20,7 @@ export default function ManagePage() {
     <div className="p-4 md:p-6 lg:p-7">
       <PageHead
         title="管理"
-        desc="全部运行记录：每次执行（LLM 测试 / 助手试跑 / Agent 执行）点一行就地展开，看它怎么想、调了什么、耗时花在哪。"
+        desc="每次执行一行，点开看过程与耗时"
       />
       <RunsPanel />
     </div>

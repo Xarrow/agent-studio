@@ -57,7 +57,7 @@ export function ResizeCorner({ id, active, onDown }: { id: string; active: boole
       data-node-resize-corner={id}
       onPointerDown={onDown}
       onClick={(e) => e.stopPropagation()}
-      title="拖动我，调整这张卡的宽和高"
+      title="拖动调整宽高"
       className="group/corner absolute z-30"
       style={{ right: -8, bottom: -8, width: 24, height: 24, cursor: "nwse-resize", touchAction: "none" }}
     >

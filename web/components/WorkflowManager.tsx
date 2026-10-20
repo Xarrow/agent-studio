@@ -111,7 +111,7 @@ export function WorkflowManager({
       };
       const st = (d.steps ?? [])[idx];
       if (!st?.run_id) {
-        setStepDetail({ loading: false, steps: [], note: "这一步没有独立的执行记录" });
+        setStepDetail({ loading: false, steps: [], note: "这步没有独立记录" });
         return;
       }
       const evts = await api.runEvents(st.run_id);
@@ -233,8 +233,8 @@ export function WorkflowManager({
           <span className={variant === "page" ? "text-[13px]" : "text-[12px]"} style={{ color: "var(--color-muted)" }}>
             {sel === ALL
               ? variant === "page"
-                ? `全部流程与运行记录 —— 点一行就地展开，看它怎么跑的（共 ${list.length} 份流程）`
-                : `共 ${list.length} 份流程 —— 左边流程 / 右边运行记录，一处管完`
+                ? `全部流程与运行记录（共 ${list.length} 份）`
+                : `共 ${list.length} 份 · 左流程右记录`
               : `共 ${list.length} 份 · 选中这份跑过 ${curRuns} 次`}
           </span>
           <div className="ml-auto flex items-center gap-1.5">
@@ -423,7 +423,7 @@ export function WorkflowManager({
                                 : "color-mix(in srgb, var(--color-accent) 6%, transparent)",
                             color: "var(--color-accent)",
                           }}
-                          title={runs.length ? `第 ${c.no} 步 · ${c.name} —— 点开看这一步的执行详情` : `第 ${c.no} 步 · ${c.name}（这份流程还没跑过）`}
+                          title={runs.length ? `第 ${c.no} 步 · ${c.name}` : `第 ${c.no} 步 · ${c.name}（这份流程还没跑过）`}
                         >
                           <span className="tabular-nums opacity-70">{c.no}</span>
                           {c.name}

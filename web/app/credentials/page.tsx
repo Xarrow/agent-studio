@@ -53,7 +53,7 @@ export default function CredentialsPage() {
     const ok = await fb.confirm({
       title: `显示「${c.name}」的 API Key？`,
       description: "明文会显示在页面上，60 秒后自动隐藏。",
-      details: ["请确认屏幕前没有别人，也不要在录屏或共享屏幕时操作。"],
+      details: ["确认周围没人、没在录屏"],
       confirmText: "显示",
     });
     if (!ok) return;
@@ -85,7 +85,7 @@ export default function CredentialsPage() {
       await navigator.clipboard.writeText(revealed[id]);
       fb.success("已复制到剪贴板");
     } catch {
-      fb.warn("复制失败", "浏览器不允许剪贴板访问，请手动选中复制。");
+      fb.warn("复制失败", "浏览器不让读剪贴板，请手动复制");
     }
   };
 
@@ -196,7 +196,7 @@ export default function CredentialsPage() {
         <div className="card">
           <Empty
             title="还没有配置任何 LLM Key"
-            hint="添加后 Agent 就能选用。Key 加密存储，列表只显示脱敏串。"
+            hint="添加后即可选用；Key 加密存，只显示脱敏串"
             action={
               <button className="btn btn-primary" onClick={() => setShowNew(true)}>
                 添加第一份配置
@@ -254,7 +254,7 @@ export default function CredentialsPage() {
                       <button
                         type="button"
                         className="btn text-[12px] max-md:w-9 max-md:px-0"
-                        title="直接跟模型聊两句，不经过助手"
+                        title="直接跟模型聊，不经过助手"
                         aria-label="对话测试"
                         onClick={() => setChatting(c)}
                       >
@@ -405,7 +405,7 @@ export default function CredentialsPage() {
         <Section
           title="支持的 Provider"
           count={`${byProvider.length} 家`}
-          desc="平台已经知道怎么跟这些服务商说话；钥匙配在上面的列表里，这里只是清单与默认端点"
+          desc="服务商地址平台已知；钥匙在上面的列表里配"
         >
           <div className="flex flex-col">
             {byProvider.map(({ meta, items }) => (
@@ -588,7 +588,7 @@ function NewCredentialDialog({
               <button
                 className="btn shrink-0"
                 disabled={busy}
-                title="按这个模型名发一次极小调用，确认能不能真用"
+                title="发一次极小调用确认可用"
                 onClick={() => void doTest()}
               >
                 {busy ? "测试中…" : "测试"}
@@ -676,7 +676,7 @@ function EditCredentialDialog({
       const r = await api.credentialModels(credential.id);
       setFound(r.models ?? []);
       if (r.ok && (r.models?.length ?? 0) > 0) {
-        setProbeNote(`✓ 探测到 ${r.models.length} 个模型，点一下即可选用`);
+        setProbeNote(`✓ 探测到 ${r.models.length} 个模型，点一下选用`);
       } else if (r.suggested?.length) {
         // 探测不到就退回 provider 的推荐清单，用户仍可一键选
         setFound(r.suggested);
@@ -684,7 +684,7 @@ function EditCredentialDialog({
           `未能从服务商取到清单${r.error ? `（${r.error}）` : ""}，下面是推荐的模型名，可直接选或手填。`,
         );
       } else {
-        setProbeNote("没能取到模型清单，请手动填写模型名称。");
+        setProbeNote("没取到清单，请手填模型名");
       }
     } catch (e) {
       setProbeNote(`探测失败：${e instanceof Error ? e.message : String(e)}，请手动填写。`);
@@ -825,7 +825,7 @@ function EditCredentialDialog({
                   根本没有 /models 清单，探测不出来，只能手填 ✓ */}
               <input
                 className="input mono min-w-0 flex-1"
-                placeholder="手填模型名，或点右侧探测后从下方选"
+                placeholder="手填，或点右侧探测后选"
                 value={model}
                 onChange={(e) => {
                   setModel(e.target.value);
@@ -838,7 +838,7 @@ function EditCredentialDialog({
               <button
                 className="btn shrink-0"
                 disabled={!model.trim() || busy}
-                title="按这个模型名发一次极小调用，验证能不能真用（不发对话、几乎不花钱）"
+                title="发一次极小调用验证（几乎不花钱）"
                 onClick={() => void testModel()}
               >
                 测试

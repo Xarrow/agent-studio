@@ -55,15 +55,15 @@ export default function ToolsPage() {
   const TAB_META: Record<"tools" | "skills" | "mcp", { title: string; desc: string }> = {
     tools: {
       title: "工具",
-      desc: "给助手加「手」：能查网页、读文件、跑命令之类。不加的话它就只能聊天。",
+      desc: "能查网页、读文件、跑命令；不加只能聊天",
     },
     skills: {
       title: "Skills",
-      desc: "给助手加「说明书」：告诉它这类任务该怎么做（正文按需加载，不占上下文）。",
+      desc: "给助手的说明书，按需加载不占上下文",
     },
     mcp: {
       title: "MCP",
-      desc: "接外部工具服务器：把别的系统提供的能力挂给助手用。",
+      desc: "把别的系统的能力挂给助手用",
     },
   };
 
@@ -114,7 +114,7 @@ export default function ToolsPage() {
   const remove = async (t: Tool) => {
     const ok = await fb.confirm({
       title: `删除工具「${t.name}」？`,
-      description: "已挂载它的 Agent 会立即失去该能力。",
+      description: "挂载它的助手会立即失去该能力",
       danger: true,
       confirmText: "删除",
     });
@@ -148,8 +148,8 @@ export default function ToolsPage() {
       title: `删除选中的 ${rows.length} 个工具？`,
       description:
         protectedRows.length > 0
-          ? `已挂载这些工具的助手会立即失去对应能力。平台/运行时提供的 ${protectedRows.length} 个会被跳过（删了也会被同步回来）。`
-          : "已挂载这些工具的助手会立即失去对应能力。",
+          ? `挂载它的助手会立即失去该能力；内置 ${protectedRows.length} 个跳过`
+          : "挂载它的助手会立即失去该能力",
       details: rows
         .slice(0, 8)
         .map((t) => `${t.name}（${t.kind}${protectedRows.includes(t) ? " · 会跳过" : ""}）`),
@@ -369,7 +369,7 @@ export default function ToolsPage() {
             <div className="card">
               <Empty
                 title="这个分类下还没有工具"
-                hint="点「同步内置工具」导入运行时的内置能力，或创建自定义 HTTP 工具。"
+                hint="同步内置能力，或新建自定义 HTTP 工具"
                 action={
                   <>
                     <button className="btn" disabled={syncing} onClick={sync}>
@@ -910,8 +910,8 @@ function EditToolDialog({
         </div>
         <p className="text-[12px] text-[var(--color-muted)] mb-4">
           {isBuiltin
-            ? "内置工具只能修改描述 —— 它的实现由运行时提供，「同步内置工具」会把改动覆盖回去。"
-            : "改完保存即生效，引用它的助手下次运行就会用新定义。"}
+            ? "内置工具只能改描述，同步会覆盖回来"
+            : "保存即生效，下次运行用新定义"}
         </p>
 
         <div className="space-y-3.5">

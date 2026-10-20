@@ -210,7 +210,7 @@ export function CredentialChatDialog({
           <input
             className="input flex-1"
             value={input}
-            placeholder="输入消息，回车发送（中文组字中回车是选字）"
+            placeholder="输入消息，回车发送（组字时不发）"
             disabled={busy}
             {...ime.props}
             onChange={(e) => setInput(e.target.value)}

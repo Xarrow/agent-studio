@@ -318,12 +318,12 @@ export function StepExecPanel({
                 {thinking}
               </div>
             ) : (
-              <Muted>{live ? "还在想…（模型没输出思考内容时这里是空的）" : "这一步没有思考内容"}</Muted>
+              <Muted>{live ? "还在想…（模型没给思考内容时为空）" : "这一步没有思考内容"}</Muted>
             )}
           </Section>
 
           {/* 工具 */}
-          <Section label={`工具（${tools.length} 次）`} hint="它实际调用了什么、结果如何">
+          <Section label={`工具（${tools.length} 次）`} hint="调了什么、结果如何">
             {tools.length === 0 ? (
               <Muted>没调用工具</Muted>
             ) : (

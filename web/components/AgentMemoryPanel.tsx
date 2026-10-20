@@ -77,7 +77,7 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
     setBusy(true);
     try {
       await api.duplicateMemory(m.id, { agent_id: agentId, scope: "agent" });
-      fb.success("已复制给它", "副本归它专有，之后单独改不会影响共用的那条。");
+      fb.success("已复制给它", "副本专有，改动不影响原条");
       await load();
     } catch (e) {
       fb.error("复制失败", e instanceof Error ? e.message : String(e));
@@ -116,7 +116,7 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
   const removeMemory = async (m: Memory) => {
     const ok = await fb.confirm({
       title: "删除这条记忆？",
-      description: "删掉后它不会再被想起。此操作不可撤销。",
+      description: "删掉就不会再被想起，不可撤销",
       details: [m.content],
       danger: true,
       confirmText: "删除",
@@ -135,7 +135,7 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
   const addMemory = async () => {
     const text = await fb.prompt({
       title: "记一条新的事",
-      description: "写给这个助手看的「已知信息」，比如它的工作习惯、你的偏好。",
+      description: "它的工作习惯、你的偏好",
       label: "内容",
       multiline: true,
       placeholder: "例如：回复尽量简短，先给结论。",
@@ -293,7 +293,7 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
                   <button
                     className="btn text-[12px] px-2 py-1 shrink-0"
                     disabled={busy}
-                    title="复制一份绑定给当前助手，之后可以单独修改"
+                    title="复制一份给当前助手，可单独改"
                     onClick={() => void copyToThisAgent(m)}
                   >
                     复制到它
@@ -336,10 +336,10 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
               </select>
               <p className="text-[12px] text-[var(--color-muted)] mt-1">
                 {policy.recall_backend === "local"
-                  ? "记忆存在平台数据库里，按关键词 + 最近使用打分。"
+                  ? "存平台库里，按关键词 + 最近使用打分"
                   : policy.recall_backend === "external"
-                    ? "只问外部服务；它没配好或连不上时会退回内置记忆（不会静默变空）。在「记忆」页配置外部服务。"
-                    : "内置与外部各问一遍，同一句话只留一条；外部分数略降权，不会顶掉内置排序。"}
+                    ? "只问外部；连不上退回内置（不会变空）"
+                    : "各问一遍，同一句只留一条"}
               </p>
             </div>
 
@@ -435,8 +435,8 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
               </select>
               <p className="text-[12px] text-[var(--color-muted)] mt-1">
                 {policy.compress_after_turns === 0
-                  ? "一直保留全部原文（对话很长时会占满上下文）"
-                  : `每次任务跑完后检查：超过 ${policy.compress_after_turns} 轮就把较早的对话总结成一段话继续带着，最近的原文保留`}
+                  ? "一直保留全部原文（可能占满上下文）"
+                  : `超过 ${policy.compress_after_turns} 轮就把较早的对话总结成一段`}
               </p>
             </div>
 

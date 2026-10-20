@@ -134,7 +134,7 @@ export function CapabilityPicker({
 
       {filtered.length === 0 ? (
         <p className="px-1 py-2 text-[12px]" style={{ color: "var(--color-muted)" }}>
-          {kw ? `没有匹配「${q}」的能力` : "还没勾选任何能力 —— 点右上「显示全部」挑几个。"}
+          {kw ? `没有匹配「${q}」的能力` : "还没勾选能力，点右上「显示全部」"}
         </p>
       ) : (
         <div className="flex flex-col gap-1 max-h-[340px] overflow-auto">

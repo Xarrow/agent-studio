@@ -625,7 +625,7 @@ function phaseText(steps: Step[], running: boolean): string {
   if (n.tool) parts.push(`${n.tool} 次工具`);
   if (n.tool_response) parts.push(`${n.tool_response} 条结果`);
   if (n.artifact) parts.push(`${n.artifact} 个产物`);
-  if (!parts.length) return "这次执行没有可展示的过程";
+  if (!parts.length) return "这次没有可展示的过程";
   return parts.join(" · ");
 }
 
@@ -840,7 +840,7 @@ export function ProcessBar({
               className="ml-auto text-[11.5px] inline-flex items-center gap-1.5"
               style={{ color: anim ? "var(--color-accent)" : "var(--color-muted)" }}
               onClick={() => saveAnim(!anim)}
-              title="执行时的动效（思考呼吸 / 工具转圈 / 结果闪一下）"
+              title="执行动效（思考 / 工具 / 结果）"
             >
               <span
                 className="relative inline-flex items-center rounded-full transition-colors"

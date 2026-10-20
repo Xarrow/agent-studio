@@ -12,7 +12,7 @@ const FRAMEWORK_INTERRUPTION = /^i notice the interruption[\s\S]*$/i;
 
 /** 中文替代：说清发生了什么 + 下一步能做什么（不出现第二个术语） */
 export const INTERRUPTED_NOTICE =
-  "这一轮被中断了，没有产出内容（通常是执行超过上限，或者你点了停止）。可以让我接着做。";
+  "这一轮被中断，没有产出。可以让我接着做。";
 
 /**
  * 助手消息出厂前过一道：把框架内部话术换成中文说明。

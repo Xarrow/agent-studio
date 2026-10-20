@@ -34,7 +34,7 @@ export function RunIdLink({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        title="点开看这次执行的完整过程（不离开本页）"
+        title="点开看完整过程"
         data-tap
         className={
           className ??

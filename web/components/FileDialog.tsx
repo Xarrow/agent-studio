@@ -522,11 +522,11 @@ export function FileDialog({
               /* probe 失败（没有 ffprobe 之类）时不能假装"能播" —— 归到"试试转码"这一档 */
               const verdict = probe?.playable ?? (probe ? "maybe" : "yes");
               const warn = videoFailed
-                ? "这个视频在你的设备上解不开（多半是编码不支持）"
+                ? "你的设备解不开这个编码"
                 : verdict === "no"
-                  ? probe?.reason || "浏览器解不了这个视频的编码"
+                  ? probe?.reason || "浏览器解不了这个编码"
                   : verdict === "maybe"
-                    ? probe?.reason || "这段视频的编码在部分设备上放不出来"
+                    ? probe?.reason || "部分设备放不出这个编码"
                     : "";
               return (
                 <div>

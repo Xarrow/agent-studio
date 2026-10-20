@@ -113,7 +113,7 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
   const saveSuite = async () => {
     const clean = cases.filter((c) => c.input.trim());
     if (!clean.length) {
-      fb.error("至少要有一条用例", "每行填「问什么」——「必须包含」可以留空（那就会请模型当裁判）");
+      fb.error("至少要有一条用例", "每行填「问什么」；「必须包含」留空则由模型判");
       return;
     }
     setBusy(true);
@@ -202,7 +202,7 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
         {suite && (
           <button
             type="button"
-            title={armDelete ? "再点一次就删掉这个用例集（历史评测记录会保留）" : "删掉这个用例集"}
+            title={armDelete ? "再点一次删掉用例集（历史记录保留）" : "删掉这个用例集"}
             onClick={() => {
               if (!armDelete) {
                 setArmDelete(true);
@@ -211,7 +211,7 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
               void (async () => {
                 try {
                   await api.evalDeleteSuite(suite.id);
-                  fb.success("用例集已删除", "历史评测记录保留着（那是证据）");
+                  fb.success("用例集已删除", "历史记录保留（那是证据）");
                   setArmDelete(false);
                   setDetail(null);
                   setCmp(null);
@@ -238,7 +238,7 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
             onClick={() => void runNow()}
             className="rounded-[8px] border px-2.5 py-1.5 text-[12px] disabled:opacity-50"
             style={{ borderColor: "var(--color-accent)", color: "var(--color-accent)" }}
-            title={disabled ? "先把这个助手的配置保存好" : "每一例都会真跑一次（算进用量与额度）"}
+            title={disabled ? "先把这个助手的配置保存好" : "每例都真跑，算进用量"}
           >
             跑一次评测
           </button>
@@ -247,7 +247,7 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
           <input
             value={label}
             onChange={(e) => setLabel(e.target.value)}
-            placeholder="这次叫什么（可选，如「改提示词前」）"
+            placeholder="叫什么（可选）"
             className="w-[190px] rounded-[8px] border px-2 py-1.5 text-[12px] outline-none"
             style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
           />
@@ -285,7 +285,7 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
                     cur.map((x, j) => (j === i ? { ...x, must_include: e.target.value } : x)),
                   )
                 }
-                placeholder="必须包含哪些词（多个用 | 分隔；留空则请模型当裁判）"
+                placeholder="必须包含的词（| 分隔；留空由模型判）"
                 className="min-w-0 flex-1 rounded-[8px] border px-2 py-1.5 text-[12px] outline-none"
                 style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
               />
