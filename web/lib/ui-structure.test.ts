@@ -666,3 +666,25 @@ test("视频预览：先探编码，播不了给转码入口", () => {
   assert.match(dlg, /const workRel = /, "probe/transcode 用相对 data/work 的路径（不是会话目录那层）");
   assert.match(dlg, /onError=\{\(\) => setVideoFailed\(true\)\}/, "浏览器自己解不开时也要切成提示态");
 });
+
+
+test("浏览器交互用窗口 + 动作字幕，不是一张裸图", () => {
+  const stage = read("components/BrowserStage.tsx");
+  const chat = read("components/ChatConsole.tsx");
+  const rail = read("components/ProcessRail.tsx");
+
+  // 窗口感：chrome 条 + 地址栏可复制
+  assert.match(stage, /function ChromeBar/, "要有窗口 chrome 条（三个点 + 地址栏）");
+  assert.match(stage, /navigator\.clipboard\.writeText\(frame\.url\)/, "地址栏点一下能复制网址");
+  // 人话字幕：动作来自后端 browser_action
+  assert.match(stage, /function ActionLine/, "要有动作字幕");
+  assert.match(chat, /ev\.type === "browser_action"/, "前端要收 browser_action 事件");
+  // 不抢正文：消息流里只是缩略条，点开才是面板
+  assert.match(chat, /variant="inline"/, "消息流里用缩略条");
+  assert.match(chat, /variant="panel"/, "点开是完整窗口");
+  // 双层缓冲防闪
+  assert.match(stage, /const \[prev, setPrev\]/, "换帧要交叉淡入，不能闪白");
+  // 右栏与消息流共用同一个组件（不再各写一份）
+  assert.match(rail, /<BrowserStage/, "右栏也用 BrowserStage");
+  assert.throws(() => read("components/BrowserLive.tsx"), "旧的 BrowserLive 应已删除");
+});

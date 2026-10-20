@@ -21,7 +21,6 @@ import { ProcessBar, eventsToSteps, recallProc, rememberProc } from "@/component
 import BgProcsStrip from "@/components/BgProcsStrip";
 import TodoStrip from "@/components/TodoStrip";
 import SessionJobs, { JobButton } from "@/components/SessionJobs";
-import { BrowserLive } from "@/components/BrowserLive";
 import { ProcessRail } from "@/components/ProcessRail";
 import { SlashMenu, type CommandItem } from "@/components/SlashMenu";
 import { useImeGuard, isImeEvent } from "@/lib/ime";
@@ -31,6 +30,7 @@ import { AgentDetailDialog } from "@/components/AgentDetailDialog";
 import { FileOpenerProvider, FileRowButton } from "@/components/FileDialog";
 import { copyText } from "@/lib/clipboard";
 import { middleEllipsis, fileTypeKey, shortFilePath } from "@/lib/files";
+import { BrowserStage, type BrowserAction } from "@/components/BrowserStage";
 import { humanizeAssistantText } from "@/lib/messages";
 import { FileTypeIcon } from "@/components/ui/icons";
 
@@ -126,6 +126,13 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   const runStartRef = useRef<number>(0);
   /** 浏览器画面（Agent 的 Chromium screencast 直播帧，base64 JPEG —— 不落库，纯实时） */
   const [browserFrame, setBrowserFrame] = useState<{ data: string; url: string; title: string } | null>(null);
+  /* 浏览器动作字幕 + 打开面板 —— 帧只说"现在长什么样"，动作才说"它在干什么" */
+  const [browserActions, setBrowserActions] = useState<BrowserAction[]>([]);
+  const [browserOpen, setBrowserOpen] = useState(false);
+  /* 「需要你上手」只在最后一个动作是 wait_login 时为真 —— 不用后端再加标记，
+     动作流本身就是真相来源（登录完成后助手会继续 navigate/click，状态自然解除）。 */
+  const browserWaiting =
+    browserActions.length > 0 && browserActions[browserActions.length - 1].action === "wait_login";
   /** 本次发送的内容（作为执行过程的第一段「输入」） */
   const [liveInput, setLiveInput] = useState("");
   /** 正在跑的这一轮的 run id —— 停止时要拿它去 abort 后端 */
@@ -452,10 +459,25 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
    * resume 之后运行会继续产出事件，必须有人接着收，否则用户只看到确认条消失、
    * 后面发生了什么全然不知。
    */
+  /** 在画面上做的动作（点击/打字/滚动）→ 打进那个 run 的 Chromium。
+   *  凭证只走这条路进浏览器，不进模型、不落库。 */
+  const sendBrowser = useCallback(
+    async (body: Record<string, unknown>) => {
+      if (!liveRunId) return;
+      await fetch(`/api/runs/${liveRunId}/browser-input`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).catch(() => {});
+    },
+    [liveRunId],
+  );
+
   const attachStream = (runId: string, sentText: string) => {
     const es = new EventSource(api.streamUrl(runId));
     esRef.current = es;
     setLiveRunId(runId);
+    setBrowserActions([]);
 
     es.onmessage = (e: MessageEvent) => {
       try {
@@ -472,12 +494,31 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
           const t = typeof p.text === "string" ? p.text : typeof p.delta === "string" ? p.delta : "";
           setLive((prev) => (prev ? { role: "assistant", text: prev.text + t } : prev));
         }
+        if (ev.type === "browser_action") {
+          const summary = typeof p.summary === "string" ? p.summary : "";
+          if (summary) {
+            setBrowserActions((prev) => [
+              ...prev,
+              {
+                action: typeof p.action === "string" ? p.action : "",
+                summary,
+                target: typeof p.target === "string" ? p.target : "",
+                url: typeof p.url === "string" ? p.url : "",
+              },
+            ]);
+          }
+        }
         if (ev.type === "browser_frame" && typeof p.frame === "string") {
-          setBrowserFrame({
-            data: p.frame,
-            url: typeof p.url === "string" ? p.url : "",
-            title: typeof p.title === "string" ? p.title : "",
-          });
+          const u = typeof p.url === "string" ? p.url : "";
+          // 收尾时会吐 about:blank 的白屏帧，丢掉它；url 偶尔为空（后端还没读到
+          // document.URL）—— 那种时候沿用上一次的地址，别把地址栏清空。
+          if (!u.startsWith("about:")) {
+            setBrowserFrame((prev) => ({
+              data: p.frame as string,
+              url: u || prev?.url || "",
+              title: (typeof p.title === "string" && p.title) || prev?.title || "",
+            }));
+          }
         }
       } catch {
         /* ignore */
@@ -488,7 +529,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
       es.close();
       setBusy(false);
       setLiveRunId("");
-      setBrowserFrame(null);
+      // 帧**不清**：这轮浏览停在哪一页，用户事后再点开还能看见（开新 run 时才重置）。
+      // 画面只进内存、不落库；持久的那一张在会话文件的 browser/<run>.jpg 里。
       const r = await api.run(runId).catch(() => null);
       if (r && r.status === "waiting_hitl") {
         // **不是结束，是暂停等你点头** —— 保留现场（不清 live），
@@ -1129,28 +1171,15 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 {/* 生成中：实时分色显示执行过程（思考 / 工具 / 结果 / 回答） */}
                 {/* 手机/平板：画面卡片在消息流里；桌面只在右栏收起时用它顶替
                     （避免同一画面两处重复） */}
-                {busy && browserFrame && (
-                  <div className={railOpen ? "lg:hidden" : ""}>
-                    <BrowserLive
-                      frame={browserFrame}
-                      onUserClick={async (x, y) => {
-                        if (!liveRunId) return;
-                        await fetch(`/api/runs/${liveRunId}/browser-input`, {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ kind: "click", x, y }),
-                        }).catch(() => {});
-                      }}
-                      onUserText={async (text) => {
-                        if (!liveRunId) return;
-                        await fetch(`/api/runs/${liveRunId}/browser-input`, {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ kind: "text", text }),
-                        }).catch(() => {});
-                      }}
-                    />
-                  </div>
+                {(browserFrame || browserActions.length > 0) && (
+                  <BrowserStage
+                    variant="inline"
+                    frame={browserFrame}
+                    actions={browserActions}
+                    busy={busy}
+                    waiting={browserWaiting}
+                    onOpen={() => setBrowserOpen(true)}
+                  />
                 )}
                 {/* 生成中：只给一条**收起**的过程条 + 下面正常流的回答。
                     想看它每一步在干嘛，点开这一行（默认不摊开，
@@ -1798,24 +1827,13 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
         {railOpen ? (
           <ProcessRail
             frame={browserFrame}
+            actions={browserActions}
             busy={busy}
+            waiting={browserWaiting}
             onCollapse={toggleRail}
-            onUserClick={async (x, y) => {
-              if (!liveRunId) return;
-              await fetch(`/api/runs/${liveRunId}/browser-input`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ kind: "click", x, y }),
-              }).catch(() => {});
-            }}
-            onUserText={async (text) => {
-              if (!liveRunId) return;
-              await fetch(`/api/runs/${liveRunId}/browser-input`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ kind: "text", text }),
-              }).catch(() => {});
-            }}
+            onUserClick={async (x, y) => sendBrowser({ kind: "click", x, y })}
+            onUserText={async (text) => sendBrowser({ kind: "text", text })}
+            onUserScroll={async (dy) => sendBrowser({ kind: "scroll", dy })}
           />
         ) : (
           <button
@@ -1834,6 +1852,35 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
           </button>
         )}
       </div>
+      {/* 浏览器面板 —— 桌面居中窗口，手机贴底抽屉（和文件预览同一个手感）。
+          点缩略条打开；画面可点、可滚、可打字，登录要用户自己来。 */}
+      {browserOpen && (
+        <div className="fixed inset-0 z-[70] flex items-end justify-center md:items-center" role="dialog" aria-modal="true" aria-label="浏览器画面">
+          <div className="absolute inset-0" style={{ background: "rgba(15,23,42,0.4)" }} onClick={() => setBrowserOpen(false)} />
+          <div
+            className="relative flex w-full flex-col overflow-hidden rounded-t-[16px] md:max-w-[900px] md:rounded-[14px]"
+            style={{
+              height: "88vh",
+              maxHeight: "88vh",
+              border: "1px solid var(--color-border-strong)",
+              background: "var(--color-surface)",
+              boxShadow: "0 24px 60px rgba(15,23,42,0.28)",
+            }}
+          >
+            <BrowserStage
+              variant="panel"
+              frame={browserFrame}
+              actions={browserActions}
+              busy={busy}
+              waiting={browserWaiting}
+              onUserClick={async (x, y) => sendBrowser({ kind: "click", x, y })}
+              onUserText={async (text) => sendBrowser({ kind: "text", text })}
+              onUserScroll={async (dy) => sendBrowser({ kind: "scroll", dy })}
+              onClose={() => setBrowserOpen(false)}
+            />
+          </div>
+        </div>
+      )}
     </FileOpenerProvider>
   );
 }

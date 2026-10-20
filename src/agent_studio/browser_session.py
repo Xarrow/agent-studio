@@ -184,6 +184,7 @@ class BrowserSession:
         self._proxy = proxy
         self._ws_url: str | None = None
         self._last_url = ""
+        self._last_frame = ""
         self._last_title = ""
 
     # -- 生命周期 ----------------------------------------------------------- #
@@ -251,6 +252,11 @@ class BrowserSession:
         data = params.get("data", "")
         if len(data) > FRAME_MAX_BYTES:
             return
+        # 留最后一张：run 结束存成会话文件，刷新页面后还能看到"它最后停在哪儿"。
+        # 只收 http(s) 的帧 —— Chromium 被收尾时会吐 about:blank 的白屏帧，
+        # 收下它就等于把"最后一屏"存成一张空白图。
+        if self._last_url.startswith(("http://", "https://")):
+            self._last_frame = data
         try:
             self._on_frame(self.run_id, data, self._last_url, self._last_title)
         except Exception:  # pragma: no cover
@@ -281,6 +287,10 @@ class BrowserSession:
             return err
         await self._ensure()
         assert self._cdp is not None
+        # 先按请求的地址记下 —— `_refresh_meta` 靠 Runtime.evaluate 读 document.URL，
+        # 偶尔读不回来（页面还在跳转/执行上下文被换掉），那样帧事件里的 url 就是空的，
+        # 前端只能显示"还没打开页面"。请求地址是最可靠的兜底。
+        self._last_url = url
         await self._cdp.send("Page.navigate", {"url": url})
         await asyncio.sleep(min(max(wait_s, 0.5), 10))
         await self._refresh_meta()
@@ -416,10 +426,23 @@ def get_session(run_id: str, on_frame: Any, proxy: str | None = None) -> Browser
     return sess
 
 
-async def close_all(run_id: str) -> None:
-    """run 结束时收尾：杀进程 + 删 user-data-dir（不留全局状态）。"""
+async def close_all(run_id: str, keep_frame: Path | None = None) -> None:
+    """run 结束时收尾：杀进程 + 删 user-data-dir（不留全局状态）。
+
+    keep_frame 指向一个文件时，把最后一张画面写过去（会话目录下的 browser/<run>.jpg）——
+    实时帧本来不落库，刷新就没了；留一张"最后停在哪儿"是最省事的回看方式。
+    """
     sess = _SESSIONS.pop(run_id, None)
     if sess is not None:
+        frame = getattr(sess, "_last_frame", "")
+        if keep_frame is not None and frame:
+            try:
+                import base64
+
+                keep_frame.parent.mkdir(parents=True, exist_ok=True)
+                keep_frame.write_bytes(base64.b64decode(frame))
+            except Exception:  # pragma: no cover
+                logger.debug("保存最后一帧失败", exc_info=True)
         await sess.close()
     import shutil
 

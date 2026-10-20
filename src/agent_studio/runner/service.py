@@ -279,6 +279,17 @@ def workspace_isolation(definition: Any) -> str:
     return raw if raw in ("session", "shared") else "session"
 
 
+def _last_frame_path(session_id: str | None, run_id: str) -> Path | None:
+    """浏览器最后一张画面存哪：会话目录下的 browser/<run>.jpg。
+
+    存进会话目录而不是别处，有两个直接好处：会话文件清单里能看到（用户点开就是
+    "它最后停在哪个页面"），删会话时跟着一起清掉，不留孤儿文件。
+    """
+    if not session_id:
+        return None
+    return session_work_dir(session_id) / "browser" / f"{run_id}.jpg"
+
+
 def session_work_dir(session_id: str) -> Path:
     """某个会话的工作目录（绝对路径，不创建）。"""
     base = Path(settings.work_dir).resolve()
@@ -1112,7 +1123,7 @@ class RunService:
                 try:
                     from ..browser_session import close_all as _close_browser
 
-                    await _close_browser(run_id)
+                    await _close_browser(run_id, _last_frame_path(context.session_id if context else None, run_id))
                 except Exception:  # pragma: no cover
                     logger.debug("浏览器会话清理失败", exc_info=True)
             self.bus.close(run_id)
@@ -1489,7 +1500,16 @@ class RunService:
             try:
                 from ..browser_session import close_all as _close_browser
 
-                await _close_browser(run_id)
+                # 续跑结束也要留最后一帧：这条路径恰恰常是"登录后继续"，
+                # 用户刷新后最想看的正是它最后停在哪。session_id 从 run 行补。
+                _dest = None
+                try:
+                    async with SessionLocal() as _db2:
+                        _row = await _db2.get(Run, run_id)
+                    _dest = _last_frame_path(getattr(_row, "session_id", None), run_id)
+                except Exception:  # pragma: no cover
+                    _dest = None
+                await _close_browser(run_id, _dest)
             except Exception:  # pragma: no cover
                 logger.debug("浏览器会话清理失败", exc_info=True)
             self.bus.close(run_id)

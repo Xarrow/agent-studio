@@ -402,9 +402,9 @@ async def stream_run(run_id: str) -> StreamingResponse:
                     continue
                 if item is None:                   # Run 结束哨兵
                     break
-                # browser_frame 是纯实时直播帧（不落库、seq=-1 占位）——
+                # browser_frame / browser_action 是纯实时直播（不落库、seq<0 占位）——
                 # 不能走 seq 去重（回放段 last_seq>=0 会把它全丢掉）。
-                if item.get("type") == "browser_frame":
+                if item.get("type") in ("browser_frame", "browser_action") or int(item.get("seq", 0)) < 0:
                     yield f"data: {json.dumps(item, ensure_ascii=False)}\n\n"
                     continue
                 if item.get("seq", 0) <= last_seq:  # 去重
@@ -1598,6 +1598,7 @@ async def browser_input(run_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     两种输入：
     · click：{kind:"click", x, y}（画面坐标 → CDP 鼠标事件；前端按显示尺寸等比换算）
     · text：{kind:"text", text}（配合页面底部的输入条 —— 中文输入法兼容性靠它）
+    · scroll：{kind:"scroll", dy}（在想看更多内容时自己滚画面）
 
     凭证安全：用户打的字（如密码）只进 Chromium，不进模型上下文、不落库。
     """
@@ -1615,6 +1616,12 @@ async def browser_input(run_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         if kind == "text":
             text = str(payload.get("text") or "")
             return {"ok": await sess.user_type(text)}
+        if kind == "scroll":
+            # 用户在看画面时自己滚（不用等助手动手）—— 以前只能干看着
+            dy = int(float(payload.get("dy", 0)))
+            if dy == 0:
+                return {"ok": "没有滚动量"}
+            return {"ok": await sess.scroll(dy)}
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"未知输入类型: {kind}")
     except HTTPException:
         raise

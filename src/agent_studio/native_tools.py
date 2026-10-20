@@ -652,25 +652,59 @@ async def _browser(
         )
 
     sess = get_session(run_id, on_frame)
+
+    # 动作字幕：前端把它显示成浏览器窗口底部的一行"它正在做什么"。
+    # 为什么由后端发而不是解析工具入参：动作人话化要在一个地方定（打开 host / 点击 搜索框），
+    # 前端不必认识 action 枚举，也不必猜 selector 是啥。
+    def _emit(summary: str, target: str = "") -> None:
+        bus.publish(
+            run_id,
+            {
+                "seq": -2,  # 与帧一样不占事件序：纯直播，刷新后由工具调用记录还原
+                "type": "browser_action",
+                "ts": 0,
+                "payload": {"action": action, "summary": summary, "target": target, "url": url},
+            },
+        )
+
+    def _host(u: str) -> str:
+        try:
+            from urllib.parse import urlparse
+
+            return urlparse(u).netloc or u
+        except Exception:
+            return u
+
+    def _short(v: str, n: int = 24) -> str:
+        v = (v or "").replace("\n", " ").strip()
+        return v if len(v) <= n else v[: n - 1] + "…"
+
     if action == "navigate":
+        _emit(f"打开 {_host(url)}")
         return await sess.navigate(url or "about:blank", wait_s)
     if action == "click":
         if not selector:
             return "✗ click 需要 selector"
+        _emit(f"点击 {_short(selector)}", selector)
         return await sess.click(selector)
     if action == "type":
         if not selector:
             return "✗ type 需要 selector"
+        _emit(f"输入「{_short(value, 16)}」", selector)
         return await sess.type_text(selector, value)
     if action == "read":
+        _emit("读页面内容")
         return await sess.read(selector or "body")
     if action == "scroll":
+        _emit("往下滚" if dy >= 0 else "往上滚")
         return await sess.scroll(dy)
     if action == "wait":
+        _emit(f"等页面 {wait_s:g}s")
         return await sess.wait(wait_s)
     if action == "wait_login":
         # 暂停执行，等用户在页面的浏览器画面里亲手操作（输入账号密码/验证码）。
         # 用户点「已登录，继续」后恢复 —— 凭证全程不经模型。
+        _emit("等你登录", "login")
         await sess.navigate(url, wait_s) if url else None
         return (
             "PAUSE_FOR_USER_LOGIN：已在页面上显示浏览器画面，等用户亲自完成登录。"
