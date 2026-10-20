@@ -1371,8 +1371,10 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 </div>
                 {openFiles &&
                   (sessionFiles && sessionFiles.files.length > 0 ? (
-                  <div className="mt-1 flex max-h-[96px] flex-wrap gap-1.5 overflow-y-auto pb-0.5">
-                    {sessionFiles.files.slice(0, 6).map((f) => (
+                  /* 文件全列出来（以前只摆 6 个、剩下写成"还有 N 个…"点不到 —— 等于没给）。
+                     高度封在 40vh 并允许滚动：文件再多也不会把输入坞顶到屏幕外。 */
+                  <div className="mt-1 flex max-h-[40vh] flex-wrap gap-1.5 overflow-y-auto pb-0.5">
+                    {sessionFiles.files.map((f) => (
                       <FileRowButton
                         key={f.path}
                         file={{ path: `${sessionFiles.work_dir}/${f.path}`, url: f.url, size: f.size, mtime: f.mtime }}
@@ -1388,11 +1390,6 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                         <span style={{ color: "var(--color-muted)" }}>{fmt.bytes(f.size)}</span>
                       </FileRowButton>
                     ))}
-                    {sessionFiles.files.length > 6 && (
-                      <span className="inline-flex items-center px-1 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
-                        还有 {sessionFiles.files.length - 6} 个…
-                      </span>
-                    )}
                   </div>
                 ) : (
                   <div className="mt-0.5 text-[11px]" style={{ color: "var(--color-muted)" }}>
