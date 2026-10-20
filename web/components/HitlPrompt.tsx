@@ -258,13 +258,24 @@ export function HitlPrompt({
             <span className="text-[12px] text-[var(--color-muted)]">
               {risky.map((c) => c.risk?.reason).filter(Boolean).join("；")}
             </span>
+            {/* 危险操作的第二步才给「不再问」：默认关上，勾了才生效 —— 少一次点击，
+                但不把"以后都直接执行 rm"变成默认行为 */}
+            <label className="flex items-center gap-1.5 text-[12px] cursor-pointer select-none w-full" style={{ color: "var(--color-muted)" }}>
+              <input
+                type="checkbox"
+                checked={remember}
+                onChange={(e) => setRemember(e.target.checked)}
+                disabled={busy}
+              />
+              本会话内不再问这类操作（勾了以后同类命令直接执行）
+            </label>
             <div className="ml-auto flex items-center gap-2">
               <button
                 data-tap
                 className="btn btn-sm"
                 style={{ background: "var(--color-err)", borderColor: "var(--color-err)", color: "#fff" }}
                 disabled={busy}
-                onClick={() => void resume(true)}
+                onClick={() => void resume(true, remember)}
               >
                 {busy ? "执行中…" : "确认执行"}
               </button>
