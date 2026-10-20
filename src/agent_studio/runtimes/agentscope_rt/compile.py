@@ -471,7 +471,11 @@ PERMISSION_MODES: dict[str, str] = {
 DEFAULT_PERMISSION_MODE = "accept_edits"
 
 
-def build_permission_state(defn: AgentDefinition, tools: list[ToolSpec] | None = None):
+def build_permission_state(
+    defn: AgentDefinition,
+    tools: list[ToolSpec] | None = None,
+    extra_allow: list[str] | tuple[str, ...] = (),
+):
     """把权限 scope 翻译成 ``AgentState``（AgentScope 从 state.permission_context 取）。
 
     配置形如::
@@ -580,9 +584,27 @@ def build_permission_state(defn: AgentDefinition, tools: list[ToolSpec] | None =
                 )
             )
 
+    allow_rules = _group("allow", PermissionBehavior.ALLOW)
+    # 会话级「不再问这个工具」：直接并进 allow 规则（工具名已是注册名，
+    # 由 resume 时从 hitl 事件里取的 tool_call_name 得来）。
+    for tool in extra_allow:
+        name = BUILTIN_TOOLS.get(str(tool).lower(), str(tool))
+        if not name:
+            continue
+        allow_rules.setdefault(name, []).append(
+            PermissionRule(
+                tool_name=name,
+                rule_content=None,
+                behavior=PermissionBehavior.ALLOW,
+                source="userSettings",
+            )
+        )
+        # 严格模式给每个工具注入的兜底 ASK 要撤掉 —— 否则 ask(Step 2) 会盖住 allow(Step 5)
+        ask_rules.pop(name, None)
+
     ctx = PermissionContext(
         mode=mode,
-        allow_rules=_group("allow", PermissionBehavior.ALLOW),
+        allow_rules=allow_rules,
         deny_rules=_group("deny", PermissionBehavior.DENY),
         ask_rules=ask_rules,
     )
@@ -674,6 +696,7 @@ def build_agent(
     memory_text: str | None = None,
     mcp_tools: list[Any] | None = None,
     cwd: str | None = None,
+    session_allow: list[str] | tuple[str, ...] = (),
 ):
     """编译出 ``(agent, model)`` —— 二者都需在 dispose 时收尾。
 
@@ -719,6 +742,8 @@ def build_agent(
         # 额外地盘：默认只有会话目录；助手要"像 Hermes 一样能动手"就配 ["/"]。
         # 只放宽"越界写"这一类 ASK，递归删除/凭据/提权照样问、照样拦。
         roots=tuple(_gconf.get("roots") or ()),
+        # 「这个会话里别再问这个工具」—— 存在 session_allow 表，由编译入口读好传进来
+        session_allow=tuple(session_allow),
     )
 
     agent = Agent(
@@ -731,6 +756,7 @@ def build_agent(
         # 而平台没有中途审批界面 → 运行会停在等待人工确认上。
         state=build_permission_state(
             defn,
+            extra_allow=list(session_allow),
             # 严格模式的 ASK 兜底需要真实工具名（ToolRef.ref 是行 id），
             # 由编译入口把 ToolSpec 列表传进来
             tools=tools,

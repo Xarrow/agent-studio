@@ -18,6 +18,8 @@ import json
 import logging
 from collections.abc import AsyncIterator
 from pathlib import Path
+
+from sqlalchemy import select
 from typing import Any
 
 from ... import platform_env
@@ -331,6 +333,27 @@ class AgentScopeRuntime(AgentRuntime):
                         pass
                 mcp_clients, mcp_tools = [], []
 
+        # 会话级「这个工具别再问了」—— 编译前读一次，交给守卫与权限引擎
+        session_allow: list[str] = []
+        _sid = str((ctx.get("context").session_id if ctx.get("context") else "") or "")
+        if _sid:
+            try:
+                from ...db import SessionLocal
+                from ...models import SessionAllow
+
+                async with SessionLocal() as _s:
+                    session_allow = list(
+                        (
+                            await _s.execute(
+                                select(SessionAllow.tool_name).where(
+                                    SessionAllow.session_id == _sid
+                                )
+                            )
+                        ).scalars()
+                    )
+            except Exception:  # noqa: BLE001 —— 读不到就当没配，不影响执行
+                logger.debug("读会话允许清单失败", exc_info=True)
+
         agent, model = build_agent(
             definition,
             api_key,
@@ -339,6 +362,7 @@ class AgentScopeRuntime(AgentRuntime):
             memory_text=context.memory_text if context else None,
             mcp_tools=mcp_tools,
             cwd=str(work_dir) if work_dir else None,
+            session_allow=session_allow,
         )
 
         # 多轮会话：把历史消息预置进 Agent。

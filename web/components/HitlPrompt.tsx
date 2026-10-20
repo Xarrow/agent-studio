@@ -68,11 +68,13 @@ export function HitlPrompt({
   const [confirming, setConfirming] = useState(false);
   /** 展开看完整参数的那一条 */
   const [showFull, setShowFull] = useState<number | null>(null);
+  /** 「本会话内不再问这个工具」—— 危险操作不提供这个选项（每次都该问） */
+  const [remember, setRemember] = useState(false);
   const calls = summarizeCalls(payload);
   const danger = highestRisk(calls) === "danger";
   const risky = calls.filter((c) => c.risk?.level === "danger");
 
-  const resume = async (confirm: boolean) => {
+  const resume = async (confirm: boolean, rememberTool = false) => {
     if (busy || sent !== null) return;
     setBusy(true);
     setSent(confirm);
@@ -81,6 +83,7 @@ export function HitlPrompt({
     try {
       await api.resumeRun(runId, {
         confirm,
+        ...(rememberTool ? { remember: true } : {}),
         ...(payload && Object.keys(payload).length ? { payload } : {}),
       });
       onResumed?.(confirm);
@@ -276,11 +279,23 @@ export function HitlPrompt({
               data-tap
               className="btn btn-primary btn-sm"
               disabled={busy}
-              onClick={() => (danger ? setConfirming(true) : void resume(true))}
+              onClick={() => (danger ? setConfirming(true) : void resume(true, remember))}
               style={danger ? { background: "var(--color-err)", borderColor: "var(--color-err)" } : undefined}
             >
               {busy ? "处理中…" : danger ? "允许执行" : "允许"}
             </button>
+            {!danger && (
+              /* 同类操作问十遍是主要噪音源；危险操作故意不给这个选项（每次都该问） */
+              <label className="flex items-center gap-1.5 text-[12px] text-[var(--color-muted)] cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={remember}
+                  onChange={(e) => setRemember(e.target.checked)}
+                  disabled={busy}
+                />
+                本会话内不再问{calls.length === 1 ? `「${calls[0].label}」` : "这类操作"}
+              </label>
+            )}
             <button
               data-tap
               className="btn btn-sm"

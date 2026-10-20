@@ -142,6 +142,12 @@ class Run(Base):
     item_label: Mapped[str | None] = mapped_column(String(120), default=None)
     #: 发起分派的那条执行（子实例指回父）
     parent_run_id: Mapped[str | None] = mapped_column(String(32), default=None, index=True)
+    #: 分派出来的子执行：它的对话**不写进会话历史**（只有汇总结果回到父执行）。
+    #: 为什么：以前子执行沿用父会话号，每个子任务的「问-答全过程」都灌进用户的对话，
+    #: 派 5 路就是 5 段无关内容 —— 用户看到的是一团重复。模型要的只是结论。
+    # server_default 不能省：老库是 ALTER TABLE 补的（NOT NULL DEFAULT 0），
+    # 但直接 INSERT 不带这一列时，只有 DB 端默认值才兜得住（不然会撞 NOT NULL）。
+    isolated: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
 
     input: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     output: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
@@ -915,3 +921,23 @@ class EvalRun(Base):
     created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
     finished_at: Mapped[int | None] = mapped_column(BigInteger, default=None)
 
+
+
+class SessionAllow(Base):
+    """「这个会话里，这个工具别再问了」。
+
+    为什么按会话而不是全局：用户点「不再问」的语境是"我正在干的这件事"，不是
+    "以后所有对话都放开 rm"。会话级是安全的默认 —— 换个会话重新问一遍，
+    代价只是再点一次，而不是悄悄把权限扩大到所有对话。
+
+    存的是 **AgentScope 的工具名**（Bash/Write/…），和权限规则同一套命名，
+    免得守卫和权限引擎各认一套导致"点过了还在问"。
+    """
+
+    __tablename__ = "session_allow"
+    __table_args__ = (UniqueConstraint("session_id", "tool_name", name="uq_session_allow"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[str] = mapped_column(String(32), index=True)
+    tool_name: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[int] = mapped_column(Integer, default=now_ms)

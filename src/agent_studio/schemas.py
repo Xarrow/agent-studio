@@ -612,6 +612,8 @@ class HitlResumeRequest(BaseModel):
     confirm: bool = True
     reason: str | None = None
     payload: dict[str, Any] | None = None
+    #: 「这个会话里，这个工具别再问了」—— 只有 confirm=True 时才有意义
+    remember: bool = False
 
 
 # --------------------------------------------------------------------------- #

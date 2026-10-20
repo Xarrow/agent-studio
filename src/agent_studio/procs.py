@@ -99,8 +99,60 @@ async def _watch(proc_id: str, proc: asyncio.subprocess.Process) -> None:
         if row is not None and row.status == "killed":
             status = "killed"
     await _write_row(proc_id, status=status, exit_code=code, ended_at=int(time.time() * 1000))
+    await _announce_done(proc_id)
     _LIVE.pop(proc_id, None)
     _WATCHERS.pop(proc_id, None)
+
+
+async def _announce_done(proc_id: str) -> None:
+    """后台进程结束时**往会话里说一声**。
+
+    为什么：以前它跑完只是状态从 running 变成 exited，用户下次打开会话看不到任何痕迹；
+    助手自己也得靠 proc_poll 一遍遍问。异步任务「跑完主动汇报」是后台能力的最后一块拼图。
+
+    写的是 ``role="system"`` 的会话消息：只给人看，不进模型上下文（``load_history``
+    只取 user/assistant），所以不会污染下一轮。
+    """
+    from .models import BgProc, SessionMessage, now_ms
+
+    async with SessionLocal() as session:
+        row = await session.get(BgProc, proc_id)
+        if row is None or not row.session_id:
+            return
+        took = ""
+        if row.started_at and row.ended_at:
+            took = f"，用时 {(row.ended_at - row.started_at) / 1000:.0f} 秒"
+        label = (row.label or row.command or "").strip()
+        if len(label) > 60:
+            label = label[:59] + "…"
+        if row.status == "exited":
+            text = f"〔后台任务〕{label} 跑完了（退出码 0{took}）"
+        elif row.status == "killed":
+            text = f"〔后台任务〕{label} 已被停止{took}"
+        elif row.status == "failed":
+            text = f"〔后台任务〕{label} 失败（退出码 {row.exit_code}{took}），日志：{row.log_path}"
+        else:
+            text = f"〔后台任务〕{label} 状态未知（服务重启过？）"
+        # 同一会话里可能同时有多个进程在跑：turn_index 沿用最后一条，够用
+        last_turn = (
+            await session.execute(
+                select(SessionMessage.turn_index)
+                .where(SessionMessage.session_id == row.session_id)
+                .order_by(SessionMessage.id.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none() or 0
+        session.add(
+            SessionMessage(
+                session_id=row.session_id,
+                turn_index=int(last_turn),
+                role="system",
+                content=text,
+                run_id=row.run_id,
+                ts=now_ms(),
+            )
+        )
+        await session.commit()
 
 
 async def start(

@@ -461,8 +461,22 @@ def classify_code(code: str, workspace: str | None = None) -> Verdict:
             return worst
     if worst.risk == RISK_DENY:
         return worst
-    if re.search(r"shutil\.rmtree\s*\(\s*['\"](/|~|\$HOME)", text):
-        return Verdict(RISK_DENY, "代码里要 shutil.rmtree 删系统目录，已拒绝", "py-rmtree-root", _short(text))
+    # 递归删目录：**删到工作目录之外**才是 DENY；删自己会话目录里的东西只该问一句。
+    # 以前这里只看"路径以 / 开头"就拒 —— 助手把会话目录写成绝对路径（很常见）时，
+    # 删自己刚建的临时目录也会被拒，用户看到的是一句莫名其妙的"删系统目录"。
+    _rm = re.search(r"shutil\.rmtree\s*\(\s*['\"]([^'\"]+)['\"]", text)
+    if _rm:
+        _target = os.path.expandvars(os.path.expanduser(_rm.group(1)))
+        _norm = os.path.normpath(_target)
+        _critical = ("/etc", "/usr", "/bin", "/sbin", "/boot", "/lib", "/lib64", "/var", "/root", "/proc", "/sys", "/dev")
+        _is_critical = _norm == "/" or any(_norm == d or _norm.startswith(d + "/") for d in _critical)
+        if _is_critical and not _is_inside(_norm, workspace):
+            return Verdict(
+                RISK_DENY,
+                "代码里要 shutil.rmtree 删工作目录之外的目录，已拒绝",
+                "py-rmtree-root",
+                _short(text),
+            )
     # 把括号、引号、逗号抹成空格再扫一遍：`subprocess.run(["rm","-rf","./x"])` 这种
     # 逐字面量扫不出来（'rm' 后面跟的是另一个字面量 '-rf'，中间隔了引号逗号），
     # 但抹平之后就是一句完整的 `rm -rf ./x`。现场就是靠这条路绕过闸门把目录删掉的。

@@ -681,6 +681,28 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                   默认 60 秒，可自定义
                 </p>
               </div>
+              <div>
+                <label className="label">花费上限（空 = 不限）</label>
+                <input
+                  className="input mono"
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  placeholder="不限"
+                  value={def.limits.max_cost_usd ?? ""}
+                  onChange={(e) =>
+                    patch({
+                      limits: {
+                        ...def.limits,
+                        max_cost_usd: e.target.value === "" ? null : Number(e.target.value),
+                      },
+                    })
+                  }
+                />
+                <p className="text-[12px] text-[var(--color-muted)] mt-1">
+                  跑到这个金额就停下（按「模型单价」里填的价格算）
+                </p>
+              </div>
             </div>
             {/* 模型与运行时并进同一张「定义」卡：两者回答的是同一件事
                 「这个助手是谁、拿什么跑」。原先是两张卡、模型那节还默认收起 ——

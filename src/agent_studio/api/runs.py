@@ -551,6 +551,32 @@ async def resume_run(
             status.HTTP_409_CONFLICT,
             "这条运行的待确认内容已经丢失（旧的记录格式），没法继续；请重新发起一次。",
         )
+    # 「本会话内不再问这个工具」：先把允许记下来，再续跑 ——
+    # 顺序反了的话，续跑立刻又弹一次（用户会以为按钮没生效）。
+    if payload.confirm and payload.remember and run.session_id:
+        # HITL 的 payload 形状：{"reply_id", "tool_calls": [{name, input, ...}], "guard_reasons"}
+        # 工具名在 tool_calls[0].name 里（早先这里读 tool_call_name，永远是空 → 「不再问」点了没反应）
+        _hitl = run.pending_hitl or {}
+        _calls = _hitl.get("tool_calls") or []
+        tool_name = str(
+            ( _calls[0].get("name") if _calls and isinstance(_calls[0], dict) else "")
+            or _hitl.get("tool_call_name")
+            or ""
+        ).strip()
+        if tool_name:
+            from ..models import SessionAllow
+
+            exists = (
+                await session.execute(
+                    select(SessionAllow).where(
+                        SessionAllow.session_id == run.session_id,
+                        SessionAllow.tool_name == tool_name,
+                    )
+                )
+            ).scalar_one_or_none()
+            if exists is None:
+                session.add(SessionAllow(session_id=run.session_id, tool_name=tool_name))
+                await session.commit()
     ok = await run_service.resume(
         run_id,
         # payload 允许客户端不传（None）—— 服务端会用自己存的那份合并，

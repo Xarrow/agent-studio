@@ -749,7 +749,7 @@ export const api = {
     post<{ run_id: string; status: string }>(`/api/runs/${id}/refill`, {}),
   resumeRun: (
     id: string,
-    body: { confirm: boolean; reason?: string; payload?: unknown },
+    body: { confirm: boolean; reason?: string; payload?: unknown; remember?: boolean },
   ) => post<{ resumed: boolean }>(`/api/runs/resume/${id}`, body),
   compareRuns: (a: string, b: string) =>
     request<{

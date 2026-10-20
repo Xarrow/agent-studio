@@ -68,14 +68,106 @@ async def currency_of(session: AsyncSession) -> str:
     return str(cur or DEFAULT_CURRENCY)
 
 
+def match_price(model: str | None, prices: dict[str, ModelPrice]) -> ModelPrice | None:
+    """按模型名找单价：先精确，再**模糊**（最长命中优先）。
+
+    为什么必须模糊：真实模型名带版本尾巴（``deepseek-v4-flash``、
+    ``gpt-4o-mini-2024``），而用户只愿意填一条 ``deepseek-v4``。
+    以前只做精确匹配 → 一条都对不上 → 算不出钱 → 花费上限永远不触发（实测踩到）。
+    """
+    key = price_key(model)
+    if not key:
+        return None
+    hit = prices.get(key)
+    if hit is not None:
+        return hit
+    best: tuple[int, ModelPrice] | None = None
+    for candidate, row in prices.items():
+        if candidate and candidate in key:
+            if best is None or len(candidate) > best[0]:
+                best = (len(candidate), row)
+    return best[1] if best else None
+
+
 def cost_of(
     model: str | None, tokens_in: int, tokens_out: int, prices: dict[str, ModelPrice]
 ) -> float | None:
     """算这一次调用的钱。没有单价 → ``None``（不是 0）。"""
-    p = prices.get(price_key(model))
+    p = match_price(model, prices)
     if p is None:
         return None
     total = (tokens_in or 0) * float(p.in_per_mtok or 0) + (tokens_out or 0) * float(
         p.out_per_mtok or 0
     )
     return round(total / PER_TOKENS, 6)
+
+
+async def run_cost(session: AsyncSession, run_id: str) -> tuple[float | None, bool]:
+    """这次执行到目前为止花了多少。
+
+    返回 ``(金额, 是否完整)``：只要有一个模型没填单价，金额就只能是**下界** ——
+    第二个返回值告诉调用方这件事，别把下界当成准数写进报告。
+    一次查完（按模型汇总 token），不逐条查库。
+    """
+    from sqlalchemy import func
+
+    from .models import LlmCall
+
+    prices = await load_prices(session)
+    rows = (
+        await session.execute(
+            select(
+                LlmCall.model,
+                func.sum(LlmCall.tokens_in),
+                func.sum(LlmCall.tokens_out),
+            )
+            .where(LlmCall.run_id == run_id)
+            .group_by(LlmCall.model)
+        )
+    ).all()
+    total: float | None = 0.0
+    complete = True
+    for model, tin, tout in rows:
+        c = cost_of(model, int(tin or 0), int(tout or 0), prices)
+        if c is None:
+            complete = False  # 没单价：这部分算不进去
+            continue
+        total = (total or 0.0) + c
+    if not rows:
+        return None, True
+    return round(total or 0.0, 6), complete
+
+
+#: 开箱可用的**参考价**（¥ / 百万 token）。用户可在「模型单价」里覆盖任意一条。
+#: 为什么要有它：全新的库里 model_price 是空的 → 算不出钱 → 花费上限永远拦不住。
+#: 这些只是量级正确的参考价（各家的实际折扣/汇率以账单为准），标注清楚就不算骗人。
+DEFAULT_PRICES: dict[str, tuple[float, float]] = {
+    "deepseek-v4": (2.0, 8.0),
+    "deepseek-v3": (2.0, 8.0),
+    "deepseek-r1": (4.0, 16.0),
+    "deepseek": (2.0, 8.0),
+    "doubao": (0.8, 2.0),
+    "gpt-4o-mini": (1.1, 4.4),
+    "gpt-4o": (18.0, 72.0),
+    "gpt-4.1": (15.0, 60.0),
+    "claude-sonnet": (22.0, 108.0),
+    "claude-haiku": (5.8, 29.0),
+    "claude": (22.0, 108.0),
+    "qwen": (2.2, 8.8),
+    "glm": (4.3, 16.0),
+    "kimi": (4.3, 18.0),
+}
+
+
+async def ensure_default_prices(session: AsyncSession) -> int:
+    """给**还没有单价**的参考模型补一条（已有的绝不覆盖 —— 用户填的价说了算）。"""
+    existing = await load_prices(session)
+    added = 0
+    for model, (pin, pout) in DEFAULT_PRICES.items():
+        if price_key(model) in existing:
+            continue
+        session.add(ModelPrice(model=price_key(model), in_per_mtok=pin, out_per_mtok=pout))
+        added += 1
+    if added:
+        await session.commit()
+    return added

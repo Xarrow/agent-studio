@@ -194,6 +194,8 @@ _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("model_test", "payload_truncated", "payload_truncated INTEGER DEFAULT 0"),
     # 分派（fan-out）：节点维度 + 第几路 + 那一路的名字 + 父执行
     ("run", "node_id", "node_id VARCHAR(32)"),
+    # 子执行隔离：True = 它的对话不进会话历史（只回汇总）
+    ("run", "isolated", "isolated BOOLEAN NOT NULL DEFAULT 0"),
     ("run", "item_index", "item_index INTEGER"),
     ("run", "item_label", "item_label VARCHAR(120)"),
     ("run", "parent_run_id", "parent_run_id VARCHAR(32)"),

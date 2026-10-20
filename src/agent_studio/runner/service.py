@@ -15,6 +15,7 @@ from typing import Any
 from sqlalchemy import select, delete
 
 from ..config import settings
+from ..pricing import run_cost
 from ..quota import check_daily_quota, get_depth_limit
 from ..context import append_turn, build_turn_context, compress_if_needed, run_dialogue
 from .. import steer as steer_registry
@@ -58,6 +59,16 @@ RUN_TERMINAL: frozenset[str] = frozenset({"ok", "error", "aborted"})
 
 #: 在途（尚未收尾）的状态。这些状态的记录**必须**有人在内存里推进它。
 RUN_IN_FLIGHT: frozenset[str] = frozenset({"pending", "running", "waiting_hitl"})
+
+#: 花超预算被执行「预算闸」打断的 run —— 收尾时要按这个标记写人话，
+#: 而不是记成「你点了停止」（AgentScope 把取消吞掉，只能靠标记区分是谁断的）。
+_BUDGET_HIT: set[str] = set()
+
+#: 预算检查间隔（秒）。3 秒够快（一次调用通常几秒），又不会把库打爆。
+BUDGET_POLL_S = 3.0
+
+#: run_id → 预算看门狗任务（收尾时取消，别留个空转的协程）
+_BUDGET_GUARDS: dict[str, asyncio.Task] = {}
 
 
 async def reap_orphan_runs(boot_ms: int) -> int:
@@ -851,6 +862,11 @@ class RunService:
                                 # 它会在后台一直挂着，模型那头的循环还在跑，下一轮就抢不到资源。
                                 agen = runtime.run(compiled, run_input)
                                 _me = asyncio.current_task()
+                                _budget = float(definition.limits.max_cost_usd or 0)
+                                if _budget > 0:
+                                    _BUDGET_GUARDS[run_id] = asyncio.create_task(
+                                        self._budget_watch(run_id, _budget, _me)
+                                    )
                                 try:
                                     async for ev in agen:
                                         ev = ev.model_copy(update={"run_id": run_id, "seq": seq})
@@ -942,6 +958,14 @@ class RunService:
                                     )
                                 if compiled is not None:
                                     setattr(compiled, "last_output", None)
+                            elif run_id in _BUDGET_HIT:
+                                _spent, _ = await run_cost(session, run_id)
+                                status, finished_reason = "aborted", "budget"
+                                error = (
+                                    f"预算用完了：这一轮已经花了约 {_spent if _spent is not None else 0:.4f}，"
+                                    f"超过你设的上限 {float(definition.limits.max_cost_usd or 0):g}。"
+                                    "想继续就调大助手配置里的「花费上限」，或者把这件活拆小。"
+                                )
                             elif status == "ok" and finished_reason == "interrupted":
                                 _elapsed = time.monotonic() - _t0
                                 if timeout > 0 and _elapsed >= timeout - 1.0:
@@ -1064,6 +1088,11 @@ class RunService:
             else:
                 status, error = "error", f"{_n}: {exc}"
         finally:
+            # 预算看门狗跟着这次执行一起收尾（否则它每 3 秒继续查一个已结束的 run）
+            _guard_task = _BUDGET_GUARDS.pop(run_id, None)
+            if _guard_task is not None and not _guard_task.done():
+                _guard_task.cancel()
+            _BUDGET_HIT.discard(run_id)
             # 不管成功失败都要**归还并发槽位**，否则跑几次之后闸就被占死了
             if _gated:
                 gate.release()
@@ -1108,7 +1137,9 @@ class RunService:
                     return
 
                 # 1) 多轮会话：把这一轮问答写入历史
-                if run.session_id:
+                #    **隔离的子执行除外**：它们是分派出来的「临时工」，全过程只该回一份汇总，
+                #    写进会话只会把用户的对话冲成一团（派 5 路 = 5 段无关问答）。
+                if run.session_id and not getattr(run, "isolated", False):
                     user_text, assistant_text = await run_dialogue(run)
                     await append_turn(
                         session,
@@ -1477,6 +1508,34 @@ class RunService:
                 )
             )
             await session.commit()
+
+    async def _budget_watch(self, run_id: str, budget: float, task: asyncio.Task | None) -> None:
+        """每 3 秒算一次这次执行花了多少，超了就打断。
+
+        为什么不用中间件在每次模型调用后判：一次 ReAct 循环里可能有 10 次调用，
+        中间件里同步查库+算钱会拖慢每一步；更重要的是——预算闸要能**打断正在跑的
+        工具调用**，只取消协程才做得到。
+
+        口径：只算**已经有单价**的模型（见 pricing.py）；没填单价的模型算不进钱，
+        所以这里判的是「已知花费」—— 宁可晚停一步，也不谎报。
+        """
+        try:
+            while True:
+                await asyncio.sleep(BUDGET_POLL_S)
+                try:
+                    async with SessionLocal() as session:
+                        spent, _complete = await run_cost(session, run_id)
+                except Exception:  # noqa: BLE001 —— 查库失败不该打断执行
+                    logger.warning("预算检查失败 run=%s", run_id, exc_info=True)
+                    continue
+                if spent is not None and spent >= budget:
+                    _BUDGET_HIT.add(run_id)
+                    logger.info("执行 %s 花超预算（%.4f >= %.4f），打断", run_id, spent, budget)
+                    if task is not None:
+                        asyncio.get_running_loop().call_soon(task.cancel)
+                    return
+        except asyncio.CancelledError:
+            raise
 
     async def _finalize(
         self,

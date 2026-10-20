@@ -58,6 +58,7 @@ class DangerousActionGuard(MiddlewareBase):
         allow: list[str] | tuple[str, ...] = (),
         workspace: str | None = None,
         roots: list[str] | tuple[str, ...] = (),
+        session_allow: list[str] | tuple[str, ...] = (),
     ) -> None:
         self.enabled = enabled
         #: 用户显式放行的模式（只对 ask 生效，deny 永不放行）
@@ -66,6 +67,9 @@ class DangerousActionGuard(MiddlewareBase):
         #: 这个助手额外申请的地盘（会话目录之外）。``"/"`` = 全盘，
         #: 用来配出「和 Hermes 一样的权限」；破坏性命令的判定不受影响。
         self._roots = tuple(r for r in roots if r)
+        #: 用户在这个会话里点过「不再问这个工具」的（AgentScope 工具名）。
+        #: 只降级 ASK —— ``rm -rf /`` 这类 DENY 永不放行（点过也不放）。
+        self._session_allow = {t for t in session_allow if t}
 
     # ------------------------------------------------------------------ #
     def _allowed_by_user(self, text: str) -> bool:
@@ -108,6 +112,9 @@ class DangerousActionGuard(MiddlewareBase):
             return await next_handler()
 
         text = self._command_text(tool_input)
+        if verdict.risk == guardrails.RISK_ASK and name in self._session_allow:
+            logger.info("安全闸门：本会话已允许 %s，跳过确认（%s）", name, verdict.rule)
+            return await next_handler()
         if verdict.risk == guardrails.RISK_ASK and self._allowed_by_user(text):
             # 用户在这个助手上显式放行过同类命令 → 不再打扰
             logger.info("安全闸门：按用户放行规则跳过确认（%s）", verdict.rule)

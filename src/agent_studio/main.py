@@ -54,6 +54,15 @@ async def lifespan(_app: FastAPI):
     from .db import SessionLocal
     from .revisions import backfill_initial
 
+    # 模型单价：全新库里是空的 → 花费上限永远拦不住（算不出钱）。
+    # 只补参考价，用户填过的绝不覆盖。
+    from .pricing import ensure_default_prices
+
+    async with SessionLocal() as _ps:
+        _priced = await ensure_default_prices(_ps)
+    if _priced:
+        logger.info("模型单价：补了 %d 条参考价（可在「模型单价」里改）", _priced)
+
     async with SessionLocal() as _s:
         _made = await backfill_initial(_s)
     if _made:
