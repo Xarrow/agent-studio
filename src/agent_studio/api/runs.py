@@ -8,12 +8,14 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import SessionLocal, get_session
 from ..models import Agent, LlmCall, ModelTest, Run, RunEvent, Span, ToolCall, now_ms
 from ..pricing import cost_of, currency_of, load_prices, price_key, tokens_of
+from .. import steer as steer_registry
 from ..runner import run_service
 from ..runner.service import resolve_api_key
 from ..schemas import (
@@ -429,6 +431,41 @@ async def abort_run(run_id: str, session: AsyncSession = Depends(get_session)) -
     await _get_or_404(session, run_id)
     ok = await run_service.abort(run_id)
     return {"aborted": ok}
+
+
+class SteerRequest(BaseModel):
+    """运行中插话的入参（一句话，不给就拒）。"""
+
+    text: str = ""
+
+
+@router.post("/{run_id}/steer")
+async def steer_run(
+    run_id: str, payload: SteerRequest, session: AsyncSession = Depends(get_session)
+) -> dict:
+    """往**正在跑**的这一轮里插一句话（不重跑、不打断当前这一步）。
+
+    和"再发一条消息"的区别：那条会排在这一轮之后，等它看到时想拦的事已经发生了。
+    做不到的情况要**明说**（HTTP 409 + 人话），不能回个 200 让用户以为说上了。
+    """
+    run = await _get_or_404(session, run_id)
+    if run.status == "waiting_hitl":
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "这一轮正卡在等你授权 —— 先点「允许」或「拒绝」，再插话",
+        )
+    if run.status not in ("running", "pending"):
+        raise HTTPException(status.HTTP_409_CONFLICT, "这一轮已经结束了，插不进去")
+    if not (payload.text or "").strip():
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "插话内容不能为空")
+
+    result = await steer_registry.deliver(run_id, payload.text)
+    if result != steer_registry.SteerResult.DELIVERED:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            steer_registry.SteerResult.MESSAGES.get(result, "插话没送出去"),
+        )
+    return {"delivered": True, "message": steer_registry.SteerResult.MESSAGES[result]}
 
 
 @router.post("/{run_id}/refill")

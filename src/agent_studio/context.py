@@ -181,6 +181,7 @@ async def append_turn(
     user_text: str,
     assistant_text: str,
     usage: dict[str, Any] | None = None,
+    steer_texts: list[str] | None = None,
 ) -> int:
     """把一轮问答写入会话历史（执行完成后调用）。"""
     sess = await session.get(ChatSession, session_id)
@@ -195,6 +196,15 @@ async def append_turn(
             content=user_text, run_id=run_id, ts=ts,
         )
     ]
+    # 运行中插话：同一轮里的补充发言，排在原提问之后、回答之前 ——
+    # 顺序就是它真正被说出口的顺序，别把历史重排成"事后诸葛亮"。
+    for _i, _steer in enumerate(steer_texts or []):
+        rows.append(
+            SessionMessage(
+                session_id=session_id, turn_index=turn, role="user",
+                content=f"（运行中插话）{_steer}", run_id=run_id, ts=ts + _i + 1,
+            )
+        )
     # 回答为空 = 这一轮没产出（超时/停止/失败）。**不要**塞一条空的助手消息：
     # 那会让会话里出现一个空白气泡，用户以为模型答了个空。界面那边有失败条说明原因。
     if assistant_text.strip():

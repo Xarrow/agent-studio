@@ -46,6 +46,8 @@ EventType = Literal[
     "hitl_request",
     #: 主模型不可用，已整轮切到备用模型重跑（payload: from / to / reason）
     "model_fallback",
+    #: 用户在运行中插话，这句话已经塞进这一轮的上下文（payload: text）
+    "steer",
     "error",
     "run_end",
 ]
@@ -201,6 +203,14 @@ class AgentRuntime(ABC):
     @abstractmethod
     def run(self, agent: CompiledAgent, run_input: Any) -> AsyncIterator[UnifiedEvent]:
         """执行并产出统一事件流。"""
+
+    async def steer(self, agent: CompiledAgent, text: str) -> None:
+        """把用户的一句话塞进**正在跑**的这一轮上下文。
+
+        默认不支持 —— 做不到的运行时不该假装做到了（界面会据此说"这个运行时
+        还不支持运行中插话"，而不是让用户以为说上了、助手其实没听见）。
+        """
+        raise NotImplementedError("这个运行时还不支持运行中插话")
 
     async def resume(self, agent: CompiledAgent, hitl: HitlResponse) -> AsyncIterator[UnifiedEvent]:
         """HITL 恢复。不支持时抛 ``NotImplementedError``。"""

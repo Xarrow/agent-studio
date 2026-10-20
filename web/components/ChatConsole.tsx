@@ -546,6 +546,27 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     }
   };
 
+  /**
+   * 运行中插话 —— 不重跑、不打断当前这一步，把那句话塞进这一轮的上下文。
+   * 排在这一轮后面发的消息，等助手看到时想拦的事情已经发生了。
+   */
+  const steer = async () => {
+    const text = input.trim();
+    if (!text || !liveRunId) return;
+    setInput("");
+    try {
+      const r = await api.steerRun(liveRunId, text);
+      setHistory((h) => [
+        ...h,
+        { role: "user" as const, content: `（运行中插话）${text}`, run_id: liveRunId, turn_index: 0 },
+      ]);
+      fb.success(r.message || "已插话", text.slice(0, 80));
+    } catch (e) {
+      setInput(text);
+      fb.warn("没插上", e instanceof Error ? e.message : String(e));
+    }
+  };
+
   const stop = async () => {
     // 关流 + **中止后端执行**（不是只不看了 —— 那会白烧 token，
     // 用户点停止的意图就是「别做了」；abort 端点会把 run 标成 aborted）
@@ -1354,13 +1375,13 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     paused
                       ? "运行暂停，先处理上面的授权…"
                       : busy
-                        ? "执行中…可以继续打字，等它跑完再发"
+                        ? "执行中 · 直接回车就是插话（它下一步就看到）"
                         : pendingFiles.length > 0
                           ? `附了 ${pendingFiles.length} 个文件，说点什么…`
                           : "说点什么…"
                   }
                   value={input}
-                  disabled={busy || paused}
+                  disabled={paused}
                   {...ime.props}
                   onPaste={(e) => {
                     // 截图直接 Cmd/Ctrl+V —— 比先存成文件再点附件顺手得多
@@ -1380,7 +1401,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     if (e.key === "Enter" && !e.shiftKey) {
                       if (ime.blocked(e)) return;
                       e.preventDefault();
-                      void send();
+                      void (busy ? steer() : send());
                     }
                   }}
                 />
@@ -1432,6 +1453,18 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                         </svg>
                       </button>
                     )}
+                    {busy && input.trim() ? (
+                      <button
+                        data-tap
+                        type="button"
+                        title="插话：塞进这一轮，不打断当前这一步"
+                        onClick={() => void steer()}
+                        className="h-11 sm:h-8 px-2.5 shrink-0 flex items-center justify-center rounded-full text-[12.5px] font-medium"
+                        style={{ background: "var(--color-accent)", color: "#fff" }}
+                      >
+                        插话
+                      </button>
+                    ) : null}
                     {busy ? (
                       <button
                         data-tap
@@ -1994,8 +2027,12 @@ function Bubble({
     name: m[3] || "附件",
     size: Number(m[4]) || 0,
   }));
+  // 运行中插话：历史里以「（运行中插话）」开头 —— 剥掉标记，单独给一个小标签，
+  // 让人一眼看出这句是"打断式补充"，不是新一轮的提问。
+  const isSteerMsg = isUser && content.startsWith("（运行中插话）");
+  const bodySource = isSteerMsg ? content.slice("（运行中插话）".length) : content;
   const userBody = isUser
-    ? content
+    ? bodySource
         .split("\n")
         .filter((ln) => !ln.startsWith("[attach:") && !ln.startsWith("[附件] "))
         .join("\n")
@@ -2146,6 +2183,9 @@ function Bubble({
                     ),
                   )}
                 </div>
+              )}
+              {isSteerMsg && (
+                <span className="block text-[11px] opacity-80 leading-tight mb-0.5">运行中插话</span>
               )}
               {userBody}
             </>

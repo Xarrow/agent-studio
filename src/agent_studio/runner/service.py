@@ -17,6 +17,7 @@ from sqlalchemy import select, delete
 from ..config import settings
 from ..quota import check_daily_quota, get_depth_limit
 from ..context import append_turn, build_turn_context, compress_if_needed, run_dialogue
+from .. import steer as steer_registry
 from ..db import SessionLocal
 from ..memory import (
     get_policy,
@@ -851,12 +852,30 @@ class RunService:
                                         status = "waiting_hitl"
                                         hitl_payload = dict(ev.payload)
 
+                            # 这一轮现在能接收「运行中插话」了。收尾一律摘下 ——
+                            # 不摘的话，run 结束后再插话会塞进一个已经没人用的 agent 里。
+                            async def _on_steer(_t: str) -> None:
+                                nonlocal seq
+                                steer_registry.remember(run_id, _t)
+                                _ev = UnifiedEvent(
+                                    run_id=run_id, seq=seq, type="steer", ts=now_ms(),
+                                    payload={"text": _t},
+                                )
+                                seq += 1
+                                collector.on_event(_ev)
+                                await self._persist_event(run_id, _ev)
+                                self.bus.publish(run_id, _ev.model_dump(mode="json", exclude={"raw"}))
+
+                            await steer_registry.attach(run_id, runtime, compiled, _on_steer)
                             _t0 = time.monotonic()
-                            if timeout and timeout > 0:
-                                # 不限（0 / 负数）时**不能**包 wait_for ✗ —— timeout=0 是"立刻超时"，语义正好相反 ✓
-                                await asyncio.wait_for(consume(), timeout=timeout)
-                            else:
-                                await consume()
+                            try:
+                                if timeout and timeout > 0:
+                                    # 不限（0 / 负数）时**不能**包 wait_for ✗ —— timeout=0 是"立刻超时"，语义正好相反 ✓
+                                    await asyncio.wait_for(consume(), timeout=timeout)
+                                else:
+                                    await consume()
+                            finally:
+                                await steer_registry.detach(run_id)
 
                             # ── 「被中断」要分清楚是谁断的 ────────────────────────────
                             # AgentScope 收到取消后**不会**把 CancelledError 抛给我们（它把工具调用
@@ -1024,6 +1043,9 @@ class RunService:
                         user_text=user_text,
                         assistant_text=assistant_text,
                         usage=run.usage or {},
+                        # 这一轮打断过它的话也要留在历史里 —— 否则刷新页面，
+                        # 用户说过的那句补充就凭空消失了（模型还记得，人却看不见）
+                        steer_texts=steer_registry.take_texts(run_id),
                     )
                     # 2) 轮次超阈值时压缩较早历史（防上下文爆炸）。
                     #    **在任务跑完之后做**：一次执行的中间态不该被动（压缩要花一次
@@ -1239,11 +1261,27 @@ class RunService:
                         status = "waiting_hitl"
                         hitl_payload = dict(ev.payload)
 
-            if timeout and timeout > 0:
-                # 不限（0 / 负数）时**不能**包 wait_for ✗ —— timeout=0 是"立刻超时"，语义正好相反 ✓
-                await asyncio.wait_for(consume(), timeout=timeout)
-            else:
-                await consume()
+            # 恢复后同样是"正在跑"，一样要能插话
+            async def _on_steer(_t: str) -> None:
+                nonlocal seq
+                steer_registry.remember(run_id, _t)
+                _ev = UnifiedEvent(
+                    run_id=run_id, seq=seq, type="steer", ts=now_ms(), payload={"text": _t}
+                )
+                seq += 1
+                collector.on_event(_ev)
+                await self._persist_event(run_id, _ev)
+                self.bus.publish(run_id, _ev.model_dump(mode="json", exclude={"raw"}))
+
+            await steer_registry.attach(run_id, runtime, compiled, _on_steer)
+            try:
+                if timeout and timeout > 0:
+                    # 不限（0 / 负数）时**不能**包 wait_for ✗ —— timeout=0 是"立刻超时"，语义正好相反 ✓
+                    await asyncio.wait_for(consume(), timeout=timeout)
+                else:
+                    await consume()
+            finally:
+                await steer_registry.detach(run_id)
 
             # 恢复之后**又**要授权（模型连着要两步是常事：先写脚本、再跑脚本）：
             # 这里必须和正常执行路径一样，把待确认内容 + 状态快照一起落库。

@@ -695,6 +695,9 @@ export const api = {
   },
   runTrace: (id: string) => request<RunTrace>(`/api/runs/trace/${id}`),
   abortRun: (id: string) => post<{ aborted: boolean }>(`/api/runs/abort/${id}`),
+  /** 运行中插话：塞进正在跑的这一轮（不重跑、不打断当前这一步） */
+  steerRun: (id: string, text: string) =>
+    post<{ delivered: boolean; message: string }>(`/api/runs/${id}/steer`, { text }),
   /** **重跑这一条执行**：记录原地重来（归属不变）——分派的某一项失败时只重跑那一路 */
   rerunRun: (id: string) => post<Run>(`/api/runs/${id}/rerun`, {}),
   /** 评测：用例集 + 跑一次 + 结果 + 两版对比（都挂在助手维度） */

@@ -412,6 +412,32 @@ class AgentScopeRuntime(AgentRuntime):
             if unified is not None:
                 yield unified
 
+    async def steer(self, agent: CompiledAgent, text: str) -> None:
+        """插话：把用户的话 observe 进 agent 的上下文。
+
+        AgentScope 每次推理都从 memory 重新拼 prompt，所以 observe 之后
+        **下一步**就看得见；正在跑的那次工具调用/模型请求不受影响。
+        前缀必须写清楚这是运行中的补充，否则模型会以为自己又被派了个新任务。
+        """
+        from agentscope.message import Msg, TextBlock
+
+        assert isinstance(agent, AgentScopeCompiled)
+        msg = Msg(
+            name="user",
+            role="user",
+            content=[
+                TextBlock(
+                    type="text",
+                    text=(
+                        "【运行中插话】用户在你执行的过程中补充了这句话，"
+                        "请据此调整接下来的做法（已经开始的这一步不用重来）：\n"
+                        f"{text.strip()}"
+                    ),
+                )
+            ],
+        )
+        await agent.agent.observe(msg)
+
     async def resume(self, agent: CompiledAgent, hitl: HitlResponse) -> AsyncIterator[UnifiedEvent]:
         """HITL 恢复：把确认结果回灌给 Agent 继续跑。"""
         from agentscope.event import ConfirmResult, UserConfirmResultEvent

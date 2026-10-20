@@ -176,11 +176,19 @@ test("输入坞：图标化发送/停止 + 自动长高 + 粘贴/拖拽投喂附
   assert.match(src, /void addFiles\(e\.dataTransfer\.files\)/);
 });
 
-test("输入坞：运行暂停（等授权）时禁用，避免又起一轮抢同一个会话", () => {
+test("输入坞：等授权时禁用；执行中可用（回车是插话，不是又起一轮）", () => {
   const src = read("components/ChatConsole.tsx");
   assert.match(src, /const paused = !!hitl;/);
-  assert.match(src, /disabled=\{busy \|\| paused\}/);
+  // 暂停（等授权）时禁掉 —— 避免又起一轮抢同一个会话
+  assert.match(src, /disabled=\{paused\}/);
   assert.match(src, /运行暂停，先处理上面的授权…/);
+  // 执行中可用，但回车走插话；send 仍然挡住"又起一轮"
+  assert.match(src, /void \(busy \? steer\(\) : send\(\)\)/);
+  assert.match(
+    src,
+    /if \(\(!text && pendingFiles\.length === 0\) \|\| busy \|\| !sessionId \|\| !agentId\) return;/,
+    "send 仍然挡住执行中的新起一轮",
+  );
 });
 
 test("授权条：判定走 lib/hitl，危险操作要两步，参数可展开，拒绝有出路", () => {
@@ -568,4 +576,24 @@ test("备用模型：配置页可设 + 过程条认「换模型」", () => {
   assert.match(tl, /主模型 \$\{from\} 不可用/, "说清是谁换成了谁");
   const types = read("lib/types.ts");
   assert.match(types, /fallback\?: ModelSpec \| null/, "定义里带 fallback");
+});
+
+/**
+ * 运行中插话（2026-10）：一轮还在跑的时候，用户要能把方向掰回来。
+ * 口径：
+ *   · 执行中**输入框可用**、回车即插话（不是排到这一轮后面）
+ *   · 有字时给一个「插话」按钮（常驻可见，不藏进菜单）
+ *   · 插过的话在历史里看得出是"打断式补充"，不是新一轮提问
+ */
+test("运行中插话：执行中输入框可用 + 回车即插话 + 历史里标记出来", () => {
+  const chat = read("components/ChatConsole.tsx");
+  assert.match(chat, /api\.steerRun\(liveRunId, text\)/, "走插话接口");
+  assert.match(chat, /执行中 · 直接回车就是插话/, "提示语说清楚回车是插话");
+  assert.match(chat, /void \(busy \? steer\(\) : send\(\)\)/, "执行中回车走插话");
+  assert.match(chat, /disabled=\{paused\}/, "执行中输入框不能禁掉");
+  assert.match(chat, /插话：塞进这一轮，不打断当前这一步/, "按钮常驻可点");
+  assert.match(chat, /运行中插话/, "历史里标记出来");
+
+  const api = read("lib/api.ts");
+  assert.match(api, /steerRun: \(id: string, text: string\)/, "接口封装存在");
 });
