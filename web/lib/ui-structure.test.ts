@@ -597,3 +597,27 @@ test("运行中插话：执行中输入框可用 + 回车即插话 + 历史里�
   const api = read("lib/api.ts");
   assert.match(api, /steerRun: \(id: string, text: string\)/, "接口封装存在");
 });
+
+/**
+ * 变更门 + 心跳（2026-10）：定时任务别每次都为"没变化"烧一遍模型；
+ * 长任务别让用户反复问"跑完没"。
+ */
+test("定时任务：可设「有变化才跑」，并把跳过的原因说清楚", () => {
+  const jobs = read("components/SessionJobs.tsx");
+  assert.match(jobs, /命令输出变了才跑/, "命令型检查有入口");
+  assert.match(jobs, /网址内容变了才跑/, "网址型检查有入口");
+  assert.match(jobs, /monitor_kind: monitorKind/, "保存时带上类型");
+  assert.match(jobs, /结果和上次一样就「整个跳过」/, "文案说清为什么没跑");
+  assert.match(jobs, /有变化才跑/, "列表行上看得出来");
+
+  const types = read("lib/types.ts");
+  assert.match(types, /monitor_kind: "" \| "command" \| "url"/);
+});
+
+test("心跳：平台自己的提示在对话里有一行灰字（关掉页面回来还在）", () => {
+  const chat = read("components/ChatConsole.tsx");
+  assert.match(chat, /m\.role === "system"/, "system 消息要保留并渲染");
+  assert.match(chat, /key=\{m\.id \?\? `sys-\$\{i\}`\}/, "系统行有稳定 key");
+  const tools = read("../src/agent_studio/native_tools.py");
+  assert.match(tools, /heartbeat_s/, "proc_start 能开心跳");
+});

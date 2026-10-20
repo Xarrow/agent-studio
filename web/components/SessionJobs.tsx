@@ -99,6 +99,9 @@ export default function SessionJobs({
   const [url, setUrl] = useState("");
   const [format, setFormat] = useState<"feishu" | "wecom" | "dingtalk" | "generic">("feishu");
   const [runNow, setRunNow] = useState(false);
+  // 变更门：只在有变化时才跑（省钱也不刷屏）
+  const [monitorKind, setMonitorKind] = useState<"" | "command" | "url">("");
+  const [monitor, setMonitor] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -134,6 +137,8 @@ export default function SessionJobs({
     setUrl("");
     setFormat("feishu");
     setRunNow(false);
+    setMonitorKind("");
+    setMonitor("");
     onOpenChange(true);
   }, [onOpenChange]);
 
@@ -149,6 +154,8 @@ export default function SessionJobs({
     setUrl(j.deliver?.url || "");
     setFormat((j.deliver?.format as typeof format) || "feishu");
     setRunNow(false);
+    setMonitorKind((j.monitor_kind as "" | "command" | "url") || "");
+    setMonitor(j.monitor || "");
     onOpenChange(true);
   };
 
@@ -160,6 +167,10 @@ export default function SessionJobs({
     }
     if (channel === "webhook" && !/^https?:\/\//.test(url.trim())) {
       fb.info("投递地址不对", "必须以 http:// 或 https:// 开头");
+      return;
+    }
+    if (monitorKind && !monitor.trim()) {
+      fb.info("还差检查内容", "选了「只在有变化时跑」，就要说清检查什么");
       return;
     }
     setBusy(true);
@@ -174,6 +185,8 @@ export default function SessionJobs({
           channel === "webhook"
             ? ({ channel, url: url.trim(), format } as Record<string, string>)
             : ({ channel: "session" } as Record<string, string>),
+        monitor_kind: monitorKind,
+        monitor: monitorKind ? monitor.trim() : "",
       };
       const saved = editing
         ? await api.updateSessionJob(editing, body)
@@ -325,6 +338,40 @@ export default function SessionJobs({
           </div>
         )}
 
+        <label className="mb-1 mt-3 block text-[12px]" style={{ color: "var(--color-muted)" }}>
+          什么时候才真跑
+        </label>
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <Segmented
+            options={[
+              { key: "", label: "每次都跑" },
+              { key: "command", label: "命令输出变了才跑" },
+              { key: "url", label: "网址内容变了才跑" },
+            ]}
+            value={monitorKind}
+            onChange={(k) => setMonitorKind(k as "" | "command" | "url")}
+          />
+        </div>
+        {monitorKind ? (
+          <>
+            <input
+              className="input mb-1 w-full"
+              placeholder={
+                monitorKind === "url"
+                  ? "https://example.com/feed（抓它的正文来比）"
+                  : "比如 git -C /srv/app log -1 --format=%h"
+              }
+              value={monitor}
+              onChange={(e) => setMonitor(e.target.value)}
+              inputMode={monitorKind === "url" ? "url" : "text"}
+            />
+            <p className="mb-1 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+              到点时先跑这条检查；结果和上次一样就「整个跳过」（不调模型、不刷屏）。
+              {monitorKind === "url" ? " 地址要 http(s)。" : " 命令 20 秒内要结束。"}
+            </p>
+          </>
+        ) : null}
+
         <label className="mb-1 mt-2 block text-[12px]" style={{ color: "var(--color-muted)" }}>
           结果送到哪
         </label>
@@ -443,6 +490,7 @@ export default function SessionJobs({
                       {" · "}
                       {j.enabled ? `下次 ${whenText(j.next_run_at)}` : "已暂停"}
                       {j.deliver?.channel === "webhook" ? " · 推送到群" : ""}
+                      {j.monitor_kind ? " · 有变化才跑" : ""}
                     </span>
                   </button>
                   {st && (

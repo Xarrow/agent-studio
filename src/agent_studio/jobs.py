@@ -43,6 +43,81 @@ MAX_ATTEMPTS = 3
 DELIVER_CHARS = 3000
 
 
+# --------------------------------------------------------------------------- #
+# 变更门（monitor）—— 没变化就不跑
+# --------------------------------------------------------------------------- #
+#: 监视值最多留这么长（超了截断：对比只需要指纹，不需要全文）
+MONITOR_CHARS = 4000
+#: 跑监视命令的超时（秒）—— 它只是个探针，不该比任务本身还久
+MONITOR_TIMEOUT_S = 20
+
+
+def monitor_kind_of(raw: Any) -> str:
+    """把界面上传来的监视类型收敛成三种之一（其余一律当没配）。"""
+    kind = str(raw or "").strip().lower()
+    return kind if kind in ("command", "url") else ""
+
+
+async def read_monitor(kind: str, spec: str, *, cwd: str | None = None) -> str:
+    """取一次监视值：命令的输出 / 网址的正文。
+
+    取不到就抛异常 —— 调用方按"这一轮要跑"处理（宁可多跑一次，也不能因为
+    探针坏了就永远不跑：那会让用户以为任务停了）。
+    """
+    spec = (spec or "").strip()
+    if not spec:
+        raise ValueError("监视内容为空")
+    if kind == "url":
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+            r = await client.get(spec, headers={"User-Agent": "agent-studio-monitor/1"})
+            r.raise_for_status()
+            text = r.text
+        return text[:MONITOR_CHARS]
+
+    # 命令：交给平台的危险命令闸门先判一次（定时任务没人看着点"允许"）
+    from .guardrails import RISK_DENY, classify_command, downgrade_if_unattended
+
+    verdict = downgrade_if_unattended(classify_command(spec, workspace=cwd))
+    if verdict.risk == RISK_DENY:
+        raise PermissionError(f"监视命令被拒绝执行：{verdict.reason}")
+
+    import asyncio
+
+    proc = await asyncio.create_subprocess_shell(
+        spec,
+        cwd=cwd or None,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+    )
+    try:
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=MONITOR_TIMEOUT_S)
+    except asyncio.TimeoutError:  # noqa: UP041
+        proc.kill()
+        raise TimeoutError(f"监视命令超过 {MONITOR_TIMEOUT_S} 秒没结束") from None
+    text = out.decode("utf-8", "replace")
+    if proc.returncode not in (0, None):
+        # 非 0 退出 = 这个探针本身有问题（路径不存在、权限、语法错）。
+        # 当成"没变化"会永久停跑，当成"有变化"会让模型看一堆噪音 —— 报出来最诚实。
+        raise RuntimeError(f"监视命令退出码 {proc.returncode}：{text.strip()[:200]}")
+    return text[:MONITOR_CHARS]
+
+
+def monitor_prompt(prompt: str, *, before: str, after: str) -> str:
+    """监视到变化时，喂给模型的这一轮该长什么样。
+
+    要说清"变了什么"，否则模型只知道"跑一次"，用户看到的还是那套旧内容。
+    """
+    before_txt = (before or "").strip()
+    tail = before_txt[-1200:] if before_txt else "（第一次，没有上一版）"
+    return (
+        f"{prompt}\n\n"
+        "【监视到变化】下面这项检查的结果和上次不一样了，按上面的事做一次：\n"
+        f"上一次：{tail}\n"
+        f"这一次：{(after or '').strip()[:1200]}\n"
+        "如果这次变化其实没有实质影响，就直接说「无实质变化」，别硬凑内容。"
+    )
+
+
 def next_for(job: SessionJob, now: int | None = None) -> int | None:
     """下一次什么时候跑（复用 Workflow 那套纯函数 —— 同一个"什么时候"只算一次逻辑）。"""
     return compute_next(job.mode, job.at, job.weekdays, now)
@@ -117,6 +192,36 @@ async def fire(job_id: str, *, now: int | None = None, manual: bool = False) -> 
             await db.commit()
             logger.info("定时任务 %s：会话里这一轮还没跑完，跳过", job_id)
             return None
+
+        # ── 变更门：先看一眼有没有变化，没变化就整轮跳过（不唤起模型、不刷屏）──
+        # 手动「立刻跑一次」不受变更门限制 —— 用户点名要跑，就不该被"没变化"挡掉
+        job_kind = monitor_kind_of(job.monitor_kind) if not manual else ""
+        if job_kind and (job.monitor or "").strip():
+            from .runner.service import session_work_dir  # 与助手干活同一个目录
+
+            # 会话目录可能还没建（还没跑过任何一轮）—— 建出来，
+            # 否则探针拿到一个不存在的 cwd 会直接抛错，被当成"检查失败"永远照常跑
+            _cwd_path = session_work_dir(job.session_id)
+            _cwd_path.mkdir(parents=True, exist_ok=True)
+            _cwd = str(_cwd_path)
+            try:
+                value = await read_monitor(job_kind, job.monitor, cwd=_cwd)
+            except Exception as _exc:  # noqa: BLE001
+                # 探针坏了**不能**变成"永远不跑"：按要跑处理，并把原因记下来
+                logger.warning("定时任务 %s 的监视检查失败（%s），照常跑一次", job_id, _exc)
+                value = None
+                job.monitor_last = (job.monitor_last or "") + "\n[检查失败] " + str(_exc)[:200]
+            if value is not None:
+                if value == (job.monitor_last or ""):
+                    job.last_run_at = now
+                    job.last_status = "skipped"
+                    job.next_run_at = next_for(job, now)
+                    job.updated_at = now_ms()
+                    await db.commit()
+                    logger.info("定时任务 %s：监视值没变，跳过这一轮", job_id)
+                    return None
+                prompt = monitor_prompt(prompt, before=job.monitor_last or "", after=value)
+                job.monitor_last = value
 
         chat = await db.get(Session, job.session_id)
         if chat is None:
@@ -314,6 +419,10 @@ async def sync_last_status() -> None:
                 continue
             run = await db.get(Run, job.last_run_id)
             if run is None or run.status in ("pending", "running"):
+                continue
+            # 刚因为「监视值没变」跳过的那一轮，不能被上一条 run 的结果盖回去 ——
+            # 否则界面会显示"成功"，用户以为它真跑了（实际什么都没做）。
+            if (job.last_status == "skipped") and (job.last_run_at or 0) > (run.started_at or 0):
                 continue
             # 结果落定后把投递也补上（队列里那条会自己送；这里只管状态显示）
             want = {"ok": "ok", "error": "error", "aborted": "aborted"}.get(run.status, "error")

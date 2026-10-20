@@ -251,6 +251,7 @@ export default function BgProcsStrip({
                     : it.exit_code !== null && it.status !== "exited"
                       ? ` · 退出码 ${it.exit_code} · ${hum(it.elapsed_s)}`
                       : ` · ${hum(it.elapsed_s)}`}
+                    {it.heartbeat_s ? " · 心跳汇报中" : ""}
                 </span>
                 {it.status === "running" && (
                   <button

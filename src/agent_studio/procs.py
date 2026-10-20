@@ -41,7 +41,7 @@ from sqlalchemy import select
 
 from .config import PROJECT_ROOT, settings
 from .db import SessionLocal
-from .models import BgProc, new_id
+from .models import BgProc, new_id, now_ms
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +97,7 @@ async def start(
     label: str = "",
     run_id: str | None = None,
     agent_id: str | None = None,
+    heartbeat_s: int = 0,
 ) -> dict[str, Any]:
     """起一个后台进程，**立刻**返回。``command`` 用 shell 执行（与 bash 工具一致）。"""
     cmd = (command or "").strip()
@@ -104,6 +105,11 @@ async def start(
         raise ValueError("命令不能为空")
     if not (session_id or "").strip():
         raise ValueError("后台进程必须挂在会话上（缺 session_id）")
+
+    try:
+        hb = max(0, int(heartbeat_s or 0))
+    except (TypeError, ValueError):
+        hb = 0
 
     work = Path(cwd).resolve() if cwd else Path(settings.work_dir).resolve()
     if not work.exists():
@@ -140,6 +146,9 @@ async def start(
                 status="running",
                 log_path=str(log),
                 started_at=now,
+                heartbeat_s=hb,
+                # 第一次心跳从起跑就开始算（否则要等两个周期才有动静）
+                last_beat_at=now if hb > 0 else None,
             )
         )
         await session.commit()
@@ -154,7 +163,9 @@ async def start(
         "label": (label or cmd)[:120],
         "cwd": str(work),
         "log": str(log),
-        "hint": "已经起好了，先用 proc_poll 看它跑得怎么样；别用同步命令等它。",
+        "heartbeat_s": hb,
+        "hint": "已经起好了，先用 proc_poll 看它跑得怎么样；别用同步命令等它。"
+        + ("（已开启心跳：平台会定期把进展发进会话，用户不用反复问）" if hb else ""),
     }
 
 
@@ -189,6 +200,8 @@ def _row_dict(row: BgProc, *, tail: bool = False) -> dict[str, Any]:
         "started_at": row.started_at,
         "ended_at": row.ended_at,
         "elapsed_s": round(elapsed, 1),
+        "heartbeat_s": int(row.heartbeat_s or 0),
+        "last_beat_at": row.last_beat_at,
     }
     if tail:
         out["tail"] = _read_tail(row.log_path)
@@ -311,3 +324,64 @@ async def running_count(session_id: str) -> int:
             .all()
         )
     return len(rows)
+
+
+# --------------------------------------------------------------------------- #
+# 心跳：长任务跑着的时候，定期把"还在跑 + 最近输出"发进会话
+# --------------------------------------------------------------------------- #
+#: 心跳里最多带几个字的日志尾巴（多了会把会话撑爆）
+BEAT_CHARS = 400
+
+
+def _last_lines(text: str, limit: int = 3) -> str:
+    lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
+    return " / ".join(lines[-limit:])[:BEAT_CHARS]
+
+
+async def beat_due(now: int | None = None) -> int:
+    """把所有到点的后台进程汇报一次，返回发了几条。
+
+    为什么发**会话消息**而不是 SSE：心跳的意义是"人不在屏幕前也能看到"，
+    关掉页面再回来，这些进展要还在。SSE 只在页面开着时有用。
+    """
+    from .models import SessionMessage
+
+    now = now_ms() if now is None else now
+    sent = 0
+    async with SessionLocal() as session:
+        rows = list(
+            (
+                await session.execute(
+                    select(BgProc).where(BgProc.status == "running", BgProc.heartbeat_s > 0)
+                )
+            ).scalars()
+        )
+        for row in rows:
+            every = int(row.heartbeat_s or 0) * 1000
+            last = int(row.last_beat_at or row.started_at or now)
+            if every <= 0 or now - last < every:
+                continue
+            tail = _last_lines(_read_tail(row.log_path, BEAT_CHARS * 2))
+            elapsed_s = max(0, int((now - (row.started_at or now)) / 1000))
+            spent = f"{elapsed_s} 秒" if elapsed_s < 60 else f"{elapsed_s // 60} 分钟"
+            text = (
+                f"〔心跳〕{row.label or row.command[:40]} 还在跑（已 {spent}）"
+                + (f" · 最近输出：{tail}" if tail else " · 暂时没有输出")
+            )
+            session.add(
+                SessionMessage(
+                    session_id=row.session_id,
+                    turn_index=0,  # 心跳不属于任何一轮
+                    role="system",
+                    content=text,
+                    run_id=row.run_id,
+                    ts=now,
+                )
+            )
+            row.last_beat_at = now
+            sent += 1
+        if sent:
+            await session.commit()
+    if sent:
+        logger.info("后台进程心跳：发了 %s 条", sent)
+    return sent

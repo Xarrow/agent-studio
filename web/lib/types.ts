@@ -572,6 +572,9 @@ export interface BgProcInfo {
   started_at: number;
   ended_at: number | null;
   elapsed_s: number;
+  /** 心跳间隔（秒，0=不汇报）—— 界面据此显示「心跳 60 秒」 */
+  heartbeat_s?: number;
+  last_beat_at?: number | null;
   tail?: string;
 }
 
@@ -591,6 +594,11 @@ export interface SessionJob {
   last_run_at: number | null;
   last_run_id: string | null;
   last_status: "ok" | "error" | "aborted" | "skipped" | null;
+  /** 变更门：""=每次都跑；command/url=检查没变化就跳过 */
+  monitor_kind: "" | "command" | "url";
+  monitor: string;
+  /** 上一次看到的监视值（界面上可展示"上次检查到的是什么"） */
+  monitor_last: string;
   created_at: number;
 }
 

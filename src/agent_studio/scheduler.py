@@ -203,6 +203,12 @@ async def loop() -> None:
             sent = await _jobs.deliver_pending()
             if sent:
                 logger.info("定时结果已投递 %s 条", sent)
+            # 后台进程心跳：长任务跑着的时候定期把进展发进会话
+            from . import procs as _procs
+
+            beats = await _procs.beat_due()
+            if beats:
+                logger.info("后台进程心跳 %s 条", beats)
         except asyncio.CancelledError:  # 服务在退出
             raise
         except Exception:  # noqa: BLE001

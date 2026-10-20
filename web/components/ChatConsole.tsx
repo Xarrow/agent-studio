@@ -103,7 +103,14 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
 
   /** 已落库的历史消息 */
   const [history, setHistory] = useState<
-    { role: "user" | "assistant"; content: string; run_id: string | null; turn_index: number; id?: number; ts?: number }[]
+    {
+      role: "user" | "assistant" | "system";
+      content: string;
+      run_id: string | null;
+      turn_index: number;
+      id?: number;
+      ts?: number;
+    }[]
   >([]);
   /** history 的镜像 ref：刷新恢复块要读"刚加载完"的最新历史，
    *  但不能把它加进 useEffect 依赖（会反复触发）—— 用 ref 桥一下。 */
@@ -199,9 +206,11 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
       const detail = await api.session(sid);
       setHistory(
         detail.messages
-          .filter((m) => m.role === "user" || m.role === "assistant")
+          // system = 心跳这类"平台说的话"：不属于任何一轮，但要留在历史里
+          // （关掉页面回来还能看到后台任务跑到哪了）
+          .filter((m) => m.role === "user" || m.role === "assistant" || m.role === "system")
           .map((m) => ({
-            role: m.role as "user" | "assistant",
+            role: m.role as "user" | "assistant" | "system",
             // 框架的内部话术（"I notice the interruption…"）不能原样给用户看
             content: m.role === "assistant" ? humanizeAssistantText(m.content) : m.content,
             run_id: m.run_id,
@@ -997,6 +1006,23 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             ) : (
               <div className="max-w-3xl mx-auto px-4 sm:px-5 py-6 space-y-5">
                 {history.map((m, i) => {
+                  // 平台自己的提示（心跳/系统事件）：一行居中的灰字，不占气泡
+                  if (m.role === "system") {
+                    return (
+                      <div
+                        key={m.id ?? `sys-${i}`}
+                        className="flex justify-center px-2 text-[11.5px] leading-[1.6]"
+                        style={{ color: "var(--color-muted)" }}
+                      >
+                        <span
+                          className="max-w-[42rem] rounded-md px-2 py-1 text-center"
+                          style={{ background: "var(--color-surface-2)" }}
+                        >
+                          {m.content}
+                        </span>
+                      </div>
+                    );
+                  }
                   // 给助手的执行过程带上「用户说了什么」，这样六段里第一段（输入）有着落
                   const prevUser =
                     m.role === "assistant"

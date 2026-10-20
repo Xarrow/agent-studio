@@ -527,6 +527,14 @@ class SessionJob(Base):
     enabled: Mapped[int] = mapped_column(Integer, default=1, index=True)
     deliver: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
+    # ── 变更门（monitor）───────────────────────────────────────────────
+    #: ""=每次到点都跑；command=跑一条命令看它的输出；url=抓这个网址看内容
+    monitor_kind: Mapped[str] = mapped_column(String(16), default="")
+    #: 命令本身 / 网址
+    monitor: Mapped[str] = mapped_column(LongText, default="")
+    #: 上一次看到的值 —— 跟这次一样就**不跑**（不唤起模型、不刷屏）
+    monitor_last: Mapped[str] = mapped_column(LongText, default="")
+
     next_run_at: Mapped[int | None] = mapped_column(Integer, default=None, index=True)
     last_run_at: Mapped[int | None] = mapped_column(Integer, default=None)
     last_run_id: Mapped[str | None] = mapped_column(String(32), default=None)
@@ -588,6 +596,10 @@ class BgProc(Base):
     log_path: Mapped[str] = mapped_column(String(500), default="")
     started_at: Mapped[int] = mapped_column(Integer, default=now_ms, index=True)
     ended_at: Mapped[int | None] = mapped_column(BigInteger, default=None)
+    #: 心跳间隔（秒）：0=不汇报。长任务跑着的时候，用户不该靠反复问"跑完没"
+    heartbeat_s: Mapped[int] = mapped_column(Integer, default=0)
+    #: 上一次心跳的时间（scheduler 据此算下一次）
+    last_beat_at: Mapped[int | None] = mapped_column(BigInteger, default=None)
 
 
 class Orchestration(Base):

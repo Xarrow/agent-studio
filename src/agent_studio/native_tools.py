@@ -557,6 +557,13 @@ PROC_START_SCHEMA: dict[str, Any] = {
             "type": "string",
             "description": "工作目录（默认就是当前会话目录；相对路径按它解析）",
         },
+        "heartbeat_s": {
+            "type": "integer",
+            "description": (
+                "心跳间隔（秒）：填了之后平台会每隔这么久往会话里发一条「还在跑 + 最近输出」，"
+                "用户不用反复问进度。跑得久（几分钟以上）就填 60~300；短活留空"
+            ),
+        },
     },
     "required": ["command"],
 }
@@ -608,7 +615,7 @@ def _proc_ctx() -> tuple[str, str, str, str]:
     )
 
 
-async def _proc_start(command: str, label: str = "", cwd: str = "") -> str:
+async def _proc_start(command: str, label: str = "", cwd: str = "", heartbeat_s: int = 0) -> str:
     """起一个后台进程，立刻返回（不等它跑完）。"""
     from . import procs
 
@@ -630,12 +637,15 @@ async def _proc_start(command: str, label: str = "", cwd: str = "") -> str:
             label=label,
             run_id=run_id or None,
             agent_id=agent_id or None,
+            heartbeat_s=heartbeat_s or 0,
         )
     except Exception as exc:
         return f"起后台进程失败：{exc}"
+    beat = int(info.get("heartbeat_s") or 0)
     return (
         f"已启动：{info['id']}（pid {info['pid']}，{info['label']}）\n"
         f"它会在后台继续跑，你现在可以接着干别的；用 proc_poll 看进度（别用同步命令等它）。"
+        + (f"\n已开启心跳：每 {beat} 秒往会话里报一次进展。" if beat else "")
     )
 
 

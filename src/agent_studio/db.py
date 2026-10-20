@@ -208,6 +208,13 @@ _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("workflow", "last_run_at", "last_run_at BIGINT"),
     ("workflow", "last_run_source", "last_run_source VARCHAR(16)"),
     ("workflow", "trigger_token", "trigger_token VARCHAR(64)"),
+    # 定时任务的变更门：没变化就不跑（省钱也不刷屏）
+    ("session_job", "monitor_kind", "monitor_kind VARCHAR(16) DEFAULT ''"),
+    ("session_job", "monitor", "monitor TEXT"),
+    ("session_job", "monitor_last", "monitor_last TEXT"),
+    # 后台进程心跳：长任务定期把"还在跑 + 最近输出"发进会话
+    ("bg_proc", "heartbeat_s", "heartbeat_s INTEGER DEFAULT 0"),
+    ("bg_proc", "last_beat_at", "last_beat_at BIGINT"),
     # 记忆召回来源：local / external / hybrid（外部记忆服务的接入点）
     ("memory_policy", "recall_backend", "recall_backend VARCHAR(16) DEFAULT 'local'"),
 )
