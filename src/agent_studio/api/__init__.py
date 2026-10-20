@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from . import (
     agents,
     agui,
+    browser_drivers,
     evals,
     guardrails,
     credentials,
@@ -57,6 +58,7 @@ from . import work as work_files
 api_router.include_router(work_files.router)    # /api/work（agent 产物展示）
 api_router.include_router(database.router)        # /api/database（环境配置：切换持久化驱动）
 api_router.include_router(environment.router, prefix="/api/environment")
+api_router.include_router(browser_drivers.router)  # /api/browser-drivers（浏览器驱动：装哪个、用哪个）
 api_router.include_router(guardrails.router)      # /api/guardrails（护栏：今日额度 + 分派层数）
 api_router.include_router(evals.router)           # /api/evals（评测：用例集 + 批量跑 + 对比）
 

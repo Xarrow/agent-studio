@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PageHead, Section } from "@/components/ui/kit";
+import { BrowserDriversCard } from "@/components/BrowserDriversCard";
 import { api } from "@/lib/api";
 import type { DbDriver, DbDriverInfo, DbStatus, DbTestResult , UploadConfigRead } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
@@ -263,6 +264,14 @@ export default function EnvironmentPage() {
         desc="检测本机 Python / Node，缺了一键装到平台目录"
       >
         <RuntimeCard />
+      </Section>
+
+      {/* ── 浏览器驱动：助手用哪个内核上网 ─────────────────── */}
+      <Section
+        title="浏览器驱动"
+        desc="助手操作网页用的内核；装哪个、用哪个都在这"
+      >
+        <BrowserDriversCard />
       </Section>
 
       {/* ── 当前使用 ─────────────────────────────────────────── */}

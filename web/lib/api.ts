@@ -226,7 +226,52 @@ const put = <T>(p: string, body?: unknown) =>
   request<T>(p, { method: "PUT", body: JSON.stringify(body ?? {}) });
 const del = <T = void,>(p: string) => request<T>(p, { method: "DELETE" });
 
+
+/** 一个浏览器驱动（系统装的或平台托管的） */
+export type BrowserDriverRow = {
+  kind: string;
+  label: string;
+  proto: string;
+  version: string;
+  path: string;
+  source: string;
+  dir?: string;
+  size_mb?: number;
+  active?: boolean;
+  custom?: boolean;
+};
+
+export type BrowserDriverEngine = {
+  kind: string;
+  label: string;
+  proto: string;
+  managed: boolean;
+  note: string;
+};
+
 export const api = {
+  /* ── 浏览器驱动（环境配置）：装哪个、用哪个 ────────────────────── */
+  browserDrivers: () =>
+    request<{
+      active: BrowserDriverRow;
+      installed: BrowserDriverRow[];
+      engines: BrowserDriverEngine[];
+    }>("/api/browser-drivers"),
+  browserVersions: (kind: string) =>
+    request<{ kind: string; managed: boolean; stable?: string; note?: string; items: { version: string; url: string; stable: boolean }[] }>(
+      `/api/browser-drivers/versions?kind=${encodeURIComponent(kind)}`,
+    ),
+  browserInstall: (kind: string, version: string, url: string) =>
+    post<{ id: string }>("/api/browser-drivers/install", { kind, version, url }),
+  browserInstallStatus: (id: string) =>
+    request<{ id: string; status: string; phase: string; percent: number; error: string; path: string }>(
+      `/api/browser-drivers/install/${id}`,
+    ),
+  browserActivate: (row: { kind: string; path: string; version: string; source: string }) =>
+    post<BrowserDriverRow>("/api/browser-drivers/active", row),
+  browserReset: () => post<BrowserDriverRow>("/api/browser-drivers/active/reset", {}),
+  browserUninstall: (kind: string, version: string) =>
+    del<{ removed: string }>(`/api/browser-drivers/installed/${kind}/${version}`),
   /** 编排者的**平台内置职责定义**（Agents 页展示用；文案只存在后端一份，不复制） */
   orchestratorBrief: () => request<{ brief: string; abilities: string }>("/api/agents/orchestrator/brief"),
   /* ── MCP 服务器（注册 / 探测 / 绑定）────────────────────────────────── */
