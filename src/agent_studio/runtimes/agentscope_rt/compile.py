@@ -439,6 +439,15 @@ def assemble_toolkit(tools: list[Any], skills_dir: Path | None = None):
     """用**已构造好的**工具对象装配 Toolkit（工具与 Skill 的唯一注册源）。"""
     from agentscope.tool import Toolkit
 
+    # 技能使用计数：给 AgentScope 的 Skill 工具打一次类级钩子（进程内幂等）。
+    # 只统计"模型真读过"的技能 —— 只列在清单里不算，否则每个技能的数字都一样大。
+    try:
+        from ...skill_usage import install_skill_usage_hook
+
+        install_skill_usage_hook()
+    except Exception as exc:  # noqa: BLE001 —— 计数装不上不能影响开跑
+        logger.warning("技能使用计数未启用: %s", exc)
+
     skills_or_loaders = []
     if skills_dir is not None and skills_dir.exists():
         try:

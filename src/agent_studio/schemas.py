@@ -304,6 +304,12 @@ class SkillRead(BaseModel):
     files: dict[str, Any]
     created_at: int
     updated_at: int
+    # ---- 生命周期：用了多少次、最后一次什么时候、现在什么状态、有没有被固定 ----
+    use_count: int = 0
+    last_used_at: int | None = None
+    state: str = "active"
+    pinned: bool = False
+    archived_at: int | None = None
 
 
 # --------------------------------------------------------------------------- #

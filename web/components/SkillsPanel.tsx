@@ -34,6 +34,13 @@ function sourceLabel(source: unknown): string {
   return type || "—";
 }
 
+/** 状态用人话说：stale = 很久没人读了（照样能用），archived = 已从助手那边撤下 */
+const STATE_LABEL: Record<string, { text: string; color: string }> = {
+  active: { text: "在用", color: "var(--color-ok)" },
+  stale: { text: "闲置", color: "var(--color-warn, #b45309)" },
+  archived: { text: "已归档", color: "var(--color-muted)" },
+};
+
 export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
   const fb = useFeedback();
   const [skills, setSkills] = useState<Skill[]>([]);
@@ -73,6 +80,60 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
     }
   };
 
+  /** 固定 / 取消固定：钉住的技能任何自动整理都不碰 */
+  const togglePin = async (s: Skill) => {
+    try {
+      const r = await api.pinSkill(s.id, !s.pinned);
+      await load();
+      const fresh = await api.skill(s.id);
+      setDetail(fresh);
+      fb.success(r.pinned ? `已固定「${s.name}」` : `已取消固定「${s.name}」`);
+    } catch (e) {
+      fb.error("操作失败", e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  /** 归档：从助手那边撤下，内容留在库里 —— 所以不用确认两次，随时能恢复 */
+  const archive = async (s: Skill) => {
+    try {
+      await api.archiveSkill(s.id);
+      await load();
+      setDetail(await api.skill(s.id));
+      fb.success(`已归档「${s.name}」`, "助手那边不再提供它；内容留在库里，点「恢复」就能回来。");
+    } catch (e) {
+      fb.error("归档失败", e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const restore = async (s: Skill) => {
+    try {
+      await api.restoreSkill(s.id);
+      await load();
+      setDetail(await api.skill(s.id));
+      fb.success(`已恢复「${s.name}」`);
+    } catch (e) {
+      fb.error("恢复失败", e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  /** 整理一次：闲置降级 + 长期不用归档（只动助手自己攒的，绝不出删除） */
+  const [curating, setCurating] = useState(false);
+  const curate = async () => {
+    setCurating(true);
+    try {
+      const r = await api.runSkillCurator();
+      await load();
+      const parts: string[] = [];
+      if (r.stale?.length) parts.push(`${r.stale.length} 个标记闲置`);
+      if (r.archived?.length) parts.push(`${r.archived.length} 个已归档`);
+      fb.success(parts.length ? `整理完成：${parts.join("，")}` : "整理完成：没有需要动的技能");
+    } catch (e) {
+      fb.error("整理失败", e instanceof Error ? e.message : String(e));
+    } finally {
+      setCurating(false);
+    }
+  };
+
   const remove = async (s: Skill) => {
     const ok = await fb.confirm({
       title: `删除 Skill「${s.name}」？`,
@@ -104,14 +165,28 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
               预先写好的「做事套路」。装上之后，助手遇到这类任务就知道该按什么步骤做。
             </p>
             <p className="text-[12px] text-[var(--color-muted)] mt-1">
-              {skills.length} 个 · 标准 <span className="mono">SKILL.md</span> 格式，与 Claude Code /
-              Hermes / AgentScope 通用
+              {skills.length} 个 · 在用{" "}
+              {skills.filter((x) => (x.state ?? "active") === "active").length} · 闲置{" "}
+              {skills.filter((x) => x.state === "stale").length} · 已归档{" "}
+              {skills.filter((x) => x.state === "archived").length} · 标准{" "}
+              <span className="mono">SKILL.md</span> 格式，与 Claude Code / Hermes / AgentScope 通用
             </p>
           </div>
         )}
-        <button className={`btn btn-primary ${embedded ? "ml-auto" : ""}`} onClick={() => setShowImport(true)}>
-          + 新建 / 导入 Skill
-        </button>
+        <div className={`flex items-center gap-2 ${embedded ? "ml-auto" : ""}`}>
+          {/* 嵌在「工具」页时页头是收起的，统计就挪到按钮旁边 —— 否则"整理"按了没参照物 */}
+          <span className="text-[12px] whitespace-nowrap" style={{ color: "var(--color-muted)" }}>
+            在用 {skills.filter((x) => (x.state ?? "active") === "active").length} · 闲置{" "}
+            {skills.filter((x) => x.state === "stale").length} · 已归档{" "}
+            {skills.filter((x) => x.state === "archived").length}
+          </span>
+          <button className="btn" disabled={curating} onClick={() => void curate()}>
+            {curating ? "整理中…" : "整理"}
+          </button>
+          <button className="btn btn-primary" onClick={() => setShowImport(true)}>
+            + 新建 / 导入 Skill
+          </button>
+        </div>
       </div>
 
       {showImport && (
@@ -151,8 +226,24 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
                       {s.description}
                     </p>
                   )}
-                  <div className="text-[12px] text-[var(--color-muted)] mt-1.5">
-                    {Object.keys(s.files ?? {}).length} 个附件 · {fmt.relative(s.updated_at)}
+                  <div className="text-[12px] text-[var(--color-muted)] mt-1.5 flex items-center gap-1.5 flex-wrap">
+                    <span>{Object.keys(s.files ?? {}).length} 个附件</span>
+                    <span>·</span>
+                    {/* 用量是"真读过"的次数 —— 只列在提示里不算 */}
+                    <span>用了 {s.use_count ?? 0} 次</span>
+                    <span>·</span>
+                    <span>
+                      {s.last_used_at ? `最后 ${fmt.relative(s.last_used_at)}` : "还没人读过"}
+                    </span>
+                    {(s.state ?? "active") !== "active" && (
+                      <span
+                        className="tag"
+                        style={{ color: STATE_LABEL[s.state ?? "active"]?.color }}
+                      >
+                        {STATE_LABEL[s.state ?? "active"]?.text}
+                      </span>
+                    )}
+                    {s.pinned && <span className="tag">固定</span>}
                   </div>
                 </button>
               ))}
@@ -200,6 +291,26 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
                   {String(detail.source?.repo ?? "") !== "" && (
                     <button className="btn" disabled={updating} onClick={() => void update(detail)}>
                       {updating ? "更新中…" : "更新"}
+                    </button>
+                  )}
+                  <button
+                    className="btn"
+                    title={detail.pinned ? "取消固定（之后允许自动整理）" : "固定：任何自动整理都不碰它"}
+                    onClick={() => void togglePin(detail)}
+                  >
+                    {detail.pinned ? "取消固定" : "固定"}
+                  </button>
+                  {(detail.state ?? "active") === "archived" ? (
+                    <button className="btn" onClick={() => void restore(detail)}>
+                      恢复
+                    </button>
+                  ) : (
+                    <button
+                      className="btn"
+                      title="从助手那边撤下（内容仍留在库里，随时能恢复）"
+                      onClick={() => void archive(detail)}
+                    >
+                      归档
                     </button>
                   )}
                   <button className="btn" onClick={() => setEditing(detail)}>

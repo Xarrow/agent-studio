@@ -96,6 +96,18 @@ class Skill(Base):
     description: Mapped[str] = mapped_column(LongText, default="")
     source: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)   # {type,url,ref,sha}
     content: Mapped[str] = mapped_column(LongText, default="")               # SKILL.md 全文
+    # ---- 生命周期（对齐 Hermes curator）-----------------------------------
+    #: 助手真读过几次（"Skill" 工具取用一次 +1 —— 不是"列在清单里"的次数）
+    use_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_used_at: Mapped[int | None] = mapped_column(Integer, default=None, index=True)
+    last_used_run_id: Mapped[str | None] = mapped_column(String(32), default=None)
+    #: active | stale（久了没人用）| archived（已从运行时撤下，内容还在库里）
+    state: Mapped[str] = mapped_column(String(16), default="active", index=True)
+    #: 固定 = 任何自动整理都不碰它（"这个我常用，别动"）
+    pinned: Mapped[bool] = mapped_column(Boolean, default=False)
+    archived_at: Mapped[int | None] = mapped_column(Integer, default=None)
+    #: 归档时目录被挪到哪（恢复按它搬回来）—— 绝不删除，只挪走
+    archive_path: Mapped[str] = mapped_column(String(400), default="")
     files: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)    # 附属文件
     created_at: Mapped[int] = mapped_column(Integer, default=now_ms)
     updated_at: Mapped[int] = mapped_column(Integer, default=now_ms)

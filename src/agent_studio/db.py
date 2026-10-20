@@ -198,6 +198,14 @@ _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("run", "isolated", "isolated BOOLEAN NOT NULL DEFAULT 0"),
     ("run", "item_index", "item_index INTEGER"),
     # MCP 的 env / headers 里几乎一定放 token —— 落盘必须加密（明文列只留非敏感的历史数据）
+    # 技能生命周期：使用次数 / 状态 / 固定 / 归档位置（内容永不留失，只挪目录）
+    ("skill", "use_count", "use_count INTEGER NOT NULL DEFAULT 0"),
+    ("skill", "last_used_at", "last_used_at BIGINT"),
+    ("skill", "last_used_run_id", "last_used_run_id VARCHAR(32)"),
+    ("skill", "state", "state VARCHAR(16) DEFAULT 'active'"),
+    ("skill", "pinned", "pinned BOOLEAN NOT NULL DEFAULT 0"),
+    ("skill", "archived_at", "archived_at BIGINT"),
+    ("skill", "archive_path", "archive_path VARCHAR(400) DEFAULT ''"),
     ("mcp_server", "env_enc", "env_enc TEXT"),
     ("mcp_server", "headers_enc", "headers_enc TEXT"),
     ("run", "item_label", "item_label VARCHAR(120)"),

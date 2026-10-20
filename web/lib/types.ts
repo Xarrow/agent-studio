@@ -124,6 +124,33 @@ export interface Skill {
   files: Record<string, string>;
   created_at: number;
   updated_at: number;
+  /* ---- 生命周期：用量、最后使用、状态（active|stale|archived）、固定 ---- */
+  use_count?: number;
+  last_used_at?: number | null;
+  state?: "active" | "stale" | "archived";
+  pinned?: boolean;
+  archived_at?: number | null;
+}
+
+/** 技能库体检（「整理」用）：谁在用、谁闲置、谁已撤下 */
+export interface SkillLifecycleItem {
+  id: string;
+  name: string;
+  state: "active" | "stale" | "archived";
+  pinned: boolean;
+  use_count: number;
+  last_used_at: number | null;
+  last_activity_at: number;
+  source_type: string;
+  agent_owned: boolean;
+  archived_at: number | null;
+}
+
+export interface SkillLifecycle {
+  stats: { total: number; active: number; stale: number; archived: number; pinned: number; agent: number };
+  thresholds: { stale_days: number; archive_days: number };
+  last_sweep_at: number;
+  items: SkillLifecycleItem[];
 }
 
 /** 仓库里发现的一个技能（安装前的预览项） */

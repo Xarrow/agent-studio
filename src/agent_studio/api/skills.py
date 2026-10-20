@@ -15,7 +15,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
-from ..db import get_session
+from ..db import SessionLocal, get_session
 from ..models import AgentSkill, Skill, now_ms
 from ..schemas import (
     CliInstallRequest,
@@ -50,6 +50,11 @@ def to_read(row: Skill) -> SkillRead:
         files=row.files or {},
         created_at=row.created_at,
         updated_at=row.updated_at,
+        use_count=int(row.use_count or 0),
+        last_used_at=row.last_used_at,
+        state=row.state or "active",
+        pinned=bool(row.pinned),
+        archived_at=row.archived_at,
     )
 
 
@@ -211,6 +216,98 @@ async def install_skills_cli(payload: CliInstallRequest) -> dict:
         "hint": hint,
         "notes": notes,
     }
+
+
+# --------------------------------------------------------------------------- #
+# 技能生命周期（整理 / 固定 / 归档 / 恢复）
+# --------------------------------------------------------------------------- #
+@router.get("/lifecycle")
+async def skill_lifecycle() -> dict:
+    """技能库体检：多少在用、多少闲置、多少已归档，以及每个技能的用量。
+
+    为什么单独一个接口而不是塞进列表：列表是"有什么"，这里是"还该不该留"，
+    两件事的读法不一样（列表要快，这里要能排序看谁最久没人用）。
+    """
+    from .. import skills_lifecycle as lc
+
+    async with SessionLocal() as db:
+        rows = list((await db.execute(select(Skill))).scalars())
+    items = [
+        {
+            "id": r.id,
+            "name": r.name,
+            "state": r.state or "active",
+            "pinned": bool(r.pinned),
+            "use_count": int(r.use_count or 0),
+            "last_used_at": r.last_used_at,
+            "last_activity_at": lc._last_seen(r),
+            "source_type": str((r.source or {}).get("type", "")),
+            "agent_owned": lc._is_agent_skill(r),
+            "archived_at": r.archived_at,
+        }
+        for r in rows
+    ]
+    items.sort(key=lambda x: (x["state"] != "archived", -x["use_count"], x["last_activity_at"]))
+    return {
+        "stats": lc.stats(rows),
+        "thresholds": {"stale_days": lc.STALE_AFTER_DAYS, "archive_days": lc.ARCHIVE_AFTER_DAYS},
+        "last_sweep_at": int(lc.LAST_SWEEP.get("at") or 0),
+        "items": items,
+    }
+
+
+@router.post("/curator/run")
+async def run_curator(force: bool = True) -> dict:
+    """现在整理一次（界面上的「整理」按钮）。默认无视 6 小时间隔。"""
+    from .. import skills_lifecycle as lc
+
+    async with SessionLocal() as db:
+        done = await lc.sweep(db, force=force)
+    return done
+
+
+@router.post("/{skill_id}/pin")
+async def pin_skill(skill_id: str, payload: dict | None = None) -> dict:
+    """固定/取消固定。固定的技能任何自动整理都不碰。"""
+    pinned = True if payload is None else bool(payload.get("pinned", True))
+    async with SessionLocal() as db:
+        row = await db.get(Skill, skill_id)
+        if row is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"技能不存在: {skill_id}")
+        row.pinned = pinned
+        if pinned and row.state == "stale":
+            row.state = "active"  # 钉住即"我在用"，顺手把闲置标签清掉
+        await db.commit()
+    return {"id": skill_id, "pinned": pinned, "state": row.state}
+
+
+@router.post("/{skill_id}/archive")
+async def archive_skill_api(skill_id: str) -> dict:
+    """手动归档（从运行时撤下，内容留在库里可恢复）。固定的要先取消固定。"""
+    from .. import skills_lifecycle as lc
+
+    async with SessionLocal() as db:
+        row = await db.get(Skill, skill_id)
+        if row is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"技能不存在: {skill_id}")
+        if row.pinned:
+            raise HTTPException(status.HTTP_409_CONFLICT, "这个技能被固定了，先取消固定再归档")
+        await lc.archive_skill(db, row)
+        await db.commit()
+        return {"id": skill_id, "state": row.state, "archive_path": row.archive_path}
+
+
+@router.post("/{skill_id}/restore")
+async def restore_skill_api(skill_id: str) -> dict:
+    from .. import skills_lifecycle as lc
+
+    async with SessionLocal() as db:
+        row = await db.get(Skill, skill_id)
+        if row is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"技能不存在: {skill_id}")
+        await lc.restore_skill(db, row)
+        await db.commit()
+        return {"id": skill_id, "state": row.state}
 
 
 @router.get("/{skill_id}", response_model=SkillRead)

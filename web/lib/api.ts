@@ -9,6 +9,7 @@ import type {
   EvalRunRead,
   EvalSuiteRead,
   GuardrailsRead,
+  SkillLifecycle,
   SkillRepoScan,
   UsageBucket,
   WorkflowAuto,
@@ -960,6 +961,16 @@ export const api = {
     post<{ removed_messages: number }>(`/api/sessions/${id}/clear-context`, {
       keep_summary: keepSummary,
     }),
+
+  /* -------------------------- 技能生命周期（整理） -------------------------- */
+  skillLifecycle: () => request<SkillLifecycle>("/api/skills/lifecycle"),
+  runSkillCurator: () =>
+    post<{ stale: string[]; archived: string[]; skipped: number }>("/api/skills/curator/run", {}),
+  pinSkill: (id: string, pinned: boolean) =>
+    post<{ id: string; pinned: boolean; state: string }>(`/api/skills/${id}/pin`, { pinned }),
+  archiveSkill: (id: string) =>
+    post<{ id: string; state: string; archive_path: string }>(`/api/skills/${id}/archive`, {}),
+  restoreSkill: (id: string) => post<{ id: string; state: string }>(`/api/skills/${id}/restore`, {}),
 
   /* ----------------------------- 记忆（长期） ----------------------------- */
   memories: (params?: {

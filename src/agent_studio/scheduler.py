@@ -200,6 +200,16 @@ async def loop() -> None:
             if fired:
                 logger.info("会话定时任务发起 %s 个", len(fired))
             await _jobs.sync_last_status()
+            # 技能生命周期：闲置降级 / 长期不用则归档（只动助手自己攒的，绝不出删除）
+            from .skills_lifecycle import maybe_sweep
+
+            swept = await maybe_sweep()
+            if swept and (swept.get("stale") or swept.get("archived")):
+                logger.info(
+                    "技能整理：闲置 %s 个，归档 %s 个",
+                    len(swept.get("stale") or []),
+                    len(swept.get("archived") or []),
+                )
             sent = await _jobs.deliver_pending()
             if sent:
                 logger.info("定时结果已投递 %s 条", sent)
