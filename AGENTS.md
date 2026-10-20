@@ -111,4 +111,9 @@ FastAPI + SQLite（后端 `src/agent_studio/`）+ Next.js（前端 `web/`）。
    画布那一列必须有 `min-h-0`（`min-h-0 min-w-0 flex-1`），让内部 `overflow-auto` 自己滚。
    **横向溢出为 0 ≠ 移动端没问题** —— 浮动控件要在 390×844 真机视口量 `rect.bottom ≤ innerHeight`。
 | 做法要沉淀成技能 | 助手在对话里摸出来的多步做法（部署、抓数、排查、批量改文件），用 `skill_save` 存成一个**全局技能**：写「什么时候用 / 步骤 / 命令 / 坑」，不写这次的具体数字。技能落在 `data/work/skills/<名字>/SKILL.md` + `skill` 表，**只进库不落盘助手看不见**；同名默认不覆盖（技能是长期资产）；存完自动挂给发起它的助手。技能页来源显示「助手沉淀 · 谁写的」 |
+| 会话级授权 | HITL 允许条上的「本会话内不再问这个工具」→ `session_allow` 表；只降级 ASK，DENY 永不降级；换会话重新问 |
+| 花费上限 | `limits.max_cost_usd` 由 `_budget_watch` 每 3 秒对账（`cost_of` 按 model_price，模型名模糊匹配）；超了取消执行 → aborted + 人话；空白库启动时补 14 条参考价 |
+| 子任务隔离 | `Run.isolated=True` 的子执行**不写会话历史**，只把汇总交回父执行；fork/A2A 创建时置 True |
+| 后台任务汇报 | 进程退出写 `role=system` 的「〔后台任务〕…跑完了（退出码 0，用时 N 秒）」；只给人看，不进模型上下文 |
+| 技能接入 | `skills_dir` = 平台技能库（不是会话目录）；`LocalSkillLoader(scan_subdir=True)`；技能清单拼进 system prompt；`Skill` 工具由 Toolkit 自动挂 |
 | 助手的「地盘」可配 | 默认只有自己的会话目录，写 /tmp 之类要问一句。要配出「和 Hermes 一样能动手」的助手，在 `runtime_options.agentscope.guard.roots` 里加 `"/"`（或几个具体目录）。这只放宽「越界写」这一类 ASK —— 递归删除、凭据文件、提权照样问、照样拦，`rm -rf /` 仍然直接拒 |
