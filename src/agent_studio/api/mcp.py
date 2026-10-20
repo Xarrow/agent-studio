@@ -10,6 +10,7 @@ MCP 服务器的工具是**它自己的能力**，随时会随版本变。手填
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from typing import Any
 
@@ -18,6 +19,7 @@ from sqlalchemy import select
 
 from ..db import SessionLocal
 from ..models import McpServer, now_ms
+from ..security.crypto import decrypt, encrypt
 from ..schemas import (
     McpProbeResult,
     McpServerCreate,
@@ -115,7 +117,47 @@ async def probe_config(
         return [], f"{type(exc).__name__}: {exc}"[:600]
 
 
+# --------------------------------------------------------------------------- #
+# env / headers 落盘加密
+# --------------------------------------------------------------------------- #
+#: 为什么这两个字段必须加密：MCP 的鉴权几乎都走 headers（``Authorization: Bearer ...``）
+#: 或 env（``GITHUB_TOKEN``）。以前明文存 SQLite —— 备份、复制库、发个诊断包都会把
+#: 别人的 token 一起带走。这里与 LLM 密钥用同一套主密钥（``security.crypto``）。
+def seal(env: dict[str, str] | None, headers: dict[str, str] | None) -> tuple[str, str]:
+    """把 env / headers 加密成两段密文（空字典也存，表示"明确没有"）。"""
+    return (
+        encrypt(json.dumps(env or {}, ensure_ascii=False)).decode(),
+        encrypt(json.dumps(headers or {}, ensure_ascii=False)).decode(),
+    )
+
+
+def _loads(blob: str | None) -> dict[str, str]:
+    if not blob:
+        return {}
+    try:
+        data = json.loads(decrypt(blob.encode()))
+    except Exception:  # noqa: BLE001 —— 主密钥换过/密文坏了：当没有，别让整页崩
+        logger.warning("MCP 凭据解密失败（主密钥换过？）")
+        return {}
+    return {str(k): str(v) for k, v in (data or {}).items()} if isinstance(data, dict) else {}
+
+
+def open_io(row: McpServer) -> tuple[dict[str, str], dict[str, str]]:
+    """读回 (env, headers)：有密文用密文，没有就回落到明文列（老数据）。"""
+    env = _loads(row.env_enc) if row.env_enc else dict(row.env or {})
+    headers = _loads(row.headers_enc) if row.headers_enc else dict(row.headers or {})
+    return env, headers
+
+
+def apply_io(row: McpServer, env: dict[str, str] | None, headers: dict[str, str] | None) -> None:
+    """写入：密文进新列，明文列清空（不留第二份明文）。"""
+    row.env_enc, row.headers_enc = seal(env, headers)
+    row.env = {}
+    row.headers = {}
+
+
 def _to_read(row: McpServer) -> McpServerRead:
+    env, headers = open_io(row)
     return McpServerRead(
         id=row.id,
         name=row.name,
@@ -123,8 +165,8 @@ def _to_read(row: McpServer) -> McpServerRead:
         command=row.command,
         args=list(row.args or []),
         url=row.url,
-        env=dict(row.env or {}),
-        headers=dict(row.headers or {}),
+        env=env,
+        headers=headers,
         enabled=bool(row.enabled),
         tools=list(row.tools or []),
         last_probe_ok=bool(row.last_probe_ok),
@@ -234,8 +276,8 @@ async def import_servers(payload: dict[str, Any]) -> list[McpServerRead]:
             row.command = it.command
             row.args = list(it.args)
             row.url = it.url
-            row.env = dict(it.env)
-            row.headers = dict(it.headers)
+            # 导入/同步也走加密（否则"从文件导入"会成为绕过加密的后门）
+            apply_io(row, dict(it.env), dict(it.headers))
             row.enabled = it.enabled
             await session.commit()
             await session.refresh(row)
@@ -252,9 +294,13 @@ async def create_server(body: McpServerCreate) -> McpServerRead:
             command=body.command.strip(),
             args=[str(a) for a in body.args],
             url=body.url.strip(),
-            env={str(k): str(v) for k, v in body.env.items()},
-            headers={str(k): str(v) for k, v in body.headers.items()},
             enabled=body.enabled,
+        )
+        # 凭据只进密文列（明文列一律留空）
+        apply_io(
+            row,
+            {str(k): str(v) for k, v in body.env.items()},
+            {str(k): str(v) for k, v in body.headers.items()},
         )
         session.add(row)
         await session.commit()
@@ -269,11 +315,23 @@ async def update_server(server_id: str, body: McpServerUpdate) -> McpServerRead:
         if row is None:
             raise HTTPException(404, "没有这个 MCP 服务器")
         data = body.model_dump(exclude_unset=True)
+        # env/headers 单独处理：它们要进密文列，不能 setattr 明文
+        if "env" in data or "headers" in data:
+            cur_env, cur_headers = open_io(row)
+            new_env = (
+                {str(k): str(v) for k, v in (data.pop("env") or {}).items()}
+                if "env" in data
+                else cur_env
+            )
+            new_headers = (
+                {str(k): str(v) for k, v in (data.pop("headers") or {}).items()}
+                if "headers" in data
+                else cur_headers
+            )
+            apply_io(row, new_env, new_headers)
         for key, value in data.items():
             if key in ("args",) and value is not None:
                 value = [str(v) for v in value]
-            if key in ("env", "headers") and value is not None:
-                value = {str(k): str(v) for k, v in value.items()}
             setattr(row, key, value)
         row.updated_at = now_ms()
         await session.commit()
@@ -313,14 +371,15 @@ async def probe_saved(server_id: str) -> McpServerRead:
         row = await session.get(McpServer, server_id)
         if row is None:
             raise HTTPException(404, "没有这个 MCP 服务器")
+        env, headers = open_io(row)
         tools, error = await probe_config(
             name=row.name,
             transport=row.transport,
             command=row.command,
             args=list(row.args or []),
             url=row.url,
-            env=dict(row.env or {}),
-            headers=dict(row.headers or {}),
+            env=env,
+            headers=headers,
         )
         row.tools = tools or row.tools
         row.last_probe_ok = not error
@@ -333,3 +392,23 @@ async def probe_saved(server_id: str) -> McpServerRead:
 
 def _unused(_: Any) -> None:  # pragma: no cover - 占位，避免 lint 报未使用
     return None
+
+
+async def migrate_plaintext_secrets() -> int:
+    """把历史明文 env/headers 迁进密文列（幂等，启动时跑）。
+
+    为什么每次启动都跑：升级上来的库里躺着一批明文 token，用户不会去"点一下迁移"。
+    """
+    moved = 0
+    async with SessionLocal() as session:
+        rows = list((await session.execute(select(McpServer))).scalars())
+        for row in rows:
+            if row.env_enc or row.headers_enc:
+                continue
+            if not (row.env or row.headers):
+                continue
+            apply_io(row, dict(row.env or {}), dict(row.headers or {}))
+            moved += 1
+        if moved:
+            await session.commit()
+    return moved

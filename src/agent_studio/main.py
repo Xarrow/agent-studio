@@ -63,6 +63,13 @@ async def lifespan(_app: FastAPI):
     if _priced:
         logger.info("模型单价：补了 %d 条参考价（可在「模型单价」里改）", _priced)
 
+    # MCP 的 env/headers 历史上是明文存的（里面有别人的 token）→ 启动时就地加密
+    from .api.mcp import migrate_plaintext_secrets
+
+    _mcp_moved = await migrate_plaintext_secrets()
+    if _mcp_moved:
+        logger.info("MCP 凭据：把 %d 条明文 env/headers 迁到了密文列", _mcp_moved)
+
     async with SessionLocal() as _s:
         _made = await backfill_initial(_s)
     if _made:

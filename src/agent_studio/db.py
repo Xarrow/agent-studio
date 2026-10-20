@@ -197,6 +197,9 @@ _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     # 子执行隔离：True = 它的对话不进会话历史（只回汇总）
     ("run", "isolated", "isolated BOOLEAN NOT NULL DEFAULT 0"),
     ("run", "item_index", "item_index INTEGER"),
+    # MCP 的 env / headers 里几乎一定放 token —— 落盘必须加密（明文列只留非敏感的历史数据）
+    ("mcp_server", "env_enc", "env_enc TEXT"),
+    ("mcp_server", "headers_enc", "headers_enc TEXT"),
     ("run", "item_label", "item_label VARCHAR(120)"),
     ("run", "parent_run_id", "parent_run_id VARCHAR(32)"),
     # 凭据的默认模型（LLM 配置页可探测后选择 / 手动填写）

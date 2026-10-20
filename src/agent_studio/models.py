@@ -802,6 +802,11 @@ class McpServer(Base):
     #: stdio：启动命令与参数（如 npx -y @modelcontextprotocol/server-filesystem /data）
     command: Mapped[str] = mapped_column(String(400), default="")
     args: Mapped[list[Any]] = mapped_column(JSON, default=list)
+    #: env / headers 的密文（Fernet，与 LLM 密钥同一套主密钥）。
+    #: 为什么单开两列而不是就地加密 JSON：旧数据是明文，混着改容易读出诡异的半截串；
+    #: 新列有值就优先解密，没有就回落到明文列（下次保存自动迁移）。
+    env_enc: Mapped[str] = mapped_column(LongText, default="")
+    headers_enc: Mapped[str] = mapped_column(LongText, default="")
     #: http：端点 URL（streamable-http 或 sse）
     url: Mapped[str] = mapped_column(String(500), default="")
     #: 额外环境变量 / 请求头（值里可以引用 .env 的变量名，不落明文）

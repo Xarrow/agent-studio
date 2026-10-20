@@ -307,6 +307,10 @@ class AgentScopeRuntime(AgentRuntime):
                         row = await session.get(McpServer, sid)
                         if row is None or not row.enabled:
                             continue
+                        # 凭据在密文列里（env/headers 明文列已废弃），统一走 open_io 解密
+                        from ...api.mcp import open_io
+
+                        env, headers = open_io(row)
                         client = build_mcp_client(
                             {
                                 "name": row.name,
@@ -314,8 +318,8 @@ class AgentScopeRuntime(AgentRuntime):
                                 "command": row.command,
                                 "args": list(row.args or []),
                                 "url": row.url,
-                                "env": dict(row.env or {}),
-                                "headers": dict(row.headers or {}),
+                                "env": env,
+                                "headers": headers,
                             }
                         )
                         if row.transport != "http":
