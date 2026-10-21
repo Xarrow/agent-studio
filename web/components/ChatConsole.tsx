@@ -553,7 +553,11 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
         const p = ev.payload as Record<string, unknown>;
         if (ev.type === "text_delta") {
           const t = typeof p.text === "string" ? p.text : typeof p.delta === "string" ? p.delta : "";
-          setLive((prev) => (prev ? { role: "assistant", text: prev.text + t } : prev));
+          // 恢复现场时 live 还是空的（切回来/刷新后重新挂流）：
+          // 第一条增量到了就把它开出来，否则这段输出永远上不了屏
+          setLive((prev) =>
+            prev ? { role: "assistant", text: prev.text + t } : { role: "assistant", text: t },
+          );
         }
         if (ev.type === "browser_action") {
           const summary = typeof p.summary === "string" ? p.summary : "";
