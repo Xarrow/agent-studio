@@ -131,6 +131,17 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   const liveMeta = useRef<{ url: string; title: string }>({ url: "", title: "" });
   /* 浏览器动作字幕 + 打开面板 —— 帧只说"现在长什么样"，动作才说"它在干什么" */
   const [browserActions, setBrowserActions] = useState<BrowserAction[]>([]);
+  /* 动作字幕批量上屏：browser_action 一轮能来几十条，每条 setState 就是一次整树
+     commit；攒 120ms 一起上，肉眼无差，commit 少一个量级。 */
+  const pendingActions = useRef<BrowserAction[]>([]);
+  const actionTimer = useRef<number>(0);
+  const flushActions = useCallback(() => {
+    actionTimer.current = 0;
+    const batch = pendingActions.current;
+    if (!batch.length) return;
+    pendingActions.current = [];
+    setBrowserActions((prev) => [...prev, ...batch].slice(-60));
+  }, []);
   const [browserOpen, setBrowserOpen] = useState(false);
   /* 执行过程留档：每步动作 + 当时那一屏（后端写在会话目录 browser/<run>/ 下） */
   const [browserSteps, setBrowserSteps] = useState<BrowserStep[]>([]);
@@ -279,6 +290,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     // 浏览器现场同样属于上一个会话：画面帧、动作字幕、过程回顾都要清掉，
     // 否则切过去还能看到别人会话里那张网页截图和「打开 example.com」
     setBrowserFrame(null);
+    pendingActions.current = [];
+    if (actionTimer.current) { clearTimeout(actionTimer.current); actionTimer.current = 0; }
     setBrowserActions([]);
     setBrowserSteps([]);
     setBrowserOpen(false);
@@ -573,15 +586,13 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
         if (ev.type === "browser_action") {
           const summary = typeof p.summary === "string" ? p.summary : "";
           if (summary) {
-            setBrowserActions((prev) => [
-              ...prev,
-              {
-                action: typeof p.action === "string" ? p.action : "",
-                summary,
-                target: typeof p.target === "string" ? p.target : "",
-                url: typeof p.url === "string" ? p.url : "",
-              },
-            ]);
+            pendingActions.current.push({
+              action: typeof p.action === "string" ? p.action : "",
+              summary,
+              target: typeof p.target === "string" ? p.target : "",
+              url: typeof p.url === "string" ? p.url : "",
+            });
+            if (!actionTimer.current) actionTimer.current = window.setTimeout(flushActions, 120);
           }
         }
         if (ev.type === "browser_frame" && typeof p.frame === "string") {

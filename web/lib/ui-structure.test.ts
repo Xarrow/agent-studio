@@ -682,8 +682,10 @@ test("浏览器交互用窗口 + 动作字幕，不是一张裸图", () => {
   // 不抢正文：消息流里只是缩略条，点开才是面板
   assert.match(chat, /variant="inline"/, "消息流里用缩略条");
   assert.match(chat, /variant="panel"/, "点开是完整窗口");
-  // 双层缓冲防闪
-  assert.match(stage, /const \[prev, setPrev\]/, "换帧要交叉淡入，不能闪白");
+  // 帧直达 <img>（2026-10-22 起）：限帧后不再需要双层淡入那套，
+  // 每帧 setState 才是卡顿的根，这里守住"位图不进 React 状态"
+  assert.match(stage, /img\.src = `data:image\/jpeg;base64,\$\{pending\}`/, "帧要直接写进 img.src");
+  assert.doesNotMatch(stage, /const \[prev, setPrev\]/, "不该再有双层淡入的两份帧状态");
   // 右栏与消息流共用同一个组件（不再各写一份）
   assert.match(rail, /<BrowserStage/, "右栏也用 BrowserStage");
   assert.throws(() => read("components/BrowserLive.tsx"), "旧的 BrowserLive 应已删除");

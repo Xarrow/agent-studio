@@ -15,7 +15,7 @@
  */
 
 import { isImagePath, linkifyWorkPaths, workUrl } from "@/lib/work-paths";
-import React from "react";
+import React, { memo } from "react";
 import { FileChip } from "@/components/FileDialog";
 import { CodeBlock } from "@/components/CodeBlock";
 import { Mermaid } from "@/components/Mermaid";
@@ -261,7 +261,7 @@ function imgLike(rel: string): boolean {
  * 呼吸感）；面板、抽屉、运行详情里仍然用紧凑的 12px —— 那边是表格化的信息。
  * 之前只有一档 12px，对话里读大段文字像看脚注。
  */
-export default function Markdown({ text, chat = false }: { text: string; chat?: boolean }) {
+function MarkdownBody({ text, chat = false }: { text: string; chat?: boolean }) {
   const src = linkifyWorkPaths((text || "").replace(/\r\n/g, "\n"));
   if (!src.trim()) return null;
 
@@ -501,3 +501,10 @@ export default function Markdown({ text, chat = false }: { text: string; chat?: 
 
   return <div>{blocks}</div>;
 }
+
+/**
+ * 聊天里的历史消息内容不会变，但父组件每秒 commit 好几次（流式文本、动作字幕）。
+ * 没有 memo 的话每次 commit 都要把整篇 Markdown 重新解析一遍 —— 会话越长越卡。
+ * 这里把「同样的 text 就不重算」钉死。
+ */
+export default memo(MarkdownBody);
