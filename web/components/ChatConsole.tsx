@@ -21,7 +21,8 @@ import { ProcessBar, eventsToSteps, recallProc, rememberProc } from "@/component
 import BgProcsStrip from "@/components/BgProcsStrip";
 import TodoStrip from "@/components/TodoStrip";
 import SessionJobs, { JobButton } from "@/components/SessionJobs";
-import { ProcessRail } from "@/components/ProcessRail";
+import { ProcessRail } from "./ProcessRail";
+import { pushFrame, clearFrame } from "@/lib/browser-frame";
 import { SlashMenu, type CommandItem } from "@/components/SlashMenu";
 import { useImeGuard, isImeEvent } from "@/lib/ime";
 import Markdown from "@/components/Markdown";
@@ -127,6 +128,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   const runStartRef = useRef<number>(0);
   /** 浏览器画面（Agent 的 Chromium screencast 直播帧，base64 JPEG —— 不落库，纯实时） */
   const [browserFrame, setBrowserFrame] = useState<{ data: string; url: string; title: string } | null>(null);
+  const liveMeta = useRef<{ url: string; title: string }>({ url: "", title: "" });
   /* 浏览器动作字幕 + 打开面板 —— 帧只说"现在长什么样"，动作才说"它在干什么" */
   const [browserActions, setBrowserActions] = useState<BrowserAction[]>([]);
   const [browserOpen, setBrowserOpen] = useState(false);
@@ -281,6 +283,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     setBrowserSteps([]);
     setBrowserOpen(false);
     lastBrowserRun.current = "";
+    liveMeta.current = { url: "", title: "" };
+    clearFrame();
     void (async () => {
       await loadMessages(sessionId);
       // ── 刷新恢复：会话里还有在跑的 run 就重新挂上 SSE ──
@@ -585,11 +589,16 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
           // 收尾时会吐 about:blank 的白屏帧，丢掉它；url 偶尔为空（后端还没读到
           // document.URL）—— 那种时候沿用上一次的地址，别把地址栏清空。
           if (!u.startsWith("about:")) {
-            setBrowserFrame((prev) => ({
-              data: p.frame as string,
-              url: u || prev?.url || "",
-              title: (typeof p.title === "string" && p.title) || prev?.title || "",
-            }));
+            // 位图走广播通道，直接写进 <img>；state 只在地址/标题变化时更新，
+            // 否则每秒几十帧会把整个对话树重渲染一遍 —— 那就是卡顿的来源。
+            const t = (typeof p.title === "string" && p.title) || "";
+            const nu = u || liveMeta.current.url || "";
+            const nt = t || liveMeta.current.title || "";
+            liveMeta.current = { url: nu, title: nt };
+            pushFrame({ data: p.frame as string, url: nu, title: nt });
+            setBrowserFrame((prev) =>
+              prev && prev.url === nu && prev.title === nt ? prev : { data: "", url: nu, title: nt }
+            );
           }
         }
       } catch {

@@ -32,6 +32,7 @@ import asyncio
 import base64
 import json
 import logging
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -46,6 +47,12 @@ logger = logging.getLogger(__name__)
 CHROME_BIN = "/usr/bin/chromium"
 #: 一帧的最大体积（CDP 返回 base64；超限丢帧而不是断流）
 FRAME_MAX_BYTES = 400_000
+#: 帧参数。画面是"让人看得见它在干嘛"，不是录屏：quality 55 一帧 ~30-50KB，
+#: everyNthFrame 4 + 后端最小间隔 200ms，约 5 帧/秒 —— 看得清操作，又不把
+#: SSE 和前端拖垮。之前不给限速，页面一动就把 30 帧/秒全推过来，整页卡死。
+FRAME_QUALITY = 55
+FRAME_EVERY_NTH = 4
+FRAME_MIN_INTERVAL_MS = 200
 #: read 动作返回正文的最大字符数
 READ_MAX_CHARS = 20_000
 #: 单个动作的默认超时
@@ -267,6 +274,7 @@ class BrowserSession:
         self._ws_url: str | None = None
         self._last_url = ""
         self._last_frame = ""
+        self._last_frame_at = 0.0
         self._last_title = ""
         #: 非 CDP 引擎（Firefox/BiDi）时用这一套；两套共用一个对外的动作接口
         self._bidi: _Bidi | None = None
@@ -341,7 +349,15 @@ class BrowserSession:
         self._cdp.on("Page.screencastFrame", self._handle_frame)
         await self._cdp.send(
             "Page.startScreencast",
-            {"format": "jpeg", "quality": 60, "maxWidth": VIEWPORT["width"], "maxHeight": VIEWPORT["height"]},
+            {
+                "format": "jpeg",
+                # 画面只是"让人看得见它在干嘛"，不是录屏：不给 maxFrameRate
+                # Chromium 会按页面变化把 30 帧/秒全推过来，SSE 和前端都扛不住。
+                "quality": FRAME_QUALITY,
+                "maxWidth": VIEWPORT["width"],
+                "maxHeight": VIEWPORT["height"],
+                "everyNthFrame": FRAME_EVERY_NTH,
+            },
         )
 
     async def _handle_frame(self, params: dict[str, Any]) -> None:
@@ -355,6 +371,11 @@ class BrowserSession:
         data = params.get("data", "")
         if len(data) > FRAME_MAX_BYTES:
             return
+        # 节流：Chromium 在页面有动画/滚动时会猛推帧，按最小间隔丢掉多余的
+        now_ms = time.monotonic() * 1000.0
+        if now_ms - self._last_frame_at < FRAME_MIN_INTERVAL_MS:
+            return
+        self._last_frame_at = now_ms
         # 留最后一张：run 结束存成会话文件，刷新页面后还能看到"它最后停在哪儿"。
         # 只收 http(s) 的帧 —— Chromium 被收尾时会吐 about:blank 的白屏帧，
         # 收下它就等于把"最后一屏"存成一张空白图。

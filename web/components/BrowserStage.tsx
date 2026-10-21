@@ -23,6 +23,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { BrowserStep } from "@/lib/types";
 import { withToken } from "@/lib/api";
+import { onFrame, latestFrame } from "@/lib/browser-frame";
 import { isImeEvent } from "@/lib/ime";
 
 const VIEW_W = 800;
@@ -149,8 +150,8 @@ export function BrowserStage({
   onLoadSteps?: () => void;
 }) {
   const imgRef = useRef<HTMLImageElement>(null);
-  const [cur, setCur] = useState<string>("");
-  const [prev, setPrev] = useState<string>("");
+  const [hasFrame, setHasFrame] = useState(false);
+  const [thumb, setThumb] = useState("");
   const [text, setText] = useState("");
   const [copied, setCopied] = useState(false);
   const scrollAt = useRef(0);
@@ -161,13 +162,52 @@ export function BrowserStage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [variant]);
 
-  // 双层缓冲：新帧先在隐藏层加载完，再淡入，避免两张图之间闪白
+  // 帧直达 <img>：走广播通道 + rAF 合并，全程不进 React state。
+  // 之前每帧 setState 一次，屏幕一动整个对话树跟着重渲染，就是卡顿的根。
   useEffect(() => {
-    const next = frame?.data ?? "";
-    if (!next || next === cur) return;
-    setPrev(cur);
-    setCur(next);
-  }, [frame?.data, cur]);
+    let raf = 0;
+    let pending = "";
+    const apply = () => {
+      raf = 0;
+      const img = imgRef.current;
+      if (!img || !pending) return;
+      img.src = `data:image/jpeg;base64,${pending}`;
+      setHasFrame(true);
+    };
+    const sub = onFrame((f) => {
+      pending = f.data;
+      if (raf) return;
+      raf = requestAnimationFrame(apply);
+    });
+    const lf = latestFrame();
+    if (lf) {
+      pending = lf.data;
+      apply();
+    }
+    return () => {
+      sub();
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, []);
+
+  // 缩略条没必要跟满帧率：半秒一张足够看出它在干嘛
+  useEffect(() => {
+    if (variant !== "inline") return;
+    let t: ReturnType<typeof setTimeout> | null = null;
+    const sub = onFrame((f) => {
+      if (t) return;
+      t = setTimeout(() => {
+        t = null;
+        setThumb(f.data);
+      }, 400);
+    });
+    const lf = latestFrame();
+    if (lf) setThumb(lf.data);
+    return () => {
+      sub();
+      if (t) clearTimeout(t);
+    };
+  }, [variant]);
 
   const copyUrl = async () => {
     if (!frame?.url) return;
@@ -182,7 +222,7 @@ export function BrowserStage({
 
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const img = imgRef.current;
-    if (!img || !onUserClick || !cur) return;
+    if (!img || !onUserClick || !hasFrame) return;
     const rect = img.getBoundingClientRect();
     const scale = VIEW_W / rect.width;
     void onUserClick((e.clientX - rect.left) * scale, (e.clientY - rect.top) * scale);
@@ -199,14 +239,14 @@ export function BrowserStage({
   const last = actions[actions.length - 1];
   /* 没有实时帧（刷新过 / 这轮结束清掉了）时，默认停在这一轮的最后一步 ——
      面板打开就该看见"它最后停在哪一页"，而不是一块空白。 */
-  const shown = viewStep ?? (!cur && steps && steps.length > 0 ? steps[steps.length - 1] : null);
+  const shown = viewStep ?? (!hasFrame && !frame && steps && steps.length > 0 ? steps[steps.length - 1] : null);
 
   /* ── 缩略条（消息流内） ───────────────────────────────────────────── */
   if (variant === "inline") {
     /* 刷新之后没有内存帧了 —— 用留档的最后一步当封面，别让入口消失 */
     const lastStep = steps && steps.length > 0 ? steps[steps.length - 1] : null;
-    const thumbSrc = cur
-      ? `data:image/jpeg;base64,${cur}`
+    const thumbSrc = thumb
+      ? `data:image/jpeg;base64,${thumb}`
       : lastStep?.url_file
         ? withToken(lastStep.url_file)
         : "";
@@ -318,37 +358,29 @@ export function BrowserStage({
             className="absolute inset-0 h-full w-full object-contain"
             draggable={false}
           />
-        ) : cur ? (
+        ) : (
           <>
-            {prev ? (
-              <img
-                src={`data:image/jpeg;base64,${prev}`}
-                alt=""
-                aria-hidden
-                className="absolute inset-0 h-full w-full object-contain opacity-0"
-                draggable={false}
-              />
-            ) : null}
             <img
               ref={imgRef}
-              src={`data:image/jpeg;base64,${cur}`}
               alt={frame?.title || "浏览器画面"}
               onClick={handleClick}
               className="absolute inset-0 block h-full w-full cursor-crosshair object-contain select-none"
+              style={{ opacity: hasFrame ? 1 : 0 }}
               draggable={false}
             />
-            {waiting ? (
+            {waiting && hasFrame ? (
               <span
                 aria-hidden
                 className="pointer-events-none absolute inset-0 rounded-[2px]"
                 style={{ boxShadow: "inset 0 0 0 2px #f59e0b" }}
               />
             ) : null}
+            {hasFrame ? null : (
+              <div className="flex h-full min-h-[160px] items-center justify-center text-[12px]" style={{ color: "#94a3b8" }}>
+                还未打开网页
+              </div>
+            )}
           </>
-        ) : (
-          <div className="flex h-full min-h-[160px] items-center justify-center text-[12px]" style={{ color: "#94a3b8" }}>
-            还未打开网页
-          </div>
         )}
       </div>
 
@@ -360,7 +392,7 @@ export function BrowserStage({
           <span className="truncate text-[10.5px]" style={{ color: "var(--color-muted)" }}>
             {shown.url}
           </span>
-          {cur ? (
+          {hasFrame || frame ? (
             <button
               type="button"
               onClick={() => setViewStep(null)}
