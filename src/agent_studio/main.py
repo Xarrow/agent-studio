@@ -327,7 +327,27 @@ async def health() -> dict:
         "version": __version__,
         "db": str(settings.db_path),
         "runtimes": [rt.name for rt in list_runtimes()],
+        "build": _build_stamp(),
     }
+
+
+def _build_stamp() -> int:
+    """前端产物的构建戳（index.html 的 mtime，秒级）。
+
+    浏览器那边用它判断「我手里这份页面是不是过期的」：chunk 文件名是稳定的
+    （不含内容哈希），所以一直开着的标签页不会自己更新 —— 用户看到的还是
+    老代码，改了等于没改。有了这个戳，页面能主动提示刷新。
+    """
+    idx = _WEB_DIST / "index.html"
+    try:
+        return int(idx.stat().st_mtime) if idx.is_file() else 0
+    except OSError:
+        return 0
+
+
+@app.get("/api/version")
+async def version() -> dict:
+    return {"build": _build_stamp(), "version": __version__}
 
 
 # --------------------------------------------------------------------------- #

@@ -14,7 +14,7 @@
 import Link from "next/link";
 import { HitlPrompt } from "@/components/HitlPrompt";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, fmt } from "@/lib/api";
+import { api, fmt, withToken } from "@/lib/api";
 import type { Agent, RunEvent, Session, SearchHit } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
 import { ProcessBar, eventsToSteps, recallProc, rememberProc } from "@/components/ui/run-timeline";
@@ -361,6 +361,33 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   };
 
   useEffect(() => () => esRef.current?.close(), []);
+
+  /* 页面是静态导出的，chunk 文件名又不带内容哈希 —— 一直开着的标签页永远拿不到
+     新代码，用户会一直对着旧界面（比如"卡顿还没修"）。这里每分钟问一次后端
+     构建戳，变了就提示刷新，不自动刷（会打断正在写的输入）。 */
+  const [staleBuild, setStaleBuild] = useState(false);
+  useEffect(() => {
+    let mine = 0;
+    let stop = false;
+    const check = async () => {
+      try {
+        const r = await fetch(withToken("/api/version"), { cache: "no-store" });
+        if (!r.ok) return;
+        const d = (await r.json()) as { build?: number };
+        if (stop || !d.build) return;
+        if (!mine) mine = d.build;
+        else if (d.build !== mine) setStaleBuild(true);
+      } catch {
+        /* 断网就不管，下次再问 */
+      }
+    };
+    void check();
+    const t = setInterval(() => void check(), 60000);
+    return () => {
+      stop = true;
+      clearInterval(t);
+    };
+  }, []);
 
   /* ------------------------------- 操作 ------------------------------- */
 
@@ -973,6 +1000,29 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
       onFileChanged={() => void loadSessionFiles()}
     >
       <div className="h-full min-h-0 flex">
+        {/* 手里这份页面过期了：一直开着的标签页不会自己换代码，提示一下，别让用户
+            对着旧界面判断"改了没用" */}
+        {staleBuild && (
+          <div
+            className="fixed left-1/2 top-2 z-[90] -translate-x-1/2 rounded-full border px-3 py-1.5 text-[12px] shadow-lg"
+            style={{
+              background: "var(--color-surface)",
+              borderColor: "var(--color-accent)",
+              color: "var(--color-text)",
+            }}
+            role="status"
+          >
+            界面已更新
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="ml-2 font-medium underline"
+              style={{ color: "var(--color-accent)" }}
+            >
+              刷新
+            </button>
+          </div>
+        )}
         {configAgent && (
           <AgentDetailDialog agentId={configAgent} onClose={() => setConfigAgent(null)} />
         )}
