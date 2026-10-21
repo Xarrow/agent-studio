@@ -165,6 +165,11 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   const [loading, setLoading] = useState(true);
 
   const esRef = useRef<EventSource | null>(null);
+  /** sessionId 的镜像：SSE 回调在闭包里跑，必须读到"此刻"的会话 */
+  const sessionIdRef = useRef("");
+  sessionIdRef.current = sessionId;
+  /** 这条 SSE 属于哪个会话 —— 用户切走之后，它推来的东西一律不许上屏 */
+  const streamSessionRef = useRef("");
   const endRef = useRef<HTMLDivElement | null>(null);
   const boxRef = useRef<HTMLDivElement | null>(null);
 
@@ -257,8 +262,18 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     })();
   }, [agentId, loadSessions, fb]);
 
-  // 切会话：载入历史
+  // 切会话：先把上一会话的实时现场收掉，再载入历史
   useEffect(() => {
+    // 不关流的话，旧会话里还在跑的 run 会继续往 live 里追加文本，
+    // 串到新会话的屏幕上 —— 这就是"A 会话的内容出现在 B 会话"的根因
+    if (esRef.current) { esRef.current.close(); esRef.current = null; }
+    streamSessionRef.current = "";
+    setLive(null);
+    setLiveEvents([]);
+    liveEventsRef.current = [];
+    setLiveRunId("");
+    setHitl(null);
+    setBusy(false);
     void (async () => {
       await loadMessages(sessionId);
       // ── 刷新恢复：会话里还有在跑的 run 就重新挂上 SSE ──
@@ -517,6 +532,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   const attachStream = (runId: string, sentText: string) => {
     const es = new EventSource(api.streamUrl(runId));
     esRef.current = es;
+    streamSessionRef.current = sessionId;
     setLiveRunId(runId);
     setBrowserActions([]);
     setBrowserSteps([]);
@@ -524,6 +540,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
 
     es.onmessage = (e: MessageEvent) => {
       try {
+        // 用户已经切到别的会话了：这条流属于旧会话，不许再往界面上写
+        if (streamSessionRef.current !== sessionIdRef.current) return;
         const ev = JSON.parse(e.data) as RunEvent;
         // 收下**全部**事件：不只文本，还包括思考与工具调用，
         // 这样执行过程能实时按颜色分段显示出来
@@ -570,6 +588,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
 
     const settle = async () => {
       es.close();
+      if (streamSessionRef.current !== sessionIdRef.current) return;   // 早就切走了，别动当前界面
       setBusy(false);
       setLiveRunId("");
       // 帧**不清**：这轮浏览停在哪一页，用户事后再点开还能看见（开新 run 时才重置）。
