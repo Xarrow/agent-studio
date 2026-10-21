@@ -274,6 +274,13 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     setLiveRunId("");
     setHitl(null);
     setBusy(false);
+    // 浏览器现场同样属于上一个会话：画面帧、动作字幕、过程回顾都要清掉，
+    // 否则切过去还能看到别人会话里那张网页截图和「打开 example.com」
+    setBrowserFrame(null);
+    setBrowserActions([]);
+    setBrowserSteps([]);
+    setBrowserOpen(false);
+    lastBrowserRun.current = "";
     void (async () => {
       await loadMessages(sessionId);
       // ── 刷新恢复：会话里还有在跑的 run 就重新挂上 SSE ──

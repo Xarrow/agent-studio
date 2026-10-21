@@ -360,6 +360,13 @@ _STATIC_SUFFIXES = {
 
 if _WEB_DIST.is_dir():
 
+    #: 静态产物一律走协商缓存。Next 导出的 chunk 文件名是稳定的（不含内容哈希），
+    #: 浏览器一旦按启发式缓存住，前端改完用户那边还是旧界面 —— 每次都必须验 ETag。
+    _NO_CACHE = {"Cache-Control": "no-cache, must-revalidate"}
+
+    def _serve(path: Path) -> FileResponse:
+        return FileResponse(path, headers=_NO_CACHE)
+
     @app.get("/{full_path:path}", include_in_schema=False)
     async def serve_web(full_path: str) -> "Response":
         # API 前缀不进 SPA 兜底：路由没命中（404/405）就该如实报错。
@@ -371,15 +378,15 @@ if _WEB_DIST.is_dir():
         candidate = _WEB_DIST / f"{full_path}.html" if full_path else _WEB_DIST / "index.html"
         target = _WEB_DIST / full_path
         if full_path and target.is_file():
-            return FileResponse(target)
+            return _serve(target)
         if candidate.is_file():
-            return FileResponse(candidate)
+            return _serve(candidate)
         # 静态资源缺文件 = 断链，如实 404（回 index.html 会把 JS 报成 HTML，
         # 浏览器只会甩出「Unexpected token '<'」，谁也看不出 chunk 丢了）。
         if full_path and Path(full_path).suffix.lower() in _STATIC_SUFFIXES:
             raise StarletteHTTPException(status_code=404)
         # SPA 兜底：客户端路由没有物理文件，回 index.html 交给前端路由
-        return FileResponse(_WEB_DIST / "index.html")
+        return _serve(_WEB_DIST / "index.html")
 
     logger.info("静态前端已托管 src=%s", _WEB_DIST)
 else:
