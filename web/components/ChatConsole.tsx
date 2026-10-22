@@ -1505,13 +1505,22 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             data-dock
             className="absolute inset-x-0 bottom-0 z-20 px-3 sm:px-4 pt-3 pb-2.5"
             style={{
-              background: "color-mix(in srgb, var(--color-bg) 74%, transparent)",
-              backdropFilter: "blur(20px) saturate(1.7)",
-              WebkitBackdropFilter: "blur(20px) saturate(1.7)",
-              borderTop: "1px solid color-mix(in srgb, var(--color-border) 65%, transparent)",
-              boxShadow: "0 -14px 36px -22px rgba(15,23,42,.35)",
+              background: "color-mix(in srgb, var(--color-bg) 46%, transparent)",
+              backdropFilter: "blur(22px) saturate(2)",
+              WebkitBackdropFilter: "blur(22px) saturate(2)",
+              borderTop: "1px solid color-mix(in srgb, var(--color-border) 45%, transparent)",
+              boxShadow: "0 -18px 44px -24px rgba(15,23,42,.42)",
             }}
           >
+            {/* 上沿渐隐：消息滚进来时是淡进玻璃，而不是被一条硬边切断 */}
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-x-0 -top-10 h-10"
+              style={{
+                background:
+                  "linear-gradient(to top, color-mix(in srgb, var(--color-bg) 46%, transparent), transparent)",
+              }}
+            />
             {hitl && (
               <div className="max-w-3xl mx-auto mb-2">
                 <HitlPrompt
@@ -1893,10 +1902,10 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     ? "var(--color-warn)"
                     : dragging
                       ? "var(--color-accent)"
-                      : "var(--color-border)",
-                  background: "color-mix(in srgb, var(--color-surface) 92%, transparent)",
-                  backdropFilter: "blur(6px)",
-                  WebkitBackdropFilter: "blur(6px)",
+                      : "color-mix(in srgb, var(--color-text) 9%, transparent)",
+                  background: "color-mix(in srgb, var(--color-surface) 52%, transparent)",
+                  backdropFilter: "blur(14px) saturate(1.7)",
+                  WebkitBackdropFilter: "blur(14px) saturate(1.7)",
                   boxShadow: dragging
                     ? "0 12px 32px -8px rgba(37,99,235,.28), 0 2px 8px -2px rgba(15,23,42,.12)"
                     : "0 10px 30px -10px rgba(15,23,42,.22), 0 2px 8px -3px rgba(15,23,42,.10)",
