@@ -27,7 +27,8 @@ import { SlashMenu, type CommandItem } from "@/components/SlashMenu";
 import { useImeGuard, isImeEvent } from "@/lib/ime";
 import Markdown from "@/components/Markdown";
 import { RunDetailById } from "@/components/RunDetailDialog";
-import { AgentDetailDialog } from "@/components/AgentDetailDialog";
+import { AgentDetailDialog } from "./AgentDetailDialog";
+import { AgentSwitcher } from "./AgentSwitcher";
 import { FileOpenerProvider, FileRowButton } from "@/components/FileDialog";
 import { copyText } from "@/lib/clipboard";
 import { middleEllipsis, fileTypeKey, shortFilePath } from "@/lib/files";
@@ -858,6 +859,9 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   // （Rendered more hooks than during the previous render），整页变错误页（踩过两次）。
   const [navOpen, setNavOpen] = useState(true);
   const [mobileNav, setMobileNav] = useState(false);
+  /** 助手选择面板开合：「哪个形态被点开了」。三种挂载点只认自己那一份，
+   *  共用布尔值会让面板在窗口跨断点缩放后凭空冒出来（桌面开着的面板飘到手机上）。 */
+  const [switcherOpen, setSwitcherOpen] = useState<null | "bar" | "sidebar" | "mini">(null);
   const [railOpen, setRailOpen] = useState(false);
   /** 用户在本次会话里手动关过直播栏吗 —— 关过就不再自动弹回来 */
   const railTouched = useRef(false);
@@ -1032,6 +1036,20 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
         {navOpen ? (
           <aside className="hidden lg:flex w-[264px] shrink-0 border-r border-[var(--color-border)] bg-[var(--color-surface)] flex-col min-h-0">
             <SessionsPane
+              agentSlot={
+                controlledAgentId === undefined ? (
+                  <AgentSwitcher
+                    variant="sidebar"
+                    agents={agents}
+                    value={agentId}
+                    onChange={setAgentId}
+                    busy={busy}
+                    open={switcherOpen === "sidebar"}
+                    onOpenChange={(v) => setSwitcherOpen(v ? "sidebar" : null)}
+                    onSettings={agentId ? () => setConfigAgent(agentId) : undefined}
+                  />
+                ) : null
+              }
               sessions={sessions}
               sessionId={sessionId}
               onPick={setSessionId}
@@ -1042,22 +1060,35 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             />
           </aside>
         ) : (
-          <button
-            data-tap
-            title="展开对话列表"
-            onClick={toggleNav}
-            className="hidden lg:flex w-11 shrink-0 flex-col items-center gap-2 py-3 border-r border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-2)]"
-          >
+          <div className="hidden lg:flex w-11 shrink-0 flex-col items-center gap-2 py-3 border-r border-[var(--color-border)] bg-[var(--color-surface)]">
+            {controlledAgentId === undefined && (
+              <AgentSwitcher
+                variant="mini"
+                agents={agents}
+                value={agentId}
+                onChange={setAgentId}
+                busy={busy}
+                open={switcherOpen === "mini"}
+                onOpenChange={(v) => setSwitcherOpen(v ? "mini" : null)}
+              />
+            )}
+            <button
+              data-tap
+              title="展开对话列表"
+              onClick={toggleNav}
+              className="w-8 h-8 flex items-center justify-center rounded-lg text-[var(--color-muted)] hover:bg-[var(--color-surface-2)]"
+            >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
               <path d="M4 6h16M4 12h16M4 18h10" />
             </svg>
+            </button>
             <span
               className="text-[10.5px] tabular-nums px-1.5 rounded-full"
               style={{ background: "var(--color-surface-2)", color: "var(--color-muted)" }}
             >
               {sessions.length}
             </span>
-          </button>
+          </div>
         )}
 
         {/* ── 手机会话抽屉：浮在对话之上，不吃对话高度 ─────────────── */}
@@ -1091,7 +1122,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
 
         {/* ── 对话区 ─────────────────────────────────────────── */}
         <section className="flex-1 flex flex-col min-h-0 min-w-0">
-          <header className="h-[52px] px-3 sm:px-4 flex items-center gap-2.5 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
+          <header className="h-[52px] px-3 sm:px-4 flex items-center gap-2.5 border-b border-[var(--color-border)] bg-[var(--color-surface)] lg:hidden">
             <button
               data-tap
               className="lg:hidden w-11 h-11 sm:w-9 sm:h-9 -ml-1 flex items-center justify-center rounded-lg text-[var(--color-muted)] hover:bg-[var(--color-surface-2)]"
@@ -1106,17 +1137,15 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             {/* 助手身份：受外层控制时是纯文本（参与者条是唯一入口），
                 否则用下拉 —— 两处都能选助手就是两套真相 */}
             {controlledAgentId === undefined ? (
-              <select
-                className="input input-inline min-w-[150px] max-w-[220px] shrink-0 text-[13px]"
+              <AgentSwitcher
+                variant="bar"
+                agents={agents}
                 value={agentId}
-                onChange={(e) => setAgentId(e.target.value)}
-              >
-                {agents.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-              </select>
+                onChange={setAgentId}
+                busy={busy}
+                open={switcherOpen === "bar"}
+                onOpenChange={(v) => setSwitcherOpen(v ? "bar" : null)}
+              />
             ) : (
               <span className="min-w-0 flex items-center gap-2">
                 <span className="text-[13.5px] font-medium truncate">
@@ -1172,6 +1201,23 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     ✦
                   </div>
                   <p className="text-[15px] font-medium">{currentAgent?.name || "Agent"}</p>
+                  {controlledAgentId === undefined && agents.length > 1 && (
+                    <button
+                      data-tap
+                      onClick={() =>
+                        setSwitcherOpen(
+                          window.innerWidth < 1024 ? "bar" : navOpen ? "sidebar" : "mini",
+                        )
+                      }
+                      className="mt-1 inline-flex items-center gap-1 text-[12px] rounded-md px-2 h-7 hover:bg-[var(--color-surface-2)]"
+                      style={{ color: "var(--color-accent)" }}
+                    >
+                      换一个助手
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="m6 9 6 6 6-6" />
+                      </svg>
+                    </button>
+                  )}
                   {currentAgent?.description && (
                     <p className="text-[12.5px] text-[var(--color-muted)] mt-1.5 leading-relaxed">
                       {currentAgent.description}
@@ -2051,6 +2097,7 @@ function SessionsPane({
   onRename,
   onRemove,
   onCollapse,
+  agentSlot,
 }: {
   sessions: Session[];
   sessionId: string;
@@ -2059,6 +2106,8 @@ function SessionsPane({
   onRename: (s: Session) => void;
   onRemove: (s: Session) => void;
   onCollapse: () => void;
+  /** 助手身份块：会话都属于某个助手，它排在列表最上面 */
+  agentSlot?: React.ReactNode;
 }) {
   const [q, setQ] = useState("");
   /** 打开菜单的会话 id（一次只开一个） */
@@ -2121,6 +2170,9 @@ function SessionsPane({
 
   return (
     <>
+      {agentSlot && (
+        <div className="px-1.5 pt-1.5 pb-1 border-b border-[var(--color-border)] mb-1">{agentSlot}</div>
+      )}
       <div className="p-2.5 pb-1.5 flex items-center gap-1.5">
         <button className="btn btn-primary flex-1" onClick={onNew}>
           + 新对话
