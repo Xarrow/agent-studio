@@ -318,6 +318,10 @@ from .api import jobs as jobs_api  # noqa: E402
 app.include_router(jobs_api.router)
 # A2A（Agent2Agent）协议入口 —— 根路径 /a2a + /.well-known/agent-card.json
 app.include_router(a2a.router)
+# 平台级小配置（白名单键）—— 目前是对话页的快捷标签
+from .api import app_settings as app_settings_api  # noqa: E402
+
+app.include_router(app_settings_api.router)
 
 
 @app.get("/api/health")

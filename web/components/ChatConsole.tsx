@@ -13,7 +13,7 @@
 
 import Link from "next/link";
 import { HitlPrompt } from "@/components/HitlPrompt";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api, fmt, withToken } from "@/lib/api";
 import type { Agent, RunEvent, Session, SearchHit } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
@@ -29,6 +29,8 @@ import Markdown from "@/components/Markdown";
 import { RunDetailById } from "@/components/RunDetailDialog";
 import { AgentDetailDialog } from "./AgentDetailDialog";
 import { AgentSwitcher } from "./AgentSwitcher";
+import { SkillsStrip } from "./SkillsStrip";
+import { QuickTags } from "./QuickTags";
 import { FileOpenerProvider, FileRowButton } from "@/components/FileDialog";
 import { copyText } from "@/lib/clipboard";
 import { middleEllipsis, fileTypeKey, shortFilePath } from "@/lib/files";
@@ -188,6 +190,15 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   const boxRef = useRef<HTMLDivElement | null>(null);
 
   /* ------------------------------- 数据加载 ------------------------------- */
+
+  /** 只刷助手清单（挂/卸技能之后要它，不重跑整段初始化） */
+  const reloadAgents = useCallback(async () => {
+    try {
+      setAgents(await api.agents());
+    } catch {
+      /* 刷不动就维持现状 */
+    }
+  }, []);
 
   useEffect(() => {
     void (async () => {
@@ -862,6 +873,43 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   /** 助手选择面板开合：「哪个形态被点开了」。三种挂载点只认自己那一份，
    *  共用布尔值会让面板在窗口跨断点缩放后凭空冒出来（桌面开着的面板飘到手机上）。 */
   const [switcherOpen, setSwitcherOpen] = useState<null | "bar" | "sidebar" | "mini">(null);
+  /** 底部输入坞的高度：它是浮在消息之上的（毛玻璃要透出下面滚过的内容），
+   *  所以消息区要留出这么一块内边距，否则最后一条会被压在底下。 */
+  const [dockH, setDockH] = useState(150);
+  const dockRO = useRef<ResizeObserver | null>(null);
+  /** 用 callback ref 而不是 useEffect：这一块可能是条件渲染后才挂上的，
+   *  effect 只跑一次会永远量到 0。 */
+  const dockRef = useCallback((el: HTMLDivElement | null) => {
+    dockRO.current?.disconnect();
+    if (!el) return;
+    const sync = () => setDockH(el.offsetHeight || 0);
+    sync();
+    dockRO.current = new ResizeObserver(sync);
+    dockRO.current.observe(el);
+  }, []);
+
+  /** 兜底：ResizeObserver 在部分环境里不报（无头/后台标签），每次渲染后同步量一次，
+   *  差异超过 2px 才写回 —— 相等就停，不会自激。 */
+  useLayoutEffect(() => {
+    const el = document.querySelector<HTMLDivElement>("[data-dock]");
+    if (!el) return;
+    const h = el.offsetHeight;
+    if (h > 0 && Math.abs(h - dockH) > 2) setDockH(h);
+  });
+
+  // 视口变化（转屏、拖窗口）时输入坞的高度也会变，得重新量
+  useEffect(() => {
+    const sync = () => {
+      const el = document.querySelector<HTMLDivElement>("[data-dock]");
+      if (el) setDockH(el.offsetHeight || 0);
+    };
+    window.addEventListener("resize", sync);
+    window.addEventListener("orientationchange", sync);
+    return () => {
+      window.removeEventListener("resize", sync);
+      window.removeEventListener("orientationchange", sync);
+    };
+  }, []);
   const [railOpen, setRailOpen] = useState(false);
   /** 用户在本次会话里手动关过直播栏吗 —— 关过就不再自动弹回来 */
   const railTouched = useRef(false);
@@ -1038,17 +1086,20 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             <SessionsPane
               agentSlot={
                 controlledAgentId === undefined ? (
-                  <AgentSwitcher
-                    variant="sidebar"
-                    agents={agents}
-                    value={agentId}
-                    onChange={setAgentId}
-                    busy={busy}
-                    open={switcherOpen === "sidebar"}
-                    onOpenChange={(v) => setSwitcherOpen(v ? "sidebar" : null)}
-                    onSettings={agentId ? () => setConfigAgent(agentId) : undefined}
-                  />
-                ) : null
+                  <>
+                    <AgentSwitcher
+                      variant="sidebar"
+                      agents={agents}
+                      value={agentId}
+                      onChange={setAgentId}
+                      busy={busy}
+                      open={switcherOpen === "sidebar"}
+                      onOpenChange={(v) => setSwitcherOpen(v ? "sidebar" : null)}
+                      onSettings={agentId ? () => setConfigAgent(agentId) : undefined}
+                    />
+                    <SkillsStrip agent={currentAgent} onChanged={() => void reloadAgents()} />
+                  </>
+                  ) : null
               }
               sessions={sessions}
               sessionId={sessionId}
@@ -1096,6 +1147,13 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
           <div className="lg:hidden fixed inset-0 z-40 flex">
             <div className="w-[280px] max-w-[84vw] bg-[var(--color-surface)] border-r border-[var(--color-border)] flex flex-col min-h-0">
               <SessionsPane
+                agentSlot={
+                  controlledAgentId === undefined ? (
+                    <div className="px-0.5">
+                      <SkillsStrip agent={currentAgent} onChanged={() => void reloadAgents()} />
+                    </div>
+                  ) : null
+                }
                 sessions={sessions}
                 sessionId={sessionId}
                 onPick={(id) => {
@@ -1121,7 +1179,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
         )}
 
         {/* ── 对话区 ─────────────────────────────────────────── */}
-        <section className="flex-1 flex flex-col min-h-0 min-w-0">
+        <section className="relative flex-1 flex flex-col min-h-0 min-w-0">
           <header className="h-[52px] px-3 sm:px-4 flex items-center gap-2.5 border-b border-[var(--color-border)] bg-[var(--color-surface)] lg:hidden">
             <button
               data-tap
@@ -1188,7 +1246,13 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
 
           {/* 消息流 —— 阅读宽度封顶 768px 居中：一行扫 1000px 是眼睛的负担 */}
           <div className="relative flex-1 min-h-0 flex flex-col">
-          <div className="flex-1 overflow-auto" ref={boxRef} onScroll={onScroll}>
+          <div
+            className="flex-1 overflow-auto"
+            ref={boxRef}
+            onScroll={onScroll}
+            style={{ paddingBottom: dockH + 8 }}
+            data-msg-scroll
+          >
             {history.length === 0 && !live ? (
               /* 空状态：不摆「开始对话」的废话 —— 直接给 3 个可点的开场问题，
                  点了就填进输入框（不自动发，让人改得动）。 */
@@ -1400,9 +1464,13 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 data-tap
                 onClick={jumpLatest}
                 title="回到最新"
-                className="absolute bottom-3 right-3 lg:right-5 inline-flex items-center gap-1.5 rounded-full pl-2.5 pr-3 h-8 text-[12px] shadow-md transition-opacity"
+                className="absolute right-3 lg:right-5 inline-flex items-center gap-1.5 rounded-full pl-2.5 pr-3 h-8 text-[12px] shadow-md transition-opacity z-10"
                 style={{
-                  background: "var(--color-surface)",
+                  // 输入坞现在是浮起来的，这个按钮要跟着抬到它上面
+                  bottom: dockH + 12,
+                  background: "color-mix(in srgb, var(--color-surface) 88%, transparent)",
+                  backdropFilter: "blur(8px)",
+                  WebkitBackdropFilter: "blur(8px)",
                   border: "1px solid var(--color-border)",
                   color: "var(--color-text)",
                 }}
@@ -1432,7 +1500,18 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               一个圆角输入坞包住「附件 / 输入 / 发送」—— 它们是同一件事的
               三个部分，不该是三个漂浮的控件。存储路径这类自证信息收进
               底部 ⓘ（原来每次输入都在下面排两行服务器路径，是开发者噪声）。 */}
-          <div className="border-t border-[var(--color-border)] bg-[var(--color-surface)] px-3 sm:px-4 pt-3 pb-2.5">
+          <div
+            ref={dockRef}
+            data-dock
+            className="absolute inset-x-0 bottom-0 z-20 px-3 sm:px-4 pt-3 pb-2.5"
+            style={{
+              background: "color-mix(in srgb, var(--color-bg) 74%, transparent)",
+              backdropFilter: "blur(20px) saturate(1.7)",
+              WebkitBackdropFilter: "blur(20px) saturate(1.7)",
+              borderTop: "1px solid color-mix(in srgb, var(--color-border) 65%, transparent)",
+              boxShadow: "0 -14px 36px -22px rgba(15,23,42,.35)",
+            }}
+          >
             {hitl && (
               <div className="max-w-3xl mx-auto mb-2">
                 <HitlPrompt
@@ -1787,12 +1866,27 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             )}
 
             <div className="max-w-3xl mx-auto relative">
+              {/* 快速标签：常说的几句点一下就填进输入框（标签本身在设置里增删） */}
+              <QuickTags
+                onPick={(t) => {
+                  setInput((prev) => (prev.trim() ? prev.replace(/\s+$/, "") + " " + t : t));
+                  setTimeout(() => {
+                    const ta = taRef.current;
+                    if (ta) {
+                      ta.focus();
+                      ta.selectionStart = ta.selectionEnd = ta.value.length;
+                    }
+                  }, 0);
+                }}
+              />
+
               {/* ── 输入坞 ────────────────────────────────────────
                   上下结构（上=正文，下=工具栏），不再左右平铺：多行输入时
                   按钮不会跟着文字跳。发送键用图标表达状态 —— 空闲是圆箭头、
                   执行中是方块，同一个位置形状变化，不用读字。
                   三条投喂路径统一走 addFiles：点附件 / 粘贴截图 / 拖文件进来。 */}
               <div
+                data-composer
                 className="rounded-[18px] border transition-colors"
                 style={{
                   borderColor: paused
@@ -1800,8 +1894,12 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     : dragging
                       ? "var(--color-accent)"
                       : "var(--color-border)",
-                  background: "var(--color-surface)",
-                  boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
+                  background: "color-mix(in srgb, var(--color-surface) 92%, transparent)",
+                  backdropFilter: "blur(6px)",
+                  WebkitBackdropFilter: "blur(6px)",
+                  boxShadow: dragging
+                    ? "0 12px 32px -8px rgba(37,99,235,.28), 0 2px 8px -2px rgba(15,23,42,.12)"
+                    : "0 10px 30px -10px rgba(15,23,42,.22), 0 2px 8px -3px rgba(15,23,42,.10)",
                 }}
                 onDragOver={(e) => {
                   if (e.dataTransfer.types.includes("Files")) {

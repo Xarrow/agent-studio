@@ -469,6 +469,12 @@ export const api = {
       required?: string[];
     }>(`/api/tools/${id}/test`, { args }),
 
+  // 平台级小配置（白名单键；目前只有对话页的快捷标签）
+  appSetting: (key: string) =>
+    request<{ key: string; value: unknown }>(`/api/app-settings/${key}`),
+  setAppSetting: (key: string, value: unknown) =>
+    put<{ key: string; value: unknown }>(`/api/app-settings/${key}`, { value }),
+
   // Skill
   skills: () => request<Skill[]>("/api/skills"),
   skill: (id: string) => request<Skill>(`/api/skills/${id}`),
