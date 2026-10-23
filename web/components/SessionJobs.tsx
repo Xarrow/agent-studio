@@ -57,9 +57,26 @@ const WEEKLY_PRESETS = [
   { key: "w-135-09", label: "每周一三五 09:00", at: "09:00", wd: "1,3,5" },
 ];
 
+/** 节奏的整句标签（下拉/chip/ActionSheet 共用一份） */
+function rhythmLabel(key: string): string {
+  if (key === "hourly") return "每小时";
+  if (key === "custom") return "自定义";
+  const d = DAILY_PRESETS.find((x) => x.key === key);
+  if (d) return d.label;
+  const w = WEEKLY_PRESETS.find((x) => x.key === key);
+  return w ? w.label : "自定义";
+}
+
+const RHYTHM_OPTIONS = [
+  { key: "hourly", label: "每小时" },
+  ...DAILY_PRESETS.map((p) => ({ key: p.key, label: p.label })),
+  ...WEEKLY_PRESETS.map((p) => ({ key: p.key, label: p.label })),
+  { key: "custom", label: "自定义时间…" },
+];
+
 /**
- * 节奏选择器：一个下拉说完整句（每天 09:00 / 每周一三五 09:00 / 每小时）。
- * 选了「自定义…」才把时间、星期这些零件露出来 —— 零件不该是第一个问题。
+ * 节奏选择：一个胶囊显示当前整句（每天 09:00），点开是一张底部选择面板。
+ * 不用原生 select —— 手机上那个灰底下拉在抽屉里像控件走错了片场。
  */
 function RhythmPicker({
   value,
@@ -70,23 +87,87 @@ function RhythmPicker({
   onChange: (k: string) => void;
   custom?: ReactNode;
 }) {
+  const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  const sheet = (
+    <div
+      className="fixed inset-0 z-[70] flex items-end justify-center"
+      style={{ background: "rgba(15,23,42,.34)" }}
+      onClick={() => setOpen(false)}
+    >
+      <div
+        className="w-full max-w-[560px] overflow-hidden rounded-t-[18px] pb-[env(safe-area-inset-bottom)] sm:mb-6 sm:rounded-[16px]"
+        style={{ background: "var(--color-surface)", boxShadow: "0 -12px 40px -12px rgba(15,23,42,.35)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-4 pb-1 pt-3.5">
+          <span className="text-[13px] font-medium">多久跑一次</span>
+          <button
+            type="button"
+            className="rounded px-2 text-[13px]"
+            style={{ color: "var(--color-muted)" }}
+            onClick={() => setOpen(false)}
+          >
+            取消
+          </button>
+        </div>
+        <div className="max-h-[52vh] overflow-y-auto px-2 pb-2">
+          {RHYTHM_OPTIONS.map((o) => {
+            const on = o.key === value;
+            return (
+              <button
+                key={o.key}
+                type="button"
+                onClick={() => {
+                  onChange(o.key);
+                  setOpen(false);
+                }}
+                className="flex w-full items-center gap-2 rounded-[10px] px-3 text-left text-[14px]"
+                style={{
+                  minHeight: 44,
+                  color: on ? "var(--color-accent)" : "var(--color-text)",
+                  background: on ? "color-mix(in srgb, var(--color-accent) 8%, transparent)" : undefined,
+                  fontWeight: on ? 600 : 400,
+                }}
+              >
+                <span className="flex-1">{o.label}</span>
+                {on ? (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M20 6L9 17l-5-5" />
+                  </svg>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <>
-      <select
-        className="input h-9 w-full lg:h-9"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        aria-label="多久跑一次"
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="inline-flex max-w-full items-center gap-1 rounded-full px-3 text-[13px] font-medium"
+        style={{
+          minHeight: 34,
+          background: "color-mix(in srgb, var(--color-accent) 9%, transparent)",
+          color: "var(--color-accent)",
+        }}
       >
-        <option value="hourly">每小时</option>
-        {DAILY_PRESETS.map((p) => (
-          <option key={p.key} value={p.key}>{p.label}</option>
-        ))}
-        {WEEKLY_PRESETS.map((p) => (
-          <option key={p.key} value={p.key}>{p.label}</option>
-        ))}
-        <option value="custom">自定义…</option>
-      </select>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7.5V12l3 1.8" />
+        </svg>
+        <span className="truncate">{rhythmLabel(value)}</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </button>
+      {mounted && open ? createPortal(sheet, document.body) : null}
       {value === "custom" ? custom : null}
     </>
   );
@@ -368,23 +449,48 @@ export default function SessionJobs({
   const jobCard = (j: SessionJob) => {
     const editingThis = editing === j.id;
     const st = j.last_status ? STATUS_TONE[j.last_status] : null;
+    // 「每天 09:00」拆成大字时间 + 小字节奏：一眼看到几点，再看多久一次
+    const hourly = j.mode === "hourly";
+    const big = hourly ? "每小时" : (j.at || "09:00");
+    const small = hourly ? "" : j.mode === "weekly" ? scheduleText({ ...j, at: "" }).replace(/\s*$/, "").trim() : "每天";
+    const quiet = !j.enabled;
     return (
       <div
         key={j.id}
-        className="rounded-[12px] border px-3 py-2.5"
-        style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+        className="rounded-[14px] px-3.5 py-3"
+        style={{
+          background: "color-mix(in srgb, var(--color-surface-2) 70%, var(--color-surface))",
+          opacity: quiet ? 0.72 : 1,
+        }}
       >
-        <div className="flex items-center gap-2">
-          <span className="text-[13.5px] font-medium" style={{ color: j.enabled ? "var(--color-text)" : "var(--color-muted)" }}>
-            {scheduleText(j)}
-          </span>
-          <span className="text-[11.5px]" style={{ color: j.enabled ? "var(--color-muted)" : "var(--color-warn)" }}>
-            {j.enabled ? `下次 ${whenText(j.next_run_at)}` : "已暂停"}
-          </span>
-          {st ? (
-            <span className="text-[11px]" style={{ color: st.color }}>{st.text}</span>
-          ) : null}
-          <div className="ml-auto">
+        <div className="flex items-start gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-baseline gap-1.5">
+              <span
+                className="text-[17px] font-semibold leading-none"
+                style={{ color: quiet ? "var(--color-muted)" : "var(--color-text)", fontVariantNumeric: "tabular-nums" }}
+              >
+                {big}
+              </span>
+              {small ? (
+                <span className="text-[11.5px] leading-none" style={{ color: "var(--color-muted)" }}>
+                  {small}
+                </span>
+              ) : null}
+              {j.monitor_kind ? (
+                <span
+                  className="rounded-full px-1.5 py-[1px] text-[10.5px] leading-none"
+                  style={{ background: "color-mix(in srgb, var(--color-accent) 12%, transparent)", color: "var(--color-accent)" }}
+                >
+                  有变化才跑
+                </span>
+              ) : null}
+            </div>
+            <p className="mt-1.5 line-clamp-2 text-[12.5px] leading-[1.5]" style={{ color: quiet ? "var(--color-muted)" : "var(--color-text)" }}>
+              {j.prompt}
+            </p>
+          </div>
+          <div className="shrink-0 pt-0.5">
             <Switch
               checked={j.enabled}
               onChange={() => void toggle(j)}
@@ -393,28 +499,24 @@ export default function SessionJobs({
           </div>
         </div>
 
-        <p className="mt-0.5 text-[12.5px] leading-snug" style={{ color: j.enabled ? "var(--color-text)" : "var(--color-muted)" }}>
-          {j.prompt}
-        </p>
-
-        <div className="mt-1 flex items-center gap-2 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
-          <span>
-            {j.deliver?.channel === "webhook" ? "推到群里" : "结果回到这个对话"}
-            {j.monitor_kind ? " · 有变化才跑" : ""}
+        <div className="mt-2 flex items-center gap-1.5 text-[11px]" style={{ color: "var(--color-muted)" }}>
+          <span className="truncate">
+            {quiet ? "已暂停" : `下次 ${whenText(j.next_run_at)}`}
+            {j.deliver?.channel === "webhook" ? " · 推到群里" : " · 回到这个对话"}
+            {st ? ` · ${st.text}` : ""}
           </span>
           <button
             type="button"
-            className="ml-auto min-h-[30px] rounded px-2.5 text-[12.5px] max-md:min-h-[36px]"
-            style={{ color: "var(--color-accent)" }}
+            className="ml-auto shrink-0 rounded-full px-2.5 text-[12px] font-medium"
+            style={{ color: "var(--color-accent)", minHeight: 30 }}
             onClick={() => (editingThis ? resetForm() : startEdit(j))}
           >
             {editingThis ? "收起" : "改"}
           </button>
-          {/* 想看看它到底跑出什么，不用等下一次 */}
           <button
             type="button"
-            className="min-h-[30px] rounded px-2.5 text-[12.5px] max-md:min-h-[36px]"
-            style={{ color: "var(--color-muted)" }}
+            className="shrink-0 rounded-full px-2.5 text-[12px]"
+            style={{ color: "var(--color-muted)", minHeight: 30 }}
             onClick={() => void runJobNow(j)}
           >
             跑一次
@@ -422,7 +524,10 @@ export default function SessionJobs({
         </div>
 
         {editingThis && (
-          <div className="mt-2 border-t pt-2.5" style={{ borderColor: "var(--color-border)" }}>
+          <div
+            className="mt-2.5 rounded-[12px] px-3 py-2.5"
+            style={{ background: "color-mix(in srgb, var(--color-surface) 75%, transparent)" }}
+          >
             <FieldLabel hint="到点它会自己发这句话">让它做什么</FieldLabel>
             <textarea
               className="input mb-2.5 w-full"
@@ -439,10 +544,10 @@ export default function SessionJobs({
                 <>
                   {mode !== "hourly" && (
                     <div className="mt-2 flex items-center gap-2">
-                      <select className="input h-9 flex-1 lg:h-9" value={hour} onChange={(e) => setHour(e.target.value)} aria-label="小时">
+                      <select className="input h-8 w-[84px]" value={hour} onChange={(e) => setHour(e.target.value)} aria-label="小时">
                         {hourOpts.map((h) => <option key={h} value={h}>{h} 点</option>)}
                       </select>
-                      <select className="input h-9 flex-1 lg:h-9" value={minute} onChange={(e) => setMinute(e.target.value)} aria-label="分钟">
+                      <select className="input h-8 w-[84px]" value={minute} onChange={(e) => setMinute(e.target.value)} aria-label="分钟">
                         {minOpts.map((m) => <option key={m} value={m}>{m} 分</option>)}
                       </select>
                     </div>
@@ -457,7 +562,7 @@ export default function SessionJobs({
                             type="button"
                             data-tap
                             onClick={() => setWeekdays((prev) => (on ? prev.filter((x) => x !== w.k) : [...prev, w.k]))}
-                            className="h-9 rounded-[9px] border text-[13px] lg:h-9"
+                            className="h-8 rounded-[8px] border text-[12.5px]"
                             style={{
                               background: on ? "var(--color-accent)" : "var(--color-surface)",
                               color: on ? "#fff" : "var(--color-text)",
@@ -476,7 +581,7 @@ export default function SessionJobs({
             />
             <div className="mt-2.5 flex items-center gap-2">
               <select
-                className="input h-9 flex-1 lg:h-9"
+                className="input h-8 flex-1"
                 value={channel === "webhook" ? "webhook" : "session"}
                 onChange={(e) => setChannel(e.target.value as "session" | "webhook")}
                 aria-label="结果送到哪"
@@ -486,7 +591,7 @@ export default function SessionJobs({
               </select>
               {channel === "webhook" && (
                 <select
-                  className="input h-9"
+                  className="input h-8"
                   value={format}
                   onChange={(e) => setFormat(e.target.value as typeof format)}
                   aria-label="报文格式"
@@ -497,7 +602,7 @@ export default function SessionJobs({
             </div>
             {channel === "webhook" && (
               <input
-                className="input mt-2 h-9 w-full lg:h-9"
+                className="input mt-2 h-8 w-full"
                 placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..."
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
@@ -505,14 +610,14 @@ export default function SessionJobs({
               />
             )}
 
-            <details className="mt-2.5 rounded-[10px] border px-2.5 py-1.5" style={{ borderColor: "var(--color-border)" }}>
-              <summary className="flex min-h-[36px] cursor-pointer items-center gap-1.5 text-[12.5px] lg:min-h-[30px]" style={{ color: "var(--color-muted)" }}>
+            <details className="mt-2">
+              <summary className="flex min-h-[32px] cursor-pointer items-center gap-1.5 text-[12px]" style={{ color: "var(--color-muted)" }}>
                 只在有变化时才跑
                 {monitorKind ? <span style={{ color: "var(--color-accent)" }}>· 已开启</span> : null}
               </summary>
               <div className="mt-1.5">
                 <select
-                  className="input h-9 w-full lg:h-9"
+                  className="input h-8 w-full"
                   value={monitorKind}
                   onChange={(e) => setMonitorKind(e.target.value as "" | "command" | "url")}
                   aria-label="变更门"
@@ -524,7 +629,7 @@ export default function SessionJobs({
                 {monitorKind ? (
                   <>
                     <input
-                      className="input mt-2 h-9 w-full lg:h-9"
+                      className="input mt-2 h-8 w-full"
                       placeholder={monitorKind === "url" ? "https://example.com/feed" : "比如 git -C /srv/app log -1 --format=%h"}
                       value={monitor}
                       onChange={(e) => setMonitor(e.target.value)}
@@ -574,83 +679,138 @@ export default function SessionJobs({
         className="card flex w-full max-w-[560px] flex-col overflow-hidden rounded-b-none rounded-t-[16px] max-h-[92dvh] sm:my-auto sm:max-h-[88dvh] sm:rounded-[14px]"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex shrink-0 items-center gap-2 border-b px-4 pb-2.5 pt-3" style={{ borderColor: "var(--color-border)" }}>
-          <h3 className="text-[15px] font-medium">这个对话的班表</h3>
-          <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
-            到点自己跑
-          </span>
+        {/* 把手：底部抽屉的通用语言，一眼知道能拖/能关 */}
+        <div className="flex shrink-0 justify-center pb-1 pt-2 sm:hidden">
+          <span className="h-1 w-9 rounded-full" style={{ background: "color-mix(in srgb, var(--color-text) 14%, transparent)" }} />
+        </div>
+        <div className="flex shrink-0 items-center gap-2 px-4 pb-2 pt-1">
+          <h3 className="text-[16px] font-semibold tracking-[-0.01em]">这个对话的班表</h3>
           <button
             type="button"
             aria-label="关闭"
-            className="ml-auto grid h-9 w-9 place-items-center rounded-lg hover:bg-[var(--color-surface-2)]"
+            className="ml-auto grid h-9 w-9 place-items-center rounded-full hover:bg-[var(--color-surface-2)]"
             style={{ color: "var(--color-muted)" }}
             onClick={() => !busy && onOpenChange(false)}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
               <path d="M6 6l12 12M18 6L6 18" />
             </svg>
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-          {/* 排新班 */}
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-1">
+          {/* 排新班：一张「输入卡」—— 上面写一句话，下面一行是时间和按钮 */}
           {editing === null && (
-            <div className="mb-3">
-              <textarea
-                className="input w-full"
-                rows={2}
-                placeholder="到点让它做什么？比如：汇总今天三条 AI 新闻，每条一句话，带链接"
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                style={{ lineHeight: 1.55 }}
-              />
-              <div className="mt-2 flex items-center gap-2">
-                <div className="min-w-0 flex-1">
+            <div className="mb-4">
+              <div
+                className="overflow-hidden rounded-[14px]"
+                style={{
+                  background: "var(--color-surface)",
+                  border: "1px solid color-mix(in srgb, var(--color-border) 70%, transparent)",
+                  boxShadow: "0 1px 3px rgba(15,23,42,.05)",
+                }}
+              >
+                <textarea
+                  className="w-full resize-none bg-transparent px-3.5 pb-1 pt-3 text-[15px] leading-[1.55] outline-none"
+                  rows={2}
+                  placeholder="到点让它做什么？比如：汇总今天三条 AI 新闻"
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  style={{ color: "var(--color-text)", minHeight: 72 }}
+                />
+                <div className="flex items-center gap-2 px-2.5 pb-2.5 pt-0.5">
                   <RhythmPicker value={rhythm} onChange={applyRhythm} />
+                  <button
+                    type="button"
+                    className="ml-auto shrink-0 rounded-[10px] px-3.5 text-[13px] font-medium transition-opacity disabled:opacity-40"
+                    style={{ minHeight: 34, background: "var(--color-accent)", color: "#fff" }}
+                    disabled={busy || !prompt.trim()}
+                    onClick={() => void save()}
+                  >
+                    {busy ? "…" : "排上"}
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  className="btn btn-primary shrink-0 px-4"
-                  disabled={busy || !prompt.trim()}
-                  onClick={() => void save()}
-                >
-                  {busy ? "…" : "排上"}
-                </button>
               </div>
+
               {rhythm === "custom" && (
-                <div className="mt-2">
-                  <div className="flex items-center gap-2">
-                    <select className="input h-9 flex-1 lg:h-9" value={mode} onChange={(e) => setMode(e.target.value as typeof mode)} aria-label="频率">
-                      <option value="hourly">每小时</option>
-                      <option value="daily">每天</option>
-                      <option value="weekly">每周</option>
-                    </select>
+                <div
+                  className="mt-2 rounded-[12px] px-3 py-2.5"
+                  style={{ background: "color-mix(in srgb, var(--color-surface-2) 60%, transparent)" }}
+                >
+                  <div className="flex items-center gap-1.5">
+                    {([
+                      { k: "hourly", label: "每小时" },
+                      { k: "daily", label: "每天" },
+                      { k: "weekly", label: "每周" },
+                    ] as const).map((o) => {
+                      const on = mode === o.k;
+                      return (
+                        <button
+                          key={o.k}
+                          type="button"
+                          onClick={() => setMode(o.k)}
+                          className="rounded-full px-3 text-[12.5px] transition-colors"
+                          style={{
+                            minHeight: 32,
+                            background: on ? "var(--color-accent)" : "transparent",
+                            color: on ? "#fff" : "var(--color-muted)",
+                            fontWeight: on ? 500 : 400,
+                            border: on ? "1px solid var(--color-accent)" : "1px solid var(--color-border)",
+                          }}
+                        >
+                          {o.label}
+                        </button>
+                      );
+                    })}
                     {mode !== "hourly" && (
-                      <>
-                        <select className="input h-9" value={hour} onChange={(e) => setHour(e.target.value)} aria-label="小时">
-                          {hourOpts.map((h) => <option key={h} value={h}>{h} 点</option>)}
+                      <div className="ml-auto flex items-center gap-1">
+                        <select
+                          value={hour}
+                          onChange={(e) => setHour(e.target.value)}
+                          aria-label="小时"
+                          className="rounded-[8px] px-1.5 text-[13px] outline-none"
+                          style={{
+                            height: 32,
+                            background: "var(--color-surface)",
+                            border: "1px solid var(--color-border)",
+                            color: "var(--color-text)",
+                          }}
+                        >
+                          {hourOpts.map((h) => <option key={h} value={h}>{h}</option>)}
                         </select>
-                        <select className="input h-9" value={minute} onChange={(e) => setMinute(e.target.value)} aria-label="分钟">
-                          {minOpts.map((m) => <option key={m} value={m}>{m} 分</option>)}
+                        <span className="text-[13px]" style={{ color: "var(--color-muted)" }}>:</span>
+                        <select
+                          value={minute}
+                          onChange={(e) => setMinute(e.target.value)}
+                          aria-label="分钟"
+                          className="rounded-[8px] px-1.5 text-[13px] outline-none"
+                          style={{
+                            height: 32,
+                            background: "var(--color-surface)",
+                            border: "1px solid var(--color-border)",
+                            color: "var(--color-text)",
+                          }}
+                        >
+                          {minOpts.map((m) => <option key={m} value={m}>{m}</option>)}
                         </select>
-                      </>
+                      </div>
                     )}
                   </div>
                   {mode === "weekly" && (
-                    <div className="mt-2 grid grid-cols-7 gap-1.5">
+                    <div className="mt-2 grid grid-cols-7 gap-1">
                       {WEEK.map((w) => {
                         const on = weekdays.includes(w.k);
                         return (
                           <button
                             key={w.k}
                             type="button"
-                            data-tap
                             onClick={() => setWeekdays((prev) => (on ? prev.filter((x) => x !== w.k) : [...prev, w.k]))}
-                            className="h-9 rounded-[9px] border text-[13px] lg:h-9"
+                            className="rounded-[8px] text-[12.5px] transition-colors"
                             style={{
+                              height: 32,
                               background: on ? "var(--color-accent)" : "var(--color-surface)",
                               color: on ? "#fff" : "var(--color-text)",
-                              borderColor: on ? "var(--color-accent)" : "var(--color-border)",
+                              border: on ? "1px solid var(--color-accent)" : "1px solid var(--color-border)",
                             }}
                             aria-pressed={on}
                           >
@@ -668,26 +828,28 @@ export default function SessionJobs({
           {/* 已经在跑的 */}
           {items.length > 0 && (
             <>
-              <div className="mb-1.5 flex items-center gap-2 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
-                <span className="panel-title" style={{ fontSize: 11.5 }}>
-                  已经在跑
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-[12px] font-medium" style={{ color: "var(--color-muted)" }}>
+                  已经在跑 {items.filter((j) => j.enabled).length}
                 </span>
-                <span>{items.filter((j) => j.enabled).length} 个</span>
-                <button
-                  type="button"
-                  className="ml-auto min-h-[30px] rounded px-2.5 text-[12px] max-md:min-h-[36px]"
-                  style={{ color: "var(--color-accent)" }}
-                  onClick={() => resetForm()}
-                >
-                  ＋ 再排一个
-                </button>
+                <span className="flex-1" />
+                {editing !== null && (
+                  <button
+                    type="button"
+                    className="rounded-full px-2.5 text-[12px]"
+                    style={{ color: "var(--color-accent)", minHeight: 30 }}
+                    onClick={() => resetForm()}
+                  >
+                    ＋ 再排一个
+                  </button>
+                )}
               </div>
-              <div className="flex flex-col gap-1.5">{items.map((j) => jobCard(j))}</div>
+              <div className="flex flex-col gap-2">{items.map((j) => jobCard(j))}</div>
             </>
           )}
           {items.length === 0 && editing === null && (
-            <p className="mt-1 text-[12px]" style={{ color: "var(--color-muted)" }}>
-              还没有班。上面写一句、选个时间，就是一条。
+            <p className="px-1 text-[12px] leading-relaxed" style={{ color: "var(--color-muted)" }}>
+              还没有班 —— 上面写一句话、选个时间，就是一条。
             </p>
           )}
         </div>
@@ -700,37 +862,43 @@ export default function SessionJobs({
       {/* 常驻条：只在有定时任务时出现（空条是噪声） */}
       {items.length > 0 && (
         <div className="panel-strip max-w-3xl mx-auto mb-1.5 px-2.5 py-1.5 max-md:px-2">
-          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px]">
+          <div className="flex min-w-0 items-center gap-2">
             {/* 标题本身就是「打开班表」的入口：有任务时工具排那个按钮就不摆了，
                 但列表得有地方看得到 */}
             <button
               type="button"
-              className="panel-title inline-flex items-center gap-1 rounded max-md:min-h-[36px]"
+              className="inline-flex min-w-0 items-center gap-1.5 rounded-full text-[12px] font-medium"
+              style={{ color: "var(--color-accent)", minHeight: 30 }}
               onClick={() => {
                 resetForm();
                 onOpenChange(true);
               }}
               title="打开班表：看全部、改时间、再排一个"
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <circle cx="12" cy="12" r="9" />
-                <path d="M12 7v5l3 2" />
+                <path d="M12 7.3V12l3.1 1.9" />
               </svg>
-              定时任务
+              定时
+              <span
+                className="rounded-full px-1.5 text-[11px] leading-[16px]"
+                style={{ background: "color-mix(in srgb, var(--color-accent) 12%, transparent)" }}
+              >
+                {items.length}
+              </span>
             </button>
-            <span style={{ color: "var(--color-muted)" }}>
-              {/* 「在跑」不准确：定时任务多数时间在等下一次，不是正在执行 */}
-              {items.filter((j) => j.enabled).length} 个已启用
-              {items.some((j) => !j.enabled) &&
-                ` · ${items.filter((j) => !j.enabled).length} 个已暂停`}
-            </span>
+            {items.some((j) => !j.enabled) && (
+              <span className="text-[11px]" style={{ color: "var(--color-muted)" }}>
+                {items.filter((j) => !j.enabled).length} 个已暂停
+              </span>
+            )}
             <button
               type="button"
-              className="ml-auto min-h-[30px] rounded px-2.5 text-[12px] max-md:min-h-[36px]"
-              style={{ color: "var(--color-accent)" }}
+              className="ml-auto rounded-full px-2.5 text-[12px] font-medium"
+              style={{ color: "var(--color-accent)", minHeight: 30 }}
               onClick={startNew}
             >
-              ＋ 再排一个
+              ＋ 加一条
             </button>
           </div>
           <div className="mt-1 flex flex-col gap-0.5">
@@ -748,9 +916,8 @@ export default function SessionJobs({
                       {scheduleText(j)}
                     </span>
                     <span className="ml-1.5 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
-                      {" · "}
-                      {j.enabled ? `下次 ${whenText(j.next_run_at)}` : "已暂停"}
-                      {j.deliver?.channel === "webhook" ? " · 推送到群" : ""}
+                      {j.enabled ? ` · ${whenText(j.next_run_at)}` : " · 已暂停"}
+                      {j.deliver?.channel === "webhook" ? " · 群" : ""}
                       {j.monitor_kind ? " · 有变化才跑" : ""}
                     </span>
                   </button>

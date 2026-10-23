@@ -559,7 +559,7 @@ test("定时任务：枚举频率 + 两选一投递 + 空态不占位", () => {
   // 节奏从「三个分段 + 时间零件」改成整句下拉（每天 09:00 / 每周一三五 09:00），
   // 枚举值仍在源码里明写着，不让用户写 cron
   assert.match(src, /DAILY_PRESETS/, "频率是枚举好的整句");
-  assert.match(src, /option value="hourly"/, "每小时仍可选");
+  assert.match(src, /key: "hourly", label: "每小时"/, "每小时仍可选");
   assert.match(src, /key: "session" as const, label: "这个对话"/, "默认投递=本对话");
   assert.match(src, /key: "feishu", label: "飞书"/, "webhook 支持飞书");
   assert.match(src, /key: "wecom", label: "企业微信"/, "webhook 支持企业微信");
