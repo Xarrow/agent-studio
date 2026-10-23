@@ -54,7 +54,23 @@ test("扩展名与类型判定", () => {
   assert.equal(extOf("/a/b/Report.MD"), "md");
   assert.equal(extOf("noext"), "");
   assert.equal(fileKind("shot.PNG"), "image");
-  assert.equal(fileKind("data.json"), "text");
+  // JSON / XML 各有专门的渲染器（折叠树 / 缩进），不再当普通文本
+  assert.equal(fileKind("data.json"), "json");
+  assert.equal(fileKind("feed.jsonl"), "json");
+  assert.equal(fileKind("conf.xml"), "xml");
+  // Office 与思维导图：内容交给后端解（/api/work/preview）
+  assert.equal(fileKind("报表.xlsx"), "spreadsheet");
+  assert.equal(fileKind("报表.XLSM"), "spreadsheet");
+  assert.equal(fileKind("复盘.docx"), "document");
+  assert.equal(fileKind("汇报.pptx"), "slides");
+  assert.equal(fileKind("记忆.xmind"), "outline");
+  // 老格式仍归到对应类型：后端解不了，但会给「另存为 .xlsx」的具体建议，
+  // 比笼统的「这类文件不能预览」有用
+  assert.equal(fileKind("老表.xls"), "spreadsheet");
+  assert.equal(fileKind("老文档.doc"), "document");
+  assert.equal(fileKind("老幻灯片.ppt"), "slides");
+  // svg 是图片（当图看比当 XML 看有用）
+  assert.equal(fileKind("图.svg"), "image");
   // 常见格式各有各的预览方式（PDF 内嵌、音视频原生控件、md 渲染、表格出表）
   assert.equal(fileKind("报告.pdf"), "pdf");
   assert.equal(fileKind("录音.mp3"), "audio");

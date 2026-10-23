@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import re
 import shutil
@@ -43,10 +44,12 @@ import subprocess
 from pathlib import Path
 from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 
 from ..config import settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/work", tags=["work"])
 
@@ -56,6 +59,11 @@ _ALLOWED_SUFFIXES = {
     ".pdf", ".txt", ".md", ".markdown", ".json", ".csv", ".tsv",
     ".html", ".htm", ".xml", ".yaml", ".yml", ".log", ".py", ".js",
     ".ts", ".sql", ".ipynb", ".mdx",
+    # Office 与思维导图：本身不能内联显示，但「预览」端点会把内容解成 JSON；
+    # 下载端点也要放行，否则预览失败时连下载都没得给
+    ".xlsx", ".xlsm", ".docx", ".pptx", ".xmind",
+    # 老格式只给下载（解不了），但别在下载这一步就 404
+    ".xls", ".doc", ".ppt",
     # 音视频：对话里能直接播（浏览器原生控件），只放行 Web 能解的容器/编码
     ".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac", ".opus",
     ".mp4", ".webm", ".mov", ".m4v", ".ogv",
@@ -157,6 +165,35 @@ def _probe(target: Path) -> dict:
         "height": int(v.get("height") or 0),
         "size": target.stat().st_size,
     }
+
+
+@router.get("/preview")
+def preview_file(fpath: str = Query(..., description="相对工作目录的路径")) -> dict:
+    """把 xlsx / docx / pptx / xmind 解成前端能直接画的结构。
+
+    为什么不让前端解：这三类 office 文件要在浏览器里解析得引三套库（+1.5MB），
+    而服务端已经有现成的解析器。这里输出统一的 ``{kind, payload, notes}``，
+    前端只按 kind 选渲染器 —— 加一种格式只要多一个后端分支，前端不用动。
+
+    解析失败**不抛 500**：文件可能损坏、可能加密、可能是老格式。
+    回 200 + ``error`` 让前端把原因显示在预览层里，比一个干巴巴的 500 有用。
+    """
+    target = _resolve(fpath)
+    from ..preview import parse
+
+    try:
+        return {"ok": True, **parse(target)}
+    except ValueError as exc:
+        # 明确"这个格式解不了"（老 Office 格式、损坏文件）—— 是预期内的情况
+        return {"ok": False, "error": str(exc), "name": target.name, "size": target.stat().st_size}
+    except Exception as exc:  # noqa: BLE001 —— 第三方解析器抛什么都有可能
+        logger.warning("预览解析失败 %s: %s", target, exc)
+        return {
+            "ok": False,
+            "error": f"解析失败：{type(exc).__name__}（文件可能已损坏或带密码）",
+            "name": target.name,
+            "size": target.stat().st_size,
+        }
 
 
 @router.get("/probe")

@@ -1,6 +1,7 @@
 /** 后端 API 客户端（类型化 fetch 封装）。 */
 
 import type {
+  WorkPreview,
   BgProcInfo,
   BrowserRun,
   BrowserStep,
@@ -1034,6 +1035,14 @@ export const api = {
   /* ------------------------- 视频能不能播 / 转码 ------------------------- */
   probeWorkFile: (path: string) =>
     request<WorkProbe>(`/api/work/probe?path=${encodeURIComponent(path)}`),
+  /**
+   * 把 xlsx / docx / pptx / xmind 解成可渲染的结构。
+   * 解析失败时后端仍回 200（带 error 字段）—— 文件损坏、加密、老格式都属于预期情况，
+   * 不该在前端变成一个"请求失败"的红色错误。
+   */
+  previewWorkFile: (path: string) =>
+    // 参数名必须跟着后端走：work.py 的 preview_file(fpath=...) —— 写成 path 会 422
+    request<WorkPreview>(`/api/work/preview?fpath=${encodeURIComponent(path)}`),
   transcodeWorkFile: (path: string) =>
     post<TranscodeResult>("/api/work/transcode", { path }),
 

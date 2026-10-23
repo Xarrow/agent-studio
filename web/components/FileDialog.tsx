@@ -24,6 +24,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { DLG_BACKDROP, DLG_CARD } from "@/components/ui/kit";
 import { api, fmt } from "@/lib/api";
+import type { WorkPreview } from "@/lib/types";
 import { CodeBlock } from "@/components/CodeBlock";
 import Markdown from "@/components/Markdown";
 import { FileTypeIcon } from "@/components/ui/icons";
@@ -33,10 +34,21 @@ import {
   fileKind,
   fileTypeKey,
   fileUrlFor,
+  isServerParsedKind,
   isTextishKind,
   looksLikeFilePath,
 } from "@/lib/files";
 import { copyText } from "@/lib/clipboard";
+import {
+  DocumentView,
+  JsonView,
+  OutlineView,
+  SlidesView,
+  SpreadsheetView,
+  XmlFetch,
+  type OutlineSheet,
+  type SheetData,
+} from "@/components/FilePreviews";
 
 export type FileRef = { path: string; name?: string; url?: string | null; size?: number; mtime?: number };
 
@@ -168,6 +180,12 @@ const KIND_LABEL: Record<string, string> = {
   table: "表格",
   html: "网页",
   text: "文本",
+  json: "JSON",
+  xml: "XML",
+  spreadsheet: "表格",
+  document: "文档",
+  slides: "幻灯片",
+  outline: "思维导图",
   other: "文件",
 };
 
@@ -292,6 +310,10 @@ export function FileDialog({
   const [convErr, setConvErr] = useState<string | null>(null);
   /** Markdown / 表格的"看排版"与"看原文"切换（默认看排版） */
   const [rawView, setRawView] = useState(false);
+  /* Office / 思维导图：内容由后端解析（前端解 xlsx/docx/pptx 要引三套库、+1.5MB） */
+  const [parsed, setParsed] = useState<WorkPreview | null>(null);
+  const [parseErr, setParseErr] = useState<string | null>(null);
+  const [parsing, setParsing] = useState(false);
   /* 删除是不可撤销的：第一下只把按钮变成「确认删除」，4 秒内再点才算（不用原生 confirm —— 它阻塞 JS） */
   const [confirmDel, setConfirmDel] = useState(false);
   /** 确认态的倒计时（4 → 1），到点自己退回「删除」 */
@@ -411,6 +433,33 @@ export function FileDialog({
       setConverting(false);
     }
   };
+
+  /* Office / 思维导图：让后端解析成结构。探针式的失败（老格式、损坏）不是错误页，
+     而是"这里放一句人话 + 仍然给下载"。 */
+  useEffect(() => {
+    let alive = true;
+    setParsed(null);
+    setParseErr(null);
+    if (!sessionId || !isServerParsedKind(kind)) return;
+    setParsing(true);
+    void api
+      .previewWorkFile(workRel)
+      .then((r) => {
+        if (!alive) return;
+        if (r.ok) {
+          setParsed(r);
+        } else {
+          setParseErr(r.error || "解不了这个文件");
+        }
+      })
+      .catch((e) => alive && setParseErr(e instanceof Error ? e.message : "解析请求失败"))
+      .finally(() => alive && setParsing(false));
+    return () => {
+      alive = false;
+    };
+    // workRel 由 path/sessionId 派生，两者变了才需要重新解析
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workRel, kind, sessionId]);
 
   useEffect(() => {
     let alive = true;
@@ -575,6 +624,37 @@ export function FileDialog({
                 </div>
               );
             })()
+          ) : isServerParsedKind(kind) ? (
+            parsing ? (
+              <div className="rounded-[10px] border p-3" style={{ borderColor: "var(--color-border)" }}>
+                {[88, 70, 44].map((w) => (
+                  <div
+                    key={w}
+                    className="mb-2 h-[9px] rounded-full last:mb-0"
+                    style={{ width: `${w}%`, background: "var(--color-surface-2)", animation: "pulse 1.4s ease-in-out infinite" }}
+                  />
+                ))}
+              </div>
+            ) : parseErr ? (
+              <p
+                className="rounded-[10px] border p-3 text-[12.5px] leading-relaxed"
+                style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
+              >
+                {parseErr}
+              </p>
+            ) : !parsed?.kind ? (
+              <p className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+                没有内容可显示
+              </p>
+            ) : parsed.kind === "spreadsheet" ? (
+              <SpreadsheetView sheets={(parsed.payload?.sheets as SheetData[]) ?? []} />
+            ) : parsed.kind === "document" ? (
+              <DocumentView blocks={parsed.payload?.blocks ?? []} />
+            ) : parsed.kind === "slides" ? (
+              <SlidesView slides={parsed.payload?.slides ?? []} />
+            ) : (
+              <OutlineView sheets={(parsed.payload?.sheets as OutlineSheet[]) ?? []} />
+            )
           ) : kind === "html" ? (
             /* HTML 用沙箱 iframe：不给脚本、不给同源 —— 别人的页面不能在我们的域里跑代码 */
             <iframe
@@ -584,6 +664,8 @@ export function FileDialog({
               className="h-[52dvh] w-full rounded-[10px] border"
               style={{ borderColor: "var(--color-border)", background: "#fff" }}
             />
+          ) : kind === "xml" ? (
+            <XmlFetch url={url} path={file.path} />
           ) : isTextishKind(kind) ? (
             state === "loading" ? (
               /* 骨架：三条灰条，比一句"读取中…"更像在加载（也避免文字跳一下） */
@@ -612,6 +694,9 @@ export function FileDialog({
                   </div>
                 ) : kind === "table" && !rawView ? (
                   <TablePreview text={text || ""} path={file.path} />
+                ) : kind === "json" && !rawView ? (
+                  /* JSON：折叠树。比一大段括号好读得多，而且能按 key 收起来找结构 */
+                  <JsonView text={text || ""} />
                 ) : (
                   /* 代码/纯文本：CodeBlock —— JSON/XML 自动格式化 + 着色 */
                   <div className="max-h-[46dvh] overflow-auto">
@@ -622,13 +707,19 @@ export function FileDialog({
                   className="flex flex-wrap items-center gap-2 px-1 pt-1 text-[12px]"
                   style={{ color: "var(--color-muted)" }}
                 >
-                  {(kind === "markdown" || kind === "table") && (
+                  {(kind === "markdown" || kind === "table" || kind === "json") && (
                     <button
                       type="button"
                       className="btn px-2 py-0.5 text-[12px] max-md:min-h-[32px]"
                       onClick={() => setRawView((v) => !v)}
                     >
-                      {rawView ? (kind === "table" ? "看表格" : "看排版") : "看源码"}
+                      {rawView
+                        ? kind === "table"
+                          ? "看表格"
+                          : kind === "json"
+                            ? "看结构"
+                            : "看排版"
+                        : "看源码"}
                     </button>
                   )}
                   只显示前{" "}
@@ -648,7 +739,8 @@ export function FileDialog({
           ) : (
             <p className="rounded-[10px] border p-3 text-[12.5px]" style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}>
               这类文件（{extOf(file.path) || "无扩展名"}）不能在页面里预览 —— 下载后用本机程序打开。
-              能直接看的有：图片、PDF、音频、视频、Markdown、CSV/TSV、代码与纯文本。
+              能直接看的有：图片、PDF、音频、视频、Word/Excel/PPT（含 xlsx/docx/pptx）、思维导图（xmind）、
+              Markdown、CSV/TSV、JSON/XML、代码与纯文本。
             </p>
           )}
         </div>

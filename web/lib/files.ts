@@ -29,6 +29,14 @@ export type FileKind =
   | "table"
   | "html"
   | "text"
+  /** 结构化文本：前端自己解析成折叠树 / 缩进，比原样显示好用 */
+  | "json"
+  | "xml"
+  /** Office 与思维导图：内容由后端 /api/work/preview 解成 JSON，前端只负责画 */
+  | "spreadsheet"
+  | "document"
+  | "slides"
+  | "outline"
   | "other";
 
 const PDF_EXT = new Set(["pdf"]);
@@ -37,6 +45,17 @@ const VIDEO_EXT = new Set(["mp4", "webm", "mov", "m4v", "ogv"]);
 const MD_EXT = new Set(["md", "markdown", "mdx"]);
 const TABLE_EXT = new Set(["csv", "tsv"]);
 const HTML_EXT = new Set(["html", "htm"]);
+/**
+ * 后端能解成结构的 Office / 思维导图。
+ *
+ * 老格式（xls/doc/ppt）**也归到对应类型**：后端解不了，但会回一句
+ * 「另存为 .xlsx 就能预览」—— 这比通用提示「不能用页面预览」有用得多。
+ * 前端不需要知道"哪些解得开"，交给后端说。
+ */
+const SPREADSHEET_EXT = new Set(["xlsx", "xlsm", "xls"]);
+const DOCUMENT_EXT = new Set(["docx", "doc"]);
+const SLIDES_EXT = new Set(["pptx", "ppt"]);
+const OUTLINE_EXT = new Set(["xmind"]);
 
 export function extOf(name: string): string {
   const base = name.split("/").pop() || name;
@@ -53,13 +72,24 @@ export function fileKind(name: string): FileKind {
   if (MD_EXT.has(e)) return "markdown";
   if (TABLE_EXT.has(e)) return "table";
   if (HTML_EXT.has(e)) return "html";
+  if (e === "json" || e === "jsonl" || e === "ndjson") return "json";
+  if (e === "xml") return "xml"; // svg 归 image（当图看比当 XML 看有用，见上面的 IMAGE_EXT）
+  if (SPREADSHEET_EXT.has(e)) return "spreadsheet";
+  if (DOCUMENT_EXT.has(e)) return "document";
+  if (SLIDES_EXT.has(e)) return "slides";
+  if (OUTLINE_EXT.has(e)) return "outline";
   if (TEXT_EXT.has(e)) return "text";
   return "other";
 }
 
-/** 需要先取回文本才能预览的那几类（Markdown 渲染、表格解析、代码高亮） */
+/** 需要先取回文本才能预览的那几类（Markdown 渲染、表格解析、JSON 解析、代码高亮） */
 export function isTextishKind(kind: FileKind): boolean {
-  return kind === "text" || kind === "markdown" || kind === "table";
+  return kind === "text" || kind === "markdown" || kind === "table" || kind === "json";
+}
+
+/** 内容由后端解析的那几类（走 /api/work/preview，不直接 fetch 文件） */
+export function isServerParsedKind(kind: FileKind): boolean {
+  return kind === "spreadsheet" || kind === "document" || kind === "slides" || kind === "outline";
 }
 
 /** 这个文件在这台设备上能不能直接看（决定弹层里给预览还是给下载） */

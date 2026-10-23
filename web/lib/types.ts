@@ -1170,6 +1170,26 @@ export type UploadConfigRead = {
 };
 
 /** 视频能不能在浏览器里直接播（后端 ffprobe 判定） */
+/** /api/work/preview 的返回：后端已把 Office / 思维导图解成结构 */
+export interface WorkPreview {
+  ok: boolean;
+  /** 解析失败时的人话原因（老格式、损坏、加密） */
+  error?: string;
+  name?: string;
+  size?: number;
+  ext?: string;
+  /** 渲染方式，不是文件类型 */
+  kind?: "spreadsheet" | "document" | "slides" | "outline";
+  payload?: {
+    /** xlsx 是 [{name, rows}]，xmind 是 [{title, root}] —— 由 kind 决定用哪套，故不写死 */
+    sheets?: unknown;
+    blocks?: { t: string; text?: string; rows?: string[][] }[];
+    slides?: { n: number; title: string; lines: string[]; notes: string }[];
+  };
+  truncated?: boolean;
+  notes?: string[];
+}
+
 export interface WorkProbe {
   ok: boolean;
   playable?: "yes" | "maybe" | "no";
