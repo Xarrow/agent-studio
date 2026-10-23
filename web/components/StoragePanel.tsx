@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { api, fmt } from "@/lib/api";
+import { Section } from "@/components/ui/kit";
 import { useFeedback } from "@/components/ui/feedback";
 
 type Storage = {
@@ -142,13 +143,12 @@ export function StoragePanel() {
   };
 
   return (
-    <section className="card p-4">
-      <div className="mb-2 flex items-center gap-2">
-        <h2 className="text-[14px] font-medium">存储</h2>
-        <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
-          事件会随执行累积；自动整理每小时最多跑一次，也可手动
-        </span>
-      </div>
+    // 存储体检是低频动作：默认收起，页面上只留一行；要整理再展开
+    <Section
+      title="存储"
+      desc="事件会随执行累积；自动整理每小时最多跑一次，也可手动"
+      defaultOpen={false}
+    >
 
       {loading && !data ? (
         <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>
@@ -291,6 +291,6 @@ export function StoragePanel() {
           </div>
         </>
       )}
-    </section>
+    </Section>
   );
 }

@@ -57,6 +57,7 @@ export default function EnvironmentPage() {
   const [driver, setDriver] = useState<DbDriver>("sqlite");
   const [form, setForm] = useState<Form>(EMPTY);
   const [test, setTest] = useState<DbTestResult | null>(null);
+  const [switchOpen, setSwitchOpen] = useState(false);
   const [busy, setBusy] = useState<"test" | "switch" | null>(null);
   const [switching, setSwitching] = useState(false);
   /* 上传目录（Playground 任务卡的附件存这里）—— 跟数据库配置互不相干，单独一块。
@@ -261,7 +262,8 @@ export default function EnvironmentPage() {
       {/* ── 运行环境：这台机器有什么、缺了能装 ─────────────── */}
       <Section
         title="运行环境"
-        desc="检测本机 Python / Node，缺了一键装到平台目录"
+        desc="本机 Python / Node；缺了一键装到平台目录"
+        defaultOpen={false}
       >
         <RuntimeCard />
       </Section>
@@ -270,43 +272,58 @@ export default function EnvironmentPage() {
       <Section
         title="浏览器驱动"
         desc="助手操作网页用的内核；装哪个、用哪个都在这"
+        defaultOpen={false}
       >
         <BrowserDriversCard />
       </Section>
 
-      {/* ── 当前使用 ─────────────────────────────────────────── */}
+      {/* ── 数据库：现状 + 换库 合成一块（同一件事的两面，不该分两个 Section）── */}
       <Section
-        title="当前使用"
-        desc="当前真实落点；改完要重启才生效"
+        title="数据库"
+        count={
+          status
+            ? `${status.config.driver_label.replace(/（.*?）|\(.*?\)/g, "").trim()} · ${status.table_count} 张表`
+            : undefined
+        }
+        desc={
+          status
+            ? status.pending_restart
+              ? "配置改过但还没生效 —— 重启后才会用新库"
+              : status.reachable
+                ? "连接正常；换库后要重启才生效"
+                : "连不上，去看看下面的连接参数"
+            : "读配置中…"
+        }
       >
         {status && (
           <>
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
               <span
-                className="text-[10.5px] px-1.5 py-0.5 rounded"
+                className="inline-block h-[7px] w-[7px] shrink-0 translate-y-[-1px] rounded-full"
+                style={{ background: status.reachable ? "var(--color-ok)" : "var(--color-err)" }}
+                title={status.reachable ? "连接正常" : "连不上"}
+              />
+              <span className="text-[15px] font-semibold">{status.config.driver_label}</span>
+              <span className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                {status.table_count} 张表
+                {status.reachable ? "" : " · 连不上"}
+              </span>
+              <span
+                className="ml-auto rounded-full px-1.5 py-[1px] text-[10.5px] leading-[15px]"
                 style={{
-                  background: "color-mix(in srgb, var(--color-accent) 14%, transparent)",
+                  background: "color-mix(in srgb, var(--color-accent) 12%, transparent)",
                   color: "var(--color-accent)",
                 }}
               >
                 生效中
               </span>
-              <span className="text-[13.5px] font-medium">{status.config.driver_label}</span>
-              <span
-                className="text-[12px]"
-                style={{ color: status.reachable ? "var(--color-ok)" : "var(--color-err)" }}
-              >
-                {status.reachable ? "● 连接正常" : "✕ 连不上"}
-              </span>
             </div>
 
-            <div className="mono text-[12px] text-[var(--color-muted)] mt-2 break-all">
+            <div className="mono mt-1.5 truncate text-[11.5px]" style={{ color: "var(--color-muted)" }} title={status.runtime.describe}>
               {status.runtime.describe}
             </div>
-
-            <div className="flex items-center gap-4 mt-2 flex-wrap text-[12px] text-[var(--color-muted)]">
-              <span>{status.table_count} 张表</span>
-              <span>配置文件：{status.config_path}</span>
+            <div className="mono mt-0.5 truncate text-[11px]" style={{ color: "var(--color-muted)" }} title={status.config_path}>
+              配置 {status.config_path}
             </div>
 
             {status.error && (
@@ -321,15 +338,23 @@ export default function EnvironmentPage() {
             )}
           </>
         )}
-      </Section>
 
-      {/* ── 切换 ─────────────────────────────────────────────── */}
-      <Section
-        title="切换到其他数据库"
-        desc="新库自动建表，里面是空的；旧库不动"
-      >
+        {/* 换库是低频动作：默认收起，别让一个空表单占掉整屏 */}
+        <button
+          type="button"
+          onClick={() => setSwitchOpen((v) => !v)}
+          aria-expanded={switchOpen}
+          className="mt-3 flex w-full items-center gap-1.5 rounded-lg text-left text-[11.5px]"
+          style={{ color: "var(--color-muted)", minHeight: 32 }}
+        >
+          <span>{switchOpen ? "▾" : "▸"}</span>
+          <span className="font-medium">换一个库</span>
+          <span className="truncate">· 新库自动建表，旧库不动</span>
+        </button>
 
-        <div className="mb-4 flex flex-col gap-1.5 sm:grid sm:grid-cols-3 sm:gap-2">
+        {switchOpen ? (
+          <>
+        <div className="mb-4 mt-2 flex flex-col gap-1.5 sm:grid sm:grid-cols-3 sm:gap-2">
           {drivers.map((d) => {
             const on = driver === d.key;
             const inUse = status?.config.driver === d.key;
@@ -560,11 +585,14 @@ export default function EnvironmentPage() {
             </span>
           )}
         </div>
+          </>
+        ) : null}
       </Section>
 
       {/* ── 上传目录 ─────────────────────────────────────────── */}
       <Section
         title="上传目录"
+        defaultOpen={false}
         desc={
           <>
             对话与任务里上传的图片/文件存到这个目录；留空 = 用默认目录
@@ -614,6 +642,7 @@ export default function EnvironmentPage() {
       <Section
         title="对外接入 · AG-UI"
         desc="暴露 AG-UI SSE 端点，外部客户端可直接驱动助手"
+        defaultOpen={false}
       >
         <AguiCard />
       </Section>
@@ -625,6 +654,7 @@ export default function EnvironmentPage() {
       <Section
         title="配置导入导出"
         desc="按功能导出或全量导出；导入只新增"
+        defaultOpen={false}
       >
         <BackupRestore />
       </Section>
@@ -633,6 +663,7 @@ export default function EnvironmentPage() {
       <Section
         title="几点说明"
         desc="数据不搬、要重启、切错自动退回"
+        defaultOpen={false}
       >
         <ul className="text-[12px] text-[var(--color-muted)] space-y-1.5 leading-relaxed">
           <li>
