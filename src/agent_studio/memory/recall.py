@@ -201,6 +201,66 @@ async def recall(
     return RecallResult(memories=kept, text=render(kept) if kept else None)
 
 
+async def pinned_for(
+    session: AsyncSession,
+    agent_id: str,
+    *,
+    max_chars: int = 1200,
+    session_id: str | None = None,
+) -> list[RecalledMemory]:
+    """**常驻层**：pinned 的记忆，不参与相似度排序，每轮整段注入。
+
+    对应 Hermes 的 MEMORY.md / USER.md。为什么要单独一层：
+    检索召回是"你问什么，我找像的"；而「用户在上海」「凭据都在 .env」这类事实，
+    用户问「帮我部署个服务」时和问题**一点也不像**，top_k 永远排不上 ——
+    但它必须每轮都在。这类事实放这里，检索那层只管任务相关的细节。
+
+    预算按 importance 从高到低吃，超了截断（常驻也不能无限长，否则挤掉正文）。
+    """
+    stmt = select(Memory).where(Memory.status == "active", Memory.pinned == 1)
+    rows = list((await session.execute(stmt)).scalars().all())
+    if not rows:
+        return []
+    mine: list[Memory] = []
+    for m in rows:
+        if m.agent_id == agent_id or m.scope == "global":
+            mine.append(m)
+        elif m.scope == "session" and session_id and m.session_id == session_id:
+            mine.append(m)
+    mine.sort(key=lambda m: float(m.importance or 0.5), reverse=True)
+
+    kept: list[RecalledMemory] = []
+    used = 0
+    for m in mine:
+        cost = len(m.content) + 8
+        if used + cost > max_chars:
+            break
+        kept.append(
+            RecalledMemory(
+                id=m.id, content=m.content, kind=m.kind,
+                score=float(m.importance or 0.5), importance=float(m.importance or 0.5),
+            )
+        )
+        used += cost
+    return kept
+
+
+def render_pinned(memories: list[RecalledMemory]) -> str:
+    """常驻段的渲染。标题与检索段分开，模型能区分"always know"与"this task related"。"""
+    if not memories:
+        return ""
+    lines = ["## 常驻记忆（每轮都在，不必再查）"]
+    for m in memories:
+        label = {
+            "fact": "事实",
+            "preference": "偏好",
+            "summary": "结论",
+            "instruction": "要求",
+        }.get(m.kind, "信息")
+        lines.append(f"- [{label}] {m.content}")
+    return "\n".join(lines)
+
+
 def render(memories: list[RecalledMemory]) -> str:
     """把记忆渲染成注入 System Prompt 的文本块。
 

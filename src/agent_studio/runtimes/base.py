@@ -165,8 +165,12 @@ class TurnContext(BaseModel):
     #: 被注入的记忆 id —— 执行后据此累计 hits（热度衰减用）
     memory_ids: list[str] = Field(default_factory=list)
 
+    #: **常驻记忆**：pinned 的条目，每轮整段注入（对应 Hermes 的 MEMORY.md）
+    pinned_text: str | None = None
+    pinned_ids: list[str] = Field(default_factory=list)
+
     def is_empty(self) -> bool:
-        return not (self.history or self.summary or self.memory_text)
+        return not (self.history or self.summary or self.memory_text or self.pinned_text)
 
 
 # --------------------------------------------------------------------------- #

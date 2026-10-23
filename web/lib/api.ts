@@ -1080,6 +1080,8 @@ export const api = {
       importance: number;
       status: string;
       scope: string;
+      /** 1 = 常驻（每轮注入） */
+      pinned: number;
     }>,
   ) =>
     request<Memory>(`/api/memories/${id}`, {

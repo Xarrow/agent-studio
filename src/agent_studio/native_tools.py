@@ -346,6 +346,14 @@ MEMORY_SAVE_SCHEMA: dict[str, Any] = {
             "items": {"type": "string"},
             "description": "可选标签（外部记忆服务支持；平台内置记忆会写进正文）",
         },
+        "pin": {
+            "type": "boolean",
+            "description": (
+                "true = 常驻：以后每一轮都直接带上这条（不靠检索）。"
+                "只给「用户是谁、环境事实、长期约定」这类每次都要知道的事；"
+                "任务细节、一次性的结论不要 pin —— 常驻段有长度上限，塞满会挤掉正文。"
+            ),
+        },
     },
     "required": ["content"],
 }
@@ -537,7 +545,9 @@ async def _skill_save(
         )
 
 
-async def _memory_save(content: str, tags: list[str] | None = None) -> str:
+async def _memory_save(
+    content: str, tags: list[str] | None = None, pin: bool = False
+) -> str:
     """**主动记一条**：内置直接生效（store-and-use）+ 配了外部就同时写外部。
 
     为什么改成直接生效（原来的候选制）：
@@ -569,7 +579,9 @@ async def _memory_save(content: str, tags: list[str] | None = None) -> str:
                 source="agent",
                 source_run_id=run_id,
                 status="active",
-                importance=0.6,
+                # 常驻的给高 importance：常驻段按它排序，超预算时先保重要的
+                importance=0.9 if pin else 0.6,
+                pinned=1 if pin else 0,
                 created_at=now_ms(),
                 updated_at=now_ms(),
             )
@@ -585,7 +597,8 @@ async def _memory_save(content: str, tags: list[str] | None = None) -> str:
         except external.ExternalMemoryError as exc:
             external_note = f"外部记忆写入失败：{exc}"
 
-    return f"已记住（下一轮起就会带上这条；记多了可在记忆页归档）；{external_note}"
+    where = "常驻记忆（以后每一轮都会带上）" if pin else "记忆（下次提问相关时会召回）"
+    return f"已记住，存进{where}；记多了可在记忆页归档。{external_note}"
 
 
 # --------------------------------------------------------------------------- #

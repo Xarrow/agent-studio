@@ -460,6 +460,12 @@ class Memory(Base):
     hits: Mapped[int] = mapped_column(Integer, default=0)
     last_hit_at: Mapped[int | None] = mapped_column(Integer, default=None)
 
+    #: **常驻层**：pinned=1 的记忆不参与相似度排序，**每轮都整段注入**
+    #: （对应 Hermes 的 MEMORY.md / USER.md）。身份、环境、长期约定放这里 ——
+    #: 这类事实"用户问什么都要知道"，靠 top_k 召回等于碰运气：
+    #: 用户说"帮我部署个服务"时，「用户在上海」「凭据在 .env」根本不像，召不回来。
+    pinned: Mapped[int] = mapped_column(Integer, default=0, index=True)
+
     #: none | pending | ready  —— 预留向量检索，当前不使用
     embedding_status: Mapped[str] = mapped_column(String(16), default="none")
     #: NULL = 永久

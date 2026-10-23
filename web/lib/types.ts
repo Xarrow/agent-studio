@@ -680,6 +680,8 @@ export interface Memory {
   source_run_id: string | null;
   status: MemoryStatus;
   importance: number;
+  /** 1 = 常驻：每轮整段注入，不靠相似度召回（对齐 Hermes 的 MEMORY.md） */
+  pinned: number;
   hits: number;
   last_hit_at: number | null;
   embedding_status: string;

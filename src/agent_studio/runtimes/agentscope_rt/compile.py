@@ -812,6 +812,7 @@ def build_agent(
     tools: list[ToolSpec],
     skills_dir: Path | None = None,
     memory_text: str | None = None,
+    pinned_text: str | None = None,
     mcp_tools: list[Any] | None = None,
     cwd: str | None = None,
     session_allow: list[str] | tuple[str, ...] = (),
@@ -861,6 +862,10 @@ def build_agent(
     model_cfg, context_cfg, react_cfg, injection_cfg = build_configs(defn)
 
     system_prompt = defn.system_prompt or ""
+    # 常驻记忆先于检索记忆：前者是"你本来就该知道的事"（用户是谁、环境事实），
+    # 后者是"这次任务相关". 顺序反了模型容易把身份事实当成任务备注。
+    if pinned_text:
+        system_prompt = f"{system_prompt.rstrip()}\n\n{pinned_text}".strip()
     if memory_text:
         system_prompt = f"{system_prompt.rstrip()}\n\n{memory_text}".strip()
     # 项目上下文：工作目录里的 AGENTS.md（"这个目录该怎么做"）

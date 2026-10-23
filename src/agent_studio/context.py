@@ -116,6 +116,18 @@ async def build_turn_context(
             ctx.summary = sess.summary
             ctx.history = await load_history(session, session_id)
 
+    # 常驻层：pinned 的记忆每轮整段注入，**不参与相似度排序**，也不受 recall_enabled 影响
+    # （关掉检索是不想塞不相关的细节，不是不想知道用户是谁）
+    try:
+        from .memory.recall import pinned_for, render_pinned
+
+        pinned = await pinned_for(session, agent_id, max_chars=1200, session_id=session_id)
+        if pinned:
+            ctx.pinned_text = render_pinned(pinned)
+            ctx.pinned_ids = [m.id for m in pinned]
+    except Exception as exc:  # noqa: BLE001 —— 常驻层读失败不能拖垮整轮执行
+        logger.warning("常驻记忆读取失败：%s", exc)
+
     if policy.recall_enabled:
         # 召回来源：local（内置 BM25）/ external（外部记忆服务）/ hybrid（两边合并去重）。
         # 三档都要能跑：外部没配、外部挂了，都不能让执行停摆 ——

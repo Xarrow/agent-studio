@@ -801,6 +801,8 @@ class MemoryUpdate(BaseModel):
     status: MemoryStatus | None = None
     scope: MemoryScope | None = None
     ttl_s: int | None = None
+    #: 1 = 常驻（每轮注入）；0 = 普通（按相关度召回）
+    pinned: int | None = None
     #: 改归属。传 NULL 表示"不修改"，传 "" 表示改成全局（不绑任何 Agent）
     agent_id: str | None = None
 
@@ -831,6 +833,8 @@ class MemoryRead(BaseModel):
     source_run_id: str | None = None
     status: str
     importance: float
+    #: 常驻：pinned 的记忆每轮整段注入（不靠相似度召回）
+    pinned: int = 0
     hits: int
     last_hit_at: int | None = None
     embedding_status: str

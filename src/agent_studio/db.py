@@ -230,6 +230,8 @@ _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("bg_proc", "last_beat_at", "last_beat_at BIGINT"),
     # 记忆召回来源：local / external / hybrid（外部记忆服务的接入点）
     ("memory_policy", "recall_backend", "recall_backend VARCHAR(16) DEFAULT 'local'"),
+    # 记忆常驻层：pinned 的记忆每轮整段注入，不靠相似度召回（对齐 Hermes 的 MEMORY.md）
+    ("memory", "pinned", "pinned BOOLEAN NOT NULL DEFAULT 0"),
 )
 
 

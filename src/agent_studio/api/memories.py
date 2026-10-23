@@ -80,6 +80,7 @@ def _to_read(row: Memory, agent_name: str | None = None) -> MemoryRead:
         source_run_id=row.source_run_id,
         status=row.status,
         importance=float(row.importance or 0.5),
+        pinned=int(row.pinned or 0),
         hits=row.hits or 0,
         last_hit_at=row.last_hit_at,
         embedding_status=row.embedding_status,
@@ -440,6 +441,11 @@ async def update_memory(
         row.scope = payload.scope
     if payload.ttl_s is not None:
         row.ttl_s = payload.ttl_s
+    if payload.pinned is not None:
+        row.pinned = 1 if payload.pinned else 0
+        # 常驻 = 每轮都在，重要性天然该高；普通 = 按相关度，别动它原来的权重
+        if payload.pinned and (row.importance or 0) < 0.8:
+            row.importance = 0.9
 
     # 改归属。归属只有一个语义来源（agent_id），scope 跟着它走 ——
     # 这样就不会出现"scope=global 却绑着某个 agent"这种自相矛盾的状态。

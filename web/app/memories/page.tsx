@@ -182,6 +182,16 @@ export default function MemoriesPage() {
     }
   };
 
+  const togglePin = async (m: Memory) => {
+    try {
+      await api.updateMemory(m.id, { pinned: m.pinned ? 0 : 1 });
+      fb.success(m.pinned ? "已取消常驻" : "已设为常驻（以后每轮都会带上）");
+      await load();
+    } catch (e) {
+      fb.error("设置失败", e instanceof Error ? e.message : String(e));
+    }
+  };
+
   const remove = async (m: Memory) => {
     const ok = await fb.confirm({
       title: "删除这条记忆？",
@@ -524,6 +534,7 @@ export default function MemoriesPage() {
                   <span className="min-w-0 flex-1 basis-[260px]">
                     <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                       <KindTag kind={m.kind} />
+                      {m.pinned ? <Chip tone="accent">常驻</Chip> : null}
                       {cand ? <Chip tone="warn">待确认</Chip> : null}
                       {arch ? <Chip tone="muted">已停用</Chip> : null}
                       <span
@@ -591,6 +602,9 @@ export default function MemoriesPage() {
                         </span>
                       </KV>
                       <KV k="重要度">{m.importance}</KV>
+                      <KV k="每轮都带上">
+                        {m.pinned ? "是（常驻）" : "否（按相关度召回）"}
+                      </KV>
                       <KV k="有效期">
                         {m.ttl_s ? `${Math.round(m.ttl_s / 86400)} 天` : "长期有效"}
                       </KV>
@@ -610,6 +624,18 @@ export default function MemoriesPage() {
 
                     {/* 次级动作放在展开区：常用动作（确认/停用/删除）留在行上常驻 */}
                     <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                      <button
+                        type="button"
+                        className="btn min-h-[36px] px-2.5 text-[12px]"
+                        title={
+                          m.pinned
+                            ? "不再每轮带上（回到按相关度召回）"
+                            : "每轮都完整带上（用户是谁、环境事实这类，别靠召回碰运气）"
+                        }
+                        onClick={() => void togglePin(m)}
+                      >
+                        {m.pinned ? "取消常驻" : "设为常驻"}
+                      </button>
                       <button
                         type="button"
                         className="btn min-h-[36px] px-2.5 text-[12px]"
