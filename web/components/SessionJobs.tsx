@@ -16,9 +16,10 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { api } from "@/lib/api";
 import { useFeedback } from "@/components/ui/feedback";
-import { DLG_BACKDROP, DLG_CARD, Segmented } from "@/components/ui/kit";
+import { DLG_BACKDROP, FieldLabel, Switch } from "@/components/ui/kit";
 import type { SessionJob } from "@/lib/types";
 
 const WEEK = [
@@ -86,6 +87,9 @@ export default function SessionJobs({
   const fb = useFeedback();
   const [items, setItems] = useState<SessionJob[]>([]);
   const [busy, setBusy] = useState(false);
+  /** 静态导出时首屏在服务端渲染，document 还不存在 —— 挂载后才开 portal */
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   /** 正在编辑的任务 id（null = 新建） */
   const [editing, setEditing] = useState<string | null>(null);
 
@@ -242,185 +246,243 @@ export default function SessionJobs({
   // 输入框下面的「定时」按钮（父组件渲染）+ 有任务时的常驻条 + 弹框
   const dialog = (
     <div className={DLG_BACKDROP} onClick={() => !busy && onOpenChange(false)}>
-      <div className={`${DLG_CARD} max-w-[520px] p-4`} onClick={(e) => e.stopPropagation()}>
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-[14px] font-medium">{editing ? "改定时" : "排个班"}</h3>
+      {/*
+        手机 = 底部抽屉（贴底、全宽、封顶 92dvh），桌面 = 居中卡片。
+        内部拆成「固定标题 / 可滚动表单 / 固定操作条」三段 —— 表单再长，
+        保存键也不会被推到滚动区外面去。
+      */}
+      <div
+        className="card flex w-full max-w-[560px] flex-col overflow-hidden rounded-b-none rounded-t-[16px] max-h-[92dvh] sm:my-auto sm:max-h-[88dvh] sm:rounded-[14px]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* 标题 */}
+        <div className="flex shrink-0 items-center gap-2 border-b px-4 pb-2.5 pt-3" style={{ borderColor: "var(--color-border)" }}>
+          <h3 className="text-[15px] font-medium">{editing ? "改定时" : "排个班"}</h3>
+          <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+            {editing ? "" : "让这个对话到点自己跑"}
+          </span>
           <button
             type="button"
-            className="rounded px-2 py-1 text-[12px] max-md:min-h-[36px]"
+            aria-label="关闭"
+            className="ml-auto grid h-11 w-11 place-items-center rounded-lg hover:bg-[var(--color-surface-2)] lg:h-8 lg:w-8"
             style={{ color: "var(--color-muted)" }}
             onClick={() => !busy && onOpenChange(false)}
           >
-            关闭
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
           </button>
         </div>
 
-        <label className="mb-1 block text-[12px]" style={{ color: "var(--color-muted)" }}>
-          每次让它做什么
-        </label>
-        <textarea
-          className="input mb-3 w-full"
-          rows={2}
-          placeholder="比如：汇总今天三条 AI 新闻，每条一句话，带链接"
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          style={{ lineHeight: 1.6 }}
-        />
-
-        <label className="mb-1 block text-[12px]" style={{ color: "var(--color-muted)" }}>
-          多久一次
-        </label>
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          <Segmented
-            options={[
-              { key: "hourly", label: "每小时" },
-              { key: "daily", label: "每天" },
-              { key: "weekly", label: "每周" },
-            ]}
-            value={mode}
-            onChange={(k) => setMode(k)}
+        {/* 表单 */}
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+          <FieldLabel hint="到点它会自己发这句话">让它做什么</FieldLabel>
+          <textarea
+            className="input mb-4 w-full text-[16px] lg:text-[13.5px]"
+            rows={3}
+            placeholder="比如：汇总今天三条 AI 新闻，每条一句话，带链接"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            style={{ lineHeight: 1.55 }}
           />
+
+          <FieldLabel>多久一次</FieldLabel>
+          <div className="flex items-center gap-0.5 rounded-[11px] border p-0.5" style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}>
+            {([
+              { k: "hourly", label: "每小时" },
+              { k: "daily", label: "每天" },
+              { k: "weekly", label: "每周" },
+            ] as const).map((o) => {
+              const on = o.k === mode;
+              return (
+                <button
+                  key={o.k}
+                  type="button"
+                  onClick={() => setMode(o.k)}
+                  className="min-h-[44px] flex-1 rounded-[8px] text-[13.5px] transition-colors lg:min-h-[36px] lg:text-[12.5px]"
+                  style={{
+                    background: on ? "var(--color-accent)" : undefined,
+                    color: on ? "#fff" : "var(--color-muted)",
+                    fontWeight: on ? 500 : undefined,
+                  }}
+                >
+                  {o.label}
+                </button>
+              );
+            })}
+          </div>
+
           {mode !== "hourly" && (
-            <span className="flex items-center gap-1">
+            <div className="mt-2 flex items-center gap-2">
               <select
-                className="input"
+                className="input h-11 flex-1 text-[16px] lg:h-9 lg:text-[13.5px]"
                 value={hour}
                 onChange={(e) => setHour(e.target.value)}
                 aria-label="小时"
               >
                 {hourOpts.map((h) => (
-                  <option key={h} value={h}>
-                    {h}
-                  </option>
+                  <option key={h} value={h}>{h} 点</option>
                 ))}
               </select>
-              <span style={{ color: "var(--color-muted)" }}>:</span>
               <select
-                className="input"
+                className="input h-11 flex-1 text-[16px] lg:h-9 lg:text-[13.5px]"
                 value={minute}
                 onChange={(e) => setMinute(e.target.value)}
                 aria-label="分钟"
               >
                 {minOpts.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
+                  <option key={m} value={m}>{m} 分</option>
                 ))}
               </select>
-            </span>
+            </div>
           )}
-        </div>
 
-        {mode === "weekly" && (
-          <div className="mb-2 flex flex-wrap items-center gap-1">
-            {WEEK.map((w) => {
-              const on = weekdays.includes(w.k);
-              return (
-                <button
-                  key={w.k}
-                  type="button"
-                  data-tap
-                  onClick={() =>
-                    setWeekdays((prev) => (on ? prev.filter((x) => x !== w.k) : [...prev, w.k]))
-                  }
-                  className="rounded-[7px] border px-2.5 text-[12px] max-md:min-h-[36px]"
-                  style={{
-                    minHeight: 32,
-                    background: on ? "var(--color-accent)" : "var(--color-surface)",
-                    color: on ? "#fff" : "var(--color-text)",
-                    borderColor: "var(--color-border)",
-                  }}
+          {mode === "weekly" && (
+            <div className="mt-2 grid grid-cols-7 gap-1.5">
+              {WEEK.map((w) => {
+                const on = weekdays.includes(w.k);
+                return (
+                  <button
+                    key={w.k}
+                    type="button"
+                    data-tap
+                    onClick={() => setWeekdays((prev) => (on ? prev.filter((x) => x !== w.k) : [...prev, w.k]))}
+                    className="h-11 rounded-[9px] border text-[13px] transition-colors lg:h-9 lg:text-[12px]"
+                    style={{
+                      background: on ? "var(--color-accent)" : "var(--color-surface)",
+                      color: on ? "#fff" : "var(--color-text)",
+                      borderColor: on ? "var(--color-accent)" : "var(--color-border)",
+                    }}
+                    aria-pressed={on}
+                  >
+                    {w.label.replace("周", "")}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="mt-4">
+            <FieldLabel>结果送到哪</FieldLabel>
+            <div className="flex items-center gap-0.5 rounded-[11px] border p-0.5" style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}>
+              {CHANNEL_OPTS.map((o) => {
+                const on = o.key === channel;
+                return (
+                  <button
+                    key={o.key}
+                    type="button"
+                    onClick={() => setChannel(o.key)}
+                    className="min-h-[44px] flex-1 rounded-[8px] text-[13.5px] transition-colors lg:min-h-[36px] lg:text-[12.5px]"
+                    style={{
+                      background: on ? "var(--color-accent)" : undefined,
+                      color: on ? "#fff" : "var(--color-muted)",
+                      fontWeight: on ? 500 : undefined,
+                    }}
+                  >
+                    {o.label}
+                  </button>
+                );
+              })}
+            </div>
+            {channel === "webhook" ? (
+              <div className="mt-2 space-y-2">
+                <select
+                  className="input h-11 w-full text-[16px] lg:h-9 lg:text-[13.5px]"
+                  value={format}
+                  onChange={(e) => setFormat(e.target.value as typeof format)}
+                  aria-label="报文格式"
                 >
-                  {w.label}
-                </button>
-              );
-            })}
+                  {FORMAT_OPTS.map((f) => (
+                    <option key={f.key} value={f.key}>{f.label}</option>
+                  ))}
+                </select>
+                <input
+                  className="input h-11 w-full text-[16px] lg:h-9 lg:text-[13.5px]"
+                  placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..."
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  inputMode="url"
+                />
+              </div>
+            ) : (
+              <p className="mt-1.5 text-[12px]" style={{ color: "var(--color-muted)" }}>
+                结果就是这个对话里的下一轮，回来能接着追问。
+              </p>
+            )}
           </div>
-        )}
 
-        <label className="mb-1 mt-3 block text-[12px]" style={{ color: "var(--color-muted)" }}>
-          什么时候才真跑
-        </label>
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          <Segmented
-            options={[
-              { key: "", label: "每次都跑" },
-              { key: "command", label: "命令输出变了才跑" },
-              { key: "url", label: "网址内容变了才跑" },
-            ]}
-            value={monitorKind}
-            onChange={(k) => setMonitorKind(k as "" | "command" | "url")}
-          />
-        </div>
-        {monitorKind ? (
-          <>
+          {/* 高级：5% 场景，不占常驻位置 */}
+          <details className="mt-4 rounded-[10px] border px-3 py-2" style={{ borderColor: "var(--color-border)" }}>
+            <summary className="flex min-h-[36px] cursor-pointer items-center gap-1.5 text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+              高级：只在有变化时才跑
+              {monitorKind ? <span style={{ color: "var(--color-accent)" }}>· 已开启</span> : null}
+            </summary>
+            <div className="mt-2">
+              <div className="flex items-center gap-0.5 rounded-[11px] border p-0.5" style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}>
+                {([
+                  { k: "", label: "每次都跑" },
+                  { k: "command", label: "命令" },
+                  { k: "url", label: "网址" },
+                ] as const).map((o) => {
+                  const on = o.k === monitorKind;
+                  return (
+                    <button
+                      key={o.k}
+                      type="button"
+                      onClick={() => setMonitorKind(o.k)}
+                      className="min-h-[44px] flex-1 rounded-[8px] text-[13px] transition-colors lg:min-h-[36px] lg:text-[12.5px]"
+                      style={{
+                        background: on ? "var(--color-accent)" : undefined,
+                        color: on ? "#fff" : "var(--color-muted)",
+                      }}
+                    >
+                      {o.label}
+                    </button>
+                  );
+                })}
+              </div>
+              {monitorKind ? (
+                <>
+                  <input
+                    className="input mt-2 h-11 w-full text-[16px] lg:h-9 lg:text-[13.5px]"
+                    placeholder={
+                      monitorKind === "url"
+                        ? "https://example.com/feed（抓它的正文来比）"
+                        : "比如 git -C /srv/app log -1 --format=%h"
+                    }
+                    value={monitor}
+                    onChange={(e) => setMonitor(e.target.value)}
+                    inputMode={monitorKind === "url" ? "url" : "text"}
+                  />
+                  <p className="mt-1.5 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                    到点先跑这条检查；结果和上次一样就「整个跳过」（不调模型、不刷屏）。
+                    {monitorKind === "url" ? " 地址要 http(s)。" : " 命令 20 秒内要结束。"}
+                  </p>
+                </>
+              ) : null}
+            </div>
+          </details>
+
+          <label className="mt-3 flex min-h-[44px] items-center gap-2.5 text-[13px]">
             <input
-              className="input mb-1 w-full"
-              placeholder={
-                monitorKind === "url"
-                  ? "https://example.com/feed（抓它的正文来比）"
-                  : "比如 git -C /srv/app log -1 --format=%h"
-              }
-              value={monitor}
-              onChange={(e) => setMonitor(e.target.value)}
-              inputMode={monitorKind === "url" ? "url" : "text"}
+              type="checkbox"
+              checked={runNow}
+              onChange={(e) => setRunNow(e.target.checked)}
+              className="h-[20px] w-[20px]"
             />
-            <p className="mb-1 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
-              到点时先跑这条检查；结果和上次一样就「整个跳过」（不调模型、不刷屏）。
-              {monitorKind === "url" ? " 地址要 http(s)。" : " 命令 20 秒内要结束。"}
-            </p>
-          </>
-        ) : null}
-
-        <label className="mb-1 mt-2 block text-[12px]" style={{ color: "var(--color-muted)" }}>
-          结果送到哪
-        </label>
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          <Segmented options={CHANNEL_OPTS} value={channel} onChange={(k) => setChannel(k)} />
-          {channel === "webhook" && (
-            <select
-              className="input"
-              value={format}
-              onChange={(e) => setFormat(e.target.value as typeof format)}
-              aria-label="报文格式"
-            >
-              {FORMAT_OPTS.map((f) => (
-                <option key={f.key} value={f.key}>
-                  {f.label}
-                </option>
-              ))}
-            </select>
-          )}
+            保存后立刻跑一次看看
+          </label>
         </div>
-        {channel === "webhook" ? (
-          <input
-            className="input mb-1 w-full"
-            placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..."
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            inputMode="url"
-          />
-        ) : (
-          <p className="mb-1 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
-            结果就是这个对话里的下一轮，回来能接着追问。
-          </p>
-        )}
 
-        <label className="mt-3 flex min-h-[36px] items-center gap-2 text-[12px]">
-          <input
-            type="checkbox"
-            checked={runNow}
-            onChange={(e) => setRunNow(e.target.checked)}
-            className="h-[18px] w-[18px]"
-          />
-          保存后立刻跑一次看看
-        </label>
-
-        <div className="mt-4 flex items-center gap-2">
+        {/* 操作条：始终可见。删除靠左红字，主操作靠右 —— 危险动作不和保存挨着 */}
+        <div
+          className="flex shrink-0 items-center gap-2 border-t px-4 py-2.5"
+          style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+        >
           {editing && (
             <button
               type="button"
-              className="rounded px-2 text-[12px] max-md:min-h-[36px]"
+              className="min-h-[36px] rounded-lg px-2 text-[13px]"
               style={{ color: "var(--color-err)" }}
               onClick={() => {
                 const j = items.find((x) => x.id === editing);
@@ -432,12 +494,18 @@ export default function SessionJobs({
           )}
           <button
             type="button"
-            className="btn ml-auto max-md:min-h-[40px]"
-            disabled={busy}
-            onClick={() => void save()}
-            style={{ minWidth: 92 }}
+            className="btn ml-auto px-4"
+            onClick={() => !busy && onOpenChange(false)}
           >
-            {busy ? "保存中…" : "保存"}
+            取消
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary px-5"
+            disabled={busy || !prompt.trim()}
+            onClick={() => void save()}
+          >
+            {busy ? "保存中…" : editing ? "保存" : "排上"}
           </button>
         </div>
       </div>
@@ -476,10 +544,10 @@ export default function SessionJobs({
             {items.map((j) => {
               const st = j.last_status ? STATUS_TONE[j.last_status] : null;
               return (
-                <div key={j.id} className="flex min-w-0 items-center gap-2 text-[12px]">
+                <div key={j.id} className="flex min-w-0 items-center gap-1 text-[12px]">
                   <button
                     type="button"
-                    className="min-w-0 flex-1 truncate text-left hover:underline max-md:min-h-[32px]"
+                    className="min-h-[44px] min-w-0 flex-1 truncate text-left lg:min-h-[32px]"
                     title={j.prompt}
                     onClick={() => startEdit(j)}
                   >
@@ -498,15 +566,13 @@ export default function SessionJobs({
                       {st.text}
                     </span>
                   )}
-                  <button
-                    type="button"
-                    className="shrink-0 rounded border px-1.5 text-[11px] max-md:min-h-[32px]"
-                    style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
-                    onClick={() => void toggle(j)}
-                    title={j.enabled ? "暂停" : "恢复"}
-                  >
-                    {j.enabled ? "暂停" : "恢复"}
-                  </button>
+                  {/* 开/关用开关：比「暂停 / 恢复」两个字更像它现在的状态 */}
+                  <Switch
+                    checked={j.enabled}
+                    onChange={() => void toggle(j)}
+                    ariaLabel={j.enabled ? "暂停这个定时" : "恢复这个定时"}
+                    title={j.enabled ? "正在生效，点一下暂停" : "已暂停，点一下恢复"}
+                  />
                 </div>
               );
             })}
@@ -514,7 +580,12 @@ export default function SessionJobs({
         </div>
       )}
 
-      {open && dialog}
+      {/*
+        用 portal 挂到 body：这个组件的挂载点在输入坞里面，而输入坞有
+        backdrop-filter（毛玻璃）—— 那会让它成为 position:fixed 的参照物，
+        弹框就被拽到输入坞里居中/贴底，而不是整个视口。
+      */}
+      {open && mounted ? createPortal(dialog, document.body) : null}
     </>
   );
 }

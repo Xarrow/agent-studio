@@ -556,13 +556,14 @@ test("侧栏搜索：标题 + 对话内容两段，内容命中可点进会话",
  */
 test("定时任务：枚举频率 + 两选一投递 + 空态不占位", () => {
   const src = read("components/SessionJobs.tsx");
-  assert.match(src, /key: "hourly", label: "每小时"/, "频率枚举");
+  assert.match(src, /k: "hourly", label: "每小时"/, "频率枚举");
   assert.match(src, /key: "session" as const, label: "这个对话"/, "默认投递=本对话");
   assert.match(src, /key: "feishu", label: "飞书"/, "webhook 支持飞书");
   assert.match(src, /key: "wecom", label: "企业微信"/, "webhook 支持企业微信");
   assert.match(src, /\{items\.length > 0 && \(/, "没有任务时不出常驻条");
   assert.match(src, /保存后立刻跑一次看看/, "可以先跑一次验证");
-  assert.match(src, /j\.enabled \? "暂停" : "恢复"/, "能开关");
+  // 开关从两个字的按钮换成 Switch（状态比动作更直观，触屏也更好点）
+  assert.match(src, /<Switch[\s\S]{0,160}checked=\{j\.enabled\}/, "能开关");
   // 对话页必须接上：按钮 + 常驻条
   const chat = read("components/ChatConsole.tsx");
   // 入口在输入坞的工具排里（附件旁边），而且是"没有任务时"才摆 ——
@@ -630,8 +631,9 @@ test("运行中插话：执行中输入框可用 + 回车即插话 + 历史里�
  */
 test("定时任务：可设「有变化才跑」，并把跳过的原因说清楚", () => {
   const jobs = read("components/SessionJobs.tsx");
-  assert.match(jobs, /命令输出变了才跑/, "命令型检查有入口");
-  assert.match(jobs, /网址内容变了才跑/, "网址型检查有入口");
+  assert.match(jobs, /高级：只在有变化时才跑/, "变更门有入口（收进高级，不再常驻占三行）");
+  assert.match(jobs, /label: "命令"/, "命令型检查有入口");
+  assert.match(jobs, /label: "网址"/, "网址型检查有入口");
   assert.match(jobs, /monitor_kind: monitorKind/, "保存时带上类型");
   assert.match(jobs, /结果和上次一样就「整个跳过」/, "文案说清为什么没跑");
   assert.match(jobs, /有变化才跑/, "列表行上看得出来");
