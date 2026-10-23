@@ -157,6 +157,7 @@ export default function SessionJobs({
   // 变更门：只在有变化时才跑（省钱也不刷屏）
   const [monitorKind, setMonitorKind] = useState<"" | "command" | "url">("");
   const [monitor, setMonitor] = useState("");
+  const [rhythmCustom, setRhythmCustom] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -191,6 +192,7 @@ export default function SessionJobs({
   /** 回到「排新班」状态（清空表单，不关抽屉） */
   const resetForm = useCallback(() => {
     setEditing(null);
+    setRhythmCustom(false);
     setPrompt("");
     setMode("daily");
     setHour("09");
@@ -205,6 +207,7 @@ export default function SessionJobs({
 
   const startNew = useCallback(() => {
     setEditing(null);
+    setRhythmCustom(false);
     setPrompt("");
     setMode("daily");
     setHour("09");
@@ -220,6 +223,7 @@ export default function SessionJobs({
 
   const startEdit = (j: SessionJob) => {
     setEditing(j.id);
+    setRhythmCustom(false); // 先按它自己的值算：能对上预设就显示预设，对不上自然落"自定义…"
     setPrompt(j.prompt);
     setMode(j.mode);
     const [h, m] = (j.at || "09:00").split(":");
@@ -332,8 +336,15 @@ export default function SessionJobs({
     const hit = WEEKLY_PRESETS.find((x) => x.at === `${h}:${mi}` && x.wd === one.join(","));
     return hit ? hit.key : "custom";
   };
-  const rhythm = rhythmKey(mode, hour, minute, weekdays.join(","));
+  /* rhythm 是从 mode/时间/星期派生出来的；「自定义…」本身没有对应的值可存，
+     所以单独记一个开关 —— 否则一选就被算回预设值，下拉弹回去（报过的 bug）。 */
+  const rhythm = rhythmCustom ? "custom" : rhythmKey(mode, hour, minute, weekdays.join(","));
   const applyRhythm = (k: string) => {
+    if (k === "custom") {
+      setRhythmCustom(true);
+      return;
+    }
+    setRhythmCustom(false);
     const daily = DAILY_PRESETS.find((x) => x.key === k);
     if (daily) {
       setMode("daily");

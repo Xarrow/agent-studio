@@ -641,6 +641,9 @@ test("定时任务：可设「有变化才跑」，并把跳过的原因说清�
   assert.match(jobs, /option value="command"/, "命令型检查有入口");
   assert.match(jobs, /option value="url"/, "网址型检查有入口");
   assert.match(jobs, /monitor_kind: monitorKind/, "保存时带上类型");
+  // 节奏是派生值，「自定义…」必须有独立 state 记着，否则一选就被算回预设、下拉弹回去
+  assert.match(jobs, /rhythmCustom\s*\?\s*"custom"/, "自定义选项有独立 state");
+  assert.match(jobs, /setRhythmCustom\(true\)/, "选中自定义时置位");
   assert.match(jobs, /结果和上次一样就「整个跳过」/, "文案说清为什么没跑");
   assert.match(jobs, /有变化才跑/, "列表行上看得出来");
 
