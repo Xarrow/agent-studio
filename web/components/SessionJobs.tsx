@@ -73,7 +73,7 @@ function RhythmPicker({
   return (
     <>
       <select
-        className="input h-11 w-full lg:h-9"
+        className="input h-9 w-full lg:h-9"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         aria-label="多久跑一次"
@@ -375,6 +375,7 @@ export default function SessionJobs({
           ) : null}
           <div className="ml-auto">
             <Switch
+              compact
               checked={j.enabled}
               onChange={() => void toggle(j)}
               ariaLabel={j.enabled ? "暂停这个定时" : "恢复这个定时"}
@@ -393,7 +394,7 @@ export default function SessionJobs({
           </span>
           <button
             type="button"
-            className="ml-auto min-h-[32px] rounded px-2.5 text-[12.5px] max-md:min-h-[44px] max-md:min-w-[44px]"
+            className="ml-auto min-h-[30px] rounded px-2.5 text-[12.5px] max-md:min-h-[36px]"
             style={{ color: "var(--color-accent)" }}
             onClick={() => (editingThis ? resetForm() : startEdit(j))}
           >
@@ -402,7 +403,7 @@ export default function SessionJobs({
           {/* 想看看它到底跑出什么，不用等下一次 */}
           <button
             type="button"
-            className="min-h-[32px] rounded px-2.5 text-[12.5px] max-md:min-h-[44px] max-md:min-w-[44px]"
+            className="min-h-[30px] rounded px-2.5 text-[12.5px] max-md:min-h-[36px]"
             style={{ color: "var(--color-muted)" }}
             onClick={() => void runJobNow(j)}
           >
@@ -428,10 +429,10 @@ export default function SessionJobs({
                 <>
                   {mode !== "hourly" && (
                     <div className="mt-2 flex items-center gap-2">
-                      <select className="input h-11 flex-1 lg:h-9" value={hour} onChange={(e) => setHour(e.target.value)} aria-label="小时">
+                      <select className="input h-9 flex-1 lg:h-9" value={hour} onChange={(e) => setHour(e.target.value)} aria-label="小时">
                         {hourOpts.map((h) => <option key={h} value={h}>{h} 点</option>)}
                       </select>
-                      <select className="input h-11 flex-1 lg:h-9" value={minute} onChange={(e) => setMinute(e.target.value)} aria-label="分钟">
+                      <select className="input h-9 flex-1 lg:h-9" value={minute} onChange={(e) => setMinute(e.target.value)} aria-label="分钟">
                         {minOpts.map((m) => <option key={m} value={m}>{m} 分</option>)}
                       </select>
                     </div>
@@ -446,7 +447,7 @@ export default function SessionJobs({
                             type="button"
                             data-tap
                             onClick={() => setWeekdays((prev) => (on ? prev.filter((x) => x !== w.k) : [...prev, w.k]))}
-                            className="h-11 rounded-[9px] border text-[13px] lg:h-9"
+                            className="h-9 rounded-[9px] border text-[13px] lg:h-9"
                             style={{
                               background: on ? "var(--color-accent)" : "var(--color-surface)",
                               color: on ? "#fff" : "var(--color-text)",
@@ -465,7 +466,7 @@ export default function SessionJobs({
             />
             <div className="mt-2.5 flex items-center gap-2">
               <select
-                className="input h-11 flex-1 lg:h-9"
+                className="input h-9 flex-1 lg:h-9"
                 value={channel === "webhook" ? "webhook" : "session"}
                 onChange={(e) => setChannel(e.target.value as "session" | "webhook")}
                 aria-label="结果送到哪"
@@ -475,7 +476,7 @@ export default function SessionJobs({
               </select>
               {channel === "webhook" && (
                 <select
-                  className="input h-11 lg:h-9"
+                  className="input h-9"
                   value={format}
                   onChange={(e) => setFormat(e.target.value as typeof format)}
                   aria-label="报文格式"
@@ -486,7 +487,7 @@ export default function SessionJobs({
             </div>
             {channel === "webhook" && (
               <input
-                className="input mt-2 h-11 w-full lg:h-9"
+                className="input mt-2 h-9 w-full lg:h-9"
                 placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..."
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
@@ -495,13 +496,13 @@ export default function SessionJobs({
             )}
 
             <details className="mt-2.5 rounded-[10px] border px-2.5 py-1.5" style={{ borderColor: "var(--color-border)" }}>
-              <summary className="flex min-h-[44px] cursor-pointer items-center gap-1.5 text-[12.5px] lg:min-h-[32px]" style={{ color: "var(--color-muted)" }}>
+              <summary className="flex min-h-[36px] cursor-pointer items-center gap-1.5 text-[12.5px] lg:min-h-[30px]" style={{ color: "var(--color-muted)" }}>
                 只在有变化时才跑
                 {monitorKind ? <span style={{ color: "var(--color-accent)" }}>· 已开启</span> : null}
               </summary>
               <div className="mt-1.5">
                 <select
-                  className="input h-11 w-full lg:h-9"
+                  className="input h-9 w-full lg:h-9"
                   value={monitorKind}
                   onChange={(e) => setMonitorKind(e.target.value as "" | "command" | "url")}
                   aria-label="变更门"
@@ -513,7 +514,7 @@ export default function SessionJobs({
                 {monitorKind ? (
                   <>
                     <input
-                      className="input mt-2 h-11 w-full lg:h-9"
+                      className="input mt-2 h-9 w-full lg:h-9"
                       placeholder={monitorKind === "url" ? "https://example.com/feed" : "比如 git -C /srv/app log -1 --format=%h"}
                       value={monitor}
                       onChange={(e) => setMonitor(e.target.value)}
@@ -530,7 +531,7 @@ export default function SessionJobs({
             <div className="mt-2.5 flex items-center gap-2">
               <button
                 type="button"
-                className="min-h-[44px] rounded-lg px-2.5 text-[13px] lg:min-h-[36px]"
+                className="min-h-[36px] rounded-lg px-2.5 text-[13px] lg:min-h-[30px]"
                 style={{ color: "var(--color-err)" }}
                 onClick={() => void remove(j)}
               >
@@ -539,7 +540,6 @@ export default function SessionJobs({
               <button
                 type="button"
                 className="btn btn-primary ml-auto px-4"
-                style={{ minHeight: 44 }}
                 disabled={busy || !prompt.trim()}
                 onClick={() => void save()}
               >
@@ -572,7 +572,7 @@ export default function SessionJobs({
           <button
             type="button"
             aria-label="关闭"
-            className="ml-auto grid h-11 w-11 place-items-center rounded-lg hover:bg-[var(--color-surface-2)] lg:h-8 lg:w-8"
+            className="ml-auto grid h-9 w-9 place-items-center rounded-lg hover:bg-[var(--color-surface-2)]"
             style={{ color: "var(--color-muted)" }}
             onClick={() => !busy && onOpenChange(false)}
           >
@@ -601,7 +601,6 @@ export default function SessionJobs({
                 <button
                   type="button"
                   className="btn btn-primary shrink-0 px-4"
-                  style={{ minHeight: 44 }}
                   disabled={busy || !prompt.trim()}
                   onClick={() => void save()}
                 >
@@ -611,17 +610,17 @@ export default function SessionJobs({
               {rhythm === "custom" && (
                 <div className="mt-2">
                   <div className="flex items-center gap-2">
-                    <select className="input h-11 flex-1 lg:h-9" value={mode} onChange={(e) => setMode(e.target.value as typeof mode)} aria-label="频率">
+                    <select className="input h-9 flex-1 lg:h-9" value={mode} onChange={(e) => setMode(e.target.value as typeof mode)} aria-label="频率">
                       <option value="hourly">每小时</option>
                       <option value="daily">每天</option>
                       <option value="weekly">每周</option>
                     </select>
                     {mode !== "hourly" && (
                       <>
-                        <select className="input h-11 lg:h-9" value={hour} onChange={(e) => setHour(e.target.value)} aria-label="小时">
+                        <select className="input h-9" value={hour} onChange={(e) => setHour(e.target.value)} aria-label="小时">
                           {hourOpts.map((h) => <option key={h} value={h}>{h} 点</option>)}
                         </select>
-                        <select className="input h-11 lg:h-9" value={minute} onChange={(e) => setMinute(e.target.value)} aria-label="分钟">
+                        <select className="input h-9" value={minute} onChange={(e) => setMinute(e.target.value)} aria-label="分钟">
                           {minOpts.map((m) => <option key={m} value={m}>{m} 分</option>)}
                         </select>
                       </>
@@ -637,7 +636,7 @@ export default function SessionJobs({
                             type="button"
                             data-tap
                             onClick={() => setWeekdays((prev) => (on ? prev.filter((x) => x !== w.k) : [...prev, w.k]))}
-                            className="h-11 rounded-[9px] border text-[13px] lg:h-9"
+                            className="h-9 rounded-[9px] border text-[13px] lg:h-9"
                             style={{
                               background: on ? "var(--color-accent)" : "var(--color-surface)",
                               color: on ? "#fff" : "var(--color-text)",
@@ -666,7 +665,7 @@ export default function SessionJobs({
                 <span>{items.filter((j) => j.enabled).length} 个</span>
                 <button
                   type="button"
-                  className="ml-auto min-h-[32px] rounded px-2.5 text-[12px] max-md:min-h-[44px]"
+                  className="ml-auto min-h-[30px] rounded px-2.5 text-[12px] max-md:min-h-[36px]"
                   style={{ color: "var(--color-accent)" }}
                   onClick={() => resetForm()}
                 >
@@ -696,7 +695,7 @@ export default function SessionJobs({
                 但列表得有地方看得到 */}
             <button
               type="button"
-              className="panel-title inline-flex items-center gap-1 rounded max-md:min-h-[44px]"
+              className="panel-title inline-flex items-center gap-1 rounded max-md:min-h-[36px]"
               onClick={() => {
                 resetForm();
                 onOpenChange(true);
@@ -717,7 +716,7 @@ export default function SessionJobs({
             </span>
             <button
               type="button"
-              className="ml-auto min-h-[32px] rounded px-2.5 text-[12px] max-md:min-h-[44px]"
+              className="ml-auto min-h-[30px] rounded px-2.5 text-[12px] max-md:min-h-[36px]"
               style={{ color: "var(--color-accent)" }}
               onClick={startNew}
             >
@@ -752,6 +751,7 @@ export default function SessionJobs({
                   )}
                   {/* 开/关用开关：比「暂停 / 恢复」两个字更像它现在的状态 */}
                   <Switch
+                    compact
                     checked={j.enabled}
                     onChange={() => void toggle(j)}
                     ariaLabel={j.enabled ? "暂停这个定时" : "恢复这个定时"}
@@ -790,7 +790,7 @@ export function JobButton({ onClick }: { onClick: () => void }) {
       type="button"
       onClick={onClick}
       title="让这个对话按时自己跑：每天/每周到点自动执行"
-      className="h-11 sm:h-8 shrink-0 inline-flex items-center gap-1 rounded-xl border px-2.5 text-[12px] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
+      className="h-9 sm:h-8 shrink-0 inline-flex items-center gap-1 rounded-xl border px-2.5 text-[12px] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
       style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
     >
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

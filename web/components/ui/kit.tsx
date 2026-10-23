@@ -372,12 +372,15 @@ export function Switch({
   disabled,
   ariaLabel,
   title,
+  compact,
 }: {
   checked: boolean;
   onChange: (next: boolean) => void;
   disabled?: boolean;
   ariaLabel?: string;
   title?: string;
+  /** 摆在 36 高的按钮/下拉旁边时用：轨道小一圈，不显得比周围胖 */
+  compact?: boolean;
 }) {
   return (
     <button
@@ -389,15 +392,27 @@ export function Switch({
       data-tap
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className="inline-flex h-11 shrink-0 items-center justify-center px-1 disabled:opacity-50 lg:h-8"
+      className={
+        compact
+          ? "inline-flex h-9 shrink-0 items-center justify-center px-1 disabled:opacity-50"
+          : "inline-flex h-11 shrink-0 items-center justify-center px-1 disabled:opacity-50 lg:h-8"
+      }
     >
       <span
-        className="relative block h-6 w-12 rounded-full transition-colors"
+        className={
+          compact
+            ? "relative block h-5 w-10 rounded-full transition-colors"
+            : "relative block h-6 w-12 rounded-full transition-colors"
+        }
         style={{ background: checked ? "var(--color-accent)" : "var(--color-border)" }}
       >
         <span
-          className="absolute left-[2px] top-[2px] h-5 w-5 rounded-full bg-white shadow transition-transform"
-          style={{ transform: checked ? "translateX(24px)" : "translateX(0)" }}
+          className={
+            compact
+              ? "absolute left-[2px] top-[2px] h-4 w-4 rounded-full bg-white shadow transition-transform"
+              : "absolute left-[2px] top-[2px] h-5 w-5 rounded-full bg-white shadow transition-transform"
+          }
+          style={{ transform: checked ? (compact ? "translateX(20px)" : "translateX(24px)") : "translateX(0)" }}
         />
       </span>
     </button>
