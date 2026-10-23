@@ -1183,7 +1183,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
           <header className="h-[52px] px-3 sm:px-4 flex items-center gap-2.5 border-b border-[var(--color-border)] bg-[var(--color-surface)] lg:hidden">
             <button
               data-tap
-              className="lg:hidden w-11 h-11 sm:w-9 sm:h-9 -ml-1 flex items-center justify-center rounded-lg text-[var(--color-muted)] hover:bg-[var(--color-surface-2)]"
+              className="lg:hidden w-9 h-9 sm:w-9 sm:h-9 -ml-1 flex items-center justify-center rounded-lg text-[var(--color-muted)] hover:bg-[var(--color-surface-2)]"
               title="对话列表"
               onClick={() => setMobileNav(true)}
             >
@@ -1259,7 +1259,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               <div className="max-w-md mx-auto mt-16 px-6">
                 <div className="text-center">
                   <div
-                    className="inline-flex items-center justify-center w-11 h-11 rounded-2xl text-[19px] mb-3"
+                    className="inline-flex items-center justify-center w-9 h-9 rounded-2xl text-[19px] mb-3"
                     style={{ background: "var(--color-surface-2)" }}
                   >
                     ✦
@@ -1974,7 +1974,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                   <button
                     data-tap
                     type="button"
-                    className="w-11 h-11 sm:w-8 sm:h-8 shrink-0 flex items-center justify-center rounded-xl text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] disabled:opacity-40"
+                    className="w-9 h-9 sm:w-8 sm:h-8 shrink-0 flex items-center justify-center rounded-xl text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] disabled:opacity-40"
                     title="添加附件（可粘贴截图、拖入文件）"
                     disabled={busy || paused || uploading}
                     onClick={() => fileRef.current?.click()}
@@ -2004,7 +2004,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                       <button
                         data-tap
                         type="button"
-                        className="w-11 h-11 sm:w-8 sm:h-8 shrink-0 flex items-center justify-center rounded-xl hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
+                        className="w-9 h-9 sm:w-8 sm:h-8 shrink-0 flex items-center justify-center rounded-xl hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
                         style={{ color: showPaths ? "var(--color-accent)" : "var(--color-muted)" }}
                         title="对话存在哪、助手在哪干活"
                         aria-expanded={showPaths}
@@ -2026,7 +2026,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                         type="button"
                         title="插话：塞进这一轮，不打断当前这一步"
                         onClick={() => void steer()}
-                        className="h-11 sm:h-8 px-2.5 shrink-0 flex items-center justify-center rounded-full text-[12.5px] font-medium"
+                        className="h-9 sm:h-8 px-2.5 shrink-0 flex items-center justify-center rounded-full text-[12.5px] font-medium"
                         style={{ background: "var(--color-accent)", color: "#fff" }}
                       >
                         插话
@@ -2038,7 +2038,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                         type="button"
                         title="停止这一轮"
                         onClick={() => void stop()}
-                        className="w-11 h-11 sm:w-8 sm:h-8 shrink-0 flex items-center justify-center rounded-full border"
+                        className="w-9 h-9 sm:w-8 sm:h-8 shrink-0 flex items-center justify-center rounded-full border"
                         style={{
                           borderColor: "var(--color-border)",
                           background: "var(--color-surface-2)",
@@ -2056,7 +2056,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                         title={paused ? "运行暂停，先处理授权" : "发送（Enter）"}
                         disabled={paused || (!input.trim() && pendingFiles.length === 0)}
                         onClick={() => void send()}
-                        className="w-11 h-11 sm:w-8 sm:h-8 shrink-0 flex items-center justify-center rounded-full transition-colors disabled:opacity-40"
+                        className="w-9 h-9 sm:w-8 sm:h-8 shrink-0 flex items-center justify-center rounded-full transition-colors disabled:opacity-40"
                         style={{
                           background:
                             input.trim() || pendingFiles.length > 0

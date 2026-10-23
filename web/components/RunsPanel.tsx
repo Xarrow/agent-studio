@@ -718,7 +718,7 @@ export function RunsPanel() {
                         并且点击不再冒泡到行上（勾选 ≠ 展开行） */}
                     {!live ? (
                       <label
-                        className="flex h-11 w-9 shrink-0 cursor-pointer items-center justify-center lg:h-9 lg:w-6"
+                        className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center lg:h-9 lg:w-6"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <input

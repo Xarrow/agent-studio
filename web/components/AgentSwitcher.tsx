@@ -145,8 +145,8 @@ export function AgentSwitcher({
           mini
             ? "grid place-items-center w-9 h-9 rounded-lg transition-colors hover:bg-[var(--color-surface-2)]"
             : side
-              ? "flex-1 min-w-0 flex items-center gap-2 h-11 px-2 rounded-lg transition-colors hover:bg-[var(--color-surface-2)]"
-              : "flex items-center gap-2 h-11 sm:h-9 max-w-[62vw] sm:max-w-[280px] pl-1 pr-2 rounded-lg transition-colors hover:bg-[var(--color-surface-2)]"
+              ? "flex-1 min-w-0 flex items-center gap-2 h-9 px-2 rounded-lg transition-colors hover:bg-[var(--color-surface-2)]"
+              : "flex items-center gap-2 h-9 max-w-[62vw] sm:max-w-[280px] pl-1 pr-2 rounded-lg transition-colors hover:bg-[var(--color-surface-2)]"
         }
       >
         <span
@@ -338,7 +338,7 @@ export function AgentSwitcher({
 
             <a
               href="/agents"
-              className="shrink-0 flex items-center justify-between px-3 h-11 border-t border-[var(--color-border)] text-[12.5px] hover:bg-[var(--color-surface-2)]"
+              className="shrink-0 flex items-center justify-between px-3 h-9 border-t border-[var(--color-border)] text-[12.5px] hover:bg-[var(--color-surface-2)]"
               style={{ color: "var(--color-muted)" }}
             >
               管理全部助手

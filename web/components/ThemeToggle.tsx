@@ -43,7 +43,7 @@ export function ThemeToggle({ compact = false }: { compact?: boolean }) {
             onClick={() => apply(value)}
             title={label}
             aria-label={label}
-            className={`w-11 h-11 md:w-9 md:h-9 flex items-center justify-center rounded text-[13px] transition-colors ${
+            className={`w-9 h-9 flex items-center justify-center rounded text-[13px] transition-colors ${
               theme === value
                 ? "bg-[var(--color-surface)] text-[var(--color-accent)]"
                 : "text-[var(--color-muted)] hover:text-[var(--color-text)]"

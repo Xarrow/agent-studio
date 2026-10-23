@@ -163,7 +163,7 @@ export function Nav() {
         <button
           onClick={() => setDrawerOpen(true)}
           aria-label="打开菜单"
-          className="w-11 h-11 -ml-2 flex items-center justify-center rounded-md hover:bg-[var(--color-surface-2)] active:bg-[var(--color-surface-2)]"
+          className="w-9 h-9 -ml-2 flex items-center justify-center rounded-md hover:bg-[var(--color-surface-2)] active:bg-[var(--color-surface-2)]"
         >
           <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
             <path
@@ -239,7 +239,7 @@ export function Nav() {
             key={l.href}
             href={l.href}
             title={`${l.label} —— ${l.tip}`}
-            className={`w-11 h-11 flex items-center justify-center rounded-md ${
+            className={`w-9 h-9 flex items-center justify-center rounded-md ${
               isActive(l.href)
                 ? "text-[var(--color-accent)] bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)]"
                 : "hover:bg-[var(--color-surface-2)]"
@@ -254,7 +254,7 @@ export function Nav() {
             key={l.href}
             href={l.href}
             title={`${l.label} —— ${l.tip}`}
-            className={`w-11 h-11 flex items-center justify-center rounded-md ${
+            className={`w-9 h-9 flex items-center justify-center rounded-md ${
               isActive(l.href)
                 ? "text-[var(--color-accent)] bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)]"
                 : "hover:bg-[var(--color-surface-2)]"

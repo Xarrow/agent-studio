@@ -375,7 +375,6 @@ export default function SessionJobs({
           ) : null}
           <div className="ml-auto">
             <Switch
-              compact
               checked={j.enabled}
               onChange={() => void toggle(j)}
               ariaLabel={j.enabled ? "暂停这个定时" : "恢复这个定时"}
@@ -730,7 +729,7 @@ export default function SessionJobs({
                 <div key={j.id} className="flex min-w-0 items-center gap-1 text-[12px]">
                   <button
                     type="button"
-                    className="min-h-[44px] min-w-0 flex-1 truncate text-left lg:min-h-[32px]"
+                    className="min-h-[36px] min-w-0 flex-1 truncate text-left"
                     title={j.prompt}
                     onClick={() => startEdit(j)}
                   >
@@ -751,7 +750,6 @@ export default function SessionJobs({
                   )}
                   {/* 开/关用开关：比「暂停 / 恢复」两个字更像它现在的状态 */}
                   <Switch
-                    compact
                     checked={j.enabled}
                     onChange={() => void toggle(j)}
                     ariaLabel={j.enabled ? "暂停这个定时" : "恢复这个定时"}

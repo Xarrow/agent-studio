@@ -288,7 +288,7 @@ export function SelectBox({
     <label
       title={title}
       onClick={(e) => e.stopPropagation()}
-      className="flex h-11 w-8 shrink-0 cursor-pointer items-center justify-center lg:h-8"
+      className="flex h-9 w-8 shrink-0 cursor-pointer items-center justify-center lg:h-8"
     >
       <input
         type="checkbox"
@@ -372,15 +372,12 @@ export function Switch({
   disabled,
   ariaLabel,
   title,
-  compact,
 }: {
   checked: boolean;
   onChange: (next: boolean) => void;
   disabled?: boolean;
   ariaLabel?: string;
   title?: string;
-  /** 摆在 36 高的按钮/下拉旁边时用：轨道小一圈，不显得比周围胖 */
-  compact?: boolean;
 }) {
   return (
     <button
@@ -392,27 +389,16 @@ export function Switch({
       data-tap
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={
-        compact
-          ? "inline-flex h-9 shrink-0 items-center justify-center px-1 disabled:opacity-50"
-          : "inline-flex h-11 shrink-0 items-center justify-center px-1 disabled:opacity-50 lg:h-8"
-      }
+      /* 手机 36 / 桌面 32 —— 和全站控件一个口径，不摆在按钮堆里高一头 */
+      className="inline-flex h-9 shrink-0 items-center justify-center px-1 disabled:opacity-50 lg:h-8"
     >
       <span
-        className={
-          compact
-            ? "relative block h-5 w-10 rounded-full transition-colors"
-            : "relative block h-6 w-12 rounded-full transition-colors"
-        }
+        className="relative block h-5 w-10 rounded-full transition-colors"
         style={{ background: checked ? "var(--color-accent)" : "var(--color-border)" }}
       >
         <span
-          className={
-            compact
-              ? "absolute left-[2px] top-[2px] h-4 w-4 rounded-full bg-white shadow transition-transform"
-              : "absolute left-[2px] top-[2px] h-5 w-5 rounded-full bg-white shadow transition-transform"
-          }
-          style={{ transform: checked ? (compact ? "translateX(20px)" : "translateX(24px)") : "translateX(0)" }}
+          className="absolute left-[2px] top-[2px] h-4 w-4 rounded-full bg-white shadow transition-transform"
+          style={{ transform: checked ? "translateX(20px)" : "translateX(0)" }}
         />
       </span>
     </button>
