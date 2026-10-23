@@ -15,7 +15,7 @@
  *   写明频率、下一次、上一轮结果，可以直接关/开。
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { api } from "@/lib/api";
 import { useFeedback } from "@/components/ui/feedback";
@@ -43,6 +43,54 @@ const FORMAT_OPTS = [
   { key: "dingtalk", label: "钉钉" },
   { key: "generic", label: "自定义 JSON" },
 ];
+
+/** 「什么时候跑」先说整句 —— 只列几个真用得上的，剩下的走「自定义…」 */
+const DAILY_PRESETS = [
+  { key: "d-09", label: "每天 09:00", at: "09:00" },
+  { key: "d-12", label: "每天 12:00", at: "12:00" },
+  { key: "d-18", label: "每天 18:00", at: "18:00" },
+  { key: "d-21", label: "每天 21:00", at: "21:00" },
+];
+const WEEKLY_PRESETS = [
+  { key: "w-1-09", label: "每周一 09:00", at: "09:00", wd: "1" },
+  { key: "w-5-18", label: "每周五 18:00", at: "18:00", wd: "5" },
+  { key: "w-135-09", label: "每周一三五 09:00", at: "09:00", wd: "1,3,5" },
+];
+
+/**
+ * 节奏选择器：一个下拉说完整句（每天 09:00 / 每周一三五 09:00 / 每小时）。
+ * 选了「自定义…」才把时间、星期这些零件露出来 —— 零件不该是第一个问题。
+ */
+function RhythmPicker({
+  value,
+  onChange,
+  custom,
+}: {
+  value: string;
+  onChange: (k: string) => void;
+  custom?: ReactNode;
+}) {
+  return (
+    <>
+      <select
+        className="input h-11 w-full lg:h-9"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        aria-label="多久跑一次"
+      >
+        <option value="hourly">每小时</option>
+        {DAILY_PRESETS.map((p) => (
+          <option key={p.key} value={p.key}>{p.label}</option>
+        ))}
+        {WEEKLY_PRESETS.map((p) => (
+          <option key={p.key} value={p.key}>{p.label}</option>
+        ))}
+        <option value="custom">自定义…</option>
+      </select>
+      {value === "custom" ? custom : null}
+    </>
+  );
+}
 
 function scheduleText(j: { mode: string; at: string; weekdays: string }): string {
   if (j.mode === "hourly") return "每小时";
@@ -76,8 +124,11 @@ export default function SessionJobs({
   open,
   onOpenChange,
   onCount,
+  draft,
 }: {
   sessionId: string;
+  /** 输入框里正在写的字 —— 打开时直接带进「排新班」，不用再打一遍 */
+  draft?: string;
   /** 由父组件控制：输入框下面那个「定时」按钮点开时传 { open: true } */
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -102,7 +153,7 @@ export default function SessionJobs({
   const [channel, setChannel] = useState<"session" | "webhook">("session");
   const [url, setUrl] = useState("");
   const [format, setFormat] = useState<"feishu" | "wecom" | "dingtalk" | "generic">("feishu");
-  const [runNow, setRunNow] = useState(false);
+  // （「保存后立刻跑一次」改成卡片上的「跑一次」按钮，随时可验证）
   // 变更门：只在有变化时才跑（省钱也不刷屏）
   const [monitorKind, setMonitorKind] = useState<"" | "command" | "url">("");
   const [monitor, setMonitor] = useState("");
@@ -123,12 +174,34 @@ export default function SessionJobs({
     void load();
   }, [sessionId, load]);
 
+  // 打开抽屉时，把输入坞里正在写的那句话带进来 —— 用户的本意就是「把这句话变成每天的」
+  useEffect(() => {
+    if (!open) return;
+    setEditing(null);
+    setPrompt((prev) => prev.trim() ? prev : (draft ?? "").trim());
+  }, [open, draft]);
+
   // 有任务在跑的时候顺手刷新"上一轮"状态（20 秒够，和调度器一拍）
   useEffect(() => {
     if (items.length === 0) return;
     const t = setInterval(() => void load(), 20000);
     return () => clearInterval(t);
   }, [items.length, load]);
+
+  /** 回到「排新班」状态（清空表单，不关抽屉） */
+  const resetForm = useCallback(() => {
+    setEditing(null);
+    setPrompt("");
+    setMode("daily");
+    setHour("09");
+    setMinute("00");
+    setWeekdays(["1"]);
+    setChannel("session");
+    setUrl("");
+    setFormat("feishu");
+    setMonitorKind("");
+    setMonitor("");
+  }, []);
 
   const startNew = useCallback(() => {
     setEditing(null);
@@ -140,7 +213,6 @@ export default function SessionJobs({
     setChannel("session");
     setUrl("");
     setFormat("feishu");
-    setRunNow(false);
     setMonitorKind("");
     setMonitor("");
     onOpenChange(true);
@@ -157,7 +229,6 @@ export default function SessionJobs({
     setChannel(j.deliver?.channel === "webhook" ? "webhook" : "session");
     setUrl(j.deliver?.url || "");
     setFormat((j.deliver?.format as typeof format) || "feishu");
-    setRunNow(false);
     setMonitorKind((j.monitor_kind as "" | "command" | "url") || "");
     setMonitor(j.monitor || "");
     onOpenChange(true);
@@ -195,17 +266,10 @@ export default function SessionJobs({
       const saved = editing
         ? await api.updateSessionJob(editing, body)
         : await api.createSessionJob(sessionId, body);
-      onOpenChange(false);
-      if (runNow) {
-        try {
-          await api.runJobNow(saved.id);
-          fb.success("已排上，先跑了一次", "结果会出现在这个对话里");
-        } catch (e) {
-          fb.info("排上了，但这次没跑起来", e instanceof Error ? e.message : String(e));
-        }
-      } else {
-        fb.success(editing ? "已保存" : "已排上", `${scheduleText(saved)} · 下次 ${whenText(saved.next_run_at)}`);
-      }
+      fb.success(editing ? "已保存" : "已排上", `${scheduleText(saved)} · 下次 ${whenText(saved.next_run_at)}`);
+      // 排上之后不关抽屉：能立刻看到它进了下面的列表，也能接着排第二条
+      if (editing) onOpenChange(false);
+      else resetForm();
       await load();
     } catch (e) {
       fb.error("没保存成功", e instanceof Error ? e.message : String(e));
@@ -220,6 +284,17 @@ export default function SessionJobs({
       await load();
     } catch (e) {
       fb.error("改不动", e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  /** 立刻跑一次（验证它到底会产出什么） */
+  const runJobNow = async (j: SessionJob) => {
+    try {
+      await api.runJobNow(j.id);
+      fb.success("已经跑起来了", "结果会出现在这个对话里");
+      await load();
+    } catch (e) {
+      fb.error("没跑起来", e instanceof Error ? e.message : String(e));
     }
   };
 
@@ -244,22 +319,255 @@ export default function SessionJobs({
   const minOpts = useMemo(() => ["00", "15", "30", "45"], []);
 
   // 输入框下面的「定时」按钮（父组件渲染）+ 有任务时的常驻条 + 弹框
+  /* ── 节奏：几个枚举好的选项 + 自定义 ───────────────────────────────────
+     用户脑子里是「每天 9 点」这种整句，不是 mode/at/weekdays 三个字段。
+     所以先说整句，只有选了「自定义…」才暴露时间/星期这些零件。 */
+  const rhythmKey = (m: string, h: string, mi: string, wd: string) => {
+    if (m === "hourly") return "hourly";
+    if (m === "daily") {
+      const hit = DAILY_PRESETS.find((x) => x.at === `${h}:${mi}`);
+      return hit ? hit.key : "custom";
+    }
+    const one = wd.split(",").filter(Boolean);
+    const hit = WEEKLY_PRESETS.find((x) => x.at === `${h}:${mi}` && x.wd === one.join(","));
+    return hit ? hit.key : "custom";
+  };
+  const rhythm = rhythmKey(mode, hour, minute, weekdays.join(","));
+  const applyRhythm = (k: string) => {
+    const daily = DAILY_PRESETS.find((x) => x.key === k);
+    if (daily) {
+      setMode("daily");
+      setHour(daily.at.split(":")[0]);
+      setMinute(daily.at.split(":")[1]);
+      return;
+    }
+    const weekly = WEEKLY_PRESETS.find((x) => x.key === k);
+    if (weekly) {
+      setMode("weekly");
+      setHour(weekly.at.split(":")[0]);
+      setMinute(weekly.at.split(":")[1]);
+      setWeekdays(weekly.wd.split(","));
+      return;
+    }
+    if (k === "hourly") setMode("hourly");
+    // custom：保持原值，露出下面的时间/星期控件
+  };
+
+  /** 一张定时卡：说清「什么时候、做什么、结果去哪」，点「改」就地展开编辑 */
+  const jobCard = (j: SessionJob) => {
+    const editingThis = editing === j.id;
+    const st = j.last_status ? STATUS_TONE[j.last_status] : null;
+    return (
+      <div
+        key={j.id}
+        className="rounded-[12px] border px-3 py-2.5"
+        style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-[13.5px] font-medium" style={{ color: j.enabled ? "var(--color-text)" : "var(--color-muted)" }}>
+            {scheduleText(j)}
+          </span>
+          <span className="text-[11.5px]" style={{ color: j.enabled ? "var(--color-muted)" : "var(--color-warn)" }}>
+            {j.enabled ? `下次 ${whenText(j.next_run_at)}` : "已暂停"}
+          </span>
+          {st ? (
+            <span className="text-[11px]" style={{ color: st.color }}>{st.text}</span>
+          ) : null}
+          <div className="ml-auto">
+            <Switch
+              checked={j.enabled}
+              onChange={() => void toggle(j)}
+              ariaLabel={j.enabled ? "暂停这个定时" : "恢复这个定时"}
+            />
+          </div>
+        </div>
+
+        <p className="mt-0.5 text-[12.5px] leading-snug" style={{ color: j.enabled ? "var(--color-text)" : "var(--color-muted)" }}>
+          {j.prompt}
+        </p>
+
+        <div className="mt-1 flex items-center gap-2 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+          <span>
+            {j.deliver?.channel === "webhook" ? "推到群里" : "结果回到这个对话"}
+            {j.monitor_kind ? " · 有变化才跑" : ""}
+          </span>
+          <button
+            type="button"
+            className="ml-auto min-h-[32px] rounded px-2.5 text-[12.5px] max-md:min-h-[44px] max-md:min-w-[44px]"
+            style={{ color: "var(--color-accent)" }}
+            onClick={() => (editingThis ? resetForm() : startEdit(j))}
+          >
+            {editingThis ? "收起" : "改"}
+          </button>
+          {/* 想看看它到底跑出什么，不用等下一次 */}
+          <button
+            type="button"
+            className="min-h-[32px] rounded px-2.5 text-[12.5px] max-md:min-h-[44px] max-md:min-w-[44px]"
+            style={{ color: "var(--color-muted)" }}
+            onClick={() => void runJobNow(j)}
+          >
+            跑一次
+          </button>
+        </div>
+
+        {editingThis && (
+          <div className="mt-2 border-t pt-2.5" style={{ borderColor: "var(--color-border)" }}>
+            <FieldLabel hint="到点它会自己发这句话">让它做什么</FieldLabel>
+            <textarea
+              className="input mb-2.5 w-full"
+              rows={2}
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              style={{ lineHeight: 1.5 }}
+            />
+            <FieldLabel>什么时候跑</FieldLabel>
+            <RhythmPicker
+              value={rhythm}
+              onChange={applyRhythm}
+              custom={
+                <>
+                  {mode !== "hourly" && (
+                    <div className="mt-2 flex items-center gap-2">
+                      <select className="input h-11 flex-1 lg:h-9" value={hour} onChange={(e) => setHour(e.target.value)} aria-label="小时">
+                        {hourOpts.map((h) => <option key={h} value={h}>{h} 点</option>)}
+                      </select>
+                      <select className="input h-11 flex-1 lg:h-9" value={minute} onChange={(e) => setMinute(e.target.value)} aria-label="分钟">
+                        {minOpts.map((m) => <option key={m} value={m}>{m} 分</option>)}
+                      </select>
+                    </div>
+                  )}
+                  {mode === "weekly" && (
+                    <div className="mt-2 grid grid-cols-7 gap-1.5">
+                      {WEEK.map((w) => {
+                        const on = weekdays.includes(w.k);
+                        return (
+                          <button
+                            key={w.k}
+                            type="button"
+                            data-tap
+                            onClick={() => setWeekdays((prev) => (on ? prev.filter((x) => x !== w.k) : [...prev, w.k]))}
+                            className="h-11 rounded-[9px] border text-[13px] lg:h-9"
+                            style={{
+                              background: on ? "var(--color-accent)" : "var(--color-surface)",
+                              color: on ? "#fff" : "var(--color-text)",
+                              borderColor: on ? "var(--color-accent)" : "var(--color-border)",
+                            }}
+                            aria-pressed={on}
+                          >
+                            {w.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              }
+            />
+            <div className="mt-2.5 flex items-center gap-2">
+              <select
+                className="input h-11 flex-1 lg:h-9"
+                value={channel === "webhook" ? "webhook" : "session"}
+                onChange={(e) => setChannel(e.target.value as "session" | "webhook")}
+                aria-label="结果送到哪"
+              >
+                <option value="session">结果回到这个对话</option>
+                <option value="webhook">推到群（Webhook）</option>
+              </select>
+              {channel === "webhook" && (
+                <select
+                  className="input h-11 lg:h-9"
+                  value={format}
+                  onChange={(e) => setFormat(e.target.value as typeof format)}
+                  aria-label="报文格式"
+                >
+                  {FORMAT_OPTS.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
+                </select>
+              )}
+            </div>
+            {channel === "webhook" && (
+              <input
+                className="input mt-2 h-11 w-full lg:h-9"
+                placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..."
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                inputMode="url"
+              />
+            )}
+
+            <details className="mt-2.5 rounded-[10px] border px-2.5 py-1.5" style={{ borderColor: "var(--color-border)" }}>
+              <summary className="flex min-h-[44px] cursor-pointer items-center gap-1.5 text-[12.5px] lg:min-h-[32px]" style={{ color: "var(--color-muted)" }}>
+                只在有变化时才跑
+                {monitorKind ? <span style={{ color: "var(--color-accent)" }}>· 已开启</span> : null}
+              </summary>
+              <div className="mt-1.5">
+                <select
+                  className="input h-11 w-full lg:h-9"
+                  value={monitorKind}
+                  onChange={(e) => setMonitorKind(e.target.value as "" | "command" | "url")}
+                  aria-label="变更门"
+                >
+                  <option value="">每次都跑</option>
+                  <option value="command">命令输出变了才跑</option>
+                  <option value="url">网址内容变了才跑</option>
+                </select>
+                {monitorKind ? (
+                  <>
+                    <input
+                      className="input mt-2 h-11 w-full lg:h-9"
+                      placeholder={monitorKind === "url" ? "https://example.com/feed" : "比如 git -C /srv/app log -1 --format=%h"}
+                      value={monitor}
+                      onChange={(e) => setMonitor(e.target.value)}
+                      inputMode={monitorKind === "url" ? "url" : "text"}
+                    />
+                    <p className="mt-1 text-[11px]" style={{ color: "var(--color-muted)" }}>
+                      结果和上次一样就「整个跳过」（不调模型、不刷屏）。
+                    </p>
+                  </>
+                ) : null}
+              </div>
+            </details>
+
+            <div className="mt-2.5 flex items-center gap-2">
+              <button
+                type="button"
+                className="min-h-[44px] rounded-lg px-2.5 text-[13px] lg:min-h-[36px]"
+                style={{ color: "var(--color-err)" }}
+                onClick={() => void remove(j)}
+              >
+                删除
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary ml-auto px-4"
+                style={{ minHeight: 44 }}
+                disabled={busy || !prompt.trim()}
+                onClick={() => void save()}
+              >
+                {busy ? "保存中…" : "保存"}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  /*
+    抽屉 = 两件事：
+      上：排新班（一句话 + 什么时候跑 + 一个按钮就排上）
+      下：已经在跑的（卡片列表，点「改」就地展开）
+    没有第二层弹框，也不再把四段表单一次性怼到脸上。
+  */
   const dialog = (
     <div className={DLG_BACKDROP} onClick={() => !busy && onOpenChange(false)}>
-      {/*
-        手机 = 底部抽屉（贴底、全宽、封顶 92dvh），桌面 = 居中卡片。
-        内部拆成「固定标题 / 可滚动表单 / 固定操作条」三段 —— 表单再长，
-        保存键也不会被推到滚动区外面去。
-      */}
       <div
         className="card flex w-full max-w-[560px] flex-col overflow-hidden rounded-b-none rounded-t-[16px] max-h-[92dvh] sm:my-auto sm:max-h-[88dvh] sm:rounded-[14px]"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* 标题 */}
         <div className="flex shrink-0 items-center gap-2 border-b px-4 pb-2.5 pt-3" style={{ borderColor: "var(--color-border)" }}>
-          <h3 className="text-[15px] font-medium">{editing ? "改定时" : "排个班"}</h3>
+          <h3 className="text-[15px] font-medium">这个对话的班表</h3>
           <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
-            {editing ? "" : "让这个对话到点自己跑"}
+            到点自己跑
           </span>
           <button
             type="button"
@@ -274,239 +582,105 @@ export default function SessionJobs({
           </button>
         </div>
 
-        {/* 表单 */}
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-          <FieldLabel hint="到点它会自己发这句话">让它做什么</FieldLabel>
-          <textarea
-            className="input mb-4 w-full text-[16px] lg:text-[13.5px]"
-            rows={3}
-            placeholder="比如：汇总今天三条 AI 新闻，每条一句话，带链接"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            style={{ lineHeight: 1.55 }}
-          />
-
-          <FieldLabel>多久一次</FieldLabel>
-          <div className="flex items-center gap-0.5 rounded-[11px] border p-0.5" style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}>
-            {([
-              { k: "hourly", label: "每小时" },
-              { k: "daily", label: "每天" },
-              { k: "weekly", label: "每周" },
-            ] as const).map((o) => {
-              const on = o.k === mode;
-              return (
+          {/* 排新班 */}
+          {editing === null && (
+            <div className="mb-3">
+              <textarea
+                className="input w-full"
+                rows={2}
+                placeholder="到点让它做什么？比如：汇总今天三条 AI 新闻，每条一句话，带链接"
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                style={{ lineHeight: 1.55 }}
+              />
+              <div className="mt-2 flex items-center gap-2">
+                <div className="min-w-0 flex-1">
+                  <RhythmPicker value={rhythm} onChange={applyRhythm} />
+                </div>
                 <button
-                  key={o.k}
                   type="button"
-                  onClick={() => setMode(o.k)}
-                  className="min-h-[44px] flex-1 rounded-[8px] text-[13.5px] transition-colors lg:min-h-[36px] lg:text-[12.5px]"
-                  style={{
-                    background: on ? "var(--color-accent)" : undefined,
-                    color: on ? "#fff" : "var(--color-muted)",
-                    fontWeight: on ? 500 : undefined,
-                  }}
+                  className="btn btn-primary shrink-0 px-4"
+                  style={{ minHeight: 44 }}
+                  disabled={busy || !prompt.trim()}
+                  onClick={() => void save()}
                 >
-                  {o.label}
+                  {busy ? "…" : "排上"}
                 </button>
-              );
-            })}
-          </div>
-
-          {mode !== "hourly" && (
-            <div className="mt-2 flex items-center gap-2">
-              <select
-                className="input h-11 flex-1 text-[16px] lg:h-9 lg:text-[13.5px]"
-                value={hour}
-                onChange={(e) => setHour(e.target.value)}
-                aria-label="小时"
-              >
-                {hourOpts.map((h) => (
-                  <option key={h} value={h}>{h} 点</option>
-                ))}
-              </select>
-              <select
-                className="input h-11 flex-1 text-[16px] lg:h-9 lg:text-[13.5px]"
-                value={minute}
-                onChange={(e) => setMinute(e.target.value)}
-                aria-label="分钟"
-              >
-                {minOpts.map((m) => (
-                  <option key={m} value={m}>{m} 分</option>
-                ))}
-              </select>
+              </div>
+              {rhythm === "custom" && (
+                <div className="mt-2">
+                  <div className="flex items-center gap-2">
+                    <select className="input h-11 flex-1 lg:h-9" value={mode} onChange={(e) => setMode(e.target.value as typeof mode)} aria-label="频率">
+                      <option value="hourly">每小时</option>
+                      <option value="daily">每天</option>
+                      <option value="weekly">每周</option>
+                    </select>
+                    {mode !== "hourly" && (
+                      <>
+                        <select className="input h-11 lg:h-9" value={hour} onChange={(e) => setHour(e.target.value)} aria-label="小时">
+                          {hourOpts.map((h) => <option key={h} value={h}>{h} 点</option>)}
+                        </select>
+                        <select className="input h-11 lg:h-9" value={minute} onChange={(e) => setMinute(e.target.value)} aria-label="分钟">
+                          {minOpts.map((m) => <option key={m} value={m}>{m} 分</option>)}
+                        </select>
+                      </>
+                    )}
+                  </div>
+                  {mode === "weekly" && (
+                    <div className="mt-2 grid grid-cols-7 gap-1.5">
+                      {WEEK.map((w) => {
+                        const on = weekdays.includes(w.k);
+                        return (
+                          <button
+                            key={w.k}
+                            type="button"
+                            data-tap
+                            onClick={() => setWeekdays((prev) => (on ? prev.filter((x) => x !== w.k) : [...prev, w.k]))}
+                            className="h-11 rounded-[9px] border text-[13px] lg:h-9"
+                            style={{
+                              background: on ? "var(--color-accent)" : "var(--color-surface)",
+                              color: on ? "#fff" : "var(--color-text)",
+                              borderColor: on ? "var(--color-accent)" : "var(--color-border)",
+                            }}
+                            aria-pressed={on}
+                          >
+                            {w.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
-          {mode === "weekly" && (
-            <div className="mt-2 grid grid-cols-7 gap-1.5">
-              {WEEK.map((w) => {
-                const on = weekdays.includes(w.k);
-                return (
-                  <button
-                    key={w.k}
-                    type="button"
-                    data-tap
-                    onClick={() => setWeekdays((prev) => (on ? prev.filter((x) => x !== w.k) : [...prev, w.k]))}
-                    className="h-11 rounded-[9px] border text-[13px] transition-colors lg:h-9 lg:text-[12px]"
-                    style={{
-                      background: on ? "var(--color-accent)" : "var(--color-surface)",
-                      color: on ? "#fff" : "var(--color-text)",
-                      borderColor: on ? "var(--color-accent)" : "var(--color-border)",
-                    }}
-                    aria-pressed={on}
-                  >
-                    {w.label.replace("周", "")}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          <div className="mt-4">
-            <FieldLabel>结果送到哪</FieldLabel>
-            <div className="flex items-center gap-0.5 rounded-[11px] border p-0.5" style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}>
-              {CHANNEL_OPTS.map((o) => {
-                const on = o.key === channel;
-                return (
-                  <button
-                    key={o.key}
-                    type="button"
-                    onClick={() => setChannel(o.key)}
-                    className="min-h-[44px] flex-1 rounded-[8px] text-[13.5px] transition-colors lg:min-h-[36px] lg:text-[12.5px]"
-                    style={{
-                      background: on ? "var(--color-accent)" : undefined,
-                      color: on ? "#fff" : "var(--color-muted)",
-                      fontWeight: on ? 500 : undefined,
-                    }}
-                  >
-                    {o.label}
-                  </button>
-                );
-              })}
-            </div>
-            {channel === "webhook" ? (
-              <div className="mt-2 space-y-2">
-                <select
-                  className="input h-11 w-full text-[16px] lg:h-9 lg:text-[13.5px]"
-                  value={format}
-                  onChange={(e) => setFormat(e.target.value as typeof format)}
-                  aria-label="报文格式"
+          {/* 已经在跑的 */}
+          {items.length > 0 && (
+            <>
+              <div className="mb-1.5 flex items-center gap-2 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                <span className="panel-title" style={{ fontSize: 11.5 }}>
+                  已经在跑
+                </span>
+                <span>{items.filter((j) => j.enabled).length} 个</span>
+                <button
+                  type="button"
+                  className="ml-auto min-h-[32px] rounded px-2.5 text-[12px] max-md:min-h-[44px]"
+                  style={{ color: "var(--color-accent)" }}
+                  onClick={() => resetForm()}
                 >
-                  {FORMAT_OPTS.map((f) => (
-                    <option key={f.key} value={f.key}>{f.label}</option>
-                  ))}
-                </select>
-                <input
-                  className="input h-11 w-full text-[16px] lg:h-9 lg:text-[13.5px]"
-                  placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..."
-                  value={url}
-                  onChange={(e) => setUrl(e.target.value)}
-                  inputMode="url"
-                />
+                  ＋ 再排一个
+                </button>
               </div>
-            ) : (
-              <p className="mt-1.5 text-[12px]" style={{ color: "var(--color-muted)" }}>
-                结果就是这个对话里的下一轮，回来能接着追问。
-              </p>
-            )}
-          </div>
-
-          {/* 高级：5% 场景，不占常驻位置 */}
-          <details className="mt-4 rounded-[10px] border px-3 py-2" style={{ borderColor: "var(--color-border)" }}>
-            <summary className="flex min-h-[36px] cursor-pointer items-center gap-1.5 text-[12.5px]" style={{ color: "var(--color-muted)" }}>
-              高级：只在有变化时才跑
-              {monitorKind ? <span style={{ color: "var(--color-accent)" }}>· 已开启</span> : null}
-            </summary>
-            <div className="mt-2">
-              <div className="flex items-center gap-0.5 rounded-[11px] border p-0.5" style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}>
-                {([
-                  { k: "", label: "每次都跑" },
-                  { k: "command", label: "命令" },
-                  { k: "url", label: "网址" },
-                ] as const).map((o) => {
-                  const on = o.k === monitorKind;
-                  return (
-                    <button
-                      key={o.k}
-                      type="button"
-                      onClick={() => setMonitorKind(o.k)}
-                      className="min-h-[44px] flex-1 rounded-[8px] text-[13px] transition-colors lg:min-h-[36px] lg:text-[12.5px]"
-                      style={{
-                        background: on ? "var(--color-accent)" : undefined,
-                        color: on ? "#fff" : "var(--color-muted)",
-                      }}
-                    >
-                      {o.label}
-                    </button>
-                  );
-                })}
-              </div>
-              {monitorKind ? (
-                <>
-                  <input
-                    className="input mt-2 h-11 w-full text-[16px] lg:h-9 lg:text-[13.5px]"
-                    placeholder={
-                      monitorKind === "url"
-                        ? "https://example.com/feed（抓它的正文来比）"
-                        : "比如 git -C /srv/app log -1 --format=%h"
-                    }
-                    value={monitor}
-                    onChange={(e) => setMonitor(e.target.value)}
-                    inputMode={monitorKind === "url" ? "url" : "text"}
-                  />
-                  <p className="mt-1.5 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
-                    到点先跑这条检查；结果和上次一样就「整个跳过」（不调模型、不刷屏）。
-                    {monitorKind === "url" ? " 地址要 http(s)。" : " 命令 20 秒内要结束。"}
-                  </p>
-                </>
-              ) : null}
-            </div>
-          </details>
-
-          <label className="mt-3 flex min-h-[44px] items-center gap-2.5 text-[13px]">
-            <input
-              type="checkbox"
-              checked={runNow}
-              onChange={(e) => setRunNow(e.target.checked)}
-              className="h-[20px] w-[20px]"
-            />
-            保存后立刻跑一次看看
-          </label>
-        </div>
-
-        {/* 操作条：始终可见。删除靠左红字，主操作靠右 —— 危险动作不和保存挨着 */}
-        <div
-          className="flex shrink-0 items-center gap-2 border-t px-4 py-2.5"
-          style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
-        >
-          {editing && (
-            <button
-              type="button"
-              className="min-h-[36px] rounded-lg px-2 text-[13px]"
-              style={{ color: "var(--color-err)" }}
-              onClick={() => {
-                const j = items.find((x) => x.id === editing);
-                if (j) void remove(j);
-              }}
-            >
-              删除
-            </button>
+              <div className="flex flex-col gap-1.5">{items.map((j) => jobCard(j))}</div>
+            </>
           )}
-          <button
-            type="button"
-            className="btn ml-auto px-4"
-            onClick={() => !busy && onOpenChange(false)}
-          >
-            取消
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary px-5"
-            disabled={busy || !prompt.trim()}
-            onClick={() => void save()}
-          >
-            {busy ? "保存中…" : editing ? "保存" : "排上"}
-          </button>
+          {items.length === 0 && editing === null && (
+            <p className="mt-1 text-[12px]" style={{ color: "var(--color-muted)" }}>
+              还没有班。上面写一句、选个时间，就是一条。
+            </p>
+          )}
         </div>
       </div>
     </div>
@@ -518,13 +692,23 @@ export default function SessionJobs({
       {items.length > 0 && (
         <div className="panel-strip max-w-3xl mx-auto mb-1.5 px-2.5 py-1.5 max-md:px-2">
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px]">
-            <span className="panel-title inline-flex items-center gap-1">
+            {/* 标题本身就是「打开班表」的入口：有任务时工具排那个按钮就不摆了，
+                但列表得有地方看得到 */}
+            <button
+              type="button"
+              className="panel-title inline-flex items-center gap-1 rounded max-md:min-h-[44px]"
+              onClick={() => {
+                resetForm();
+                onOpenChange(true);
+              }}
+              title="打开班表：看全部、改时间、再排一个"
+            >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <circle cx="12" cy="12" r="9" />
                 <path d="M12 7v5l3 2" />
               </svg>
               定时任务
-            </span>
+            </button>
             <span style={{ color: "var(--color-muted)" }}>
               {/* 「在跑」不准确：定时任务多数时间在等下一次，不是正在执行 */}
               {items.filter((j) => j.enabled).length} 个已启用
@@ -533,7 +717,7 @@ export default function SessionJobs({
             </span>
             <button
               type="button"
-              className="ml-auto rounded px-1.5 text-[11.5px] max-md:min-h-[32px]"
+              className="ml-auto min-h-[32px] rounded px-2.5 text-[12px] max-md:min-h-[44px]"
               style={{ color: "var(--color-accent)" }}
               onClick={startNew}
             >

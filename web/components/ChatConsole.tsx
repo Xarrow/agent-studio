@@ -1613,6 +1613,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 open={jobOpen}
                 onOpenChange={setJobOpen}
                 onCount={setJobCount}
+                draft={input}
               />
             )}
 

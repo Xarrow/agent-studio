@@ -556,12 +556,18 @@ test("侧栏搜索：标题 + 对话内容两段，内容命中可点进会话",
  */
 test("定时任务：枚举频率 + 两选一投递 + 空态不占位", () => {
   const src = read("components/SessionJobs.tsx");
-  assert.match(src, /k: "hourly", label: "每小时"/, "频率枚举");
+  // 节奏从「三个分段 + 时间零件」改成整句下拉（每天 09:00 / 每周一三五 09:00），
+  // 枚举值仍在源码里明写着，不让用户写 cron
+  assert.match(src, /DAILY_PRESETS/, "频率是枚举好的整句");
+  assert.match(src, /option value="hourly"/, "每小时仍可选");
   assert.match(src, /key: "session" as const, label: "这个对话"/, "默认投递=本对话");
   assert.match(src, /key: "feishu", label: "飞书"/, "webhook 支持飞书");
   assert.match(src, /key: "wecom", label: "企业微信"/, "webhook 支持企业微信");
   assert.match(src, /\{items\.length > 0 && \(/, "没有任务时不出常驻条");
-  assert.match(src, /保存后立刻跑一次看看/, "可以先跑一次验证");
+  // 「保存后立刻跑一次」的复选框改成卡片上的「跑一次」按钮：随时能验证，
+  // 也不必在创建时多做一次决定
+  assert.match(src, /跑一次/, "可以立刻跑一次验证");
+  assert.match(src, /api\.runJobNow/, "走的是后端 run-now 接口");
   // 开关从两个字的按钮换成 Switch（状态比动作更直观，触屏也更好点）
   assert.match(src, /<Switch[\s\S]{0,160}checked=\{j\.enabled\}/, "能开关");
   // 对话页必须接上：按钮 + 常驻条
@@ -631,9 +637,9 @@ test("运行中插话：执行中输入框可用 + 回车即插话 + 历史里�
  */
 test("定时任务：可设「有变化才跑」，并把跳过的原因说清楚", () => {
   const jobs = read("components/SessionJobs.tsx");
-  assert.match(jobs, /高级：只在有变化时才跑/, "变更门有入口（收进高级，不再常驻占三行）");
-  assert.match(jobs, /label: "命令"/, "命令型检查有入口");
-  assert.match(jobs, /label: "网址"/, "网址型检查有入口");
+  assert.match(jobs, /只在有变化时才跑/, "变更门有入口（收进折叠区，不占常驻位置）");
+  assert.match(jobs, /option value="command"/, "命令型检查有入口");
+  assert.match(jobs, /option value="url"/, "网址型检查有入口");
   assert.match(jobs, /monitor_kind: monitorKind/, "保存时带上类型");
   assert.match(jobs, /结果和上次一样就「整个跳过」/, "文案说清为什么没跑");
   assert.match(jobs, /有变化才跑/, "列表行上看得出来");
