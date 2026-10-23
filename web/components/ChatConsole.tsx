@@ -1987,6 +1987,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                       </svg>
                     )}
                   </button>
+                  {/* 一个定时任务都没有时才摆这个入口：有了上面就有 strip，含「＋ 再排一个」 */}
+                  {sessionId && jobCount === 0 && <JobButton onClick={() => setJobOpen(true)} />}
                   <span className="hidden sm:block text-[11.5px] truncate text-[var(--color-muted)]">
                     {dragging
                       ? "松手即添加为附件"
@@ -2086,7 +2088,6 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
 
             <div className="max-w-3xl mx-auto mt-1.5 flex items-center gap-3 text-[11.5px] text-[var(--color-muted)]">
               <span className="hidden sm:inline">Enter 发送 · Shift + Enter 换行 · 可直接粘贴截图</span>
-              {sessionId && <JobButton count={jobCount} onClick={() => setJobOpen(true)} />}
               {paused && <span className="ml-auto">运行暂停中</span>}
             </div>
 

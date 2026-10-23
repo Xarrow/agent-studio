@@ -458,7 +458,10 @@ export default function SessionJobs({
               定时任务
             </span>
             <span style={{ color: "var(--color-muted)" }}>
-              {items.filter((j) => j.enabled).length} 个在跑
+              {/* 「在跑」不准确：定时任务多数时间在等下一次，不是正在执行 */}
+              {items.filter((j) => j.enabled).length} 个已启用
+              {items.some((j) => !j.enabled) &&
+                ` · ${items.filter((j) => !j.enabled).length} 个已暂停`}
             </span>
             <button
               type="button"
@@ -516,23 +519,30 @@ export default function SessionJobs({
   );
 }
 
-/** 输入框下面那个「定时」按钮（父组件放，点击打开上面的弹框） */
-export function JobButton({ count, onClick }: { count: number; onClick: () => void }) {
-  const ref = useRef<HTMLButtonElement>(null);
+/**
+ * 输入坞工具排里的「定时」入口（附件右边那一组工具之一）。
+ *
+ * 以前它在最下面那行说明文字里（"Enter 发送 · … · 定时"）—— 说明里混动作，
+ * 又是灰的 11.5px 无边框，触屏还没有 hover，看起来就是一句话的一部分。
+ * 挪进工具栏、加边框和图标之后它才像个能点的东西。
+ *
+ * 已经有定时任务时不摆这个（上面那条 strip 里有「＋ 再排一个」）：
+ * 同一个动作只留一个入口。
+ */
+export function JobButton({ onClick }: { onClick: () => void }) {
   return (
     <button
-      ref={ref}
       type="button"
       onClick={onClick}
-      title="定时：让这个对话按时自己跑"
-      className="inline-flex items-center gap-1 rounded px-1.5 text-[11.5px] hover:underline max-md:min-h-[32px]"
-      style={{ color: count > 0 ? "var(--color-accent)" : "var(--color-muted)" }}
+      title="让这个对话按时自己跑：每天/每周到点自动执行"
+      className="h-11 sm:h-8 shrink-0 inline-flex items-center gap-1 rounded-xl border px-2.5 text-[12px] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
+      style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
     >
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         <circle cx="12" cy="12" r="9" />
         <path d="M12 7v5l3 2" />
       </svg>
-      定时{count > 0 ? ` ${count}` : ""}
+      定时
     </button>
   );
 }

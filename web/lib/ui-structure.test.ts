@@ -565,7 +565,18 @@ test("定时任务：枚举频率 + 两选一投递 + 空态不占位", () => {
   assert.match(src, /j\.enabled \? "暂停" : "恢复"/, "能开关");
   // 对话页必须接上：按钮 + 常驻条
   const chat = read("components/ChatConsole.tsx");
-  assert.match(chat, /<JobButton count=\{jobCount\} onClick=\{\(\) => setJobOpen\(true\)\} \/>/, "输入框下有定时入口");
+  // 入口在输入坞的工具排里（附件旁边），而且是"没有任务时"才摆 ——
+  // 有任务时上面有常驻条，条里已有「＋ 再排一个」，同一个动作只留一个入口
+  assert.match(
+    chat,
+    /jobCount === 0 && <JobButton onClick=\{\(\) => setJobOpen\(true\)\} \/>/,
+    "没有任务时工具排里有定时入口",
+  );
+  assert.doesNotMatch(
+    chat,
+    /Enter 发送 · Shift \+ Enter 换行 · 可直接粘贴截图<\/span>\s*\{sessionId && <JobButton/,
+    "定时不能混在键盘说明那一行里",
+  );
   assert.match(chat, /<SessionJobs[\s\S]{0,160}onCount=\{setJobCount\}/, "常驻条与计数接上");
   // 接口
   const api = read("lib/api.ts");
