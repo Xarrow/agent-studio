@@ -232,6 +232,10 @@ _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("memory_policy", "recall_backend", "recall_backend VARCHAR(16) DEFAULT 'local'"),
     # 记忆常驻层：pinned 的记忆每轮整段注入，不靠相似度召回（对齐 Hermes 的 MEMORY.md）
     ("memory", "pinned", "pinned BOOLEAN NOT NULL DEFAULT 0"),
+    # 记忆分层：user（关于用户）/ memory（助手笔记），对应 Hermes 的 USER.md / MEMORY.md
+    ("memory", "layer", "layer VARCHAR(8) DEFAULT 'memory'"),
+    # 保存方式：auto（直接存）/ confirm（先问）/ off（不许存）
+    ("memory_policy", "save_mode", "save_mode VARCHAR(8) DEFAULT 'auto'"),
 )
 
 

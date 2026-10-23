@@ -198,6 +198,34 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
           />
         </div>
 
+        {/* 存的时候先问还是直接存 —— 这是「记忆归谁管」的开关，放在数量上面 */}
+        <div className="mt-3 pt-3 border-t border-[var(--color-border)]">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[12px]">它要记东西时</span>
+            <select
+              className="input h-[32px] min-w-0"
+              style={{ width: "auto" }}
+              value={policy.save_mode}
+              disabled={busy || !memoryOn}
+              title={memoryOn ? "决定助手能不能自己把事写进记忆" : "记忆关了，这个设置暂不生效"}
+              onChange={(e) =>
+                void patch({ save_mode: e.target.value as "auto" | "confirm" | "off" })
+              }
+            >
+              <option value="auto">直接记下（不用问我）</option>
+              <option value="confirm">先放待确认，我点「记住」才生效</option>
+              <option value="off">不许记（只能读已有的）</option>
+            </select>
+          </div>
+          <p className="mt-1 text-[11.5px] leading-snug text-[var(--color-muted)]">
+            {policy.save_mode === "auto"
+              ? "存完下一轮就能用上；记错了去「记忆」页改。"
+              : policy.save_mode === "confirm"
+                ? "它会说「已放进待确认」；你在记忆页点「确认」之后，这条才会进上下文。"
+                : "它只能读已有记忆，新东西不会写进来（手动在记忆页加仍可以）。"}
+          </p>
+        </div>
+
         <div className="mt-3 pt-3 border-t border-[var(--color-border)] flex items-center gap-3 flex-wrap">
           <span className="text-[12px]">
             它当前记得 <strong>{own.length + shared.length}</strong> 条

@@ -1052,6 +1052,8 @@ export const api = {
     agentId?: string;
     status?: string;
     kind?: string;
+    /** user（关于用户）| memory（助手笔记） */
+    layer?: string;
     q?: string;
     scope?: string;
   }) => {
@@ -1059,6 +1061,7 @@ export const api = {
     if (params?.agentId) qs.set("agent_id", params.agentId);
     if (params?.status) qs.set("status", params.status);
     if (params?.kind) qs.set("kind", params.kind);
+    if (params?.layer) qs.set("layer", params.layer);
     if (params?.q) qs.set("q", params.q);
     if (params?.scope) qs.set("scope", params.scope);
     const suffix = qs.toString() ? `?${qs}` : "";
@@ -1082,6 +1085,8 @@ export const api = {
       scope: string;
       /** 1 = 常驻（每轮注入） */
       pinned: number;
+      /** user（关于用户）| memory（助手笔记） */
+      layer: "user" | "memory";
     }>,
   ) =>
     request<Memory>(`/api/memories/${id}`, {

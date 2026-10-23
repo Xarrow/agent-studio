@@ -16,6 +16,8 @@ from ..schemas import MemoryPolicyRead
 #: 默认策略 —— 安全默认：召回开（明显有益）、自动沉淀关（有成本，需显式开启）
 DEFAULT_POLICY: dict[str, Any] = {
     "auto_extract": False,
+    #: 默认直接存（对齐 Hermes 的存完即用）；想先问就改成 confirm
+    "save_mode": "auto",
     "recall_enabled": True,
     "recall_top_k": 5,
     "recall_strategy": "hybrid",
@@ -33,6 +35,7 @@ def to_read(agent_id: str, row: MemoryPolicy | None) -> MemoryPolicyRead:
     return MemoryPolicyRead(
         agent_id=agent_id,
         auto_extract=bool(row.auto_extract),
+        save_mode=getattr(row, "save_mode", None) or "auto",
         recall_enabled=bool(row.recall_enabled),
         recall_top_k=row.recall_top_k,
         recall_strategy=row.recall_strategy,

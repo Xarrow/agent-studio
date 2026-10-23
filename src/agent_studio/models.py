@@ -445,6 +445,12 @@ class Memory(Base):
     scope: Mapped[str] = mapped_column(String(16), default="agent")
     session_id: Mapped[str | None] = mapped_column(String(32), default=None)
 
+    #: **分层**：user（关于用户 —— 是谁、偏好、在做什么）| memory（助手自己的笔记 ——
+    #: 环境事实、做法、结论）。对应 Hermes 的 USER.md / MEMORY.md：
+    #: 两层的差别不是存在哪，而是"谁的知识" —— 混在一起注入，模型会把自己的猜测
+    #: 当成用户说过的话。
+    layer: Mapped[str] = mapped_column(String(8), default="memory", index=True)
+
     #: fact | preference | summary | instruction
     kind: Mapped[str] = mapped_column(String(16), default="fact")
     content: Mapped[str] = mapped_column(LongText, default="")
@@ -502,6 +508,11 @@ class MemoryPolicy(Base):
     )
     #: 执行结束后自动提炼记忆（进入候选态）
     auto_extract: Mapped[int] = mapped_column(Integer, default=0)
+    #: 助手要记东西时怎么办：
+    #:   auto    = 直接存（存完即用）
+    #:   confirm = 先放「待确认」，用户在记忆页/对话里点「记住」才生效
+    #:   off     = 不许存（只读记忆）
+    save_mode: Mapped[str] = mapped_column(String(8), default="auto")
     #: 执行前召回并注入 System Prompt
     recall_enabled: Mapped[int] = mapped_column(Integer, default=1)
     recall_top_k: Mapped[int] = mapped_column(Integer, default=5)

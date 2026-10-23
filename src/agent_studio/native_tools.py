@@ -354,6 +354,16 @@ MEMORY_SAVE_SCHEMA: dict[str, Any] = {
                 "任务细节、一次性的结论不要 pin —— 常驻段有长度上限，塞满会挤掉正文。"
             ),
         },
+        "layer": {
+            "type": "string",
+            "enum": ["user", "memory"],
+            "description": (
+                "user = 关于**用户**的（他是谁、偏好、正在做什么、在意什么）；"
+                "memory = **你自己**的笔记（环境事实、某套做法、踩过的坑、结论）。"
+                "判据：这句话主语是用户还是环境/事情。分错层的后果是模型把自己推断的东西"
+                "当成用户亲口说过的话。默认 memory。"
+            ),
+        },
     },
     "required": ["content"],
 }
@@ -546,7 +556,10 @@ async def _skill_save(
 
 
 async def _memory_save(
-    content: str, tags: list[str] | None = None, pin: bool = False
+    content: str,
+    tags: list[str] | None = None,
+    pin: bool = False,
+    layer: str = "memory",
 ) -> str:
     """**主动记一条**：内置直接生效（store-and-use）+ 配了外部就同时写外部。
 
@@ -557,12 +570,14 @@ async def _memory_save(
     """
     from .db import SessionLocal
     from .memory import external
+    from .memory.policy import get_policy
     from .models import Memory, now_ms
     from .runner.ctx import current_run_ctx
 
     body = (content or "").strip()
     if not body:
         return "内容为空，没有存。"
+    lay = "user" if str(layer or "").strip().lower() == "user" else "memory"
     tag_list = [str(t).strip() for t in (tags or []) if str(t).strip()]
     ctx = current_run_ctx()
     agent_id = str(ctx.get("agent_id") or "") or None
@@ -570,15 +585,30 @@ async def _memory_save(
 
     stored = body + (f"（标签：{'、'.join(tag_list)}）" if tag_list else "")
     async with SessionLocal() as session:
+        # 保存方式由 Agent 的记忆策略决定：
+        #   auto    → 直接 active（存完即用）
+        #   confirm → candidate（进「待确认」，用户点了「记住」才算数）
+        #   off     → 不存，如实告诉模型"这个助手关了记忆写入"
+        save_mode = "auto"
+        if agent_id:
+            try:
+                pol = await get_policy(session, agent_id)
+                save_mode = getattr(pol, "save_mode", None) or "auto"
+            except Exception:  # noqa: BLE001 —— 读不到策略就按默认（直接存）走
+                save_mode = "auto"
+        if save_mode == "off":
+            return "这个助手关了记忆写入（记忆策略里设成了「不许存」），这条没存。要记的话让用户去记忆面板改。"
+        status = "candidate" if save_mode == "confirm" else "active"
         session.add(
             Memory(
                 agent_id=agent_id,
                 scope="agent" if agent_id else "global",
                 kind="fact",
+                layer=lay,
                 content=stored,
                 source="agent",
                 source_run_id=run_id,
-                status="active",
+                status=status,
                 # 常驻的给高 importance：常驻段按它排序，超预算时先保重要的
                 importance=0.9 if pin else 0.6,
                 pinned=1 if pin else 0,
@@ -597,8 +627,14 @@ async def _memory_save(
         except external.ExternalMemoryError as exc:
             external_note = f"外部记忆写入失败：{exc}"
 
+    who = "关于用户的" if lay == "user" else ""
+    if status == "candidate":
+        return (
+            f"已放进「待确认」：{who}「{body[:40]}…」—— 用户点「记住」之后才算数，"
+            f"在那之前不会进上下文。{external_note}"
+        )
     where = "常驻记忆（以后每一轮都会带上）" if pin else "记忆（下次提问相关时会召回）"
-    return f"已记住，存进{where}；记多了可在记忆页归档。{external_note}"
+    return f"已记住{who}{where}；记多了可在记忆页归档。{external_note}"
 
 
 # --------------------------------------------------------------------------- #

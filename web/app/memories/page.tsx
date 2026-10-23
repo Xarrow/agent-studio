@@ -72,6 +72,8 @@ export default function MemoriesPage() {
   const [status, setStatus] = useState<string>("");
   const [agentId, setAgentId] = useState("");
   const [kind, setKind] = useState("");
+  /** 层：user（关于用户）/ memory（助手笔记） */
+  const [layer, setLayer] = useState("");
   const [query, setQuery] = useState("");
 
   /** 展开中那条（一行一对象：详情就在这一行下面展开） */
@@ -100,6 +102,7 @@ export default function MemoriesPage() {
           agentId: agentId || undefined,
           status: status || undefined,
           kind: kind || undefined,
+          layer: layer || undefined,
           q: query.trim() || undefined,
         }),
         api.agents(),
@@ -114,13 +117,13 @@ export default function MemoriesPage() {
     } finally {
       setLoading(false);
     }
-  }, [agentId, status, kind, query, fb]);
+  }, [agentId, status, kind, layer, query, fb]);
 
   useEffect(() => {
     void load();
     // 只在真实筛选变化时重载（fb 是稳定引用）
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agentId, status, kind]);
+  }, [agentId, status, kind, layer]);
 
   const candidates = useMemo(() => items.filter((m) => m.status === "candidate"), [items]);
 
@@ -186,6 +189,17 @@ export default function MemoriesPage() {
     try {
       await api.updateMemory(m.id, { pinned: m.pinned ? 0 : 1 });
       fb.success(m.pinned ? "已取消常驻" : "已设为常驻（以后每轮都会带上）");
+      await load();
+    } catch (e) {
+      fb.error("设置失败", e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const toggleLayer = async (m: Memory) => {
+    const nextLayer = m.layer === "user" ? "memory" : "user";
+    try {
+      await api.updateMemory(m.id, { layer: nextLayer });
+      fb.success(nextLayer === "user" ? "已改成「关于用户」" : "已改成「助手笔记」");
       await load();
     } catch (e) {
       fb.error("设置失败", e instanceof Error ? e.message : String(e));
@@ -389,6 +403,17 @@ export default function MemoriesPage() {
         <select
           className="input h-[36px] min-w-0"
           style={{ width: "auto" }}
+          title="关于用户 / 助手自己的笔记"
+          value={layer}
+          onChange={(e) => setLayer(e.target.value)}
+        >
+          <option value="">全部层</option>
+          <option value="user">关于用户</option>
+          <option value="memory">助手笔记</option>
+        </select>
+        <select
+          className="input h-[36px] min-w-0"
+          style={{ width: "auto" }}
           title="只看某种类型"
           value={kind}
           onChange={(e) => setKind(e.target.value)}
@@ -534,6 +559,7 @@ export default function MemoriesPage() {
                   <span className="min-w-0 flex-1 basis-[260px]">
                     <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                       <KindTag kind={m.kind} />
+                      {m.layer === "user" ? <Chip tone="muted">关于用户</Chip> : null}
                       {m.pinned ? <Chip tone="accent">常驻</Chip> : null}
                       {cand ? <Chip tone="warn">待确认</Chip> : null}
                       {arch ? <Chip tone="muted">已停用</Chip> : null}
@@ -605,6 +631,9 @@ export default function MemoriesPage() {
                       <KV k="每轮都带上">
                         {m.pinned ? "是（常驻）" : "否（按相关度召回）"}
                       </KV>
+                      <KV k="属于">
+                        {m.layer === "user" ? "关于用户（身份/偏好/约定）" : "助手笔记（环境/做法/结论）"}
+                      </KV>
                       <KV k="有效期">
                         {m.ttl_s ? `${Math.round(m.ttl_s / 86400)} 天` : "长期有效"}
                       </KV>
@@ -635,6 +664,18 @@ export default function MemoriesPage() {
                         onClick={() => void togglePin(m)}
                       >
                         {m.pinned ? "取消常驻" : "设为常驻"}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn min-h-[36px] px-2.5 text-[12px]"
+                        title={
+                          m.layer === "user"
+                            ? "改成助手自己的笔记（环境、做法、结论）"
+                            : "改成「关于用户」（身份、偏好、约定）"
+                        }
+                        onClick={() => void toggleLayer(m)}
+                      >
+                        {m.layer === "user" ? "改成助手笔记" : "改成关于用户"}
                       </button>
                       <button
                         type="button"

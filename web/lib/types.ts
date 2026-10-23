@@ -675,6 +675,8 @@ export interface Memory {
   session_id: string | null;
   kind: MemoryKind;
   content: string;
+  /** user（关于用户：身份/偏好/约定）| memory（助手自己的笔记：环境与做法） */
+  layer: "user" | "memory";
   //: agent = 助手在对话里自己记的（memory_save，存完即用）
   source: "manual" | "auto" | "import" | "agent";
   source_run_id: string | null;
@@ -693,6 +695,8 @@ export interface Memory {
 export interface MemoryPolicy {
   agent_id: string;
   auto_extract: boolean;
+  /** 助手要记东西时：auto（直接存）| confirm（先问，进待确认）| off（不许存） */
+  save_mode: "auto" | "confirm" | "off";
   recall_enabled: boolean;
   recall_top_k: number;
   recall_strategy: "recent" | "keyword" | "hybrid";

@@ -76,6 +76,7 @@ def _to_read(row: Memory, agent_name: str | None = None) -> MemoryRead:
         session_id=row.session_id,
         kind=row.kind,
         content=row.content,
+        layer=getattr(row, "layer", None) or "memory",
         source=row.source,
         source_run_id=row.source_run_id,
         status=row.status,
@@ -308,6 +309,7 @@ async def list_memories(
     agent_id: str | None = None,
     status_filter: str | None = Query(default=None, alias="status"),
     kind: str | None = None,
+    layer: str | None = Query(default=None, description="user | memory"),
     q: str | None = Query(default=None, description="关键词搜索"),
     scope: str | None = None,
     limit: int = Query(default=200, le=500),
@@ -320,6 +322,8 @@ async def list_memories(
         stmt = stmt.where(Memory.status == status_filter)
     if kind:
         stmt = stmt.where(Memory.kind == kind)
+    if layer:
+        stmt = stmt.where(Memory.layer == layer)
     if scope:
         stmt = stmt.where(Memory.scope == scope)
     if q:
@@ -441,6 +445,8 @@ async def update_memory(
         row.scope = payload.scope
     if payload.ttl_s is not None:
         row.ttl_s = payload.ttl_s
+    if payload.layer is not None:
+        row.layer = payload.layer
     if payload.pinned is not None:
         row.pinned = 1 if payload.pinned else 0
         # 常驻 = 每轮都在，重要性天然该高；普通 = 按相关度，别动它原来的权重

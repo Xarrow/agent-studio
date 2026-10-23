@@ -803,6 +803,8 @@ class MemoryUpdate(BaseModel):
     ttl_s: int | None = None
     #: 1 = 常驻（每轮注入）；0 = 普通（按相关度召回）
     pinned: int | None = None
+    #: user（关于用户）| memory（助手笔记）
+    layer: Literal["user", "memory"] | None = None
     #: 改归属。传 NULL 表示"不修改"，传 "" 表示改成全局（不绑任何 Agent）
     agent_id: str | None = None
 
@@ -829,6 +831,8 @@ class MemoryRead(BaseModel):
     session_id: str | None = None
     kind: str
     content: str
+    #: user（关于用户）| memory（助手笔记）
+    layer: str = "memory"
     source: str
     source_run_id: str | None = None
     status: str
@@ -848,6 +852,8 @@ class MemoryPolicyRead(BaseModel):
 
     agent_id: str
     auto_extract: bool = False
+    #: 助手要记东西时：auto（直接存）| confirm（先问，放进待确认）| off（不许存）
+    save_mode: Literal["auto", "confirm", "off"] = "auto"
     recall_enabled: bool = True
     recall_top_k: int = 5
     recall_strategy: str = "hybrid"
@@ -860,6 +866,7 @@ class MemoryPolicyRead(BaseModel):
 
 class MemoryPolicyUpdate(BaseModel):
     auto_extract: bool | None = None
+    save_mode: Literal["auto", "confirm", "off"] | None = None
     recall_enabled: bool | None = None
     recall_top_k: int | None = Field(default=None, ge=1, le=50)
     recall_strategy: Literal["recent", "keyword", "hybrid"] | None = None

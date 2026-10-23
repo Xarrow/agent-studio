@@ -107,6 +107,8 @@ class RecalledMemory:
     kind: str
     score: float
     importance: float
+    #: user（关于用户）| memory（助手笔记）—— 注入时分两段渲染
+    layer: str = "memory"
 
 
 @dataclass
@@ -239,6 +241,7 @@ async def pinned_for(
             RecalledMemory(
                 id=m.id, content=m.content, kind=m.kind,
                 score=float(m.importance or 0.5), importance=float(m.importance or 0.5),
+                layer=getattr(m, "layer", None) or "memory",
             )
         )
         used += cost
@@ -246,19 +249,37 @@ async def pinned_for(
 
 
 def render_pinned(memories: list[RecalledMemory]) -> str:
-    """常驻段的渲染。标题与检索段分开，模型能区分"always know"与"this task related"。"""
+    """常驻段的渲染，**按层分开** —— 对应 Hermes 的 USER.md / MEMORY.md。
+
+    为什么要分两段而不是一个列表：两层是不同来源的知识。
+    上层是「用户告诉过我/我从对话里确认的关于他的事」，改成任何说法都要尊重；
+    下层是「我自己摸索出来的环境与做法」，可以被后来的验证推翻。
+    混在一段里，模型容易把后者当成用户的要求来引用。
+    """
     if not memories:
         return ""
-    lines = ["## 常驻记忆（每轮都在，不必再查）"]
-    for m in memories:
-        label = {
-            "fact": "事实",
-            "preference": "偏好",
-            "summary": "结论",
-            "instruction": "要求",
-        }.get(m.kind, "信息")
-        lines.append(f"- [{label}] {m.content}")
-    return "\n".join(lines)
+    user_side = [m for m in memories if getattr(m, "layer", "memory") == "user"]
+    mine = [m for m in memories if getattr(m, "layer", "memory") != "user"]
+    out: list[str] = []
+
+    def _block(title: str, items: list[RecalledMemory], note: str) -> None:
+        if not items:
+            return
+        out.append(f"## {title}")
+        out.append(f"（{note}）")
+        for m in items:
+            label = {
+                "fact": "事实",
+                "preference": "偏好",
+                "summary": "结论",
+                "instruction": "要求",
+            }.get(m.kind, "信息")
+            out.append(f"- [{label}] {m.content}")
+        out.append("")
+
+    _block("关于用户", user_side, "这些是用户的身份、偏好与约定，按此说话和做事")
+    _block("我记的笔记", mine, "环境事实与做法；与后来的实测冲突时以实测为准")
+    return "\n".join(out).strip()
 
 
 def render(memories: list[RecalledMemory]) -> str:
