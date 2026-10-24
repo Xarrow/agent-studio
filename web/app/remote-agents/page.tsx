@@ -16,7 +16,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 
-import { api, apiBase } from "@/lib/api";
+import { api, apiBase, fmt } from "@/lib/api";
 import type {
   Agent,
   RemoteAgentCallRecord,
@@ -183,6 +183,15 @@ export default function RemoteAgentsPage() {
   // API 地址与前端 api 客户端同一口径（lib/api.ts 的 apiBase）：内网 hostname:8848、公网走反代
   const base = apiBase();
   const selfRegUrl = `${base}/api/remote-agents/self`;
+  /* 自注册口令：远端在别人机器上，拿不到全站口令，所以另发一把只够"推自己"的 */
+  const [regToken, setRegToken] = useState("");
+  const [showReg, setShowReg] = useState(false);
+  useEffect(() => {
+    void api
+      .selfRegisterToken()
+      .then((r) => setRegToken(r.token))
+      .catch(() => setRegToken(""));
+  }, []);
   const selfCardUrl = `${base}/.well-known/agent-card.json`;
   async function copySelfreg() {
     try {
@@ -426,6 +435,13 @@ export default function RemoteAgentsPage() {
                             {r.has_token ? `已配（${r.auth_header} · ${r.auth_scheme}）` : "未配（内网直连）"}
                           </KV>
                           <KV k="单次上限">{Math.round(r.timeout_s)}s</KV>
+                          <KV k="探活">
+                            {r.health_interval_s > 0
+                              ? `每 ${r.health_interval_s >= 60 ? `${Math.round(r.health_interval_s / 60)} 分钟` : `${r.health_interval_s} 秒`}自动查一次`
+                              : "不自动查（只用下面的按钮手动查）"}
+                            {r.last_checked_at ? ` · 上次 ${fmt.relative(r.last_checked_at)}` : ""}
+                            {r.health_fail_count > 0 ? ` · 连续失败 ${r.health_fail_count} 次` : ""}
+                          </KV>
                           <KV k="最近解析">
                             {r.last_checked_at
                               ? `${new Date(r.last_checked_at).toLocaleString()}${r.status === "ok" ? " · 成功" : r.status === "error" ? " · 失败" : ""}`
@@ -467,6 +483,25 @@ export default function RemoteAgentsPage() {
                           。
                         </div>
 
+                        <div className="flex items-center gap-2">
+                          <button
+                            className="btn text-[12.5px]"
+                            disabled={busy === `probe:${r.id}`}
+                            onClick={() =>
+                              void run(
+                                `probe:${r.id}`,
+                                () => api.probeRemoteAgents(r.id),
+                                "已检查",
+                              )
+                            }
+                          >
+                            {busy === `probe:${r.id}` ? "检查中…" : "检查可用性"}
+                          </button>
+                          <span className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                            后台也会按上面的间隔自己查；这里只是立刻查一次
+                          </span>
+                        </div>
+
                         <EditRow
                           r={r}
                           busy={busy}
@@ -499,8 +534,41 @@ export default function RemoteAgentsPage() {
               复制
             </button>
           </KV>
+          <KV k="从公网访问">
+            <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+              远端在别的机器上，要用**公网**地址（本页显示的地址只在内网可达）：
+              <code className="mono ml-1 text-[12px]">https://as-prod.zeit.ccwu.cc/api/remote-agents/self</code>
+            </span>
+          </KV>
           <KV k="本平台卡片">
             <code className="mono text-[12px]">{selfCardUrl}</code>
+          </KV>
+          <KV k="注册口令">
+            <code className="mono text-[12px]">
+              {showReg ? regToken || "（取不到）" : regToken ? "•".repeat(Math.min(20, regToken.length)) : "…"}
+            </code>
+            <div className="flex items-center gap-1.5">
+              <button className="btn" onClick={() => setShowReg((v) => !v)}>
+                {showReg ? "隐藏" : "显示"}
+              </button>
+              <button
+                className="btn"
+                onClick={() =>
+                  void run(
+                    "rotate-reg",
+                    async () => {
+                      const r = await api.selfRegisterToken(true);
+                      setRegToken(r.token);
+                      setShowReg(true);
+                      return r;
+                    },
+                    "已换新口令（旧的立刻失效）",
+                  )
+                }
+              >
+                换一把
+              </button>
+            </div>
           </KV>
           <div
             className="flex flex-col gap-1 rounded p-2.5"
@@ -514,6 +582,7 @@ export default function RemoteAgentsPage() {
               style={{ color: "var(--color-muted)" }}
             >{`curl -X POST ${selfRegUrl} \
   -H 'Content-Type: application/json' \
+  -H 'X-Register-Token: <上面那个口令>' \
   -d '{"name":"我的助手","description":"……","skills":[],"url":"http://远端地址:端口"}'`}</pre>
           </div>
           {copied ? (
@@ -552,6 +621,7 @@ function EditRow({
   const [timeoutS, setTimeoutS] = useState(String(Math.round(r.timeout_s)));
   const [note, setNote] = useState(r.note ?? "");
   const [token, setToken] = useState("");
+  const [healthS, setHealthS] = useState(String(r.health_interval_s ?? 300));
   const [openEdit, setOpenEdit] = useState(false);
 
   if (!openEdit) {
@@ -600,9 +670,25 @@ function EditRow({
           />
         </div>
       </div>
-      <div>
-        <FieldLabel>备注</FieldLabel>
-        <input className="input" value={note} onChange={(e) => setNote(e.target.value)} />
+      <div className="grid gap-2 sm:grid-cols-2">
+        <div>
+          <FieldLabel hint="远端是别人的机器，挂了这边该自己知道">自动检查可用性</FieldLabel>
+          <select
+            className="input"
+            value={healthS}
+            onChange={(e) => setHealthS(e.target.value)}
+          >
+            <option value="0">不自动检查</option>
+            <option value="60">每 1 分钟</option>
+            <option value="300">每 5 分钟</option>
+            <option value="900">每 15 分钟</option>
+            <option value="3600">每 1 小时</option>
+          </select>
+        </div>
+        <div>
+          <FieldLabel>备注</FieldLabel>
+          <input className="input" value={note} onChange={(e) => setNote(e.target.value)} />
+        </div>
       </div>
       <div className="flex flex-wrap gap-2">
         <button
@@ -613,6 +699,7 @@ function EditRow({
               name,
               remote_agent_id: remoteAgentId,
               timeout_s: Number(timeoutS) || r.timeout_s,
+              health_interval_s: Number(healthS),
               note,
             };
             if (token) patch.token = token;

@@ -210,6 +210,20 @@ async def loop() -> None:
                     len(swept.get("stale") or []),
                     len(swept.get("archived") or []),
                 )
+            # 远程 A2A agent 探活：到点的探一次（每个自己的 health_interval_s）。
+            # 放这里而不是另起循环 —— 它和定时任务一样是「后台自己动」的事。
+            from . import remote_health
+
+            try:
+                probed = await remote_health.sweep()
+                for item in probed.get("flipped") or []:
+                    logger.warning(
+                        "远程 agent 状态翻转：%s %s → %s",
+                        item["name"], item["before"], item["after"],
+                    )
+            except Exception:  # noqa: BLE001 —— 探活坏了不能连累定时任务
+                logger.exception("远程 agent 探活这一轮出错（继续下一轮）")
+
             sent = await _jobs.deliver_pending()
             if sent:
                 logger.info("定时结果已投递 %s 条", sent)

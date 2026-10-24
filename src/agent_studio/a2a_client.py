@@ -34,6 +34,10 @@ logger = logging.getLogger(__name__)
 POLL_S = 1.5
 DEFAULT_TIMEOUT_S = 900.0
 
+#: 出站 UA。远端很可能在 Cloudflare 后面，默认的 ``python-httpx/x`` 会被
+#: 浏览器完整性检查直接 403（error 1010）—— 那不是协议问题，但一样调不通。
+UA = "agent-studio-a2a/1 (+https://github.com/Xarrow/agent-studio)"
+
 #: A2A 状态 → 本平台的 run 状态（与 api/a2a.py 的 STATE_MAP 反向对应）
 STATE_TO_STATUS = {
     "submitted": "running",
@@ -78,7 +82,13 @@ async def _post_json(
 
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.post(url, json=payload, headers={"Accept": "application/json"})
+            # ⚠️ headers 必须并进来：早先只写了 Accept，把调用方传的凭据整个吞掉了
+            # → 需要鉴权的远端一律 401（服务端日志里连 Authorization 都看不到）。
+            resp = await client.post(
+                url,
+                json=payload,
+                headers={"Accept": "application/json", "User-Agent": UA, **(headers or {})},
+            )
     except httpx.HTTPError as exc:
         raise A2AError(f"连不上远端 {url}（{type(exc).__name__}: {str(exc)[:120]}）") from exc
     if resp.status_code >= 400:
@@ -112,7 +122,8 @@ async def discover(
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.get(
-                card_url, headers={"Accept": "application/json", **(headers or {})}
+                card_url,
+                headers={"Accept": "application/json", "User-Agent": UA, **(headers or {})},
             )
     except httpx.HTTPError as exc:
         raise A2AError(f"拉取卡片失败 {card_url}（{type(exc).__name__}: {str(exc)[:120]}）") from exc

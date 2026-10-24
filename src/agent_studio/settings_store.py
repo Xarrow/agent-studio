@@ -26,6 +26,30 @@ async def get_setting(session: AsyncSession, key: str, default: Any = None) -> A
     return default if row is None else row.value
 
 
+#: 远端自注册用的口令（自注册端点对公网放行，靠它挡住随便乱塞）
+REGISTER_TOKEN_KEY = "remote_register_token"
+
+
+async def ensure_register_token(rotate: bool = False) -> str:
+    """取自注册口令；没有就生成一个（``rotate=True`` 强制换新）。
+
+    单独一把、和全站口令分开：把口令给远端，等于允许它往注册表里推**它自己**，
+    不该连带着把整个平台的控制权递出去。轮换只需重取一次（旧的立刻失效）。
+    """
+    import secrets as _secrets
+
+    from .db import SessionLocal
+
+    async with SessionLocal() as session:
+        cur = await get_setting(session, REGISTER_TOKEN_KEY, "")
+        if isinstance(cur, str) and cur and not rotate:
+            return cur
+        token = _secrets.token_urlsafe(24)
+        await set_setting(session, REGISTER_TOKEN_KEY, token)
+        await session.commit()
+        return token
+
+
 async def set_setting(session: AsyncSession, key: str, value: Any) -> None:
     """写一个配置（有则改、无则建）。调用方负责 commit。"""
     row = (

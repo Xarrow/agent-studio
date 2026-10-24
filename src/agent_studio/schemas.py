@@ -1191,6 +1191,9 @@ class RemoteAgentRead(BaseModel):
     last_checked_at: int | None = None
     last_ok_at: int | None = None
     last_error: str = ""
+    #: 探活间隔（秒）；0 = 不自动探。界面据此显示「每 5 分钟查一次 / 不自动查」
+    health_interval_s: int = 300
+    health_fail_count: int = 0
     enabled: bool = True
     tool_id: str | None = None
     tool_name: str = ""
@@ -1229,6 +1232,7 @@ class RemoteAgentPatchIn(BaseModel):
     token: str | None = None
     timeout_s: float | None = None
     enabled: bool | None = None
+    health_interval_s: int | None = None
     note: str | None = None
 
 

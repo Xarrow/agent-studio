@@ -333,6 +333,9 @@ export interface RemoteAgentRecord {
   last_checked_at: number | null;
   last_ok_at: number | null;
   last_error: string;
+  /** 探活间隔（秒）；0 = 不自动探 */
+  health_interval_s: number;
+  health_fail_count: number;
   enabled: boolean;
   tool_id: string | null;
   tool_name: string;

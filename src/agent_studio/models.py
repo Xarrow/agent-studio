@@ -782,6 +782,12 @@ class RemoteAgent(Base):
     last_checked_at: Mapped[int | None] = mapped_column(Integer, default=None)
     last_ok_at: Mapped[int | None] = mapped_column(Integer, default=None)
     last_error: Mapped[str] = mapped_column(LongText, default="")
+    #: 探活间隔（秒）。0 = 不自动探（用户手动点刷新）。
+    #: 默认 300s：远端可能一天被调用三次，每分钟去敲一次门是打扰。
+    health_interval_s: Mapped[int] = mapped_column(Integer, default=300)
+    #: 连续失败次数。**连续 2 次**才把状态标成 error ——
+    #: 一次网络抖动就翻红，会让人整天盯着一个其实是好的 agent。
+    health_fail_count: Mapped[int] = mapped_column(Integer, default=0)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     #: 自动创建的工具行（绑定入口）
     tool_id: Mapped[str | None] = mapped_column(String(32), default=None)

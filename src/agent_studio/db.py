@@ -202,6 +202,9 @@ _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("skill", "use_count", "use_count INTEGER NOT NULL DEFAULT 0"),
     ("skill", "last_used_at", "last_used_at BIGINT"),
     ("skill", "last_used_run_id", "last_used_run_id VARCHAR(32)"),
+    # 远程 A2A agent 的定时探活：间隔 + 连续失败计数（连续 2 次才翻红）
+    ("remote_agent", "health_interval_s", "health_interval_s INTEGER DEFAULT 300"),
+    ("remote_agent", "health_fail_count", "health_fail_count INTEGER DEFAULT 0"),
     ("skill", "state", "state VARCHAR(16) DEFAULT 'active'"),
     ("skill", "pinned", "pinned BOOLEAN NOT NULL DEFAULT 0"),
     ("skill", "archived_at", "archived_at BIGINT"),
@@ -259,6 +262,20 @@ async def _ensure_columns(conn) -> None:  # pragma: no cover - 启动期执行
         existing = await conn.run_sync(_columns_of, table)
         if existing and column not in existing:
             await conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {ddl}")
+
+
+def is_lan_peer(request) -> bool:
+    """这次请求是不是**从内网直接**来的（不是经隧道/Cloudflare 转进来的）。
+
+    判据用 ``CF-Connecting-IP``：经 Cloudflare 隧道进来时它会带上真实客户端 IP。
+    只看 peer 地址不够 —— 隧道对端（cloudflared）本身就在局域网里，会被误判成内网。
+    """
+    headers = getattr(request, "headers", None) or {}
+    if headers.get("cf-connecting-ip") or headers.get("x-forwarded-for"):
+        return False
+    peer = (getattr(getattr(request, "client", None), "host", "") or "").strip()
+    return peer.startswith(("127.", "10.", "192.168.", "::1")) or peer.startswith("172.16.") \
+        or any(peer.startswith(f"172.{i}.") for i in range(17, 32))
 
 
 async def drop_all() -> None:

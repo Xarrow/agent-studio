@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import secrets
 import time
 from typing import Any
 
@@ -34,6 +35,12 @@ from ..security.crypto import encrypt
 router = APIRouter(tags=["remote-agents"])
 
 
+def _bearer_of(request: Request) -> str:
+    """从 Authorization 里取 Bearer 值（自注册的第二种传法）。"""
+    auth = request.headers.get("authorization", "")
+    return auth[7:].strip() if auth.lower().startswith("bearer ") else ""
+
+
 def _to_read(row: RemoteAgent, *, tool: Tool | None = None, bound: list[dict[str, str]] | None = None) -> RemoteAgentRead:
     parsed = row.parsed or {}
     return RemoteAgentRead(
@@ -51,6 +58,8 @@ def _to_read(row: RemoteAgent, *, tool: Tool | None = None, bound: list[dict[str
         last_checked_at=row.last_checked_at,
         last_ok_at=row.last_ok_at,
         last_error=row.last_error or "",
+        health_interval_s=int(row.health_interval_s if row.health_interval_s is not None else 300),
+        health_fail_count=int(row.health_fail_count or 0),
         enabled=bool(row.enabled),
         tool_id=row.tool_id,
         tool_name=(tool.name if tool is not None else ""),
@@ -169,6 +178,25 @@ async def self_register_remote_agent(
     治理无特权：注册后与手工注册完全同一条链（用户可停用/删除）。
     注意这条路由在 ``/{remote_id}`` 之前匹配，否则 "self" 会被当成 remote_id。
     """
+    # 注册口令：自注册端点对公网放行（远端在别人的机器上，拿不到全站口令），
+    # 所以这里必须自己验——否则任何知道 URL 的人都能往注册表里塞一条。
+    # 内网直连（本机/局域网）不要求，避免自测时被自己的鉴权挡住。
+    from ..settings_store import ensure_register_token
+    from ..db import is_lan_peer
+
+    if not is_lan_peer(request):
+        expect = await ensure_register_token()
+        given = (
+            (request.headers.get("x-register-token") or "").strip()
+            or _bearer_of(request)
+        )
+        if not given or not secrets.compare_digest(given, expect):
+            raise HTTPException(
+                status.HTTP_401_UNAUTHORIZED,
+                "自注册需要口令：请求头 X-Register-Token（或 Authorization: Bearer <口令>）。"
+                "口令在「远程 Agent 管理」页的「远端自注册」区块里。",
+            )
+
     try:
         body = await request.json()
     except Exception as exc:
@@ -193,6 +221,48 @@ async def self_register_remote_agent(
         {"url": row.url},
     )
     return resp
+
+
+@router.get("/self/token")
+async def read_self_token(rotate: bool = Query(default=False)) -> dict[str, Any]:
+    """自注册口令（界面展示/轮换用）。
+
+    这是**管理页**的接口：要进得来管理页，本身已经过了全站口令，所以这里
+    可以返回口令本体。``rotate=true`` 立刻换新，旧的当场失效。
+    """
+    from ..settings_store import ensure_register_token
+
+    token = await ensure_register_token(rotate=rotate)
+    return {"token": token, "rotated": rotate}
+
+
+@router.post("/probe")
+async def probe_all(
+    only_id: str | None = Query(default=None, description="只探这一个"),
+) -> dict[str, Any]:
+    """立刻探一遍（不管间隔到没到）。页面上「检查可用性」按钮走这里。
+
+    定时探活是后台自己做的（scheduler tick），这个端点只是让人能马上知道
+    现在的状态 —— 改完凭据、刚重启远端之后，谁都不想等 5 分钟。
+    """
+    from .. import remote_health
+
+    if only_id:
+        async with SessionLocal() as session:
+            row = await session.get(RemoteAgent, only_id)
+            if row is None:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, f"远程 agent 不存在: {only_id}")
+            row.last_checked_at = None  # 强制到点
+            await session.commit()
+    got = await remote_health.sweep(force=not only_id)
+    return {
+        "checked": got["checked"],
+        "ok": got["ok"],
+        "flipped": [
+            {"id": i["id"], "name": i["name"], "from": i["before"], "to": i["after"], "error": i["error"]}
+            for i in got["flipped"]
+        ],
+    }
 
 
 @router.post("/{remote_id}/refresh", response_model=RemoteAgentRead)
@@ -329,6 +399,9 @@ async def patch_remote_agent(
         row.auth_token_enc = encrypt(payload.token) if payload.token else None
     if payload.timeout_s is not None:
         row.timeout_s = float(payload.timeout_s)
+    if payload.health_interval_s is not None:
+        # 下限 0（= 关闭自动探活），上限一天 —— 太小会让远端觉得被骚扰
+        row.health_interval_s = max(0, min(86400, int(payload.health_interval_s)))
     if payload.enabled is not None and bool(payload.enabled) != row.enabled:
         row.enabled = bool(payload.enabled)
         await remote_agents.log_event(

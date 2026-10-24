@@ -629,6 +629,17 @@ export const api = {
     request<RemoteAgentRecord>("/api/remote-agents", { method: "POST", body: JSON.stringify(body) }),
   patchRemoteAgent: (id: string, body: Record<string, unknown>) =>
     request<RemoteAgentRecord>(`/api/remote-agents/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  /** 自注册口令（远端推卡片时用 X-Register-Token 带上） */
+  selfRegisterToken: (rotate = false) =>
+    request<{ token: string; rotated: boolean }>(
+      `/api/remote-agents/self/token${rotate ? "?rotate=true" : ""}`,
+    ),
+  /** 立刻探一遍（ign 间隔）：页面上的「检查可用性」 */
+  probeRemoteAgents: (id?: string) =>
+    request<{ checked: number; ok: number; flipped: { id: string; name: string; from: string; to: string; error: string }[] }>(
+      `/api/remote-agents/probe${id ? `?only_id=${encodeURIComponent(id)}` : ""}`,
+      { method: "POST" },
+    ),
   refreshRemoteAgent: (id: string) =>
     request<RemoteAgentRecord>(`/api/remote-agents/${id}/refresh`, { method: "POST" }),
   testRemoteAgent: (id: string) =>

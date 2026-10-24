@@ -171,7 +171,11 @@ AUTH_EXEMPT = {"/api/health", "/docs", "/openapi.json", "/redoc"}
 #: 目前只有一个：外部触发 ``/api/hooks/{token}`` —— 凭证就在路径里，
 #: 而调用方（监控/告警/第三方平台）往往只能配一个 URL，塞不进 header。
 #: 口令再叠一层的结果是"所有这类调用都调不通"，所以这里只认 token。
-AUTH_EXEMPT_PREFIXES = ("/api/hooks/",)
+#: 目前两条：
+#:   · ``/api/hooks/{token}``     —— 外部触发，凭证在路径里
+#:   · ``/api/remote-agents/self`` —— 远端 agent 自注册：它在别人的机器上，
+#:     拿不到全站口令；这条端点**自己验**注册口令（见 api/remote_agents.py）
+AUTH_EXEMPT_PREFIXES = ("/api/hooks/", "/api/remote-agents/self")
 
 #: 隧道对端（= cloudflared 所在机器）。换机/多台可用环境变量覆盖。
 TUNNEL_PEERS = {
