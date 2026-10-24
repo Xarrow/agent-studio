@@ -14,6 +14,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Agent } from "@/lib/types";
 
 function mark(name: string) {
@@ -58,6 +59,9 @@ export function AgentSwitcher({
   const panelRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [q, setQ] = useState("");
+  /** 桌面上面板的固定坐标（portal 到 body 之后不再相对徽章定位，得自己算）。
+   *  手机上不用它 —— 那边是贴底弹层，靠 CSS 类。 */
+  const [pos, setPos] = useState<{ left: number; top: number; width: number } | null>(null);
 
   const needSearch = agents.length > 12;
   const shown = useMemo(() => {
@@ -90,12 +94,38 @@ export function AgentSwitcher({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  // 桌面：算面板位置（徽章下方；下面放不下就翻到上面；左右钳在视口内）
+  useEffect(() => {
+    if (!open) {
+      setPos(null);
+      return;
+    }
+    const calc = () => {
+      const desktop = window.matchMedia("(min-width: 1024px)").matches;
+      if (!desktop) return setPos(null);
+      const r = rootRef.current?.getBoundingClientRect();
+      if (!r) return;
+      const width = variant === "sidebar" || variant === "mini" ? 348 : 400;
+      const left = Math.min(Math.max(8, r.left), window.innerWidth - width - 8);
+      const below = window.innerHeight - r.bottom - 12;
+      const top = below < 280 ? Math.max(8, r.top - 8 - 440) : r.bottom + 8;
+      setPos({ left, top, width });
+    };
+    calc();
+    window.addEventListener("resize", calc);
+    return () => window.removeEventListener("resize", calc);
+  }, [open, variant]);
+
   // 点面板外面就收起（手机上另有遮罩，桌面靠这个）
   useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => {
-      const el = rootRef.current;
-      if (el && !el.contains(e.target as Node)) onOpenChange(false);
+      const t = e.target as Node;
+      // ⚠ 面板已经 portal 到 body，不在 rootRef 里了 ——
+      // 只看 rootRef 会把"点面板本身"当成点外面，一按就关。
+      if (panelRef.current?.contains(t)) return;
+      if (rootRef.current?.contains(t)) return;
+      onOpenChange(false);
     };
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
@@ -212,10 +242,14 @@ export function AgentSwitcher({
       )}
 
       {/* ── 选择面板：桌面上贴徽章展开，手机从底部弹出 ─────────── */}
-      {open && (
+      {/* ⚠ 必须 portal 到 body —— 这个徽章在顶栏里，而顶栏是 `z-20` 的
+          absolute 层叠上下文。面板就算写 z-50，也被锁在顶栏那个上下文里，
+          和输入坞（同为 z-20、DOM 在后）比对时排在下面：实测点面板下半部
+          命中的是输入框，「最后两个助手根本选不到」。 */}
+      {open && typeof document !== "undefined" && createPortal(
         <>
           <div
-            className="lg:hidden fixed inset-0 z-40"
+            className="lg:hidden fixed inset-0 z-[79]"
             style={{ background: "var(--color-overlay)" }}
             onClick={close}
             aria-hidden="true"
@@ -225,13 +259,12 @@ export function AgentSwitcher({
             role="listbox"
             tabIndex={-1}
             onKeyDown={onKey}
-            className={`z-50 fixed inset-x-2 bottom-2 rounded-2xl lg:absolute lg:inset-x-auto lg:bottom-auto lg:left-0 lg:top-[calc(100%+8px)] lg:rounded-xl border overflow-hidden flex flex-col ${
-              side || mini ? "lg:w-[348px]" : "lg:w-[400px]"
-            }`}
+            className="z-[80] fixed inset-x-2 bottom-2 max-h-[calc(100dvh-16px)] rounded-2xl lg:inset-x-auto lg:bottom-auto lg:rounded-xl border overflow-hidden flex flex-col"
             style={{
+              ...(pos ? { left: pos.left, top: pos.top, width: pos.width } : null),
               background: "var(--color-surface)",
               borderColor: "var(--color-border)",
-              boxShadow: "0 14px 40px rgba(15,23,42,.18)",
+              boxShadow: "0 20px 50px -12px rgba(15,23,42,.35)",
               outline: "none",
             }}
           >
@@ -264,7 +297,7 @@ export function AgentSwitcher({
               </div>
             )}
 
-            <div ref={listRef} className="overflow-auto py-1" style={{ maxHeight: "min(58vh, 420px)" }}>
+            <div ref={listRef} className="min-h-0 flex-1 overflow-auto py-1" style={{ maxHeight: "min(58vh, 420px)" }}>
               {shown.length === 0 && (
                 <div className="px-3 py-6 text-center text-[12.5px]" style={{ color: "var(--color-muted)" }}>
                   没找到「{q}」
@@ -362,7 +395,8 @@ export function AgentSwitcher({
               </svg>
             </a>
           </div>
-        </>
+        </>,
+        document.body,
       )}
     </div>
   );
