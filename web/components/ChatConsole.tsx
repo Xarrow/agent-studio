@@ -1911,8 +1911,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                   )}
                   {/* 文件全列出来（以前只摆 6 个、剩下写成"还有 N 个…"点不到 —— 等于没给）。
                       高度封在 40vh 并允许滚动：文件再多也不会把输入坞顶到屏幕外。 */}
-                  /* 一行一个文件，铺满宽度：胶囊流会让右侧空一大片、名字还被
-                     截成一样长，扫起来得来回找。列表是文件该有的样子。 */
+                  {/* 一行一个文件，铺满宽度：胶囊流会让右侧空一大片、名字还被
+                      截成一样长，扫起来得来回找。列表是文件该有的样子。 */}
                   <div className="mt-1 flex max-h-[46vh] flex-col overflow-y-auto pb-0.5">
                     {shownFiles.map((f) =>
                       managing ? (
@@ -1955,6 +1955,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                           file={{ path: `${sessionFiles.work_dir}/${f.path}`, url: f.url, size: f.size, mtime: f.mtime }}
                           className="w-full flex items-center gap-2.5 rounded-lg px-2 py-2.5 text-left hover:bg-[var(--color-surface-2)] transition-colors"
                           style={{ color: "var(--color-text)" }}
+                          onOpen={() => setFilesOpenPref(false)}
                         >
                           <FileTypeIcon kind={fileTypeKey(f.path)} size={15} className="shrink-0 opacity-60" />
                           <span className="mono flex-1 min-w-0 truncate text-[12.5px]" title={f.path}>

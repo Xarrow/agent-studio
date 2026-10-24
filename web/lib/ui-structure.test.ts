@@ -717,3 +717,19 @@ test("浏览器交互用窗口 + 动作字幕，不是一张裸图", () => {
   assert.match(rail, /<BrowserStage/, "右栏也用 BrowserStage");
   assert.throws(() => read("components/BrowserLive.tsx"), "旧的 BrowserLive 应已删除");
 });
+
+test("JSX 里不许出现裸注释 —— 它会被原样渲染成界面上的文字", () => {
+  // 真实事故：在 <div> 前面写了一行 /* 一行一个文件… */，没包 {/* */}，
+  // 于是这句话出现在文件面板里，用户直接看到「文件管理为什么有 * 一行一个文件…」。
+  const src = read("components/ChatConsole.tsx");
+  const lines = src.split("\n");
+  const bad: string[] = [];
+  lines.forEach((l, i) => {
+    if (!/^\s{10,}\/\*[^*]/.test(l)) return; // 只看深缩进、单星的注释
+    const prev = (lines[i - 1] ?? "").trim();
+    // 上一行是标签收尾（>）⇒ 这条注释落在 JSX **子节点**位置上，会被渲染成文字。
+    // 开标签内部（属性之间）的 /* */ 是合法 JS 注释，不在此列。
+    if (/>\s*$/.test(prev)) bad.push(`${i + 1}: ${l.trim().slice(0, 40)}`);
+  });
+  assert.deepEqual(bad, [], `这些注释会被渲染成文字，改成 {/* ... */}：\n${bad.join("\n")}`);
+});

@@ -149,16 +149,27 @@ export function FileRowButton({
   children,
   className = "",
   style,
+  onOpen,
 }: {
   file: FileRef;
   children: ReactNode;
   className?: string;
   style?: React.CSSProperties;
+  /** 打开预览之前先做点事（比如把外面的文件面板收起来 —— 两层浮层叠着很难看） */
+  onOpen?: () => void;
 }) {
   const open = useFileOpener();
   if (!open) return <span className={className} style={style}>{children}</span>;
   return (
-    <button type="button" onClick={() => open(file)} className={`min-w-0 text-left ${className}`} style={style}>
+    <button
+      type="button"
+      onClick={() => {
+        onOpen?.();
+        open(file);
+      }}
+      className={`min-w-0 text-left ${className}`}
+      style={style}
+    >
       {children}
     </button>
   );
