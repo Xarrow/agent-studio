@@ -871,6 +871,10 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   // （Rendered more hooks than during the previous render），整页变错误页（踩过两次）。
   const [navOpen, setNavOpen] = useState(true);
   const [mobileNav, setMobileNav] = useState(false);
+  /** 抽屉两个视图：会话（默认）/ 功能与配置。手机上全站只有这一个抽屉，
+      功能入口不能另开一个抽屉，也不能塞成横向短标签条（短名和侧栏的完整
+      标签对不上，就是"不统一"的来源）。 */
+  const [navView, setNavView] = useState<"sessions" | "menu">("sessions");
   /** 助手选择面板开合：「哪个形态被点开了」。三种挂载点只认自己那一份，
    *  共用布尔值会让面板在窗口跨断点缩放后凭空冒出来（桌面开着的面板飘到手机上）。 */
   const [switcherOpen, setSwitcherOpen] = useState<null | "bar" | "sidebar" | "mini">(null);
@@ -1052,7 +1056,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
       workDir={sessionFiles?.work_dir}
       onFileChanged={() => void loadSessionFiles()}
     >
-      <div className="h-full min-h-0 flex max-md:-mt-14 max-md:h-[calc(100%+3.5rem)]">
+      <div className="h-full min-h-0 flex max-md:-mt-[52px] max-md:h-[calc(100%+52px)]">
         {/* 手里这份页面过期了：一直开着的标签页不会自己换代码，提示一下，别让用户
             对着旧界面判断"改了没用" */}
         {staleBuild && (
@@ -1147,50 +1151,86 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
         {mobileNav && (
           <div className="lg:hidden fixed inset-0 z-40 flex">
             <div className="w-[280px] max-w-[84vw] bg-[var(--color-surface)] border-r border-[var(--color-border)] flex flex-col min-h-0">
-              <SessionsPane
-                agentSlot={
-                  controlledAgentId === undefined ? (
-                    <div className="px-0.5">
-                      <SkillsStrip agent={currentAgent} onChanged={() => void reloadAgents()} />
-                    </div>
-                  ) : null
-                }
-                sessions={sessions}
-                sessionId={sessionId}
-                onPick={(id) => {
-                  setSessionId(id);
-                  setMobileNav(false);
-                }}
-                onNew={() => {
-                  void newChat();
-                  setMobileNav(false);
-                }}
-                onRename={(s) => void renameSession(s)}
-                onRemove={(s) => void removeSession(s)}
-                onCollapse={() => setMobileNav(false)}
-              />
-              {/* 手机上没有全局顶栏了（顶栏只留菜单 + 当前助手 + 配置），
-                  功能入口放在这个抽屉底部：图标 + 短标签，横向可滑。
-                  只给图标不行 —— 手机没有 hover，看不出是干什么的。 */}
-              <div className="shrink-0 border-t border-[var(--color-border)] pb-[env(safe-area-inset-bottom)]">
-                <div className="px-3 pt-2 pb-1 text-[11px] text-[var(--color-muted)]">功能</div>
-                <div className="flex gap-1 overflow-x-auto px-2 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                  {SETUP_ITEMS.map((item) => (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      title={item.tip}
-                      onClick={() => setMobileNav(false)}
-                      className="shrink-0 w-11 flex flex-col items-center gap-1 rounded-lg py-1.5 text-[var(--color-muted)] active:bg-[var(--color-surface-2)]"
+              {navView === "menu" ? (
+                /* 功能视图 —— 和桌面侧栏同一份定义、同样的完整标签 */
+                <>
+                  <div className="shrink-0 h-[calc(52px+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] flex items-center gap-1 pl-1 pr-3 border-b border-[var(--color-border)]">
+                    <button
+                      data-tap
+                      aria-label="返回对话列表"
+                      onClick={() => setNavView("sessions")}
+                      className="shrink-0 w-9 h-9 flex items-center justify-center rounded-lg text-[var(--color-muted)] active:bg-[var(--color-surface-2)]"
+                    >
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M15 18l-6-6 6-6" />
+                      </svg>
+                    </button>
+                    <span className="text-[15px] font-semibold tracking-tight">功能与配置</span>
+                  </div>
+                  <div className="flex-1 overflow-y-auto py-1.5 pb-[calc(0.375rem+env(safe-area-inset-bottom))]">
+                    {SETUP_ITEMS.map((item) => (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        onClick={() => setMobileNav(false)}
+                        className="mx-1.5 flex items-center gap-2.5 rounded-lg px-2.5 min-h-[44px] active:bg-[var(--color-surface-2)]"
+                      >
+                        <span className="shrink-0 text-[var(--color-muted)]">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d={ICON_PATHS[item.icon] ?? ""} />
+                          </svg>
+                        </span>
+                        <span className="min-w-0 flex flex-col">
+                          <span className="text-[14px] leading-tight">{item.label}</span>
+                          <span className="text-[11.5px] leading-snug truncate text-[var(--color-muted)]">{item.tip}</span>
+                        </span>
+                      </Link>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <SessionsPane
+                    agentSlot={
+                      controlledAgentId === undefined ? (
+                        <div className="px-0.5">
+                          <SkillsStrip agent={currentAgent} onChanged={() => void reloadAgents()} />
+                        </div>
+                      ) : null
+                    }
+                    sessions={sessions}
+                    sessionId={sessionId}
+                    onPick={(id) => {
+                      setSessionId(id);
+                      setMobileNav(false);
+                    }}
+                    onNew={() => {
+                      void newChat();
+                      setMobileNav(false);
+                    }}
+                    onRename={(s) => void renameSession(s)}
+                    onRemove={(s) => void removeSession(s)}
+                    onCollapse={() => setMobileNav(false)}
+                  />
+                  <div className="shrink-0 border-t border-[var(--color-border)] pb-[env(safe-area-inset-bottom)]">
+                    <button
+                      data-tap
+                      onClick={() => setNavView("menu")}
+                      className="w-full flex items-center gap-2.5 px-3 h-12 text-[var(--color-muted)] active:bg-[var(--color-surface-2)]"
                     >
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <path d={ICON_PATHS[item.icon] ?? ""} />
+                        <path d="M4 6h16M4 12h16M4 18h10" />
                       </svg>
-                      <span className="text-[10.5px] leading-none">{item.short ?? item.label}</span>
-                    </Link>
-                  ))}
-                </div>
-              </div>
+                      <span className="text-[13.5px]">功能与配置</span>
+                      <span className="ml-auto text-[var(--color-muted)]">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M9 18l6-6-6-6" />
+                        </svg>
+                      </span>
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
             <button
               aria-label="关闭对话列表"
@@ -1207,13 +1247,16 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               之前它上面还叠着全局的「Agent Studio」条（fixed 56 + 这条 52），
               中间大片空白，像没做完 —— 现在对话页不出全局那条，只剩这一条。 */}
           <header
-            className="h-[calc(3rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] pl-1 pr-1.5 flex items-center gap-1 border-b border-[var(--color-border)] bg-[var(--color-surface)] lg:hidden"
+            className="h-[calc(52px+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] pl-1 pr-1.5 flex items-center gap-1 border-b border-[var(--color-border)] bg-[var(--color-surface)] lg:hidden"
           >
             <button
               data-tap
               className="shrink-0 w-9 h-9 flex items-center justify-center rounded-lg text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] active:bg-[var(--color-surface-2)]"
               title="对话列表"
-              onClick={() => setMobileNav(true)}
+              onClick={() => {
+                setNavView("sessions");
+                setMobileNav(true);
+              }}
             >
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
                 <path d="M4 6h16M4 12h16M4 18h10" />

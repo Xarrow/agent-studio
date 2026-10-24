@@ -40,6 +40,10 @@ export function Nav() {
   /** 对话页自己有一条顶栏（菜单 + 当前助手 + 配置），全局这条不再叠一层 —— 
       手机上两条 bar 摞着要吃掉 108px，而且中间那条大片空白看着像没做完。 */
   const isExecPage = pathname === "/exec";
+  /** 顶栏中间显示当前在哪，而不是固定的产品名 —— 对话页那一条同一个位置放
+      的是"当前助手"，两边对齐后走哪儿都长一个样。 */
+  const currentLabel =
+    [...USE_ITEMS, ...SETUP_ITEMS].find((i) => i.href === pathname)?.label ?? "Agent Studio";
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   // 路由变化就收起抽屉
@@ -96,7 +100,7 @@ export function Nav() {
     <>
       {/* ── 移动端顶栏（对话页除外：那条由 ChatConsole 自己出）──────── */}
       {!isExecPage && (
-      <header className="md:hidden fixed top-0 inset-x-0 z-40 h-14 flex items-center gap-3 px-4 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
+      <header className="md:hidden fixed top-0 inset-x-0 z-40 h-[calc(52px+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] flex items-center gap-3 px-3 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
         <button
           onClick={() => setDrawerOpen(true)}
           aria-label="打开菜单"
@@ -112,7 +116,7 @@ export function Nav() {
             />
           </svg>
         </button>
-        <span className="font-semibold text-[15px] tracking-tight">Agent Studio</span>
+        <span className="font-semibold text-[15px] tracking-tight">{currentLabel}</span>
       </header>
       )}
 

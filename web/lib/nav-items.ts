@@ -13,7 +13,6 @@ export const USE_ITEMS: NavItem[] = [
   {
     href: "/exec",
     label: "Agent 执行",
-    short: "执行",
     icon: "exec",
     // 对话式干活入口（画布已退役）：选一个助手、说话、看它怎么想怎么做。
     tip: "选助手，说任务，全程可见",
@@ -22,13 +21,13 @@ export const USE_ITEMS: NavItem[] = [
 
 /** 配置 / 管理 —— 一次性设置的地方 */
 export const SETUP_ITEMS: NavItem[] = [
-  { href: "/runs", label: "管理", short: "管理", icon: "manage", tip: "每次执行一行，点开看过程与耗时" },
-  { href: "/agents", label: "Agents", short: "助手", icon: "agents", tip: "一个会自己想办法做事的 AI" },
-  { href: "/memories", label: "记忆", short: "记忆", icon: "memory", tip: "跨对话的长期记性" },
-  { href: "/tools", label: "工具", short: "工具", icon: "tools", tip: "能查网页、读文件、跑命令；不加只能聊天" },
-  { href: "/remote-agents", label: "远程 Agent 管理", short: "远程", icon: "exchange", tip: "接入外部 A2A agent，挂到助手调用" },
-  { href: "/environment", label: "环境配置", short: "环境", icon: "database", tip: "数据存哪：默认 SQLite，也可换 MySQL / PostgreSQL" },
-  { href: "/credentials", label: "LLM 配置", short: "密钥", icon: "key", tip: "模型服务商的密钥，本机加密保存" },
+  { href: "/runs", label: "管理", icon: "manage", tip: "每次执行一行，点开看过程与耗时" },
+  { href: "/agents", label: "Agents", icon: "agents", tip: "一个会自己想办法做事的 AI" },
+  { href: "/memories", label: "记忆", icon: "memory", tip: "跨对话的长期记性" },
+  { href: "/tools", label: "工具", icon: "tools", tip: "能查网页、读文件、跑命令；不加只能聊天" },
+  { href: "/remote-agents", label: "远程 Agent 管理", icon: "exchange", tip: "接入外部 A2A agent，挂到助手调用" },
+  { href: "/environment", label: "环境配置", icon: "database", tip: "数据存哪：默认 SQLite，也可换 MySQL / PostgreSQL" },
+  { href: "/credentials", label: "LLM 配置", icon: "key", tip: "模型服务商的密钥，本机加密保存" },
 ];
 
 /** 图标路径（24×24 描边）：与 NavItem.icon 对应 */
