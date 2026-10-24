@@ -68,6 +68,11 @@ data/uploads.config.json
 
 # agent 跑工具时在工作目录里生成的测试产物（不进版本库）
 hello_world.py
+_py_tool.py
+_*.py
+
+# 隔离实例（staging）的数据目录 —— 和 data/ 一样是本地运行数据
+data-staging/
 
 # 长会话交接快照（工作文档，不进版本库）
 HANDOFF.md
