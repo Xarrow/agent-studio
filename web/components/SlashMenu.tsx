@@ -24,6 +24,10 @@ export type CommandItem = {
   hint?: string;
   /** 选中后回填到输入框的文本；不回填（纯动作）则为空 */
   fill?: string;
+  /** 分组标题（同一 group 的条目上只出现一次，给几十条的长列表做眼） */
+  group?: string;
+  /** 右侧勾选态（技能/工具：已挂 true） */
+  on?: boolean;
   run: () => void;
 };
 
@@ -90,14 +94,26 @@ export function SlashMenu({
 
   return (
     <div
-      className="absolute bottom-full left-0 right-0 mb-2 rounded-[10px] border overflow-hidden shadow-lg z-20"
-      style={{ background: "var(--color-surface)", borderColor: "var(--color-border)" }}
+      className="absolute bottom-full left-0 right-0 mb-2 rounded-[10px] border overflow-y-auto overscroll-contain shadow-lg z-20"
+
+      style={{
+        background: "var(--color-surface)",
+        borderColor: "var(--color-border)",
+        // 条目可能几十条（技能 + 工具 + 记忆 + 助手）：必须封高并自己滚，
+        // 否则整块从输入框往上顶出屏幕（实测 2642px 高、top −1932）
+        maxHeight: "46vh",
+      }}
       ref={listRef}
       role="listbox"
     >
       {filtered.map((it, i) => (
+        <div key={it.id}>
+        {it.group && it.group !== filtered[i - 1]?.group && (
+          <div className="px-3 pt-2 pb-1 text-[10.5px] font-medium" style={{ color: "var(--color-muted)" }}>
+            {it.group}
+          </div>
+        )}
         <button
-          key={it.id}
           type="button"
           role="option"
           aria-selected={i === idx}
@@ -112,8 +128,13 @@ export function SlashMenu({
             onClose();
           }}
         >
-          <span className="mono text-[12px] shrink-0" style={{ color: "var(--color-accent)" }}>
-            {it.fill ?? "→"}
+          {/* 勾选态：技能/工具已挂显示 ✓（选中即取消），其余是动作箭头 */}
+          <span
+            className="mono text-[12px] shrink-0 w-[14px] text-center"
+            style={{ color: it.on ? "var(--color-accent)" : "var(--color-muted)" }}
+            aria-hidden="true"
+          >
+            {it.on ? "✓" : it.fill ? it.fill : "→"}
           </span>
           <span className="truncate">{it.label}</span>
           {it.hint && (
@@ -122,6 +143,7 @@ export function SlashMenu({
             </span>
           )}
         </button>
+        </div>
       ))}
     </div>
   );

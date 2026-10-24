@@ -12,7 +12,7 @@
  * 那些属于「工具」页，别把两种意图塞进同一个面板。
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Agent, Skill } from "@/lib/types";
 import { api } from "@/lib/api";
 import { Sheet } from "./ui/Sheet";
@@ -76,6 +76,13 @@ export function SkillPicker({
     }
   };
 
+  /* 排序在打开那一刻定下来：勾选后不再重排，否则点一行它立刻跳走 */
+  const orderRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (open) orderRef.current = new Set(mountedIds);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
   const list = q.trim()
     ? all.filter(
         (s) =>
@@ -83,6 +90,12 @@ export function SkillPicker({
           (s.description || "").toLowerCase().includes(q.trim().toLowerCase()),
       )
     : all;
+
+  const sorted = useMemo(
+    () => [...list].sort((a, b) => Number(orderRef.current.has(b.id)) - Number(orderRef.current.has(a.id))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [list],
+  );
 
   return (
     <Sheet
@@ -114,7 +127,7 @@ export function SkillPicker({
       ) : (
         <div className="pb-2">
           {/* 已挂的排前面：对话时最常做的事就是"确认它挂着" */}
-          {[...list].sort((a, b) => Number(mounted.has(b.id)) - Number(mounted.has(a.id))).map((s) => {
+          {sorted.map((s) => {
             const on = mounted.has(s.id);
             return (
               <button

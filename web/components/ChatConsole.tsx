@@ -15,7 +15,7 @@ import Link from "next/link";
 import { HitlPrompt } from "@/components/HitlPrompt";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api, fmt, withToken } from "@/lib/api";
-import type { Agent, RunEvent, Session, SearchHit } from "@/lib/types";
+import type { Agent, RunEvent, Session, SearchHit, Skill, Tool, Memory } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
 import { ProcessBar, eventsToSteps, recallProc, rememberProc } from "@/components/ui/run-timeline";
 import BgProcsStrip from "@/components/BgProcsStrip";
@@ -31,7 +31,7 @@ import { AgentDetailDialog } from "./AgentDetailDialog";
 import { ICON_PATHS, SETUP_ITEMS } from "@/lib/nav-items";
 import { AgentSwitcher } from "./AgentSwitcher";
 import { SkillsStrip } from "./SkillsStrip";
-import { SkillEntry, MemoryEntry } from "./ToolEntries";
+import { SkillEntry, ToolEntry, MemoryEntry } from "./ToolEntries";
 import { Sheet } from "./ui/Sheet";
 import { MemoryPicker } from "./MemoryPicker";
 import { QuickTags } from "./QuickTags";
@@ -422,22 +422,55 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   /* ------------------------------- 操作 ------------------------------- */
 
   /** `/` 命令表 —— 能枚举的一律给选择（用户口径：让用户选择而不是输入） */
-  const slashItems: CommandItem[] = [
-    {
-      id: "new",
-      label: "新对话",
-      hint: "另起一个干净的会话",
-      fill: "/新对话",
-      run: () => void newChat(),
-    },
-    ...agents.map((a) => ({
-      id: `agent-${a.id}`,
-      label: `切换到 ${a.name}`,
-      hint: (a.description ?? "").slice(0, 40) || "换一个助手接着聊",
-      fill: `/${a.name}`,
-      run: () => setAgentId(a.id),
-    })),
-  ];
+  /* `/` 菜单里的技能/工具/记忆：第一次打开菜单时拉一次，之后复用。
+     （每天用不到，不该在进对话时就打三个接口） */
+  const [slashLib, setSlashLib] = useState<{ skills: Skill[]; tools: Tool[]; mems: Memory[] }>({
+    skills: [],
+    tools: [],
+    mems: [],
+  });
+  useEffect(() => {
+    if (!slashOpen) return;
+    if (slashLib.skills.length || slashLib.tools.length) return;
+    let alive = true;
+    void Promise.all([
+      api.skills().catch(() => [] as Skill[]),
+      api.tools().catch(() => [] as Tool[]),
+      api.memories({ status: "active" }).catch(() => [] as Memory[]),
+    ]).then(([sk, tl, mem]) => {
+      if (!alive) return;
+      setSlashLib({
+        skills: (sk as Skill[]).filter((x) => (x.state ?? "active") !== "archived"),
+        tools: tl as Tool[],
+        mems: mem as Memory[],
+      });
+    });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slashOpen]);
+
+  /** `/` 菜单里勾技能/工具：和工具行那两个面板走同一条写入路径 */
+  const slashToggle = async (kind: "skill" | "tool", id: string) => {
+    if (!currentAgent) return;
+    const def = currentAgent.definition;
+    if (kind === "skill") {
+      const cur = (def.skills ?? []).map((x) => x.ref);
+      const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
+      await api.updateAgent(currentAgent.id, {
+        definition: { ...def, skills: next.map((r) => ({ ref: r })) },
+      }).catch(() => null);
+    } else {
+      const cur = (def.tools ?? []).map((x) => x.ref);
+      const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
+      await api.updateAgent(currentAgent.id, {
+        definition: { ...def, tools: next.map((r) => ({ ref: r, enabled: true })) },
+      }).catch(() => null);
+    }
+    void reloadAgents();
+  };
+
 
   const newChat = async () => {
     if (!agentId) return;
@@ -1094,6 +1127,58 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   }
 
   const currentAgent = agents.find((a) => a.id === agentId);
+
+  /* `/` 菜单的条目：必须定义在 currentAgent 之后 —— 里面 .map 会立即读
+     currentAgent.definition 判断「已挂」，放前面就是 TDZ（Cannot access before initialization）。 */
+  const slashItems: CommandItem[] = [
+    {
+      id: "new",
+      label: "新对话",
+      hint: "另起一个干净的会话",
+      fill: "/新对话",
+      run: () => void newChat(),
+    },
+    /* 技能 / 工具：选中即勾上或取消（勾着的排在前面） */
+    ...slashLib.skills.map((sk) => {
+      const on = (currentAgent?.definition.skills ?? []).some((x) => x.ref === sk.id);
+      return {
+        id: `sk-${sk.id}`,
+        group: "技能",
+        on,
+        label: sk.name,
+        hint: (sk.description ?? "").slice(0, 40),
+        run: () => void slashToggle("skill", sk.id),
+      };
+    }),
+    ...slashLib.tools.map((tl) => {
+      const on = (currentAgent?.definition.tools ?? []).some((x) => x.ref === tl.id);
+      return {
+        id: `tl-${tl.id}`,
+        group: "工具",
+        on,
+        label: tl.name,
+        hint: (tl.description ?? "").slice(0, 40),
+        run: () => void slashToggle("tool", tl.id),
+      };
+    }),
+    /* 记忆：选中把内容填进输入框（想让它照着做） */
+    ...slashLib.mems.map((m) => ({
+      id: `mem-${m.id}`,
+      group: "记忆",
+      label: m.content.slice(0, 30) + (m.content.length > 30 ? "…" : ""),
+      hint: m.layer === "user" ? "关于你" : "助手笔记",
+      run: () => appendToInput(m.content),
+    })),
+    /* 切助手放最后：这一屏里更常做的是「给这轮加个技能/工具」 */
+    ...agents.map((a) => ({
+      id: `agent-${a.id}`,
+      group: "助手",
+      label: `切换到 ${a.name}`,
+      hint: (a.description ?? "").slice(0, 40) || "换一个助手接着聊",
+      fill: `/${a.name}`,
+      run: () => setAgentId(a.id),
+    })),
+  ];
 
   /* 一个助手都没有 —— 别让人对着空下拉框发呆，直接给出路 */
   if (!loading && agents.length === 0) {
@@ -2179,6 +2264,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                       这两个是「工具」，和附件、定时同性质，待在工具栏才对。
                       状态在组件内部自持 —— 开关面板不该让消息流跟着重渲染。 */}
                   <SkillEntry agent={currentAgent} onChanged={() => void reloadAgents()} />
+                  <ToolEntry agent={currentAgent} onChanged={() => void reloadAgents()} />
                   <MemoryEntry onPick={appendToInput} />
                   <span className="hidden sm:block text-[11.5px] truncate text-[var(--color-muted)]">
                     {dragging
@@ -2270,6 +2356,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                   items={slashItems}
                   onPick={(it) => {
                     setSlashOpen(false);
+                    // 输入框里那串 `/xxx` 只是指令，别留在正文里被发出去
+                    setInput("");
                     it.run();
                   }}
                   onClose={() => setSlashOpen(false)}

@@ -14,6 +14,7 @@
 import { useEffect, useState } from "react";
 import type { Agent } from "@/lib/types";
 import { SkillPicker } from "./SkillPicker";
+import { ToolPicker } from "./ToolPicker";
 import { MemoryPicker } from "./MemoryPicker";
 
 const EVENT = "studio:panel-open";
@@ -70,6 +71,36 @@ export function SkillEntry({
         </svg>
       </button>
       <SkillPicker agent={agent} onChanged={onChanged} open={open} onOpenChange={setOpen} />
+    </>
+  );
+}
+
+export function ToolEntry({
+  agent,
+  onChanged,
+}: {
+  agent: Agent | undefined;
+  onChanged: () => void;
+}) {
+  const { open, setOpen, toggle } = useExclusive("tool");
+  if (!agent) return null;
+
+  return (
+    <>
+      <button
+        data-tap
+        type="button"
+        aria-expanded={open}
+        title="这个助手挂了哪些工具（点开就地勾选）"
+        onClick={toggle}
+        className={btnCls}
+        style={{ color: open ? "var(--color-accent)" : "var(--color-muted)" }}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M14.7 6.3a4 4 0 0 0 5 5L20 21H4l-.7-9.7a4 4 0 0 0 5-5l3.2-3.2 3.2 3.2z" />
+        </svg>
+      </button>
+      <ToolPicker agent={agent} onChanged={onChanged} open={open} onOpenChange={setOpen} />
     </>
   );
 }
