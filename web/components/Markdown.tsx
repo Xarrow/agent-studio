@@ -16,7 +16,30 @@
 
 import { isImagePath, linkifyWorkPaths, workUrl } from "@/lib/work-paths";
 import React, { memo } from "react";
-import { FileChip } from "@/components/FileDialog";
+import { FileChip, useFileOpener } from "@/components/FileDialog";
+import { looksLikeFilePath } from "@/lib/files";
+
+/**
+ * 行内代码。**只有同时满足「像文件路径」+「这里有文件预览入口」时才做成卡片**，
+ * 否则就是普通 `<code>`。
+ *
+ * 早先的写法是 ``chip ?? <code>``，而 ``chip`` 是 ``<FileChip/>`` 这个**元素**——
+ * 元素永远非 null，``??`` 从不触发；FileChip 在拿不到 provider 时内部返回 null，
+ * 于是整段行内代码凭空消失（实测：skills 详情里 `` `bash` `` `` `curl` ``
+ * 这些全不见，句子变成「用户丢来  或整段分享文本」）。
+ */
+function InlineCode({ text }: { text: string }) {
+  const open = useFileOpener();
+  if (open && looksLikeFilePath(text)) return <FileChip path={text} />;
+  return (
+    <code
+      className="rounded px-1 py-px text-[12px]"
+      style={{ background: "var(--color-surface-2)", border: "1px solid var(--color-border)" }}
+    >
+      {text}
+    </code>
+  );
+}
 import { CodeBlock } from "@/components/CodeBlock";
 import { Mermaid } from "@/components/Mermaid";
 import { ChartBlock, CsvBlock, DiffBlock, JsonBlock } from "@/components/DataBlocks";
@@ -45,19 +68,7 @@ function inline(text: string, keyBase: string): React.ReactNode[] {
          复制路径）—— 用户原话："对话页面如果是文件类显示，用户点击应该是弹出一个框中
          让用户操作，而不是这直接给出地址"。不是路径的（`npm run build`）原样渲染；
          没有 FileOpenerProvider 的地方（比如运行详情弹窗）FileChip 返回 null → 也原样。 */
-      const inner = tok.slice(1, -1);
-      const chip = <FileChip key={key} path={inner} />;
-      out.push(
-        chip ?? (
-          <code
-            key={key}
-            className="rounded px-1 py-px text-[12px]"
-            style={{ background: "var(--color-surface-2)", border: "1px solid var(--color-border)" }}
-          >
-            {inner}
-          </code>
-        ),
-      );
+      out.push(<InlineCode key={key} text={tok.slice(1, -1)} />);
     } else if (tok.startsWith("$")) {
       // 行内公式：$x^2$ / $rac{a}{b}$
       out.push(<TexInline key={key} tex={tok.slice(1, -1)} />);

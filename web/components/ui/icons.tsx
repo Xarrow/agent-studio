@@ -294,3 +294,40 @@ export function IconPlug({ size = 16, className }: P) {
     </svg>
   );
 }
+
+/** 时间（相对时间前面用） */
+export function IconClock({ size = 16, className }: P) {
+  return (
+    <svg {...base(size, className)}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </svg>
+  );
+}
+
+/** 目录 / 服务器本地 */
+export function IconFolder({ size = 16, className }: P) {
+  return (
+    <svg {...base(size, className)}>
+      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />
+    </svg>
+  );
+}
+
+/** 整理 / 自动清理（魔棒） */
+export function IconWand({ size = 16, className }: P) {
+  return (
+    <svg {...base(size, className)}>
+      <path d="m15 4 5 5M13.5 5.5 4 15l1.5 1.5L15 7l-1.5-1.5ZM19 13v3M17.5 14.5h3M6 3v3M4.5 4.5h3" />
+    </svg>
+  );
+}
+
+/** 加号（新建/导入） */
+export function IconPlus({ size = 16, className }: P) {
+  return (
+    <svg {...base(size, className)}>
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}

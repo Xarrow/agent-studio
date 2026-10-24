@@ -1162,7 +1162,10 @@ body {
 
 /* 弹出层在桌面固定宽度（手机全宽），通过 CSS 变量传进来 */
 @media (min-width: 1024px) {
-  [role="dialog"][aria-labelledby], [role="dialog"][aria-label] { width: var(--sheet-w, 360px); }
+  /* Sheet 专用：宽度由 --sheet-w 给。**排除详情面板** —— 它是右侧全高抽屉，
+     宽度自己说了算（早先这条把它按成 360，720 的 md:w 完全没机会生效）。 */
+  [role="dialog"][aria-labelledby]:not(.panel-slide-in),
+  [role="dialog"][aria-label]:not(.panel-slide-in) { width: var(--sheet-w, 360px); }
 }
 
 /* ── 交互流畅度（2026-10-24）──────────────────────────────────────────
@@ -1177,3 +1180,17 @@ body {
 /* 消息再多也不该拖慢输入：屏外的消息不参与布局与绘制。
    contain-intrinsic-size 给一个接近真实的高度估计，滚动条不会跳。 */
 .msg-stream > * { content-visibility: auto; contain-intrinsic-size: auto 120px; }
+
+
+/* ── 详情面板（右侧全高抽屉 / 手机全屏）─────────────────────────────
+   和输入坞的 Sheet 是两回事：这个占满右侧，从右边推进来。 */
+@keyframes panel-slide-in {
+  from { transform: translateX(24px); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}
+.panel-slide-in { animation: panel-slide-in 0.22s cubic-bezier(0.22, 0.8, 0.3, 1) both; }
+@keyframes panel-veil-in { from { opacity: 0; } to { opacity: 1; } }
+.panel-veil-in { animation: panel-veil-in 0.18s ease-out both; }
+@media (prefers-reduced-motion: reduce) {
+  .panel-slide-in, .panel-veil-in { animation: none !important; }
+}
