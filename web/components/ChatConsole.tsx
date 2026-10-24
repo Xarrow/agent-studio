@@ -2275,7 +2275,9 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     附件、定时、技能、工具、记忆这几颗在跑的时候点了也没用，
                     留着它们会把右边两颗挤出输入框（实测 390 宽下多出约 90px，
                     320 宽更是一排顶到屏幕外）。 */}
-                <div className="flex min-w-0 items-center gap-1 px-1.5 pb-0 pt-0">
+                {/* 右边留 2px（原来 6px + 1px 边框，看着离框边还有一小截，
+                    发送按钮像是浮在中间）。左边仍留 6px，回形针那侧不贴边。 */}
+                <div className="flex min-w-0 items-center gap-1 pb-0 pl-1.5 pr-1 pt-0">
                   {/* 左侧工具组自己可横向滚（窄屏 320 下一排放不开），
                       右侧「插话 / 发送」永远不滚、不被挤走 */}
                   <div
@@ -2366,15 +2368,13 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                         type="button"
                         title="停止这一轮"
                         onClick={() => void stop()}
-                        className="w-9 h-9 sm:w-8 sm:h-8 shrink-0 flex items-center justify-center rounded-full border"
-                        style={{
-                          borderColor: "var(--color-border)",
-                          background: "var(--color-surface-2)",
-                          color: "var(--color-err)",
-                        }}
+                        /* 不要圆形底板、不要描边 —— 就是一颗红色方块图标。
+                           36×36 只是热区，hover 才浮一层淡底。 */
+                        className="w-9 h-9 shrink-0 grid place-items-center rounded-full transition-colors hover:bg-[var(--color-surface-2)]"
+                        style={{ color: "var(--color-err)" }}
                       >
-                        <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-                          <rect x="1.5" y="1.5" width="9" height="9" rx="1.5" fill="currentColor" />
+                        <svg width="13" height="13" viewBox="0 0 12 12" aria-hidden="true">
+                          <rect x="1" y="1" width="10" height="10" rx="2" fill="currentColor" />
                         </svg>
                       </button>
                     ) : (
@@ -2384,16 +2384,17 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                         title={paused ? "运行暂停，先处理授权" : "发送（Enter）"}
                         disabled={paused || (!input.trim() && pendingFiles.length === 0)}
                         onClick={() => void send()}
-                        className="w-9 h-9 sm:w-8 sm:h-8 shrink-0 flex items-center justify-center rounded-full transition-colors disabled:opacity-40"
+                        /* 同样不要底板：一根箭头。有内容时是强调色，空的时候是灰的，
+                           点不了就 40% 透明 —— 状态靠颜色，不靠画个圆。 */
+                        className="w-9 h-9 shrink-0 grid place-items-center rounded-full transition-colors hover:bg-[var(--color-surface-2)] disabled:opacity-40"
                         style={{
-                          background:
+                          color:
                             input.trim() || pendingFiles.length > 0
                               ? "var(--color-accent)"
-                              : "var(--color-surface-2)",
-                          color: input.trim() || pendingFiles.length > 0 ? "#fff" : "var(--color-muted)",
+                              : "var(--color-muted)",
                         }}
                       >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                           <path d="M12 19V5" />
                           <path d="M5 12l7-7 7 7" />
                         </svg>
