@@ -92,10 +92,10 @@ export function SkillPicker({
       hint="勾上就对这一轮生效"
       extra={
         <span className="text-[11px] tabular-nums" style={{ color: "var(--color-muted)" }}>
-          {mountedIds.length} 个已挂
+          已挂 {mountedIds.length} / 共 {all.length}
         </span>
       }
-      maxH="76vh"
+      maxH="84vh"
       width={380}
     >
       <div className="px-3.5 pb-2">
@@ -122,12 +122,12 @@ export function SkillPicker({
                 data-tap
                 disabled={!!busyId}
                 onClick={() => void toggle(s.id)}
-                className="w-full text-left px-3.5 py-2.5 flex items-start gap-2.5 hover:bg-[var(--color-surface-2)] transition-colors"
+                className="w-full text-left px-3.5 py-2 flex items-start gap-2.5 hover:bg-[var(--color-surface-2)] transition-colors"
               >
                 <span
-                  className="shrink-0 mt-0.5 w-[18px] h-[18px] grid place-items-center rounded-[5px] border"
+                  className="shrink-0 mt-0.5 w-[18px] h-[18px] grid place-items-center rounded-[5px] border transition-colors"
                   style={{
-                    borderColor: on ? "var(--color-accent)" : "var(--color-border)",
+                    borderColor: on ? "var(--color-accent)" : "var(--color-border-strong, var(--color-border))",
                     background: on ? "var(--color-accent)" : "transparent",
                     opacity: busyId === s.id ? 0.5 : 1,
                   }}
@@ -143,7 +143,7 @@ export function SkillPicker({
                   <span className="block text-[13px] font-medium truncate">{s.name}</span>
                   {s.description && (
                     <span
-                      className="block text-[11.5px] leading-[1.5] mt-0.5 line-clamp-2"
+                      className="text-[11.5px] leading-[1.45] mt-0.5 line-clamp-1"
                       style={{ color: "var(--color-muted)" }}
                     >
                       {s.description}

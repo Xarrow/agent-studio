@@ -77,7 +77,7 @@ export function MemoryPicker({
           {busy ? "…" : `${activeCount} / ${items.length}`}
         </span>
       }
-      maxH="76vh"
+      maxH="84vh"
       width={400}
     >
       <div className="px-3.5 pb-2">
@@ -100,26 +100,32 @@ export function MemoryPicker({
             return (
               <div
                 key={m.id}
-                className="flex items-start gap-2.5 px-3.5 py-2.5 hover:bg-[var(--color-surface-2)] transition-colors"
+                className="flex items-start gap-2.5 px-3.5 py-2 hover:bg-[var(--color-surface-2)] transition-colors"
               >
+                {/* 外层 36×36 是点按区（[data-tap] 在手机端会把按钮兜到 36 高，
+                    所以框必须画在里面那层，否则 18×18 的方框会被撑成长条）。 */}
                 <button
                   type="button"
                   data-tap
                   aria-pressed={on}
                   title={on ? "点一下这条就不生效了" : "点一下让它生效"}
                   onClick={() => void toggle(m)}
-                  className="shrink-0 mt-0.5 w-[18px] h-[18px] grid place-items-center rounded-[5px] border transition-colors"
-                  style={{
-                    borderColor: on ? "var(--color-accent)" : "var(--color-border)",
-                    background: on ? "var(--color-accent)" : "transparent",
-                    opacity: toggling === m.id ? 0.5 : 1,
-                  }}
+                  className="shrink-0 -ml-1.5 -my-1.5 w-9 h-9 grid place-items-center rounded-lg"
+                  style={{ opacity: toggling === m.id ? 0.5 : 1 }}
                 >
-                  {on && (
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M20 6 9 17l-5-5" />
-                    </svg>
-                  )}
+                  <span
+                    className="w-[18px] h-[18px] grid place-items-center rounded-[5px] border transition-colors"
+                    style={{
+                      borderColor: on ? "var(--color-accent)" : "var(--color-border-strong, var(--color-border))",
+                      background: on ? "var(--color-accent)" : "transparent",
+                    }}
+                  >
+                    {on && (
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M20 6 9 17l-5-5" />
+                      </svg>
+                    )}
+                  </span>
                 </button>
 
                 <button
@@ -132,7 +138,7 @@ export function MemoryPicker({
                   title="填进输入框"
                 >
                   <span
-                    className="block text-[12px] leading-[1.55] line-clamp-3"
+                    className="text-[12px] leading-[1.5] line-clamp-2"
                     style={{ color: on ? "var(--color-text)" : "var(--color-muted)" }}
                   >
                     {m.content}
