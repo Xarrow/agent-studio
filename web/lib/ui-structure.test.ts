@@ -471,7 +471,9 @@ test("自动跟随：贴底才跟，否则给「最新」", () => {
   const chat = read("components/ChatConsole.tsx");
   assert.match(chat, /const followRef = useRef\(true\)/, "跟随状态放 ref（scroll 回调要读最新值）");
   assert.match(chat, /if \(!followRef\.current\) return;/, "不贴底就不滚动");
-  assert.match(chat, /el\.scrollHeight - el\.scrollTop - el\.clientHeight < 80/, "80px 以内算贴底");
+  /* 120 而不是 80：输入区高度会变（快捷标签出现/隐藏、键盘弹出），
+     布局一变就会凭空多出一百来像素，用 80 判"不在底部"会把自己锁死。 */
+  assert.match(chat, /el\.scrollHeight - el\.scrollTop - el\.clientHeight < 120/, "120px 以内算贴底");
   assert.match(chat, /const jumpLatest = \(\) => \{/, "要有回到最新");
   assert.match(chat, /\{!atBottom && \(/, "离开底部才露出浮标");
   // 旧的“每次都滚到底”必须消失（那就是把人拽回去的写法）
