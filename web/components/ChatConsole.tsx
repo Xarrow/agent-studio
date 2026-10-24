@@ -2011,7 +2011,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                       /* 只给它上 accent 色：它是「这次的产出」（对象），右边那排是
                          「点了填进输入框」（动作）。同一款胶囊，靠颜色分性质 ——
                          尺寸和形态一个字没动，宁可轻也不要做粗。 */
-                      className="shrink-0 inline-flex items-center gap-1.5 h-6 px-2 rounded-full border text-[11.5px] transition-colors hover:bg-[var(--color-surface-2)]"
+                      className="chip-thin shrink-0 inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full border text-[12px] transition-colors hover:bg-[var(--color-surface-2)]"
                       style={{
                         borderColor: openFiles
                           ? "var(--color-accent)"

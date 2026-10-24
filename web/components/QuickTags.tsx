@@ -25,6 +25,10 @@ export function QuickTags({ onPick, prefix }: { onPick: (text: string) => void; 
   const [tags, setTags] = useState<string[]>([]);
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<string[]>([]);
+  /* 已经确定的标签放 draft（只能删，不能就地改字），正在打的那一条放 newTag。
+     一行一个输入框的写法每加一条就多一行输入框＋删除键，条目一多整块变表格；
+     标签流更像「我常说的几句话」，扫一眼就知道有哪些。 */
+  const [newTag, setNewTag] = useState("");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -54,13 +58,25 @@ export function QuickTags({ onPick, prefix }: { onPick: (text: string) => void; 
   }, [open]);
 
   const openEditor = () => {
-    setDraft(tags.length ? [...tags] : [""]);
+    setDraft([...tags]);
+    setNewTag("");
     setErr("");
     setOpen(true);
   };
 
+  const addTag = () => {
+    const t = newTag.trim();
+    if (!t || draft.length >= MAX) return;
+    setDraft((d) => [...d, t]);
+    setNewTag("");
+  };
+
   const save = async () => {
-    const clean = draft.map((t) => t.trim()).filter(Boolean).slice(0, MAX);
+    const pending = newTag.trim();
+    const clean = [...draft, ...(pending ? [pending] : [])]
+      .map((t) => t.trim())
+      .filter(Boolean)
+      .slice(0, MAX);
     setSaving(true);
     setErr("");
     try {
@@ -83,7 +99,7 @@ export function QuickTags({ onPick, prefix }: { onPick: (text: string) => void; 
         <button
           data-tap
           onClick={openEditor}
-          className="text-[11.5px] px-2 h-6 rounded-md hover:bg-[var(--color-surface-2)]"
+          className="chip-thin text-[12px] px-2.5 h-7 rounded-md hover:bg-[var(--color-surface-2)]"
           style={{ color: "var(--color-muted)" }}
         >
           + 快捷标签
@@ -101,7 +117,7 @@ export function QuickTags({ onPick, prefix }: { onPick: (text: string) => void; 
             key={t}
             data-tap
             onClick={() => onPick(t)}
-            className="shrink-0 h-6 px-2 rounded-full border text-[11.5px] transition-colors hover:bg-[var(--color-surface-2)]"
+            className="chip-thin shrink-0 inline-flex items-center h-7 px-2.5 rounded-full border text-[12px] transition-colors hover:bg-[var(--color-surface-2)]"
             style={{ borderColor: "var(--color-border)", color: "var(--color-text)" }}
             title={`把「${t}」填进输入框`}
           >
@@ -112,7 +128,7 @@ export function QuickTags({ onPick, prefix }: { onPick: (text: string) => void; 
           data-tap
           title="管理快捷标签"
           onClick={() => (open ? setOpen(false) : openEditor())}
-          className="shrink-0 w-6 h-6 grid place-items-center rounded-full hover:bg-[var(--color-surface-2)]"
+          className="chip-thin shrink-0 w-7 h-7 grid place-items-center rounded-full hover:bg-[var(--color-surface-2)]"
           style={{ color: "var(--color-muted)" }}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -124,98 +140,125 @@ export function QuickTags({ onPick, prefix }: { onPick: (text: string) => void; 
       </div>
 
       {open && (
-        <div
-          className="absolute left-0 right-0 z-50 rounded-xl border overflow-hidden flex flex-col"
-          style={{
-            background: "var(--color-surface)",
-            borderColor: "var(--color-border)",
-            boxShadow: "0 14px 40px rgba(15,23,42,.18)",
-            bottom: "calc(100% + 6px)",
-          }}
-        >
-          <div className="flex items-center justify-between px-2.5 h-9 border-b border-[var(--color-border)] shrink-0">
-            <span className="text-[11.5px] font-medium" style={{ color: "var(--color-muted)" }}>
-              快捷标签 · 点了就填进输入框
-            </span>
-            <button
-              data-tap
-              className="text-[11.5px] px-1.5 h-6 rounded"
-              style={{ color: "var(--color-muted)" }}
-              onClick={() => setOpen(false)}
-            >
-              关闭
-            </button>
-          </div>
+        <>
+          {/* 手机：贴底抽屉（拇指够得到）；桌面：锚在「⋯」上方的小卡片 */}
+          <div
+            className="lg:hidden fixed inset-0 z-[59] veil-in"
+            style={{ background: "rgba(15,23,42,.32)" }}
+            onClick={() => setOpen(false)}
+            aria-hidden="true"
+          />
+          <div
+            role="dialog"
+            aria-label="快捷问句"
+            className="sheet-up z-[60] flex flex-col overflow-hidden max-lg:fixed max-lg:inset-x-0 max-lg:bottom-0 max-lg:rounded-t-[18px] max-lg:max-h-[72vh] lg:absolute lg:right-0 lg:bottom-[calc(100%+8px)] lg:w-[340px] lg:rounded-xl"
+            style={{
+              background: "var(--color-surface)",
+              border: "1px solid var(--color-border)",
+              boxShadow: "0 -8px 40px rgba(15,23,42,.22)",
+              paddingBottom: "env(safe-area-inset-bottom)",
+            }}
+          >
+            <div className="shrink-0 px-3.5 pt-3 pb-2 flex items-baseline gap-2">
+              <span className="text-[13.5px] font-semibold">快捷问句</span>
+              <span className="text-[11px] min-w-0 truncate" style={{ color: "var(--color-muted)" }}>
+                点了填进输入框
+              </span>
+              <span className="ml-auto text-[11px] tabular-nums" style={{ color: "var(--color-muted)" }}>
+                {draft.length}/{MAX}
+              </span>
+            </div>
 
-          <div className="p-2 space-y-1.5 max-h-[42vh] overflow-auto">
-            {draft.length === 0 && (
-              <p className="text-[12px] py-3 text-center" style={{ color: "var(--color-muted)" }}>
-                还没有标签
-              </p>
-            )}
-            {draft.map((t, i) => (
-              <div key={i} className="flex items-center gap-1.5">
-                <input
-                  className="input h-8 text-[12.5px]"
-                  value={t}
-                  placeholder="比如：询问是否完成"
-                  onChange={(e) =>
-                    setDraft((d) => d.map((x, j) => (j === i ? e.target.value : x)))
+            {/* 标签流：已确定的都在这里，点 ✕ 删。没有「每行一个输入框」那种表格感 */}
+            <div className="px-3.5 pb-2.5 min-h-[44px] max-h-[38vh] overflow-auto">
+              {draft.length === 0 ? (
+                <p className="text-[12px] py-3" style={{ color: "var(--color-muted)" }}>
+                  还没有，在下面加一条试试
+                </p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {draft.map((t, i) => (
+                    <span
+                      key={`${t}-${i}`}
+                      className="inline-flex items-center gap-1 h-8 pl-2.5 pr-1 rounded-lg text-[12.5px]"
+                      style={{ background: "var(--color-surface-2)", color: "var(--color-text)" }}
+                    >
+                      {t}
+                      <button
+                        data-tap
+                        title={`删掉「${t}」`}
+                        onClick={() => setDraft((d) => d.filter((_, j) => j !== i))}
+                        className="shrink-0 w-6 h-6 grid place-items-center rounded-md hover:bg-[color-mix(in_srgb,var(--color-text)_8%,transparent)]"
+                        style={{ color: "var(--color-muted)" }}
+                      >
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+                          <path d="M5 12h14" />
+                        </svg>
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* 添加：一个输入框 + 一个＋，回车即加 —— 不再每行都配一个删除键 */}
+            <div className="px-3.5 pb-3 flex items-center gap-1.5">
+              <input
+                className="input h-10 flex-1 min-w-0 text-[13.5px]"
+                value={newTag}
+                placeholder={draft.length >= MAX ? `最多 ${MAX} 条` : "添加一条，回车确认"}
+                disabled={draft.length >= MAX}
+                onChange={(e) => setNewTag(e.target.value)}
+                onKeyDown={(e) => {
+                  if (isImeEvent(e)) return; // 中文组字中的回车是选字，不是加一条
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addTag();
                   }
-                  onKeyDown={(e) => {
-                    if (isImeEvent(e)) return; // 中文组字中的回车是选字，不是加一行
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      if (i === draft.length - 1 && draft.length < MAX) {
-                        setDraft((d) => [...d, ""]);
-                      }
-                    }
-                  }}
-                />
-                <button
-                  data-tap
-                  title="删掉这条"
-                  onClick={() => setDraft((d) => d.filter((_, j) => j !== i))}
-                  className="shrink-0 w-8 h-8 grid place-items-center rounded-md hover:bg-[var(--color-surface-2)]"
-                  style={{ color: "var(--color-muted)" }}
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
-                    <path d="M5 12h14" />
-                  </svg>
-                </button>
-              </div>
-            ))}
-            {draft.length < MAX && (
+                }}
+              />
               <button
                 data-tap
-                className="text-[12px] px-1.5 h-7 rounded-md hover:bg-[var(--color-surface-2)]"
-                style={{ color: "var(--color-accent)" }}
-                onClick={() => setDraft((d) => [...d, ""])}
+                title="加上这一条"
+                disabled={!newTag.trim() || draft.length >= MAX}
+                onClick={addTag}
+                className="shrink-0 w-10 h-10 grid place-items-center rounded-lg disabled:opacity-40"
+                style={{ background: "var(--color-accent)", color: "#fff" }}
               >
-                + 添加一条
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
               </button>
-            )}
+            </div>
+
             {err && (
-              <p className="text-[11.5px] px-1" style={{ color: "var(--color-danger, #b91c1c)" }}>
+              <p className="px-3.5 pb-2 text-[11.5px]" style={{ color: "var(--color-danger, #b91c1c)" }}>
                 {err}
               </p>
             )}
-          </div>
 
-          <div className="flex items-center justify-end gap-2 px-2.5 h-10 border-t border-[var(--color-border)] shrink-0">
-            <button
-              data-tap
-              className="btn btn-sm"
-              onClick={() => setOpen(false)}
-              disabled={saving}
-            >
-              取消
-            </button>
-            <button data-tap className="btn btn-sm btn-primary" onClick={() => void save()} disabled={saving}>
-              {saving ? "保存中…" : "保存"}
-            </button>
+            <div className="shrink-0 flex items-center justify-end gap-1.5 px-3.5 py-2.5 border-t border-[var(--color-border)]">
+              <button
+                data-tap
+                className="h-9 px-3 rounded-lg text-[13px] hover:bg-[var(--color-surface-2)]"
+                style={{ color: "var(--color-muted)" }}
+                onClick={() => setOpen(false)}
+                disabled={saving}
+              >
+                取消
+              </button>
+              <button
+                data-tap
+                className="h-9 px-4 rounded-lg text-[13px] font-medium disabled:opacity-50"
+                style={{ background: "var(--color-accent)", color: "#fff" }}
+                onClick={() => void save()}
+                disabled={saving}
+              >
+                {saving ? "保存中…" : "保存"}
+              </button>
+            </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   );

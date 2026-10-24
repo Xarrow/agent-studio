@@ -1144,3 +1144,18 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .composer-focus { transition: none; }
 }
+
+/* ── chips 行：视觉 28、热区 36 ──────────────────────────────────────
+   全局 [data-tap] 在 ≤1023 会把高度兜到 36，于是这排胶囊比设计稿胖一圈，
+   和 44 的输入框摆在一起比例失衡（用户原话：尺寸比例不协调，应该小一点）。
+   这里只放开高度、用伪元素把点按区补回 36 —— 看着小一点，点着不变小。 */
+.composer-chips [data-tap].chip-thin {
+  min-height: 0 !important;
+  height: 28px;
+  position: relative;
+}
+.composer-chips [data-tap].chip-thin::after {
+  content: "";
+  position: absolute;
+  inset: -4px -2px;
+}
