@@ -352,17 +352,33 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
      惹人烦的毛病。离开底部时右下浮一个「回到最新」。 */
   const followRef = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
+  /* 程序自己滚的时候，不要被 onScroll 判成"用户往上翻了"。
+     否则：贴底 → 中间态触发 scroll → gap 很大 → follow=false → 再也不贴底，
+     表现就是每次进会话都差一截空白。 */
+  const programScroll = useRef(false);
+  const pinBottom = useCallback(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    programScroll.current = true;
+    el.scrollTop = el.scrollHeight;
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        programScroll.current = false;
+      }),
+    );
+  }, []);
   useEffect(() => {
     if (!followRef.current) return;
     const el = boxRef.current;
     if (!el) return;
     // 流式时用瞬时滚动（smooth 会被每帧的新内容打断，反而抖）
-    el.scrollTop = el.scrollHeight;
-  }, [history, live]);
+    pinBottom();
+  }, [history, live, pinBottom]);
   const onScroll = () => {
+    if (programScroll.current) return;
     const el = boxRef.current;
     if (!el) return;
-    const near = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    const near = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
     followRef.current = near;
     setAtBottom(near);
   };
@@ -901,6 +917,48 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     const h = el.offsetHeight;
     if (h > 0 && Math.abs(h - dockH) > 2) setDockH(h);
   });
+
+  /* dock 高度一变（快捷标签出现/隐藏、键盘弹出收掉那一行），消息区底部留白跟着变。
+     还停在底部的就重新贴底 —— 不然会凭空多出一百多像素的空白，看起来像"消息没加载完"。
+     判据放宽到 300：布局变化本身就会制造一两百像素的空隙，用 80 判"不在底部"
+     会把自己锁死（不贴底 → 判为离底 → 永远不贴底）。用户真往上翻时离底都远大于 300。 */
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (!followRef.current && gap > 300) return;
+    followRef.current = true;
+    pinBottom();
+  }, [dockH, history.length, pinBottom]);
+
+  /* 进会话的兜底贴底：消息是分几批进来的（历史 → 执行过程 → 折叠块），
+     每一批都会把内容撑高一点，等 MutationObserver 追完往往还差几十像素。
+     这里在 50/300/900ms 各贴一次，之后就交给上面的跟随逻辑。 */
+  useEffect(() => {
+    if (!sessionId) return;
+    followRef.current = true;
+    setAtBottom(true);
+    const timers = [50, 300, 900].map((ms) => window.setTimeout(() => pinBottom(), ms));
+    return () => timers.forEach((t) => window.clearTimeout(t));
+  }, [sessionId, pinBottom]);
+
+  /* 消息内容自己长高（图片、执行过程条、表格渲染完）时也要贴底。
+     只靠 history 变化不够 —— 那些是异步组件，撑高发生在渲染之后，
+     结果就是"进来看不到最新那条，底部差一条空白"。 */
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const mo = new MutationObserver(() => {
+      if (!followRef.current) return;
+      requestAnimationFrame(() => {
+        if (followRef.current) pinBottom();
+      });
+    });
+    mo.observe(el, { childList: true, subtree: true, characterData: true });
+    return () => mo.disconnect();
+    // 依赖 sessionId：切换会话时滚动容器可能被整块重建（加载态 → 有消息），
+    // 只在 mount 时挂一次会盯着一个已经不在文档里的旧节点，永远收不到通知。
+  }, [sessionId]);
 
   // 视口变化（转屏、拖窗口）时输入坞的高度也会变，得重新量
   useEffect(() => {
@@ -1922,6 +1980,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                   空会话不出现 —— 一句话都没有的时候，「询问是否完成」没上下文，
                   只是白占输入区上方一行。 */}
               {(history.length > 0 || live) && (
+              <div className="composer-chips">
               <QuickTags
                 prefix={
                   sessionId && fileCount > 0 ? (
@@ -1955,6 +2014,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                   }, 0);
                 }}
               />
+              </div>
               )}
 
               {/* ── 输入坞 ────────────────────────────────────────

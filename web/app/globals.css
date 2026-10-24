@@ -1050,3 +1050,12 @@ body {
 [data-theme="dark"] [data-composer] {
   box-shadow: 0 12px 34px -10px rgba(0, 0, 0, 0.62), 0 2px 8px -3px rgba(0, 0, 0, 0.5) !important;
 }
+
+/* ── 矮视口：只留输入框 ─────────────────────────────────────────────
+   软键盘弹出后可视高度会掉到 400~550（iPhone 14 剩 500），这时如果还摆着
+   「N 个文件 + 快捷标签」那一行，输入区要吃掉 40% 的屏，消息区只剩 185px。
+   留 640 这条线：常规手机（≥667）不动，键盘一弹起来就收掉这一行。
+   收起后 dock 高度由 ResizeObserver 重新量，消息区 paddingBottom 自动跟着变。 */
+@media (max-height: 640px) {
+  .composer-chips { display: none; }
+}
