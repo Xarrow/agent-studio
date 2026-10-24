@@ -6,7 +6,23 @@ import { isImeEvent } from "@/lib/ime";
 import type { Skill, SkillRepoScan } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
 import { Hint, HINTS } from "@/components/ui/hint";
-import { DLG_BACKDROP, DLG_CARD } from "@/components/ui/kit";
+import { DLG_BACKDROP, DLG_CARD, KV, Row, RowList, Segmented } from "@/components/ui/kit";
+import { Sheet } from "@/components/ui/Sheet";
+import {
+  IconArchive,
+  IconBox,
+  IconChevronRight,
+  IconCopy,
+  IconFile,
+  IconLink,
+  IconPencil,
+  IconPin,
+  IconRefresh,
+  IconSearch,
+  IconSkill,
+  IconSpark,
+  IconTrash,
+} from "@/components/ui/icons";
 
 type Source = "git" | "url" | "local" | "inline";
 
@@ -152,10 +168,39 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
     }
   };
 
+  /** 列表里的筛选（在用/闲置/已归档）—— 归档的不该和常用技能混在一屏抢注意力 */
+  const [filter, setFilter] = useState<"all" | "active" | "stale" | "archived">("all");
+  const [q, setQ] = useState("");
+
+  /** 来源 → 图标 + 底色（一眼分清"仓库装的"和"助手自己攒的"） */
+  const glyphOf = (s: Skill) => {
+    const type = String((s.source as Record<string, unknown> | undefined)?.type ?? "").toLowerCase();
+    if (type === "agent") return { Ico: IconSpark, bg: "color-mix(in srgb, #8b5cf6 14%, transparent)", fg: "#7c3aed" };
+    if (type === "repo" || type === "git") return { Ico: IconBox, bg: "color-mix(in srgb, #2563eb 12%, transparent)", fg: "#2563eb" };
+    if (type === "url") return { Ico: IconLink, bg: "color-mix(in srgb, #0891b2 12%, transparent)", fg: "#0891b2" };
+    if (type === "import" || type === "zip") return { Ico: IconArchive, bg: "color-mix(in srgb, #b45309 12%, transparent)", fg: "#b45309" };
+    return { Ico: IconSkill, bg: "color-mix(in srgb, #64748b 12%, transparent)", fg: "#64748b" };
+  };
+
+  const shown = skills.filter((s) => {
+    const st = s.state ?? "active";
+    if (filter === "active" && st !== "active") return false;
+    if (filter === "stale" && st !== "stale") return false;
+    if (filter === "archived" && st !== "archived") return false;
+    if (q.trim()) {
+      const hay = `${s.name} ${s.description ?? ""}`.toLowerCase();
+      if (!hay.includes(q.trim().toLowerCase())) return false;
+    }
+    return true;
+  });
+
+  const countOf = (k: "active" | "stale" | "archived") =>
+    skills.filter((x) => (x.state ?? "active") === k).length;
+
   return (
     <div className={embedded ? "" : "p-4 md:p-6 lg:p-7 max-w-5xl"}>
       {/* 新建/导入入口：嵌入工具页时也要可见（否则用户没有任何创建自定义 skill 的地方） */}
-      <div className={`flex items-center justify-between ${embedded ? "mb-4" : ""}`}>
+      <div className={`flex flex-wrap items-center justify-between gap-2 ${embedded ? "mb-3" : "mb-4"}`}>
         {!embedded && (
           <div>
             <h1 className="text-[22px] font-semibold tracking-tight flex items-center gap-1.5">
@@ -165,21 +210,11 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
               预先写好的「做事套路」。装上之后，助手遇到这类任务就知道该按什么步骤做。
             </p>
             <p className="text-[12px] text-[var(--color-muted)] mt-1">
-              {skills.length} 个 · 在用{" "}
-              {skills.filter((x) => (x.state ?? "active") === "active").length} · 闲置{" "}
-              {skills.filter((x) => x.state === "stale").length} · 已归档{" "}
-              {skills.filter((x) => x.state === "archived").length} · 标准{" "}
-              <span className="mono">SKILL.md</span> 格式，与 Claude Code / Hermes / AgentScope 通用
+              标准 <span className="mono">SKILL.md</span> 格式，与 Claude Code / Hermes / AgentScope 通用
             </p>
           </div>
         )}
         <div className={`flex items-center gap-2 ${embedded ? "ml-auto" : ""}`}>
-          {/* 嵌在「工具」页时页头是收起的，统计就挪到按钮旁边 —— 否则"整理"按了没参照物 */}
-          <span className="text-[12px] whitespace-nowrap" style={{ color: "var(--color-muted)" }}>
-            在用 {skills.filter((x) => (x.state ?? "active") === "active").length} · 闲置{" "}
-            {skills.filter((x) => x.state === "stale").length} · 已归档{" "}
-            {skills.filter((x) => x.state === "archived").length}
-          </span>
           <button className="btn" disabled={curating} onClick={() => void curate()}>
             {curating ? "整理中…" : "整理"}
           </button>
@@ -199,144 +234,238 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
         />
       )}
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_1.1fr]">
-        <div>
-          {loading ? (
-            <div className="card p-6 text-[13px] text-[var(--color-muted)]">加载中…</div>
-          ) : skills.length === 0 ? (
-            <div className="card p-6 text-center text-[13px] text-[var(--color-muted)]">
-              还没有 Skill。可以从 Git 仓库、URL、服务器本地目录导入，或直接写一份。
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {skills.map((s) => (
-                <button
-                  key={s.id}
-                  onClick={() => setDetail(s)}
-                  className={`card p-3.5 w-full text-left transition-colors hover:border-[var(--color-accent-dim)] ${
-                    detail?.id === s.id ? "border-[var(--color-accent)]" : ""
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium text-[13.5px] truncate">{s.name}</span>
-                    <span className="tag shrink-0">{sourceLabel(s.source)}</span>
-                  </div>
-                  {s.description && (
-                    <p className="text-[12px] text-[var(--color-muted)] mt-1 line-clamp-2">
-                      {s.description}
-                    </p>
-                  )}
-                  <div className="text-[12px] text-[var(--color-muted)] mt-1.5 flex items-center gap-1.5 flex-wrap">
-                    <span>{Object.keys(s.files ?? {}).length} 个附件</span>
-                    <span>·</span>
-                    {/* 用量是"真读过"的次数 —— 只列在提示里不算 */}
-                    <span>用了 {s.use_count ?? 0} 次</span>
-                    <span>·</span>
-                    <span>
-                      {s.last_used_at ? `最后 ${fmt.relative(s.last_used_at)}` : "还没人读过"}
-                    </span>
-                    {(s.state ?? "active") !== "active" && (
-                      <span
-                        className="tag"
-                        style={{ color: STATE_LABEL[s.state ?? "active"]?.color }}
-                      >
-                        {STATE_LABEL[s.state ?? "active"]?.text}
-                      </span>
-                    )}
-                    {s.pinned && <span className="tag">固定</span>}
-                  </div>
-                </button>
-              ))}
-            </div>
+      {/* 搜索 + 状态筛选：技能一多，先给"缩小范围"再给"看内容" */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[160px] flex-1">
+          <IconSearch
+            size={14}
+            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-muted)]"
+          />
+          <input
+            className="input"
+            /* .input 的 padding 是 CSS 类给的，Tailwind 的 pl-8 压不住（同页已有先例）
+               → 内联，保证图标和文字不重叠 */
+            style={{ paddingLeft: 30 }}
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="搜名字或说明"
+            aria-label="搜索 Skill"
+          />
+        </div>
+        <Segmented
+          value={filter}
+          onChange={(k) => setFilter(k as "all" | "active" | "stale" | "archived")}
+          options={[
+            { key: "all", label: "全部", count: skills.length },
+            { key: "active", label: "在用", count: countOf("active") },
+            { key: "stale", label: "闲置", count: countOf("stale") },
+            { key: "archived", label: "已归档", count: countOf("archived") },
+          ]}
+        />
+      </div>
+
+      {loading ? (
+        <div className="card p-6 text-[13px] text-[var(--color-muted)]">加载中…</div>
+      ) : shown.length === 0 ? (
+        <div className="card p-8 text-center">
+          <IconSkill size={22} className="mx-auto mb-2 text-[var(--color-muted)]" />
+          <div className="text-[13px]" style={{ color: "var(--color-muted)" }}>
+            {skills.length === 0
+              ? "还没有 Skill。可以从 Git 仓库、URL、服务器本地目录导入，或直接写一份。"
+              : "这个筛选下没有技能"}
+          </div>
+          {skills.length === 0 && (
+            <button className="btn btn-primary mt-3" onClick={() => setShowImport(true)}>
+              + 新建 / 导入 Skill
+            </button>
           )}
         </div>
-
-        <div className="card p-4 min-h-[300px]">
-          {detail ? (
-            <>
-              <div className="flex items-start justify-between mb-3">
-                <div className="min-w-0">
-                  <h2 className="text-[15px] font-medium">{detail.name}</h2>
-                  {String(detail.source?.repo ?? "") !== "" ? (
-                    /* 仓库装的：显示 owner/repo@版本 + commit，并提供「更新」——
-                       来源记全了才有更新可言（内联手写的没有） */
-                    <div className="text-[12px] text-[var(--color-muted)] mt-0.5 flex items-center gap-1.5 flex-wrap">
-                      {typeof detail.source?.url === "string" && (
-                        <a
-                          href={String(detail.source.url)}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="mono hover:underline"
-                          style={{ color: "var(--color-accent)" }}
-                        >
-                          {String(detail.source.repo)}
-                        </a>
-                      )}
-                      {typeof detail.source?.ref === "string" && <span className="tag">{String(detail.source.ref)}</span>}
-                      {typeof detail.source?.sha === "string" && String(detail.source.sha) && (
-                        <span className="mono text-[11px]">{String(detail.source.sha).slice(0, 7)}</span>
-                      )}
-                    </div>
-                  ) : (
-                    typeof detail.source?.url === "string" && (
-                      <div className="text-[12px] text-[var(--color-muted)] mono mt-0.5 truncate">
-                        {detail.source.url}
-                        {typeof detail.source?.sha === "string" &&
-                          ` @ ${detail.source.sha.slice(0, 8)}`}
-                      </div>
-                    )
-                  )}
-                </div>
-                <div className="flex gap-2 shrink-0">
-                  {String(detail.source?.repo ?? "") !== "" && (
-                    <button className="btn" disabled={updating} onClick={() => void update(detail)}>
-                      {updating ? "更新中…" : "更新"}
-                    </button>
-                  )}
-                  <button
-                    className="btn"
-                    title={detail.pinned ? "取消固定，允许自动整理" : "固定：自动整理不碰它"}
-                    onClick={() => void togglePin(detail)}
-                  >
-                    {detail.pinned ? "取消固定" : "固定"}
-                  </button>
-                  {(detail.state ?? "active") === "archived" ? (
-                    <button className="btn" onClick={() => void restore(detail)}>
-                      恢复
-                    </button>
-                  ) : (
-                    <button
-                      className="btn"
-                      title="从助手撤下，库里还有"
-                      onClick={() => void archive(detail)}
+      ) : (
+        <RowList>
+          {shown.map((s) => {
+            const g = glyphOf(s);
+            const st = s.state ?? "active";
+            const meta = STATE_LABEL[st] ?? STATE_LABEL.active;
+            return (
+              <Row
+                key={s.id}
+                wrapActions={false}
+                onToggle={() => {
+                  // 列表里只有摘要，正文要单独拉 —— 先给个壳让弹层立刻出现，
+                  // 全文回来再替换（不用等一次往返才看到名字）
+                  setDetail(s);
+                  void api.skill(s.id).then(setDetail).catch(() => {});
+                }}
+                actions={<IconChevronRight size={16} className="text-[var(--color-muted)]" />}
+              >
+                <span
+                  className="grid h-8 w-8 shrink-0 place-items-center rounded-[9px]"
+                  style={{ background: g.bg, color: g.fg }}
+                >
+                  <g.Ico size={16} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-1.5">
+                    <span className="truncate text-[13.5px] font-medium">{s.name}</span>
+                    {s.pinned && (
+                      <span title="已固定：自动整理不会动它" style={{ color: "var(--color-accent)" }}>
+                        <IconPin size={12} />
+                      </span>
+                    )}
+                    <span
+                      className="ml-0.5 inline-flex shrink-0 items-center gap-1 text-[11px]"
+                      style={{ color: meta.color }}
                     >
-                      归档
-                    </button>
+                      <span
+                        className="h-1.5 w-1.5 rounded-full"
+                        style={{ background: meta.color }}
+                        aria-hidden="true"
+                      />
+                      {meta.text}
+                    </span>
+                  </span>
+                  {s.description && (
+                    <span className="mt-0.5 block truncate text-[12px]" style={{ color: "var(--color-muted)" }}>
+                      {s.description}
+                    </span>
                   )}
-                  <button className="btn" onClick={() => setEditing(detail)}>
-                    编辑
-                  </button>
-                  <button className="btn text-[var(--color-err)]" onClick={() => remove(detail)}>
-                    删除
-                  </button>
-                </div>
+                  <span
+                    className="mt-1 flex items-center gap-1.5 text-[11.5px]"
+                    style={{ color: "var(--color-muted)" }}
+                  >
+                    <span className="tag">{sourceLabel(s.source)}</span>
+                    <span>·</span>
+                    <span>{Object.keys(s.files ?? {}).length} 个附件</span>
+                    <span>·</span>
+                    <span>用了 {s.use_count ?? 0} 次</span>
+                    <span>·</span>
+                    <span>{s.last_used_at ? `最后 ${fmt.relative(s.last_used_at)}` : "还没人读过"}</span>
+                  </span>
+                </span>
+              </Row>
+            );
+          })}
+        </RowList>
+      )}
+
+      {/* 详情：**弹出来**，不再在页面下半部分撑一块常驻面板（手机上那等于要滚到最底才看得见） */}
+      <Sheet
+        open={!!detail}
+        onClose={() => setDetail(null)}
+        title={detail?.name ?? "Skill"}
+        hint={detail ? sourceLabel(detail.source) : undefined}
+        width={620}
+        maxH="86vh"
+        footer={
+          detail ? (
+            <div className="flex w-full flex-wrap items-center gap-1.5">
+              {String(detail.source?.repo ?? "") !== "" && (
+                <button className="btn btn-sm" disabled={updating} onClick={() => void update(detail)}>
+                  <IconRefresh size={14} />
+                  {updating ? "更新中…" : "更新"}
+                </button>
+              )}
+              <button
+                className="btn btn-sm"
+                title={detail.pinned ? "取消固定，允许自动整理" : "固定：自动整理不碰它"}
+                onClick={() => void togglePin(detail)}
+              >
+                <IconPin size={14} />
+                {detail.pinned ? "取消固定" : "固定"}
+              </button>
+              {(detail.state ?? "active") === "archived" ? (
+                <button className="btn btn-sm" onClick={() => void restore(detail)}>
+                  <IconRefresh size={14} />
+                  恢复
+                </button>
+              ) : (
+                <button className="btn btn-sm" title="从助手撤下，库里还有" onClick={() => void archive(detail)}>
+                  <IconArchive size={14} />
+                  归档
+                </button>
+              )}
+              <button className="btn btn-sm" onClick={() => setEditing(detail)}>
+                <IconPencil size={14} />
+                编辑
+              </button>
+              <button
+                className="btn btn-sm ml-auto"
+                style={{ color: "var(--color-err)" }}
+                onClick={() => void remove(detail)}
+              >
+                <IconTrash size={14} />
+                删除
+              </button>
+            </div>
+          ) : null
+        }
+      >
+        {detail ? (
+          editing?.id === detail.id ? (
+            <SkillEditor
+              skill={detail}
+              onCancel={() => setEditing(null)}
+              onSaved={async (s) => {
+                setEditing(null);
+                await load();
+                setDetail(s);
+              }}
+            />
+          ) : (
+            <div className="space-y-3">
+              {/* 概览：谁弄进来的、什么时候用过 —— 一行一个事实，不堆在一起 */}
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                <KV k="状态">
+                  <span className="inline-flex items-center gap-1" style={{ color: (STATE_LABEL[detail.state ?? "active"] ?? STATE_LABEL.active).color }}>
+                    <span
+                      className="h-1.5 w-1.5 rounded-full"
+                      style={{ background: (STATE_LABEL[detail.state ?? "active"] ?? STATE_LABEL.active).color }}
+                    />
+                    {(STATE_LABEL[detail.state ?? "active"] ?? STATE_LABEL.active).text}
+                    {detail.pinned ? " · 固定" : ""}
+                  </span>
+                </KV>
+                <KV k="用过">{detail.use_count ?? 0} 次</KV>
+                <KV k="最后">
+                  {detail.last_used_at ? fmt.relative(detail.last_used_at) : "还没人读过"}
+                </KV>
               </div>
 
-              {editing?.id === detail.id ? (
-                <SkillEditor
-                  skill={detail}
-                  onCancel={() => setEditing(null)}
-                  onSaved={async (s) => {
-                    setEditing(null);
-                    await load();
-                    setDetail(s);
-                  }}
-                />
+              {/* 来源 */}
+              {String(detail.source?.repo ?? "") !== "" ? (
+                <KV k="来源">
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    {typeof detail.source?.url === "string" && (
+                      <a
+                        href={String(detail.source.url)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mono hover:underline"
+                        style={{ color: "var(--color-accent)" }}
+                      >
+                        {String(detail.source.repo)}
+                      </a>
+                    )}
+                    {typeof detail.source?.ref === "string" && <span className="tag">{String(detail.source.ref)}</span>}
+                    {typeof detail.source?.sha === "string" && String(detail.source.sha) && (
+                      <span className="mono text-[11px]">{String(detail.source.sha).slice(0, 7)}</span>
+                    )}
+                  </span>
+                </KV>
+              ) : typeof detail.source?.url === "string" ? (
+                <KV k="来源">
+                  <span className="mono break-all text-[11.5px]">{detail.source.url}</span>
+                </KV>
               ) : (
-                <>
+                <KV k="来源">{sourceLabel(detail.source)}</KV>
+              )}
+
               {Object.keys(detail.files ?? {}).length > 0 && (
-                <div className="mb-3">
-                  <div className="text-[12px] text-[var(--color-muted)] mb-1">附件</div>
+                <div>
+                  <div className="mb-1 flex items-center gap-1 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                    <IconFile size={12} />
+                    附件 {Object.keys(detail.files).length} 个
+                  </div>
                   <div className="flex flex-wrap gap-1.5">
                     {Object.keys(detail.files).map((f) => (
                       <span key={f} className="tag mono">
@@ -347,19 +476,43 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
                 </div>
               )}
 
-              <pre className="text-[12px] whitespace-pre-wrap break-all bg-[var(--color-bg)] p-3 rounded-md max-h-[420px] overflow-auto">
-                {detail.content}
-              </pre>
-                </>
-              )}
-            </>
-          ) : (
-            <div className="h-full flex items-center justify-center text-[12px] text-[var(--color-muted)]">
-              选择左侧 Skill 查看内容
+              {/* 正文：给个表头 + 复制，才像"读一份文档"而不是"看一段日志" */}
+              <div>
+                <div
+                  className="flex items-center justify-between rounded-t-[10px] border border-b-0 px-2.5 py-1.5"
+                  style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
+                >
+                  <span className="mono text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                    SKILL.md · {(detail.content ?? "").length} 字符
+                  </span>
+                  <button
+                    className="inline-flex items-center gap-1 text-[11.5px]"
+                    style={{ color: "var(--color-accent)" }}
+                    onClick={() => {
+                      void navigator.clipboard?.writeText(detail.content ?? "");
+                      fb.success("已复制正文");
+                    }}
+                  >
+                    <IconCopy size={12} />
+                    复制
+                  </button>
+                </div>
+                <pre
+                  className="overflow-auto whitespace-pre-wrap break-words rounded-b-[10px] border p-3 text-[12px]"
+                  style={{
+                    borderColor: "var(--color-border)",
+                    background: "var(--color-bg)",
+                    maxHeight: "38vh",
+                    lineHeight: 1.65,
+                  }}
+                >
+                  {detail.content}
+                </pre>
+              </div>
             </div>
-          )}
-        </div>
-      </div>
+          )
+        ) : null}
+      </Sheet>
     </div>
   );
 }

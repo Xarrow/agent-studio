@@ -18,7 +18,7 @@ import {
   SelectionBar,
   Toolbar,
 } from "@/components/ui/kit";
-import { IconPencil, IconPlay, IconTrash } from "@/components/ui/icons";
+import { IconPencil, IconPlay, IconPlug, IconSkill, IconTrash, IconWrench } from "@/components/ui/icons";
 import { SkillsPanel } from "@/components/SkillsPanel";
 import { McpPanel } from "@/components/McpPanel";
 import { ToolTestForm } from "@/components/ToolTestForm";
@@ -245,7 +245,12 @@ export default function ToolsPage() {
           原来是「顶部页签条 + 页签里再来一个 h1 + 说明 + 按钮」两层头，
           占了 150px 才看到第一个工具，且字号与其它页不一致 ✗ */}
       <PageHead
-        title={TAB_META[tab].title}
+        title={
+          <span className="flex items-center gap-2">
+            {tab === "tools" ? <IconWrench size={20} /> : tab === "skills" ? <IconSkill size={20} /> : <IconPlug size={20} />}
+            {TAB_META[tab].title}
+          </span>
+        }
         desc={TAB_META[tab].desc}
         actions={
           <Segmented

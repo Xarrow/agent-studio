@@ -191,3 +191,106 @@ export function FileTypeIcon({ kind, size = 14, className }: P & { kind: string 
       return <IconFile size={size} className={className} />;
   }
 }
+
+// ── 能力库（Skills）用的一组 ──────────────────────────────────────────
+/** 技能本体：一本书。来源不同再叠不同的小标志 */
+export function IconSkill({ size = 16, className }: P) {
+  return (
+    <svg {...base(size, className)}>
+      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z" />
+    </svg>
+  );
+}
+
+/** 仓库装的 */
+export function IconBox({ size = 16, className }: P) {
+  return (
+    <svg {...base(size, className)}>
+      <path d="M21 8v8a2 2 0 0 1-1 1.7l-7 4a2 2 0 0 1-2 0l-7-4A2 2 0 0 1 3 16V8a2 2 0 0 1 1-1.7l7-4a2 2 0 0 1 2 0l7 4A2 2 0 0 1 21 8Z" />
+      <path d="m3.3 7 8.7 5 8.7-5M12 22V12" />
+    </svg>
+  );
+}
+
+/** 助手自己沉淀出来的 */
+export function IconSpark({ size = 16, className }: P) {
+  return (
+    <svg {...base(size, className)}>
+      <path d="M12 3v3M12 18v3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M3 12h3M18 12h3M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+export function IconCheck({ size = 16, className }: P) {
+  return (
+    <svg {...base(size, className)}>
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  );
+}
+
+/** 固定（图钉） */
+export function IconPin({ size = 16, className }: P) {
+  return (
+    <svg {...base(size, className)}>
+      <path d="M12 17v5M9 3h6l-1 6 4 3v2H6v-2l4-3-1-6Z" />
+    </svg>
+  );
+}
+
+/** 归档（盒子里的向下箭头） */
+export function IconArchive({ size = 16, className }: P) {
+  return (
+    <svg {...base(size, className)}>
+      <rect x="3" y="4" width="18" height="4" rx="1" />
+      <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4" />
+    </svg>
+  );
+}
+
+/** 更新 / 重新拉取 */
+export function IconRefresh({ size = 16, className }: P) {
+  return (
+    <svg {...base(size, className)}>
+      <path d="M21 12a9 9 0 1 1-3-6.7M21 4v5h-5" />
+    </svg>
+  );
+}
+
+export function IconSearch({ size = 16, className }: P) {
+  return (
+    <svg {...base(size, className)}>
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.5-3.5" />
+    </svg>
+  );
+}
+
+export function IconChevronRight({ size = 16, className }: P) {
+  return (
+    <svg {...base(size, className)}>
+      <path d="m9 18 6-6-6-6" />
+    </svg>
+  );
+}
+
+/** 工具（扳手） */
+export function IconWrench({ size = 16, className }: P) {
+  return (
+    <svg {...base(size, className)}>
+      <path d="M14.7 6.3a4 4 0 0 0 5 5l-9.4 9.4a2.1 2.1 0 0 1-3-3l9.4-9.4Z" />
+      <path d="M14.7 6.3 17 4l3 3-2.3 2.3" />
+    </svg>
+  );
+}
+
+/** MCP / 插头 */
+export function IconPlug({ size = 16, className }: P) {
+  return (
+    <svg {...base(size, className)}>
+      <path d="M9 2v6M15 2v6M6 8h12v3a6 6 0 0 1-12 0V8ZM12 17v5" />
+    </svg>
+  );
+}

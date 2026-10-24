@@ -26,7 +26,8 @@ export function PageHead({
   desc,
   actions,
 }: {
-  title: string;
+  /** 标题可以带图标（图标放这里而不是另起一行，页头高度不变） */
+  title: ReactNode;
   desc?: ReactNode;
   actions?: ReactNode;
 }) {
