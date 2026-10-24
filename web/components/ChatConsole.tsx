@@ -32,6 +32,7 @@ import { ICON_PATHS, SETUP_ITEMS } from "@/lib/nav-items";
 import { AgentSwitcher } from "./AgentSwitcher";
 import { SkillsStrip } from "./SkillsStrip";
 import { SkillPicker } from "./SkillPicker";
+import { Sheet } from "./ui/Sheet";
 import { MemoryPicker } from "./MemoryPicker";
 import { QuickTags } from "./QuickTags";
 import { FileOpenerProvider, FileRowButton } from "@/components/FileDialog";
@@ -1802,8 +1803,23 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             {/* 展开时才是「面板」，收起时只剩快捷标签行最左边那个「N 个文件」
                 chip —— 这一条不再自己占一行。 */}
             {sessionId && fileCount > 0 && openFiles && (
+              <Sheet
+                open
+                onClose={() => setFilesOpenPref(false)}
+                title="这个会话的文件"
+                hint={`${fileCount} 个 · ${fmt.bytes(
+                  (sessionFiles?.files ?? []).reduce((a, f) => a + (f.size || 0), 0),
+                )}`}
+                maxH="78vh"
+                width={440}
+              >
               <div
-                className={`panel-strip fab-in max-w-3xl mx-auto mb-1.5 px-2.5 py-1.5 max-md:px-2 ${managing ? "is-active" : ""}`}
+                className="px-3.5 py-2"
+                style={
+                  managing
+                    ? { background: "color-mix(in srgb, var(--color-accent) 6%, transparent)" }
+                    : undefined
+                }
               >
                 <div className="flex min-w-0 items-center gap-2 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
                   {/* 桌面上就是那串路径：点一下复制（收起由左边那个 chip 管） */}
@@ -1895,7 +1911,9 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                   )}
                   {/* 文件全列出来（以前只摆 6 个、剩下写成"还有 N 个…"点不到 —— 等于没给）。
                       高度封在 40vh 并允许滚动：文件再多也不会把输入坞顶到屏幕外。 */}
-                  <div className="mt-1 flex max-h-[40vh] flex-wrap gap-1.5 overflow-y-auto pb-0.5">
+                  /* 一行一个文件，铺满宽度：胶囊流会让右侧空一大片、名字还被
+                     截成一样长，扫起来得来回找。列表是文件该有的样子。 */
+                  <div className="mt-1 flex max-h-[46vh] flex-col overflow-y-auto pb-0.5">
                     {shownFiles.map((f) =>
                       managing ? (
                         /* 管理态：点一下是勾选（不是打开预览）—— 这时的目的就是删 */
@@ -1904,12 +1922,11 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                           type="button"
                           onClick={() => togglePick(f.path)}
                           aria-pressed={picked.includes(f.path)}
-                          className="inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-1 text-[11.5px] max-md:min-h-[32px]"
+                          className="w-full flex items-center gap-2.5 rounded-lg px-2 py-2.5 text-left text-[12.5px] transition-colors"
                           style={{
-                            borderColor: picked.includes(f.path) ? "var(--color-accent)" : "var(--color-border-strong)",
                             background: picked.includes(f.path)
-                              ? "color-mix(in srgb, var(--color-accent) 12%, var(--color-surface))"
-                              : "var(--color-surface)",
+                              ? "color-mix(in srgb, var(--color-accent) 10%, transparent)"
+                              : undefined,
                             color: "var(--color-text)",
                           }}
                         >
@@ -1936,14 +1953,16 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                         <FileRowButton
                           key={f.path}
                           file={{ path: `${sessionFiles.work_dir}/${f.path}`, url: f.url, size: f.size, mtime: f.mtime }}
-                          className="inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-1 text-[11.5px] hover:brightness-[0.98] max-md:min-h-[32px]"
-                          style={{ borderColor: "var(--color-border-strong)", background: "var(--color-surface)", color: "var(--color-text)" }}
+                          className="w-full flex items-center gap-2.5 rounded-lg px-2 py-2.5 text-left hover:bg-[var(--color-surface-2)] transition-colors"
+                          style={{ color: "var(--color-text)" }}
                         >
-                          <FileTypeIcon kind={fileTypeKey(f.path)} size={13} className="shrink-0 opacity-60" />
-                          <span className="mono shrink-0" title={f.path}>
+                          <FileTypeIcon kind={fileTypeKey(f.path)} size={15} className="shrink-0 opacity-60" />
+                          <span className="mono flex-1 min-w-0 truncate text-[12.5px]" title={f.path}>
                             {shortFilePath(f.path)}
                           </span>
-                          <span style={{ color: "var(--color-muted)" }}>{fmt.bytes(f.size)}</span>
+                          <span className="shrink-0 tabular-nums text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                            {fmt.bytes(f.size)}
+                          </span>
                         </FileRowButton>
                       ),
                     )}
@@ -2008,6 +2027,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                   </div>
                 ))}
               </div>
+              </Sheet>
             )}
 
             <div className="max-w-3xl mx-auto relative">
@@ -2047,58 +2067,6 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     </button>
                   ) : null}
 
-                  {/* 技能与记忆搬到手边：对话中想换技能或引一条记忆，
-                      不用退出对话、不用去配置页。 */}
-                  {currentAgent && (
-                    <button
-                      type="button"
-                      data-tap
-                      onClick={() => {
-                        setMemOpen(false);
-                        setSkillOpen((v) => !v);
-                      }}
-                      aria-expanded={skillOpen}
-                      title="这个助手挂了哪些技能（点开就地勾选）"
-                      className="chip-thin shrink-0 inline-flex items-center gap-1 h-7 px-2.5 rounded-full border text-[12px] transition-colors hover:bg-[var(--color-surface-2)]"
-                      style={{
-                        borderColor: skillOpen ? "var(--color-accent)" : "var(--color-border)",
-                        background: skillOpen ? "color-mix(in srgb, var(--color-accent) 8%, transparent)" : "transparent",
-                        color: "var(--color-text)",
-                      }}
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <path d="M12 3 4 7v6c0 4.4 3.4 7.4 8 8 4.6-.6 8-3.6 8-8V7l-8-4z" />
-                      </svg>
-                      技能
-                      {(currentAgent.definition?.skills ?? []).length > 0 && (
-                        <span className="tabular-nums" style={{ color: "var(--color-muted)" }}>
-                          {(currentAgent.definition?.skills ?? []).length}
-                        </span>
-                      )}
-                    </button>
-                  )}
-
-                  <button
-                    type="button"
-                    data-tap
-                    onClick={() => {
-                      setSkillOpen(false);
-                      setMemOpen((v) => !v);
-                    }}
-                    aria-expanded={memOpen}
-                    title="翻一条记忆填进输入框"
-                    className="chip-thin shrink-0 inline-flex items-center gap-1 h-7 px-2.5 rounded-full border text-[12px] transition-colors hover:bg-[var(--color-surface-2)]"
-                    style={{
-                      borderColor: memOpen ? "var(--color-accent)" : "var(--color-border)",
-                      background: memOpen ? "color-mix(in srgb, var(--color-accent) 8%, transparent)" : "transparent",
-                      color: "var(--color-text)",
-                    }}
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M4 5h16v12H8l-4 4V5z" />
-                    </svg>
-                    记忆
-                  </button>
                   </>
                 }
                 onPick={appendToInput}
@@ -2220,6 +2188,44 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                   </button>
                   {/* 一个定时任务都没有时才摆这个入口：有了上面就有 strip，含「＋ 再排一个」 */}
                   {sessionId && jobCount === 0 && <JobButton onClick={() => setJobOpen(true)} />}
+
+                  {/* 技能 / 记忆放这里，不放上面那排 chips：
+                      chips 是「这轮对话的上下文」（文件、常说的句子），多了就得左右滑；
+                      这两个是「工具」，和附件、定时同性质，待在工具栏才对。 */}
+                  {currentAgent && (
+                    <button
+                      data-tap
+                      type="button"
+                      aria-expanded={skillOpen}
+                      title="这个助手挂了哪些技能（点开就地勾选）"
+                      onClick={() => {
+                        setMemOpen(false);
+                        setSkillOpen((v) => !v);
+                      }}
+                      className="w-9 h-9 sm:w-8 sm:h-8 shrink-0 flex items-center justify-center rounded-xl hover:bg-[var(--color-surface-2)] transition-colors"
+                      style={{ color: skillOpen ? "var(--color-accent)" : "var(--color-muted)" }}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M12 3 4 7v6c0 4.4 3.4 7.4 8 8 4.6-.6 8-3.6 8-8V7l-8-4z" />
+                      </svg>
+                    </button>
+                  )}
+                  <button
+                    data-tap
+                    type="button"
+                    aria-expanded={memOpen}
+                    title="翻一条记忆填进输入框"
+                    onClick={() => {
+                      setSkillOpen(false);
+                      setMemOpen((v) => !v);
+                    }}
+                    className="w-9 h-9 sm:w-8 sm:h-8 shrink-0 flex items-center justify-center rounded-xl hover:bg-[var(--color-surface-2)] transition-colors"
+                    style={{ color: memOpen ? "var(--color-accent)" : "var(--color-muted)" }}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M4 5h16v12H8l-4 4V5z" />
+                    </svg>
+                  </button>
                   <span className="hidden sm:block text-[11.5px] truncate text-[var(--color-muted)]">
                     {dragging
                       ? "松手即添加为附件"

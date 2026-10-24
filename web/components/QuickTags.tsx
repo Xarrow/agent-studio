@@ -110,7 +110,9 @@ export function QuickTags({ onPick, prefix }: { onPick: (text: string) => void; 
 
   return (
     <div ref={rootRef} className="relative max-w-3xl mx-auto mb-1.5">
-      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+      {/* flex-wrap 而不是横向滚动：手机上"这排还能往右滑"几乎没人会想到去试，
+          多出来的问句就等于不存在。换行最多两行，再多的收进 ⋯ 管理面板。 */}
+      <div className="flex flex-wrap items-center gap-2 overflow-hidden" style={{ maxHeight: 68 }}>
         {prefix}
         {tags.map((t) => (
           <button

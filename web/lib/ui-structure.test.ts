@@ -329,7 +329,8 @@ test("会话文件清单可折叠：默认按数量、手动选择要记住", ()
   assert.match(chat, /localStorage\.setItem\("chat\.filesOpen"/, "手动选择要记住");
   assert.match(chat, /localStorage\.getItem\("chat\.filesOpen"\)/, "刷新后要读回来");
   assert.match(chat, /openFiles && \(/, "胶囊行必须跟着折叠状态走");
-  assert.match(chat, /max-h-\[40vh\][^"]*overflow-y-auto/, "展开时高度要有上限，别无限长");
+  /* 具体数字可以调（40→46vh 随面板高度变），要守的是"有上限 + 内部滚动" */
+  assert.match(chat, /max-h-\[\d+vh\][^"]*overflow-y-auto/, "展开时高度要有上限，别无限长");
   /* 2026-10 改口径：以前只摆 6 个、剩下写成「还有 N 个…」根本点不到 —— 等于没给。
      现在全部列出（换行 + 滚动兜高度），不许再出现截断与「还有」提示。 */
   assert.doesNotMatch(chat, /slice\(0, 6\)/, "不许再截断成 6 个");
