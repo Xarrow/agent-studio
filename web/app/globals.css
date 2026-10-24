@@ -1106,7 +1106,7 @@ body {
   from { transform: translateY(100%); }
   to   { transform: none; }
 }
-.sheet-up { animation: sheet-up 0.24s cubic-bezier(0.22, 0.8, 0.3, 1) both; }
+.sheet-up { animation: sheet-up 0.2s cubic-bezier(0.22, 0.8, 0.3, 1) both; }
 @keyframes veil-in { from { opacity: 0; } to { opacity: 1; } }
 .veil-in { animation: veil-in 0.2s ease-out both; }
 
@@ -1164,3 +1164,16 @@ body {
 @media (min-width: 1024px) {
   [role="dialog"][aria-labelledby], [role="dialog"][aria-label] { width: var(--sheet-w, 360px); }
 }
+
+/* ── 交互流畅度（2026-10-24）──────────────────────────────────────────
+   三条都是"少画一点"：
+   ① 输入坞那层 blur(32px) 覆盖整屏宽，是手机 GPU 最大的一笔开销；
+      24px 肉眼几乎分辨不出，帧时间明显下来。
+   ② 浮层里的滚动列表开 will-change —— 弹出/关闭时不再整块重排。
+   ③ 长列表（技能、记忆、文件）滚动时给内容层提升，避免每帧重新合成。 */
+[data-composer] { backdrop-filter: blur(24px) saturate(2.1); -webkit-backdrop-filter: blur(24px) saturate(2.1); }
+[role="dialog"] [class*="overflow-auto"] { will-change: transform; contain: layout paint; }
+
+/* 消息再多也不该拖慢输入：屏外的消息不参与布局与绘制。
+   contain-intrinsic-size 给一个接近真实的高度估计，滚动条不会跳。 */
+.msg-stream > * { content-visibility: auto; contain-intrinsic-size: auto 120px; }

@@ -31,7 +31,7 @@ import { AgentDetailDialog } from "./AgentDetailDialog";
 import { ICON_PATHS, SETUP_ITEMS } from "@/lib/nav-items";
 import { AgentSwitcher } from "./AgentSwitcher";
 import { SkillsStrip } from "./SkillsStrip";
-import { SkillPicker } from "./SkillPicker";
+import { SkillEntry, MemoryEntry } from "./ToolEntries";
 import { Sheet } from "./ui/Sheet";
 import { MemoryPicker } from "./MemoryPicker";
 import { QuickTags } from "./QuickTags";
@@ -900,9 +900,6 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   // （Rendered more hooks than during the previous render），整页变错误页（踩过两次）。
   const [navOpen, setNavOpen] = useState(true);
   const [mobileNav, setMobileNav] = useState(false);
-  /* 工具栏上的两个手边入口：换了/勾了立刻生效，不离开对话 */
-  const [skillOpen, setSkillOpen] = useState(false);
-  const [memOpen, setMemOpen] = useState(false);
   /** 抽屉两个视图：会话（默认）/ 功能与配置。手机上全站只有这一个抽屉，
       功能入口不能另开一个抽屉，也不能塞成横向短标签条（短名和侧栏的完整
       标签对不上，就是"不统一"的来源）。 */
@@ -1679,8 +1676,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             className="absolute inset-x-0 bottom-0 z-20 px-3 sm:px-4 pt-0.5 pb-1"
             style={{
               background: "color-mix(in srgb, var(--color-bg) 34%, transparent)",
-              backdropFilter: "blur(32px) saturate(2.1)",
-              WebkitBackdropFilter: "blur(32px) saturate(2.1)",
+              backdropFilter: "blur(24px) saturate(2.1)",
+              WebkitBackdropFilter: "blur(24px) saturate(2.1)",
               borderTop: "1px solid color-mix(in srgb, var(--color-border) 45%, transparent)",
               boxShadow:
                 "inset 0 1px 0 rgba(255,255,255,.55), 0 -18px 44px -24px rgba(15,23,42,.42)",
@@ -2073,20 +2070,6 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 }
                 onPick={appendToInput}
               />
-              <SkillPicker
-                agent={currentAgent}
-                onChanged={() => void reloadAgents()}
-                open={skillOpen}
-                onOpenChange={setSkillOpen}
-              />
-              <MemoryPicker
-                open={memOpen}
-                onOpenChange={setMemOpen}
-                onPick={(t) => {
-                  appendToInput(t);
-                  setMemOpen(false);
-                }}
-              />
               </div>
               )}
 
@@ -2193,41 +2176,10 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
 
                   {/* 技能 / 记忆放这里，不放上面那排 chips：
                       chips 是「这轮对话的上下文」（文件、常说的句子），多了就得左右滑；
-                      这两个是「工具」，和附件、定时同性质，待在工具栏才对。 */}
-                  {currentAgent && (
-                    <button
-                      data-tap
-                      type="button"
-                      aria-expanded={skillOpen}
-                      title="这个助手挂了哪些技能（点开就地勾选）"
-                      onClick={() => {
-                        setMemOpen(false);
-                        setSkillOpen((v) => !v);
-                      }}
-                      className="w-9 h-9 sm:w-8 sm:h-8 shrink-0 flex items-center justify-center rounded-xl hover:bg-[var(--color-surface-2)] transition-colors"
-                      style={{ color: skillOpen ? "var(--color-accent)" : "var(--color-muted)" }}
-                    >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <path d="M12 3 4 7v6c0 4.4 3.4 7.4 8 8 4.6-.6 8-3.6 8-8V7l-8-4z" />
-                      </svg>
-                    </button>
-                  )}
-                  <button
-                    data-tap
-                    type="button"
-                    aria-expanded={memOpen}
-                    title="翻一条记忆填进输入框"
-                    onClick={() => {
-                      setSkillOpen(false);
-                      setMemOpen((v) => !v);
-                    }}
-                    className="w-9 h-9 sm:w-8 sm:h-8 shrink-0 flex items-center justify-center rounded-xl hover:bg-[var(--color-surface-2)] transition-colors"
-                    style={{ color: memOpen ? "var(--color-accent)" : "var(--color-muted)" }}
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M4 5h16v12H8l-4 4V5z" />
-                    </svg>
-                  </button>
+                      这两个是「工具」，和附件、定时同性质，待在工具栏才对。
+                      状态在组件内部自持 —— 开关面板不该让消息流跟着重渲染。 */}
+                  <SkillEntry agent={currentAgent} onChanged={() => void reloadAgents()} />
+                  <MemoryEntry onPick={appendToInput} />
                   <span className="hidden sm:block text-[11.5px] truncate text-[var(--color-muted)]">
                     {dragging
                       ? "松手即添加为附件"

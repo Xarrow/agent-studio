@@ -38,8 +38,12 @@ export function MemoryPicker({
       .finally(() => setBusy(false));
   }, []);
 
+  // 挂载就拉一次：打开面板时数据已经在，不会先空再填（那 300ms 很显眼）
   useEffect(() => {
-    if (open) load();
+    load();
+  }, [load]);
+  useEffect(() => {
+    if (open) load(q); // 打开时静默刷新，旧数据先显示
   }, [open, load]);
 
   // 输入停下来再查，别每个字都打一次接口
