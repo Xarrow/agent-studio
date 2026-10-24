@@ -30,7 +30,6 @@ import { RunDetailById } from "@/components/RunDetailDialog";
 import { AgentDetailDialog } from "./AgentDetailDialog";
 import { ICON_PATHS, SETUP_ITEMS } from "@/lib/nav-items";
 import { AgentSwitcher } from "./AgentSwitcher";
-import { SkillsStrip } from "./SkillsStrip";
 import { SkillEntry, ToolEntry, MemoryEntry } from "./ToolEntries";
 import { Sheet } from "./ui/Sheet";
 import { MemoryPicker } from "./MemoryPicker";
@@ -1258,7 +1257,6 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                       onOpenChange={(v) => setSwitcherOpen(v ? "sidebar" : null)}
                       onSettings={agentId ? () => setConfigAgent(agentId) : undefined}
                     />
-                    <SkillsStrip agent={currentAgent} onChanged={() => void reloadAgents()} />
                   </>
                   ) : null
               }
@@ -1307,7 +1305,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
         {mobileNav && (
           <div className="lg:hidden fixed inset-0 z-40 flex">
             <div className="veil-in absolute inset-0" style={{ background: "rgba(15,23,42,.28)" }} onClick={() => setMobileNav(false)} />
-            <div className="drawer-in relative w-[280px] max-w-[84vw] bg-[var(--color-surface)] border-r border-[var(--color-border)] flex flex-col min-h-0">
+            <div className="drawer-in relative w-[312px] max-w-[86vw] bg-[var(--color-surface)] border-r border-[var(--color-border)] flex flex-col min-h-0">
               {navView === "menu" ? (
                 /* 功能视图 —— 和桌面侧栏同一份定义、同样的完整标签 */
                 <>
@@ -1329,25 +1327,27 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     </button>
                     <span className="text-[15px] font-semibold tracking-tight">功能与配置</span>
                   </div>
-                  <div className="flex-1 overflow-y-auto py-1.5 pb-[calc(0.375rem+env(safe-area-inset-bottom))]">
-                    {SETUP_ITEMS.map((item) => (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        onClick={() => setMobileNav(false)}
-                        className="mx-1.5 flex items-center gap-2.5 rounded-lg px-2.5 min-h-[44px] active:bg-[var(--color-surface-2)]"
-                      >
-                        <span className="shrink-0 text-[var(--color-muted)]">
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  {/* 两列宫格：手机上竖排 7 行要点 7 次滚动，宫格一屏就能全看到；
+                      图标在上、名字在下，扫一眼就知道点哪儿。 */}
+                  <div className="flex-1 overflow-y-auto px-2 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {/* 工具不在这一格里：输入框工具行已经能直接勾选了，
+                          再放一个跳页入口只会让人猜「这两个是不是一回事」 */}
+                      {SETUP_ITEMS.filter((it) => it.href !== "/tools").map((item) => (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          onClick={() => setMobileNav(false)}
+                          className="flex flex-col items-center justify-center gap-1.5 rounded-xl px-2 py-3 min-h-[76px] active:bg-[var(--color-surface-2)] transition-colors"
+                          style={{ background: "var(--color-surface-2)" }}
+                        >
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ color: "var(--color-accent)" }}>
                             <path d={ICON_PATHS[item.icon] ?? ""} />
                           </svg>
-                        </span>
-                        <span className="min-w-0 flex flex-col">
-                          <span className="text-[14px] leading-tight">{item.label}</span>
-                          <span className="text-[11.5px] leading-snug truncate text-[var(--color-muted)]">{item.tip}</span>
-                        </span>
-                      </Link>
-                    ))}
+                          <span className="text-[12.5px] leading-tight text-center">{item.label}</span>
+                        </Link>
+                      ))}
+                    </div>
                   </div>
                 </>
               ) : (
@@ -1356,8 +1356,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     agentSlot={
                       controlledAgentId === undefined ? (
                         <div className="px-0.5">
-                          <SkillsStrip agent={currentAgent} onChanged={() => void reloadAgents()} />
-                        </div>
+                              </div>
                       ) : null
                     }
                     sessions={sessions}
@@ -2561,7 +2560,10 @@ function SessionsPane({
         <div className="px-1.5 pt-1.5 pb-1 border-b border-[var(--color-border)] mb-1">{agentSlot}</div>
       )}
       <div className="p-2.5 pb-1.5 flex items-center gap-1.5">
-        <button className="btn btn-primary flex-1" onClick={onNew}>
+        <button
+          className="btn btn-primary flex-1 !min-h-[40px] max-md:!min-h-[44px] max-md:text-[14px]"
+          onClick={onNew}
+        >
           + 新对话
         </button>
         <button
@@ -2595,7 +2597,7 @@ function SessionsPane({
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="搜索对话"
-            className="input pl-8 h-9 text-[13px]"
+            className="input pl-8 h-8 text-[12.5px]"
             data-tap
           />
         </div>
@@ -2617,7 +2619,10 @@ function SessionsPane({
             {groups.map((g) =>
               g.items.length === 0 ? null : (
               <div key={g.label} className="mb-1">
-                <div className="px-2 pt-2 pb-1 text-[11px] font-medium tracking-wide text-[var(--color-muted)]">
+                <div className="sticky top-0 z-10 flex items-center gap-1.5 px-3 pt-3 pb-1.5 text-[11px] font-semibold tracking-[0.06em] text-[var(--color-muted)] backdrop-blur-sm"
+                  style={{ background: "color-mix(in srgb, var(--color-surface) 88%, transparent)" }}
+                >
+                  <span className="w-1 h-1 rounded-full" style={{ background: "var(--color-border-strong, var(--color-border))" }} aria-hidden="true" />
                   {g.label}
                 </div>
                 <div className="space-y-0.5">
@@ -2626,20 +2631,20 @@ function SessionsPane({
                     return (
                       <div
                         key={s.id}
-                        className={`group relative flex items-center gap-1 rounded-lg pl-2 pr-1 py-1.5 cursor-pointer transition-colors ${
+                        className={`group relative flex items-center gap-1 rounded-xl pl-3 pr-1 py-2 max-md:py-2.5 cursor-pointer transition-colors ${
                           active ? "bg-[var(--color-surface-2)]" : "hover:bg-[var(--color-surface-2)]"
                         }`}
                         onClick={() => onPick(s.id)}
                       >
                         {/* 当前会话：左边一条竖色条 */}
                         <span
-                          className="absolute left-0 top-1.5 bottom-1.5 w-[2.5px] rounded-full"
+                          className="absolute left-0 top-2.5 bottom-2.5 w-[3px] rounded-full"
                           style={{ background: active ? "var(--color-accent)" : "transparent" }}
                           aria-hidden="true"
                         />
                         <div className="min-w-0 flex-1">
                           <div
-                            className="text-[12.5px] truncate"
+                            className="text-[13px] max-md:text-[14px] leading-[1.3] truncate tracking-[-0.01em]"
                             style={
                               active
                                 ? { color: "var(--color-accent)", fontWeight: 500 }
@@ -2648,12 +2653,12 @@ function SessionsPane({
                           >
                             {s.title || "未命名对话"}
                           </div>
-                          <div className="text-[10.5px] text-[var(--color-muted)] truncate mt-0.5">
+                          <div className="text-[11.5px] max-md:text-[12.5px] text-[var(--color-muted)] truncate mt-1 tabular-nums">
                             {s.turn_count} 轮 · {fmt.relative(s.last_active_at)}
                           </div>
                         </div>
                         <button
-                          className="shrink-0 w-7 h-7 flex items-center justify-center rounded-md text-[var(--color-muted)] hover:bg-[var(--color-surface)] hover:text-[var(--color-text)] lg:opacity-0 lg:group-hover:opacity-100"
+                          className="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-[var(--color-muted)] hover:bg-[var(--color-surface)] hover:text-[var(--color-text)] opacity-60 lg:opacity-0 lg:group-hover:opacity-100"
                           data-tap-lg
                           title="更多"
                           aria-haspopup="menu"
