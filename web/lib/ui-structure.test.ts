@@ -234,7 +234,9 @@ test("会话隔离要在界面上看得见：助手配置能选目录分法、�
   // 对话页：产物必须按**会话**列（再用全局清单就等于把隔离漏回去了）
   const cc = read("components/ChatConsole.tsx");
   assert.match(cc, /api\.sessionFiles\(sessionId\)/);
-  assert.match(cc, /这个会话的目录/);
+  /* 文件入口在输入框上方那行 chips 里的「N 个文件」（2026-10 改）：以前是一条
+     独立面板，手机上写着 …/sessions/ses_xxx/，白吃输入区 46px。 */
+  assert.match(cc, /\{fileCount\} 个文件/, "会话产物的入口要按会话列出来");
   assert.doesNotMatch(cc, /api\.workList\(|maintenance\/list/, "对话页不该拉全局产物清单");
 
   // 存储体检：会话目录体检 + 只清"没主的"
@@ -326,7 +328,7 @@ test("会话文件清单可折叠：默认按数量、手动选择要记住", ()
   assert.match(chat, /const openFiles = filesOpenPref \?\? fileCount <= 3/, "默认口径：≤3 个展开");
   assert.match(chat, /localStorage\.setItem\("chat\.filesOpen"/, "手动选择要记住");
   assert.match(chat, /localStorage\.getItem\("chat\.filesOpen"\)/, "刷新后要读回来");
-  assert.match(chat, /\{openFiles &&/, "胶囊行必须跟着折叠状态走");
+  assert.match(chat, /openFiles && \(/, "胶囊行必须跟着折叠状态走");
   assert.match(chat, /max-h-\[40vh\][^"]*overflow-y-auto/, "展开时高度要有上限，别无限长");
   /* 2026-10 改口径：以前只摆 6 个、剩下写成「还有 N 个…」根本点不到 —— 等于没给。
      现在全部列出（换行 + 滚动兜高度），不许再出现截断与「还有」提示。 */
