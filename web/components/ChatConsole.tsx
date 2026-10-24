@@ -1807,9 +1807,57 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 open
                 onClose={() => setFilesOpenPref(false)}
                 title="这个会话的文件"
-                hint={`${fileCount} 个 · ${fmt.bytes(
-                  (sessionFiles?.files ?? []).reduce((a, f) => a + (f.size || 0), 0),
-                )}`}
+                hint={
+                  managing
+                    ? `已选 ${picked.length} / ${fileCount}`
+                    : `${fileCount} 个 · ${fmt.bytes(
+                        (sessionFiles?.files ?? []).reduce((a, f) => a + (f.size || 0), 0),
+                      )}`
+                }
+                extra={
+                  <span className="flex items-center gap-0.5">
+                    <button
+                      type="button"
+                      className="w-8 h-8 grid place-items-center rounded-lg hover:bg-[var(--color-surface-2)] disabled:opacity-50"
+                      style={{ color: "var(--color-muted)" }}
+                      onClick={() => void loadSessionFiles()}
+                      disabled={filesBusy}
+                      aria-label="刷新文件清单"
+                      title="重新读一遍这个会话目录"
+                    >
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.9"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                        style={filesBusy ? { animation: "spin 1s linear infinite" } : undefined}
+                      >
+                        <path d="M21 12a9 9 0 1 1-3-6.7" />
+                        <path d="M21 3v6h-6" />
+                      </svg>
+                    </button>
+                    {fileCount > 0 && (
+                      <button
+                        type="button"
+                        className="h-8 px-2 rounded-lg text-[12px] hover:bg-[var(--color-surface-2)]"
+                        style={{ color: managing ? "var(--color-err)" : "var(--color-accent)" }}
+                        onClick={() => {
+                          setManaging((v) => !v);
+                          setPicked([]);
+                          setBulkConfirm(false);
+                        }}
+                        title="勾选多个文件一起删"
+                      >
+                        {managing ? "完成" : "管理"}
+                      </button>
+                    )}
+                  </span>
+                }
                 maxH="78vh"
                 width={440}
               >
@@ -1821,65 +1869,26 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     : undefined
                 }
               >
-                <div className="flex min-w-0 items-center gap-2 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
-                  {/* 桌面上就是那串路径：点一下复制（收起由左边那个 chip 管） */}
+
+                {/* 路径只在桌面上露一行，点一下复制；手机上它有 0 信息量 ——
+                    要的是「有哪些文件」，路径属于排查时才看的东西。 */}
+                {sessionFiles?.work_dir && (
                   <button
                     type="button"
-                    className="mono min-w-0 flex-1 truncate text-left hover:underline max-md:hidden"
-                    title={`点一下复制完整路径\n${sessionFiles?.work_dir ?? ""}`}
+                    className="mono block w-full truncate text-left text-[11px] py-0.5 hover:underline max-md:hidden"
+                    style={{ color: "var(--color-muted)" }}
+                    title={`点一下复制完整路径\n${sessionFiles.work_dir}`}
                     onClick={() =>
-                      void copyText(sessionFiles?.work_dir ?? "").then((ok) =>
+                      void copyText(sessionFiles.work_dir).then((ok) =>
                         ok
-                          ? fb.success("已复制会话目录", sessionFiles?.work_dir ?? "")
-                          : fb.info("会话目录", sessionFiles?.work_dir ?? ""),
+                          ? fb.success("已复制会话目录", sessionFiles.work_dir)
+                          : fb.info("会话目录", sessionFiles.work_dir),
                       )
                     }
                   >
-                    {sessionFiles?.work_dir ?? "…"}
+                    {sessionFiles.work_dir}
                   </button>
-                  {/* 管理：把文件变成可勾选，用来批量删。常驻可见（不藏进 ⋯） */}
-                  {fileCount > 0 ? (
-                    <button
-                      type="button"
-                      className="ml-auto shrink-0 rounded px-1 text-[12px] hover:underline max-md:min-h-[32px] max-md:min-w-[36px]"
-                      style={{ color: managing ? "var(--color-err)" : "var(--color-accent)" }}
-                      onClick={() => {
-                        setManaging((v) => !v);
-                        setPicked([]);
-                        setBulkConfirm(false);
-                      }}
-                      title="勾选多个文件一起删"
-                    >
-                      {managing ? "退出管理" : "管理"}
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    className="inline-flex shrink-0 items-center gap-1 rounded px-1 hover:underline max-md:min-h-[32px] max-md:min-w-[32px] max-md:justify-center disabled:opacity-60"
-                    style={{ color: "var(--color-accent)" }}
-                    onClick={() => void loadSessionFiles()}
-                    disabled={filesBusy}
-                    aria-label="刷新本会话文件"
-                    title="重新读一遍这个会话目录"
-                  >
-                    <svg
-                      width="12"
-                      height="12"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                      style={filesBusy ? { animation: "spin 1s linear infinite" } : { opacity: 0.75 }}
-                    >
-                      <path d="M21 12a9 9 0 1 1-3-6.7" />
-                      <path d="M21 3v6h-6" />
-                    </svg>
-                    <span className="max-md:hidden">{filesBusy ? "读取中" : "刷新"}</span>
-                  </button>
-                </div>
+                )}
 
                 {(sessionFiles && sessionFiles.files.length > 0 ? (
                   <>
@@ -1913,7 +1922,47 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                       高度封在 40vh 并允许滚动：文件再多也不会把输入坞顶到屏幕外。 */}
                   {/* 一行一个文件，铺满宽度：胶囊流会让右侧空一大片、名字还被
                       截成一样长，扫起来得来回找。列表是文件该有的样子。 */}
-                  <div className="mt-1 flex max-h-[46vh] flex-col overflow-y-auto pb-0.5">
+                  {/* 管理态的动作条：放在列表**上面**，文件再多也不会被滚走 */}
+                  {managing && (
+                    <div className="mb-1.5 flex flex-wrap items-center gap-2 text-[12px]">
+                      {/* 「已选 N」已经在标题那一行写着，这里不重复 */}
+                      <span className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                        点文件勾选，可多选
+                      </span>
+                      <button
+                        type="button"
+                        className="btn px-2 py-0.5 text-[12px] max-md:min-h-[32px]"
+                        onClick={() => setPicked(shownFiles.map((f) => f.path))}
+                      >
+                        全选
+                      </button>
+                      <button
+                        type="button"
+                        className="btn px-2 py-0.5 text-[12px] max-md:min-h-[32px]"
+                        disabled={bulkBusy}
+                        style={{
+                          color: bulkConfirm ? "#fff" : "var(--color-err)",
+                          background: bulkConfirm ? "var(--color-err)" : "transparent",
+                          borderColor: "var(--color-err)",
+                        }}
+                        onClick={() => {
+                          if (picked.length === 0) return;
+                          if (!bulkConfirm) {
+                            setBulkConfirm(true);
+                            return;
+                          }
+                          void bulkDelete();
+                        }}
+                      >
+                        {bulkBusy
+                          ? "删除中…"
+                          : bulkConfirm
+                            ? `确认删除 ${picked.length} 个（不可撤销）`
+                            : `删除选中${picked.length ? `（${picked.length}）` : ""}`}
+                      </button>
+                    </div>
+                  )}
+                  <div className="flex max-h-[46vh] flex-col overflow-y-auto pb-0.5">
                     {shownFiles.map((f) =>
                       managing ? (
                         /* 管理态：点一下是勾选（不是打开预览）—— 这时的目的就是删 */
@@ -1973,54 +2022,6 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                       </span>
                     ) : null}
                   </div>
-                  {/* 管理态的动作条：就地出现，不占平时的位置 */}
-                  {managing && (
-                    <div className="mt-1 flex flex-wrap items-center gap-2 text-[12px]">
-                      <span style={{ color: "var(--color-muted)" }}>已选 {picked.length} 个</span>
-                      <button
-                        type="button"
-                        className="btn px-2 py-0.5 text-[12px] max-md:min-h-[32px]"
-                        onClick={() => setPicked(shownFiles.map((f) => f.path))}
-                      >
-                        全选
-                      </button>
-                      <button
-                        type="button"
-                        className="btn px-2 py-0.5 text-[12px] max-md:min-h-[32px]"
-                        disabled={bulkBusy}
-                        style={{
-                          color: bulkConfirm ? "#fff" : "var(--color-err)",
-                          background: bulkConfirm ? "var(--color-err)" : "transparent",
-                          borderColor: "var(--color-err)",
-                        }}
-                        onClick={() => {
-                          if (picked.length === 0) return;
-                          if (!bulkConfirm) {
-                            setBulkConfirm(true);
-                            return;
-                          }
-                          void bulkDelete();
-                        }}
-                      >
-                        {bulkBusy
-                          ? "删除中…"
-                          : bulkConfirm
-                            ? `确认删除 ${picked.length} 个（不可撤销）`
-                            : `删除选中${picked.length ? `（${picked.length}）` : ""}`}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn ml-auto px-2 py-0.5 text-[12px] max-md:min-h-[32px]"
-                        onClick={() => {
-                          setManaging(false);
-                          setPicked([]);
-                          setBulkConfirm(false);
-                        }}
-                      >
-                        完成
-                      </button>
-                    </div>
-                  )}
                   </>
                 ) : (
                   <div className="mt-0.5 text-[11px]" style={{ color: "var(--color-muted)" }}>
