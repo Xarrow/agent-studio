@@ -4,8 +4,22 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 import { api, fmt } from "@/lib/api";
 import type { Credential, CredentialTestResult, Provider } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
-import { Chip, DLG_BACKDROP, DLG_CARD, Empty, KV, PageHead, Row, RowDetail, RowList, Section } from "@/components/ui/kit";
-import { IconChat, IconEye, IconLink, IconPencil, IconTrash } from "@/components/ui/icons";
+import { Chip, DLG_BACKDROP, DLG_CARD, Empty, KV, PageHead, Row, RowList, Section } from "@/components/ui/kit";
+import { DetailPanel } from "@/components/ui/DetailPanel";
+import {
+  IconChat,
+  IconCheck,
+  IconChevronRight,
+  IconClock,
+  IconCopy,
+  IconEye,
+  IconKey,
+  IconLink,
+  IconPencil,
+  IconPlus,
+  IconSpark,
+  IconTrash,
+} from "@/components/ui/icons";
 import { PriceBook } from "@/components/PriceBook";
 import { Hint, HINTS } from "@/components/ui/hint";
 import { CredentialChatDialog } from "@/components/CredentialChatDialog";
@@ -295,76 +309,147 @@ export default function CredentialsPage() {
                       {c.last_test_ok === true && <Chip tone="ok">上次测试通过</Chip>}
                       {c.last_test_ok === false && <Chip tone="err">上次测试失败</Chip>}
                     </span>
+                    {/* 元信息：图标 + 短词，三个事实不再用「·」串成一句话 */}
                     <span
-                      className="mono mt-0.5 block truncate text-[12px]"
+                      className="mt-1 flex items-center gap-3 text-[11.5px]"
                       style={{ color: "var(--color-muted)" }}
                     >
-                      {revealed[c.id] ? revealed[c.id] : c.masked_key} ·{" "}
-                      {c.base_url || "默认端点"} · 默认模型 {c.default_model || "未设置"}
+                      <span className="inline-flex min-w-0 items-center gap-1" title="密钥（掩码）">
+                        <IconKey size={12} className="shrink-0" />
+                        <span className="truncate mono">{revealed[c.id] || c.masked_key}</span>
+                      </span>
+                      <span className="inline-flex min-w-0 items-center gap-1" title="请求端点">
+                        <IconLink size={12} className="shrink-0" />
+                        <span className="truncate mono">{c.base_url || "默认端点"}</span>
+                      </span>
+                      <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap" title="默认模型">
+                        <IconSpark size={12} />
+                        {c.default_model || "未指定"}
+                      </span>
                     </span>
                   </span>
-                  <span className="shrink-0 text-[12px]" style={{ color: "var(--color-muted)" }}>
-                    {open ? "▾" : "▸"}
+                  <span className="shrink-0" style={{ color: "var(--color-muted)" }}>
+                    <IconChevronRight size={16} />
                   </span>
                 </Row>
 
                 {open && (
-                  <RowDetail>
-                    <div className="grid gap-1.5 md:grid-cols-2">
-                      <KV k="端点">
-                        <span className="mono">{c.base_url || "默认端点"}</span>
-                      </KV>
-                      <KV k="默认模型">
-                        {c.default_model ? (
-                          <span className="mono">{c.default_model}</span>
-                        ) : (
-                          <span style={{ color: "var(--color-muted)" }}>
-                            未设置（用服务商推荐的第一个）
-                          </span>
-                        )}
-                      </KV>
-                      {c.created_at > 0 ? (
-                        <KV k="添加时间">{fmt.relative(c.created_at)}</KV>
-                      ) : null}
-                      {c.last_test_at ? <KV k="上次测试">{fmt.relative(c.last_test_at)}</KV> : null}
+                  <DetailPanel
+                    title={c.name}
+                    icon={<IconKey size={22} />}
+                    subtitle={
+                      <>
+                        <Chip tone="muted">{c.provider_display}</Chip>
+                        {c.last_test_ok === true && <Chip tone="ok">上次通过</Chip>}
+                        {c.last_test_ok === false && <Chip tone="err">上次失败</Chip>}
+                      </>
+                    }
+                    facts={[
+                      { icon: <IconLink size={13} />, text: c.base_url || "默认端点", title: "请求打到哪个地址" },
+                      { icon: <IconSpark size={13} />, text: c.default_model || "未指定模型", title: "默认模型" },
+                      ...(c.last_test_at
+                        ? [{ icon: <IconClock size={13} />, text: `测于 ${fmt.relative(c.last_test_at)}`, title: "上次测试时间" }]
+                        : []),
+                      ...(c.created_at > 0
+                        ? [{ icon: <IconPlus size={13} />, text: `添加于 ${fmt.relative(c.created_at)}`, title: "添加时间" }]
+                        : []),
+                    ]}
+                    actions={
+                      <>
+                        <button type="button" className="btn btn-primary btn-sm" onClick={() => setEditing(c)}>
+                          <IconPencil size={14} />
+                          编辑
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          disabled={testing === c.id}
+                          title="拿这条钥匙真发一个请求，看通不通"
+                          onClick={() => void test(c.id)}
+                        >
+                          <IconLink size={14} />
+                          {testing === c.id ? "测试中…" : "测试连接"}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          title="直接跟模型聊，不经过助手"
+                          onClick={() => setChatting(c)}
+                        >
+                          <IconChat size={14} />
+                          对话测试
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm ml-auto"
+                          style={{ color: "var(--color-err)" }}
+                          onClick={() => void remove(c)}
+                        >
+                          <IconTrash size={14} />
+                          删除
+                        </button>
+                      </>
+                    }
+                    onClose={() => setExpanded(null)}
+                  >
+                    {/* 密钥本体：默认掩码，点了才显示 —— 明文只在这个区块里出现 */}
+                    <div
+                      className="rounded-[10px] border p-3"
+                      style={{ borderColor: "var(--color-border)", background: "var(--color-bg)" }}
+                    >
+                      <div className="mb-1.5 flex items-center justify-between">
+                        <span className="inline-flex items-center gap-1.5 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                          <IconKey size={12} />
+                          API Key
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11.5px] hover:bg-[var(--color-surface-2)]"
+                            style={{ color: "var(--color-accent)" }}
+                            onClick={() => (revealed[c.id] ? hide(c.id) : void reveal(c))}
+                          >
+                            <IconEye size={12} />
+                            {revealed[c.id] ? "隐藏" : "显示"}
+                          </button>
+                          {revealed[c.id] ? (
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11.5px] hover:bg-[var(--color-surface-2)]"
+                              style={{ color: "var(--color-accent)" }}
+                              onClick={() => void copyKey(c.id)}
+                            >
+                              <IconCopy size={12} />
+                              复制
+                            </button>
+                          ) : null}
+                        </span>
+                      </div>
+                      <div className="mono break-all text-[12.5px]">
+                        {revealed[c.id] || c.masked_key}
+                      </div>
                     </div>
 
-                    {revealed[c.id] ? (
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <span className="mono break-all text-[12px]">{revealed[c.id]}</span>
-                        <button
-                          type="button"
-                          className="btn text-[12px] px-2 py-1"
-                          onClick={() => void copyKey(c.id)}
-                        >
-                          复制
-                        </button>
-                        <button
-                          type="button"
-                          className="btn text-[12px] px-2 py-1"
-                          onClick={() => hide(c.id)}
-                        >
-                          隐藏
-                        </button>
-                      </div>
-                    ) : null}
-
+                    {/* 测试结果：成功给绿的框 + 延迟 + 可用模型；失败给红的框 + 原始错误 */}
                     {r ? (
                       <div
-                        className="mt-2.5 rounded-[8px] border p-2.5 text-[12px]"
+                        className="mt-3 rounded-[10px] border p-3 text-[12.5px]"
                         style={{ borderColor: r.ok ? "var(--color-ok)" : "var(--color-err)" }}
                       >
                         {r.ok ? (
                           <>
-                            <div style={{ color: "var(--color-ok)" }}>✓ 连接正常</div>
-                            <div
-                              className="mt-0.5 text-[12px]"
-                              style={{ color: "var(--color-muted)" }}
-                            >
-                              延迟 {fmt.ms(r.latency_ms)} · 可用模型 {r.models.length} 个
+                            <div className="inline-flex items-center gap-1.5" style={{ color: "var(--color-ok)" }}>
+                              <IconCheck size={14} />
+                              连接正常
+                            </div>
+                            <div className="mt-1 inline-flex items-center gap-1.5 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                              <IconClock size={12} />
+                              延迟 {fmt.ms(r.latency_ms)}
+                              <span>·</span>
+                              可用模型 {r.models.length} 个
                             </div>
                             {r.models.length > 0 ? (
-                              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                              <div className="mt-2 flex flex-wrap gap-1.5">
                                 {r.models.slice(0, 12).map((m) => (
                                   <Chip key={m} tone="muted">
                                     {m.trim()}
@@ -374,18 +459,21 @@ export default function CredentialsPage() {
                             ) : null}
                           </>
                         ) : (
-                          <div style={{ color: "var(--color-err)" }}>
-                            ✗ {r.error}
-                            {r.latency_ms ? ` （${fmt.ms(r.latency_ms)}）` : ""}
+                          <div className="inline-flex items-start gap-1.5" style={{ color: "var(--color-err)" }}>
+                            <IconTrash size={14} className="mt-0.5 shrink-0" />
+                            <span>
+                              {r.error}
+                              {r.latency_ms ? ` （${fmt.ms(r.latency_ms)}）` : ""}
+                            </span>
                           </div>
                         )}
                       </div>
                     ) : (
-                      <div className="mt-2.5 text-[12px]" style={{ color: "var(--color-muted)" }}>
-                        点右侧「测试连接」验一下能不能通 —— 延迟与可用模型会显示在这里。
+                      <div className="mt-3 text-[12px]" style={{ color: "var(--color-muted)" }}>
+                        点上面的「测试连接」验一下能不能通 —— 延迟与可用模型会显示在这里。
                       </div>
                     )}
-                  </RowDetail>
+                  </DetailPanel>
                 )}
               </Fragment>
             );

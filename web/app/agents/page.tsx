@@ -13,8 +13,20 @@ import type {
   Skill,
   Tool,
 } from "@/lib/types";
-import { Chip, DLG_BACKDROP, DLG_CARD, Empty, KV, PageHead, Row, RowDetail, RowList } from "@/components/ui/kit";
-import { IconCopy, IconPencil, IconTrash } from "@/components/ui/icons";
+import { Chip, DLG_BACKDROP, DLG_CARD, Empty, KV, PageHead, Row, RowList } from "@/components/ui/kit";
+import { DetailPanel } from "@/components/ui/DetailPanel";
+import {
+  IconChevronRight,
+  IconCopy,
+  IconGitBranch,
+  IconPencil,
+  IconPin,
+  IconPlay,
+  IconSkill,
+  IconSpark,
+  IconTrash,
+  IconWrench,
+} from "@/components/ui/icons";
 import { useFeedback } from "@/components/ui/feedback";
 import { Hint, HINTS } from "@/components/ui/hint";
 import { ModelPicker } from "@/components/ModelPicker";
@@ -338,61 +350,143 @@ export default function AgentsPage() {
                         )}
                       </span>
                     )}
-                    {/* 一行摘要：认得出来是谁 + 配了什么 + 最近跑得怎么样。
-                        24 位 id 是开发者噪声，卡片上不放（详情页仍完整保留）。 */}
+                    {/* 元信息：图标 + 短词。原来是一整句
+                        「deepseek-flash · 工具 25 · Skills 8 · 3 分钟前 ✓」——
+                        手机上一换行就变成"一条一条竖着堆"。 */}
                     <span
-                      className="mt-0.5 block truncate text-[12px]"
+                      className="mt-1 flex items-center gap-3 text-[11.5px]"
                       style={{ color: "var(--color-muted)" }}
                     >
-                      <span className="mono">{a.definition?.model?.name || "未指定模型"}</span>
-                      {toolNames.length > 0 || skillNames.length > 0 ? (
-                        <> · 工具 {toolNames.length}{skillNames.length > 0 ? ` · Skills ${skillNames.length}` : ""}</>
-                      ) : (
-                        <> · 纯对话</>
-                      )}
-                      {/* 血缘只留有信息量的一侧：派生自谁 或 派生出几个，别两项都占位置 */}
-                      {a.parent_id ? ` · ⇣ ${agents.find((x) => x.id === a.parent_id)?.name ?? "（已删）"}` : ""}
-                      {childrenOf(a.id).length > 0 ? ` · ⇡ ${childrenOf(a.id).length}` : ""}
+                      <span className="inline-flex min-w-0 items-center gap-1" title="模型">
+                        <IconSpark size={12} className="shrink-0" />
+                        <span className="truncate mono">{a.definition?.model?.name || "未指定模型"}</span>
+                      </span>
+                      <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap" title="挂了多少工具">
+                        <IconWrench size={12} />
+                        {toolNames.length}
+                      </span>
+                      <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap" title="挂了多少 Skill">
+                        <IconSkill size={12} />
+                        {skillNames.length}
+                      </span>
                       {last ? (
-                        <>
-                          {" · "}
-                          {fmt.relative(last.at)}{" "}
-                          <span
-                            style={{
-                              color:
-                                last.status === "ok"
-                                  ? "var(--color-ok)"
-                                  : last.status === "error"
-                                    ? "var(--color-err)"
-                                    : "var(--color-accent)",
-                            }}
-                          >
-                            {last.status === "ok" ? "✓" : last.status === "error" ? "✕" : "◌"}
-                          </span>
-                        </>
+                        <span
+                          className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap"
+                          title={last.status === "ok" ? "上次跑成功了" : last.status === "error" ? "上次跑失败了" : "上次还没跑完"}
+                          style={{
+                            color:
+                              last.status === "ok"
+                                ? "var(--color-ok)"
+                                : last.status === "error"
+                                  ? "var(--color-err)"
+                                  : "var(--color-accent)",
+                          }}
+                        >
+                          <IconPlay size={12} />
+                          {fmt.relative(last.at)}
+                        </span>
                       ) : (
-                        <> · 还没跑过</>
+                        <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap">
+                          <IconPlay size={12} />
+                          没跑过
+                        </span>
                       )}
                     </span>
                   </span>
                   <Chip tone="muted">{runtime}</Chip>
-                  <span className="shrink-0 text-[12px]" style={{ color: "var(--color-muted)" }}>
-                    {open ? "▾" : "▸"}
+                  <span className="shrink-0" style={{ color: "var(--color-muted)" }}>
+                    <IconChevronRight size={16} />
                   </span>
                 </Row>
 
                 {open && (
-                  <RowDetail>
+                  <DetailPanel
+                    title={a.name}
+                    icon={<IconSpark size={22} />}
+                    subtitle={
+                      <>
+                        {a.definition?.role === "orchestrator" && (
+                          <Chip tone="accent" title="编排者：分析 → 管上下文 → 验证 → 归纳">
+                            编排者
+                          </Chip>
+                        )}
+                        <Chip tone="muted">{runtime}</Chip>
+                        <span className="mono">{a.definition?.model?.name || "未指定模型"}</span>
+                        <span>v{a.version}</span>
+                      </>
+                    }
+                    facts={[
+                      { icon: <IconWrench size={13} />, text: `工具 ${toolNames.length}`, title: "挂了多少工具" },
+                      { icon: <IconSkill size={13} />, text: `Skills ${skillNames.length}`, title: "挂了多少 Skill" },
+                      last
+                        ? { icon: <IconPlay size={13} />, text: `${fmt.relative(last.at)} · ${last.duration_ms != null ? fmt.ms(last.duration_ms) : "运行中"}`, title: last.title }
+                        : { icon: <IconPlay size={13} />, text: "还没运行过" },
+                      { icon: <IconPin size={13} />, text: a.slug, title: "唯一标识（脚本里用它）" },
+                    ]}
+                    actions={
+                      <>
+                        <Link
+                          href={`/agents/detail?id=${a.id}`}
+                          className="btn btn-primary btn-sm"
+                          title="改提示词、模型、工具、权限"
+                        >
+                          <IconPencil size={14} />
+                          设置 / 定义
+                        </Link>
+                        <Link href={`/exec?agent=${a.id}`} className="btn btn-sm" title="直接拿它跑一次">
+                          <IconPlay size={14} />
+                          跑一次
+                        </Link>
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          title="按这份配置再建一个"
+                          disabled={busy === a.id}
+                          onClick={() => void duplicate(a.id)}
+                        >
+                          <IconCopy size={14} />
+                          复制一份
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          title="改名字"
+                          disabled={busy === a.id}
+                          onClick={() => {
+                            setRenaming(a.id);
+                            setNameDraft(a.name);
+                          }}
+                        >
+                          <IconPencil size={14} />
+                          改名
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm ml-auto"
+                          style={{ color: "var(--color-err)" }}
+                          title="删除这个助手（会再确认一次）"
+                          disabled={busy === a.id}
+                          onClick={() => void remove(a)}
+                        >
+                          <IconTrash size={14} />
+                          删除
+                        </button>
+                      </>
+                    }
+                    onClose={() => toggleRow(a.id)}
+                  >
                     {a.description ? (
-                      <div className="mb-2 text-[12px] leading-[1.65]">{a.description}</div>
+                      <div className="mb-3 text-[13px] leading-relaxed">{a.description}</div>
                     ) : null}
+
                     {/* 血缘：派生自谁 / 派生出哪些 —— 有血缘才显示，没有就不占一行 */}
                     {(a.parent_id || childrenOf(a.id).length > 0) && (
-                      <div className="mb-2 rounded-[8px] px-2.5 py-2" style={{ background: "var(--color-surface-2)" }}>
-                        <div className="mb-1 text-[12px]" style={{ color: "var(--color-muted)" }}>
+                      <div className="mb-3 rounded-[10px] px-3 py-2.5" style={{ background: "var(--color-surface-2)" }}>
+                        <div className="mb-1.5 inline-flex items-center gap-1.5 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                          <IconGitBranch size={12} />
                           fork 血缘（助手之间的派生关系）
                         </div>
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px]">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px]">
                           {a.parent_id && (
                             <>
                               <span style={{ color: "var(--color-muted)" }}>派生自</span>
@@ -473,15 +567,7 @@ export default function AgentsPage() {
                         )}
                       </KV>
                     </div>
-                    <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-                      <Link href={`/exec?agent=${a.id}`} className="btn text-[12px]">
-                        用这个助手跑一次 →
-                      </Link>
-                      <span className="mono text-[11.5px] text-[var(--color-muted)]">
-                        {a.slug} · v{a.version}
-                      </span>
-                    </div>
-                  </RowDetail>
+                  </DetailPanel>
                 )}
               </Fragment>
             );

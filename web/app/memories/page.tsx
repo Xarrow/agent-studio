@@ -33,7 +33,6 @@ import {
   KV,
   PageHead,
   Row,
-  RowDetail,
   RowList,
   Segmented,
   SelectBox,
@@ -45,12 +44,34 @@ import { MemoryCopyDialog } from "@/components/MemoryCopyDialog";
 import { ExternalMemoryCard } from "@/components/ExternalMemoryCard";
 import { isImeEvent } from "@/lib/ime";
 import { RunIdLink } from "@/components/RunIdLink";
+import { DetailPanel } from "@/components/ui/DetailPanel";
+import {
+  IconCheck,
+  IconChevronRight,
+  IconClock,
+  IconCopy,
+  IconFile,
+  IconPencil,
+  IconPin,
+  IconRefresh,
+  IconSpark,
+  IconTrash,
+  IconUsers,
+} from "@/components/ui/icons";
 
 const KIND_LABEL: Record<string, string> = {
   fact: "事实",
   preference: "偏好",
   summary: "结论",
   instruction: "要求",
+};
+
+/** 每类记忆一个图标：列表和详情都靠它认，不用读"事实/偏好/结论/要求"四个词 */
+const MEM_ICON: Record<string, (p: { size?: number; className?: string }) => React.ReactElement> = {
+  fact: IconFile,
+  preference: IconSpark,
+  summary: IconCheck,
+  instruction: IconPin,
 };
 
 const KIND_COLOR: Record<string, string> = {
@@ -556,48 +577,128 @@ export default function MemoriesPage() {
                     title="选中这条（可批量启停 / 删除）"
                   />
 
-                  <span className="min-w-0 flex-1 basis-[260px]">
-                    <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="min-w-0 flex-1">
+                    <span className="flex min-w-0 items-center gap-1.5">
                       <KindTag kind={m.kind} />
                       {m.layer === "user" ? <Chip tone="muted">关于用户</Chip> : null}
                       {m.pinned ? <Chip tone="accent">常驻</Chip> : null}
                       {cand ? <Chip tone="warn">待确认</Chip> : null}
                       {arch ? <Chip tone="muted">已停用</Chip> : null}
-                      <span
-                        className="line-clamp-2 min-w-0 flex-1 text-[13.5px] leading-snug"
-                        style={{ color: arch ? "var(--color-muted)" : undefined }}
-                        title={m.content}
-                      >
-                        {m.content}
-                      </span>
                     </span>
+                    {/* 内容才是这一行要给人看的东西 —— 给它两行，其余一行足够 */}
                     <span
-                      className="mt-0.5 block text-[12px]"
+                      className="mt-0.5 line-clamp-2 min-w-0 text-[13.5px] leading-snug"
+                      style={{ color: arch ? "var(--color-muted)" : undefined }}
+                      title={m.content}
+                    >
+                      {m.content}
+                    </span>
+                    {/* 元信息：图标 + 短词。原来是一整句「所有助手共用 · 自动提炼 · 用过 3 次 · 4 分钟前」，
+                        手机上必换行，每个对象要多占一整行 —— 就是"一条一条竖着堆"的来源。 */}
+                    <span
+                      className="mt-1 flex items-center gap-3 text-[11.5px]"
                       style={{ color: "var(--color-muted)" }}
                     >
-                      {m.scope === "global" ? "所有助手共用" : (m.agent_name ?? "（绑定助手已失效）")}
-                      {" · "}
-                      {m.source === "auto" ? "自动提炼" : m.source === "agent" ? "助手记的" : "手动录入"}
-                      {" · 用过 "}
-                      {m.hits} 次
-                      {" · "}
-                      {fmt.relative(m.updated_at)}
+                      <span className="inline-flex min-w-0 items-center gap-1" title={m.scope === "global" ? "所有助手共用" : `只给 ${m.agent_name ?? "已失效的助手"} 用`}>
+                        {m.scope === "global" ? <IconUsers size={12} className="shrink-0" /> : <IconSpark size={12} className="shrink-0" />}
+                        <span className="truncate">{m.scope === "global" ? "共用" : (m.agent_name ?? "助手已失效")}</span>
+                      </span>
+                      <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap" title="被召回进上下文的次数">
+                        <IconRefresh size={12} />
+                        {m.hits}
+                      </span>
+                      <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap" title="最后修改">
+                        <IconClock size={12} />
+                        {fmt.relative(m.updated_at)}
+                      </span>
                     </span>
                   </span>
 
                   <span className="shrink-0 text-[12px]" style={{ color: "var(--color-muted)" }}>
-                    {open ? "▾" : "▸"}
+                    <IconChevronRight size={16} />
                   </span>
                 </Row>
 
                 {open && (
-                  <RowDetail>
-                    <div className="whitespace-pre-wrap break-words text-[13px] leading-relaxed">
+                  <DetailPanel
+                    title={m.content.length > 44 ? `${m.content.slice(0, 44)}…` : m.content}
+                    icon={(() => {
+                      const Ico = MEM_ICON[m.kind] ?? IconFile;
+                      return <Ico size={22} />;
+                    })()}
+                    iconBg={`color-mix(in srgb, ${KIND_COLOR[m.kind] ?? "var(--color-muted)"} 14%, transparent)`}
+                    iconFg={KIND_COLOR[m.kind] ?? "var(--color-muted)"}
+                    subtitle={
+                      <>
+                        <KindTag kind={m.kind} />
+                        {m.layer === "user" ? <Chip tone="muted">关于用户</Chip> : null}
+                        {m.pinned ? <Chip tone="accent">常驻</Chip> : null}
+                        {cand ? <Chip tone="warn">待确认</Chip> : null}
+                        {arch ? <Chip tone="muted">已停用</Chip> : null}
+                        <span>{m.scope === "global" ? "所有助手共用" : (m.agent_name ?? "助手已失效")}</span>
+                      </>
+                    }
+                    facts={[
+                      { icon: <IconRefresh size={13} />, text: `用过 ${m.hits} 次`, title: "被召回进上下文的次数" },
+                      { icon: <IconClock size={13} />, text: m.last_hit_at ? `最后 ${fmt.relative(m.last_hit_at)}` : "还没用过", title: "最后一次被召回" },
+                      { icon: <IconCheck size={13} />, text: `重要度 ${m.importance}`, title: "召回时的权重" },
+                      { icon: <IconPencil size={13} />, text: fmt.relative(m.updated_at), title: "最后修改" },
+                    ]}
+                    actions={
+                      <>
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          title={m.pinned ? "不再每轮带上（回到按相关度召回）" : "每轮都完整带上（用户是谁、环境事实这类，别靠召回碰运气）"}
+                          onClick={() => void togglePin(m)}
+                        >
+                          <IconPin size={14} />
+                          {m.pinned ? "取消常驻" : "设为常驻"}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          title={m.layer === "user" ? "改成助手自己的笔记（环境、做法、结论）" : "改成「关于用户」（身份、偏好、约定）"}
+                          onClick={() => void toggleLayer(m)}
+                        >
+                          <IconSpark size={14} />
+                          {m.layer === "user" ? "改助手笔记" : "改关于用户"}
+                        </button>
+                        <button type="button" className="btn btn-sm" onClick={() => void edit(m)}>
+                          <IconPencil size={14} />
+                          编辑
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          title="复制一份并绑定到别的助手（原件不动）"
+                          onClick={() => setCopying(m)}
+                        >
+                          <IconCopy size={14} />
+                          复制到助手
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm ml-auto"
+                          style={{ color: "var(--color-err)" }}
+                          onClick={() => void remove(m)}
+                        >
+                          <IconTrash size={14} />
+                          删除
+                        </button>
+                      </>
+                    }
+                    onClose={() => setOpenId("")}
+                  >
+                    {/* 正文：记忆的全部内容，不改一个字 */}
+                    <div
+                      className="whitespace-pre-wrap break-words rounded-[10px] border p-4 text-[13.5px] leading-relaxed"
+                      style={{ borderColor: "var(--color-border)", background: "var(--color-bg)" }}
+                    >
                       {m.content}
                     </div>
 
                     <div className="mt-3 grid gap-1.5 md:grid-cols-2">
-                      <KV k="类型">{KIND_LABEL[m.kind] ?? m.kind}</KV>
                       <KV k="归谁">
                         {m.scope === "global" ? "所有助手共用" : (m.agent_name ?? "（绑定助手已失效）")}
                       </KV>
@@ -621,28 +722,14 @@ export default function MemoriesPage() {
                           </>
                         ) : null}
                       </KV>
-                      <KV k="被使用">
-                        {m.hits} 次
-                        <span style={{ color: "var(--color-muted)" }}>
-                          {m.last_hit_at ? ` · 最后 ${fmt.relative(m.last_hit_at)}` : " · 还没用过"}
-                        </span>
-                      </KV>
-                      <KV k="重要度">{m.importance}</KV>
-                      <KV k="每轮都带上">
-                        {m.pinned ? "是（常驻）" : "否（按相关度召回）"}
-                      </KV>
+                      <KV k="每轮都带上">{m.pinned ? "是（常驻）" : "否（按相关度召回）"}</KV>
                       <KV k="属于">
                         {m.layer === "user" ? "关于用户（身份/偏好/约定）" : "助手笔记（环境/做法/结论）"}
                       </KV>
-                      <KV k="有效期">
-                        {m.ttl_s ? `${Math.round(m.ttl_s / 86400)} 天` : "长期有效"}
-                      </KV>
-                      <KV k="更新">
-                        {fmt.time(m.updated_at)}
-                        <span style={{ color: "var(--color-muted)" }}>
-                          {" "}
-                          · 创建 {fmt.relative(m.created_at)}
-                        </span>
+                      <KV k="有效期">{m.ttl_s ? `${Math.round(m.ttl_s / 86400)} 天` : "长期有效"}</KV>
+                      <KV k="创建">
+                        {fmt.time(m.created_at)}
+                        <span style={{ color: "var(--color-muted)" }}> · {fmt.relative(m.created_at)}</span>
                       </KV>
                       <KV k="编号">
                         <span className="mono text-[12px]" style={{ color: "var(--color-muted)" }}>
@@ -650,50 +737,7 @@ export default function MemoriesPage() {
                         </span>
                       </KV>
                     </div>
-
-                    {/* 次级动作放在展开区：常用动作（确认/停用/删除）留在行上常驻 */}
-                    <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                      <button
-                        type="button"
-                        className="btn min-h-[36px] px-2.5 text-[12px]"
-                        title={
-                          m.pinned
-                            ? "不再每轮带上（回到按相关度召回）"
-                            : "每轮都完整带上（用户是谁、环境事实这类，别靠召回碰运气）"
-                        }
-                        onClick={() => void togglePin(m)}
-                      >
-                        {m.pinned ? "取消常驻" : "设为常驻"}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn min-h-[36px] px-2.5 text-[12px]"
-                        title={
-                          m.layer === "user"
-                            ? "改成助手自己的笔记（环境、做法、结论）"
-                            : "改成「关于用户」（身份、偏好、约定）"
-                        }
-                        onClick={() => void toggleLayer(m)}
-                      >
-                        {m.layer === "user" ? "改成助手笔记" : "改成关于用户"}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn min-h-[36px] px-2.5 text-[12px]"
-                        onClick={() => void edit(m)}
-                      >
-                        编辑内容
-                      </button>
-                      <button
-                        type="button"
-                        className="btn min-h-[36px] px-2.5 text-[12px]"
-                        title="复制一份并绑定到别的助手（原件不动）"
-                        onClick={() => setCopying(m)}
-                      >
-                        复制到别的助手…
-                      </button>
-                    </div>
-                  </RowDetail>
+                  </DetailPanel>
                 )}
               </div>
             );

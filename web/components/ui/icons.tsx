@@ -331,3 +331,36 @@ export function IconPlus({ size = 16, className }: P) {
     </svg>
   );
 }
+
+/** 多个助手 / 共用 */
+export function IconUsers({ size = 16, className }: P) {
+  return (
+    <svg {...base(size, className)}>
+      <path d="M16 19v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 17.5V19" />
+      <circle cx="10" cy="7.5" r="3" />
+      <path d="M20 19v-1.5a3.5 3.5 0 0 0-2.6-3.4M15.5 4.6a3 3 0 0 1 0 5.8" />
+    </svg>
+  );
+}
+
+/** 分叉 / 血缘 */
+export function IconGitBranch({ size = 16, className }: P) {
+  return (
+    <svg {...base(size, className)}>
+      <circle cx="6" cy="5" r="2.5" />
+      <circle cx="6" cy="19" r="2.5" />
+      <circle cx="18" cy="12" r="2.5" />
+      <path d="M6 7.5v9M8.5 12h7" />
+    </svg>
+  );
+}
+
+/** 密钥 */
+export function IconKey({ size = 16, className }: P) {
+  return (
+    <svg {...base(size, className)}>
+      <circle cx="8" cy="15" r="4" />
+      <path d="m10.8 12.2 8.2-8.2M17 6l2 2M14 9l2 2" />
+    </svg>
+  );
+}

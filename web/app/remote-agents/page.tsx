@@ -24,6 +24,16 @@ import type {
   RemoteAgentParsed,
   RemoteAgentRecord,
 } from "@/lib/types";
+import { DetailPanel } from "@/components/ui/DetailPanel";
+import {
+  IconClock,
+  IconLink,
+  IconPlay,
+  IconPlug,
+  IconRefresh,
+  IconSkill,
+  IconTrash,
+} from "@/components/ui/icons";
 import { useFeedback } from "@/components/ui/feedback";
 import {
   Chip,
@@ -34,7 +44,6 @@ import {
   KV,
   PageHead,
   Row,
-  RowDetail,
   RowList,
   Section,
   Segmented,
@@ -397,28 +406,113 @@ export default function RemoteAgentsPage() {
                       </>
                     }
                   >
-                    <span className="truncate text-[13px] font-medium">{r.name}</span>
-                    <StatusChip r={r} />
-                    <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
-                      技能 {skills.length}
-                    </span>
-                    {r.bound_agents.length ? (
-                      <Chip tone="accent">已挂 {r.bound_agents.length} 个助手</Chip>
-                    ) : (
-                      <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
-                        未挂载
+                    <span className="min-w-0 flex-1">
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <span className="truncate text-[13.5px] font-medium">{r.name}</span>
+                        <StatusChip r={r} />
+                        {r.bound_agents.length ? (
+                          <Chip tone="accent">已挂 {r.bound_agents.length}</Chip>
+                        ) : null}
                       </span>
-                    )}
-                    <span
-                      className="mono hidden truncate text-[12px] sm:inline"
-                      style={{ color: "var(--color-muted)" }}
-                    >
-                      {(() => { try { return new URL(r.url).host; } catch { return r.url; } })()}
+                      {/* 元信息：图标 + 短词（原来四个 span 平铺，窄屏一换行就竖着堆） */}
+                      <span
+                        className="mt-1 flex items-center gap-3 text-[11.5px]"
+                        style={{ color: "var(--color-muted)" }}
+                      >
+                        <span className="inline-flex min-w-0 items-center gap-1" title={r.url}>
+                          <IconLink size={12} className="shrink-0" />
+                          <span className="truncate mono">
+                            {(() => { try { return new URL(r.url).host; } catch { return r.url; } })()}
+                          </span>
+                        </span>
+                        <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap" title="它声明的技能数">
+                          <IconSkill size={12} />
+                          {skills.length}
+                        </span>
+                        <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap" title="探活间隔">
+                          <IconRefresh size={12} />
+                          {r.health_interval_s > 0 ? `${Math.round(r.health_interval_s / 60) || 1} 分` : "手动"}
+                        </span>
+                      </span>
                     </span>
                   </Row>
 
                   {expanded ? (
-                    <RowDetail>
+                    <DetailPanel
+                      title={r.name}
+                      icon={<IconPlug size={22} />}
+                      subtitle={
+                        <>
+                          <StatusChip r={r} />
+                          {r.bound_agents.length ? (
+                            <Chip tone="accent">已挂 {r.bound_agents.length} 个助手</Chip>
+                          ) : (
+                            <span>未挂载</span>
+                          )}
+                        </>
+                      }
+                      facts={[
+                        {
+                          icon: <IconLink size={13} />,
+                          text: (() => { try { return new URL(r.url).host; } catch { return r.url; } })(),
+                          title: r.url,
+                        },
+                        { icon: <IconSkill size={13} />, text: `${skills.length} 个技能`, title: "它声明的技能" },
+                        {
+                          icon: <IconClock size={13} />,
+                          text: r.health_interval_s > 0
+                            ? `每 ${r.health_interval_s >= 60 ? `${Math.round(r.health_interval_s / 60)} 分钟` : `${r.health_interval_s} 秒`}查`
+                            : "不自动查",
+                          title: "探活间隔",
+                        },
+                        r.last_checked_at
+                          ? { icon: <IconRefresh size={13} />, text: fmt.relative(r.last_checked_at), title: "上次检查" }
+                          : { icon: <IconRefresh size={13} />, text: "还没查过", title: "还没检查过" },
+                      ]}
+                      actions={
+                        <>
+                          <button
+                            className="btn btn-primary btn-sm"
+                            disabled={!r.enabled || busy === `test:${r.id}`}
+                            onClick={() => void onTest(r)}
+                          >
+                            <IconPlay size={14} />
+                            {busy === `test:${r.id}` ? "调用中…" : "测试调用"}
+                          </button>
+                          <button
+                            className="btn btn-sm"
+                            disabled={busy === `refresh:${r.id}`}
+                            onClick={() =>
+                              void run(`refresh:${r.id}`, () => api.refreshRemoteAgent(r.id), "已重新解析")
+                            }
+                          >
+                            <IconRefresh size={14} />
+                            {busy === `refresh:${r.id}` ? "解析中…" : "重新解析"}
+                          </button>
+                          <button
+                            className="btn btn-sm"
+                            disabled={busy === `toggle:${r.id}`}
+                            onClick={() =>
+                              void run(`toggle:${r.id}`, () => api.patchRemoteAgent(r.id, { enabled: !r.enabled }),
+                                r.enabled ? "已停用（助手不再能调它）" : "已启用")
+                            }
+                          >
+                            <IconPlug size={14} />
+                            {r.enabled ? "停用" : "启用"}
+                          </button>
+                          <button
+                            className="btn btn-sm ml-auto"
+                            style={{ color: "var(--color-err)" }}
+                            title="删除这个远程 agent（会再确认一次）"
+                            onClick={() => void onDelete(r)}
+                          >
+                            <IconTrash size={14} />
+                            删除
+                          </button>
+                        </>
+                      }
+                      onClose={() => setOpen(null)}
+                    >
                       <div className="flex flex-col gap-3">
                         <div className="flex flex-col gap-1">
                           <KV k="地址">
@@ -512,7 +606,7 @@ export default function RemoteAgentsPage() {
 
                         <RecordsTabs remoteId={r.id} name={r.name} />
                       </div>
-                    </RowDetail>
+                    </DetailPanel>
                   ) : null}
                 </Fragment>
               );
