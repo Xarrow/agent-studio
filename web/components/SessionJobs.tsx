@@ -966,8 +966,10 @@ export function JobButton({ onClick }: { onClick: () => void }) {
       type="button"
       onClick={onClick}
       title="让这个对话按时自己跑：每天/每周到点自动执行"
-      className="h-9 sm:h-8 shrink-0 inline-flex items-center gap-1 rounded-xl border px-2.5 text-[12px] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
-      style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
+      /* 和同一行里的「+」「?」一个规格：无边框、灰、hover 才出底色。
+         加了边框它就成了这一行里唯一的"框"，像另一种层级的控件在抢注意力。 */
+      className="h-9 sm:h-8 shrink-0 inline-flex items-center gap-1 rounded-xl px-2 text-[12px] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
+      style={{ color: "var(--color-muted)" }}
     >
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         <circle cx="12" cy="12" r="9" />
