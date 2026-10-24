@@ -1212,7 +1212,12 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               {navView === "menu" ? (
                 /* 功能视图 —— 和桌面侧栏同一份定义、同样的完整标签 */
                 <>
-                  <div className="shrink-0 h-[calc(44px+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] flex items-center gap-1 pl-1 pr-3 border-b border-[var(--color-border)]">
+                  <div className="shrink-0 h-[calc(44px+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] flex items-center gap-1 pl-1 pr-3 border-b border-[var(--color-border)]"
+                style={{
+                  background: "color-mix(in srgb, var(--color-surface) 62%, transparent)",
+                  backdropFilter: "blur(16px) saturate(1.7)",
+                  WebkitBackdropFilter: "blur(16px) saturate(1.7)",
+                }}>
                     <button
                       data-tap
                       aria-label="返回对话列表"
@@ -1305,7 +1310,12 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               之前它上面还叠着全局的「Agent Studio」条（fixed 56 + 这条 52），
               中间大片空白，像没做完 —— 现在对话页不出全局那条，只剩这一条。 */}
           <header
-            className="h-[calc(44px+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] pl-1 pr-1.5 flex items-center gap-1 border-b border-[var(--color-border)] bg-[var(--color-surface)] lg:hidden"
+            className="h-[calc(44px+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] pl-1 pr-1.5 flex items-center gap-1 border-b border-[var(--color-border)] lg:hidden"
+            style={{
+              background: "color-mix(in srgb, var(--color-bg) 70%, transparent)",
+              backdropFilter: "blur(20px) saturate(1.8)",
+              WebkitBackdropFilter: "blur(20px) saturate(1.8)",
+            }}
           >
             <button
               data-tap
@@ -1643,11 +1653,12 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             data-dock
             className="absolute inset-x-0 bottom-0 z-20 px-3 sm:px-4 pt-1 pb-1"
             style={{
-              background: "color-mix(in srgb, var(--color-bg) 46%, transparent)",
-              backdropFilter: "blur(22px) saturate(2)",
-              WebkitBackdropFilter: "blur(22px) saturate(2)",
+              background: "color-mix(in srgb, var(--color-bg) 34%, transparent)",
+              backdropFilter: "blur(32px) saturate(2.1)",
+              WebkitBackdropFilter: "blur(32px) saturate(2.1)",
               borderTop: "1px solid color-mix(in srgb, var(--color-border) 45%, transparent)",
-              boxShadow: "0 -18px 44px -24px rgba(15,23,42,.42)",
+              boxShadow:
+                "inset 0 1px 0 rgba(255,255,255,.55), 0 -18px 44px -24px rgba(15,23,42,.42)",
             }}
           >
             {/* 上沿渐隐：消息滚进来时是淡进玻璃，而不是被一条硬边切断 */}
@@ -1656,7 +1667,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               className="pointer-events-none absolute inset-x-0 -top-10 h-10"
               style={{
                 background:
-                  "linear-gradient(to top, color-mix(in srgb, var(--color-bg) 46%, transparent), transparent)",
+                  "linear-gradient(to top, color-mix(in srgb, var(--color-bg) 34%, transparent), transparent)",
               }}
             />
             {hitl && (
@@ -2031,12 +2042,12 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     : dragging
                       ? "var(--color-accent)"
                       : "color-mix(in srgb, var(--color-text) 9%, transparent)",
-                  background: "color-mix(in srgb, var(--color-surface) 52%, transparent)",
-                  backdropFilter: "blur(14px) saturate(1.7)",
-                  WebkitBackdropFilter: "blur(14px) saturate(1.7)",
+                  background: "color-mix(in srgb, var(--color-surface) 40%, transparent)",
+                  backdropFilter: "blur(22px) saturate(1.9)",
+                  WebkitBackdropFilter: "blur(22px) saturate(1.9)",
                   boxShadow: dragging
-                    ? "0 12px 32px -8px rgba(37,99,235,.28), 0 2px 8px -2px rgba(15,23,42,.12)"
-                    : "0 10px 30px -10px rgba(15,23,42,.22), 0 2px 8px -3px rgba(15,23,42,.10)",
+                    ? "inset 0 1px 0 rgba(255,255,255,.7), 0 12px 32px -8px rgba(37,99,235,.28), 0 2px 8px -2px rgba(15,23,42,.12)"
+                    : "inset 0 1px 0 rgba(255,255,255,.7), 0 10px 30px -10px rgba(15,23,42,.22), 0 2px 8px -3px rgba(15,23,42,.10)",
                 }}
                 onDragOver={(e) => {
                   if (e.dataTransfer.types.includes("Files")) {
