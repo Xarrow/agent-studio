@@ -104,6 +104,9 @@ const ICON_PATHS: Record<string, string> = {
 
 export function Nav() {
   const pathname = usePathname();
+  /** 对话页自己有一条顶栏（菜单 + 当前助手 + 配置），全局这条不再叠一层 —— 
+      手机上两条 bar 摞着要吃掉 108px，而且中间那条大片空白看着像没做完。 */
+  const isExecPage = pathname === "/exec";
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   // 路由变化就收起抽屉
@@ -158,7 +161,8 @@ export function Nav() {
 
   return (
     <>
-      {/* ── 移动端顶栏 ─────────────────────────────────────── */}
+      {/* ── 移动端顶栏（对话页除外：那条由 ChatConsole 自己出）──────── */}
+      {!isExecPage && (
       <header className="md:hidden fixed top-0 inset-x-0 z-40 h-14 flex items-center gap-3 px-4 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
         <button
           onClick={() => setDrawerOpen(true)}
@@ -177,6 +181,7 @@ export function Nav() {
         </button>
         <span className="font-semibold text-[15px] tracking-tight">Agent Studio</span>
       </header>
+      )}
 
       {/* ── 移动端抽屉 ─────────────────────────────────────── */}
       {drawerOpen && (

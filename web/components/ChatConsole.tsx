@@ -1051,7 +1051,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
       workDir={sessionFiles?.work_dir}
       onFileChanged={() => void loadSessionFiles()}
     >
-      <div className="h-full min-h-0 flex">
+      <div className="h-full min-h-0 flex max-md:-mt-14 max-md:h-[calc(100%+3.5rem)]">
         {/* 手里这份页面过期了：一直开着的标签页不会自己换代码，提示一下，别让用户
             对着旧界面判断"改了没用" */}
         {staleBuild && (
@@ -1180,10 +1180,15 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
 
         {/* ── 对话区 ─────────────────────────────────────────── */}
         <section className="relative flex-1 flex flex-col min-h-0 min-w-0">
-          <header className="h-[52px] px-3 sm:px-4 flex items-center gap-2.5 border-b border-[var(--color-border)] bg-[var(--color-surface)] lg:hidden">
+          {/* 移动端唯一那条顶栏：菜单 + 当前助手 + 配置。
+              之前它上面还叠着全局的「Agent Studio」条（fixed 56 + 这条 52），
+              中间大片空白，像没做完 —— 现在对话页不出全局那条，只剩这一条。 */}
+          <header
+            className="h-[calc(3rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] pl-1 pr-1.5 flex items-center gap-1 border-b border-[var(--color-border)] bg-[var(--color-surface)] lg:hidden"
+          >
             <button
               data-tap
-              className="lg:hidden w-9 h-9 sm:w-9 sm:h-9 -ml-1 flex items-center justify-center rounded-lg text-[var(--color-muted)] hover:bg-[var(--color-surface-2)]"
+              className="shrink-0 w-9 h-9 flex items-center justify-center rounded-lg text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] active:bg-[var(--color-surface-2)]"
               title="对话列表"
               onClick={() => setMobileNav(true)}
             >
@@ -1197,6 +1202,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             {controlledAgentId === undefined ? (
               <AgentSwitcher
                 variant="bar"
+                className="flex-1"
                 agents={agents}
                 value={agentId}
                 onChange={setAgentId}
@@ -1228,17 +1234,25 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               </span>
             )}
 
-            <div className="ml-auto flex items-center gap-1.5 shrink-0">
+            <div className="ml-auto flex items-center gap-0.5 shrink-0">
               {/* 每条助手消息自己带「执行过程 / 完整记录」—— 顶栏再放一个
                   「本轮详情」就是同一件事的第二道门（用户反馈过：同一条
-                  信息别两处给），所以这里只留「配置」。 */}
+                  信息别两处给），所以这里只留「配置」。
+                  用齿轮而不是「配置」两个字的按钮：一个字块在同一行里比
+                  名字还重，会把这行顶成「左边身份、右边一个按钮」的割裂感；
+                  齿轮是通用认知，且图标按钮比文字按钮矮一号。 */}
               {agentId && (
                 <button
                   data-tap
-                  className="btn btn-sm"
+                  className="w-9 h-9 shrink-0 flex items-center justify-center rounded-lg text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] active:bg-[var(--color-surface-2)]"
+                  title="助手配置"
+                  aria-label="助手配置"
                   onClick={() => setConfigAgent(agentId)}
                 >
-                  配置
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="3" />
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                  </svg>
                 </button>
               )}
             </div>

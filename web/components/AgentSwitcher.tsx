@@ -146,7 +146,12 @@ export function AgentSwitcher({
             ? "grid place-items-center w-9 h-9 rounded-lg transition-colors hover:bg-[var(--color-surface-2)]"
             : side
               ? "flex-1 min-w-0 flex items-center gap-2 h-9 px-2 rounded-lg transition-colors hover:bg-[var(--color-surface-2)]"
-              : "flex items-center gap-2 h-9 max-w-[62vw] sm:max-w-[280px] pl-1 pr-2 rounded-lg transition-colors hover:bg-[var(--color-surface-2)]"
+              /* 顶栏这一档撑满中间的空白：点名字这一下的热区越大越好（手机上
+                 中间空着一大片却点不到，是这行看着"散"的原因之一）。名字超长
+                 由 min-w-0 + truncate 收住，不会把右边的箭头挤出去。 */
+              /* w-full 而不是 flex-1：这一档的外层是块级 div（不是 flex 容器），
+                 flex-1 在这儿等于没写，按钮会缩成内容宽度、把中间留成死白。 */
+              : "w-full min-w-0 flex items-center gap-2 h-9 pl-1 pr-2 rounded-lg transition-colors hover:bg-[var(--color-surface-2)]"
         }
       >
         <span
