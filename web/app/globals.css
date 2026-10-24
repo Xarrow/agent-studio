@@ -1078,3 +1078,69 @@ body {
 @media (max-width: 767px) {
   html, body { max-height: 100dvh; }
 }
+
+/* ── 对话页动效 ────────────────────────────────────────────────────
+   只做"状态变了"的提示，不做装饰：时长 140~220ms，ease-out 收尾。
+   一律不用 transition: all —— 它会把布局属性也带上，滚动时抖。
+   动效改的都是 opacity / transform，不触发布局。 */
+
+/* 新消息落位：淡入 + 抬 6px。用 :last-child 而不是给每条挂 class ——
+   流式更新时最后一条还是同一个节点，不会重放；只有真的新增才动。 */
+@keyframes msg-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+.msg-stream > *:last-child {
+  animation: msg-in 0.22s cubic-bezier(0.22, 0.8, 0.3, 1) both;
+}
+
+/* 「回到最新」浮标：从下方弹出来 */
+@keyframes fab-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.94); }
+  to   { opacity: 1; transform: none; }
+}
+.fab-in { animation: fab-in 0.16s ease-out both; }
+
+/* 底部抽屉：从下往上滑（手机上的模态就该是这个方向） */
+@keyframes sheet-up {
+  from { transform: translateY(100%); }
+  to   { transform: none; }
+}
+.sheet-up { animation: sheet-up 0.24s cubic-bezier(0.22, 0.8, 0.3, 1) both; }
+@keyframes veil-in { from { opacity: 0; } to { opacity: 1; } }
+.veil-in { animation: veil-in 0.2s ease-out both; }
+
+/* 左侧抽屉：从左边推出来 */
+@keyframes drawer-in {
+  from { transform: translateX(-100%); }
+  to   { transform: none; }
+}
+.drawer-in { animation: drawer-in 0.22s cubic-bezier(0.22, 0.8, 0.3, 1) both; }
+
+/* 输入坞拿到焦点：外圈亮起来（只动 box-shadow 和 border-color，不动尺寸） */
+.composer-focus {
+  transition: box-shadow 0.16s ease-out, border-color 0.16s ease-out, background-color 0.16s ease-out;
+}
+
+/* 按下反馈：触屏没有 hover，靠这个确认"点到了" */
+@media (hover: none) {
+  [data-tap]:active,
+  .tap-shrink:active { transform: scale(0.96); }
+  [data-tap], .tap-shrink { transition: transform 0.1s ease-out; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .msg-stream > *:last-child,
+  .fab-in, .sheet-up, .veil-in, .drawer-in { animation: none !important; }
+  [data-tap]:active, .tap-shrink:active { transform: none; }
+}
+
+/* 输入坞拿到焦点：外圈亮起（不动尺寸，只是影子），提示"现在打进去的是这里" */
+[data-composer]:focus-within {
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--color-accent) 10%, transparent),
+    0 10px 30px -10px rgba(15, 23, 42, 0.22) !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .composer-focus { transition: none; }
+}

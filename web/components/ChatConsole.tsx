@@ -355,17 +355,14 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   /* 程序自己滚的时候，不要被 onScroll 判成"用户往上翻了"。
      否则：贴底 → 中间态触发 scroll → gap 很大 → follow=false → 再也不贴底，
      表现就是每次进会话都差一截空白。 */
-  const programScroll = useRef(false);
+  /* 用时间戳而不是布尔标志：标志要靠 rAF 复位，而 MutationObserver 一密集
+     就会反复置 true，reset 永远轮不到 —— onScroll 被永久屏蔽，浮标再不出现。 */
+  const lastPinAt = useRef(0);
   const pinBottom = useCallback(() => {
     const el = boxRef.current;
     if (!el) return;
-    programScroll.current = true;
+    lastPinAt.current = Date.now();
     el.scrollTop = el.scrollHeight;
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => {
-        programScroll.current = false;
-      }),
-    );
   }, []);
   useEffect(() => {
     if (!followRef.current) return;
@@ -375,7 +372,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     pinBottom();
   }, [history, live, pinBottom]);
   const onScroll = () => {
-    if (programScroll.current) return;
+    // 自己刚贴过底（120ms 内）产生的那次 scroll 不算用户操作
+    if (Date.now() - lastPinAt.current < 120) return;
     const el = boxRef.current;
     if (!el) return;
     const near = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
@@ -1208,7 +1206,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
         {/* ── 手机会话抽屉：浮在对话之上，不吃对话高度 ─────────────── */}
         {mobileNav && (
           <div className="lg:hidden fixed inset-0 z-40 flex">
-            <div className="w-[280px] max-w-[84vw] bg-[var(--color-surface)] border-r border-[var(--color-border)] flex flex-col min-h-0">
+            <div className="veil-in absolute inset-0" style={{ background: "rgba(15,23,42,.28)" }} onClick={() => setMobileNav(false)} />
+            <div className="drawer-in relative w-[280px] max-w-[84vw] bg-[var(--color-surface)] border-r border-[var(--color-border)] flex flex-col min-h-0">
               {navView === "menu" ? (
                 /* 功能视图 —— 和桌面侧栏同一份定义、同样的完整标签 */
                 <>
@@ -1310,13 +1309,19 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               之前它上面还叠着全局的「Agent Studio」条（fixed 56 + 这条 52），
               中间大片空白，像没做完 —— 现在对话页不出全局那条，只剩这一条。 */}
           <header
-            className="h-[calc(44px+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] pl-1 pr-1.5 flex items-center gap-1 border-b border-[var(--color-border)] lg:hidden"
-            style={{
-              background: "color-mix(in srgb, var(--color-bg) 70%, transparent)",
-              backdropFilter: "blur(20px) saturate(1.8)",
-              WebkitBackdropFilter: "blur(20px) saturate(1.8)",
-            }}
+            className="relative h-[calc(44px+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] pl-1 pr-1.5 flex items-center gap-1 border-b border-[var(--color-border)] lg:hidden"
           >
+            {/* 毛玻璃单独一层（同 Nav）：挂在 header 自身会让里面的
+                position:fixed 面板相对 header 定位，助手选择面板会飞出屏幕。 */}
+            <div
+              aria-hidden="true"
+              className="absolute inset-0 -z-10"
+              style={{
+                background: "color-mix(in srgb, var(--color-bg) 70%, transparent)",
+                backdropFilter: "blur(20px) saturate(1.8)",
+                WebkitBackdropFilter: "blur(20px) saturate(1.8)",
+              }}
+            />
             <button
               data-tap
               className="shrink-0 w-9 h-9 flex items-center justify-center rounded-lg text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] active:bg-[var(--color-surface-2)]"
@@ -1518,7 +1523,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 </div>
               </div>
             ) : (
-              <div className="max-w-3xl mx-auto px-4 sm:px-5 py-6 space-y-5">
+              <div className="msg-stream max-w-3xl mx-auto px-4 sm:px-5 py-6 space-y-5">
                 {history.map((m, i) => {
                   // 平台自己的提示（心跳/系统事件）：一行居中的灰字，不占气泡
                   if (m.role === "system") {
@@ -1612,7 +1617,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 data-tap
                 onClick={jumpLatest}
                 title="回到最新"
-                className="absolute right-3 lg:right-5 inline-flex items-center gap-1.5 rounded-full pl-2.5 pr-3 h-8 text-[12px] shadow-md transition-opacity z-10"
+                className="fab-in absolute right-3 lg:right-5 inline-flex items-center gap-1.5 rounded-full pl-2.5 pr-3 h-8 text-[12px] shadow-md z-10"
                 style={{
                   // 输入坞现在是浮起来的，这个按钮要跟着抬到它上面
                   bottom: dockH + 12,
@@ -1779,7 +1784,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 chip —— 这一条不再自己占一行。 */}
             {sessionId && fileCount > 0 && openFiles && (
               <div
-                className={`panel-strip max-w-3xl mx-auto mb-1.5 px-2.5 py-1.5 max-md:px-2 ${managing ? "is-active" : ""}`}
+                className={`panel-strip fab-in max-w-3xl mx-auto mb-1.5 px-2.5 py-1.5 max-md:px-2 ${managing ? "is-active" : ""}`}
               >
                 <div className="flex min-w-0 items-center gap-2 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
                   {/* 桌面上就是那串路径：点一下复制（收起由左边那个 chip 管） */}
@@ -2035,7 +2040,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                   三条投喂路径统一走 addFiles：点附件 / 粘贴截图 / 拖文件进来。 */}
               <div
                 data-composer
-                className="rounded-[18px] border transition-colors"
+                className="composer-focus rounded-[18px] border"
                 style={{
                   borderColor: paused
                     ? "var(--color-warn)"

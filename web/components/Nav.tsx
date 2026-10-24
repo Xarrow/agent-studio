@@ -100,14 +100,20 @@ export function Nav() {
     <>
       {/* ── 移动端顶栏（对话页除外：那条由 ChatConsole 自己出）──────── */}
       {!isExecPage && (
-      <header
-        className="md:hidden fixed top-0 inset-x-0 z-40 h-[calc(44px+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] flex items-center gap-3 px-3 border-b border-[var(--color-border)]"
-        style={{
-          background: "color-mix(in srgb, var(--color-bg) 70%, transparent)",
-          backdropFilter: "blur(20px) saturate(1.8)",
-          WebkitBackdropFilter: "blur(20px) saturate(1.8)",
-        }}
-      >
+      <header className="md:hidden fixed top-0 inset-x-0 z-40 h-[calc(44px+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] flex items-center gap-3 px-3 border-b border-[var(--color-border)]">
+        {/* 毛玻璃放在独立的一层里，不挂在 header 自己身上：
+            backdrop-filter 会给「它的后代」建立新的包含块，header 里那些
+            position:fixed 的面板（助手选择、技能选择）就会改成相对 header
+            定位，直接跑到屏幕外。放进子层，对兄弟节点没有影响。 */}
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 -z-10"
+          style={{
+            background: "color-mix(in srgb, var(--color-bg) 70%, transparent)",
+            backdropFilter: "blur(20px) saturate(1.8)",
+            WebkitBackdropFilter: "blur(20px) saturate(1.8)",
+          }}
+        />
         <button
           onClick={() => setDrawerOpen(true)}
           aria-label="打开菜单"
