@@ -46,25 +46,33 @@ export function SkillPicker({
     if (open) load();
   }, [open, load]);
 
-  const mountedIds = useMemo(
+  /* 勾选要跟手：先就地改，接口回来再以服务端为准。
+     agent 来自上层 props，一次往返期间它还是旧值，所以中间态放这里兜着。 */
+  const [override, setOverride] = useState<string[] | null>(null);
+  const serverIds = useMemo(
     () => (agent?.definition?.skills ?? []).map((s) => s.ref),
     [agent],
   );
+  const mountedIds = override ?? serverIds;
   const mounted = useMemo(() => new Set(mountedIds), [mountedIds]);
 
+  // 服务端的值追上来了就把中间态扔掉
+  useEffect(() => {
+    if (override && serverIds.join(",") === override.join(",")) setOverride(null);
+  }, [serverIds, override]);
+
   const toggle = async (id: string) => {
-    if (!agent || busyId) return;
-    setBusyId(id);
-    const next = mounted.has(id) ? mountedIds.filter((x) => x !== id) : [...mountedIds, id];
+    if (!agent) return;
+    const before = mountedIds;
+    const next = mounted.has(id) ? before.filter((x) => x !== id) : [...before, id];
+    setOverride(next);
     try {
       await api.updateAgent(agent.id, {
         definition: { ...agent.definition, skills: next.map((r) => ({ ref: r })) },
       });
       onChanged();
     } catch {
-      /* 失败就保持原样，再点一次还能重试 */
-    } finally {
-      setBusyId(null);
+      setOverride(before); // 失败退回原样，再点一次还能重试
     }
   };
 
