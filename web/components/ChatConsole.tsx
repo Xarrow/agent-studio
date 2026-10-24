@@ -28,7 +28,7 @@ import { useImeGuard, isImeEvent } from "@/lib/ime";
 import Markdown from "@/components/Markdown";
 import { RunDetailById } from "@/components/RunDetailDialog";
 import { AgentDetailDialog } from "./AgentDetailDialog";
-import { ICON_PATHS, SETUP_ITEMS } from "@/lib/nav-items";
+import { ICON_PATHS, SETUP_ITEMS, USE_ITEMS } from "@/lib/nav-items";
 import { AgentSwitcher } from "./AgentSwitcher";
 import { SkillEntry, ToolEntry, MemoryEntry } from "./ToolEntries";
 import { Sheet } from "./ui/Sheet";
@@ -1327,30 +1327,40 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     </button>
                     <span className="text-[15px] font-semibold tracking-tight">功能与配置</span>
                   </div>
-                  {/* 两列宫格：手机上竖排要点好多次，宫格一屏就能全看到；
-                      图标在上、名字在下，扫一眼就知道点哪儿。
-                      条目与桌面侧栏「配置」组完全同源（SETUP_ITEMS），
-                      少一项就是对不上号 —— 手机和电脑要能说同一件事。 */}
-                  <div className="flex-1 overflow-y-auto px-2 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
-                    <div className="grid grid-cols-2 gap-1.5">
-                      {SETUP_ITEMS.map((item, i) => (
-                        <Link
-                          key={item.href}
-                          href={item.href}
-                          onClick={() => setMobileNav(false)}
-                          /* 奇数项时最后一项占满整行，免得右下角空一块 */
-                          className={`flex flex-col items-center justify-center gap-1.5 rounded-xl px-2 py-3 min-h-[76px] active:bg-[var(--color-surface-2)] transition-colors ${
-                            i === SETUP_ITEMS.length - 1 && SETUP_ITEMS.length % 2 === 1 ? "col-span-2" : ""
-                          }`}
-                          style={{ background: "var(--color-surface-2)" }}
-                        >
-                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ color: "var(--color-accent)" }}>
-                            <path d={ICON_PATHS[item.icon] ?? ""} />
-                          </svg>
-                          <span className="text-[12.5px] leading-tight text-center">{item.label}</span>
-                        </Link>
-                      ))}
-                    </div>
+                  {/* 和桌面侧栏同一套行式菜单：图标 + 名字（+ 一句说明）。
+                      条目同源（USE_ITEMS / SETUP_ITEMS）、同样分「使用 / 配置」两组，
+                      手机上不另造一种排版 —— 换个设备不该像换了个产品。 */}
+                  <div className="flex-1 overflow-y-auto px-2 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
+                    {[
+                      { label: "使用", items: USE_ITEMS },
+                      { label: "配置", items: SETUP_ITEMS },
+                    ].map((grp) => (
+                      <div key={grp.label} className="mb-1.5">
+                        <div className="px-2 pt-2 pb-1 text-[11px] font-semibold tracking-[0.06em] text-[var(--color-muted)]">
+                          {grp.label}
+                        </div>
+                        {grp.items.map((item) => (
+                          <Link
+                            key={item.href}
+                            href={item.href}
+                            onClick={() => setMobileNav(false)}
+                            className="flex items-center gap-2.5 rounded-lg px-2 py-2 min-h-[48px] active:bg-[var(--color-surface-2)] transition-colors"
+                          >
+                            <span className="shrink-0" style={{ color: "var(--color-muted)" }}>
+                              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                <path d={ICON_PATHS[item.icon] ?? ""} />
+                              </svg>
+                            </span>
+                            <span className="min-w-0 flex flex-col">
+                              <span className="text-[14px] leading-tight">{item.label}</span>
+                              <span className="text-[11.5px] leading-snug truncate text-[var(--color-muted)]">
+                                {item.tip}
+                              </span>
+                            </span>
+                          </Link>
+                        ))}
+                      </div>
+                    ))}
                   </div>
                 </>
               ) : (
