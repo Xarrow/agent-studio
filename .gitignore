@@ -79,3 +79,6 @@ HANDOFF.md
 
 # gh / 工具态的本地状态目录（不该进仓库）
 .local/
+
+# Java 编译产物
+*.class
