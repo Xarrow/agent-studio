@@ -1327,18 +1327,21 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     </button>
                     <span className="text-[15px] font-semibold tracking-tight">功能与配置</span>
                   </div>
-                  {/* 两列宫格：手机上竖排 7 行要点 7 次滚动，宫格一屏就能全看到；
-                      图标在上、名字在下，扫一眼就知道点哪儿。 */}
+                  {/* 两列宫格：手机上竖排要点好多次，宫格一屏就能全看到；
+                      图标在上、名字在下，扫一眼就知道点哪儿。
+                      条目与桌面侧栏「配置」组完全同源（SETUP_ITEMS），
+                      少一项就是对不上号 —— 手机和电脑要能说同一件事。 */}
                   <div className="flex-1 overflow-y-auto px-2 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
                     <div className="grid grid-cols-2 gap-1.5">
-                      {/* 工具不在这一格里：输入框工具行已经能直接勾选了，
-                          再放一个跳页入口只会让人猜「这两个是不是一回事」 */}
-                      {SETUP_ITEMS.filter((it) => it.href !== "/tools").map((item) => (
+                      {SETUP_ITEMS.map((item, i) => (
                         <Link
                           key={item.href}
                           href={item.href}
                           onClick={() => setMobileNav(false)}
-                          className="flex flex-col items-center justify-center gap-1.5 rounded-xl px-2 py-3 min-h-[76px] active:bg-[var(--color-surface-2)] transition-colors"
+                          /* 奇数项时最后一项占满整行，免得右下角空一块 */
+                          className={`flex flex-col items-center justify-center gap-1.5 rounded-xl px-2 py-3 min-h-[76px] active:bg-[var(--color-surface-2)] transition-colors ${
+                            i === SETUP_ITEMS.length - 1 && SETUP_ITEMS.length % 2 === 1 ? "col-span-2" : ""
+                          }`}
                           style={{ background: "var(--color-surface-2)" }}
                         >
                           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ color: "var(--color-accent)" }}>
