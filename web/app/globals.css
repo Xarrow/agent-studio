@@ -1159,3 +1159,8 @@ body {
   position: absolute;
   inset: -4px -2px;
 }
+
+/* 弹出层在桌面固定宽度（手机全宽），通过 CSS 变量传进来 */
+@media (min-width: 1024px) {
+  [role="dialog"][aria-labelledby], [role="dialog"][aria-label] { width: var(--sheet-w, 360px); }
+}

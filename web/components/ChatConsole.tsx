@@ -31,6 +31,8 @@ import { AgentDetailDialog } from "./AgentDetailDialog";
 import { ICON_PATHS, SETUP_ITEMS } from "@/lib/nav-items";
 import { AgentSwitcher } from "./AgentSwitcher";
 import { SkillsStrip } from "./SkillsStrip";
+import { SkillPicker } from "./SkillPicker";
+import { MemoryPicker } from "./MemoryPicker";
 import { QuickTags } from "./QuickTags";
 import { FileOpenerProvider, FileRowButton } from "@/components/FileDialog";
 import { copyText } from "@/lib/clipboard";
@@ -831,6 +833,18 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   const [uploading, setUploading] = useState(false);
   /** 文本域：自动长高用 */
   const taRef = useRef<HTMLTextAreaElement | null>(null);
+  /** 往输入框尾部追加一段文字并把焦点放回末尾 —— 快捷问句、记忆都走这里。
+   *  只填不发：人能改，改完再发。 */
+  const appendToInput = useCallback((t: string) => {
+    setInput((prev) => (prev.trim() ? prev.replace(/\s+$/, "") + " " + t : t));
+    setTimeout(() => {
+      const ta = taRef.current;
+      if (ta) {
+        ta.focus();
+        ta.selectionStart = ta.selectionEnd = ta.value.length;
+      }
+    }, 0);
+  }, []);
   /** 有文件被拖到输入坞上方（给边框高亮 + 「松手即添加」提示） */
   const [dragging, setDragging] = useState(false);
   /** 运行停在等授权时输入坞不可用 —— 否则会又起一轮，和暂停的那一轮抢同一个会话 */
@@ -885,6 +899,9 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   // （Rendered more hooks than during the previous render），整页变错误页（踩过两次）。
   const [navOpen, setNavOpen] = useState(true);
   const [mobileNav, setMobileNav] = useState(false);
+  /* 工具栏上的两个手边入口：换了/勾了立刻生效，不离开对话 */
+  const [skillOpen, setSkillOpen] = useState(false);
+  const [memOpen, setMemOpen] = useState(false);
   /** 抽屉两个视图：会话（默认）/ 功能与配置。手机上全站只有这一个抽屉，
       功能入口不能另开一个抽屉，也不能塞成横向短标签条（短名和侧栏的完整
       标签对不上，就是"不统一"的来源）。 */
@@ -2001,7 +2018,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               <div className="composer-chips">
               <QuickTags
                 prefix={
-                  sessionId && fileCount > 0 ? (
+                  <>
+                  {sessionId && fileCount > 0 ? (
                     <button
                       type="button"
                       data-tap
@@ -2027,17 +2045,76 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                       </svg>
                       {fileCount} 个文件
                     </button>
-                  ) : null
+                  ) : null}
+
+                  {/* 技能与记忆搬到手边：对话中想换技能或引一条记忆，
+                      不用退出对话、不用去配置页。 */}
+                  {currentAgent && (
+                    <button
+                      type="button"
+                      data-tap
+                      onClick={() => {
+                        setMemOpen(false);
+                        setSkillOpen((v) => !v);
+                      }}
+                      aria-expanded={skillOpen}
+                      title="这个助手挂了哪些技能（点开就地勾选）"
+                      className="chip-thin shrink-0 inline-flex items-center gap-1 h-7 px-2.5 rounded-full border text-[12px] transition-colors hover:bg-[var(--color-surface-2)]"
+                      style={{
+                        borderColor: skillOpen ? "var(--color-accent)" : "var(--color-border)",
+                        background: skillOpen ? "color-mix(in srgb, var(--color-accent) 8%, transparent)" : "transparent",
+                        color: "var(--color-text)",
+                      }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M12 3 4 7v6c0 4.4 3.4 7.4 8 8 4.6-.6 8-3.6 8-8V7l-8-4z" />
+                      </svg>
+                      技能
+                      {(currentAgent.definition?.skills ?? []).length > 0 && (
+                        <span className="tabular-nums" style={{ color: "var(--color-muted)" }}>
+                          {(currentAgent.definition?.skills ?? []).length}
+                        </span>
+                      )}
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    data-tap
+                    onClick={() => {
+                      setSkillOpen(false);
+                      setMemOpen((v) => !v);
+                    }}
+                    aria-expanded={memOpen}
+                    title="翻一条记忆填进输入框"
+                    className="chip-thin shrink-0 inline-flex items-center gap-1 h-7 px-2.5 rounded-full border text-[12px] transition-colors hover:bg-[var(--color-surface-2)]"
+                    style={{
+                      borderColor: memOpen ? "var(--color-accent)" : "var(--color-border)",
+                      background: memOpen ? "color-mix(in srgb, var(--color-accent) 8%, transparent)" : "transparent",
+                      color: "var(--color-text)",
+                    }}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M4 5h16v12H8l-4 4V5z" />
+                    </svg>
+                    记忆
+                  </button>
+                  </>
                 }
+                onPick={appendToInput}
+              />
+              <SkillPicker
+                agent={currentAgent}
+                onChanged={() => void reloadAgents()}
+                open={skillOpen}
+                onOpenChange={setSkillOpen}
+              />
+              <MemoryPicker
+                open={memOpen}
+                onOpenChange={setMemOpen}
                 onPick={(t) => {
-                  setInput((prev) => (prev.trim() ? prev.replace(/\s+$/, "") + " " + t : t));
-                  setTimeout(() => {
-                    const ta = taRef.current;
-                    if (ta) {
-                      ta.focus();
-                      ta.selectionStart = ta.selectionEnd = ta.value.length;
-                    }
-                  }, 0);
+                  appendToInput(t);
+                  setMemOpen(false);
                 }}
               />
               </div>
