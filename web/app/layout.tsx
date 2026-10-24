@@ -34,8 +34,9 @@ export default function RootLayout({
           <AccessGate />
           <div className="flex h-screen overflow-hidden">
             <Nav />
-            {/* pt-14：移动端顶部栏是 fixed，需要给内容留出高度（≥768px 无顶栏） */}
-            <main className="flex-1 overflow-auto pt-14 md:pt-0">{children}</main>
+            {/* pt-[52px]：移动端顶栏是 fixed，给内容留出高度（≥768px 无顶栏）。
+                52 是全站顶栏唯一规格（导航条 / 对话条 / 抽屉头都是 52）。 */}
+            <main className="flex-1 overflow-auto pt-[52px] md:pt-0">{children}</main>
           </div>
         </FeedbackProvider>
       </body>
