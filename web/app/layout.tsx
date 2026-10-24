@@ -39,7 +39,7 @@ export default function RootLayout({
             <Nav />
             {/* pt-[52px]：移动端顶栏是 fixed，给内容留出高度（≥768px 无顶栏）。
                 52 是全站顶栏唯一规格（导航条 / 对话条 / 抽屉头都是 52）。 */}
-            <main className="flex-1 overflow-auto pt-[52px] md:pt-0">{children}</main>
+            <main className="flex-1 overflow-auto pt-[44px] md:pt-0">{children}</main>
           </div>
         </FeedbackProvider>
       </body>

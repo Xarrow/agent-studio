@@ -100,7 +100,7 @@ export function Nav() {
     <>
       {/* ── 移动端顶栏（对话页除外：那条由 ChatConsole 自己出）──────── */}
       {!isExecPage && (
-      <header className="md:hidden fixed top-0 inset-x-0 z-40 h-[calc(52px+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] flex items-center gap-3 px-3 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
+      <header className="md:hidden fixed top-0 inset-x-0 z-40 h-[calc(44px+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] flex items-center gap-3 px-3 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
         <button
           onClick={() => setDrawerOpen(true)}
           aria-label="打开菜单"

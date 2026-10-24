@@ -1114,7 +1114,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
       workDir={sessionFiles?.work_dir}
       onFileChanged={() => void loadSessionFiles()}
     >
-      <div className="h-full min-h-0 flex max-md:-mt-[52px] max-md:h-[calc(100%+52px)]">
+      <div className="h-full min-h-0 flex max-md:-mt-[44px] max-md:h-[calc(100%+44px)]">
         {/* 手里这份页面过期了：一直开着的标签页不会自己换代码，提示一下，别让用户
             对着旧界面判断"改了没用" */}
         {staleBuild && (
@@ -1212,7 +1212,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               {navView === "menu" ? (
                 /* 功能视图 —— 和桌面侧栏同一份定义、同样的完整标签 */
                 <>
-                  <div className="shrink-0 h-[calc(52px+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] flex items-center gap-1 pl-1 pr-3 border-b border-[var(--color-border)]">
+                  <div className="shrink-0 h-[calc(44px+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] flex items-center gap-1 pl-1 pr-3 border-b border-[var(--color-border)]">
                     <button
                       data-tap
                       aria-label="返回对话列表"
@@ -1305,7 +1305,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               之前它上面还叠着全局的「Agent Studio」条（fixed 56 + 这条 52），
               中间大片空白，像没做完 —— 现在对话页不出全局那条，只剩这一条。 */}
           <header
-            className="h-[calc(52px+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] pl-1 pr-1.5 flex items-center gap-1 border-b border-[var(--color-border)] bg-[var(--color-surface)] lg:hidden"
+            className="h-[calc(44px+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] pl-1 pr-1.5 flex items-center gap-1 border-b border-[var(--color-border)] bg-[var(--color-surface)] lg:hidden"
           >
             <button
               data-tap
@@ -1641,7 +1641,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
           <div
             ref={dockRef}
             data-dock
-            className="absolute inset-x-0 bottom-0 z-20 px-3 sm:px-4 pt-3 pb-2.5"
+            className="absolute inset-x-0 bottom-0 z-20 px-3 sm:px-4 pt-1 pb-1"
             style={{
               background: "color-mix(in srgb, var(--color-bg) 46%, transparent)",
               backdropFilter: "blur(22px) saturate(2)",
@@ -1990,7 +1990,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                       onClick={toggleFiles}
                       aria-expanded={openFiles}
                       title={`这个会话产出的 ${fileCount} 个文件（点开看清单）`}
-                      className="shrink-0 inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full border text-[12px] transition-colors hover:bg-[var(--color-surface-2)]"
+                      className="shrink-0 inline-flex items-center gap-1.5 h-6 px-2 rounded-full border text-[12px] transition-colors hover:bg-[var(--color-surface-2)]"
                       style={{
                         borderColor: openFiles ? "var(--color-accent)" : "var(--color-border)",
                         color: "var(--color-text)",
@@ -2061,7 +2061,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 <textarea
                   ref={taRef}
                   rows={1}
-                  className="block w-full resize-none bg-transparent border-0 outline-none px-3.5 pt-2.5 pb-1 text-[13.5px] leading-6"
+                  className="block w-full resize-none bg-transparent border-0 outline-none px-3.5 pt-1.5 pb-1 text-[13.5px] leading-[22px]"
                   style={{ maxHeight: "40vh" }}
                   placeholder={
                     paused
@@ -2097,7 +2097,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     }
                   }}
                 />
-                <div className="flex items-center gap-1 px-1.5 pb-1.5 pt-0.5">
+                <div className="flex items-center gap-1 px-1.5 pb-0 pt-0">
                   <button
                     data-tap
                     type="button"

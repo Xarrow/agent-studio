@@ -77,7 +77,7 @@ export function QuickTags({ onPick, prefix }: { onPick: (text: string) => void; 
   if (tags.length === 0 && !open) {
     // 没配过标签时也留一个入口，否则永远打不开编辑器
     return (
-      <div className="max-w-3xl mx-auto mb-1.5 flex items-center gap-1.5">
+      <div className="max-w-3xl mx-auto flex items-center gap-1.5">
         {prefix}
         <span className="flex-1" />
         <button
@@ -101,7 +101,7 @@ export function QuickTags({ onPick, prefix }: { onPick: (text: string) => void; 
             key={t}
             data-tap
             onClick={() => onPick(t)}
-            className="shrink-0 h-7 px-2.5 rounded-full border text-[12px] transition-colors hover:bg-[var(--color-surface-2)]"
+            className="shrink-0 h-6 px-2 rounded-full border text-[12px] transition-colors hover:bg-[var(--color-surface-2)]"
             style={{ borderColor: "var(--color-border)", color: "var(--color-text)" }}
             title={`把「${t}」填进输入框`}
           >
@@ -112,7 +112,7 @@ export function QuickTags({ onPick, prefix }: { onPick: (text: string) => void; 
           data-tap
           title="管理快捷标签"
           onClick={() => (open ? setOpen(false) : openEditor())}
-          className="shrink-0 w-7 h-7 grid place-items-center rounded-full hover:bg-[var(--color-surface-2)]"
+          className="shrink-0 w-6 h-6 grid place-items-center rounded-full hover:bg-[var(--color-surface-2)]"
           style={{ color: "var(--color-muted)" }}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
