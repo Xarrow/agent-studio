@@ -1701,51 +1701,22 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
 
             {sessionId && <BgProcsStrip sessionId={sessionId} busy={busy} />}
 
-            {/* ── 本会话的文件（常驻，不再藏在 ⓘ 里）────────────────────
-                用户要求：「每个会话生成的文档应该独立存放，在会话能看到存储的路径和文件」。
-                所以这里**默认就在**：左边是这个会话的目录（点一下复制完整路径），
-                右边是文件数；下面一行是这个会话产出的文件，点开就是文件操作框
-                （预览 / 下载 / 复制路径）。没有文件时也留着这一条 —— 让人知道
-                "以后生成的东西会落在哪"。 */}
-            {sessionId && (
+            {/* ── 本会话的文件 ───────────────────────────────────────
+                有文件才出现（0 个文件时这一条只剩一个谁都看不懂的
+                `…/sessions/ses_xxx/`，白白吃掉输入区 46px）；手机上也不显示路径，
+                只显示「4 个文件」，点开才看清单 —— 手机屏宽 390，路径在这里
+                是纯技术噪音，复制路径也挪进弹层。桌面保留路径（有地方放）。 */}
+            {/* 展开时才是「面板」，收起时只剩快捷标签行最左边那个「N 个文件」
+                chip —— 这一条不再自己占一行。 */}
+            {sessionId && fileCount > 0 && openFiles && (
               <div
                 className={`panel-strip max-w-3xl mx-auto mb-1.5 px-2.5 py-1.5 max-md:px-2 ${managing ? "is-active" : ""}`}
               >
-                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                <div className="flex min-w-0 items-center gap-2 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                  {/* 桌面上就是那串路径：点一下复制（收起由左边那个 chip 管） */}
                   <button
                     type="button"
-                    onClick={toggleFiles}
-                    aria-expanded={openFiles}
-                    title={openFiles ? "收起文件清单" : "展开文件清单"}
-                    className="shrink-0 rounded p-0.5 hover:bg-[var(--color-surface)] max-md:inline-flex max-md:min-h-[32px] max-md:min-w-[32px] max-md:items-center max-md:justify-center"
-                    style={{ color: "var(--color-muted)" }}
-                  >
-                    <svg
-                      width="12"
-                      height="12"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                      style={{ transform: openFiles ? "rotate(90deg)" : "rotate(0deg)", transition: "transform .15s ease" }}
-                    >
-                      <path d="M9 6l6 6-6 6" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={toggleFiles}
-                    className="panel-title shrink-0 hover:underline max-md:inline-flex max-md:min-h-[32px] max-md:items-center"
-                    title={openFiles ? "收起文件清单" : "展开文件清单"}
-                  >
-                    本会话文件
-                  </button>
-                  <button
-                    type="button"
-                    className="mono min-w-0 flex-1 truncate text-left hover:underline max-md:inline-flex max-md:min-h-[32px] max-md:items-center"
+                    className="mono min-w-0 flex-1 truncate text-left hover:underline max-md:hidden"
                     title={`点一下复制完整路径\n${sessionFiles?.work_dir ?? ""}`}
                     onClick={() =>
                       void copyText(sessionFiles?.work_dir ?? "").then((ok) =>
@@ -1755,17 +1726,9 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                       )
                     }
                   >
-                    {sessionFiles ? (
-                      <>
-                        <span className="md:hidden">{`…/sessions/${sessionId}`}</span>
-                        <span className="max-md:hidden">{sessionFiles.work_dir}</span>
-                      </>
-                    ) : (
-                      "…"
-                    )}
+                    {sessionFiles?.work_dir ?? "…"}
                   </button>
-                  <span className="shrink-0">· {sessionFiles?.count ?? 0} 个</span>
-                  {/* 管理：把文件变成可勾选，用来批量删。常驻可见（不藏进 ⋯），但只在有文件时出现 */}
+                  {/* 管理：把文件变成可勾选，用来批量删。常驻可见（不藏进 ⋯） */}
                   {fileCount > 0 ? (
                     <button
                       type="button"
@@ -1775,7 +1738,6 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                         setManaging((v) => !v);
                         setPicked([]);
                         setBulkConfirm(false);
-                        if (!openFiles) toggleFiles();
                       }}
                       title="勾选多个文件一起删"
                     >
@@ -1809,8 +1771,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     <span className="max-md:hidden">{filesBusy ? "读取中" : "刷新"}</span>
                   </button>
                 </div>
-                {openFiles &&
-                  (sessionFiles && sessionFiles.files.length > 0 ? (
+
+                {(sessionFiles && sessionFiles.files.length > 0 ? (
                   <>
                   {/* 查询：文件一多就靠它找。只在超过 6 个时出现 —— 少的时候摆个搜索框纯属噪音。 */}
                   {fileCount > 6 && (
@@ -1956,8 +1918,32 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             )}
 
             <div className="max-w-3xl mx-auto relative">
-              {/* 快速标签：常说的几句点一下就填进输入框（标签本身在设置里增删） */}
+              {/* 快速标签：常说的几句点一下就填进输入框（标签本身在设置里增删）。
+                  空会话不出现 —— 一句话都没有的时候，「询问是否完成」没上下文，
+                  只是白占输入区上方一行。 */}
+              {(history.length > 0 || live) && (
               <QuickTags
+                prefix={
+                  sessionId && fileCount > 0 ? (
+                    <button
+                      type="button"
+                      data-tap
+                      onClick={toggleFiles}
+                      aria-expanded={openFiles}
+                      title={`这个会话产出的 ${fileCount} 个文件（点开看清单）`}
+                      className="shrink-0 inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full border text-[12px] transition-colors hover:bg-[var(--color-surface-2)]"
+                      style={{
+                        borderColor: openFiles ? "var(--color-accent)" : "var(--color-border)",
+                        color: "var(--color-text)",
+                      }}
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
+                      </svg>
+                      {fileCount} 个文件
+                    </button>
+                  ) : null
+                }
                 onPick={(t) => {
                   setInput((prev) => (prev.trim() ? prev.replace(/\s+$/, "") + " " + t : t));
                   setTimeout(() => {
@@ -1969,6 +1955,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                   }, 0);
                 }}
               />
+              )}
 
               {/* ── 输入坞 ────────────────────────────────────────
                   上下结构（上=正文，下=工具栏），不再左右平铺：多行输入时

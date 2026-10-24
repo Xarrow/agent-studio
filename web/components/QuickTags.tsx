@@ -16,7 +16,12 @@ import { isImeEvent } from "@/lib/ime";
 
 const MAX = 10;
 
-export function QuickTags({ onPick }: { onPick: (text: string) => void }) {
+/**
+ * `prefix` 渲染在这一行最左边 —— 输入框上方只留一行 chips：
+ * 「N 个文件」+ 常说的话。以前文件条自己占一整行 46px，
+ * 手机上输入区要吃掉屏幕 1/4，现在共用一行。
+ */
+export function QuickTags({ onPick, prefix }: { onPick: (text: string) => void; prefix?: React.ReactNode }) {
   const [tags, setTags] = useState<string[]>([]);
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<string[]>([]);
@@ -72,7 +77,9 @@ export function QuickTags({ onPick }: { onPick: (text: string) => void }) {
   if (tags.length === 0 && !open) {
     // 没配过标签时也留一个入口，否则永远打不开编辑器
     return (
-      <div className="max-w-3xl mx-auto mb-1.5 flex justify-end">
+      <div className="max-w-3xl mx-auto mb-1.5 flex items-center gap-1.5">
+        {prefix}
+        <span className="flex-1" />
         <button
           data-tap
           onClick={openEditor}
@@ -88,6 +95,7 @@ export function QuickTags({ onPick }: { onPick: (text: string) => void }) {
   return (
     <div ref={rootRef} className="relative max-w-3xl mx-auto mb-1.5">
       <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+        {prefix}
         {tags.map((t) => (
           <button
             key={t}
