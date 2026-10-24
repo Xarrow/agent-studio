@@ -2008,10 +2008,14 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                       onClick={toggleFiles}
                       aria-expanded={openFiles}
                       title={`这个会话产出的 ${fileCount} 个文件（点开看清单）`}
-                      className="shrink-0 inline-flex items-center gap-1.5 h-6 px-2 rounded-full border text-[12px] transition-colors hover:bg-[var(--color-surface-2)]"
+                      /* 它是「对象」不是「动作」：用 accent 淡色 + 数字，和右边那排
+                         灰底的问句区分开。展开时底更实一点，状态一眼可见。 */
+                      className="shrink-0 inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12.5px] font-medium transition-colors"
                       style={{
-                        borderColor: openFiles ? "var(--color-accent)" : "var(--color-border)",
-                        color: "var(--color-text)",
+                        background: openFiles
+                          ? "color-mix(in srgb, var(--color-accent) 20%, transparent)"
+                          : "color-mix(in srgb, var(--color-accent) 12%, transparent)",
+                        color: "var(--color-accent)",
                       }}
                     >
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
