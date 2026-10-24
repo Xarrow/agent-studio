@@ -836,6 +836,22 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     }
   };
 
+  /** 改完问句并重跑：作废这一轮及之后，用新内容直接再问一次。
+      与「重来」的区别只在于——它不问「要不要」，改完就往下走。 */
+  const rerunWith = async (turnIndex: number, text: string) => {
+    if (!sessionId) return;
+    try {
+      const r = await api.rewindSession(sessionId, turnIndex);
+      await loadMessages(sessionId);
+      await loadSessions(agentId);
+      fb.info("已作废这一轮之后的回答", `删了 ${r.deleted} 条，按新问法重答`);
+      await send(text);
+    } catch (e) {
+      fb.error("重跑失败", e instanceof Error ? e.message : String(e));
+      setInput(text);
+    }
+  };
+
   const stop = async () => {
     // 关流 + **中止后端执行**（不是只不看了 —— 那会白烧 token，
     // 用户点停止的意图就是「别做了」；abort 端点会把 run 标成 aborted）
@@ -1678,6 +1694,11 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                       onRewind={
                         m.role === "user" && m.turn_index && !busy
                           ? () => void rewindTo(m.turn_index!, m.content)
+                          : undefined
+                      }
+                      onRerun={
+                        m.role === "user" && m.turn_index && !busy
+                          ? (text) => void rerunWith(m.turn_index!, text)
                           : undefined
                       }
                       onBranch={
@@ -2782,6 +2803,36 @@ function SessionsPane({
  *  · 消息本体（用户右蓝/助手左浅）
  *  · hover 动作条：复制 / 编辑 / 重试（编辑只对已落库消息；重试只对用户消息）
  *  · 助手消息下方可折叠「执行过程」（默认收起，点开懒加载） */
+/** 消息动作条上的一个图标按钮：30×30 触控区 + 文字提示（不靠 hover 才认识） */
+function MsgAction({
+  label,
+  path,
+  onClick,
+  tone,
+}: {
+  label: string;
+  /** 24×24 描边路径 */
+  path: string;
+  onClick: () => void;
+  tone?: "ok";
+}) {
+  return (
+    <button
+      data-tap
+      type="button"
+      title={label}
+      aria-label={label}
+      onClick={onClick}
+      className="flex h-[30px] w-[30px] items-center justify-center rounded-md transition-colors hover:bg-[var(--color-surface-2)]"
+      style={{ color: tone === "ok" ? "var(--color-ok)" : "var(--color-muted)" }}
+    >
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d={path} />
+      </svg>
+    </button>
+  );
+}
+
 function Bubble({
   role,
   content,
@@ -2793,6 +2844,7 @@ function Bubble({
   onEdited,
   onRetry,
   onRewind,
+  onRerun,
   onBranch,
   streaming = false,
 }: {
@@ -2812,6 +2864,8 @@ function Bubble({
   onRetry?: () => void;
   /** 从这一轮之前重来：截断历史 + 把用户原文填回输入框（父组件做） */
   onRewind?: () => void;
+  /** 改完直接让它重新回答（把这一轮及之后作废，用新内容重跑） */
+  onRerun?: (text: string) => void;
   /** 从这一轮之前另起会话（原会话不动） */
   onBranch?: () => void;
   streaming?: boolean;
@@ -2865,14 +2919,22 @@ function Bubble({
     }
   };
 
-  const saveEdit = async () => {
+  /** 保存这一条。``rerun`` = 保存后立刻让它按新内容重答（下面的回答作废）。 */
+  const saveEdit = async (rerun = false) => {
     if (!canEdit || !draft.trim() || saving) return;
+    const next = draft.trim();
     setSaving(true);
     try {
-      await api.updateSessionMessage(sessionId!, messageId!, draft.trim());
-      onEdited!(draft.trim());
+      // 重跑要连历史一起动，所以先把新文本存进去再作废后文 ——
+      // 顺序反过来的话，被作废那几条里就有「还没改的旧问法」，审计对不上。
+      await api.updateSessionMessage(sessionId!, messageId!, next);
+      onEdited!(next);
       setEditing(false);
-      fb.success("已保存");
+      if (rerun && onRerun) {
+        onRerun(next);
+        return;
+      }
+      fb.success("已保存", "只改了记录，回答没变；要它按新问法重答点「保存并重跑」");
     } catch {
       fb.error("保存失败，请重试");
     } finally {
@@ -2946,42 +3008,93 @@ function Bubble({
       <div className={isUser ? "max-w-[88%] max-md:max-w-[90%]" : "min-w-0 flex-1"}>
         {/* 编辑态：textarea 就地展开（不用弹窗——上下文不丢） */}
         {editing ? (
+          /* 编辑态：不是一个"小表单"，而是把这条问句**重新变成输入框**——
+             改完立刻能重答，是这个交互唯一真正的目的。 */
           <div
-            className="rounded-lg p-2.5"
-            style={{ background: "var(--color-surface-2)", border: "1px solid var(--color-accent)" }}
+            /* 宽度跟气泡站一边（用户消息靠右、不铺满整屏）——
+                铺满 1400px 的输入框改一句 20 字的话，视线要横着扫一遍 */
+            className="ml-auto w-full overflow-hidden rounded-xl"
+            style={{
+              maxWidth: "min(42rem, 100%)",
+              background: "var(--color-surface)",
+              border: "1px solid var(--color-accent)",
+              boxShadow: "0 0 0 3px color-mix(in srgb, var(--color-accent) 14%, transparent)",
+            }}
           >
+            <div
+              className="flex items-center gap-2 px-3 py-2"
+              style={{ background: "color-mix(in srgb, var(--color-accent) 8%, transparent)" }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+              </svg>
+              <span className="text-[12px] font-medium" style={{ color: "var(--color-accent)" }}>
+                改这条问句
+              </span>
+              <button
+                className="ml-auto shrink-0 rounded p-0.5 text-[var(--color-muted)] hover:text-[var(--color-text)]"
+                title="取消（Esc）"
+                disabled={saving}
+                onClick={() => setEditing(false)}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                  <path d="M18 6 6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
             <textarea
-              className="input w-full text-[13.5px] resize-none"
-              rows={Math.min(10, Math.max(2, draft.split("\n").length))}
+              className="w-full resize-none border-0 bg-transparent px-3 py-2.5 text-[14px] leading-relaxed outline-none"
+              rows={Math.min(12, Math.max(2, draft.split("\n").length))}
               value={draft}
               autoFocus
               disabled={saving}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
-                // Cmd/Ctrl+Enter 保存；组字中的 Enter 交给输入法
+                if (isImeEvent(e)) return;
+                // ⌘/Ctrl+Enter = 改完并重跑（主路径）；⌘/Ctrl+S = 只保存
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                  if (isImeEvent(e)) return;
                   e.preventDefault();
-                  void saveEdit();
+                  void saveEdit(!!onRerun);
+                }
+                if (e.key.toLowerCase() === "s" && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault();
+                  void saveEdit(false);
                 }
                 if (e.key === "Escape") setEditing(false);
               }}
             />
-            <div className="mt-2 flex justify-end gap-2">
-              <button
-                className="btn btn-sm"
-                disabled={saving}
-                onClick={() => setEditing(false)}
-              >
-                取消
-              </button>
-              <button
-                className="btn btn-primary btn-sm"
-                disabled={saving || !draft.trim()}
-                onClick={() => void saveEdit()}
-              >
-                {saving ? "保存中…" : "保存"}
-              </button>
+            <div
+              className="flex flex-wrap items-center gap-2 px-3 py-2"
+              style={{ borderTop: "1px solid var(--color-border)", background: "var(--color-surface-2)" }}
+            >
+              {onRerun ? (
+                <span className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                  重跑会作废这条之后的回答
+                </span>
+              ) : null}
+              <div className="ml-auto flex items-center gap-1.5">
+                <button className="btn btn-sm" disabled={saving} onClick={() => setEditing(false)}>
+                  取消
+                </button>
+                <button
+                  className="btn btn-sm"
+                  disabled={saving || !draft.trim()}
+                  title="只改记录，回答保持原样（⌘S）"
+                  onClick={() => void saveEdit(false)}
+                >
+                  只改记录
+                </button>
+                {onRerun ? (
+                  <button
+                    className="btn btn-primary btn-sm"
+                    disabled={saving || !draft.trim()}
+                    title="保存并让它按新内容重新回答（⌘↵）"
+                    onClick={() => void saveEdit(true)}
+                  >
+                    {saving ? "重跑中…" : "保存并重跑"}
+                  </button>
+                ) : null}
+              </div>
             </div>
           </div>
         ) : (
@@ -3039,6 +3152,17 @@ function Bubble({
                 }
               : undefined
           }
+          /* 双击气泡直接改（桌面最快的一条路；手机还是点下面那个笔）。
+             不绑单击：单击要留给"选一段文字复制"。 */
+          onDoubleClick={
+            isUser && canEdit
+              ? () => {
+                  setDraft(userBody);
+                  setEditing(true);
+                }
+              : undefined
+          }
+          title={isUser && canEdit ? "双击可改" : undefined}
         >
           {isUser ? (
             <>
@@ -3093,100 +3217,80 @@ function Bubble({
           {streaming && <span className="live-dot ml-0.5">▍</span>}
         </div>
 
-        {/* 动作条：桌面 hover 显形；手机**常驻**（hover 不存在的东西必须常驻）。
-            时间戳放最左（占位但不抢眼），复制/编辑/重发跟在后面。 */}
+        {/* 动作条：一排等宽图标（不是一排小字）。文字按钮在手机上挤成一串、
+            还分不清谁是谁；图标 + title 一眼认，触控区 30×30 也够。
+            桌面 hover 显形，手机**常驻**（hover 不存在的东西必须常驻）。 */}
         {!streaming && (
           <div
-            className={`mt-1 flex items-center gap-0.5 ${isUser ? "justify-end" : ""} lg:opacity-0 lg:group-hover:opacity-100 transition-opacity`}
+            className={`mt-1 flex items-center gap-0.5 ${isUser ? "justify-end" : ""} lg:opacity-0 lg:group-hover:opacity-100 focus-within:opacity-100 transition-opacity`}
           >
             {ts ? (
-              <span className="text-[11px] mr-1.5" style={{ color: "var(--color-muted)" }}>
+              <span className="mr-1.5 text-[11px] tabular-nums" style={{ color: "var(--color-muted)" }}>
                 {new Date(ts * 1000).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}
               </span>
             ) : null}
-            <button
-              data-tap
-              className="text-[11.5px] px-1.5 py-0.5 rounded"
-              style={{ color: copied ? "var(--color-ok)" : "var(--color-muted)" }}
-              title="复制"
-              onClick={copy}
-            >
-              {copied ? "已复制" : "复制"}
-            </button>
-            {canEdit && (
-              <button
-                data-tap
-                className="text-[11.5px] px-1.5 py-0.5 rounded hover:text-[var(--color-text)]"
-                style={{ color: "var(--color-muted)" }}
-                title="编辑这条消息"
-                onClick={() => {
-                  setDraft(userBody);
-                  setEditing(true);
-                }}
+
+            {confirmRewind ? (
+              /* 破坏性动作在**原地**确认，不弹窗、不跳位 */
+              <span
+                className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1"
+                style={{ background: "color-mix(in srgb, var(--color-danger) 10%, transparent)" }}
               >
-                编辑
-              </button>
-            )}
-            {onRetry && (
-              <button
-                data-tap
-                className="text-[11.5px] px-1.5 py-0.5 rounded hover:text-[var(--color-text)]"
-                style={{ color: "var(--color-muted)" }}
-                title="把这条消息原样再发一遍"
-                onClick={onRetry}
-              >
-                重发
-              </button>
-            )}
-            {/* 重来 vs 重发：重发 = 叠在新一轮（历史还在）；重来 = 把这轮及之后擦掉，
-                改完再发。想留原答案试另一条路就用「分支」——它开新会话，这边一个字不动。 */}
-            {onRewind && !confirmRewind && (
-              <button
-                data-tap
-                className="text-[11.5px] px-1.5 py-0.5 rounded hover:text-[var(--color-text)]"
-                style={{ color: "var(--color-muted)" }}
-                title="回到这一轮之前，原文回到输入框"
-                onClick={() => setConfirmRewind(true)}
-              >
-                重来
-              </button>
-            )}
-            {onRewind && confirmRewind && (
-              <span className="inline-flex items-center gap-1">
                 <span className="text-[11.5px]" style={{ color: "var(--color-danger)" }}>
                   删掉这轮和之后的消息？
                 </span>
                 <button
                   data-tap
-                  className="text-[11.5px] px-1.5 py-0.5 rounded font-medium"
+                  className="rounded px-1.5 py-0.5 text-[11.5px] font-medium"
                   style={{ color: "var(--color-danger)" }}
                   onClick={() => {
                     setConfirmRewind(false);
-                    onRewind();
+                    onRewind?.();
                   }}
                 >
-                  确认重来
+                  确认
                 </button>
                 <button
                   data-tap
-                  className="text-[11.5px] px-1.5 py-0.5 rounded"
+                  className="rounded px-1.5 py-0.5 text-[11.5px]"
                   style={{ color: "var(--color-muted)" }}
                   onClick={() => setConfirmRewind(false)}
                 >
                   取消
                 </button>
               </span>
-            )}
-            {onBranch && (
-              <button
-                data-tap
-                className="text-[11.5px] px-1.5 py-0.5 rounded hover:text-[var(--color-text)]"
-                style={{ color: "var(--color-muted)" }}
-                title="从这一轮之前另起会话"
-                onClick={onBranch}
-              >
-                分支
-              </button>
+            ) : (
+              <>
+                <MsgAction
+                  label={copied ? "已复制" : "复制"}
+                  tone={copied ? "ok" : undefined}
+                  onClick={copy}
+                  path="M9 9h10v10H9zM5 15V5h10" /* 复制 */
+                />
+                {canEdit && (
+                  <MsgAction
+                    label="编辑"
+                    onClick={() => {
+                      setDraft(userBody);
+                      setEditing(true);
+                    }}
+                    path="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"
+                  />
+                )}
+                {onRetry && (
+                  <MsgAction label="重发" onClick={onRetry} path="M3 12a9 9 0 1 0 3-6.7M3 4v5h5" />
+                )}
+                {onRewind && (
+                  <MsgAction
+                    label="重来"
+                    onClick={() => setConfirmRewind(true)}
+                    path="M9 14 4 9l5-5M4 9h9a6 6 0 0 1 0 12H7"
+                  />
+                )}
+                {onBranch && (
+                  <MsgAction label="分支" onClick={onBranch} path="M6 3v12a3 3 0 0 0 3 3h9M18 15l3 3-3 3M6 8h8" />
+                )}
+              </>
             )}
           </div>
         )}

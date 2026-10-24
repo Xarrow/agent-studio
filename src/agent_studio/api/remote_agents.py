@@ -399,6 +399,26 @@ async def patch_remote_agent(
         row.auth_token_enc = encrypt(payload.token) if payload.token else None
     if payload.timeout_s is not None:
         row.timeout_s = float(payload.timeout_s)
+    if payload.url is not None and payload.url.strip() and payload.url.strip() != row.url:
+        # 远端换地址：归一化后写回，并**立刻重新解析**——
+        # 只改字段不重解析，卡片快照就还是旧地址那台机器的能力，比不改更危险
+        old_url = row.url
+        row.url = remote_agents.normalize_base(payload.url)
+        try:
+            got = await remote_agents.resolve(row.url, headers=remote_agents.auth_headers(row))
+            row.card = got["card"]
+            row.parsed = got["parsed"]
+            row.status = "ok"
+            row.last_error = ""
+            row.last_ok_at = now_ms()
+            row.health_fail_count = 0
+        except a2a_client.A2AError as exc:
+            row.status = "error"
+            row.last_error = f"换地址后解析失败：{exc}"
+        row.last_checked_at = now_ms()
+        await remote_agents.log_event(
+            session, row, "change_url", f"「{row.name}」地址 {old_url} → {row.url}", {"status": row.status}
+        )
     if payload.health_interval_s is not None:
         # 下限 0（= 关闭自动探活），上限一天 —— 太小会让远端觉得被骚扰
         row.health_interval_s = max(0, min(86400, int(payload.health_interval_s)))

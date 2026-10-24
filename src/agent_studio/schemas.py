@@ -1225,6 +1225,8 @@ class RemoteAgentCreateIn(BaseModel):
 
 class RemoteAgentPatchIn(BaseModel):
     name: str | None = None
+    #: 远端换了地址（换域名/换端口）时直接改，注册项与工具都跟着走
+    url: str | None = None
     remote_agent_id: str | None = None
     auth_header: str | None = None
     auth_scheme: str | None = None
