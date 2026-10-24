@@ -13,6 +13,7 @@ import {
   IconArchive,
   IconBox,
   IconChevronRight,
+  IconClock,
   IconCopy,
   IconFile,
   IconFileText,
@@ -307,41 +308,51 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
                   <g.Ico size={16} />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-1.5">
+                  {/* 第一行：名字 + 固定 + 状态 + 来源 —— 全横排，窄屏也不换行
+                      （来源 tag 本来在第三行，和三个数字挤在一起；挪上来以后
+                       左边是"它是什么"，右边留给人看描述） */}
+                  <span className="flex min-w-0 items-center gap-1.5">
                     <span className="truncate text-[13.5px] font-medium">{s.name}</span>
                     {s.pinned && (
-                      <span title="已固定：自动整理不会动它" style={{ color: "var(--color-accent)" }}>
+                      <span title="已固定：自动整理不会动它" className="shrink-0" style={{ color: "var(--color-accent)" }}>
                         <IconPin size={12} />
                       </span>
                     )}
                     <span
-                      className="ml-0.5 inline-flex shrink-0 items-center gap-1 text-[11px]"
+                      className="inline-flex shrink-0 items-center gap-1 text-[11px]"
                       style={{ color: meta.color }}
                     >
-                      <span
-                        className="h-1.5 w-1.5 rounded-full"
-                        style={{ background: meta.color }}
-                        aria-hidden="true"
-                      />
+                      <span className="h-1.5 w-1.5 rounded-full" style={{ background: meta.color }} aria-hidden="true" />
                       {meta.text}
                     </span>
+                    <span className="tag ml-auto hidden shrink-0 sm:inline-flex">{sourceLabel(s.source)}</span>
                   </span>
                   {s.description && (
                     <span className="mt-0.5 block truncate text-[12px]" style={{ color: "var(--color-muted)" }}>
                       {s.description}
                     </span>
                   )}
+                  {/* 第三行：只留三个数，一律用图标 + 短词 ——
+                      「3 个附件 · 用了 12 次 · 最后 2 天前」这种长句在手机上必换行，
+                      换行后整行就被撑成"一条一条竖着往下堆"。 */}
                   <span
-                    className="mt-1 flex items-center gap-1.5 text-[11.5px]"
+                    className="mt-1 flex items-center gap-3 text-[11.5px]"
                     style={{ color: "var(--color-muted)" }}
                   >
-                    <span className="tag">{sourceLabel(s.source)}</span>
-                    <span>·</span>
-                    <span>{Object.keys(s.files ?? {}).length} 个附件</span>
-                    <span>·</span>
-                    <span>用了 {s.use_count ?? 0} 次</span>
-                    <span>·</span>
-                    <span>{s.last_used_at ? `最后 ${fmt.relative(s.last_used_at)}` : "还没人读过"}</span>
+                    <span className="inline-flex items-center gap-1 whitespace-nowrap" title="附件数">
+                      <IconFile size={12} />
+                      {Object.keys(s.files ?? {}).length}
+                    </span>
+                    <span className="inline-flex items-center gap-1 whitespace-nowrap" title="被读进上下文的次数">
+                      <IconRefresh size={12} />
+                      {s.use_count ?? 0}
+                    </span>
+                    <span className="inline-flex min-w-0 items-center gap-1" title="最后一次被读进上下文">
+                      <IconClock size={12} className="shrink-0" />
+                      <span className="truncate">
+                        {s.last_used_at ? fmt.relative(s.last_used_at) : "没读过"}
+                      </span>
+                    </span>
                   </span>
                 </span>
               </Row>
