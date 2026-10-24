@@ -1308,8 +1308,10 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
           {/* 移动端唯一那条顶栏：菜单 + 当前助手 + 配置。
               之前它上面还叠着全局的「Agent Studio」条（fixed 56 + 这条 52），
               中间大片空白，像没做完 —— 现在对话页不出全局那条，只剩这一条。 */}
+          {/* absolute 而不是 relative：顶栏要浮在消息流之上，滚动时正文才从它
+              下面穿过 —— 毛玻璃得有东西可透才叫毛玻璃，纯色背景上做 blur 是白做。 */}
           <header
-            className="relative h-[calc(44px+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] pl-1 pr-1.5 flex items-center gap-1 border-b border-[var(--color-border)] lg:hidden"
+            className="absolute top-0 inset-x-0 z-20 h-[calc(44px+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] pl-1 pr-1.5 flex items-center gap-1 border-b border-[var(--color-border)] lg:hidden"
           >
             {/* 毛玻璃单独一层（同 Nav）：挂在 header 自身会让里面的
                 position:fixed 面板相对 header 定位，助手选择面板会飞出屏幕。 */}
@@ -1400,7 +1402,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
           {/* 消息流 —— 阅读宽度封顶 768px 居中：一行扫 1000px 是眼睛的负担 */}
           <div className="relative flex-1 min-h-0 flex flex-col">
           <div
-            className="flex-1 overflow-auto"
+            className="flex-1 overflow-auto max-lg:pt-[calc(44px+env(safe-area-inset-top))]"
             ref={boxRef}
             onScroll={onScroll}
             style={{ paddingBottom: dockH + 8 }}
@@ -1656,7 +1658,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
           <div
             ref={dockRef}
             data-dock
-            className="absolute inset-x-0 bottom-0 z-20 px-3 sm:px-4 pt-1 pb-1"
+            className="absolute inset-x-0 bottom-0 z-20 px-3 sm:px-4 pt-0.5 pb-1"
             style={{
               background: "color-mix(in srgb, var(--color-bg) 34%, transparent)",
               backdropFilter: "blur(32px) saturate(2.1)",
@@ -2077,7 +2079,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 <textarea
                   ref={taRef}
                   rows={1}
-                  className="block w-full resize-none bg-transparent border-0 outline-none px-3.5 pt-1.5 pb-1 text-[13.5px] leading-[22px]"
+                  className="block w-full resize-none bg-transparent border-0 outline-none px-3.5 py-2 text-[14px] leading-[24px] min-h-[44px]"
                   style={{ maxHeight: "40vh" }}
                   placeholder={
                     paused

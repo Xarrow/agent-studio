@@ -101,7 +101,7 @@ export function QuickTags({ onPick, prefix }: { onPick: (text: string) => void; 
             key={t}
             data-tap
             onClick={() => onPick(t)}
-            className="shrink-0 h-6 px-2 rounded-full border text-[12px] transition-colors hover:bg-[var(--color-surface-2)]"
+            className="shrink-0 h-6 px-2 rounded-full border text-[11.5px] transition-colors hover:bg-[var(--color-surface-2)]"
             style={{ borderColor: "var(--color-border)", color: "var(--color-text)" }}
             title={`把「${t}」填进输入框`}
           >
