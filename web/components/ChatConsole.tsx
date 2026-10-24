@@ -2271,13 +2271,25 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     }
                   }}
                 />
-                <div className="flex items-center gap-1 px-1.5 pb-0 pt-0">
+                {/* 运行中（busy）只留「插话 / 停止」——
+                    附件、定时、技能、工具、记忆这几颗在跑的时候点了也没用，
+                    留着它们会把右边两颗挤出输入框（实测 390 宽下多出约 90px，
+                    320 宽更是一排顶到屏幕外）。 */}
+                <div className="flex min-w-0 items-center gap-1 px-1.5 pb-0 pt-0">
+                  {/* 左侧工具组自己可横向滚（窄屏 320 下一排放不开），
+                      右侧「插话 / 发送」永远不滚、不被挤走 */}
+                  <div
+                    className="flex min-w-0 items-center gap-1 overflow-x-auto"
+                    style={{ scrollbarWidth: "none" }}
+                  >
+                  {!busy && (
+                  <>
                   <button
                     data-tap
                     type="button"
                     className="w-9 h-9 sm:w-8 sm:h-8 shrink-0 flex items-center justify-center rounded-xl text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] disabled:opacity-40"
                     title="添加附件（可粘贴截图、拖入文件）"
-                    disabled={busy || paused || uploading}
+                    disabled={paused || uploading}
                     onClick={() => fileRef.current?.click()}
                   >
                     {uploading ? (
@@ -2299,6 +2311,9 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                   <SkillEntry agent={currentAgent} onChanged={() => void reloadAgents()} />
                   <ToolEntry agent={currentAgent} onChanged={() => void reloadAgents()} />
                   <MemoryEntry onPick={appendToInput} />
+                  </>
+                  )}
+                  </div>
                   <span className="hidden sm:block text-[11.5px] truncate text-[var(--color-muted)]">
                     {dragging
                       ? "松手即添加为附件"
@@ -2335,10 +2350,14 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                         type="button"
                         title="插话：塞进这一轮，不打断当前这一步"
                         onClick={() => void steer()}
-                        className="h-9 sm:h-8 px-2.5 shrink-0 flex items-center justify-center rounded-full text-[12.5px] font-medium"
+                        className="w-9 h-9 sm:w-8 sm:h-8 shrink-0 flex items-center justify-center rounded-full"
                         style={{ background: "var(--color-accent)", color: "#fff" }}
                       >
-                        插话
+                        {/* 气泡 + 箭头 = 把话塞进去，不打断当前这一步 */}
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M20 11.5a7.5 7.5 0 0 1-10.9 6.7L4 20l1.8-5.1A7.5 7.5 0 1 1 20 11.5Z" />
+                          <path d="M9 11.5h6M13 9l2.5 2.5L13 14" />
+                        </svg>
                       </button>
                     ) : null}
                     {busy ? (
