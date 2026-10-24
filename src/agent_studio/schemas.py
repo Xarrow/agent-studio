@@ -1250,6 +1250,12 @@ class RemoteAgentSelfRegisterIn(BaseModel):
     model_config = {"extra": "allow"}
 
 
+class RemoteAgentTestIn(BaseModel):
+    """测试调用要问的话。不给就走「远端在线」那条连通性测试。"""
+
+    text: str = Field(default="", max_length=2000)
+
+
 class RemoteAgentTestResult(BaseModel):
     ok: bool
     ms: int = 0

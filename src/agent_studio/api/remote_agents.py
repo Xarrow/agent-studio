@@ -24,6 +24,7 @@ from .. import a2a_client, remote_agents
 from ..db import SessionLocal, get_session
 from ..models import RemoteAgent, RemoteAgentEvent, Run, Tool, now_ms
 from ..schemas import (
+    RemoteAgentTestIn,
     RemoteAgentCreateIn,
     RemoteAgentPatchIn,
     RemoteAgentRead,
@@ -302,19 +303,26 @@ async def refresh_remote_agent(
 
 
 @router.post("/{remote_id}/test", response_model=RemoteAgentTestResult)
-async def test_remote_agent(remote_id: str) -> RemoteAgentTestResult:
-    """真调一次：发一条消息、等远端跑完，把回答带回来（验证可达 + 鉴权 + 协议）。"""
+async def test_remote_agent(
+    remote_id: str, body: RemoteAgentTestIn | None = None
+) -> RemoteAgentTestResult:
+    """真调一次：发一条消息、等远端跑完，把回答带回来（验证可达 + 鉴权 + 协议）。
+
+    不给 `text` 就发「远端在线」那条纯连通性测试；
+    给了就按给的话问 —— 这样能直接验远端某个技能（比如「看看性能指标」）而不是只验通不通。
+    """
     async with SessionLocal() as session:
         row = await session.get(RemoteAgent, remote_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"远程 agent 不存在: {remote_id}")
+    ask = ((body.text if body else "") or "").strip() or "连通性测试：请只回复四个字「远端在线」。"
 
     t0 = time.monotonic()
     t0_ms = now_ms()
     try:
         status_txt, answer, task_id = await a2a_client.run_until_done(
             row.url,
-            "连通性测试：请只回复四个字「远端在线」。",
+            ask,
             agent_id=row.remote_agent_id,
             timeout_s=min(float(row.timeout_s or 900.0), 180.0),
             headers=remote_agents.auth_headers(row),
@@ -328,7 +336,7 @@ async def test_remote_agent(remote_id: str) -> RemoteAgentTestResult:
                 agent_id="",  # 探测调用不来自任何本地助手（run.agent_id 非空列，用空串占位）
                 runtime="a2a",
                 status="ok" if ok else "error",
-                input={"text": "连通性测试：请只回复四个字「远端在线」。", "remote": row.url, "remote_name": row.name, "probe": True},
+                input={"text": ask, "remote": row.url, "remote_name": row.name, "probe": True},
                 definition_snapshot={},
                 started_at=now_ms() - ms,
                 ended_at=now_ms(),

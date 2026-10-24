@@ -41,8 +41,8 @@ PUBLIC_URL = os.environ.get("A2A_PUBLIC_URL", f"http://127.0.0.1:{PORT}").rstrip
 AGENT_NAME = os.environ.get("A2A_NAME", "阿里云巡检助手")
 AGENT_DESC = os.environ.get(
     "A2A_DESC",
-    "一台阿里云 ECS 上的小 agent：看磁盘/内存/负载/进程/网络与时间，"
-    "只读不写，用来验证跨机器的 agent 互通。",
+    "一台阿里云 ECS 上的小 agent：查性能指标（CPU/内存/Swap/磁盘占用与读写/网卡收发/"
+    "负载/吃内存的进程）和机器巡检（磁盘/内存/负载/进程/出口 IP/运行时长）。只读不写。",
 )
 
 STARTED_AT = time.time()
@@ -132,6 +132,263 @@ def snapshot() -> str:
     return "\n".join(lines)
 
 
+# ── 性能指标（比 snapshot 更细，仍然是只读） ──────────────────────────────
+#: CPU / 磁盘 / 网络都是「两次采样求差」，间隔太短读数抖动，太长拖慢回答。
+_METRICS_SAMPLE_S = 0.35
+
+
+def _cpu_times() -> list[int]:
+    """读 /proc/stat 第一行（cpu 汇总）：user nice system idle iowait irq softirq steal ..."""
+    parts = _read("/proc/stat").splitlines()[0].split()
+    # parts[0] 是 "cpu"
+    out: list[int] = []
+    for p in parts[1:9]:
+        try:
+            out.append(int(p))
+        except ValueError:
+            out.append(0)
+    while len(out) < 8:
+        out.append(0)
+    return out
+
+
+def _cpu_pct() -> dict[str, float]:
+    """采样两次 /proc/stat，算这段时间里 CPU 各态占比（%）。"""
+    a = _cpu_times()
+    time.sleep(_METRICS_SAMPLE_S)
+    b = _cpu_times()
+    d = [max(0, b[i] - a[i]) for i in range(8)]
+    total = sum(d) or 1
+    idle = d[3] + d[4]  # idle + iowait 都算"没在算"
+    return {
+        "used": round((total - idle) / total * 100, 1),
+        "user": round((d[0] + d[1]) / total * 100, 1),
+        "system": round((d[2] + d[5] + d[6]) / total * 100, 1),
+        "iowait": round(d[4] / total * 100, 1),
+        "steal": round(d[7] / total * 100, 1),
+        "idle": round(idle / total * 100, 1),
+    }
+
+
+def _disk_io() -> dict[str, float]:
+    """根分区所在整盘的读写速率（KB/s）。/proc/diskstats 的 sectors 是 512B 计数。"""
+    def stat_for(dev: str) -> tuple[int, int] | None:
+        for line in _read("/proc/diskstats").splitlines():
+            f = line.split()
+            # 字段：major minor name reads_completed reads_merged sectors_read ...
+            if len(f) > 9 and f[2] == dev:
+                try:
+                    return int(f[5]), int(f[9])  # sectors_read, sectors_written
+                except (ValueError, IndexError):
+                    return None
+        return None
+
+    # 找根分区的物理盘名（/dev/vda1 → vda；/dev/nvme0n1p1 → nvme0n1）
+    root_src = ""
+    for line in _read("/proc/mounts").splitlines():
+        f = line.split()
+        if len(f) >= 2 and f[1] == "/":
+            root_src = f[0]
+            break
+    dev = root_src.rsplit("/", 1)[-1]
+    while dev and dev[-1].isdigit():
+        dev = dev[:-1]
+    dev = dev.rstrip("p") if dev.startswith("nvme") and dev.endswith("p") else dev
+    if not dev:
+        return {}
+    a = stat_for(dev)
+    if a is None:
+        return {}
+    time.sleep(_METRICS_SAMPLE_S)
+    b = stat_for(dev)
+    if b is None:
+        return {}
+    dt = _METRICS_SAMPLE_S
+    return {
+        "read_kbs": round((b[0] - a[0]) * 512 / 1024 / dt, 1),
+        "write_kbs": round((b[1] - a[1]) * 512 / 1024 / dt, 1),
+        "dev": dev,
+    }
+
+
+def _net_io() -> list[dict[str, Any]]:
+    """各网卡收发速率（KB/s），跳过 lo。"""
+    def read() -> dict[str, tuple[int, int]]:
+        out: dict[str, tuple[int, int]] = {}
+        for line in _read("/proc/net/dev").splitlines()[2:]:
+            name, _, rest = line.partition(":")
+            f = rest.split()
+            if len(f) >= 9 and name.strip() != "lo":
+                try:
+                    out[name.strip()] = (int(f[0]), int(f[8]))  # rx_bytes, tx_bytes
+                except ValueError:
+                    continue
+        return out
+
+    a = read()
+    time.sleep(_METRICS_SAMPLE_S)
+    b = read()
+    res: list[dict[str, Any]] = []
+    for name, (rx, tx) in b.items():
+        if name not in a:
+            continue
+        res.append({
+            "iface": name,
+            "rx_kbs": round((rx - a[name][0]) / 1024 / _METRICS_SAMPLE_S, 1),
+            "tx_kbs": round((tx - a[name][1]) / 1024 / _METRICS_SAMPLE_S, 1),
+            "rx_total_mb": round(rx / 2**20, 1),
+            "tx_total_mb": round(tx / 2**20, 1),
+        })
+    return res
+
+
+def _top_procs(n: int = 5) -> list[dict[str, Any]]:
+    """按常驻内存排序取前 n 个进程（不读 /proc/*/stat 的 CPU 累计，跨核归一化容易算错）。"""
+    hz = os.sysconf("SC_CLK_TCK") if hasattr(os, "sysconf") else 100
+    page = os.sysconf("SC_PAGE_SIZE") if hasattr(os, "sysconf") else 4096
+    rows: list[dict[str, Any]] = []
+    for pid in os.listdir("/proc"):
+        if not pid.isdigit():
+            continue
+        try:
+            with open(f"/proc/{pid}/statm", encoding="utf-8") as fh:
+                rss_pages = int(fh.read().split()[1])
+            with open(f"/proc/{pid}/stat", encoding="utf-8") as fh:
+                stat = fh.read()
+            # comm 里可能有空格和括号，取最后一个 ')' 之后的部分
+            tail = stat[stat.rfind(")") + 2:].split()
+            utime, stime = int(tail[11]), int(tail[12])
+            with open(f"/proc/{pid}/comm", encoding="utf-8") as fh:
+                comm = fh.read().strip()
+        except (OSError, ValueError, IndexError):
+            continue
+        rows.append({
+            "pid": int(pid),
+            "name": comm[:24],
+            "rss_mb": round(rss_pages * page / 2**20, 1),
+            "cpu_s": round((utime + stime) / hz, 1),
+        })
+    rows.sort(key=lambda r: r["rss_mb"], reverse=True)
+    return rows[:n]
+
+
+def _disks() -> list[dict[str, Any]]:
+    """每个真实挂载点的占用（跳过 tmpfs / overlay / proc 这些）。"""
+    skip_fs = {"tmpfs", "devtmpfs", "overlay", "proc", "sysfs", "cgroup", "cgroup2",
+               "squashfs", "nsfs", "ramfs", "debugfs", "tracefs", "securityfs", "pstore",
+               "fusectl", "fuse.lxcfs", "devpts", "mqueue", "hugetlbfs", "binfmt_misc",
+               "autofs", "configfs", "rpc_pipefs", "efivarfs"}
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for line in _read("/proc/mounts").splitlines():
+        f = line.split()
+        if len(f) < 3:
+            continue
+        src, mnt, fstype = f[0], f[1], f[2]
+        if fstype in skip_fs or mnt in seen:
+            continue
+        try:
+            du = shutil.disk_usage(mnt)
+        except OSError:
+            continue
+        if du.total < 2**28:      # < 256MB 的多是内核伪文件系统，列出来只是噪声
+            continue
+        seen.add(mnt)
+        gb = 2**30
+        out.append({
+            "mount": mnt,
+            "fstype": fstype,
+            "used_gb": round(du.used / gb, 2),
+            "total_gb": round(du.total / gb, 2),
+            "used_pct": round(du.used / du.total * 100, 1) if du.total else 0.0,
+        })
+    return out
+
+
+def metrics() -> str:
+    """这台机器的性能指标：CPU / 内存 / swap / 磁盘占用与 IO / 网络 / 负载 / 吃内存的进程。"""
+    cpu = _cpu_pct()
+    cores = os.cpu_count() or 0
+    model = ""
+    for line in _read("/proc/cpuinfo").splitlines():
+        if line.lower().startswith("model name"):
+            model = line.split(":", 1)[1].strip()
+            break
+
+    mem: dict[str, int] = {}
+    for line in _read("/proc/meminfo").splitlines():
+        k, _, v = line.partition(":")
+        try:
+            mem[k] = int((v.strip().split() or ["0"])[0])
+        except ValueError:
+            mem[k] = 0
+    mb = 1024
+    total = mem.get("MemTotal", 0) // mb
+    avail = mem.get("MemAvailable", 0) // mb
+    swap_total = mem.get("SwapTotal", 0) // mb
+    swap_free = mem.get("SwapFree", 0) // mb
+
+    load = _read("/proc/loadavg").split()
+    io = _disk_io()
+    nets = _net_io()
+    tops = _top_procs(5)
+    disks = _disks()
+
+    lines: list[str] = []
+    lines.append(f"主机：{socket.gethostname()}（{platform.machine()}，{cores} 核）")
+    if model:
+        lines.append(f"CPU：{model}")
+    lines.append(
+        f"CPU 使用率：{cpu['used']}%（user {cpu['user']}% / system {cpu['system']}%"
+        f" / iowait {cpu['iowait']}% / steal {cpu['steal']}% / idle {cpu['idle']}%）"
+    )
+    if load:
+        per = round(float(load[0]) / cores, 2) if cores else 0
+        lines.append(
+            f"负载：1 分 {load[0]} · 5 分 {load[1]} · 15 分 {load[2]}"
+            f"（每核 {per}）　任务 {load[3] if len(load) > 3 else '—'}"
+        )
+    if total:
+        lines.append(
+            f"内存：已用 {total - avail} / {total} MB（{round((total - avail) / total * 100, 1)}%）"
+            f"　可用 {avail} MB　缓存 {mem.get('Cached', 0) // mb} MB"
+            f"　Buffers {mem.get('Buffers', 0) // mb} MB"
+        )
+    if swap_total:
+        lines.append(f"Swap：已用 {swap_total - swap_free} / {swap_total} MB")
+    else:
+        lines.append("Swap：未启用")
+
+    if disks:
+        lines.append("磁盘：")
+        for d in disks:
+            lines.append(
+                f"  - {d['mount']}（{d['fstype']}）{d['used_gb']} / {d['total_gb']} GB"
+                f"　已用 {d['used_pct']}%"
+            )
+    if io:
+        lines.append(
+            f"磁盘 IO（{io['dev']}）：读 {io['read_kbs']} KB/s　写 {io['write_kbs']} KB/s"
+        )
+    for n in nets:
+        lines.append(
+            f"网络 {n['iface']}：收 {n['rx_kbs']} KB/s（累计 {n['rx_total_mb']} MB）"
+            f"　发 {n['tx_kbs']} KB/s（累计 {n['tx_total_mb']} MB）"
+        )
+    if tops:
+        lines.append("吃内存最多的进程：")
+        for p in tops:
+            lines.append(f"  - {p['name']}（PID {p['pid']}）RSS {p['rss_mb']} MB　CPU 时间 {p['cpu_s']}s")
+
+    try:
+        up = float(_read("/proc/uptime").split()[0])
+        lines.append(f"已运行：{int(up // 86400)} 天 {int(up % 86400 // 3600)} 小时")
+    except (IndexError, ValueError):
+        pass
+    lines.append(f"采样时间：{time.strftime('%Y-%m-%d %H:%M:%S %Z')}（CPU/IO/网络为 {int(_METRICS_SAMPLE_S * 1000)}ms 采样）")
+    return "\n".join(lines)
+
+
 def echo(text: str) -> str:
     return f"收到：{text}\n（我是 {AGENT_NAME}，运行在 {socket.gethostname()}，A2A 链路正常）"
 
@@ -144,6 +401,10 @@ def handle_text(text: str) -> tuple[str, str]:
         return "system-status", snapshot()
     if any(k in low for k in ("ping", "echo", "回显", "在吗", "test")) and len(t) < 40:
         return "echo", echo(t)
+    # 性能指标：问到 CPU / 内存 / 磁盘 / 网络 / 负载 / 监控 就走细版
+    if any(k in low for k in ("性能", "指标", "cpu", "内存", "磁盘", "网络", "负载",
+                              "load", "metric", "监控", "io", "swap", "进程")):
+        return "metrics", metrics()
     return "system-status", snapshot()
 
 
@@ -168,6 +429,14 @@ def card() -> dict[str, Any]:
                 "description": "读这台 ECS 的负载、内存、磁盘、进程数、出口 IP 与时间。只读。",
                 "tags": ["ops", "readonly", "ecs"],
                 "examples": ["看看这台机器现在怎么样", "磁盘还剩多少"],
+            },
+            {
+                "id": "metrics",
+                "name": "性能指标",
+                "description": "采样 CPU 使用率（user/system/iowait/steal）、内存与 swap、各挂载点占用、"
+                               "磁盘读写速率、网卡收发速率、负载与吃内存最多的进程。只读。",
+                "tags": ["ops", "readonly", "metrics", "ecs"],
+                "examples": ["看看服务器性能指标", "CPU 和内存现在多少", "磁盘 IO 和网络速率"],
             },
             {
                 "id": "echo",
