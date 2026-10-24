@@ -2008,13 +2008,17 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                       onClick={toggleFiles}
                       aria-expanded={openFiles}
                       title={`这个会话产出的 ${fileCount} 个文件（点开看清单）`}
-                      /* 它是「对象」不是「动作」：用 accent 淡色 + 数字，和右边那排
-                         灰底的问句区分开。展开时底更实一点，状态一眼可见。 */
-                      className="shrink-0 inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12.5px] font-medium transition-colors"
+                      /* 只给它上 accent 色：它是「这次的产出」（对象），右边那排是
+                         「点了填进输入框」（动作）。同一款胶囊，靠颜色分性质 ——
+                         尺寸和形态一个字没动，宁可轻也不要做粗。 */
+                      className="shrink-0 inline-flex items-center gap-1.5 h-6 px-2 rounded-full border text-[11.5px] transition-colors hover:bg-[var(--color-surface-2)]"
                       style={{
+                        borderColor: openFiles
+                          ? "var(--color-accent)"
+                          : "color-mix(in srgb, var(--color-accent) 42%, transparent)",
                         background: openFiles
-                          ? "color-mix(in srgb, var(--color-accent) 20%, transparent)"
-                          : "color-mix(in srgb, var(--color-accent) 12%, transparent)",
+                          ? "color-mix(in srgb, var(--color-accent) 10%, transparent)"
+                          : "transparent",
                         color: "var(--color-accent)",
                       }}
                     >
