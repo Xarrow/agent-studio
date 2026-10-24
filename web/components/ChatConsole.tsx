@@ -28,6 +28,7 @@ import { useImeGuard, isImeEvent } from "@/lib/ime";
 import Markdown from "@/components/Markdown";
 import { RunDetailById } from "@/components/RunDetailDialog";
 import { AgentDetailDialog } from "./AgentDetailDialog";
+import { ICON_PATHS, SETUP_ITEMS } from "@/lib/nav-items";
 import { AgentSwitcher } from "./AgentSwitcher";
 import { SkillsStrip } from "./SkillsStrip";
 import { QuickTags } from "./QuickTags";
@@ -1168,6 +1169,28 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 onRemove={(s) => void removeSession(s)}
                 onCollapse={() => setMobileNav(false)}
               />
+              {/* 手机上没有全局顶栏了（顶栏只留菜单 + 当前助手 + 配置），
+                  功能入口放在这个抽屉底部：图标 + 短标签，横向可滑。
+                  只给图标不行 —— 手机没有 hover，看不出是干什么的。 */}
+              <div className="shrink-0 border-t border-[var(--color-border)] pb-[env(safe-area-inset-bottom)]">
+                <div className="px-3 pt-2 pb-1 text-[11px] text-[var(--color-muted)]">功能</div>
+                <div className="flex gap-1 overflow-x-auto px-2 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  {SETUP_ITEMS.map((item) => (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      title={item.tip}
+                      onClick={() => setMobileNav(false)}
+                      className="shrink-0 w-11 flex flex-col items-center gap-1 rounded-lg py-1.5 text-[var(--color-muted)] active:bg-[var(--color-surface-2)]"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d={ICON_PATHS[item.icon] ?? ""} />
+                      </svg>
+                      <span className="text-[10.5px] leading-none">{item.short ?? item.label}</span>
+                    </Link>
+                  ))}
+                </div>
+              </div>
             </div>
             <button
               aria-label="关闭对话列表"
