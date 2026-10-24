@@ -32,7 +32,10 @@ export default function RootLayout({
         <FeedbackProvider>
           {/* 公网访问的口令浮层：收到 401 时自动弹出（内网直连不会出现） */}
           <AccessGate />
-          <div className="flex h-screen overflow-hidden">
+          {/* h-[100dvh] 而不是 h-screen：100vh 在手机上等于"地址栏收起后的高度"，
+              比当前可视区高，于是整个页面能上下拖动（顶栏和输入区一起被拖走）。
+              dvh 跟着可视区走，页面本体就没有可滚的余量了。 */}
+          <div className="flex h-[100dvh] overflow-hidden">
             <Nav />
             {/* pt-[52px]：移动端顶栏是 fixed，给内容留出高度（≥768px 无顶栏）。
                 52 是全站顶栏唯一规格（导航条 / 对话条 / 抽屉头都是 52）。 */}
