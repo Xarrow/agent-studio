@@ -54,9 +54,11 @@ export function Sheet({
 
   return createPortal(
     <>
+      {/* 遮罩：桌面也要。之前只在手机上给遮罩，桌面这张浮卡没有可点的背景，
+          于是「点外面关掉」根本不存在，只能按 Esc —— 看起来就是弹窗挂在右边关不掉。 */}
       <div
-        className="lg:hidden fixed inset-0 z-[59] veil-in"
-        style={{ background: "rgba(15,23,42,.32)" }}
+        className="fixed inset-0 z-[59] veil-in"
+        style={{ background: "rgba(15,23,42,.18)" }}
         onClick={onClose}
         aria-hidden="true"
       />
@@ -64,7 +66,7 @@ export function Sheet({
         role="dialog"
         aria-label={title}
         aria-labelledby={labelledBy}
-        className="sheet-up z-[60] flex flex-col overflow-hidden max-lg:fixed max-lg:inset-x-0 max-lg:bottom-0 max-lg:rounded-t-[18px] lg:fixed lg:right-4 lg:bottom-24 lg:rounded-xl"
+        className="sheet-up z-[60] flex flex-col overflow-hidden max-lg:fixed max-lg:inset-x-0 max-lg:bottom-0 max-lg:rounded-t-[18px] lg:fixed lg:inset-x-0 lg:mx-auto lg:bottom-24 lg:rounded-xl"
         style={
           {
             "--sheet-w": `${width}px`,
