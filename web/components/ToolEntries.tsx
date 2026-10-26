@@ -42,8 +42,15 @@ function useExclusive(name: string) {
   return { open, setOpen, toggle };
 }
 
+/* 桌面带文字：这三颗是「给这轮加技能/工具/记忆」，光看图标认不出来。
+   手机仍只留图标 —— 一排排不下，触控区保 36。 */
 const btnCls =
-  "w-9 h-9 sm:w-8 sm:h-8 shrink-0 flex items-center justify-center rounded-xl hover:bg-[var(--color-surface-2)] transition-colors";
+  "h-9 w-9 sm:h-8 sm:w-auto sm:px-2 shrink-0 flex items-center justify-center gap-1.5 rounded-xl hover:bg-[var(--color-surface-2)] transition-colors";
+
+/** 桌面才出的文字标签（手机隐掉） */
+const Label = ({ children }: { children: string }) => (
+  <span className="hidden sm:inline text-[12px] leading-none whitespace-nowrap">{children}</span>
+);
 
 export function SkillEntry({
   agent,
@@ -69,6 +76,7 @@ export function SkillEntry({
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M12 3 4 7v6c0 4.4 3.4 7.4 8 8 4.6-.6 8-3.6 8-8V7l-8-4z" />
         </svg>
+        <Label>技能</Label>
       </button>
       <SkillPicker agent={agent} onChanged={onChanged} open={open} onOpenChange={setOpen} />
     </>
@@ -99,6 +107,7 @@ export function ToolEntry({
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M14.7 6.3a4 4 0 0 0 5 5L20 21H4l-.7-9.7a4 4 0 0 0 5-5l3.2-3.2 3.2 3.2z" />
         </svg>
+        <Label>工具</Label>
       </button>
       <ToolPicker agent={agent} onChanged={onChanged} open={open} onOpenChange={setOpen} />
     </>
@@ -122,6 +131,7 @@ export function MemoryEntry({ onPick }: { onPick: (text: string) => void }) {
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M4 5h16v12H8l-4 4V5z" />
         </svg>
+        <Label>记忆</Label>
       </button>
       <MemoryPicker open={open} onOpenChange={setOpen} onPick={onPick} />
     </>

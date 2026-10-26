@@ -2235,7 +2235,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 <textarea
                   ref={taRef}
                   rows={1}
-                  className="block w-full resize-none bg-transparent border-0 outline-none px-3.5 py-2 text-[14px] leading-[24px] min-h-[44px]"
+                  className="block w-full resize-none bg-transparent border-0 outline-none px-3.5 py-2 text-[14px] leading-[24px] min-h-[44px] sm:min-h-[88px]"
                   style={{ maxHeight: "40vh" }}
                   placeholder={
                     paused
