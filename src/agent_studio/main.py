@@ -298,6 +298,13 @@ async def access_log(request: "Request", call_next):
             extra,
         )
 
+    # HEAD 兜底：浏览器预取器 / 健康探测 / iOS Safari 都会发 HEAD。
+    # FastAPI 只对显式注册了 HEAD 的路由回 200，其余一律 405 —— 这些 405 没有
+    # 业务影响但会打满日志，还会让部分探测方误判「服务不可用」。这里把 HEAD
+    # 统一当 GET 处理再由 Starlette 剥掉响应体（RFC 9110：HEAD = 无 body 的 GET）。
+    if request.method == "HEAD":
+        request.scope["method"] = "GET"
+
     try:
         response = await call_next(request)
     except Exception as exc:  # noqa: BLE001
