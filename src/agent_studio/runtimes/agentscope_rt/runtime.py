@@ -341,13 +341,13 @@ class AgentScopeRuntime(AgentRuntime):
 
         _run_ctx = current_run_ctx()
 
-        # 技能按**这个助手挂了哪些**过滤（用户在界面上勾选 skills 要真实生效）：
-        # 绑定的（state=active）symlink 进过滤视图目录，编译时 LocalSkillLoader
-        # 只看到这些。一个技能都没挂 → 空目录 = 助手没有任何技能（和工具的语义一致）。
-        # 兼容：一个都没绑的老助手按「全部可用」处理 —— 之前技能就是全平台共享，
-        # 突然全消失是行为破坏；绑了至少一个才切换到「严格按绑定」。
+        # 技能语义（用户定案）：**全局共享池 + 每助手显式选择**。
+        # 技能目录只是候选池；助手能用的 = 界面上勾选的（agent_skill 绑定）。
+        # 勾选（PUT /api/agents definition.skills）→ _sync_relations 写 agent_skill
+        # → 这里读绑定 symlink 进过滤视图。**零绑定 = 没有技能**（与工具一致，
+        # 不做全量回退 —— 失败即全量会让"用户移除了"悄悄失效）。
         _aid = str(_run_ctx.get("agent_id") or "")
-        _bound_names: list[str] | None = None
+        _bound_names: list[str] = []
         if _aid:
             try:
                 from ...db import SessionLocal
@@ -364,10 +364,34 @@ class AgentScopeRuntime(AgentRuntime):
                             )
                         ).scalars()
                     )
-            except Exception:  # noqa: BLE001 —— 读不到按旧行为（全量）
-                logger.debug("读技能绑定失败，退回全量技能", exc_info=True)
-                _bound_names = None
-        if _bound_names:
+            except Exception:  # noqa: BLE001 —— 读不到按空处理：宁可少给不可滥给
+                logger.warning("读技能绑定失败，本次按零技能处理", exc_info=True)
+        _view = work_dir / ".skills-view"
+        try:
+            import shutil as _sh
+
+            if _view.exists():
+                _sh.rmtree(_view)
+            _view.mkdir(parents=True, exist_ok=True)
+            for _name in _bound_names:
+                _src = skills_dir / _name
+                if (_src / "SKILL.md").is_file():
+                    (_view / _name).symlink_to(_src, target_is_directory=True)
+            skills_dir = _view
+            logger.info(
+                "技能选择：%s 挂了 %d 个 → %s", _aid, len(_bound_names), _view
+            )
+        except Exception:  # noqa: BLE001 —— 视图建不起来给空目录（同宁缺毋滥）
+            logger.warning("技能过滤视图创建失败，本次按零技能处理", exc_info=True)
+            try:
+                import shutil as _sh2
+
+                if _view.exists():
+                    _sh2.rmtree(_view)
+                _view.mkdir(parents=True, exist_ok=True)
+                skills_dir = _view
+            except Exception:  # pragma: no cover
+                pass
             _view = work_dir / ".skills-view"
             try:
                 import shutil as _sh
