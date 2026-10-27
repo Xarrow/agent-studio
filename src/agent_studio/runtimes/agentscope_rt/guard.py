@@ -113,8 +113,18 @@ class DangerousActionGuard(MiddlewareBase):
 
         text = self._command_text(tool_input)
         if verdict.risk == guardrails.RISK_ASK and name in self._session_allow:
-            logger.info("安全闸门：本会话已允许 %s，跳过确认（%s）", name, verdict.rule)
-            return await next_handler()
+            # 「本会话内不再问这类操作」生效点。必须**直接 ALLOW 短路**，
+            # 不能 next_handler() 交给引擎：引擎里的 Bash 内建检查对
+            # rm -rf 等发的是 bypass_immune ASK（allow 规则压不住），
+            # 交回去等于白放行 —— 用户勾了「不再问」还会每次再问（实测踩到）。
+            # 短路安全：能走到这的 verdict 已是 ASK（DENY 在后面拦着），不存在
+            # 「放掉了本该 DENY 的」。
+            logger.info("安全闸门：本会话已允许 %s，直接放行（%s）", name, verdict.rule)
+            return PermissionDecision(
+                behavior=PermissionBehavior.ALLOW,
+                message="用户在本会话内已允许这类操作。",
+                decision_reason=f"{verdict.rule}-session-allow",
+            )
         if verdict.risk == guardrails.RISK_ASK and self._allowed_by_user(text):
             # 用户在这个助手上显式放行过同类命令 → 不再打扰
             logger.info("安全闸门：按用户放行规则跳过确认（%s）", verdict.rule)
