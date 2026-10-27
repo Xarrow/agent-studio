@@ -304,12 +304,18 @@ async def access_log(request: "Request", call_next):
     # 统一当 GET 处理再由 Starlette 剥掉响应体（RFC 9110：HEAD = 无 body 的 GET）。
     if request.method == "HEAD":
         request.scope["method"] = "GET"
+        request.scope["_was_head"] = True
 
     try:
         response = await call_next(request)
     except Exception as exc:  # noqa: BLE001
         emit("500", f"  {type(exc).__name__}: {exc}")
         raise
+    # 响应回程把 method 改回 HEAD：Starlette 的 Response 靠 scope['method'] 决定
+    # 是否渲染 body（HEAD 应无 body）。只改进不改回会让 curl -I 看着正常、
+    # 但裸连接的 HEAD 带上一段 JSON body —— 探测方可能挂起等 body。
+    if request.scope.pop("_was_head", False) and request.scope.get("method") == "GET":
+        request.scope["method"] = "HEAD"
     emit(response.status_code)
     return response
 
