@@ -191,6 +191,9 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   const streamSessionRef = useRef("");
   const endRef = useRef<HTMLDivElement | null>(null);
   const boxRef = useRef<HTMLDivElement | null>(null);
+  /** 断流自动重挂的计数：同一 run 连断 3 次说明服务/网络真有问题，
+      再挂只会无限打转 —— 停下来把话说明白。 */
+  const esReattachRef = useRef<{ runId: string; count: number }>({ runId: "", count: 0 });
 
   /* ------------------------------- 数据加载 ------------------------------- */
 
@@ -642,7 +645,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     [liveRunId],
   );
 
-  const attachStream = (runId: string, sentText: string) => {
+  const attachStream = (runId: string, sentText: string, reattachments = 0) => {
     const es = new EventSource(api.streamUrl(runId));
     esRef.current = es;
     streamSessionRef.current = sessionId;
@@ -650,6 +653,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     setBrowserActions([]);
     setBrowserSteps([]);
     lastBrowserRun.current = runId;
+    esReattachRef.current = { runId, count: reattachments };
 
     es.onmessage = (e: MessageEvent) => {
       try {
@@ -670,6 +674,16 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
           // 第一条增量到了就把它开出来，否则这段输出永远上不了屏
           setLive((prev) =>
             prev ? { role: "assistant", text: prev.text + t } : { role: "assistant", text: t },
+          );
+        }
+        if (ev.type === "hitl_request" && p && Object.keys(p).length) {
+          // 授权请求**一到就弹**，不等流结束 —— 中间差着工具执行的尾巴（慢的几秒），
+          // 用户看到的是"说完了却没下文"；当场弹条才是"它在等我"的即时反馈。
+          // settle 之后还会再 set 一次（以 run.pending_hitl 为准，防重放丢 payload）。
+          setHitl((prev) =>
+            prev && prev.payload === p
+              ? prev
+              : { runId, payload: p as Record<string, unknown> },
           );
         }
         if (ev.type === "browser_action") {
@@ -706,7 +720,11 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
       }
     };
 
-    const settle = async () => {
+    /** settle 由两条路触发：服务端 'done'（正常收尾）与 es.onerror（断流）。
+        断流时 run 可能还没落完终态 —— 直接查一次就放弃会让「等确认」的样子
+        整个消失（用户看到的就是"对话突然断了"，刷新才回来）。这里小退避重试，
+        拿到终态为止；始终拿不到就摆一条可见的错误，绝不静默。 */
+    const settle = async (how: "done" | "error" = "done") => {
       es.close();
       if (streamSessionRef.current !== sessionIdRef.current) return;   // 早就切走了，别动当前界面
       setBusy(false);
@@ -714,8 +732,33 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
       // 帧**不清**：这轮浏览停在哪一页，用户事后再点开还能看见（开新 run 时才重置）。
       // 画面只进内存、不落库；持久的那一张在会话文件的 browser/<run>.jpg 里。
       void loadBrowserSteps();
-      const r = await api.run(runId).catch(() => null);
-      if (r && r.status === "waiting_hitl") {
+      let r = null;
+      for (let i = 0; i < 4; i++) {
+        r = await api.run(runId).catch(() => null);
+        if (r && (r.status === "waiting_hitl" || !["running", "pending"].includes(r.status))) break;
+        await new Promise((res) => setTimeout(res, 600 * (i + 1)));
+      }
+      if (!r) {
+        // 连 run 都查不到 —— 不装没事，明确说
+        fb.error("连接中断", "这轮执行的状态查不到了，请刷新页面恢复现场");
+        return;
+      }
+      if (r.status === "running" || r.status === "pending") {
+        // 后端还在跑而流断了：自动重挂（stream 端点会回放已落库事件再推增量）。
+        // 同一 run 连挂 3 次仍断 → 不再打转，明确告诉用户现场怎么回来。
+        if (how === "error") {
+          const prev = esReattachRef.current;
+          const n = prev.runId === runId ? prev.count : 0;
+          if (n >= 3) {
+            fb.error("连接反复中断", "后端还在执行，但页面接不上事件流；刷新页面即可恢复现场");
+            return;
+          }
+          esReattachRef.current = { runId, count: n + 1 };
+          attachStream(runId, sentText, n + 1);
+          return;
+        }
+      }
+      if (r.status === "waiting_hitl") {
         // **不是结束，是暂停等你点头** —— 保留现场（不清 live），
         // 这样确认之后接着往同一个视图里追加，看起来是连贯的一次执行。
         // 每次 settle 都**重新读 pending_hitl**：resume 之后模型可能又要一次
@@ -749,8 +792,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
       await verifyTurn(runId, sentText);
     };
 
-    es.addEventListener("done", () => void settle());
-    es.onerror = () => void settle();
+    es.addEventListener("done", () => void settle("done"));
+    es.onerror = () => void settle("error");
   };
 
   const send = async (override?: unknown) => {
