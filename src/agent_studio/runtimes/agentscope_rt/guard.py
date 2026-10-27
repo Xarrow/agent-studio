@@ -134,6 +134,26 @@ class DangerousActionGuard(MiddlewareBase):
         if not current_run_ctx().get("interactive", True):
             verdict = guardrails.downgrade_if_unattended(verdict)
 
+        # bypass 模式 = 用户声明"全信任，黑名单兜底"：引擎会跳过全部安全 ASK
+        # （bypass_immune 无效），我们这层再发 ASK 就和模式矛盾 —— 用户选了
+        # bypass 还是每次被问。这里对齐：只保留 DENY 拦截，ASK 放行。
+        if (
+            verdict.risk == guardrails.RISK_ASK
+            and getattr(agent, "state", None) is not None
+        ):
+            _mode = getattr(
+                getattr(getattr(agent, "state", None), "permission_context", None),
+                "mode",
+                "",
+            )
+            if str(getattr(_mode, "value", _mode)) == "bypass":
+                logger.info("安全闸门：bypass 模式，ASK 放行（%s）", verdict.rule)
+                return PermissionDecision(
+                    behavior=PermissionBehavior.ALLOW,
+                    message="权限模式为全部放行，黑名单规则仍生效。",
+                    decision_reason=f"{verdict.rule}-bypass",
+                )
+
         call_id = str(getattr(tool_call, "id", "") or "")
         note_reason(call_id, verdict.reason)
 
