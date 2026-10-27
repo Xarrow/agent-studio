@@ -42,14 +42,13 @@ function useExclusive(name: string) {
   return { open, setOpen, toggle };
 }
 
-/* 桌面带文字：这三颗是「给这轮加技能/工具/记忆」，光看图标认不出来。
-   手机仍只留图标 —— 一排排不下，触控区保 36。 */
+/** 三颗都带文字：光看图标认不出来（用户实测手机上图标看不懂）。
+    手机一排放不下就横向滚 —— 工具栏那层本来就有 overflow-x-auto。 */
 const btnCls =
-  "h-9 w-9 sm:h-8 sm:w-auto sm:px-2 shrink-0 flex items-center justify-center gap-1.5 rounded-xl hover:bg-[var(--color-surface-2)] transition-colors";
+  "h-9 sm:h-8 sm:px-2 px-1 shrink-0 flex items-center justify-center gap-1 rounded-xl hover:bg-[var(--color-surface-2)] transition-colors";
 
-/** 桌面才出的文字标签（手机隐掉） */
 const Label = ({ children }: { children: string }) => (
-  <span className="hidden sm:inline text-[12px] leading-none whitespace-nowrap">{children}</span>
+  <span className="text-[12px] leading-none whitespace-nowrap">{children}</span>
 );
 
 export function SkillEntry({

@@ -38,12 +38,20 @@ export function ToolPicker({
   const [all, setAll] = useState<Tool[]>([]);
   const [q, setQ] = useState("");
   const [override, setOverride] = useState<string[] | null>(null);
+  const [loadState, setLoadState] = useState<"loading" | "ok" | "failed">("loading");
 
   const load = useCallback(() => {
+    setLoadState("loading");
     void api
       .tools()
-      .then((list) => setAll(list))
-      .catch(() => setAll([]));
+      .then((list) => {
+        setAll(list);
+        setLoadState("ok");
+      })
+      .catch(() => {
+        setAll([]);
+        setLoadState("failed");
+      });
   }, []);
 
   useEffect(() => {
@@ -128,9 +136,22 @@ export function ToolPicker({
       </div>
 
       {list.length === 0 ? (
-        <p className="px-3.5 py-8 text-center text-[12.5px]" style={{ color: "var(--color-muted)" }}>
-          {all.length === 0 ? "还没有工具，去「工具」页建一个" : "没有匹配的工具"}
-        </p>
+        <div className="px-3.5 py-8 text-center">
+          {loadState === "failed" ? (
+            <>
+              <p className="text-[12.5px] mb-2" style={{ color: "var(--color-err)" }}>
+                工具列表没加载出来
+              </p>
+              <button type="button" data-tap className="btn btn-sm" onClick={load}>
+                重试
+              </button>
+            </>
+          ) : (
+            <p className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+              {all.length === 0 ? "还没有工具，去「工具」页建一个" : "没有匹配的工具"}
+            </p>
+          )}
+        </div>
       ) : (
         <div className="pb-2">
           {list.map((t) => {

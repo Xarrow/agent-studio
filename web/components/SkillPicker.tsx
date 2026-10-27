@@ -31,12 +31,21 @@ export function SkillPicker({
   const [all, setAll] = useState<Skill[]>([]);
   const [q, setQ] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
+  /** 加载状态：loading 转一下，failed 给重试 —— 不然 fetch 挂了用户看到的就是空白面板 */
+  const [loadState, setLoadState] = useState<"loading" | "ok" | "failed">("loading");
 
   const load = useCallback(() => {
+    setLoadState("loading");
     void api
       .skills()
-      .then((list) => setAll(list.filter((s) => (s.state ?? "active") !== "archived")))
-      .catch(() => setAll([]));
+      .then((list) => {
+        setAll(list.filter((s) => (s.state ?? "active") !== "archived"));
+        setLoadState("ok");
+      })
+      .catch(() => {
+        setAll([]);
+        setLoadState("failed");
+      });
   }, []);
 
   useEffect(() => {
@@ -121,9 +130,26 @@ export function SkillPicker({
       </div>
 
       {list.length === 0 ? (
-        <p className="px-3.5 py-8 text-center text-[12.5px]" style={{ color: "var(--color-muted)" }}>
-          {all.length === 0 ? "还没有技能，去「工具」页装一个" : "没有匹配的技能"}
-        </p>
+        <div className="px-3.5 py-8 text-center">
+          {loadState === "failed" ? (
+            <>
+              <p className="text-[12.5px] mb-2" style={{ color: "var(--color-err)" }}>
+                技能列表没加载出来
+              </p>
+              <button type="button" data-tap className="btn btn-sm" onClick={load}>
+                重试
+              </button>
+            </>
+          ) : loadState === "loading" ? (
+            <p className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+              正在加载…
+            </p>
+          ) : (
+            <p className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+              {all.length === 0 ? "还没有技能，去「工具」页装一个" : "没有匹配的技能"}
+            </p>
+          )}
+        </div>
       ) : (
         <div className="pb-2">
           {/* 已挂的排前面：对话时最常做的事就是"确认它挂着" */}
