@@ -213,7 +213,10 @@ export function PermissionScope({
                 placeholder="加一条命令片段，如 rm -rf /"
                 onChange={(e) => setDenyDraft(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && denyDraft.trim() && !denyBusy) {
+                  if (e.key !== "Enter" || e.shiftKey) return;
+                  // IME 守卫：中文组字中的回车是选字，不是提交
+                  if ((e as unknown as { nativeEvent?: { isComposing?: boolean } }).nativeEvent?.isComposing) return;
+                  if (denyDraft.trim() && !denyBusy) {
                     void saveDeny([...denyList, denyDraft.trim()]);
                     setDenyDraft("");
                   }

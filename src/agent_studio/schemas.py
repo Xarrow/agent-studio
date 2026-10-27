@@ -302,6 +302,10 @@ class SkillRead(BaseModel):
     source: dict[str, Any]
     content: str
     files: dict[str, Any]
+    #: 列表接口专用：正文/附件全文不回传（archify 一个技能 183 个文件 2.8MB，
+    #: 8 个技能 3MB 明文 JSON，公网要传 5~10 秒 —— 用户点开技能弹层等半天），
+    #: 只报附件数给列表展示。详情接口（GET /{id}）仍是全文。
+    files_count: int = 0
     created_at: int
     updated_at: int
     # ---- 生命周期：用了多少次、最后一次什么时候、现在什么状态、有没有被固定 ----

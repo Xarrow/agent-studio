@@ -341,7 +341,7 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
                   >
                     <span className="inline-flex items-center gap-1 whitespace-nowrap" title="附件数">
                       <IconFile size={12} />
-                      {Object.keys(s.files ?? {}).length}
+                      {s.files_count ?? Object.keys(s.files ?? {}).length}
                     </span>
                     <span className="inline-flex items-center gap-1 whitespace-nowrap" title="被读进上下文的次数">
                       <IconRefresh size={12} />

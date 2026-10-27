@@ -122,6 +122,8 @@ export interface Skill {
   source: Record<string, unknown>;
   content: string;
   files: Record<string, string>;
+  /** 列表接口瘦身：正文/附件全文不回传，只报附件数（详情接口才有全文） */
+  files_count?: number;
   created_at: number;
   updated_at: number;
   /* ---- 生命周期：用量、最后使用、状态（active|stale|archived）、固定 ---- */

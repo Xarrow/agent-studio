@@ -48,6 +48,32 @@ def to_read(row: Skill) -> SkillRead:
         source=row.source or {},
         content=row.content or "",
         files=row.files or {},
+        files_count=len(row.files or {}),
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+        use_count=int(row.use_count or 0),
+        last_used_at=row.last_used_at,
+        state=row.state or "active",
+        pinned=bool(row.pinned),
+        archived_at=row.archived_at,
+    )
+
+
+def to_read_lite(row: Skill) -> SkillRead:
+    """列表用瘦身版：不回正文与附件全文（点开详情才要全文）。
+
+    实测 archify 单技能 183 个附件 2.8MB，GET /api/skills 全量 3MB 明文 ——
+    公网链路 5~10s，技能弹层/斜杠菜单全都卡在这。瘦身后再算上 gzip，
+    列表响应从 3MB 降到 <10KB。
+    """
+    return SkillRead(
+        id=row.id,
+        name=row.name,
+        description=row.description or "",
+        source={},  # source 只在详情页看
+        content="",
+        files={},
+        files_count=len(row.files or {}),
         created_at=row.created_at,
         updated_at=row.updated_at,
         use_count=int(row.use_count or 0),
@@ -88,7 +114,8 @@ def parse_skill_md(text: str, fallback_name: str) -> tuple[str, str]:
 @router.get("", response_model=list[SkillRead])
 async def list_skills(session: AsyncSession = Depends(get_session)) -> list[SkillRead]:
     rows = (await session.execute(select(Skill).order_by(Skill.updated_at.desc()))).scalars().all()
-    return [to_read(r) for r in rows]
+    # 列表瘦身：正文/附件全文只在详情接口回（3MB → KB 级，公网不再卡 5~10 秒）
+    return [to_read_lite(r) for r in rows]
 
 
 # --------------------------------------------------------------------------- #
