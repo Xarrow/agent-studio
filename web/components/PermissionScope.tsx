@@ -21,7 +21,9 @@
  *   叫 Bash/Read/Write）—— 不让用户去记大小写。
  */
 
+import { useEffect, useState } from "react";
 import { Hint } from "@/components/ui/hint";
+import { api } from "@/lib/api";
 
 export type PermRule = { tool: string; pattern?: string; behavior: "allow" | "deny" | "ask" };
 export type PermConf = { mode?: string; allow?: Omit<PermRule, "behavior">[]; deny?: Omit<PermRule, "behavior">[]; ask?: Omit<PermRule, "behavior">[] };
@@ -106,6 +108,28 @@ export function PermissionScope({
   const mode = cur.mode || "accept_edits";
   const rows = toRows(cur);
   const meta = MODES.find((m) => m.value === mode);
+  // 平台级黑名单（app_setting.guard_deny_patterns）：所有助手共享、任何模式都拦。
+  // 放在每个助手的权限区里但明确标「平台共享」—— 配置就在用户配权限的地方，不用另找入口。
+  const [denyList, setDenyList] = useState<string[] | null>(null);
+  const [denyDraft, setDenyDraft] = useState("");
+  const [denyBusy, setDenyBusy] = useState(false);
+  useEffect(() => {
+    api
+      .appSetting("guard_deny_patterns")
+      .then((v: { value?: unknown }) =>
+        setDenyList(Array.isArray(v.value) ? (v.value as string[]) : []),
+      )
+      .catch(() => setDenyList([]));
+  }, []);
+  const saveDeny = async (next: string[]) => {
+    setDenyBusy(true);
+    try {
+      await api.setAppSetting("guard_deny_patterns", next);
+      setDenyList(next);
+    } finally {
+      setDenyBusy(false);
+    }
+  };
 
   const setMode = (v: string) => onChange(fromRows(v, rows));
   const setRows = (next: PermRule[]) => onChange(fromRows(mode, next));
@@ -146,6 +170,74 @@ export function PermissionScope({
           ⚠ {meta.warn}
         </p>
       )}
+
+      {/* 平台黑名单：所有助手共享，任何模式都拦 */}
+      <div className="mt-4 pt-3 border-t border-[var(--color-border)]">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-[12px] font-medium">平台黑名单</span>
+          <Hint text="所有助手共享；任何权限模式下都直接拦截，助手无法绕过。匹配方式是命令里包含这些字样。">
+            <span className="text-[12px] text-[var(--color-muted)]">全平台拦截（不可放行）</span>
+          </Hint>
+        </div>
+        {denyList === null ? (
+          <p className="text-[12px] text-[var(--color-muted)]">加载中…</p>
+        ) : (
+          <>
+            {denyList.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {denyList.map((p) => (
+                  <span
+                    key={p}
+                    className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[12px] mono"
+                    style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)" }}
+                  >
+                    {p}
+                    <button
+                      type="button"
+                      data-tap
+                      className="text-[var(--color-muted)] hover:text-[var(--color-err)]"
+                      disabled={denyBusy}
+                      onClick={() => void saveDeny(denyList.filter((x) => x !== p))}
+                      title="从黑名单移除"
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="flex items-center gap-1.5">
+              <input
+                className="input input-inline flex-1 min-w-[120px] text-[12px] mono"
+                value={denyDraft}
+                placeholder="加一条命令片段，如 rm -rf /"
+                onChange={(e) => setDenyDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && denyDraft.trim() && !denyBusy) {
+                    void saveDeny([...denyList, denyDraft.trim()]);
+                    setDenyDraft("");
+                  }
+                }}
+              />
+              <button
+                type="button"
+                data-tap
+                className="btn btn-sm"
+                disabled={!denyDraft.trim() || denyBusy || denyList.includes(denyDraft.trim())}
+                onClick={() => {
+                  void saveDeny([...denyList, denyDraft.trim()]);
+                  setDenyDraft("");
+                }}
+              >
+                加入
+              </button>
+            </div>
+            <p className="text-[12px] text-[var(--color-muted)] mt-1">
+              改动对之后新开的执行生效；正在跑的不受影响。
+            </p>
+          </>
+        )}
+      </div>
 
       {/* 例外规则 */}
       <div className="flex items-center justify-between mt-3 mb-1.5">

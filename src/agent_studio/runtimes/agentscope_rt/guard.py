@@ -59,8 +59,12 @@ class DangerousActionGuard(MiddlewareBase):
         workspace: str | None = None,
         roots: list[str] | tuple[str, ...] = (),
         session_allow: list[str] | tuple[str, ...] = (),
+        deny_patterns: list[str] | tuple[str, ...] = (),
     ) -> None:
         self.enabled = enabled
+        #: 平台级命令黑名单（子串匹配，跨助手共享）。优先级最高：
+        #: bypass 模式、会话内允许、用户放行规则都压不住 —— 黑名单就是底线。
+        self._deny_patterns = tuple(p for p in deny_patterns if p)
         #: 用户显式放行的模式（只对 ask 生效，deny 永不放行）
         self.allow = tuple(a for a in allow if a)
         self._workspace = workspace
@@ -112,6 +116,16 @@ class DangerousActionGuard(MiddlewareBase):
             return await next_handler()
 
         text = self._command_text(tool_input)
+        # 平台黑名单：最先判，任何模式/任何放行都拦（找不到子串就是没命中）
+        if text and any(p in text for p in self._deny_patterns):
+            hit = next(p for p in self._deny_patterns if p in text)
+            logger.warning("安全闸门：命中平台黑名单 %r，拒绝（%s）", hit, text[:120])
+            note_reason(str(getattr(tool_call, "id", "") or ""), f"命中平台黑名单：{hit}")
+            return PermissionDecision(
+                behavior=PermissionBehavior.DENY,
+                message=f"已拦截：命令命中平台黑名单「{hit}」。这条由平台统一配置，助手无法绕过。",
+                decision_reason=f"platform-deny:{hit}",
+            )
         if verdict.risk == guardrails.RISK_ASK and name in self._session_allow:
             # 「本会话内不再问这类操作」生效点。必须**直接 ALLOW 短路**，
             # 不能 next_handler() 交给引擎：引擎里的 Bash 内建检查对

@@ -898,6 +898,29 @@ def build_agent(
     from .guard import DangerousActionGuard
 
     _gconf = defn.options_for("agentscope").get("guard") or {}
+    # 平台级命令黑名单（app_setting.guard_deny_patterns）：所有助手共享，
+    # 在守卫里最先判、任何模式都拦。读不到就用库里的默认（DEFAULTS 兜底在 API 层，
+    # 这里 get None 就空着 —— guard 构造对空黑名单零开销）。
+    _deny_patterns: list[str] = []
+    try:
+        # build_agent 是同步函数（在 async 环境里被整包调用），这里同步直读库。
+        # app_setting.value 存的是 JSON 文本，与 settings_store 的序列化方式一致。
+        import json as _json
+        import sqlite3 as _sq
+
+        from ...models import AppSetting as _AS
+
+        _raw = None
+        with _sq.connect(str(settings.db_path)) as _conn:
+            _row = _conn.execute(
+                f"SELECT value FROM {_AS.__tablename__} WHERE key = 'guard_deny_patterns'"
+            ).fetchone()
+            _raw = _row[0] if _row else None
+        _parsed = _json.loads(_raw) if _raw else None
+        if isinstance(_parsed, list):
+            _deny_patterns = [str(p) for p in _parsed if p]
+    except Exception:  # noqa: BLE001 —— 读不到就当没配
+        logger.debug("读平台黑名单失败", exc_info=True)
     _guard = DangerousActionGuard(
         enabled=bool(_gconf.get("enabled", True)),
         allow=tuple(_gconf.get("allow") or ()),
@@ -906,6 +929,7 @@ def build_agent(
         roots=tuple(_gconf.get("roots") or ()),
         # 「这个会话里别再问这个工具」—— 存在 session_allow 表，由编译入口读好传进来
         session_allow=tuple(session_allow),
+        deny_patterns=_deny_patterns,
     )
 
     agent = Agent(

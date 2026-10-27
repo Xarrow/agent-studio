@@ -26,11 +26,15 @@ router = APIRouter(prefix="/api/app-settings", tags=["app-settings"])
 # 键 -> 期望的 JSON 类型；同时也是「能不能被界面改」的白名单
 ALLOWED: dict[str, type] = {
     "chat_quick_tags": list,
+    "guard_deny_patterns": list,
 }
 
 # 没设过时的默认值（前端拿到的就是它，不需要自己写一份默认）
 DEFAULTS: dict[str, Any] = {
     "chat_quick_tags": ["询问是否完成", "先给结论", "详细说说", "整理成文档"],
+    # 平台级命令黑名单：所有助手的 Bash/execute 都会拦（子串匹配）。
+    # 与助手自己的 deny 规则叠加，谁也放不开。
+    "guard_deny_patterns": ["shutdown", "reboot", "mkfs", "dd if=", ":(){", "crontab -r", "> /dev/sda"],
 }
 
 
