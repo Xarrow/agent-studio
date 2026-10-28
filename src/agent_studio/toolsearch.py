@@ -49,9 +49,17 @@ def split_identifier(text: str) -> str:
 
 
 def tokenize(text: str) -> list[str]:
-    """英文按词 + 中文单字再补 bigram（与 memory.recall.tokenize 同策略）。"""
-    raw = _TOKEN_RE.findall(text.lower())
+    """英文按词 + 中文单字再补 bigram（与 memory.recall.tokenize 同策略）。
+
+    标识符（memory_search / tl_8f3ac2）先拆词再进 tokenizer —— 用户会拿
+    工具名原样来搜，索引侧拆了 query 侧也得拆，两边才对得上；整段
+    标识符本身也保留一枚 token，精确工具名命中权重最高。
+    """
+    raw = _TOKEN_RE.findall(_IDENT_SPLIT_RE.sub(" ", text.lower()))
     tokens: list[str] = list(raw)
+    joined = text.strip().lower()
+    if _IDENT_SPLIT_RE.search(joined):
+        tokens.append(joined)
     for i in range(len(raw) - 1):
         a, b = raw[i], raw[i + 1]
         if len(a) == 1 and len(b) == 1 and "\u4e00" <= a <= "\u9fff":
