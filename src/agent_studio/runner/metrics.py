@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
 from typing import Any
 
 from ..runtimes.base import UnifiedEvent
@@ -112,6 +113,7 @@ class MetricsCollector:
         self._ttft_done = False
         self._open_tools: dict[str, ToolCallRecord] = {}
         self._pending_args: dict[str, dict[str, Any]] = {}
+        self._pending_args_str: dict[str, str] = {}
 
         # ── span 树（瀑布图的数据源）───────────────────────────────────────
         # `span` 表一直是空的：schema 早就有、没人写。没有它，"这一步为什么慢了三分钟"
@@ -292,9 +294,29 @@ class MetricsCollector:
 
     def _on_tool_call_args(self, ev: UnifiedEvent) -> None:
         key = self._tool_key(ev)
-        args = _first(ev.payload, "arguments", "args", "delta")
-        if isinstance(args, dict):
-            self._pending_args.setdefault(key, {}).update(args)
+        # AgentScope 2.x 的工具参数 delta 是 **JSON 字符串增量**（str），不是 dict
+        # ——逐片拼接后整体解析（解析失败留半截原文，别丢）。
+        raw = _first(ev.payload, "arguments", "args", "delta")
+        if isinstance(raw, dict):
+            self._pending_args.setdefault(key, {}).update(raw)
+        elif isinstance(raw, str):
+            self._pending_args_str[key] = self._pending_args_str.get(key, "") + raw
+
+    def _pending_args_of(self, key: str) -> dict[str, Any]:
+        """exec_start 时取已累积的参数：优先解析拼好的 JSON 串。"""
+        s = self._pending_args_str.pop(key, None)
+        if s:
+            try:
+                parsed = json.loads(s)
+                if isinstance(parsed, dict):
+                    return parsed
+            except json.JSONDecodeError:
+                return {"_raw": s}  # 半截 JSON 也留个痕
+        merged: dict[str, Any] = {}
+        d = self._pending_args.pop(key, None)
+        if isinstance(d, dict):
+            merged.update(d)
+        return merged
 
     def _on_tool_exec_start(self, ev: UnifiedEvent) -> None:
         key = self._tool_key(ev)
@@ -305,8 +327,8 @@ class MetricsCollector:
                 tool_name=str(name), call_id=key, iteration=self.iteration, started_at=ev.ts
             )
             self._open_tools[key] = rec
-        if key in self._pending_args:
-            rec.args = {**rec.args, **self._pending_args.pop(key)}
+        if key in self._pending_args or key in self._pending_args_str:
+            rec.args = {**rec.args, **self._pending_args_of(key)}
         # 工具真正开始执行的时间（比 LLM 决定调用更准确）
         rec.started_at = ev.ts
         self._tool_spans[key] = self._add_span(
