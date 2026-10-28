@@ -40,7 +40,9 @@ def test_会话允许后同类操作不再问_但危险操作照拦():
             None, {"tool_call": _tool_call("Bash", ask_case), "tool_input": ask_case}, _next
         )
     )
-    assert out == "passed-through"  # 放行：不再弹确认条
+    # 放行：不再弹确认条（67c5781 起是直接 ALLOW 短路——交回引擎会被
+    # Bash 内建的 bypass_immune ASK 再问一次，「不再问」等于没生效）
+    assert getattr(out, "behavior", None) is not None and str(out.behavior).upper().endswith("ALLOW"), out
 
     # `rm -rf /` 这类是 DENY，点过「不再问」也不放
     deny_case = {"command": "rm -rf /"}

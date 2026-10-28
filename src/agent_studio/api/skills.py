@@ -70,7 +70,7 @@ def to_read_lite(row: Skill) -> SkillRead:
         id=row.id,
         name=row.name,
         description=row.description or "",
-        source={},  # source 只在详情页看
+        source=row.source or {},  # source 是 ~100B 的小字典，瘦身只砍正文/附件；图标/「更新」按钮靠它
         content="",
         files={},
         files_count=len(row.files or {}),
