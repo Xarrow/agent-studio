@@ -700,7 +700,7 @@ async def _browser(
             },
         )
 
-    sess = get_session(run_id, on_frame)
+    sess = get_session(run_id, on_frame, proxy=os.environ.get("STUDIO_BROWSER_PROXY") or None)
 
     # 动作字幕：前端把它显示成浏览器窗口底部的一行"它正在做什么"。
     # 为什么由后端发而不是解析工具入参：动作人话化要在一个地方定（打开 host / 点击 搜索框），
@@ -1402,7 +1402,11 @@ async def _tool_search(queries: list[str] | None = None, limit: int = 8) -> str:
     if looks_like_id_only(query):
         return weak_signal_hint(query)
 
-    fingerprint = f"{len(table)}:" + ",".join(sorted(table.keys()))
+    # 指纹必须含**内容**而不只是名字集合：同名工具热更新描述后，
+    # 旧指纹会命中旧向量（稠密路重算被跳过）和旧结果缓存
+    docs = {n: index_text(n, tool_desc(t), tool_schema(t)) for n, t in table.items()}
+    content_sig = ",".join(sorted(f"{n}:{hash(docs[n])}" for n in docs))
+    fingerprint = f"{len(table)}:{content_sig}"
     limit_n = max(1, min(int(limit or 8), 20))
 
     _cache: LruCache = _TOOLSEARCH_CACHE
@@ -1411,7 +1415,6 @@ async def _tool_search(queries: list[str] | None = None, limit: int = 8) -> str:
     if hit is not None:
         return hit
 
-    docs = {n: index_text(n, tool_desc(t), tool_schema(t)) for n, t in table.items()}
     sparse = SparseIndex(docs)
     sparse_ranked: list[str] = []
     for q in qs:
@@ -1426,8 +1429,8 @@ async def _tool_search(queries: list[str] | None = None, limit: int = 8) -> str:
             if await dense.ensure(docs, embed, fingerprint):
                 qvecs = await embed([query])
                 if qvecs and qvecs[0]:
-                    for q in qs[:3]:  # 多 query 各嵌一次太贵；首 query + 稀疏路补
-                        dense_ranked.extend(dense.search(qvecs[0], top_l=120))
+                    # 多 query 不各嵌一次（太贵）：首 query 嵌一次，其余 query
+                    # 靠稀疏路补位 —— RRF 的并集语义保证单路命中也保留
                     dense_ranked.extend(dense.search(qvecs[0], top_l=120))
         except Exception:  # noqa: BLE001 —— 稠密路任何异常都不影响稀疏路返回
             logger.debug("tool_search 稠密路失败，降级纯稀疏", exc_info=True)
