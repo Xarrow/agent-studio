@@ -258,8 +258,8 @@ def cache_key(query: str, fingerprint: str, limit: int) -> str:
 #: 特征：要么是「短前缀 + 分隔符 + 乱码段」，要么整串就是一坨 hash ——
 #: 关键判据是"不含空格的自然词"，而不是枚举具体字符集（ID 的字母表各家不一）。
 _ID_ONLY_RE = re.compile(
-    r"^[a-zA-Z]{1,6}[-_][0-9a-zA-Z\-]{6,}$"   # 前缀-ID：tl_8f3ac2 / i-bp1abcdef123
-    r"|^[0-9a-f]{8,}$"                         # 纯 hex hash
+    r"^[a-zA-Z]{1,6}[-_][0-9a-zA-Z_\-]*[0-9][0-9a-zA-Z_\-]*$"  # 前缀-ID：后半段须含数字（run_x2_id_123 / tl_8f3ac2），排除 web_search 这类"前缀_英文词"工具名
+    r"|^[0-9a-f]{8,}$"                                          # 纯 hex hash
 )
 
 
