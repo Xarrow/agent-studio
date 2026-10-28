@@ -27,6 +27,8 @@ router = APIRouter(prefix="/api/app-settings", tags=["app-settings"])
 ALLOWED: dict[str, type] = {
     "chat_quick_tags": list,
     "guard_deny_patterns": list,
+    # tool_search 稠密路的 embedding 端点（native_tools._toolsearch_embed_fn 读）
+    "toolsearch_embedding": dict,
 }
 
 # 没设过时的默认值（前端拿到的就是它，不需要自己写一份默认）
@@ -35,6 +37,8 @@ DEFAULTS: dict[str, Any] = {
     # 平台级命令黑名单：所有助手的 Bash/execute 都会拦（子串匹配）。
     # 与助手自己的 deny 规则叠加，谁也放不开。
     "guard_deny_patterns": ["shutdown", "reboot", "mkfs", "dd if=", ":(){", "crontab -r", "> /dev/sda"],
+    # tool_search 的 embedding 端点：空 = 稠密路关闭，纯 BM25 照常工作
+    "toolsearch_embedding": {},
 }
 
 

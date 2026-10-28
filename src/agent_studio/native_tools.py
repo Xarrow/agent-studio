@@ -1223,6 +1223,68 @@ async def _job_cancel(id: str = "") -> str:
 _LAZY_BY_RUN: dict[str, dict[str, Any]] = {}
 _LAZY_MAX_RUNS = 200
 
+# --------------------------------------------------------------------------- #
+# tool_search 的检索引擎状态（模块级单例，见 toolsearch.py）
+# --------------------------------------------------------------------------- #
+from .toolsearch import DenseIndex as _DenseIndex, LruCache as _LruCache  # noqa: E402
+
+#: 语义缓存：⟨query+工具集指纹, 格式化结果⟩ —— agent 一轮里常重搜同义 query
+_TOOLSEARCH_CACHE: "_LruCache" = _LruCache(capacity=64)
+#: 稠密路向量缓存（工具集 fingerprint 变了才重算）
+_TOOLSEARCH_DENSE: "_DenseIndex" = _DenseIndex()
+
+#: embedding 端点配置的 app_setting key（与 memory_external 同一约定：JSON 文本）
+_TOOLSEARCH_EMBED_KEY = "toolsearch_embedding"
+
+
+def _toolsearch_embed_fn():
+    """从 app_setting 读 embedding 端点，包成 toolsearch.EmbedFn。
+
+    配置形如 ``{"base_url": ".../v1", "api_key": "...", "model": "text-embedding-v4"}``。
+    没配置就返回 None —— tool_search 纯 BM25 照常工作，稠密路是增强不是依赖。
+    """
+    import sqlite3 as _sq
+
+    from .models import AppSetting as _AS
+
+    raw = None
+    try:
+        from .config import settings
+
+        with _sq.connect(str(settings.db_path)) as _conn:
+            _row = _conn.execute(
+                f"SELECT value FROM {_AS.__tablename__} WHERE key = '{_TOOLSEARCH_EMBED_KEY}'"
+            ).fetchone()
+            raw = _row[0] if _row else None
+    except Exception:  # noqa: BLE001 —— 读不到配置就当没配
+        return None
+    if not raw:
+        return None
+    try:
+        conf = json.loads(raw) if isinstance(raw, str) else (raw or {})
+    except json.JSONDecodeError:
+        return None
+    base_url = str(conf.get("base_url") or "").strip().rstrip("/")
+    api_key = str(conf.get("api_key") or "").strip()
+    model = str(conf.get("model") or "").strip()
+    if not (base_url and api_key and model):
+        return None
+
+    async def _embed(texts: list[str]):
+        import httpx as _hx
+
+        async with _hx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+            resp = await client.post(
+                f"{base_url}/embeddings",
+                headers={"Authorization": f"Bearer {api_key}"},
+                json={"model": model, "input": texts},
+            )
+            resp.raise_for_status()
+            data = resp.json().get("data") or []
+            return [d.get("embedding") for d in data if d.get("embedding")]
+
+    return _embed
+
 
 def tool_name(tool: Any) -> str:
     return str(getattr(tool, "name", "") or getattr(tool, "__name__", "") or "")
@@ -1310,24 +1372,76 @@ TOOL_CALL_SCHEMA: dict[str, Any] = {
 
 
 async def _tool_search(queries: list[str] | None = None, limit: int = 8) -> str:
+    """按需工具检索：BM25 稀疏路 + 向量稠密路 → RRF 融合。
+
+    机制来自 MCP Gateway（ATC 2026）§4.3/§6.3：双路独立检索取并集、
+    按名次 RRF 融合 —— 稀疏路保精确词匹配（工具名/参数名是标识符），
+    稠密路保换说法（描述是自然语言），单路在对方强项上都会掉到 70% 以下。
+    """
     table = _current_lazy()
     if not table:
         return "这一轮没有按需加载的工具：所有工具都已经直接给到你，直接调用即可。"
-    qs = [str(q).strip().lower() for q in (queries or []) if str(q).strip()]
-    scored: list[tuple[int, str, str]] = []
-    for name, t in table.items():
-        hay = f"{name} {tool_desc(t)}".lower()
-        score = sum(1 for q in qs if q and q in hay)
-        if score:
-            scored.append((score, name, tool_desc(t)))
-    if not scored:
-        listing = "\n".join(f"- {n}：{d[:90]}" for n, d in sorted((n, tool_desc(t)) for n, t in table.items()))
+    qs = [str(q).strip() for q in (queries or []) if str(q).strip()]
+    if not qs:
+        return "queries 不能为空：用几个关键词描述要做的事。"
+    query = " ".join(qs)
+
+    from .toolsearch import (
+        DenseIndex,
+        LruCache,
+        SparseIndex,
+        cache_key,
+        index_text,
+        looks_like_id_only,
+        rrf_fuse,
+        weak_signal_hint,
+    )
+
+    # ID-only / 弱语义 query：两路都救不了（词面无实词、embedding 无语义），
+    # 返回引导而不是硬搜 —— 对应论文 Lesson 4（98.2→99.7 的最后一跳）。
+    if looks_like_id_only(query):
+        return weak_signal_hint(query)
+
+    fingerprint = f"{len(table)}:" + ",".join(sorted(table.keys()))
+    limit_n = max(1, min(int(limit or 8), 20))
+
+    _cache: LruCache = _TOOLSEARCH_CACHE
+    ck = cache_key(query, fingerprint, limit_n)
+    hit = _cache.get(ck)
+    if hit is not None:
+        return hit
+
+    docs = {n: index_text(n, tool_desc(t), tool_schema(t)) for n, t in table.items()}
+    sparse = SparseIndex(docs)
+    sparse_ranked: list[str] = []
+    for q in qs:
+        sparse_ranked.extend(sparse.search(q, top_l=120))
+
+    # 稠密路：embedding 端点没配/失败时静默降级为纯稀疏 —— 增强不是依赖
+    dense_ranked: list[str] = []
+    embed = _toolsearch_embed_fn()
+    if embed is not None:
+        dense = _TOOLSEARCH_DENSE
+        try:
+            if await dense.ensure(docs, embed, fingerprint):
+                qvecs = await embed([query])
+                if qvecs and qvecs[0]:
+                    for q in qs[:3]:  # 多 query 各嵌一次太贵；首 query + 稀疏路补
+                        dense_ranked.extend(dense.search(qvecs[0], top_l=120))
+                    dense_ranked.extend(dense.search(qvecs[0], top_l=120))
+        except Exception:  # noqa: BLE001 —— 稠密路任何异常都不影响稀疏路返回
+            logger.debug("tool_search 稠密路失败，降级纯稀疏", exc_info=True)
+
+    fused = rrf_fuse([sparse_ranked, dense_ranked], k=20, top_k=limit_n)
+    if not fused:
+        listing = "\n".join(f"- {n}：{tool_desc(t)[:90]}" for n, t in sorted(table.items()))
         return "没匹配到关键词。当前可按需取用的工具全集：\n" + listing[:3000]
-    scored.sort(key=lambda x: (-x[0], x[1]))
     lines = ["匹配到的工具（先 tool_describe 看参数，再 tool_call 调用）："]
-    for _, n, d in scored[: max(1, min(int(limit or 8), 20))]:
-        lines.append(f"- {n}：{d[:130]}")
-    return "\n".join(lines)
+    for n in fused:
+        lines.append(f"- {n}：{tool_desc(table[n])[:130]}")
+    text = "\n".join(lines)
+    _cache.put(ck, text)
+    return text
 
 
 async def _tool_describe(names: list[str] | None = None) -> str:

@@ -23,6 +23,7 @@ import { BackupRestore } from "@/components/BackupRestore";
 import { StoragePanel } from "@/components/StoragePanel";
 import { RuntimeCard } from "@/components/RuntimeCard";
 import { AguiCard } from "@/components/AguiCard";
+import { ToolSearchCard } from "@/components/ToolSearchCard";
 
 /** 表单字段（SQLite 只用 path，其余是网络库的连接参数） */
 type Form = {
@@ -645,6 +646,15 @@ export default function EnvironmentPage() {
         defaultOpen={false}
       >
         <AguiCard />
+      </Section>
+
+      {/* 工具检索：tool_search 的稠密路（向量）端点 —— 没配时纯 BM25 照常工作 */}
+      <Section
+        title="工具检索 · tool_search"
+        desc="按需工具的检索引擎：词面检索默认可用，配 embeddings 加一路语义检索"
+        defaultOpen={false}
+      >
+        <ToolSearchCard />
       </Section>
 
       {/* 配置导入导出：数据能带走。放在"数据存哪"下面 —— 同一件事的两面：
