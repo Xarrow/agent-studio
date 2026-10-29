@@ -118,8 +118,10 @@ export function AgentDetail({
   const [ov, setOv] = useState<{
     memoryOwn: number | null;
     memoryShared: number | null;
-    lastRun: { status: string; at: number; ms: number | null } | null;
+    lastRun: { status: string; at: number; ms: number | null; id: string; error: string | null } | null;
   }>({ memoryOwn: null, memoryShared: null, lastRun: null });
+  /** 「最近 error」就地展开的错误详情行（仅 error 徽标可点开） */
+  const [lastRunOpen, setLastRunOpen] = useState(false);
   /**
    * 把平台内置工具同步进来。
    *
@@ -197,6 +199,8 @@ export function AgentDetail({
                   last.ended_at && last.started_at
                     ? last.ended_at - last.started_at
                     : null,
+                id: last.id,
+                error: last.error,
               }
             : null,
         });
@@ -446,14 +450,54 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
             {ov.lastRun && (
               <span className="inline-flex items-center gap-1.5">
                 最近
-                <span className="mono" style={{ color: STATUS_STYLE[ov.lastRun.status as keyof typeof STATUS_STYLE] }}>
-                  {ov.lastRun.status}
-                </span>
+                {/* 失败的 run 就地可展开看原因——原来是纯文字徽标，看到 error
+                    却不知道错在哪，要自己绕到别处找现场 ✗ */}
+                {ov.lastRun.status === "error" ? (
+                  <button
+                    data-tap
+                    className="mono underline decoration-dotted underline-offset-2"
+                    style={{ color: STATUS_STYLE.error, cursor: "pointer" }}
+                    title={lastRunOpen ? "收起错误详情" : "展开错误详情"}
+                    onClick={() => setLastRunOpen((v) => !v)}
+                  >
+                    {ov.lastRun.status}
+                  </button>
+                ) : (
+                  <span className="mono" style={{ color: STATUS_STYLE[ov.lastRun.status as keyof typeof STATUS_STYLE] }}>
+                    {ov.lastRun.status}
+                  </span>
+                )}
                 {fmt.relative(ov.lastRun.at)}
               </span>
             )}
             <span className="mono opacity-70">{agent.slug} · v{agent.version}</span>
           </div>
+          {/* 最近 run 失败时的就地错误详情行（点上面的 error 展开/收起）：
+              信息默认可见 vs 页面干净之间的取舍 —— 错误摘要只占一行，折叠时
+              用户也始终知道"最近一次失败了"，展开才给完整原因。 */}
+          {lastRunOpen && ov.lastRun?.status === "error" && (
+            <div className="mt-2 text-[12px] leading-relaxed rounded-[8px] px-3 py-2 max-w-[560px]"
+              style={{ background: "color-mix(in srgb, var(--color-danger, #dc2626) 8%, transparent)" }}>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span style={{ color: STATUS_STYLE.error }}>最近一次执行失败</span>
+                <span className="text-[var(--color-muted)]">{fmt.relative(ov.lastRun.at)}</span>
+                {!inDialog && (
+                  <Link
+                    href={`/exec?agent=${agentId}`}
+                    className="underline underline-offset-2 text-[var(--color-accent)]"
+                    title="打开对话页查看完整执行现场"
+                  >
+                    去对话页看现场
+                  </Link>
+                )}
+              </div>
+              {ov.lastRun.error && (
+                <p className="mono mt-1 break-all" style={{ color: "var(--color-danger, #dc2626)" }}>
+                  {ov.lastRun.error}
+                </p>
+              )}
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {msg && <span className="text-[12px] text-[var(--color-ok)]">{msg}</span>}
