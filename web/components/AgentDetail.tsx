@@ -960,7 +960,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 留空就是"不兜底"，行为和以前一样。 */}
             <div>
               <label className="label">备用模型（可选）</label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
                 <select
                   className="input"
                   value={def.fallback?.provider ?? ""}

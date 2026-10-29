@@ -1098,7 +1098,10 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     }
   }, []);
   const fileCount = sessionFiles?.count ?? 0;
-  const openFiles = filesOpenPref ?? fileCount <= 3;
+  /* 默认收起：进对话先看消息，「N 个文件」chip 在输入区上方，点一下才出面板。
+     之前 ≤3 个默认摊开 —— 文件面板带遮罩直接糊在对话上，用户一进会话就被挡（实测反馈）。
+     用户手动点过就记住他的选择（localStorage），别每次刷新都跟他对着来。 */
+  const openFiles = filesOpenPref ?? false;
 
   /* ---- 文件查询 / 删除 ----
      文件多了要能找、能一次删掉几个。搜索只在本会话目录里过滤（名字或后缀），
