@@ -483,6 +483,25 @@ function MarkdownBody({ text, chat = false }: { text: string; chat?: boolean }) 
     }
 
     // 普通段落（连续非空行合并）
+    // 例外：裸数字行（模型数数时「1\n2\n3…」，用户明说「每个数字一行」）与
+    // 末尾无标点的短编号行 —— 这些是**结构化内容**不是软换行文本，
+    // 合并会把 20 行数字压成一行失真（审计实测）。遇到就逐行单独成段。
+    const isEnumerated = (s: string) =>
+      /^\s*\d{1,3}[.、)]?\s*$/.test(s) || /^\s*\d{1,3}[.、)]\s*\S{0,40}$/.test(s);
+    if (isEnumerated(line)) {
+      while (i < lines.length && isEnumerated(lines[i])) {
+        const t = lines[i++].trim();
+        blocks.push(
+          <p
+            key={`p${k++}`}
+            className={chat ? "my-0.5 text-[15px] leading-[1.8] break-words" : "my-0.5 text-[12px] leading-[1.75] break-words"}
+          >
+            {inline(t, `p${k}`)}
+          </p>,
+        );
+      }
+      continue;
+    }
     const buf: string[] = [];
     while (
       i < lines.length &&

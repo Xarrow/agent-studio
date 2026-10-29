@@ -2939,7 +2939,7 @@ function Bubble({
   const [loadingEv, setLoadingEv] = useState(false);
   /** 完整记录弹框（气泡内自己持有 —— 它是独立组件，不是 ChatConsole 的作用域） */
   const [detailOpen, setDetailOpen] = useState(false);
-  /** 这一轮的用量与耗时（展开时顺手拉 run 拿 —— 不展开就不拉） */
+  /** 这一轮的用量与耗时（历史消息挂载即拉——收起态也要显示 tokens/耗时） */
   const [meta, setMeta] = useState<{ tokens: number; seconds: number } | null>(null);
   /** 就地编辑态 */
   const [editing, setEditing] = useState(false);
@@ -2949,6 +2949,29 @@ function Bubble({
   /** 重来的二次确认：删历史是不可逆的，点一下就删太狠（取消不花任何成本） */
   const [confirmRewind, setConfirmRewind] = useState(false);
   const fb = useFeedback();
+
+  // 历史消息挂载即拉 usage（轻接口，一次）：收起态的过程行要显示
+  // 「N tokens · 耗时」——审计实测收起时只有「执行过程 · 点开看每一步」，
+  // 用户看不出这一轮跑了多少。事件仍保持懒加载（展开才拉，重得多）。
+  useEffect(() => {
+    if (!runId) return;
+    let dead = false;
+    api
+      .run(runId)
+      .then((run) => {
+        if (dead) return;
+        const u = (run.usage || {}) as Record<string, number>;
+        const tokens =
+          Number(u.total ?? 0) || Number(u.tokens_in ?? 0) + Number(u.tokens_out ?? 0) || 0;
+        const seconds =
+          run.ended_at && run.started_at ? Math.max(0, (run.ended_at - run.started_at) / 1000) : 0;
+        setMeta({ tokens, seconds });
+      })
+      .catch(() => {});
+    return () => {
+      dead = true;
+    };
+  }, [runId]);
 
   const hasTrace = !isUser && !!runId && !streaming;
   const canEdit = isUser && !!messageId && !!sessionId && !!onEdited && !streaming;
@@ -3011,7 +3034,6 @@ function Bubble({
       return;
     }
     setOpen(true);
-    // 懒加载：折叠时不拉数据，展开才拉（避免一进对话页就发一堆请求）
     if (events === null && runId) {
       setLoadingEv(true);
       try {
@@ -3174,6 +3196,7 @@ function Bubble({
               elapsedMs={
                 meta?.seconds ? meta.seconds * 1000 : memo?.ms ? memo.ms : undefined
               }
+              usage={meta}
               detail={
                 <>
                   <button

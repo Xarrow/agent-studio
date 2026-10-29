@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useImeGuard } from "@/lib/ime";
 import { api, fmt, STATUS_STYLE } from "@/lib/api";
 import type {
   Agent,
@@ -87,6 +88,8 @@ export function AgentDetail({
   const [syncing, setSyncing] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [nameErr, setNameErr] = useState<string | null>(null);
+  const nameIme = useImeGuard();
   /**
    * 概览汇总：这个助手「用了什么 + 最近跑成什么样」。
    *
@@ -351,7 +354,11 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
       setMsg("名称已保存");
       setTimeout(() => setMsg(null), 2000);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      // 重名等保存失败：就地红字提示（顶栏 msg 位置），并把输入框弹回当前有效名
+      const msg = e instanceof Error ? e.message : String(e);
+      setMsg(null);
+      setNameErr(msg);
+      setDef((d) => ({ ...(d ?? {}), name: agent?.name ?? next }) as AgentDefinition);
     }
   };
 
@@ -577,6 +584,11 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
             <h2 className="text-[14px] font-medium">定义</h2>
             <div>
               <label className="label">名称</label>
+              {nameErr && (
+                <p className="text-[12px] mb-1" style={{ color: "var(--color-err)" }}>
+                  {nameErr}
+                </p>
+              )}
               {/* 名称：**失焦就自动保存**。
                   为什么（这是"名称改不了"的真因）：改完输入框后必须手动点「保存改动」，
                   而用户改完常常直接切走/返回列表 → 改动没提交 → 回来还是旧名 ✗
@@ -585,8 +597,13 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
               <input
                 className="input"
                 value={def.name}
+                {...nameIme.props}
                 onChange={(e) => {
                   const v = e.target.value;
+                  if (nameErr) setNameErr(null);
+                  // IME 组字期间不启动自动保存计时 —— 拼音打到一半的「名字」
+                  // 会被 900ms 定时器落库（组字中间态比选字 Enter 更隐蔽）
+                  if (nameIme.blocked(null)) return;
                   patch({ name: v });
                   // **改完停 900ms 自动落库** —— 不再依赖"用户恰好点到别处触发失焦"。
                   // 用户反复反馈"名称还是不能修改"：改完直接点「← Agents」返回 / 切标签页时，

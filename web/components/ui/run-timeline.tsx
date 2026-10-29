@@ -643,6 +643,7 @@ export function ProcessBar({
   running = false,
   elapsedMs,
   detail,
+  usage,
   defaultOpen = false,
   className = "",
   open: openProp,
@@ -653,6 +654,8 @@ export function ProcessBar({
   running?: boolean;
   elapsedMs?: number;
   detail?: React.ReactNode;
+  /** 收起态也要显示的用量（「N tokens」）——审计实测收起行只有耗时，看不出跑了多少 */
+  usage?: { tokens: number } | null;
   defaultOpen?: boolean;
   className?: string;
   /** 受控展开（历史消息要懒加载事件，展开动作由外层发起） */
@@ -800,6 +803,12 @@ export function ProcessBar({
             style={{ background: "#fef2f2", color: "#b91c1c", border: "1px solid #fecaca" }}
           >
             {failures} 步失败
+          </span>
+        )}
+
+        {usage && usage.tokens > 0 && (
+          <span className="shrink-0 text-[11px]" style={{ color: "var(--color-muted)" }}>
+            {new Intl.NumberFormat("en-US").format(usage.tokens)} tokens
           </span>
         )}
 

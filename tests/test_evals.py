@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 
 from agent_studio.db import SessionLocal
 from agent_studio.evals import compare, normalise_cases, score_case
@@ -47,14 +48,17 @@ def test_normalise_cases_drops_empty_inputs():
 
 
 async def _stub_agent(client) -> str:
+    # 名字带随机后缀：Agent 建接口有重名保护（409），一个测试进程里
+    # 多个用例各建一次同名夹具会撞上 —— 这正是保护要拦的场景
+    name = f"评测核验-{uuid.uuid4().hex[:6]}"
     return (
         await client.post(
             "/api/agents",
             json={
-                "name": "评测核验",
+                "name": name,
                 "definition": {
                     "runtime": SpanRuntime.name,
-                    "name": "评测核验",
+                    "name": name,
                     "system_prompt": "p",
                     "model": {"provider": "deepseek", "name": "deepseek-v4-flash"},
                     "tools": [],

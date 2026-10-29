@@ -93,12 +93,19 @@ async def list_agents(session: AsyncSession = Depends(get_session)) -> list[Agen
 async def create_agent(
     payload: AgentCreate, session: AsyncSession = Depends(get_session)
 ) -> AgentRead:
+    # 重名校验：列表里两个同名助手无法区分（历史/日志里也只显示名字）。
     slug = payload.slug or slugify(payload.name)
     exists = (
         await session.execute(select(Agent).where(Agent.slug == slug, Agent.version == 1))
     ).scalar_one_or_none()
     if exists is not None:
         slug = f"{slug}-{int(now_ms() % 100000)}"
+
+    dup = (
+        await session.execute(select(Agent).where(Agent.name == payload.name.strip()))
+    ).scalar_one_or_none()
+    if dup is not None:
+        raise HTTPException(status_code=409, detail=f"已存在同名助手「{payload.name.strip()}」")
 
     row = Agent(
         slug=slug,
@@ -136,7 +143,16 @@ async def update_agent(
     row = await _get_or_404(session, agent_id)
 
     if payload.name is not None:
-        row.name = payload.name
+        new_name = payload.name.strip()
+        if new_name and new_name != row.name:
+            dup = (
+                await session.execute(
+                    select(Agent).where(Agent.name == new_name, Agent.id != agent_id)
+                )
+            ).scalar_one_or_none()
+            if dup is not None:
+                raise HTTPException(status_code=409, detail=f"已存在同名助手「{new_name}」")
+        row.name = new_name
     if payload.description is not None:
         row.description = payload.description
 
