@@ -21,7 +21,6 @@ import { ProcessBar, eventsToSteps, recallProc, rememberProc } from "@/component
 import BgProcsStrip from "@/components/BgProcsStrip";
 import TodoStrip from "@/components/TodoStrip";
 import SessionJobs, { JobButton } from "@/components/SessionJobs";
-import { ProcessRail } from "./ProcessRail";
 import { pushFrame, clearFrame } from "@/lib/browser-frame";
 import { SlashMenu, type CommandItem } from "@/components/SlashMenu";
 import { useImeGuard, isImeEvent } from "@/lib/ime";
@@ -984,8 +983,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   //  · 会话栏 navOpen：桌面在流内（260px），窄屏改为**抽屉**（不占高度）
   //  · 手机抽屉 mobileNav：默认关 —— 之前会话列表在手机上常驻，
   //    实测吃掉 338/844px（40% 屏高），对话只剩 450px 高 ✗
-  //  · Chrome 直播栏 railOpen：**默认关，真有直播画面时才自动出现** ——
-  //    之前桌面常驻 420px（占主区 34%）显示「没有正在直播的浏览器画面」✗
+  //  · 右栏 Chrome 直播栏已移除（2026-10-29 用户拍板）——画面走消息流内
+  //    缩略条 + 点开的居中大画面，右栏不再占位
   // ⚠️ 位置纪律：必须在**所有提前 return 之前**（本组件有 loading / 无助手两条
   // 提前返回）—— 放在它们之后会让两种情况 hook 数量不同，React 抛 #310
   // （Rendered more hooks than during the previous render），整页变错误页（踩过两次）。
@@ -1077,10 +1076,6 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
       window.removeEventListener("orientationchange", sync);
     };
   }, []);
-  const [railOpen, setRailOpen] = useState(false);
-  /** 用户在本次会话里手动关过直播栏吗 —— 关过就不再自动弹回来 */
-  const railTouched = useRef(false);
-  /** 存储位置这类「自托管自证」信息：默认收起，点 ⓘ 才展开（原来是常驻噪声） */
   const [showPaths, setShowPaths] = useState(false);
   /* 会话文件清单能不能折叠 —— 文件一多这条会占掉对话区；
      默认：≤3 个就摊开（少的时候看得见才有用），多了先收起（点箭头/标题展开）。
@@ -1153,12 +1148,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   useEffect(() => {
     try {
       const savedNav = localStorage.getItem("chat.navOpen");
-      const savedRail = localStorage.getItem("chat.railOpen");
       if (savedNav !== null) setNavOpen(savedNav === "1");
-      if (savedRail !== null) {
-        setRailOpen(savedRail === "1");
-        railTouched.current = true;
-      }
     } catch {}
   }, []);
   const toggleNav = () => {
@@ -1167,17 +1157,6 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
       return !v;
     });
   };
-  const toggleRail = () => {
-    railTouched.current = true;
-    setRailOpen((v) => {
-      try { localStorage.setItem("chat.railOpen", v ? "0" : "1"); } catch {}
-      return !v;
-    });
-  };
-  // 直播画面一到，右栏自己出来（用户没手动关过的话）
-  useEffect(() => {
-    if (browserFrame && !railTouched.current) setRailOpen(true);
-  }, [browserFrame]);
   /** 兼容旧调用点：input 的 change 事件给的是 FileList */
   const pickFiles = (files: FileList | null) => void addFiles(files);
 
@@ -1757,8 +1736,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 })}
 
                 {/* 生成中：实时分色显示执行过程（思考 / 工具 / 结果 / 回答） */}
-                {/* 手机/平板：画面卡片在消息流里；桌面只在右栏收起时用它顶替
-                    （避免同一画面两处重复） */}
+                {/* 画面缩略条常驻消息流（右栏直播栏已移除——全端都用这一条，点开看大画面） */}
                 {(browserFrame || browserActions.length > 0 || browserSteps.length > 0) && (
                   <BrowserStage
                     variant="inline"
@@ -2498,39 +2476,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             {/* 这个会话的文件已经常驻在输入坞上方，这里不再重复列一遍 */}
           </div>
         </section>
-
-        {/* ── 右栏：Chrome 直播（只在真有画面时出现 / 手动开）────────────
-            没有画面时给 44px 把手；点一下可以手动打开（看历史画面）。 */}
-        {railOpen ? (
-          <ProcessRail
-            frame={browserFrame}
-            actions={browserActions}
-            busy={busy}
-            waiting={browserWaiting}
-            onCollapse={toggleRail}
-            onUserClick={async (x, y) => sendBrowser({ kind: "click", x, y })}
-            onUserText={async (text) => sendBrowser({ kind: "text", text })}
-            onUserScroll={async (dy) => sendBrowser({ kind: "scroll", dy })}
-            steps={browserSteps}
-            onLoadSteps={() => void loadBrowserSteps()}
-          />
-        ) : (
-          <button
-            data-tap
-            title="浏览器"
-            onClick={toggleRail}
-            className="hidden lg:flex w-11 shrink-0 flex-col items-center gap-2 py-3 border-l border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-2)]"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="9" />
-              <path d="M3 9h18M9 3c-2 3-2 15 0 18M15 3c2 3 2 15 0 18" />
-            </svg>
-            {busy && browserFrame && (
-              <span className="w-2 h-2 rounded-full live-dot" style={{ background: "var(--color-accent)" }} />
-            )}
-          </button>
-        )}
       </div>
+
       {/* 浏览器面板 —— 桌面居中窗口，手机贴底抽屉（和文件预览同一个手感）。
           点缩略条打开；画面可点、可滚、可打字，登录要用户自己来。 */}
       {browserOpen && (
