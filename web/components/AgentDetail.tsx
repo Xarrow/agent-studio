@@ -820,12 +820,18 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                   value={def.model.provider}
                   onChange={(e) => {
                     const p = providers.find((x) => x.name === e.target.value);
+                    // **切 Provider 不动凭据**（v2 修正）：v1「属于新 Provider 就保留」
+                    // 挡不住来回切——volcengine→deepseek 时凭据不兼容被清成 null，
+                    // 再切回来时凭据已经是 null，无从恢复 = 数据照样丢。
+                    // 正解是切 Provider 时 credential_ref 原值保留：凭据下拉按
+                    // provider 过滤，不兼容的凭据只是暂时不显示（select 空白），
+                    // 切回来原值还在；真正选错凭据由下方不适配提示与保存后的
+                    // 运行时校验兜住。
                     patch({
                       model: {
                         ...def.model,
                         provider: e.target.value,
                         name: p?.models?.[0] ?? "",
-                        credential_ref: null,
                       },
                     });
                   }}
@@ -855,6 +861,15 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                     </option>
                   ))}
                 </select>
+                {/* 切了 Provider 后原凭据不显示（按 provider 过滤掉了），但值还在 ——
+                    必须告诉用户"没丢，只是这个 Provider 下看不见"，否则会被当成
+                    凭据丢了去手填（v2 修复的根源误会）。 */}
+                {usedCred && usedCred.provider !== def.model.provider && (
+                  <p className="mt-1 text-[12px]" style={{ color: "var(--color-warn, #d97706)" }}>
+                    当前凭据「{usedCred.name}」属于 {usedCred.provider}，与所选 Provider
+                    不适配 —— 切回原 Provider 即恢复显示；或改选上面列表中的配置。
+                  </p>
+                )}
               </div>
             </div>
 

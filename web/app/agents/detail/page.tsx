@@ -27,7 +27,11 @@ export default function AgentEditorPage() {
     return (
       <div className="p-4 md:p-6 lg:p-7 max-w-5xl">
         <p className="text-[13px]" style={{ color: "var(--color-muted)" }}>
-          URL 里没有助手 id —— 从助手列表页的「配置」进入。
+          URL 里没有助手 id ——{" "}
+          <a href="/agents" className="underline" style={{ color: "var(--color-accent)" }}>
+            回助手列表
+          </a>{" "}
+          从「配置」进入。
         </p>
       </div>
     );
