@@ -26,6 +26,13 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://192.168.2.11:3000",   # 内网访问（前端跑在 HPC .11）
+        # 页面由 FastAPI 同进程托管（单端口），但构建产物把 .env.local 的
+        # NEXT_PUBLIC_API_BASE=http://192.168.2.11:8848 内联进了 JS —— 用
+        # 127.0.0.1:8848（或本机其他别名）打开页面时是跨源，会被浏览器
+        # CORS 拦掉（现象：整页「加载失败：Failed to fetch」）。这里把
+        # 两个 host 别名都放行。
+        "http://127.0.0.1:8848",
+        "http://localhost:8848",
         # 走 Cloudflare 隧道的外网访问：页面在 dev.zeit.ccwu.cc、API 在
         # dev-api.zeit.ccwu.cc，两者不同源，必须显式放行。
         # （同源代理方案不需要这条，但那样 SSE 要过一层代理，直连更稳。）
