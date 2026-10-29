@@ -1604,6 +1604,8 @@ NATIVE_TOOLS: dict[str, dict[str, Any]] = {
             "把这次摸出来的做法沉淀成一个**全局技能**（出现在「技能」页，别的助手也能用）："
             "写清什么时候用它、步骤、命令、坑。用户说「把这个流程记成技能 / 下次照这个做」时用它；"
             "你自己做完一件以后还会再干的多步操作，也主动存一次。正文写做法，不要写这次的具体数据。"
+            "调用时 **name / description / body 三个参数必须一次给全**（不许传空对象或只传一部分，"
+            "缺参会直接被拒）；先想好技能名再调。"
         ),
         "schema": SKILL_SAVE_SCHEMA,
         "flags": {"read_only": False, "concurrency_safe": False, "dangerous": False, "native": True},
