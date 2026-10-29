@@ -169,6 +169,7 @@ class DenseIndex:
         self._vecs: dict[str, list[float]] = {}
         self._built_at: float = 0.0
         self._fingerprint: str = ""
+        self._dim: int = 0
 
     async def ensure(self, docs: dict[str, str], embed: EmbedFn, fingerprint: str) -> bool:
         """按需构建向量（fingerprint 变了才重算）。返回是否可用。"""
@@ -182,14 +183,20 @@ class DenseIndex:
             return False
         if not vecs or len(vecs) != len(docs):
             return False
+        dim = len(vecs[0])
+        if not dim or any(len(v) != dim for v in vecs):
+            return False  # 端点返回维度不齐 → 视为不可用，降级纯 BM25
         self._vecs = dict(zip(docs.keys(), vecs))
         self._fingerprint = fingerprint
+        self._dim = dim
         self._built_at = time.time()
         return True
 
     def search(self, query_vec: list[float] | None, top_l: int = 120) -> list[str]:
         if not query_vec or not self._vecs:
             return []
+        if len(query_vec) != self._dim:
+            return []  # query 向量维度与文档不一致（换过模型）→ 稠密路弃用，防 zip 静默截断
         scored = sorted(
             ((_cosine(query_vec, v), n) for n, v in self._vecs.items()),
             key=lambda x: (-x[0], x[1]),
