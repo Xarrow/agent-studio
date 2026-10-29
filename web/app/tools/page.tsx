@@ -23,6 +23,7 @@ import { SkillsPanel } from "@/components/SkillsPanel";
 import { McpPanel } from "@/components/McpPanel";
 import { ToolTestForm } from "@/components/ToolTestForm";
 import { urlParams } from "@/lib/tool-params";
+import { KVEditor, kvToPairs, pairsToKV, type KVPair } from "@/components/KVEditor";
 import { useFeedback } from "@/components/ui/feedback";
 
 /** 平台/运行时提供的工具：可绑定可试跑，但不给删（与后端 PROTECTED_KINDS 一致） */
@@ -642,6 +643,10 @@ export default function ToolsPage() {
 
 
 // --------------------------------------------------------------------------- //
+const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
+/** 有请求体的方法 —— 表单按此分化：无 body 的方法不出现「请求体」一节 */
+const BODY_METHODS = new Set(["POST", "PUT", "PATCH"]);
+
 function NewToolDialog({
   onClose,
   onCreated,
@@ -651,12 +656,31 @@ function NewToolDialog({
 }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [method, setMethod] = useState("GET");
+  const [method, setMethod] = useState<string>("GET");
   const [url, setUrl] = useState("");
   const [params, setParams] = useState("");
+  const [headers, setHeaders] = useState<KVPair[]>([]);
+  const [cookies, setCookies] = useState<KVPair[]>([]);
+  const [query, setQuery] = useState<KVPair[]>([]);
+  const [bodyTpl, setBodyTpl] = useState("");
+  const [timeoutS, setTimeoutS] = useState(15);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [readOnly, setReadOnly] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const hasBody = BODY_METHODS.has(method);
+  // 全部占位符来源：URL 模板 + 各 KV 值 + 请求体模板
+  const allTemplateSources = [
+    url,
+    ...headers.map((h) => h.v),
+    ...cookies.map((c) => c.v),
+    ...query.map((q) => q.v),
+    ...(hasBody ? [bodyTpl] : []),
+  ];
+  const knownParams = Array.from(new Set(allTemplateSources.flatMap((s) => urlParams(s || ""))));
+  const declaredParams = params.split(",").map((s) => s.trim()).filter(Boolean);
+  const missing = knownParams.filter((p) => !declaredParams.includes(p));
 
   const submit = async () => {
     setErr(null);
@@ -664,12 +688,25 @@ function NewToolDialog({
       setErr("名称与 URL 必填");
       return;
     }
-    // 参数形如：city, date=2026-01-01
-    const properties: Record<string, unknown> = {};
-    for (const raw of params.split(",").map((s) => s.trim()).filter(Boolean)) {
-      const [k] = raw.split("=");
-      properties[k] = { type: "string", description: raw.includes("=") ? raw : undefined };
+    if (/\s/.test(name.trim())) {
+      setErr("工具名不能有空格（它是模型调用的函数名）");
+      return;
     }
+    const properties: Record<string, unknown> = {};
+    for (const k of declaredParams) {
+      properties[k] = { type: "string" };
+    }
+
+    const impl: Record<string, unknown> = {
+      method,
+      url: url.trim(),
+      timeout_s: timeoutS,
+      max_bytes: 65536,
+    };
+    if (headers.length) impl.headers = pairsToKV(headers);
+    if (cookies.length) impl.cookies = pairsToKV(cookies);
+    if (query.length) impl.query = pairsToKV(query);
+    if (hasBody && bodyTpl.trim()) impl.body_template = bodyTpl;
 
     setBusy(true);
     try {
@@ -678,7 +715,7 @@ function NewToolDialog({
         name: name.trim(),
         description: description.trim(),
         input_schema: { type: "object", properties },
-        impl: { method, url: url.trim(), timeout_s: 15, max_bytes: 65536 },
+        impl,
         flags: { read_only: readOnly, concurrency_safe: true },
       });
       onCreated();
@@ -691,21 +728,35 @@ function NewToolDialog({
 
   return (
     <div className={DLG_BACKDROP}>
-      <div className={`${DLG_CARD} max-w-lg p-5`}>
+      <div className={`${DLG_CARD} max-w-xl p-5 max-h-[86vh] overflow-auto`}>
         <h2 className="text-[16px] font-medium mb-1">自定义 HTTP 工具</h2>
         <p className="text-[12px] text-[var(--color-muted)] mb-4">
-          URL 里用 <code className="mono">{"{{参数名}}"}</code> 占位，调用时替换成模型给出的实参。
+          值里用 <code className="mono">{"{{参数名}}"}</code> 占位（URL、请求头、Cookie、请求体都支持），
+          调用时替换成模型给出的实参。
         </p>
 
         <div className="space-y-3.5">
-          <div>
-            <label className="label">工具名（模型看到的函数名）</label>
-            <input
-              className="input mono"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="get_weather"
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">工具名（模型看到的函数名）</label>
+              <input
+                className="input mono"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="get_weather"
+              />
+            </div>
+            <div>
+              <label className="label">超时（秒）</label>
+              <input
+                className="input mono"
+                type="number"
+                min={1}
+                max={120}
+                value={timeoutS}
+                onChange={(e) => setTimeoutS(Math.max(1, Math.min(120, Number(e.target.value) || 15)))}
+              />
+            </div>
           </div>
           <div>
             <label className="label">描述（模型据此判断何时调用）</label>
@@ -717,7 +768,7 @@ function NewToolDialog({
               placeholder="查询指定城市当前天气"
             />
           </div>
-          <div className="grid grid-cols-[100px_1fr] gap-3">
+          <div className="grid grid-cols-[110px_1fr] gap-3">
             <div>
               <label className="label">方法</label>
               <select
@@ -725,7 +776,7 @@ function NewToolDialog({
                 value={method}
                 onChange={(e) => setMethod(e.target.value)}
               >
-                {["GET", "POST", "PUT", "DELETE"].map((m) => (
+                {HTTP_METHODS.map((m) => (
                   <option key={m}>{m}</option>
                 ))}
               </select>
@@ -736,40 +787,61 @@ function NewToolDialog({
                 className="input mono"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://api.example.com/weather?city={{city}}"
+                placeholder={
+                  hasBody
+                    ? "https://api.example.com/items"
+                    : "https://api.example.com/weather?city={{city}}"
+                }
               />
             </div>
           </div>
+
+          {/* 按方法分化：带体的方法给请求体模板；无体的提示参数走 URL/query */}
+          {hasBody ? (
+            <div>
+              <label className="label">
+                请求体模板（JSON，<code className="mono">{"{{参数名}}"}</code> 占位）
+              </label>
+              <textarea
+                className="input mono"
+                rows={3}
+                value={bodyTpl}
+                onChange={(e) => setBodyTpl(e.target.value)}
+                placeholder={'{"query": "{{q}}", "size": 10}'}
+                spellCheck={false}
+              />
+            </div>
+          ) : (
+            <p className="text-[12px] text-[var(--color-muted)]">
+              {method} 没有请求体 —— 参数通过 URL 占位符和下面的查询参数携带。
+            </p>
+          )}
+
           <div>
-            <label className="label">参数（从 URL 占位符自动解析，可补充）</label>
+            <label className="label">参数（模型每次调用要给的字段，逗号分隔）</label>
             <input
               className="input mono"
               value={params}
               onChange={(e) => setParams(e.target.value)}
-              placeholder="（写了 {{city}} 之类占位符会自动出现在这里）"
+              placeholder="city, date"
             />
-            {urlParams(url).length > 0 && (
+            {knownParams.length > 0 && (
               <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                 <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
-                  URL 里的占位符：
+                  模板里的占位符：
                 </span>
-                {urlParams(url).map((p) => (
+                {knownParams.map((p) => (
                   <span key={p} className="tag mono">
                     {p}
-                    {params.split(",").map((s) => s.trim()).includes(p) ? "" : " ·未在参数里"}
+                    {declaredParams.includes(p) ? "" : " ·未在参数里"}
                   </span>
                 ))}
-                {!urlParams(url).every((p) => params.split(",").map((s) => s.trim()).includes(p)) && (
+                {missing.length > 0 && (
                   <button
                     type="button"
                     className="text-[12px] underline"
                     style={{ color: "var(--color-accent)" }}
-                    onClick={() => {
-                      const cur = params.split(",").map((s) => s.trim()).filter(Boolean);
-                      const merged = [...cur];
-                      for (const p of urlParams(url)) if (!merged.includes(p)) merged.push(p);
-                      setParams(merged.join(", "));
-                    }}
+                    onClick={() => setParams([...declaredParams, ...missing].join(", "))}
                   >
                     补齐
                   </button>
@@ -777,6 +849,36 @@ function NewToolDialog({
               </div>
             )}
           </div>
+
+          {/* 高级配置：请求头 / Cookie / 固定 query —— 默认收起，用得上再展开 */}
+          <div className="pt-1 border-t border-[var(--color-border)]">
+            <button
+              className="text-[12px] text-[var(--color-muted)] mt-2"
+              data-tap
+              onClick={() => setShowAdvanced(!showAdvanced)}
+            >
+              {showAdvanced ? "▾" : "▸"} 请求头 / Cookie / 固定查询参数
+              {(headers.length || cookies.length || query.length) > 0 &&
+                `（已配 ${headers.length + cookies.length + query.length} 项）`}
+            </button>
+            {showAdvanced && (
+              <div className="mt-2.5 space-y-3.5">
+                <div>
+                  <label className="label">请求头（值可占位）</label>
+                  <KVEditor pairs={headers} onChange={setHeaders} keyPlaceholder="X-API-Key" valuePlaceholder="值或 {{参数}}" secret />
+                </div>
+                <div>
+                  <label className="label">Cookie（随请求发送）</label>
+                  <KVEditor pairs={cookies} onChange={setCookies} keyPlaceholder="session" valuePlaceholder="值或 {{参数}}" secret />
+                </div>
+                <div>
+                  <label className="label">固定查询参数（自动拼到 URL 后）</label>
+                  <KVEditor pairs={query} onChange={setQuery} keyPlaceholder="lang" valuePlaceholder="zh 或 {{参数}}" />
+                </div>
+              </div>
+            )}
+          </div>
+
           <label className="flex items-center gap-2 text-[12px]">
             <input
               type="checkbox"
@@ -833,6 +935,15 @@ function EditToolDialog({
   const [params, setParams] = useState(
     Object.keys((t?.input_schema?.properties as Record<string, unknown>) ?? {}).join(", "),
   );
+  const [headers, setHeaders] = useState<KVPair[]>(() => kvToPairs(t?.impl?.headers as Record<string, string> | undefined));
+  const [cookies, setCookies] = useState<KVPair[]>(() => kvToPairs(t?.impl?.cookies as Record<string, string> | undefined));
+  const [query, setQuery] = useState<KVPair[]>(() => kvToPairs(t?.impl?.query as Record<string, string> | undefined));
+  const [bodyTpl, setBodyTpl] = useState(() => {
+    const b = t?.impl?.body_template;
+    return typeof b === "string" ? b : b == null ? "" : JSON.stringify(b);
+  });
+  const [timeoutS, setTimeoutS] = useState(Number(t?.impl?.timeout_s ?? 15) || 15);
+  const [showKV, setShowKV] = useState(false);
   const [readOnly, setReadOnly] = useState(Boolean(t?.flags?.read_only));
   const [implText, setImplText] = useState(JSON.stringify(t?.impl ?? {}, null, 2));
   const [showImpl, setShowImpl] = useState(false);
@@ -890,11 +1001,22 @@ function EditToolDialog({
           }
           body.impl = parsed;
         } else if (isHttp) {
-          body.impl = {
+          const hasBody = BODY_METHODS.has(method);
+          const impl: Record<string, unknown> = {
             ...(t.impl ?? {}),
             method,
             url: url.trim(),
+            timeout_s: timeoutS,
           };
+          if (headers.length) impl.headers = pairsToKV(headers);
+          else delete impl.headers;
+          if (cookies.length) impl.cookies = pairsToKV(cookies);
+          else delete impl.cookies;
+          if (query.length) impl.query = pairsToKV(query);
+          else delete impl.query;
+          if (hasBody && bodyTpl.trim()) impl.body_template = bodyTpl;
+          else if (!hasBody) delete impl.body_template;
+          body.impl = impl;
           body.input_schema = { type: "object", properties: buildParams() };
           body.flags = { ...(t.flags ?? {}), read_only: readOnly };
         }
@@ -951,7 +1073,7 @@ function EditToolDialog({
 
           {isHttp && !showImpl && (
             <>
-              <div className="grid grid-cols-[100px_1fr] gap-3">
+              <div className="grid grid-cols-[110px_1fr] gap-3">
                 <div>
                   <label className="label">方法</label>
                   <select
@@ -959,7 +1081,7 @@ function EditToolDialog({
                     value={method}
                     onChange={(e) => setMethod(e.target.value)}
                   >
-                    {["GET", "POST", "PUT", "PATCH", "DELETE"].map((m) => (
+                    {HTTP_METHODS.map((m) => (
                       <option key={m}>{m}</option>
                     ))}
                   </select>
@@ -975,13 +1097,71 @@ function EditToolDialog({
                 </div>
               </div>
 
-              <div>
-                <label className="label">参数（逗号分隔，如 city, date）</label>
-                <input
-                  className="input mono"
-                  value={params}
-                  onChange={(e) => setParams(e.target.value)}
-                />
+              {BODY_METHODS.has(method) && (
+                <div>
+                  <label className="label">
+                    请求体模板（JSON，<code className="mono">{"{{参数名}}"}</code> 占位）
+                  </label>
+                  <textarea
+                    className="input mono"
+                    rows={3}
+                    value={bodyTpl}
+                    onChange={(e) => setBodyTpl(e.target.value)}
+                    placeholder={'{"query": "{{q}}"}'}
+                    spellCheck={false}
+                  />
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">参数（逗号分隔）</label>
+                  <input
+                    className="input mono"
+                    value={params}
+                    onChange={(e) => setParams(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="label">超时（秒）</label>
+                  <input
+                    className="input mono"
+                    type="number"
+                    min={1}
+                    max={120}
+                    value={timeoutS}
+                    onChange={(e) => setTimeoutS(Math.max(1, Math.min(120, Number(e.target.value) || 15)))}
+                  />
+                </div>
+              </div>
+
+              {/* 请求头 / Cookie / 固定 query —— 默认收起，已有配置时展示数量 */}
+              <div className="pt-1 border-t border-[var(--color-border)]">
+                <button
+                  className="text-[12px] text-[var(--color-muted)] mt-2"
+                  data-tap
+                  onClick={() => setShowKV(!showKV)}
+                >
+                  {showKV ? "▾" : "▸"} 请求头 / Cookie / 固定查询参数
+                  {(headers.length || cookies.length || query.length) > 0 &&
+                    `（已配 ${headers.length + cookies.length + query.length} 项）`}
+                </button>
+                {showKV && (
+                  <div className="mt-2.5 space-y-3.5">
+                    <div>
+                      <label className="label">请求头（值可占位）</label>
+                      <KVEditor pairs={headers} onChange={setHeaders} keyPlaceholder="X-API-Key" valuePlaceholder="值或 {{参数}}" secret />
+                    </div>
+                    <div>
+                      <label className="label">Cookie（随请求发送）</label>
+                      <KVEditor pairs={cookies} onChange={setCookies} keyPlaceholder="session" valuePlaceholder="值或 {{参数}}" secret />
+                    </div>
+                    <div>
+                      <label className="label">固定查询参数（自动拼到 URL 后）</label>
+                      <KVEditor pairs={query} onChange={setQuery} keyPlaceholder="lang" valuePlaceholder="zh 或 {{参数}}" />
+                    </div>
+                  </div>
+                )}
               </div>
 
               <label className="flex items-center gap-2 text-[12px]">

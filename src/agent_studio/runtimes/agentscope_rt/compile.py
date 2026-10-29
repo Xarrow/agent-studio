@@ -224,8 +224,15 @@ def build_http_tool(spec: ToolSpec):
     ``impl`` 形如::
 
         {"method": "GET", "url": "https://api.x.com/weather?city={{city}}",
-         "headers": {"X-Key": "..."}, "body_template": null,
+         "headers": {"X-Key": "..."},        # 固定请求头（{{param}} 可占位）
+         "cookies": {"session": "..."},      # 固定 Cookie（{{param}} 可占位）
+         "query": {"lang": "zh"},            # 固定查询参数（拼到 URL 上）
+         "body_template": "{\"q\": \"{{q}}\"}",  # 仅 POST/PUT/PATCH 有意义
          "timeout_s": 15}
+
+    请求方法决定配置语义（界面按此分化，运行时同样按此分化）：
+      · GET / DELETE —— 无请求体；URL 模板 + query 携带全部参数
+      · POST / PUT / PATCH —— body_template 发 JSON 体；URL/query/header/cookie 照常
     """
     import httpx
     from agentscope.tool import FunctionTool
@@ -233,10 +240,13 @@ def build_http_tool(spec: ToolSpec):
     impl = spec.impl or {}
     method = str(impl.get("method", "GET")).upper()
     url_tpl = impl.get("url") or ""
-    headers = impl.get("headers") or {}
+    headers = dict(impl.get("headers") or {})
+    cookies = dict(impl.get("cookies") or {})
+    query = dict(impl.get("query") or {})
     body_tpl = impl.get("body_template")
     timeout_s = float(impl.get("timeout_s", 15))
     max_bytes = int(impl.get("max_bytes", 64 * 1024))
+    has_body = method in ("POST", "PUT", "PATCH")
 
     def _render(value: Any, args: dict[str, Any]) -> Any:
         """把 ``{{param}}`` 占位替换成实参；dict/list 递归处理。"""
@@ -253,9 +263,23 @@ def build_http_tool(spec: ToolSpec):
 
     async def _call(**kwargs: Any) -> str:
         url = _render(url_tpl, kwargs)
-        body = _render(body_tpl, kwargs) if body_tpl is not None else None
-        async with httpx.AsyncClient(timeout=timeout_s) as client:
-            resp = await client.request(method, url, headers=headers, json=body)
+        if query:
+            # 固定 query 参数拼到 URL 上（{{param}} 同样可占位）；URL 里已有的
+            # query 与这里合并 —— httpx 的 params 会与 URL 内 query 并存
+            rendered_q = {k: _render(v, kwargs) for k, v in query.items()}
+            sep = "&" if "?" in url else "?"
+            from urllib.parse import urlencode
+
+            url = url + sep + urlencode(rendered_q)
+        req_headers = {k: str(_render(v, kwargs)) for k, v in headers.items()}
+        req_cookies = {k: str(_render(v, kwargs)) for k, v in cookies.items()}
+        body = _render(body_tpl, kwargs) if has_body and body_tpl is not None else None
+        async with httpx.AsyncClient(timeout=timeout_s, cookies=req_cookies or None) as client:
+            resp = await client.request(
+                method, url, headers=req_headers or None,
+                content=body if isinstance(body, str) else None,
+                json=body if not isinstance(body, str) else None,
+            )
             resp.raise_for_status()
             text = resp.text
         return text[:max_bytes]

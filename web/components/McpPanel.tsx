@@ -11,14 +11,31 @@
  *    而不是等到某个助手跑起来才报。
  * ③ 名字会变成工具名前缀（mcp__<名字>__<工具>），只能 ASCII —— 中文名由后端
  *    自动转成稳定短名，界面上说明一句，不让人自己猜为什么被改。
+ *
+ * 2026-10-29 重写：对齐全站 kit 范式（PageHead/Toolbar/Segmented/RowList/Row/
+ * RowDetail/Chip/Switch/Empty/KV）——整张表一圈边框的行式列表，一行一个服务器，
+ * 点行就地展开（工具清单/连接目标/失败原因全在展开区），动作常驻可见。
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, fmt } from "@/lib/api";
 import type { McpProbeResult, McpServer, McpServerInput } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
 import { Hint } from "@/components/ui/hint";
-import { DLG_BACKDROP, DLG_CARD } from "@/components/ui/kit";
+import {
+  PageHead,
+  Toolbar,
+  Segmented,
+  Chip,
+  RowList,
+  Row,
+  RowDetail,
+  Empty,
+  KV,
+  Switch,
+  DLG_BACKDROP,
+  DLG_CARD,
+} from "@/components/ui/kit";
 
 const EMPTY: McpServerInput = {
   name: "",
@@ -31,6 +48,8 @@ const EMPTY: McpServerInput = {
   enabled: true,
 };
 
+type StatusFilter = "all" | "ok" | "fail" | "off";
+
 export function McpPanel({ embedded = false }: { embedded?: boolean }) {
   const fb = useFeedback();
   const [servers, setServers] = useState<McpServer[]>([]);
@@ -38,7 +57,9 @@ export function McpPanel({ embedded = false }: { embedded?: boolean }) {
   const [editing, setEditing] = useState<McpServer | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [openTools, setOpenTools] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [filter, setFilter] = useState<StatusFilter>("all");
+  const [q, setQ] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -70,53 +91,6 @@ export function McpPanel({ embedded = false }: { embedded?: boolean }) {
     }
   };
 
-  /* ── 粘贴 mcpServers JSON 直接注册 ──────────────────────────────
-     用户从 Claude Desktop / Cursor / 内部平台拿到的那份配置原样粘进来，
-     不用把字段拆成表单手填一遍。有 command 走 stdio、有 url 走 http，
-     后端判；这里只做**本地预览**（名字/形态/连到哪）让人确认，注册和
-     工具清单一律走后端。同名再粘一次是更新不是新增。 */
-  const [pasted, setPasted] = useState("");
-  const [importing, setImporting] = useState(false);
-
-  const pastePreview = (() => {
-    const t = pasted.trim();
-    if (!t) return null;
-    try {
-      const obj = JSON.parse(t) as Record<string, unknown>;
-      const inner = (obj.mcpServers ?? obj) as Record<string, unknown>;
-      if (typeof inner !== "object" || inner === null || Array.isArray(inner))
-        return { error: "没找到 mcpServers 配置：应为 {\"mcpServers\": {\"名字\": {...}}}" };
-      const items = Object.entries(inner).map(([name, cfg]) => {
-        const c = (cfg ?? {}) as Record<string, unknown>;
-        const cmd = String(c.command ?? "").trim();
-        const url = String(c.url ?? "").trim();
-        const kind = cmd ? "stdio" : url ? "http" : "缺 command 和 url";
-        return { name, kind, target: cmd ? `命令 ${cmd}` : url || "—" };
-      });
-      if (!items.length) return { error: "mcpServers 里是空的" };
-      return { items };
-    } catch {
-      return { error: "不是合法的 JSON（先粘到别处校验一下？）" };
-    }
-  })();
-
-  const doImport = async () => {
-    setImporting(true);
-    try {
-      const got = await api.importMcpServers(JSON.parse(pasted));
-      fb.success(
-        `已导入 ${got.length} 个 MCP 服务器`,
-        got.map((s) => `${s.name}（${s.transport}）`).join("、"),
-      );
-      setPasted("");
-      await load();
-    } catch (e) {
-      fb.error("导入失败", e instanceof Error ? e.message : String(e));
-    } finally {
-      setImporting(false);
-    }
-  };
-
   const toggle = async (s: McpServer) => {
     try {
       await api.updateMcpServer(s.id, { enabled: !s.enabled });
@@ -143,170 +117,297 @@ export function McpPanel({ embedded = false }: { embedded?: boolean }) {
     }
   };
 
+  /* ── 粘贴 mcpServers JSON 直接注册 ──────────────────────────────
+     用户从 Claude Desktop / Cursor / 内部平台拿到的那份配置原样粘进来，
+     不用把字段拆成表单手填一遍。有 command 走 stdio、有 url 走 http，
+     后端判；这里只做**本地预览**（名字/形态/连到哪）让人确认，注册和
+     工具清单一律走后端。同名再粘一次是更新不是新增。 */
+  const [pasted, setPasted] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [showPaste, setShowPaste] = useState(false);
+
+  const pastePreview = useMemo(() => {
+    const t = pasted.trim();
+    if (!t) return null;
+    try {
+      const obj = JSON.parse(t) as Record<string, unknown>;
+      const inner = (obj.mcpServers ?? obj) as Record<string, unknown>;
+      if (typeof inner !== "object" || inner === null || Array.isArray(inner))
+        return { error: "没找到 mcpServers 配置：应为 {\"mcpServers\": {\"名字\": {...}}}" };
+      const items = Object.entries(inner).map(([name, cfg]) => {
+        const c = (cfg ?? {}) as Record<string, unknown>;
+        const cmd = String(c.command ?? "").trim();
+        const url = String(c.url ?? "").trim();
+        const kind = cmd ? "stdio" : url ? "http" : "缺 command 和 url";
+        return { name, kind, target: cmd ? `命令 ${cmd}` : url || "—" };
+      });
+      if (!items.length) return { error: "mcpServers 里是空的" };
+      return { items };
+    } catch {
+      return { error: "不是合法的 JSON（先粘到别处校验一下？）" };
+    }
+  }, [pasted]);
+
+  const doImport = async () => {
+    setImporting(true);
+    try {
+      const got = await api.importMcpServers(JSON.parse(pasted));
+      fb.success(
+        `已导入 ${got.length} 个 MCP 服务器`,
+        got.map((s) => `${s.name}（${s.transport}）`).join("、"),
+      );
+      setPasted("");
+      setShowPaste(false);
+      await load();
+    } catch (e) {
+      fb.error("导入失败", e instanceof Error ? e.message : String(e));
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  // 状态分桶：连不上/没探测都算「异常」（用户最该先看的），停用单列
+  const statusOf = (s: McpServer): StatusFilter =>
+    !s.enabled ? "off" : s.last_probe_at > 0 && s.last_probe_ok ? "ok" : "fail";
+  const counts = useMemo(() => {
+    const c = { all: servers.length, ok: 0, fail: 0, off: 0 };
+    for (const s of servers) c[statusOf(s)] += 1;
+    return c;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [servers]);
+  const shown = servers.filter((s) => {
+    if (filter !== "all" && statusOf(s) !== filter) return false;
+    const kw = q.trim().toLowerCase();
+    if (!kw) return true;
+    return (
+      s.name.toLowerCase().includes(kw) ||
+      (s.command || "").toLowerCase().includes(kw) ||
+      (s.url || "").toLowerCase().includes(kw) ||
+      s.tools.some((t) => t.name.toLowerCase().includes(kw))
+    );
+  });
+
   return (
     <div className={embedded ? "" : "p-4 md:p-6 lg:p-7 max-w-5xl"}>
       {!embedded && (
-        <>
-          <header className="flex items-start justify-between mb-6">
-            <div>
-              <h1 className="text-[22px] font-semibold tracking-tight flex items-center gap-1.5">
-                <Hint text="标准协议：把别人写的工具服务接进来">
-                  MCP 服务器
-                </Hint>
-              </h1>
-              <p className="text-[13px] text-[var(--color-muted)] mt-1">
-                把外部的工具服务接进来。注册一次，多个助手都能挂。
-              </p>
-            </div>
-          </header>
-        </>
+        <PageHead
+          title={<Hint text="标准协议：把别人写的工具服务接进来">MCP 服务器</Hint>}
+          desc="把外部的工具服务接进来。注册一次，多个助手都能挂。"
+        />
       )}
 
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+      <Toolbar>
         <button className="btn btn-primary" onClick={() => setShowNew(true)}>
-          + 注册 MCP 服务器
+          + 注册
         </button>
-        <span className="text-[12px] text-[var(--color-muted)]">
+        <button
+          className="btn"
+          onClick={() => setShowPaste(!showPaste)}
+          title="从 Claude Desktop / Cursor 的配置直接导入"
+        >
+          粘贴 JSON 导入
+        </button>
+        <input
+          className="input input-inline !w-[180px]"
+          placeholder="搜名字 / 命令 / 工具"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
+        <Segmented<StatusFilter>
+          options={[
+            { key: "all", label: "全部", count: counts.all },
+            { key: "ok", label: "正常", count: counts.ok },
+            { key: "fail", label: "异常", count: counts.fail },
+            { key: "off", label: "停用", count: counts.off },
+          ]}
+          value={filter}
+          onChange={setFilter}
+        />
+        <span className="ml-auto text-[12px] text-[var(--color-muted)]">
           {loading ? "加载中…" : `${servers.length} 个`}
         </span>
-        <p className="w-full text-[12px] text-[var(--color-muted)]">
-          工具清单靠<b>探测</b>得到（连上去问服务器要），不用手填 —— 手填的一定会和实际漂移
-          注册后到「Agents → 某个助手 → 能力」里勾上它，助手才有这些工具。
-        </p>
-      </div>
+      </Toolbar>
 
-      {/* ── 粘贴 mcpServers JSON（与注册按钮并列，常驻可见） ────── */}
-      <div className="mb-4 rounded-[10px] border p-3 md:p-4" style={{ borderColor: "var(--color-border)" }}>
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          <span className="text-[13px] font-medium">粘贴 mcpServers 配置</span>
-          <span className="text-[12px] text-[var(--color-muted)]">
-            Claude Desktop / Cursor / 内部平台给的那份 JSON 原样粘进来，不用拆字段手填
-          </span>
-        </div>
-        <textarea
-          className="input min-h-[64px] w-full font-mono text-[12px]"
-          placeholder={'{\n  "mcpServers": {\n    "名字": { "command": "npx", "args": ["-y", "包名"] }\n  }\n}'}
-          value={pasted}
-          onChange={(e) => setPasted(e.target.value)}
-          spellCheck={false}
-        />
-        {pastePreview && (
-          <div className="mt-2 text-[12px]">
-            {pastePreview.error ? (
-              <p style={{ color: "var(--color-err, #dc2626)" }}>{pastePreview.error}</p>
-            ) : (
-              <>
-                <p className="mb-1 text-[var(--color-muted)]">
-                  解析出 {pastePreview.items?.length ?? 0} 个服务器（导入后同名是更新）：
-                </p>
-                {(pastePreview.items ?? []).map((it) => (
-                  <p key={it.name} className="truncate">
-                    · <b>{it.name}</b> — {it.kind} · {it.target}
+      {/* ── 粘贴 mcpServers JSON（收起，点「粘贴 JSON 导入」展开） ── */}
+      {showPaste && (
+        <div className="mb-3 rounded-[10px] border p-3 md:p-4" style={{ borderColor: "var(--color-border)" }}>
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <span className="text-[13px] font-medium">粘贴 mcpServers 配置</span>
+            <span className="text-[12px] text-[var(--color-muted)]">
+              原样粘进来，不用拆字段手填；同名再导是更新
+            </span>
+          </div>
+          <textarea
+            className="input min-h-[64px] w-full font-mono text-[12px]"
+            placeholder={'{\n  "mcpServers": {\n    "名字": { "command": "npx", "args": ["-y", "包名"] }\n  }\n}'}
+            value={pasted}
+            onChange={(e) => setPasted(e.target.value)}
+            spellCheck={false}
+          />
+          {pastePreview && (
+            <div className="mt-2 text-[12px]">
+              {pastePreview.error ? (
+                <p style={{ color: "var(--color-err, #dc2626)" }}>{pastePreview.error}</p>
+              ) : (
+                <>
+                  <p className="mb-1 text-[var(--color-muted)]">
+                    解析出 {pastePreview.items?.length ?? 0} 个服务器（导入后同名是更新）：
                   </p>
-                ))}
-              </>
+                  {(pastePreview.items ?? []).map((it) => (
+                    <p key={it.name} className="truncate">
+                      · <b>{it.name}</b> — {it.kind} · {it.target}
+                    </p>
+                  ))}
+                </>
+              )}
+            </div>
+          )}
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              className="btn btn-primary"
+              disabled={importing || !pastePreview || !!pastePreview.error}
+              onClick={() => void doImport()}
+            >
+              {importing ? "导入中…" : "导入"}
+            </button>
+            {pasted && (
+              <button className="btn" onClick={() => setPasted("")} disabled={importing}>
+                清空
+              </button>
             )}
           </div>
-        )}
-        <div className="mt-2 flex items-center gap-2">
-          <button
-            className="btn btn-primary"
-            disabled={importing || !pastePreview || !!pastePreview.error}
-            onClick={() => void doImport()}
-          >
-            {importing ? "导入中…" : "导入"}
-          </button>
-          {pasted && (
-            <button className="btn" onClick={() => setPasted("")} disabled={importing}>
-              清空
-            </button>
-          )}
-        </div>
-      </div>
-
-      {servers.length === 0 && !loading && (
-        <div className="rounded-[10px] border p-4 text-[13px] text-[var(--color-muted)]" style={{ borderColor: "var(--color-border)" }}>
-          还没有 MCP 服务器。常见的两种：本地起一个进程（stdio，例如
-          <code className="mono"> npx -y @modelcontextprotocol/server-filesystem /data</code>），
-          或者接一个远端地址（http）。
         </div>
       )}
 
-      <div className="flex flex-col gap-2">
-        {servers.map((s) => (
-          <div
-            key={s.id}
-            className="rounded-[10px] border p-3"
-            style={{ borderColor: "var(--color-border)", opacity: s.enabled ? 1 : 0.6 }}
-          >
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[13.5px] font-semibold">{s.name}</span>
-              <span className="tag">{s.transport === "stdio" ? "本地进程" : "远端 http"}</span>
-              <span
-                className="tag"
-                style={
-                  s.last_probe_ok
-                    ? { color: "var(--color-ok)", borderColor: "color-mix(in srgb, var(--color-ok) 35%, var(--color-border))" }
-                    : { color: "var(--color-warn)", borderColor: "color-mix(in srgb, var(--color-warn) 35%, var(--color-border))" }
-                }
-              >
-                {s.last_probe_at === 0
-                  ? "还没探测"
-                  : s.last_probe_ok
-                    ? `${s.tools.length} 个工具`
-                    : "连不上"}
-              </span>
-              {!s.enabled && <span className="tag">已停用</span>}
-              <div className="ml-auto flex flex-wrap gap-1.5">
-                <button className="btn text-[12px]" disabled={busyId === s.id} onClick={() => void probe(s)}>
-                  {busyId === s.id ? "连接中…" : "重新探测"}
-                </button>
-                {s.tools.length > 0 && (
-                  <button className="btn text-[12px]" onClick={() => setOpenTools(openTools === s.id ? null : s.id)}>
-                    {openTools === s.id ? "收起工具" : "看工具"}
-                  </button>
+      {servers.length === 0 && !loading ? (
+        <RowList>
+          <Empty
+            title="还没有 MCP 服务器"
+            hint="常见两种：本地起一个进程（stdio，例如 npx -y @modelcontextprotocol/server-filesystem /data），或者接一个远端地址（http）。注册后到「Agents → 某个助手 → 能力」里挂上，助手才有这些工具。"
+            action={
+              <button className="btn btn-primary" onClick={() => setShowNew(true)}>
+                + 注册第一个
+              </button>
+            }
+          />
+        </RowList>
+      ) : shown.length === 0 && !loading ? (
+        <RowList>
+          <Empty title="没有符合条件的服务器" hint="换个关键词或状态筛选。" />
+        </RowList>
+      ) : (
+        <RowList>
+          {shown.map((s) => {
+            const st = statusOf(s);
+            const isOpen = expanded === s.id;
+            const target =
+              s.transport === "stdio"
+                ? [s.command, ...(s.args || [])].filter(Boolean).join(" ")
+                : s.url;
+            return (
+              <div key={s.id}>
+                <Row
+                  expanded={isOpen}
+                  onToggle={() => setExpanded(isOpen ? null : s.id)}
+                  wrapActions={false}
+                  actions={
+                    <>
+                      <Switch
+                        checked={s.enabled}
+                        onChange={() => void toggle(s)}
+                        ariaLabel={`${s.enabled ? "停用" : "启用"} ${s.name}`}
+                        title={s.enabled ? "停用（助手暂不可用这些工具）" : "启用"}
+                      />
+                      <button
+                        className="btn !min-h-0 !px-2 !py-1 text-[12px]"
+                        disabled={busyId === s.id}
+                        title="连上去要一次工具清单"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void probe(s);
+                        }}
+                      >
+                        {busyId === s.id ? "连接中…" : "探测"}
+                      </button>
+                      <button
+                        className="btn !min-h-0 !px-2 !py-1 text-[12px]"
+                        title="编辑连接配置"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditing(s);
+                        }}
+                      >
+                        编辑
+                      </button>
+                      <button
+                        className="btn !min-h-0 !px-2 !py-1 text-[12px] text-[var(--color-err)]"
+                        title="删除"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void remove(s);
+                        }}
+                      >
+                        删除
+                      </button>
+                    </>
+                  }
+                >
+                  <span className="truncate text-[13.5px] font-semibold">{s.name}</span>
+                  <Chip tone="muted">{s.transport === "stdio" ? "本地进程" : "远端 http"}</Chip>
+                  {s.last_probe_at === 0 ? (
+                    <Chip tone="warn">还没探测</Chip>
+                  ) : st === "ok" ? (
+                    <Chip tone="ok">{s.tools.length} 个工具</Chip>
+                  ) : (
+                    <Chip tone="err">连不上</Chip>
+                  )}
+                  {!s.enabled && <Chip tone="muted">已停用</Chip>}
+                  <code className="mono hidden min-w-0 flex-1 truncate text-[12px] text-[var(--color-muted)] md:inline">
+                    {target}
+                  </code>
+                </Row>
+
+                {isOpen && (
+                  <RowDetail>
+                    <div className="flex flex-col gap-1.5">
+                      <KV k="连接目标">
+                        <code className="mono break-all">{target || "—"}</code>
+                      </KV>
+                      {s.last_probe_at > 0 && (
+                        <KV k="最近探测">
+                          {fmt.time(s.last_probe_at)}
+                          {s.last_probe_ok ? "" : " · 失败"}
+                        </KV>
+                      )}
+                      {!s.last_probe_ok && s.last_probe_error && (
+                        <KV k="失败原因">
+                          <span style={{ color: "var(--color-err)" }}>{s.last_probe_error}</span>
+                        </KV>
+                      )}
+                      <KV k="挂到助手">到「Agents → 某个助手 → 能力」里勾上它</KV>
+                      {s.tools.length > 0 && (
+                        <div className="mt-1">
+                          <p className="mb-1 text-[12px] text-[var(--color-muted)]">
+                            工具清单（探测所得，{s.tools.length} 个）：
+                          </p>
+                          <ul className="flex flex-col gap-1">
+                            {s.tools.map((t) => (
+                              <li key={t.name} className="text-[12px]">
+                                <code className="mono">{t.name}</code>
+                                <span className="ml-2 text-[var(--color-muted)]">{t.description}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  </RowDetail>
                 )}
-                <button className="btn text-[12px]" onClick={() => setEditing(s)}>
-                  编辑
-                </button>
-                <button className="btn text-[12px]" onClick={() => void toggle(s)}>
-                  {s.enabled ? "停用" : "启用"}
-                </button>
-                <button className="btn text-[12px] text-[var(--color-err)]" onClick={() => void remove(s)}>
-                  删除
-                </button>
               </div>
-            </div>
-
-            <div className="mt-1.5 text-[12px] text-[var(--color-muted)] break-all">
-              {s.transport === "stdio" ? (
-                <code className="mono">{[s.command, ...(s.args || [])].filter(Boolean).join(" ")}</code>
-              ) : (
-                <code className="mono">{s.url}</code>
-              )}
-              {s.last_probe_at > 0 && (
-                <span className="ml-2">· 最近探测 {fmt.time(s.last_probe_at)}</span>
-              )}
-            </div>
-            {!s.last_probe_ok && s.last_probe_error && (
-              <p className="mt-1 text-[12px]" style={{ color: "var(--color-err)" }}>
-                {s.last_probe_error}
-              </p>
-            )}
-
-            {openTools === s.id && s.tools.length > 0 && (
-              <ul className="mt-2 flex flex-col gap-1 border-t pt-2" style={{ borderColor: "var(--color-border)" }}>
-                {s.tools.map((t) => (
-                  <li key={t.name} className="text-[12px]">
-                    <code className="mono">{t.name}</code>
-                    <span className="ml-2 text-[var(--color-muted)]">{t.description}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        ))}
-      </div>
+            );
+          })}
+        </RowList>
+      )}
 
       {(showNew || editing) && (
         <McpDialog
@@ -413,7 +514,7 @@ function McpDialog({
       >
         <h2 className="text-[15px] font-semibold">{server ? "编辑 MCP 服务器" : "注册 MCP 服务器"}</h2>
         <p className="mt-1 text-[12px] text-[var(--color-muted)]">
-          只填"怎么连"。工具清单保存后点「重新探测」自动取回来。
+          只填"怎么连"。工具清单保存后点「探测」自动取回来。
         </p>
 
         <div className="mt-3 flex flex-col gap-3">
