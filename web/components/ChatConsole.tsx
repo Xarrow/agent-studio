@@ -2484,10 +2484,10 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
         <div className="fixed inset-0 z-[70] flex items-end justify-center md:items-center" role="dialog" aria-modal="true" aria-label="浏览器画面">
           <div className="absolute inset-0" style={{ background: "rgba(15,23,42,0.4)" }} onClick={() => setBrowserOpen(false)} />
           <div
-            className="relative flex w-full flex-col overflow-hidden rounded-t-[16px] md:max-w-[900px] md:rounded-[14px]"
+            className="relative flex w-full flex-col overflow-hidden rounded-t-[16px] md:max-w-[760px] md:rounded-[14px]"
             style={{
-              height: "88vh",
-              maxHeight: "88vh",
+              height: "72vh",
+              maxHeight: "72vh",
               border: "1px solid var(--color-border-strong)",
               background: "var(--color-surface)",
               boxShadow: "0 24px 60px rgba(15,23,42,0.28)",
