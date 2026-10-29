@@ -244,9 +244,9 @@ class AgentScopeRuntime(AgentRuntime):
                 Issue(level="error", field="model.params.temperature", message="temperature 应在 0~2")
             )
 
-        # 限值
+        # 限值（null=未设置，取 schema 默认，不做比较）
         limits = definition.limits
-        if limits.max_iters < -1:
+        if limits.max_iters is not None and limits.max_iters < -1:
             issues.append(
                 Issue(
                     level="error",
@@ -254,7 +254,11 @@ class AgentScopeRuntime(AgentRuntime):
                     message="max_iters 必须 ≥ -1（-1 表示不限制轮数）",
                 )
             )
-        if limits.max_iters == -1 and limits.timeout_s <= 0:
+        if (
+            limits.max_iters == -1
+            and limits.timeout_s is not None
+            and limits.timeout_s <= 0
+        ):
             issues.append(
                 Issue(
                     level="warning",
@@ -262,7 +266,7 @@ class AgentScopeRuntime(AgentRuntime):
                     message="轮数不限制且未设超时，执行可能失控（建议设置超时兜底）",
                 )
             )
-        if limits.timeout_s > 0 and limits.timeout_s < 10:
+        if limits.timeout_s is not None and 0 < limits.timeout_s < 10:
             issues.append(
                 Issue(
                     level="warning",

@@ -55,7 +55,29 @@ async def read_setting(
     value = await get_setting(session, key, None)
     if value is None:
         value = DEFAULTS.get(key)
+    # toolsearch_embedding 的 api_key 是密文落库的（同凭据表标准）——
+    # 读取侧永不回明文，也不回密文（密文出去=拿到 db 的人就能解），只回
+    # 「已配置 + 掩码」；前端留空 = 保持原值。
+    if key == "toolsearch_embedding" and isinstance(value, dict):
+        value = _redact_embed_conf(value)
     return {"key": key, "value": value}
+
+
+def _redact_embed_conf(conf: dict[str, Any]) -> dict[str, Any]:
+    """把 toolsearch_embedding 配置里的密钥抹掉，只留可读特征。"""
+    out = {k: v for k, v in conf.items() if k not in ("api_key", "api_key_enc")}
+    enc = conf.get("api_key_enc")
+    masked = ""
+    if enc:
+        try:
+            from ..security.crypto import decrypt, mask
+
+            masked = mask(decrypt(enc.encode() if isinstance(enc, str) else enc))
+        except Exception:  # noqa: BLE001 —— 解不开就只报"已配置"
+            masked = "已配置"
+    out["api_key_masked"] = masked
+    out["api_key_set"] = bool(enc)
+    return out
 
 
 @router.put("/{key}")
@@ -67,6 +89,38 @@ async def write_setting(
     expect = ALLOWED[key]
     if not isinstance(body.value, expect):
         raise HTTPException(status_code=400, detail=f"value must be {expect.__name__}")
-    await set_setting(session, key, body.value)
+    value = body.value
+    # toolsearch_embedding：api_key 明文进门就加密（与 LLM 凭据同一套主密钥），
+    # 明文不落库、不落日志；api_key 为空/缺省 = 保持原密钥。
+    if key == "toolsearch_embedding" and isinstance(value, dict):
+        value = await _merge_embed_conf(session, value)
+    await set_setting(session, key, value)
     await session.commit()
-    return {"key": key, "value": body.value}
+    if key == "toolsearch_embedding":
+        value = _redact_embed_conf(value)
+    return {"key": key, "value": value}
+
+
+async def _merge_embed_conf(
+    session: AsyncSession, incoming: dict[str, Any]
+) -> dict[str, Any]:
+    from ..security.crypto import encrypt
+
+    base_url = str(incoming.get("base_url") or "").strip()
+    model = str(incoming.get("model") or "").strip()
+    plain_key = str(incoming.get("api_key") or "").strip()
+    if not (base_url and model):
+        # 停用（回纯 BM25）：整体清空
+        return {}
+    merged: dict[str, Any] = {"base_url": base_url, "model": model}
+    if plain_key:
+        merged["api_key_enc"] = encrypt(plain_key).decode()
+    else:
+        prev = await get_setting(session, "toolsearch_embedding", None)
+        prev = prev or {}
+        if not prev.get("api_key_enc"):
+            raise HTTPException(
+                status_code=400, detail="api_key 为空且原配置无密钥——首次启用必须填 api_key"
+            )
+        merged["api_key_enc"] = prev["api_key_enc"]
+    return merged

@@ -234,7 +234,7 @@ export function QuickTags({ onPick, prefix }: { onPick: (text: string) => void; 
             </div>
 
             {err && (
-              <p className="px-3.5 pb-2 text-[11.5px]" style={{ color: "var(--color-danger, #b91c1c)" }}>
+              <p className="px-3.5 pb-2 text-[11.5px]" style={{ color: "var(--color-err, #b91c1c)" }}>
                 {err}
               </p>
             )}

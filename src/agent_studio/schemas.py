@@ -54,17 +54,17 @@ class Limits(BaseModel):
     - ``timeout_s = 0`` 表示**不超时**；默认 60 秒，完全交给用户定义。
     """
 
-    max_iters: int = Field(
+    max_iters: int | None = Field(
         default=50,
         ge=-1,
         le=100000,
-        description="最大推理-行动轮数；-1 表示不限制",
+        description="最大推理-行动轮数；-1 表示不限制；null=未设置（取默认）",
     )
-    timeout_s: int = Field(
+    timeout_s: int | None = Field(
         default=60,
         ge=0,
         le=86400,
-        description="单次执行超时（秒）；0 表示不超时",
+        description="单次执行超时（秒）；0 表示不超时；null=未设置（取默认）",
     )
     max_cost_usd: float | None = Field(default=None, ge=0)
 

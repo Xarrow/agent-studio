@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { api, fmt } from "@/lib/api";
 import type { Credential, CredentialTestResult, Provider } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
@@ -308,6 +308,17 @@ export default function CredentialsPage() {
                       <Chip tone="muted">{c.provider_display}</Chip>
                       {c.last_test_ok === true && <Chip tone="ok">上次测试通过</Chip>}
                       {c.last_test_ok === false && <Chip tone="err">上次测试失败</Chip>}
+                      {/* 失败原因落库了就该给用户看（last_test_error 随列表返回，
+                          原来前端从不显示——刷新后只剩一个红 chip，无从排查） */}
+                      {c.last_test_ok === false && c.last_test_error && (
+                        <span
+                          className="basis-full truncate text-[11.5px]"
+                          style={{ color: "var(--color-err)" }}
+                          title={c.last_test_error}
+                        >
+                          {c.last_test_error}
+                        </span>
+                      )}
                     </span>
                     {/* 元信息：图标 + 短词，三个事实不再用「·」串成一句话 */}
                     <span
@@ -745,6 +756,7 @@ function EditCredentialDialog({
   const [found, setFound] = useState<string[]>([]);
   const [probeNote, setProbeNote] = useState<string | null>(null);
   const [probing, setProbing] = useState(false);
+  const probingRef = useRef(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -758,6 +770,10 @@ function EditCredentialDialog({
 
   /** 探测该凭据可用的模型清单 */
   const probeModels = async () => {
+    // 防连点：probing 置位前可能积压多次同步调用（React 批处理下 disabled
+    // 还没渲染出来，真机连点 3 次实测发 3 个请求）——先查 ref 闸门
+    if (probingRef.current) return;
+    probingRef.current = true;
     setProbing(true);
     setProbeNote(null);
     try {
@@ -777,6 +793,7 @@ function EditCredentialDialog({
     } catch (e) {
       setProbeNote(`探测失败：${e instanceof Error ? e.message : String(e)}，请手动填写。`);
     } finally {
+      probingRef.current = false;
       setProbing(false);
     }
   };
@@ -864,6 +881,9 @@ function EditCredentialDialog({
                 setProvider(e.target.value);
                 setFound([]);
                 setProbeNote(null);
+                // 切 Provider 联动 Base URL（编辑弹窗原来不联动，可保存出
+                // 「Ollama + 火山端点」错配；新建弹窗本来就是清空的，行为拉齐）
+                setBaseUrl("");
               }}
             >
               {providers.map((p) => (
@@ -946,7 +966,16 @@ function EditCredentialDialog({
             </div>
 
             {probeNote && (
-              <p className="text-[12px] text-[var(--color-muted)] mt-1.5">{probeNote}</p>
+              <p
+                className="text-[12px] mt-1.5"
+                style={{
+                  color: probeNote.startsWith("探测失败") || probeNote.startsWith("✗")
+                    ? "var(--color-err)"
+                    : "var(--color-muted)",
+                }}
+              >
+                {probeNote}
+              </p>
             )}
 
             {found.length > 0 && (

@@ -94,7 +94,17 @@ async def list_credentials(
     if provider:
         stmt = stmt.where(Secret.provider == normalize_provider(provider))
     rows = (await session.execute(stmt)).scalars().all()
-    return [to_read(r) for r in rows]
+    out: list[CredentialRead] = []
+    for r in rows:
+        # masked_key 用真实 key 的头尾特征（原来列表不取明文，恒为固定 8 点，
+        # 用户无法核对「这是哪把 key」）；密文解开只为做掩码，明文不出接口。
+        masked = None
+        try:
+            masked = mask(decrypt(r.ciphertext))
+        except Exception:  # noqa: BLE001 —— 解不开（主密钥变更）就保持 8 点
+            masked = None
+        out.append(to_read(r, masked))
+    return out
 
 
 @router.post("/credentials", response_model=CredentialRead, status_code=status.HTTP_201_CREATED)

@@ -474,7 +474,7 @@ export default function ToolsPage() {
                             <IconPlay className="md:hidden" />
                             <span className="max-md:hidden">{isTesting ? "收起" : "试运行"}</span>
                           </button>
-                          {t.kind !== "builtin" && (
+                          {!PROTECTED_KINDS.has(t.kind) && (
                             <button
                               type="button"
                               className="btn text-[12px] max-md:w-9 max-md:px-0"
@@ -843,6 +843,9 @@ function EditToolDialog({
 
   const isBuiltin = t.kind === "builtin";
   const isHttp = t.kind === "http";
+  // native/fork/a2a 的 name 是运行时函数名（助手编译按 name 找实现，a2a 还与
+  // 远程 Agent 挂载语义挂钩）——改名必导致编译对不上。可改名字的只有 http。
+  const nameLocked = t.kind !== "http";
 
   const buildParams = () => {
     const props: Record<string, unknown> = {};
@@ -916,19 +919,21 @@ function EditToolDialog({
         <p className="text-[12px] text-[var(--color-muted)] mb-4">
           {isBuiltin
             ? "内置工具只能改描述，同步会覆盖回来"
-            : "保存即生效，下次运行用新定义"}
+            : isHttp
+              ? "保存即生效，下次运行用新定义"
+              : "平台工具只能改描述；名字是运行时函数名，不可改"}
         </p>
 
         <div className="space-y-3.5">
           <div>
             <label className="label">
               工具名（模型看到的函数名）
-              {isBuiltin && "（内置，不可改）"}
+              {nameLocked && "（平台函数名，不可改）"}
             </label>
             <input
               className="input mono"
               value={name}
-              disabled={isBuiltin}
+              disabled={nameLocked}
               onChange={(e) => setName(e.target.value)}
             />
           </div>

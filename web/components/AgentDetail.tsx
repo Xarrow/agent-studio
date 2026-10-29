@@ -477,7 +477,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
               用户也始终知道"最近一次失败了"，展开才给完整原因。 */}
           {lastRunOpen && ov.lastRun?.status === "error" && (
             <div className="mt-2 text-[12px] leading-relaxed rounded-[8px] px-3 py-2 max-w-[560px]"
-              style={{ background: "color-mix(in srgb, var(--color-danger, #dc2626) 8%, transparent)" }}>
+              style={{ background: "color-mix(in srgb, var(--color-err, #dc2626) 8%, transparent)" }}>
               <div className="flex items-center gap-2 flex-wrap">
                 <span style={{ color: STATUS_STYLE.error }}>最近一次执行失败</span>
                 <span className="text-[var(--color-muted)]">{fmt.relative(ov.lastRun.at)}</span>
@@ -492,7 +492,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 )}
               </div>
               {ov.lastRun.error && (
-                <p className="mono mt-1 break-all" style={{ color: "var(--color-danger, #dc2626)" }}>
+                <p className="mono mt-1 break-all" style={{ color: "var(--color-err, #dc2626)" }}>
                   {ov.lastRun.error}
                 </p>
               )}
@@ -691,10 +691,15 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                   className="input mono"
                   type="number"
                   min={-1}
-                  value={def.limits.max_iters}
+                  value={def.limits.max_iters ?? ""}
                   onChange={(e) =>
                     patch({
-                      limits: { ...def.limits, max_iters: Number(e.target.value) },
+                      // 清空≠0：Number('')=0 会把「60 轮」静默变成「0 轮（立即停）」，
+                      // 清空态先落 null，保存时后端按默认值处理
+                      limits: {
+                        ...def.limits,
+                        max_iters: e.target.value === "" ? null : Number(e.target.value),
+                      },
                     })
                   }
                 />
@@ -714,10 +719,14 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                   className="input mono"
                   type="number"
                   min={0}
-                  value={def.limits.timeout_s}
+                  value={def.limits.timeout_s ?? ""}
                   onChange={(e) =>
                     patch({
-                      limits: { ...def.limits, timeout_s: Number(e.target.value) },
+                      // 同 max_iters：清空≠0（0 秒超时=立即超时）
+                      limits: {
+                        ...def.limits,
+                        timeout_s: e.target.value === "" ? null : Number(e.target.value),
+                      },
                     })
                   }
                 />

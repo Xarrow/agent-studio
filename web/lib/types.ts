@@ -54,8 +54,9 @@ export interface SkillRef {
 }
 
 export interface Limits {
-  max_iters: number;
-  timeout_s: number;
+  /** 前端清空输入时暂存 null（=未设置），保存时后端按默认值处理；0/-1 语义见 schema */
+  max_iters: number | null;
+  timeout_s: number | null;
   max_cost_usd?: number | null;
 }
 

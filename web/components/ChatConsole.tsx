@@ -3297,15 +3297,15 @@ function Bubble({
               /* 破坏性动作在**原地**确认，不弹窗、不跳位 */
               <span
                 className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1"
-                style={{ background: "color-mix(in srgb, var(--color-danger) 10%, transparent)" }}
+                style={{ background: "color-mix(in srgb, var(--color-err) 10%, transparent)" }}
               >
-                <span className="text-[11.5px]" style={{ color: "var(--color-danger)" }}>
+                <span className="text-[11.5px]" style={{ color: "var(--color-err)" }}>
                   删掉这轮和之后的消息？
                 </span>
                 <button
                   data-tap
                   className="rounded px-1.5 py-0.5 text-[11.5px] font-medium"
-                  style={{ color: "var(--color-danger)" }}
+                  style={{ color: "var(--color-err)" }}
                   onClick={() => {
                     setConfirmRewind(false);
                     onRewind?.();

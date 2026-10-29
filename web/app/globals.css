@@ -211,7 +211,9 @@ body {
   margin-bottom: 5px;
 }
 .tag {
-  display: inline-block;
+  /* display 交给 Tailwind utility（hidden/sm:inline-flex）——这里写死
+     inline-block 会以非 @layer 规则压过 utilities，Skills 来源 tag 的
+     「手机上隐藏」设计曾因此完全失效 */
   padding: 2px 9px;
   border-radius: 10px;
   background: var(--color-surface-2);

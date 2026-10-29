@@ -31,8 +31,15 @@ export function ToolSearchCard() {
     api
       .appSetting("toolsearch_embedding")
       .then((v: { value?: unknown }) => {
-        const val = (v.value || {}) as Partial<EmbedConf>;
-        setConf({ ...EMPTY, ...val, api_key: val.api_key ? val.api_key : "" });
+        // 后端只回 api_key_set/api_key_masked（密文落库，明文/密文都不出接口）；
+        // 输入框是草稿（留空=保持原值）
+        const val = (v.value || {}) as Record<string, unknown>;
+        setConf({
+          ...EMPTY,
+          base_url: (val.base_url as string) || "",
+          model: (val.model as string) || "",
+          api_key: val.api_key_set ? "__set__" : "",
+        });
         setLoaded(true);
       })
       .catch(() => setLoaded(true));
@@ -53,20 +60,33 @@ export function ToolSearchCard() {
 
   const test = async () => {
     setTesting(null);
-    if (!conf.base_url || !conf.api_key || !conf.model) {
+    const draftKey = conf._draft_key?.trim() || "";
+    const hasKey = draftKey || conf.api_key === "__set__";
+    if (!conf.base_url || !hasKey || !conf.model) {
       setTesting("三项都要填");
       return;
     }
     setTesting("测试中…");
     try {
       const base = conf.base_url.replace(/\/+$/, "");
+      // 测试直接用草稿 key（未保存也能测）；已配置但没填草稿时无法在本端测——
+      // 明文只在后端，前端不持有（提示去保存后用运行时验证）
+      if (!draftKey) {
+        setTesting("已保存的密钥不回显明文——改动 base_url/model 后请先保存，由运行时验证连通");
+        return;
+      }
       const resp = await fetch(`${base}/embeddings`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${conf.api_key}` },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${draftKey}` },
         body: JSON.stringify({ model: conf.model, input: ["连接测试"] }),
       });
       if (!resp.ok) {
-        setTesting(`失败：HTTP ${resp.status}`);
+        let detail = `HTTP ${resp.status}`;
+        try {
+          const j = await resp.json();
+          detail += `：${j?.error?.message || j?.detail || ""}`.trimEnd();
+        } catch { /* 无 body 就只报状态码 */ }
+        setTesting(`失败：${detail}`);
         return;
       }
       const data = await resp.json();
@@ -79,7 +99,7 @@ export function ToolSearchCard() {
 
   if (!loaded) return null;
 
-  const enabled = Boolean(conf.base_url && conf.api_key && conf.model);
+  const enabled = Boolean(conf.base_url && (conf._draft_key?.trim() || conf.api_key === "__set__") && conf.model);
 
   return (
     <div className="flex flex-col gap-3">
@@ -96,12 +116,12 @@ export function ToolSearchCard() {
         </div>
         <div>
           <div className="label mb-1.5">
-            API Key <Hint text="保存后不回显明文；界面留空 = 保持原值" />
+            API Key <Hint text="保存后 Fernet 加密落库，明文/密文都不回显；界面留空 = 保持原值" />
           </div>
           <input
             className="input text-[13px] mono"
             type="password"
-            placeholder={conf.api_key ? "已配置（留空保持）" : "sk-…"}
+            placeholder={conf.api_key === "__set__" ? "已配置（留空保持）" : "sk-…"}
             value={conf._draft_key ?? ""}
             disabled={busy}
             onChange={(e) => setConf((f) => ({ ...f, _draft_key: e.target.value } as EmbedForm))}
@@ -126,7 +146,8 @@ export function ToolSearchCard() {
           onClick={() =>
             save({
               base_url: conf.base_url.trim(),
-              api_key: conf._draft_key?.trim() || conf.api_key,
+              // 留空 = 保持原密钥（后端 merge 原密文）
+              api_key: conf._draft_key?.trim() || "",
               model: conf.model.trim(),
             } as EmbedForm)
           }
@@ -135,7 +156,7 @@ export function ToolSearchCard() {
         </button>
         {enabled && (
           <>
-            <button className="btn" disabled={busy} onClick={() => void save({ ...conf, api_key: "" })}>
+            <button className="btn" disabled={busy} onClick={() => void save({ ...EMPTY })}>
               停用（回纯 BM25）
             </button>
             <button className="btn" disabled={busy || testing === "测试中…"} onClick={() => void test()}>
@@ -144,7 +165,7 @@ export function ToolSearchCard() {
           </>
         )}
         {testing && (
-          <span className="text-[12px]" style={{ color: testing.startsWith("失败") || testing === "三项都要填" ? "var(--color-danger)" : "var(--color-muted)" }}>
+          <span className="text-[12px]" style={{ color: testing.startsWith("失败") || testing === "三项都要填" ? "var(--color-err)" : "var(--color-muted)" }}>
             {testing}
           </span>
         )}

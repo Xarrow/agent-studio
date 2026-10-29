@@ -1265,7 +1265,18 @@ def _toolsearch_embed_fn():
     except json.JSONDecodeError:
         return None
     base_url = str(conf.get("base_url") or "").strip().rstrip("/")
+    # api_key 密文落库（app_settings.py PUT 时 Fernet 加密）——读侧解密；
+    # 兼容历史明文字段（若有，直接用，等下次保存即变密文）
     api_key = str(conf.get("api_key") or "").strip()
+    if not api_key:
+        enc = conf.get("api_key_enc")
+        if enc:
+            try:
+                from .security.crypto import decrypt
+
+                api_key = decrypt(enc.encode() if isinstance(enc, str) else enc).strip()
+            except Exception:  # noqa: BLE001 —— 解不开=主密钥变更，稠密路降级
+                return None
     model = str(conf.get("model") or "").strip()
     if not (base_url and api_key and model):
         return None

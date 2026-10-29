@@ -737,9 +737,12 @@ def build_configs(defn: AgentDefinition):
     limits = defn.limits
 
     react_kwargs = dict(opts.get("react_config") or {})
-    # 平台语义：-1 = 不限制 → 翻译成哨兵值；正数原样传递
+    # 平台语义：-1 = 不限制 → 翻译成哨兵值；正数原样传递；
+    # None = 未设置 → 取 schema 默认（pydantic 允许 null 落库）
     effective_iters = (
-        limits.max_iters if limits.max_iters > 0 else UNLIMITED_ITERS_SENTINEL
+        limits.max_iters
+        if limits.max_iters is not None and limits.max_iters > 0
+        else (UNLIMITED_ITERS_SENTINEL if limits.max_iters == -1 else 50)
     )
     react_kwargs.setdefault("max_iters", effective_iters)
     # 取消（执行超时 / 用户点停止）**必须真的抛出来**。

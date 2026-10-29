@@ -193,7 +193,7 @@ export function McpPanel({ embedded = false }: { embedded?: boolean }) {
         {pastePreview && (
           <div className="mt-2 text-[12px]">
             {pastePreview.error ? (
-              <p style={{ color: "var(--color-danger, #dc2626)" }}>{pastePreview.error}</p>
+              <p style={{ color: "var(--color-err, #dc2626)" }}>{pastePreview.error}</p>
             ) : (
               <>
                 <p className="mb-1 text-[var(--color-muted)]">

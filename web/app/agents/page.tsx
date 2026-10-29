@@ -981,7 +981,7 @@ function NewAgentDialog({
           className="sticky bottom-0 -mx-5 mt-5 flex justify-end gap-2 border-t bg-[var(--color-surface)] px-5 pb-1 pt-3"
           style={{ borderColor: "var(--color-border)" }}
         >
-          <button className="btn" onClick={onClose}>
+          <button className="btn" onClick={requestClose}>
             取消
           </button>
           <button
