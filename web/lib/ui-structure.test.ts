@@ -80,20 +80,15 @@ test("对话页：会话栏窄屏不得在流内（必须 hidden + 抽屉）", (
   assert.match(src, /const \[mobileNav, setMobileNav\] = useState\(false\)/, "手机会话抽屉默认应当是关的");
 });
 
-test("对话页：Chrome 直播栏默认收起，只在有画面时自动展开", () => {
+test("对话页：浏览器直播默认收起，点开才占屏", () => {
   const src = read("components/ChatConsole.tsx");
-  assert.match(src, /const \[railOpen, setRailOpen\] = useState\(false\)/, "直播栏默认应当收起");
-  assert.match(
-    src,
-    /if \(browserFrame && !railTouched\.current\) setRailOpen\(true\)/,
-    "缺「有直播画面时自动展开」的效果（否则画面来了要手动点）",
-  );
-  // 收起态的把手必须只在宽屏出现
-  assert.match(
-    src,
-    /className="hidden lg:flex w-11 shrink-0 flex-col items-center gap-2 py-3 border-l/,
-    "直播栏把手应当是 `hidden lg:flex`",
-  );
+  assert.match(src, /const \[browserOpen, setBrowserOpen\] = useState\(false\)/, "直播默认应当收起");
+  /* 入口：动作条上的「看画面」；面板：全屏浮层 + 关闭。
+     口径变过一次（原来是右侧常驻 rail 把手，手机上挤掉对话宽度），
+     要守的是**默认不占屏、点得到、能关**，不是某一种形态。 */
+  assert.match(src, /onOpen=\{\(\) => setBrowserOpen\(true\)\}/, "缺打开入口");
+  assert.match(src, /onClose=\{\(\) => setBrowserOpen\(false\)\}/, "缺关闭");
+  assert.match(src, /\{browserOpen && \(/, "面板必须挂在收起状态上");
 });
 
 test("对话页：消息流阅读列封顶（一行横扫整屏是阅读负担）", () => {
@@ -178,7 +173,7 @@ test("输入坞：图标化发送/停止 + 自动长高 + 粘贴/拖拽投喂附
 
 test("输入坞：等授权时禁用；执行中可用（回车是插话，不是又起一轮）", () => {
   const src = read("components/ChatConsole.tsx");
-  assert.match(src, /const paused = !!hitl;/);
+  assert.match(src, /const paused = !!hitl && !busy;/, "等授权时禁用，恢复期间放开");
   // 暂停（等授权）时禁掉 —— 避免又起一轮抢同一个会话
   assert.match(src, /disabled=\{paused\}/);
   assert.match(src, /运行暂停，先处理上面的授权…/);
@@ -325,7 +320,11 @@ test("发送气泡：短消息胶囊、长消息圆角+尾巴，尺寸与字阶�
  */
 test("会话文件清单可折叠：默认按数量、手动选择要记住", () => {
   const chat = read("components/ChatConsole.tsx");
-  assert.match(chat, /const openFiles = filesOpenPref \?\? fileCount <= 3/, "默认口径：≤3 个展开");
+  assert.match(
+    chat,
+    /const openFiles = filesOpenPref \?\? false/,
+    "默认收起（文件面板带遮罩会糊住对话，2026-10 定案）",
+  );
   assert.match(chat, /localStorage\.setItem\("chat\.filesOpen"/, "手动选择要记住");
   assert.match(chat, /localStorage\.getItem\("chat\.filesOpen"\)/, "刷新后要读回来");
   assert.match(chat, /openFiles && \(/, "胶囊行必须跟着折叠状态走");
