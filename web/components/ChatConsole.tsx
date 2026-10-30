@@ -938,8 +938,29 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   }, []);
   /** 有文件被拖到输入坞上方（给边框高亮 + 「松手即添加」提示） */
   const [dragging, setDragging] = useState(false);
-  /** 运行停在等授权时输入坞不可用 —— 否则会又起一轮，和暂停的那一轮抢同一个会话 */
-  const paused = !!hitl;
+  /** 运行停在等授权时输入坞不可用 —— 否则会又起一轮，和暂停的那一轮抢同一个会话。
+   *  **但「已提交、正在恢复」之后要放开**：那一刻 run 已经往前跑了，input 禁用会让
+   *  用户以为还卡着（底部还写着"运行暂停中"）。 */
+  const paused = !!hitl && !busy;
+
+  /**
+   * 授权条的实例身份 —— **换一次请求就必须换一个实例**。
+   *
+   * HitlPrompt 把「已提交」记在自己的 `sent` 里（提交后整块收成一行状态、不能再点第二下，
+   * 见该组件文件头第 3 条）。同一个实例只是换 `payload` 时，它仍然是 `sent=true`，
+   * 于是**新的一次授权整条不显示**：用户看到的还是上一轮那句「已允许，继续执行…」，
+   * 直到刷新页面（重新挂载组件）才看得到新的请求 —— 现场表现就是
+   * 「权限确认不会在页面上显示，刷新后才出现」。
+   *
+   * 所以 key 必须跟着「这一次要授权的调用」变：run + reply_id + 各 tool_call id。
+   */
+  const hitlKey = hitl
+    ? `${hitl.runId}:${String(hitl.payload?.reply_id ?? "")}:${(
+        (hitl.payload?.tool_calls as { id?: string }[] | undefined) ?? []
+      )
+        .map((c) => c?.id ?? "")
+        .join(",")}`
+    : "none";
 
   /**
    * 文本域跟着内容长高（1 行起步，最多到视口 40%）。
@@ -1837,6 +1858,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             {hitl && (
               <div className="max-w-3xl mx-auto mb-2">
                 <HitlPrompt
+                  key={hitlKey}
                   runId={hitl.runId}
                   payload={hitl.payload}
                   onBeforeResume={() => attachStream(hitl.runId, liveInput)}

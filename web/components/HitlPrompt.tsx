@@ -33,7 +33,7 @@
  * 3. **必须先挂上事件流再恢复**：恢复后立刻产生的新事件不会重播，晚挂就丢
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { api } from "@/lib/api";
 import { highestRisk, summarizeCalls } from "@/lib/hitl";
@@ -73,6 +73,32 @@ export function HitlPrompt({
   const calls = summarizeCalls(payload);
   const danger = highestRisk(calls) === "danger";
   const risky = calls.filter((c) => c.risk?.level === "danger");
+
+  /**
+   * 这一次授权请求的身份：reply_id + 各 tool_call id。
+   *
+   * **一变就是新的一次请求**，本地状态必须跟着重置。不重置的话 `sent` 还停在上一轮，
+   * 组件会一直渲染那句「已允许，继续执行…」—— 新请求整条不显示，用户只能刷新页面
+   * （重新挂载）才看得到。现场表现就是「权限确认不出，刷新后才出现」。
+   *
+   * 用签名而不是 payload 对象：同一请求被重新读一次（比如 run 详情回填 pending_hitl）
+   * 会给出**内容相同、引用不同**的新对象，那时不能把"已提交"状态冲掉、让旧条又能点。
+   */
+  const sig = `${String(payload?.reply_id ?? "")}:${(
+    (payload?.tool_calls as { id?: string }[] | undefined) ?? []
+  )
+    .map((c) => c?.id ?? "")
+    .join(",")}`;
+  const sigRef = useRef(sig);
+  useEffect(() => {
+    if (sigRef.current === sig) return;
+    sigRef.current = sig;
+    setSent(null);
+    setErr(null);
+    setConfirming(false);
+    setShowFull(null);
+    setRemember(false);
+  }, [sig]);
 
   const resume = async (confirm: boolean, rememberTool = false) => {
     if (busy || sent !== null) return;
