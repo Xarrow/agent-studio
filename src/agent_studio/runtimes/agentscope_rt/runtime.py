@@ -53,6 +53,39 @@ async def _maybe_await(value: Any) -> Any:
     return value
 
 
+def build_skill_view(bound_names: list[str], skills_dir: Path, work_dir: Path) -> Path:
+    """按助手绑定生成技能视图目录（只放它勾选的技能）。
+
+    **必须是真实拷贝，不能用软链**：AgentScope 的 ``LocalSkillLoader`` 用
+    ``os.walk`` 扫目录（``followlinks=False``），软链目录一律跳过 —— 实测软链
+    视图里一个技能都发现不了，于是 Toolkit 不注册 ``Skill`` 工具，而提示词里的
+    「可用技能」表还在（它直接读磁盘）→ 模型被指引去用一个不存在的工具，
+    技能全文永远读不到、使用计数也永远是 0。
+
+    失败按空目录处理（宁缺毋滥）：读不到绑定就等于没有技能，不能退回全量。
+    """
+    import shutil as _sh
+
+    view = work_dir / ".skills-view"
+    try:
+        if view.exists():
+            _sh.rmtree(view)
+        view.mkdir(parents=True, exist_ok=True)
+        for name in bound_names:
+            src = skills_dir / name
+            if (src / "SKILL.md").is_file():
+                _sh.copytree(src, view / name, dirs_exist_ok=True, symlinks=False)
+    except Exception:  # noqa: BLE001 —— 视图建不起来给空目录
+        logger.warning("技能过滤视图创建失败，本次按零技能处理", exc_info=True)
+        try:
+            if view.exists():
+                _sh.rmtree(view)
+            view.mkdir(parents=True, exist_ok=True)
+        except Exception:  # pragma: no cover
+            pass
+    return view
+
+
 class AgentScopeCompiled(CompiledAgent):
     """AgentScope 编译产物。"""
 
@@ -370,49 +403,9 @@ class AgentScopeRuntime(AgentRuntime):
                     )
             except Exception:  # noqa: BLE001 —— 读不到按空处理：宁可少给不可滥给
                 logger.warning("读技能绑定失败，本次按零技能处理", exc_info=True)
-        _view = work_dir / ".skills-view"
-        try:
-            import shutil as _sh
-
-            if _view.exists():
-                _sh.rmtree(_view)
-            _view.mkdir(parents=True, exist_ok=True)
-            for _name in _bound_names:
-                _src = skills_dir / _name
-                if (_src / "SKILL.md").is_file():
-                    (_view / _name).symlink_to(_src, target_is_directory=True)
-            skills_dir = _view
-            logger.info(
-                "技能选择：%s 挂了 %d 个 → %s", _aid, len(_bound_names), _view
-            )
-        except Exception:  # noqa: BLE001 —— 视图建不起来给空目录（同宁缺毋滥）
-            logger.warning("技能过滤视图创建失败，本次按零技能处理", exc_info=True)
-            try:
-                import shutil as _sh2
-
-                if _view.exists():
-                    _sh2.rmtree(_view)
-                _view.mkdir(parents=True, exist_ok=True)
-                skills_dir = _view
-            except Exception:  # pragma: no cover
-                pass
-            _view = work_dir / ".skills-view"
-            try:
-                import shutil as _sh
-
-                if _view.exists():
-                    _sh.rmtree(_view)
-                _view.mkdir(parents=True, exist_ok=True)
-                for _name in _bound_names:
-                    _src = skills_dir / _name
-                    if (_src / "SKILL.md").is_file():
-                        (_view / _name).symlink_to(_src, target_is_directory=True)
-                skills_dir = _view
-                logger.info(
-                    "技能过滤：%s 挂了 %d 个 → %s", _aid, len(_bound_names), _view
-                )
-            except Exception:  # noqa: BLE001 —— 视图建不起来退回全量
-                logger.warning("技能过滤视图创建失败，退回全量技能", exc_info=True)
+        _view = build_skill_view(_bound_names, skills_dir, work_dir)
+        skills_dir = _view
+        logger.info("技能选择：%s 挂了 %d 个 → %s", _aid, len(_bound_names), _view)
 
         # 会话级「这个工具别再问了」—— 编译前读一次，交给守卫与权限引擎
         session_allow: list[str] = []
