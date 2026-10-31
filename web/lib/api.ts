@@ -98,6 +98,16 @@ export function setAccessToken(token: string): void {
   if (typeof window === "undefined") return;
   if (token) window.localStorage.setItem(TOKEN_KEY, token);
   else window.localStorage.removeItem(TOKEN_KEY);
+  /* 同时写 cookie：**浏览器导航（刷新、直接输网址、新标签）带不上自定义头**，
+     只存 localStorage 的结果是「过闸成功 → 一刷新又变成 401 白页」。
+     后端 cookie 优先于 query，所以写一次之后 ?token= 就不再需要了。 */
+  try {
+    const base = `studio_token=${encodeURIComponent(token)}; path=/; max-age=2592000; samesite=lax`;
+    const secure = window.location.protocol === "https:" ? "; secure" : "";
+    document.cookie = token ? base + secure : "studio_token=; path=/; max-age=0; samesite=lax";
+  } catch {
+    /* 隐私模式写不了 cookie：退回 localStorage + ?token= 那条老路 */
+  }
 }
 
 /**

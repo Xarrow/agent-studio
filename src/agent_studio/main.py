@@ -17,7 +17,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import __version__
@@ -186,7 +186,14 @@ TUNNEL_PEERS = {
 
 
 def _presented_token(request: "Request") -> str:
-    """从请求里取出用户提供的口令（三种形式任一）。"""
+    """从请求里取出用户提供的口令（三种形式任一）。
+
+    **必须认 cookie**：浏览器地址栏导航（刷新、直接输网址、新标签打开）带不上
+    自定义头，也不一定还挂着 ``?token=``。只认 header/query 的结果是
+    「刷新一下就变成一段白页 JSON」—— 用户只会说"页面卡住了"，而且没有任何
+    入口可以补救（401 是 JSON，页面上没有输入框）。前端过闸时会把口令写进
+    ``studio_token`` cookie，之后所有文档请求就带着它。
+    """
     auth = request.headers.get("authorization", "")
     low = auth.lower()
     if low.startswith("bearer "):
@@ -199,7 +206,71 @@ def _presented_token(request: "Request") -> str:
             return ""
         user, _, pwd = raw.partition(":")
         return (pwd or user).strip()
+    cookie = (request.cookies.get("studio_token") or "").strip()
+    if cookie:
+        return cookie
     return (request.query_params.get("token") or "").strip()
+
+
+def _wants_html(request: "Request") -> bool:
+    """这次 401 是「浏览器打开页面」还是「页面里的 fetch」？
+
+    判据用 ``Accept``：导航请求一定含 ``text/html``，fetch/EventSource 不会。
+    两者的补救办法不同 —— 导航要给一个能输口令的页面，fetch 要给 JSON 让
+    前端弹浮层。
+    """
+    accept = request.headers.get("accept", "")
+    return "text/html" in accept
+
+
+#: 401 时直接返回的口令页（无依赖、无外链，隧道只放行这一个域名时也能用）
+_AUTH_PAGE = """<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>需要访问口令</title>
+<style>
+  :root { color-scheme: light }
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+       background:#f6f7f9;color:#0f172a;font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",
+       "PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif}
+  .card{width:min(380px,calc(100vw - 32px));background:#fff;border:1px solid #e5e7eb;border-radius:14px;
+        padding:22px;box-shadow:0 12px 32px -18px rgba(15,23,42,.28)}
+  h1{margin:0 0 6px;font-size:16px;font-weight:600}
+  p{margin:0 0 16px;color:#64748b;font-size:12.5px}
+  label{display:block;font-size:12px;color:#64748b;margin-bottom:6px}
+  input{width:100%;box-sizing:border-box;height:38px;padding:0 10px;font-size:16px;
+        border:1px solid #d8dde6;border-radius:9px;outline:none}
+  input:focus{border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.12)}
+  button{margin-top:12px;width:100%;height:38px;border:0;border-radius:9px;background:#2563eb;
+         color:#fff;font-size:14px;font-weight:500;cursor:pointer}
+  button:disabled{opacity:.6;cursor:default}
+  .err{margin-top:10px;font-size:12.5px;color:#dc2626;min-height:18px}
+</style></head>
+<body><div class="card">
+  <h1>需要访问口令</h1>
+  <p>这个平台对公网访问做了口令保护。输入一次即可，之后这台浏览器会记住。</p>
+  <label for="t">访问口令</label>
+  <input id="t" type="password" autocomplete="current-password" autofocus>
+  <button id="go">进入</button>
+  <div class="err" id="e"></div>
+</div>
+<script>
+(function(){
+  var inp=document.getElementById('t'),btn=document.getElementById('go'),err=document.getElementById('e');
+  function go(){
+    var v=(inp.value||'').trim();
+    if(!v){err.textContent='请输入访问口令';return;}
+    btn.disabled=true;
+    // 前端浮层用的同一把钥匙（lib/api.ts 的 TOKEN_KEY），两边都能读到
+    try{localStorage.setItem('studio_access_token',v);}catch(_){}
+    document.cookie='studio_token='+encodeURIComponent(v)+'; path=/; max-age=2592000; samesite=lax'
+      + (location.protocol==='https:'?'; secure':'');
+    location.reload();
+  }
+  btn.addEventListener('click',go);
+  inp.addEventListener('keydown',function(e){if(e.key==='Enter')go();});
+})();
+</script></body></html>"""
 
 
 @app.middleware("http")
@@ -225,9 +296,17 @@ async def require_access_token(request: "Request", call_next):
         request.method,
         request.url.path,
     )
+    # 浏览器打开页面（导航请求）给一个能输口令的页面：JSON 401 落到地址栏里
+    # 就是一段白页文本，用户既进不去也不知道该干什么 —— 现场反馈是"页面卡住了"。
+    if _wants_html(request):
+        return HTMLResponse(
+            _AUTH_PAGE,
+            status_code=401,
+            headers={"Cache-Control": "no-store"},
+        )
     return JSONResponse(
         status_code=401,
-        content={"detail": "需要访问口令。请在页面上输入，或带上 Authorization: Bearer <口令>。"},
+        content={"detail": "需要访问口令。请在页面上输入，或带上 Authorization: Bearer ***"},
         headers={"WWW-Authenticate": 'Basic realm="Agent Studio"'},
     )
 
