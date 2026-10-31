@@ -281,8 +281,33 @@ function MarkdownBody({ text, chat = false }: { text: string; chat?: boolean }) 
   let i = 0;
   let k = 0;
 
+  /* 死循环护栏：**任何一个分支忘了推进 i 都会把标签页打死**。
+   * 现场（2026-10-31）：带 markdown 表格的回答流式输出时，堆每秒涨 ~100MB，
+   * 十几秒后渲染进程被 OOM 杀掉（Chrome 报 Aw, Snap）—— 就是这里某个分支
+   * 用 `continue` 却没动 i，同一条 line 被反复解析、反复生成元素。
+   * 每行最多允许重写 3 次（splitInlineDisplayMath 会把 tail 写回同一行），
+   * 超了就记一笔并强制跳过，宁可少渲染一行也不能卡死整页。 */
+  const guard = new Map<number, number>();
+  const tooMany = (idx: number) => {
+    const n = (guard.get(idx) ?? 0) + 1;
+    guard.set(idx, n);
+    if (n > 3) {
+      if (typeof window !== "undefined") {
+        const w = window as unknown as { __mdStuck?: string[] };
+        w.__mdStuck = w.__mdStuck ?? [];
+        if (w.__mdStuck.length < 5) w.__mdStuck.push(lines[idx]?.slice(0, 120) ?? "");
+      }
+      return true;
+    }
+    return false;
+  };
+
   while (i < lines.length) {
     const line = lines[i];
+    if (tooMany(i)) {
+      i++;
+      continue;
+    }
 
     // ``` 代码块 —— CodeBlock（复制按钮 + html 预览）
     if (line.trimStart().startsWith("```")) {
@@ -515,6 +540,15 @@ function MarkdownBody({ text, chat = false }: { text: string; chat?: boolean }) 
     ) {
       buf.push(lines[i++]);
     }
+    /* **必须保证这一轮真的消耗掉了当前行**。
+     *
+     * 反例（2026-10-31 现场，Aw-Snap 元凶）：表格还没流完整时，第一行是
+     * `| 命令 | 结果`、下一行还没有 `|---|` 分隔行 → 上面的表格分支不成立，
+     * 落到这里；而这里的条件又排除了以 `|` 开头的行，while 一次都不进，
+     * buf 为空、i 没动、再 `continue` → 同一条 line 被无限重解析，
+     * 每轮生成一个 React 元素，堆每秒涨 ~100MB，十几秒后标签页被杀。
+     * 所以：什么都没吃到就自己吃掉这一行（当作普通段落显示）。 */
+    if (!buf.length) buf.push(lines[i++]);
     blocks.push(
       <p
         key={`p${k++}`}

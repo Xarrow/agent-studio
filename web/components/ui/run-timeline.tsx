@@ -135,8 +135,18 @@ export function eventsToSteps(events: RunEvent[], userInput?: string): Step[] {
   const blocks: Blk[] = [];
   let cur: Blk | null = null;
 
-  const lastByTool = (kind: Blk["kind"], id?: string) =>
-    [...blocks].reverse().find((b) => b.kind === kind && b.toolId === id);
+  /* 按 (kind, tool_call_id) 直接查最后一个块。
+   *
+   * 原来是 `[...blocks].reverse().find(...)` —— **每个 tool 增量事件都整表拷贝一次**，
+   * 6000 个事件的 run 就是千万级对象拷贝，而且这函数在对话页每次渲染都要跑一遍
+   * （流式期间每秒好几次）。这是标签页被拖死/Aw-Snap 的主要来源之一。
+   * 现在建索引：查是 O(1)，整体回到 O(n)。 */
+  const lastIdx = new Map<string, Blk>();
+  const idxKey = (kind: Blk["kind"], id?: string) => `${kind}\u0000${id ?? ""}`;
+  const remember = (b: Blk) => {
+    if (b.kind === "tool" || b.kind === "tool_res") lastIdx.set(idxKey(b.kind, b.toolId), b);
+  };
+  const lastByTool = (kind: Blk["kind"], id?: string) => lastIdx.get(idxKey(kind, id));
 
   for (const ev of events) {
     const p = (ev.payload ?? {}) as Record<string, unknown>;
@@ -153,14 +163,15 @@ export function eventsToSteps(events: RunEvent[], userInput?: string): Step[] {
       if (cur?.kind === "think") cur.text += d;
       else blocks.push((cur = { kind: "think", text: d }));
     } else if (t === "tool_call_start") {
-      blocks.push(
-        (cur = {
-          kind: "tool",
-          text: "",
-          name: str(p.tool_call_name) || str(p.name) || "工具",
-          toolId: str(p.tool_call_id) || undefined,
-        }),
-      );
+      const b: Blk = {
+        kind: "tool",
+        text: "",
+        name: str(p.tool_call_name) || str(p.name) || "工具",
+        toolId: str(p.tool_call_id) || undefined,
+      };
+      blocks.push(b);
+      remember(b);
+      cur = b;
     } else if (t === "tool_call_args") {
       const d = str(p.delta);
       if (d) {
@@ -176,7 +187,10 @@ export function eventsToSteps(events: RunEvent[], userInput?: string): Step[] {
       if (b) {
         if (d) b.text += d;
       } else if (d) {
-        blocks.push((cur = { kind: "tool_res", text: d, toolId: id }));
+        const nb: Blk = { kind: "tool_res", text: d, toolId: id };
+        blocks.push(nb);
+        remember(nb);
+        cur = nb;
       }
     } else if (t === "tool_exec_end") {
       // 标记上一个工具结果的成功/失败

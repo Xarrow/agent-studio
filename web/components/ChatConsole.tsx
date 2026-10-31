@@ -130,6 +130,37 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   const [liveEvents, setLiveEvents] = useState<RunEvent[]>([]);
   /** 最新事件与开始时间的镜像 —— settle 在闭包里跑，读 state 会拿到旧值 */
   const liveEventsRef = useRef<RunEvent[]>([]);
+  /** 单条流最多留多少事件。
+   *
+   *  **没有上限就是内存炸弹**（2026-10-31 现场 Aw-Snap）：事件数组只增不减，
+   *  一次 6000+ 事件的 run 把 payload 全留在堆里；更要命的是原来每条事件都
+   *  `setLiveEvents` → 每来一条就把 3000 行的 ChatConsole 整棵重渲染一遍，
+   *  6000 条 = 6000 次渲染风暴，渲染进程被 OOM 杀掉。
+   *  完整事件仍在库里，点「执行过程」时按需从 /api/runs/events 取，界面不丢东西。 */
+  const LIVE_EVENTS_MAX = 1200;
+  const eventFlushRef = useRef<number | null>(null);
+  const flushLiveEvents = () => {
+    if (eventFlushRef.current != null) return;
+    // 攒一小会儿再吐给 React：8 次/秒够顺滑，渲染次数降一到两个数量级
+    eventFlushRef.current = window.setTimeout(() => {
+      eventFlushRef.current = null;
+      setLiveEvents(liveEventsRef.current.slice());
+    }, 120);
+  };
+  const appendLiveEvent = (ev: RunEvent) => {
+    const buf = liveEventsRef.current;
+    buf.push(ev);
+    if (buf.length > LIVE_EVENTS_MAX) buf.splice(0, buf.length - LIVE_EVENTS_MAX);
+    flushLiveEvents();
+  };
+  const resetLiveEvents = () => {
+    if (eventFlushRef.current != null) {
+      clearTimeout(eventFlushRef.current);
+      eventFlushRef.current = null;
+    }
+    liveEventsRef.current = [];
+    setLiveEvents([]);
+  };
   const runStartRef = useRef<number>(0);
   /** 浏览器画面（Agent 的 Chromium screencast 直播帧，base64 JPEG —— 不落库，纯实时） */
   const [browserFrame, setBrowserFrame] = useState<{ data: string; url: string; title: string } | null>(null);
@@ -179,6 +210,9 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     return () => clearInterval(t);
   }, [busy]);
   const liveElapsed = runStart ? Date.now() - runStart : 0;
+  /* 过程条的数据源：liveEvents 只在 flush（约 8 次/秒）时换引用，memo 之后
+     同一次渲染里不会重复把几千条事件重算成步骤（原来每渲染一次都重算）。 */
+  const liveSteps = useMemo(() => eventsToSteps(liveEvents, liveInput), [liveEvents, liveInput]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -299,8 +333,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     if (esRef.current) { esRef.current.close(); esRef.current = null; }
     streamSessionRef.current = "";
     setLive(null);
-    setLiveEvents([]);
-    liveEventsRef.current = [];
+    resetLiveEvents();
     setLiveRunId("");
     setHitl(null);
     setBusy(false);
@@ -660,12 +693,10 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
         if (streamSessionRef.current !== sessionIdRef.current) return;
         const ev = JSON.parse(e.data) as RunEvent;
         // 收下**全部**事件：不只文本，还包括思考与工具调用，
-        // 这样执行过程能实时按颜色分段显示出来
-        setLiveEvents((prev) => {
-          const next = [...prev, ev];
-          liveEventsRef.current = next;
-          return next;
-        });
+        // 这样执行过程能实时按颜色分段显示出来。
+        // 走缓冲 + 限长（appendLiveEvent）：每条事件只进 ref，120ms 攒一批再交给
+        // React，否则 6000 条事件 = 6000 次整棵组件重渲染（标签页被杀）。
+        appendLiveEvent(ev);
         const p = ev.payload as Record<string, unknown>;
         if (ev.type === "text_delta") {
           const t = typeof p.text === "string" ? p.text : typeof p.delta === "string" ? p.delta : "";
@@ -818,13 +849,12 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     setBusy(true);
     setRunStart(Date.now());
     runStartRef.current = Date.now();
-    liveEventsRef.current = [];
+    resetLiveEvents();
     setLive({ role: "user", text: composed });
     // 直接进入助手流式态（user 消息由 live 显示，完成后由 history 接管）
     const userEcho = { role: "user" as const, content: composed, run_id: null, turn_index: 0 };
     setHistory((h) => [...h, userEcho]);
     setLive({ role: "assistant", text: "" });
-    setLiveEvents([]);
     setLiveInput(composed);
 
     try {
@@ -1775,7 +1805,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 {busy && (
                   <div className="w-full max-w-[88%] max-md:max-w-[90%]">
                     <ProcessBar
-                      steps={eventsToSteps(liveEvents, liveInput)}
+                      steps={liveSteps}
                       running
                       elapsedMs={liveElapsed}
                     />

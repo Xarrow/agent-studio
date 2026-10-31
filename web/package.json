@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --test --experimental-strip-types lib/canvas/*.test.ts lib/tool-params.test.ts lib/ime.test.ts lib/mermaid.test.ts lib/tex.test.ts lib/dataviz.test.ts lib/ui-structure.test.ts lib/work-paths.test.ts lib/hitl.test.ts lib/files.test.ts lib/highlight.test.ts lib/messages.test.ts lib/browser-frame.test.ts"
+    "test": "node --test --experimental-strip-types lib/canvas/*.test.ts lib/tool-params.test.ts lib/ime.test.ts lib/mermaid.test.ts lib/tex.test.ts lib/dataviz.test.ts lib/ui-structure.test.ts lib/work-paths.test.ts lib/hitl.test.ts lib/files.test.ts lib/highlight.test.ts lib/messages.test.ts lib/browser-frame.test.ts lib/run-timeline.test.ts lib/markdown-loop.test.ts"
   },
   "dependencies": {
     "next": "16.3.5",
