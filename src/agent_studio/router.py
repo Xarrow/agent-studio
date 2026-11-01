@@ -96,10 +96,14 @@ def _norm(text: str) -> str:
 
 
 def _hits(needle: str, haystack: str) -> bool:
-    """命中判定：英文按词边界，中文按子串。
+    """命中判定：英文按词边界，中文按子串；中文再放宽一层（去掉虚词比一次）。
 
-    中文没有空格，"财报" 出现在"帮我看看这季度财报"里就是命中 —— 用子串；
-    英文可不能这样（"go" 会命中 "google"），所以按词边界。
+    中文没有空格，"财报"出现在"帮我看看这季度财报"里就是命中 —— 用子串。
+    但人写规则是写"季度复盘"，嘴里说的是"这季**度**的复盘" —— 中间多一个"的"就
+    命不中，用户会觉得"我明明写了"。所以子串失败后，把两侧的虚词都抹掉再比一次：
+    "季度复盘" vs "这季度的复盘" → 抹掉"这/的"后都是"季度复盘" ✓
+
+    英文不能这样（"go" 会命中 "google"），所以按词边界，且不做上面的放宽。
     """
     n = _norm(needle)
     h = _norm(haystack)
@@ -107,7 +111,13 @@ def _hits(needle: str, haystack: str) -> bool:
         return False
     if re.search(r"[a-z0-9]", n):
         return re.search(rf"(?<![a-z0-9]){re.escape(n)}(?![a-z0-9])", h) is not None
-    return n in h
+    if n in h:
+        return True
+    # 抹掉虚词再试（虚词表故意短：只收"多一个就认不出"的那些）
+    soft = set("的了吗呢吧啊呀和与及就都也很太更还又再这那我们你他它个些把被让给")
+    cn = "".join(ch for ch in n if ch not in soft)
+    ch = "".join(ch for ch in h if ch not in soft)
+    return len(cn) >= 2 and cn in ch
 
 
 def _name_words(name: str) -> list[tuple[str, int]]:

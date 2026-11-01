@@ -134,3 +134,17 @@ def test_停用词不会把所有助手都拉进来():
 def test_空输入不崩():
     d = route("", candidates=CANDS)
     assert d.agent_id is None or d.confidence == "fallback"
+
+
+def test_规则中间多一个的也能命中():
+    """用户写「季度复盘」，嘴里说的是「这季度的复盘」——命不中就会被判"我明明写了"。"""
+    rules = [Rule(agent_id="ag_report", pattern="季度复盘", priority=20)]
+    d = route("帮我把这季度的复盘写成一页纸", candidates=CANDS, rules=rules)
+    assert d.layer == 1
+    assert d.agent_id == "ag_report"
+
+
+def test_放宽不该把不相干的话也认成命中():
+    rules = [Rule(agent_id="ag_report", pattern="季度复盘")]
+    d = route("把这周的会议纪要整理一下", candidates=CANDS, rules=rules)
+    assert d.layer != 1, "放宽是抹虚词，不是模糊匹配"
