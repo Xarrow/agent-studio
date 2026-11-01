@@ -78,6 +78,28 @@ def test_work_list_shape():
         assert item["url"].startswith("/api/work/file/")
 
 
+def test_work_list_hides_skills(tmp_path, monkeypatch):
+    """技能库与技能视图不算「产物」，不能出现在列表里。
+
+    用户报的现象：对话的文件区冒出一大片 SKILL.md / references —— 那是平台内部
+    文件（以前每个会话还各拷一份），混在产物里就是噪音。
+    """
+    from agent_studio.config import settings
+    from agent_studio.main import app
+
+    sandbox = tmp_path / "work"
+    (sandbox / "skills" / "archify").mkdir(parents=True)
+    (sandbox / "skills" / "archify" / "SKILL.md").write_text("# 技能", encoding="utf-8")
+    (sandbox / ".skills-view" / "abc123" / "archify").mkdir(parents=True)
+    (sandbox / ".skills-view" / "abc123" / "archify" / "SKILL.md").write_text("# 视图", encoding="utf-8")
+    (sandbox / "result.md").write_text("# 真产物", encoding="utf-8")
+    monkeypatch.setattr(settings, "work_dir", sandbox)
+
+    files = TestClient(app).get("/api/work/list").json()["files"]
+    paths = [f["path"] for f in files]
+    assert paths == ["result.md"], f"只该剩用户产物，实际 {paths}"
+
+
 def test_upload_image_served_inline():
     """图片附件必须 inline（无 attachment 头）—— <img> 对 attachment 响应
     会拒绝渲染，缩略图全裂。非图片保持 attachment（点开=下载）。"""

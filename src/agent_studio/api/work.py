@@ -252,19 +252,31 @@ async def transcode_work_file(payload: dict) -> dict:
 
 @router.get("/list")
 def list_work_files(limit: int = 50) -> dict:
-    """最近产物列表（诊断用；前端正常流程不走这里）。"""
+    """最近产物列表（诊断用；前端正常流程不走这里）。
+
+    只列**用户看得懂的文件**：技能库（``skills/``）和技能视图（``.skills-view/``）
+    是平台内部产物 —— 它们也在 work 目录里，但既不是本次任务的结果，数量还特别
+    多（每个技能一个目录，含 references/ 与 scripts/），混进列表就是噪音。
+    """
     root = Path(settings.work_dir)
     if not root.is_dir():
         return {"files": []}
     items = []
     for p in sorted(root.rglob("*"), key=lambda x: x.stat().st_mtime, reverse=True):
-        if p.is_file() and p.suffix.lower() in _ALLOWED_SUFFIXES:
-            items.append({
-                "path": str(p.relative_to(root)),
-                "size": p.stat().st_size,
-                "mtime": int(p.stat().st_mtime),
-                "url": f"/api/work/file/{p.relative_to(root)}",
-            })
-            if len(items) >= limit:
-                break
+        if not p.is_file() or p.suffix.lower() not in _ALLOWED_SUFFIXES:
+            continue
+        rel = p.relative_to(root)
+        parts = rel.parts
+        if any(part.startswith(".") for part in parts):
+            continue
+        if parts and parts[0] == "skills":
+            continue
+        items.append({
+            "path": str(rel),
+            "size": p.stat().st_size,
+            "mtime": int(p.stat().st_mtime),
+            "url": f"/api/work/file/{rel}",
+        })
+        if len(items) >= limit:
+            break
     return {"files": items}

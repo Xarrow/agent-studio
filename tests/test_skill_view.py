@@ -50,3 +50,47 @@ def test_skill_view_empty_when_nothing_bound(tmp_path: Path) -> None:
 
     view = build_skill_view([], skills, work)
     assert list(view.iterdir()) == []
+
+
+def test_skill_view_is_shared_across_sessions(tmp_path: Path) -> None:
+    """同一组技能只落一份：两个会话拿到的必须是同一个目录。"""
+    skills = tmp_path / "skills"
+    skills.mkdir()
+    _write_skill(skills, "plan-execute")
+
+    a = build_skill_view(["plan-execute"], skills, tmp_path / "ses_a")
+    b = build_skill_view(["plan-execute"], skills, tmp_path / "ses_b")
+
+    assert a == b, "同一组技能应共用一个视图目录"
+    assert a.parent.name == ".skills-view", "视图放在技能库旁边的全局目录，不进会话目录"
+    assert not (tmp_path / "ses_a" / ".skills-view").exists()
+    assert not (tmp_path / "ses_b" / ".skills-view").exists()
+
+
+def test_skill_view_busts_when_skill_changes(tmp_path: Path) -> None:
+    """技能内容改了要换目录 —— 共享一份不能让会话读到旧版本。"""
+    skills = tmp_path / "skills"
+    skills.mkdir()
+    _write_skill(skills, "plan-execute")
+    before = build_skill_view(["plan-execute"], skills, tmp_path / "ses_a")
+
+    _write_skill(skills, "plan-execute", body="# 改过的内容，比原来长一些")
+    after = build_skill_view(["plan-execute"], skills, tmp_path / "ses_a")
+
+    assert before != after, "内容变更后应落到新指纹目录"
+    assert "改过的内容" in (after / "plan-execute" / "SKILL.md").read_text(encoding="utf-8")
+
+
+def test_skill_view_cleans_legacy_session_copy(tmp_path: Path) -> None:
+    """旧版在会话目录里的 .skills-view 要被顺手清掉（否则一直当用户文件列出来）。"""
+    skills = tmp_path / "skills"
+    skills.mkdir()
+    _write_skill(skills, "plan-execute")
+
+    legacy = tmp_path / "ses_old" / ".skills-view" / "plan-execute"
+    legacy.mkdir(parents=True)
+    (legacy / "SKILL.md").write_text("# 旧拷贝", encoding="utf-8")
+
+    build_skill_view(["plan-execute"], skills, tmp_path / "ses_old")
+
+    assert not (tmp_path / "ses_old" / ".skills-view").exists(), "会话目录里不该再留技能文件"

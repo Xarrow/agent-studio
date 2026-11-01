@@ -13,9 +13,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import inspect
 import json
 import logging
+import os
+import shutil as _sh
+import time
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -53,36 +57,101 @@ async def _maybe_await(value: Any) -> Any:
     return value
 
 
-def build_skill_view(bound_names: list[str], skills_dir: Path, work_dir: Path) -> Path:
-    """按助手绑定生成技能视图目录（只放它勾选的技能）。
+SKILL_VIEW_DIR_NAME = ".skills-view"
+#: 保留多少个不同「技能集合」的视图（内容变更会产生新指纹，旧的由 GC 回收）
+SKILL_VIEW_KEEP = 30
 
-    **必须是真实拷贝，不能用软链**：AgentScope 的 ``LocalSkillLoader`` 用
-    ``os.walk`` 扫目录（``followlinks=False``），软链目录一律跳过 —— 实测软链
-    视图里一个技能都发现不了，于是 Toolkit 不注册 ``Skill`` 工具，而提示词里的
-    「可用技能」表还在（它直接读磁盘）→ 模型被指引去用一个不存在的工具，
-    技能全文永远读不到、使用计数也永远是 0。
+
+def _skill_signature(bound_names: list[str], skills_dir: Path) -> str:
+    """按「绑了哪些技能 + 每个 SKILL.md 的大小/修改时间」算指纹。
+
+    内容变了就落到新目录，旧视图自然过期 —— 不会因为共享一份而让某个会话
+    读到旧版技能。
+    """
+    h = hashlib.sha1()
+    for name in sorted(set(bound_names)):
+        h.update(name.encode("utf-8"))
+        try:
+            st = (skills_dir / name / "SKILL.md").stat()
+            h.update(f":{st.st_size}:{st.st_mtime_ns}".encode())
+        except OSError:
+            h.update(b":-")
+    return h.hexdigest()[:16]
+
+
+def _view_complete(view: Path, bound_names: list[str], skills_dir: Path) -> bool:
+    if not view.is_dir():
+        return False
+    wanted = [n for n in bound_names if (skills_dir / n / "SKILL.md").is_file()]
+    return all((view / n / "SKILL.md").is_file() for n in wanted)
+
+
+def _gc_views(root: Path) -> None:
+    try:
+        dirs = [p for p in root.iterdir() if p.is_dir() and not p.name.startswith(".")]
+        if len(dirs) <= SKILL_VIEW_KEEP:
+            return
+        dirs.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        for old in dirs[SKILL_VIEW_KEEP:]:
+            _sh.rmtree(old, ignore_errors=True)
+    except OSError:  # pragma: no cover —— GC 失败不该影响执行
+        pass
+
+
+def build_skill_view(
+    bound_names: list[str],
+    skills_dir: Path,
+    work_dir: Path | None = None,
+) -> Path:
+    """按助手绑定生成技能视图（**全局共享一份**，不再往会话目录里拷）。
+
+    为什么共享：以前每个会话都在自己的 ``work_dir/.skills-view`` 里 copytree 一份，
+    磁盘随会话数线性膨胀（实测 10 个会话 379 个文件 / 5.7MB），而且这些文件就在
+    会话工作目录内 —— 对话的文件列表、产物判定会把它们当用户文件列出来。
+
+    现在：视图建在 ``<skills 库的父目录>/.skills-view/<指纹>/``，同一组技能只落一份
+    真实拷贝，所有会话共用；指纹包含 SKILL.md 的大小与 mtime，技能一改就换新目录。
+
+    **仍然是真实拷贝，不能用软链**：AgentScope 的 ``LocalSkillLoader`` 用
+    ``os.walk``(``followlinks=False``) 扫目录，软链目录一律跳过 —— 实测软链视图里
+    一个技能都发现不了，Toolkit 不注册 ``Skill`` 工具，而提示词里的「可用技能」表
+    还在（它直接读磁盘）→ 模型被指去用一个不存在的工具。
 
     失败按空目录处理（宁缺毋滥）：读不到绑定就等于没有技能，不能退回全量。
     """
-    import shutil as _sh
+    skills_dir = Path(skills_dir)
+    root = skills_dir.parent / SKILL_VIEW_DIR_NAME
 
-    view = work_dir / ".skills-view"
+    # 旧版遗留：会话目录里的逐会话拷贝。建新视图时顺手清掉（幂等，可反复跑）。
+    if work_dir is not None:
+        legacy = Path(work_dir) / SKILL_VIEW_DIR_NAME
+        if legacy.is_dir():
+            _sh.rmtree(legacy, ignore_errors=True)
+
+    view = root / _skill_signature(bound_names, skills_dir)
+    if _view_complete(view, bound_names, skills_dir):
+        return view
+
     try:
-        if view.exists():
-            _sh.rmtree(view)
-        view.mkdir(parents=True, exist_ok=True)
+        root.mkdir(parents=True, exist_ok=True)
+        tmp = root / f".tmp-{os.getpid()}-{time.time_ns()}"
+        tmp.mkdir(parents=True, exist_ok=False)
         for name in bound_names:
             src = skills_dir / name
             if (src / "SKILL.md").is_file():
-                _sh.copytree(src, view / name, dirs_exist_ok=True, symlinks=False)
+                _sh.copytree(src, tmp / name, dirs_exist_ok=True, symlinks=False)
+        if view.exists():
+            _sh.rmtree(view, ignore_errors=True)
+        os.replace(tmp, view)  # 原子发布：别的并发请求要么看到旧的、要么看到完整的
     except Exception:  # noqa: BLE001 —— 视图建不起来给空目录
         logger.warning("技能过滤视图创建失败，本次按零技能处理", exc_info=True)
         try:
-            if view.exists():
-                _sh.rmtree(view)
-            view.mkdir(parents=True, exist_ok=True)
+            empty = root / f"empty-{os.getpid()}"
+            empty.mkdir(parents=True, exist_ok=True)
+            return empty
         except Exception:  # pragma: no cover
-            pass
+            return view
+    _gc_views(root)
     return view
 
 

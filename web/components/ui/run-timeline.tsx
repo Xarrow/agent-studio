@@ -32,7 +32,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import type { RunEvent } from "@/lib/types";
 import Markdown from "@/components/Markdown";
-import { isImagePath, isProductPath, workImageUrls } from "@/lib/work-paths";
+import { isImagePath, isInternalPath, isProductPath, workImageUrls } from "@/lib/work-paths";
 
 export type StepKind =
   | "input"
@@ -295,7 +295,7 @@ function parseArtifact(
     if (!fp) return null;
     const m = /\/data\/work\/(.+)$/.exec(fp);
     const rel = m ? m[1] : fp.replace(/^\//, "");
-    if (!rel || rel.includes("..") || !isProductPath(rel)) return null;
+    if (!rel || rel.includes("..") || isInternalPath(rel) || !isProductPath(rel)) return null;
     return { rel };
   } catch {
     return null;

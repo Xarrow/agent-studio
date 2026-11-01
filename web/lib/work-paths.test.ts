@@ -11,7 +11,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { isImagePath, linkifyWorkPaths, mentionsWorkFile, workImageUrls, workUrl } from "./work-paths.ts";
+import { isImagePath, isInternalPath, linkifyWorkPaths, mentionsWorkFile, workImageUrls, workUrl } from "./work-paths.ts";
 
 const ABS = "/srv/src/agent-studio/data/work/youtube_homepage.png";
 const API = "/api/work/file/youtube_homepage.png";
@@ -97,4 +97,17 @@ test("整行只有一个裸路径时给它自己的段落（图不跟文字挤�
   const t = "看这里\n/srv/x/data/work/alone.png\n再见";
   const out = linkifyWorkPaths(t);
   assert.match(out, /\n\n!\[alone\.png\]/, "独占一行的产物图应当块级展示");
+});
+
+test("技能库 / 技能视图不算产物（内部文件不链接、不成卡片）", () => {
+  // 技能视图以前是每个会话拷一份，会在对话里冒出成片的 SKILL.md
+  assert.equal(isInternalPath("skills/archify/SKILL.md"), true);
+  assert.equal(isInternalPath(".skills-view/abcd1234/archify/SKILL.md"), true);
+  assert.equal(isInternalPath("sessions/ses_x/.skills-view/archify/SKILL.md"), true);
+  assert.equal(isInternalPath("result.md"), false);
+  assert.equal(isInternalPath("skills.md"), false, "名字以 skills 开头的普通文件不受影响");
+
+  const t = "读到 /srv/x/data/work/skills/archify/SKILL.md 与 /srv/x/data/work/.skills-view/ab/archify/SKILL.md";
+  assert.equal(linkifyWorkPaths(t), t, "内部路径原样保留，不变成可点文件");
+  assert.deepEqual(workImageUrls("/srv/x/data/work/.skills-view/ab/a.png"), []);
 });

@@ -51,6 +51,20 @@ export function isProductPath(p: string): boolean {
 }
 
 /**
+ * 平台内部文件（技能库 / 技能视图）：虽然也在工作目录里，但不是本次任务的产物。
+ *
+ * 技能视图以前是**每个会话拷一份**（`.skills-view/`，10 个会话 379 个文件），
+ * 现在改成全局共享（`data/work/.skills-view/<指纹>/`）；两边都得滤掉，否则对话里
+ * 冒出一堆 SKILL.md / references 当产物卡。
+ */
+export function isInternalPath(p: string): boolean {
+  const rel = (p || "").replace(/^\/+/, "");
+  if (!rel) return false;
+  if (rel === "skills" || rel.startsWith("skills/")) return true;
+  return rel.split("/").some((seg) => seg.startsWith("."));
+}
+
+/**
  * 任意写法 → `/api/work/file/<相对路径>`。
  * 浏览器拿到 `/srv/...` 会当成站点路径去请求（图直接裂），所以必须归一化。
  */
@@ -90,7 +104,7 @@ export function workImageUrls(text: string): string[] {
   for (const m of src.matchAll(WORK_IMG_RE)) {
     if (m.index === undefined || insideUrl(src, m.index)) continue;
     const rel = (m[1] || "").trim();
-    if (!rel) continue;
+    if (!rel || isInternalPath(rel)) continue;
     const url = workUrl(rel);
     if (!out.includes(url)) out.push(url);
   }
@@ -132,13 +146,14 @@ export function linkifyWorkPaths(text: string): string {
   };
   return (text || "")
     // ① inline code 里的路径：贴着原位替换
-    .replace(/`[^`\n]*?\/data\/work\/([^`\n]*?)`/g, (full, rel: string) =>
-      new RegExp(`\\.(?:${DOC_EXT_SRC})$`, "i").test((rel || "").trim())
-        ? asInline(rel.trim())
-        : full,
-    )
+    .replace(/`[^`\n]*?\/data\/work\/([^`\n]*?)`/g, (full, rel: string) => {
+      const r = (rel || "").trim();
+      if (isInternalPath(r)) return full;
+      return new RegExp(`\\.(?:${DOC_EXT_SRC})$`, "i").test(r) ? asInline(r) : full;
+    })
     // ② 裸路径：这一行除了它（最多还有个项目符号）没别的 → 块级；夹在文字里 → 行内
     .replace(WORK_PATH_RE, (full, rel: string, offset: number, whole: string) => {
+      if (isInternalPath(rel)) return full;
       const lineStart = whole.lastIndexOf("\n", offset) + 1;
       const nl = whole.indexOf("\n", offset);
       const line = whole.slice(lineStart, nl === -1 ? whole.length : nl);
