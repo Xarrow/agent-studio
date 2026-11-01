@@ -137,3 +137,96 @@ async def test_指名了就按指名的来(client):
     ).json()
     assert d["agent_id"] == b and d["layer"] == 0
     assert a != b
+
+
+async def test_灾难回溯的正则不许存(client):
+    """`(a|aa)+$` 这类回溯几十秒的正则，一句用户输入就能把整个服务钉住。"""
+    await init_db()
+    a = await _agent("慢正则助手")
+    r = await client.post(
+        "/api/routes", json={"agent_id": a, "pattern": r"(a|aa)+$", "kind": "regex"}
+    )
+    assert r.status_code == 422, r.text
+    assert "回溯" in r.json()["detail"] or "卡住" in r.json()["detail"]
+
+
+async def test_存下去的正则不许把服务卡住(client):
+    """引擎换 regex 之后 (a+)+$ 其实很快 —— 真正要守的是"任何已存规则都不许卡住请求"。"""
+    import time
+
+    await init_db()
+    a = await _agent("已存正则助手")
+    r = await client.post(
+        "/api/routes", json={"agent_id": a, "pattern": "(a+)+$", "kind": "regex"}
+    )
+    assert r.status_code == 201, r.text
+    t0 = time.time()
+    d = await client.post("/api/routes/preview", json={"text": "a" * 60 + "b"})
+    assert time.time() - t0 < 2.0, "正则跑太久 = 整台服务陪它一起等"
+    assert d.status_code == 200
+
+
+async def test_反例_正常正则照收(client):
+    await init_db()
+    a = await _agent("正常正则助手")
+    r = await client.post(
+        "/api/routes", json={"agent_id": a, "pattern": r"第\d+周", "kind": "regex"}
+    )
+    assert r.status_code == 201, r.text
+
+
+async def test_关键词里塞逗号被拒(client):
+    """「周报，复盘」当一条规则存下去 = 永远不会命中的坏规则。"""
+    await init_db()
+    a = await _agent("逗号助手")
+    r = await client.post("/api/routes", json={"agent_id": a, "pattern": "周报，复盘"})
+    assert r.status_code == 422
+    assert "分多条" in r.json()["detail"]
+
+
+async def test_大小写不同不建两条(client):
+    await init_db()
+    a = await _agent("大小写助手")
+    r1 = await client.post("/api/routes", json={"agent_id": a, "pattern": "Weekly"})
+    r2 = await client.post("/api/routes", json={"agent_id": a, "pattern": "weekly"})
+    assert r1.json()["id"] == r2.json()["id"], "关键词匹配本来就忽略大小写，存两条是重复"
+    items = (await client.get(f"/api/routes?agent_id={a}")).json()["items"]
+    assert len(items) == 1
+
+
+async def test_并发同一条不报500(client):
+    """两个人同时点添加会撞唯一键 —— 用户不该看到 500。"""
+    await init_db()
+    a = await _agent("并发助手")
+    import asyncio
+
+    res = await asyncio.gather(
+        *[client.post("/api/routes", json={"agent_id": a, "pattern": "并发词"}) for _ in range(5)]
+    )
+    codes = sorted(r.status_code for r in res)
+    assert all(c in (200, 201) for c in codes), codes
+    items = (await client.get(f"/api/routes?agent_id={a}")).json()["items"]
+    assert len(items) == 1
+
+
+async def test_指名不存在的助手_试算要报错(client):
+    await init_db()
+    r = await client.post(
+        "/api/routes/preview", json={"text": "随便", "agent_id": "ag_ghost"}
+    )
+    assert r.status_code == 422
+    assert "不存在" in r.json()["detail"]
+
+
+async def test_候选里不会出现已选中的那个(client):
+    await init_db()
+    a = await _agent("候选助手A", "处理表格")
+    b = await _agent("候选助手B", "处理表格")
+    # 两条规则都命中同一助手 → 旧版会在"其他候选"里把同一个助手再列一遍
+    await client.post("/api/routes", json={"agent_id": a, "pattern": "表格"})
+    await client.post("/api/routes", json={"agent_id": a, "pattern": "数据"})
+    d = (await client.post("/api/routes/preview", json={"text": "处理表格数据"})).json()
+    assert d["agent_id"] == a
+    assert all(x["agent_id"] != a for x in d["alternatives"])
+    assert len({x["agent_id"] for x in d["alternatives"]}) == len(d["alternatives"])
+    assert b  # 另一候选仍应出现

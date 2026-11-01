@@ -23,6 +23,11 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+try:  # 用户写的正则要能被打断 —— 标准库 re 回溯时无法中断，一句话就能把进程钉死
+    import regex as _regex_mod
+except ImportError:  # pragma: no cover - 没装时退回 re（并启用静态危险检测）
+    _regex_mod = None
+
 #: 这些字/词出现在任何描述里都不说明问题（否则"帮我"会把所有助手都算命中）
 STOPWORDS = {
     "帮我", "可以", "使用", "支持", "进行", "通过", "以及", "或者", "如果", "然后",
@@ -41,6 +46,11 @@ W_RULE = 10
 
 #: 到这个分就算"敢派"
 HIGH_SCORE = 3
+
+#: 单条正则的匹配预算（秒）。超了就当作"不命中" —— 宁可漏一次，不能把服务卡住。
+REGEX_TIMEOUT = 0.02
+#: 用户正则只在这么大的一段文本上跑（8000 字的输入配灾难回溯 = 一定超时）
+REGEX_TEXT_CAP = 2000
 #: 描述只当佐证：再多也只能贡献这么多分（不然一段长描述能把任何话都拉过来）
 DESC_CAP = 4
 
@@ -93,6 +103,58 @@ class Decision:
 
 def _norm(text: str) -> str:
     return (text or "").strip().lower()
+
+
+def _unsafe_regex(pattern: str) -> bool:
+    r"""没装 regex 时的兜底：挡掉嵌套量词这类经典灾难回溯（(a+)+、(\w+)* …）。
+
+    做法：找到「组后面还跟着量词」的位置，再看组内是不是已经有量词 ——
+    组内可重复 + 组外又重复 = 回溯指数增长。这不是完备判定，只是下限。
+    """
+    p = pattern or ""
+    for i, ch in enumerate(p):
+        if ch != ")" or i + 1 >= len(p) or p[i + 1] not in "*+{":
+            continue
+        depth = 0
+        j = i - 1
+        while j >= 0:
+            if p[j] == ")":
+                depth += 1
+            elif p[j] == "(":
+                if depth == 0:
+                    break
+                depth -= 1
+            j -= 1
+        if j < 0:
+            continue
+        if any(q in p[j + 1 : i] for q in "*+{"):
+            return True
+    return False
+
+
+def _regex_search(pattern: str, text: str) -> bool:
+    """跑一条用户正则。**绝不**让它把事件循环钉住。
+
+    为什么这么小心：实测一条 `(a+)+$` 配 30 个 a，标准库 re 要跑几十秒，
+    期间 FastAPI 的事件循环被占死 —— 后续所有请求（连别的接口）一起挂住。
+    一句用户输入就能让整个平台停摆，这不是"性能问题"。
+    """
+    if not pattern:
+        return False
+    probe = text[:REGEX_TEXT_CAP]
+    if _regex_mod is not None:
+        try:
+            return _regex_mod.search(pattern, probe, timeout=REGEX_TIMEOUT) is not None
+        except TimeoutError:
+            return False  # 太慢 = 当作不命中（记不了日志，但也不会卡）
+        except _regex_mod.error:
+            return False
+    if _unsafe_regex(pattern):
+        return False
+    try:
+        return re.search(pattern, probe, re.IGNORECASE) is not None
+    except re.error:
+        return False
 
 
 def _hits(needle: str, haystack: str) -> bool:
@@ -236,16 +298,36 @@ def match_rules(text: str, rules: list[Rule]) -> list[Rule]:
         if not pat:
             continue
         if r.kind == "regex":
-            try:
-                if re.search(pat, text or "", re.IGNORECASE):
-                    hit.append(r)
-            except re.error:
-                # 正则写错了不能把整条路由搞崩：跳过它，界面上会显示"规则无效"
-                continue
+            if _regex_search(pat, text or ""):
+                hit.append(r)
         elif _hits(pat, text):
             hit.append(r)
     hit.sort(key=lambda r: (int(r.priority), -len(r.pattern)))
     return hit
+
+
+def _alts(
+    rows: list[dict[str, Any]], exclude: str | None = None, keep_zero: bool = False
+) -> list[dict[str, Any]]:
+    """候选列表：同一个助手只出现一次，且不重复摆出已经选中的那个。
+
+    实测踩过：两条规则都命中同一助手时，界面上"交给 简明助手"下面又列出
+    "其他候选：简明助手 10 分" —— 看起来像两个不同的选择。
+    """
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for r in rows:
+        aid = str(r.get("agent_id") or "")
+        if not aid or aid == exclude or aid in seen:
+            continue
+        if not keep_zero and int(r.get("score") or 0) <= 0:
+            # 0 分的候选列出来只是噪音（实测"其他候选：X 0 分、Y 0 分、Z 0 分"）
+            continue
+        seen.add(aid)
+        out.append(r)
+        if len(out) >= 4:
+            break
+    return out
 
 
 def route(
@@ -284,16 +366,19 @@ def route(
             score=W_RULE,
             confidence="rule",
             reason=f"命中「{cand.name}」的收话规则：{top.pattern}",
-            alternatives=[
-                {"agent_id": h.agent_id, "name": by_id[h.agent_id].name, "score": W_RULE, "rule": h.pattern}
-                for h in hits[1:4]
-            ],
+            alternatives=_alts(
+                [
+                    {"agent_id": h.agent_id, "name": by_id[h.agent_id].name, "score": W_RULE, "rule": h.pattern}
+                    for h in hits[1:]
+                ],
+                exclude=top.agent_id,
+            ),
         )
 
     # ── L2 内容打分 ─────────────────────────────────────────────
     rows = score_candidates(text, list(candidates))
     best = rows[0] if rows else None
-    alts = [r for r in rows[:4]]
+    alts = _alts(rows[:4])
     if best and int(best["score"]) > 0:
         conf = "high" if int(best["score"]) >= HIGH_SCORE else "low"
         tie = [r for r in rows[1:] if int(r["score"]) == int(best["score"])]
@@ -307,7 +392,7 @@ def route(
             score=int(best["score"]),
             confidence=conf,
             reason=reason,
-            alternatives=alts,
+            alternatives=_alts(rows[:4], exclude=best["agent_id"] if conf == "high" else None),
         )
 
     # ── L3 兜底 ────────────────────────────────────────────────
@@ -319,7 +404,7 @@ def route(
             score=0,
             confidence="fallback",
             reason=f"没有哪位助手明确认得这些话，先用当前对话的「{cand.name}」。",
-            alternatives=alts,
+            alternatives=_alts(alts, exclude=cand.agent_id),
         )
     if len(by_id) == 1:
         only = next(iter(by_id.values()))
@@ -329,7 +414,7 @@ def route(
             score=0,
             confidence="fallback",
             reason=f"只有一位助手「{only.name}」，就它了。",
-            alternatives=alts,
+            alternatives=_alts(alts, exclude=only.agent_id),
         )
     return Decision(
         agent_id=None,
@@ -337,5 +422,5 @@ def route(
         score=0,
         confidence="unknown",
         reason="没有哪位助手的名字/标签/描述能对上这些话，也没配规则 —— 需要你选一个。",
-        alternatives=alts,
+        alternatives=_alts(rows[:4], keep_zero=True),
     )

@@ -16,6 +16,8 @@ dependencies = [
     "psycopg>=3.3.6",
     "pydantic-settings>=2.15.0",
     "pytest>=9.1.1",
+    # 用户可写的正则：标准库 re 回溯时无法中断，一句输入就能把进程钉死
+    "regex>=2024.5.15",
     "pytest-asyncio>=1.4.0",
     "python-docx>=1.2.0",
     "python-pptx>=1.0.2",

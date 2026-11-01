@@ -12,6 +12,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import router as intent
@@ -48,16 +49,38 @@ def _check_pattern(kind: str, pattern: str) -> str:
     if not p:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "规则不能是空的")
     if kind == "regex":
+        # 用与运行时**同一个引擎**校验：标准库 re 能编译的，运行时（regex）也可能不接受
         try:
-            re.compile(p)
-        except re.error as exc:
+            if intent._regex_mod is not None:
+                intent._regex_mod.compile(p)
+            else:
+                re.compile(p)
+        except Exception as exc:  # noqa: BLE001
             # 让错误在写入时就暴露：存下去的正则永远匹配不上，等于悄悄没生效
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_CONTENT, f"正则写错了：{exc}"
             ) from exc
+        # 灾难回溯自检：拿一段最坏输入试一下，超时就不许存（一句用户输入能把服务钉死）
+        if intent._regex_mod is not None:
+            try:
+                intent._regex_mod.search(p, "a" * 64 + "b", timeout=0.05)
+            except TimeoutError as exc:
+                raise HTTPException(
+                    status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    "这条正则回溯太慢（几十秒级别），会卡住整台服务；请改得更具体些",
+                ) from exc
+            except Exception:  # noqa: BLE001
+                pass
     elif len(p) < 2:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT, "关键词至少 2 个字（1 个字几乎句句都命中）"
+        )
+    elif any(sep in p for sep in ("，", ",", "；", ";", "、", "\n")):
+        # 一条规则里塞多个词 = 永远命不中（整串当子串比）。界面上是逗号分隔多条，
+        # 接口直调的人容易踩这个坑，所以这里直接拦住并说清怎么办。
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "一条规则只能写一个词；要写多个请分多条添加（界面里用逗号分隔会自动拆开）",
         )
     return p
 
@@ -122,13 +145,12 @@ async def add_rule(body: RuleIn, session: AsyncSession = Depends(get_session)) -
     if agent is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "助手不存在")
     pattern = _check_pattern(body.kind, body.pattern)
+    # 查重不看大小写：关键词匹配本来就是忽略大小写的，Weekly 和 weekly 存两条
+    # 只会让"其他候选"里出现同一个助手两次。
     dup = (
-        await session.execute(
-            select(RouteRule).where(
-                RouteRule.agent_id == body.agent_id, RouteRule.pattern == pattern
-            )
-        )
-    ).scalars().first()
+        await session.execute(select(RouteRule).where(RouteRule.agent_id == body.agent_id))
+    ).scalars().all()
+    dup = next((r for r in dup if (r.pattern or "").casefold() == pattern.casefold()), None)
     if dup:
         # 重复添加不是错误，是"我改一下这条"—— 直接把新参数盖上去
         dup.kind = body.kind
@@ -147,7 +169,22 @@ async def add_rule(body: RuleIn, session: AsyncSession = Depends(get_session)) -
         note=body.note,
     )
     session.add(row)
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        # 两个人同时点「添加」会撞唯一键。这不是错误，是"这条已经在了" ——
+        # 我实测并发 6 次时其中一次 500，用户看到的是红字报错。
+        await session.rollback()
+        again = (
+            await session.execute(
+                select(RouteRule).where(
+                    RouteRule.agent_id == body.agent_id, RouteRule.pattern == pattern
+                )
+            )
+        ).scalars().first()
+        if again is not None:
+            return _to_read(again)
+        raise
     await session.refresh(row)
     return _to_read(row)
 
@@ -190,6 +227,9 @@ async def remove_rule(rule_id: str, session: AsyncSession = Depends(get_session)
 async def preview(body: PreviewIn, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     """给一句话，看会交给谁、走了哪一层、分数怎么来的。"""
     agents = list((await session.execute(select(Agent))).scalars())
+    if body.agent_id and all(a.id != body.agent_id for a in agents):
+        # 指名一个不存在的助手，回来却是 "explicit/你指名的" —— 上层据此建执行会直接失败
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "指名的助手不存在")
     rules = [
         intent.Rule(
             agent_id=r.agent_id, pattern=r.pattern, kind=r.kind, priority=r.priority

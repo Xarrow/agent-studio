@@ -6,6 +6,17 @@ import { useImeGuard } from "@/lib/ime";
 import type { RouteDecision, RouteRule } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
 
+/** 正则引擎的英文报错 → 人话（用户看 "unterminated character set at position 5" 只会骂街） */
+function whyRegex(msg: string): string {
+  const m = msg || "";
+  if (/unterminated character set/i.test(m)) return "方括号 [ ] 没闭合";
+  if (/missing \)|unterminated subpattern/i.test(m)) return "括号 ( ) 没闭合";
+  if (/nothing to repeat/i.test(m)) return "量词（* + ?）前面没有东西";
+  if (/bad escape/i.test(m)) return "转义写错了（反斜杠后面跟的字符不认）";
+  if (/bad character range/i.test(m)) return "范围写反了（如 [z-a]）";
+  return m.length > 40 ? `${m.slice(0, 40)}…` : m;
+}
+
 /** 置信度 → 一句人话 + 颜色（不要给用户看 "confidence=low" 这种） */
 const CONF: Record<
   RouteDecision["confidence"],
@@ -52,11 +63,14 @@ export function RouteRules({ agentId }: { agentId: string }) {
     void load();
   }, [load]);
 
+  // 只打逗号/分号等于没写 —— 按钮也该是灰的（实测过：", , ，" 也能点亮「添加」）
+  const draftParts = draft
+    .split(/[,，;；\n]+/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+
   const add = async () => {
-    const parts = draft
-      .split(/[,，;；\n]+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
+    const parts = draftParts;
     if (!parts.length) return;
     setBusy(true);
     try {
@@ -74,7 +88,8 @@ export function RouteRules({ agentId }: { agentId: string }) {
       await load();
       fb.success("已记下", "以后这些话会先看看这个助手");
     } catch (e) {
-      fb.error("没加上", e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      fb.error("没加上", whyRegex(msg));
     } finally {
       setBusy(false);
     }
@@ -131,7 +146,7 @@ export function RouteRules({ agentId }: { agentId: string }) {
             <button
               type="button"
               className="btn h-[32px] shrink-0 max-md:h-[44px]"
-              disabled={busy || !draft.trim()}
+              disabled={busy || draftParts.length === 0}
               onClick={() => void add()}
             >
               添加
@@ -155,7 +170,9 @@ export function RouteRules({ agentId }: { agentId: string }) {
                       正则
                     </span>
                   )}
-                  <span className="mono">{r.pattern}</span>
+                  <span className="mono max-w-[180px] truncate" title={r.pattern}>
+                    {r.pattern}
+                  </span>
                   <button
                     type="button"
                     title="删掉这条"
@@ -215,9 +232,13 @@ export function RouteRules({ agentId }: { agentId: string }) {
                 <div style={{ color: "var(--color-muted)" }}>{decision.reason}</div>
                 {decision.alternatives.length > 0 && (
                   <div className="mt-1" style={{ color: "var(--color-muted)" }}>
-                    其他候选：
+                    {decision.confidence === "unknown" ? "可以交给：" : "其他候选："}
                     {decision.alternatives
-                      .map((a) => `${a.name || a.agent_id} ${a.score} 分`)
+                      .map((a) =>
+                        decision.confidence === "unknown"
+                          ? a.name || a.agent_id
+                          : `${a.name || a.agent_id} ${a.score} 分`,
+                      )
                       .join("、")}
                   </div>
                 )}
