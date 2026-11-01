@@ -1048,6 +1048,26 @@ class Event(Base):
     error: Mapped[str | None] = mapped_column(LongText, default=None)
 
 
+class ThreadSub(Base):
+    """一条 thread 认了谁 —— 「订阅直通」的账本。
+
+    为什么需要它：Router 每判断一次都要花一次钱和一轮延迟。同一条 PR / IM 话题 /
+    邮件串一旦认了人，后续事件应该**由程序直投**那个会话，不再过 Router
+    （《Super-agent》实测：去掉直通后 Router 决策 +30%、读缓存 token +37%，
+    完成时间不变 —— 直通买的是成本，不是质量）。
+
+    多对多：一条 thread 可以认给一个会话（第一版一对一，够用就好），
+    一个会话也可以接多条 thread（不同 PR 落到同一位置）。
+    """
+
+    __tablename__ = "thread_sub"
+
+    thread_id: Mapped[str] = mapped_column(String(160), primary_key=True)
+    session_id: Mapped[str] = mapped_column(String(32), index=True)
+    agent_id: Mapped[str] = mapped_column(String(32))
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+
+
 class RouteRule(Base):
     """「这些话交给这个助手」—— 路由的第一层（用户自己写的，命中就算数）。
 

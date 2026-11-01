@@ -389,21 +389,17 @@ CORE_TOOL_NAMES: frozenset[str] = frozenset(
 #:
 #: 允许的是"看"和"派"：读文件、检索、查资料、看技能、派活、排班。
 #: 不在名单里的一律不下发 —— 包括 MCP 工具（能力未知，编排者不该直接调）。
+#: ⚠️ 这里刻意**不含**读文件/抓网页/搜索（Read/Grep/Glob/read/grep/glob/fetch/web_search）。
+#: 现场实测：给它 web_search 之后，它宁可自己搜一遍再回话，也不肯派 worker ——
+#: 回复里连「派给谁」都没提。文章的原话是「把要不要分工从提示词工程 + 模型临场判断
+#: 变成系统结构」：Router 一旦够得着干活的工具，结构就白设计了。
+#: 它要看资料就 fork 一个 worker 去看 —— 这也正是 worker 存在的意义。
 ORCHESTRATOR_ALLOW_TOOLS: frozenset[str] = frozenset(
     {
-        # 内置（AgentScope）
-        "Read",
-        "Grep",
-        "Glob",
+        # 只保留"认路"用的：看技能目录（不读正文）、检索工具表
         "Skill",
-        # 平台内置/原生
-        "read",
-        "grep",
-        "glob",
-        "fetch",
-        "web_search",
         "skill_viewer",
-        "skill_save",
+        # 派活
         "fork",
         # 按需取用（懒加载三步）——它只能取到上面这些，取不到被摘掉的执行工具
         "tool_search",

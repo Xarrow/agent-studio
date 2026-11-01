@@ -811,8 +811,12 @@ async def test_default_agents_are_seeded_and_idempotent(client):
             await s.commit()
             fork_id = (await s.execute(select(Tool.id).where(Tool.name == "fork"))).scalar_one()
 
+        # 测试库整会话共用一个：别的用例可能已经触发过 init_db 的默认播种，
+        # 所以「谁该被建」要看**调用前**已有哪些，而不是假定库是空的
+        before = {a.name for a in (await s.execute(select(Agent))).scalars()}
         first = await ensure_default_agents(s)
-        assert ORCHESTRATOR_NAME in first["created"] and WORKER_NAME in first["created"]
+        expected_new = {n for n in (ORCHESTRATOR_NAME, WORKER_NAME) if n not in before}
+        assert set(first["created"]) == expected_new, (first["created"], before)
         rows = {a.name: a for a in (await s.execute(select(Agent))).scalars()}
         assert rows[ORCHESTRATOR_NAME].definition["role"] == "orchestrator"
         assert rows[WORKER_NAME].definition["role"] == "worker"

@@ -43,6 +43,7 @@ async def append(
     causation_id: str | None = None,
     hop: int = 0,
     available_at: int | None = None,
+    status: str = "queued",
 ) -> Event | None:
     """记一条事件（幂等）。返回 None 表示这条之前已经记过了。"""
     ev = Event(
@@ -54,6 +55,10 @@ async def append(
         causation_id=causation_id,
         hop=hop,
         available_at=available_at if available_at is not None else now_ms(),
+        # 只记账的事实（例如"外部事件已收下"）直接标 done —— 否则 tick 会给它判
+        # 「没有处理器」进死信，死信里堆满正常记录，真问题就看不见了
+        status=status,
+        ended_at=now_ms() if status == "done" else None,
     )
     session.add(ev)
     try:
