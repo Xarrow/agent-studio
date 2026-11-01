@@ -64,6 +64,31 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   const setAgentId = setOwnAgentId;
   const [sessions, setSessions] = useState<Session[]>([]);
   const [sessionId, setSessionId] = useState<string>("");
+  /**
+   * 「自动挑」——这一句交给谁由内容决定。默认**关**：多数时候人心里有数，
+   * 平台别抢方向盘。开了之后每句话都先过路由，认不出来就问一句。
+   */
+  const [autoPick, setAutoPick] = useState(false);
+  /** 认不出来时的候选条（点了谁就用谁发，不再猜第二遍） */
+  const [routeAsk, setRouteAsk] = useState<{
+    text: string;
+    reason: string;
+    options: { agent_id: string; name: string }[];
+  } | null>(null);
+  /** 刚刚这句话交给了谁 + 为什么（常驻在输入框上方，不用翻日志） */
+  const [routeNote, setRouteNote] = useState<{
+    name: string;
+    reason: string;
+    switched: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    try {
+      setAutoPick(window.localStorage.getItem("studio.autoPick") === "1");
+    } catch {
+      /* 隐私模式下读不到就用默认关 */
+    }
+  }, []);
   // 执行详情用弹框看，不跳页 —— 聊天上下文（输入框内容、滚动位置）不该
   // 因为「想看一眼这轮到底怎么回事」而丢掉。
   /** `/` 命令菜单是否打开（输入以 / 开头时） */
@@ -829,6 +854,62 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     es.onerror = () => void settle("error");
   };
 
+  /**
+   * 自动挑助手：定助手 → 定会话 → 起 run 全在服务端一次做完（前端分两步会出现
+   * "提示交给 A、实际跑给 B"）。认不出来**不硬派** —— 把候选摆出来让人点。
+   */
+  const runAuto = async (text: string, forceAgentId?: string) => {
+    setFailed(null);
+    setHitl(null);
+    setRouteAsk(null);
+    setBusy(true);
+    setRunStart(Date.now());
+    runStartRef.current = Date.now();
+    resetLiveEvents();
+    try {
+      const res = await api.autoStart({
+        input: text,
+        session_id: sessionId || undefined,
+        origin: "chat",
+        force_agent_id: forceAgentId,
+      });
+      if (res.kind === "needs_choice") {
+        // 认不出来就别猜：话收进候选条、输入框腾空（否则用户对着残留文字再发一次）
+        setBusy(false);
+        setLive(null);
+        setInput("");
+        setPendingFiles([]);
+        setRouteAsk({
+          text,
+          reason: res.decision.reason,
+          options: res.decision.alternatives.map((a) => ({
+            agent_id: a.agent_id,
+            name: a.name || a.agent_id,
+          })),
+        });
+        return;
+      }
+      const switched = res.agent_id !== agentId;
+      if (switched) setAgentId(res.agent_id);
+      setSessionId(res.session_id);
+      setRouteNote({ name: res.agent_name, reason: forceAgentId ? "你选的" : res.route.reason, switched });
+      setInput("");
+      setPendingFiles([]);
+      setLive({ role: "user", text });
+      setHistory((h) => [
+        ...h,
+        { role: "user" as const, content: text, run_id: res.run.id, turn_index: res.run.turn_index ?? 0 },
+      ]);
+      setLive({ role: "assistant", text: "" });
+      setLiveInput(text);
+      attachStream(res.run.id, text);
+    } catch (e) {
+      setFailed({ text, message: e instanceof Error ? e.message : String(e) });
+      setLive(null);
+      setBusy(false);
+    }
+  };
+
   const send = async (override?: unknown) => {
     // 允许传文本进来（重试时用）—— 传进来的可能是事件对象，所以只认字符串
     const text = (typeof override === "string" ? override : input).trim();
@@ -844,6 +925,12 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
           "\n" + pendingFiles.map((f) => `[attach:${f.kind}:${f.url}:${f.name}:${f.size}]`).join("\n")
         : "";
     const composed = (text || "（请处理附件）") + attachNote;
+
+    // 自动挑助手：先问平台这句话归谁，再决定要不要开跑（认不出来就把候选摆出来）
+    if (autoPick) {
+      await runAuto(composed);
+      return;
+    }
 
     setFailed(null);
     setHitl(null);
@@ -2284,6 +2371,63 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               </div>
               )}
 
+              {/* 认不出来时的候选条：这句话留在手里，点谁就用谁发（不再猜第二遍） */}
+              {routeAsk && (
+                <div
+                  className="mb-2 rounded-[14px] border px-3 py-2"
+                  style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+                      这句该交给谁？
+                    </span>
+                    {routeAsk.options.map((o) => (
+                      <button
+                        key={o.agent_id}
+                        data-tap
+                        type="button"
+                        className="btn h-[32px] px-3 text-[12.5px] max-md:h-[44px]"
+                        onClick={() => void runAuto(routeAsk.text, o.agent_id)}
+                      >
+                        {o.name}
+                      </button>
+                    ))}
+                    <button
+                      data-tap
+                      type="button"
+                      className="h-[32px] px-2 text-[12.5px] max-md:h-[44px]"
+                      style={{ color: "var(--color-muted)" }}
+                      onClick={() => {
+                        setInput(routeAsk.text);
+                        setRouteAsk(null);
+                      }}
+                    >
+                      取消
+                    </button>
+                  </div>
+                  <div className="mt-1 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                    {routeAsk.reason}
+                  </div>
+                </div>
+              )}
+
+              {/* 刚交给谁 —— 常驻一行，不用翻日志才知道这句话去哪了 */}
+              {routeNote && !routeAsk && (
+                <div
+                  className="mb-1.5 flex items-center gap-1.5 px-3 text-[11.5px]"
+                  style={{ color: "var(--color-muted)" }}
+                >
+                  <span style={{ color: "var(--color-accent)" }}>↳</span>
+                  <span>
+                    交给 <b style={{ color: "var(--color-text)" }}>{routeNote.name}</b>
+                    {routeNote.switched ? "（已切到它的对话）" : ""}
+                  </span>
+                  <span className="truncate" title={routeNote.reason}>
+                    {routeNote.reason}
+                  </span>
+                </div>
+              )}
+
               {/* ── 输入坞 ────────────────────────────────────────
                   上下结构（上=正文，下=工具栏），不再左右平铺：多行输入时
                   按钮不会跟着文字跳。发送键用图标表达状态 —— 空闲是圆箭头、
@@ -2419,6 +2563,54 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                           : ""}
                   </span>
                   <div className="ml-auto flex items-center gap-1">
+                    {/* 自动挑：开着的时候每句话先过路由 —— 认不出来会问，不会闷头猜 */}
+                    <button
+                      data-tap
+                      type="button"
+                      aria-pressed={autoPick}
+                      title={
+                        autoPick
+                          ? "自动挑开着：每句话按内容交给合适的助手"
+                          : "打开后按内容自动挑助手（认不出来会问你一句）"
+                      }
+                      onClick={() => {
+                        const next = !autoPick;
+                        setAutoPick(next);
+                        if (!next) {
+                          setRouteAsk(null);
+                          setRouteNote(null);
+                        }
+                        try {
+                          window.localStorage.setItem("studio.autoPick", next ? "1" : "0");
+                        } catch {
+                          /* 存不了就算了，下次默认关 */
+                        }
+                      }}
+                      className="h-[44px] sm:h-8 px-2 shrink-0 flex items-center gap-1 rounded-xl text-[11.5px]"
+                      style={{
+                        color: autoPick ? "var(--color-accent)" : "var(--color-muted)",
+                        background: autoPick
+                          ? "color-mix(in srgb, var(--color-accent) 12%, transparent)"
+                          : "transparent",
+                      }}
+                    >
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.9"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M4 7h5l4 10h5" />
+                        <path d="M4 17h5l2-5" />
+                        <path d="M15 4l3 3-3 3" />
+                      </svg>
+                      自动
+                    </button>
                     {paths && (
                       <button
                         data-tap

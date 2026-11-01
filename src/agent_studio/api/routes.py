@@ -98,7 +98,7 @@ def _to_read(r: RouteRule) -> dict[str, Any]:
     }
 
 
-def _candidates(agents: list[Agent]) -> list[intent.Candidate]:
+def candidates_from(agents: list[Agent]) -> list[intent.Candidate]:
     """候选 = 名字 + 描述 + 能力标签（技能名 / 工具名）。
 
     为什么把工具名当标签：用户说"帮我跑段代码"，能不能接这句话，很大程度取决于
@@ -240,7 +240,7 @@ async def preview(body: PreviewIn, session: AsyncSession = Depends(get_session))
     ]
     d = intent.route(
         body.text,
-        candidates=_candidates(agents),
+        candidates=candidates_from(agents),
         rules=rules,
         explicit_agent_id=body.agent_id,
         default_agent_id=body.default_agent_id,

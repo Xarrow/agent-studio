@@ -13,6 +13,7 @@ import type {
   EvalSuiteRead,
   AttentionRead,
   GuardrailsRead,
+  AutoStartResult,
   RouteDecision,
   RouteRule,
   SkillLifecycle,
@@ -841,6 +842,13 @@ export const api = {
   delRoute: (id: string) => del<{ deleted: string }>(`/api/routes/${encodeURIComponent(id)}`),
   routePreview: (body: { text: string; agent_id?: string; default_agent_id?: string }) =>
     post<RouteDecision>("/api/routes/preview", body),
+  /** 自动挑助手再开跑：服务端一次做完「定助手 → 定会话 → 起 run」 */
+  autoStart: (body: {
+    input: string;
+    session_id?: string;
+    origin?: string;
+    force_agent_id?: string;
+  }) => post<AutoStartResult>("/api/runs/auto-start", body),
   /** 补齐失败的那几路（分派这一步重跑；已成功的路不会重跑） */
   refillFanout: (id: string) =>
     post<{ run_id: string; status: string }>(`/api/runs/${id}/refill`, {}),

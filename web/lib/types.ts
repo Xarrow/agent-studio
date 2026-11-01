@@ -773,6 +773,18 @@ export interface RouteRule {
 }
 
 /** 试算结果：这段话会交给谁、为什么、还有哪些候选 */
+/** 「自动挑助手」发起一句话的结果：要么已开跑，要么把候选摆给用户挑 */
+export type AutoStartResult =
+  | {
+      kind: "started";
+      agent_id: string;
+      agent_name: string;
+      session_id: string;
+      run: Run;
+      route: RouteDecision;
+    }
+  | { kind: "needs_choice"; decision: RouteDecision };
+
 export interface RouteDecision {
   agent_id: string | null;
   agent_name?: string;

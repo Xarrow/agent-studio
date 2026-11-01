@@ -13,7 +13,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import SessionLocal, get_session
-from ..models import Agent, LlmCall, ModelTest, Run, RunEvent, Span, ToolCall, now_ms
+from ..models import Agent, LlmCall, ModelTest, Run, RunEvent, Span, ToolCall, new_id, now_ms
 from ..pricing import cost_of, currency_of, load_prices, price_key, tokens_of
 from .. import steer as steer_registry
 from ..runner import run_service
@@ -170,6 +170,104 @@ async def create_run(payload: RunCreate, session: AsyncSession = Depends(get_ses
     # 后台启动（与 HTTP 生命周期解耦）
     await run_service.start(run.id, definition, payload.input)
     return to_read(run)
+
+
+class AutoStartIn(BaseModel):
+    """「自动挑助手」发起一句话：由平台决定交给谁。"""
+
+    input: str
+    #: 沿用哪个会话 —— 只有它属于被选中的助手时才沿用（不能让 A 的上下文喂给 B）
+    session_id: str | None = None
+    origin: str | None = "chat"
+    #: 用户在候选条里点了某位助手 —— 这就是他的选择，别再猜一次
+    force_agent_id: str | None = None
+
+
+@router.post("/auto-start", response_model=dict)
+async def auto_start(
+    payload: AutoStartIn, session: AsyncSession = Depends(get_session)
+) -> dict[str, Any]:
+    """按内容挑助手再开跑。
+
+    为什么放在服务端而不是前端先 preview 再 createRun：一次往返里把「定助手 → 定会话
+    → 起 run」做成原子操作。分两步的话，中间任何一步变了（用户同时点、规则刚改），
+    就会出现"提示交给 A，实际跑给了 B"这种解释不清的状态。
+
+    返回值两种：
+      ``{"kind": "started", "run": …, "agent_id", "session_id", "route": …}``
+      ``{"kind": "needs_choice", "decision": …}`` —— 认不出来就别猜，让用户挑
+    """
+    from .. import router as intent
+    from ..models import RouteRule
+    from ..models import Session as ChatSession
+    from .routes import candidates_from
+
+    agents = list((await session.execute(select(Agent))).scalars())
+    cands = candidates_from(agents)
+    rules = [
+        intent.Rule(agent_id=r.agent_id, pattern=r.pattern, kind=r.kind, priority=r.priority)
+        for r in (
+            await session.execute(select(RouteRule).where(RouteRule.enabled.is_(True)))
+        ).scalars()
+    ]
+    d = intent.route(
+        payload.input,
+        candidates=cands,
+        rules=rules,
+        explicit_agent_id=payload.force_agent_id or None,
+    )
+    names = {a.id: a.name for a in agents}
+    decision = d.as_dict()
+    decision["agent_name"] = names.get(d.agent_id or "")
+
+    if payload.force_agent_id and payload.force_agent_id not in names:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "选中的助手不存在")
+
+    # 只有"规则命中 / 分数够高 / 用户点了名"才派；兜底只在平台里只有一个助手时成立
+    confident = d.confidence in ("rule", "high", "explicit") or (
+        d.confidence == "fallback" and len(cands) == 1
+    )
+    if not confident or not d.agent_id:
+        return {"kind": "needs_choice", "decision": decision}
+
+    agent = next(a for a in agents if a.id == d.agent_id)
+
+    sid: str | None = None
+    if payload.session_id:
+        chat = await session.get(ChatSession, payload.session_id)
+        if chat is not None and chat.agent_id == agent.id:
+            sid = chat.id
+    if sid is None:
+        fresh = ChatSession(
+            id=new_id("ses_"),
+            agent_id=agent.id,
+            title=(payload.input.strip()[:24] or "新对话"),
+            status="active",
+            created_at=now_ms(),
+            last_active_at=now_ms(),
+        )
+        session.add(fresh)
+        await session.commit()
+        await session.refresh(fresh)
+        sid = fresh.id
+
+    run = await create_run(
+        RunCreate(
+            agent_id=agent.id,
+            input=payload.input,
+            session_id=sid,
+            origin=payload.origin or "chat",
+        ),
+        session,
+    )
+    return {
+        "kind": "started",
+        "agent_id": agent.id,
+        "agent_name": agent.name,
+        "session_id": sid,
+        "run": run.model_dump(),
+        "route": decision,
+    }
 
 
 # --------------------------------------------------------------------------- #
