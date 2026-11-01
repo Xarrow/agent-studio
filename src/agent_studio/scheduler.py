@@ -226,6 +226,22 @@ async def loop() -> None:
             except Exception:  # noqa: BLE001
                 logger.exception("watchdog 这一轮出错（继续）")
 
+            # 事件消费：抢一批到点的事件处理（护栏拦截 → 待办 等）
+            try:
+                from .db import SessionLocal as _SL2
+                from .events import worker as _ev
+
+                async with _SL2() as _s2:
+                    _done = await _ev.tick(_s2, limit=10)
+                if _done.get("claimed"):
+                    logger.info(
+                        "事件消费：抢到 %s 条，成 %s 败 %s（跳过 %s）",
+                        _done.get("claimed"), _done.get("done"),
+                        _done.get("failed"), _done.get("skipped"),
+                    )
+            except Exception:  # noqa: BLE001 —— 事件层坏了不能拖死调度
+                logger.exception("事件消费这一轮出错（继续）")
+
             try:
                 probed = await remote_health.sweep()
                 for item in probed.get("flipped") or []:

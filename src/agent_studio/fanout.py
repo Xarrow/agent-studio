@@ -350,6 +350,46 @@ async def _chain_of(session: Any, run: Run) -> tuple[Run, str]:
     return root, path
 
 
+async def _record_blocked(
+    *,
+    parent_run: Run,
+    kind: str,
+    reason: str,
+    agent_id: str,
+    path: str,
+    db_factory: Any = SessionLocal,
+) -> None:
+    """把「派发被拦」记成一条事件（幂等）。
+
+    为什么要记：拦截只在模型调工具的那一瞬发生，用户看到的是"这一步失败了"，
+    真正的原因（预算/成环/重复）只在日志里。记成事件后，待办面板能把它端到用户面前。
+
+    ``dedupe_key`` 含父执行 id + 原因：同一路重试十次被拦，待办里只留一条
+    （否则用户会被同一件事刷屏，最后学会无视它）。
+    """
+    from .events import store as event_store
+
+    try:
+        async with db_factory() as session:
+            await event_store.append(
+                session,
+                "fanout.blocked",
+                subject_kind="run",
+                subject_id=parent_run.id,
+                payload={
+                    "blocked": kind,
+                    "reason": reason,
+                    "agent_id": agent_id,
+                    "path": path,
+                    "root_run_id": parent_run.root_run_id or parent_run.id,
+                },
+                dedupe_key=f"fanout.blocked:{parent_run.id}:{kind}:{agent_id}",
+            )
+            await session.commit()
+    except Exception as exc:  # noqa: BLE001 —— 记账失败绝不能影响"拦住了"这个事实
+        logger.warning("记录派发被拦事件失败：%s", exc)
+
+
 async def _tree_gate(
     *,
     parent_run: Run,
@@ -466,6 +506,14 @@ async def dispatch(
     )
     if gate.get("blocked"):
         logger.warning("分派被拦（%s）：%s", gate.get("kind"), gate.get("reason"))
+        await _record_blocked(
+            parent_run=parent_run,
+            kind=str(gate.get("kind") or ""),
+            reason=str(gate.get("reason") or "分派被拦"),
+            agent_id=agent_id,
+            path=str(parent_run.dispatch_path or ""),
+            db_factory=db_factory,
+        )
         return {
             "ok": False,
             "blocked": str(gate.get("kind") or ""),

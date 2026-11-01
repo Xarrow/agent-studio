@@ -612,7 +612,10 @@ export function RunsPanel() {
           ))}
         </select>
 
-        <div className="ml-auto flex items-center gap-2 max-md:order-5">
+        <div
+          className="ml-auto flex flex-wrap items-center gap-2 max-md:order-5"
+          style={{ minWidth: 0 }}
+        >
           {/* 用量一行 —— 老版四张卡的位置。数字一个不少，只是不再各占一张卡。 */}
           {usage && (
             <button
@@ -664,12 +667,71 @@ export function RunsPanel() {
             </button>
           )}
 
+          {/* 选择总数 + 清理菜单（自研下拉，禁用原生 confirm/alert） */}
+          {selected.size > 0 && (
+            <span className="text-[12px] tabular-nums" style={{ color: "var(--color-accent)" }}>
+              已选 {selected.size}
+            </span>
+          )}
+          {/* 删除选中常驻可见 —— 用户口径：动作收进 ⋯ = 藏起来了（曾被打回过一次）。
+              其余低频清理（按时间/清空）留在 ⋯ 里。 */}
+          <button
+            type="button"
+            className="btn btn-sm"
+            style={{ color: "var(--color-err)" }}
+            disabled={busy || selected.size === 0}
+            onClick={() => void deleteSelected()}
+          >
+            删除选中{selected.size > 0 ? `（${selected.size}）` : ""}
+          </button>
+          <div className="relative" ref={menuRef}>
+            <button
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={menu}
+              title="按时间清理 / 清空"
+              onClick={() => setMenu((v) => !v)}
+              className="min-h-[36px] min-w-[40px] rounded-[8px] border px-2.5 text-[13px] hover:bg-[var(--color-surface-2)]"
+              style={{ borderColor: "var(--color-border)" }}
+            >
+              ⋯
+            </button>
+            {menu && (
+              <div
+                role="menu"
+                className="absolute right-0 z-30 mt-1 w-[190px] overflow-hidden rounded-[10px] border shadow-lg"
+                style={{ background: "var(--color-surface)", borderColor: "var(--color-border)" }}
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={busy}
+                  onClick={() => void pruneOld()}
+                  className="flex min-h-[38px] w-full items-center gap-2 px-3 text-left text-[12px] hover:bg-[var(--color-surface-2)] disabled:opacity-40"
+                >
+                  按时间清理
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={busy || items.length === 0}
+                  onClick={() => void clearAll()}
+                  className="flex min-h-[38px] w-full items-center gap-2 px-3 text-left text-[12px] hover:bg-[var(--color-surface-2)] disabled:opacity-40"
+                  style={{ color: "var(--color-err)" }}
+                >
+                  清空执行记录
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
           {/* 护栏（点「用量」就地展开一行，不弹框、不跳页）：三档全是枚举，
               选完立刻生效 —— 这三条是"别在没人看着的时候烧光额度"的唯一旋钮。 */}
           {guardOpen && (
             <div
-              className="w-full max-md:order-9 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t pt-1.5 text-[12px]"
-              style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
+              className="w-full basis-full max-md:order-9 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t pt-1.5 text-[12px]"
+              style={{ borderColor: "var(--color-border)", color: "var(--color-muted)", minWidth: 0, width: "100%" }}
             >
               {!guard ? (
                 <span>读取护栏…</span>
@@ -762,8 +824,8 @@ export function RunsPanel() {
 
           {attentionOpen && attention && (
             <div
-              className="w-full max-md:order-9 rounded-[10px] border p-2 text-[12px]"
-              style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+              className="w-full basis-full max-md:order-9 rounded-[10px] border p-2 text-[12px]"
+              style={{ borderColor: "var(--color-border)", background: "var(--color-surface)", minWidth: 0, width: "100%" }}
             >
               {attention.items.map((it) => (
                 <div
@@ -774,14 +836,31 @@ export function RunsPanel() {
                   <span
                     className="rounded-full px-1.5 py-0.5 text-[11px]"
                     style={{
-                      color: it.kind === "hitl" ? "var(--color-err)" : it.kind === "stalled" ? "var(--color-warn)" : "var(--color-muted)",
+                      color:
+                        it.kind === "hitl"
+                          ? "var(--color-err)"
+                          : it.kind === "stalled"
+                            ? "var(--color-warn)"
+                            : it.kind === "blocked"
+                              ? "var(--color-accent)"
+                              : "var(--color-muted)",
                       background: "var(--color-bg)",
                     }}
                   >
-                    {it.kind === "hitl" ? "等你确认" : it.kind === "stalled" ? "停滞" : "失败"}
+                    {it.kind === "hitl"
+                      ? "等你确认"
+                      : it.kind === "stalled"
+                        ? "停滞"
+                        : it.kind === "blocked"
+                          ? "被拦"
+                          : "失败"}
                   </span>
                   <b style={{ color: "var(--color-text)" }}>{it.agent_name}</b>
-                  <span className="min-w-0 flex-1 truncate" title={it.reason} style={{ color: "var(--color-muted)" }}>
+                  <span
+                    className="min-w-0 flex-1 truncate"
+                    title={it.hint ? `${it.reason}\n\n${it.hint}` : it.reason}
+                    style={{ color: "var(--color-muted)" }}
+                  >
                     {it.reason}
                   </span>
                   {it.kind === "hitl" ? (
@@ -793,6 +872,16 @@ export function RunsPanel() {
                       onClick={() => void jumpToRun(it)}
                     >
                       去确认
+                    </button>
+                  ) : it.kind === "blocked" ? (
+                    <button
+                      type="button"
+                      data-tap
+                      className="inline-flex h-[28px] items-center underline decoration-dotted max-md:h-[44px] max-md:px-1"
+                      style={{ color: "var(--color-accent)" }}
+                      onClick={() => jumpToRun(it)}
+                    >
+                      去看
                     </button>
                   ) : (
                     <button
@@ -810,64 +899,6 @@ export function RunsPanel() {
             </div>
           )}
 
-          {/* 选择总数 + 清理菜单（自研下拉，禁用原生 confirm/alert） */}
-          {selected.size > 0 && (
-            <span className="text-[12px] tabular-nums" style={{ color: "var(--color-accent)" }}>
-              已选 {selected.size}
-            </span>
-          )}
-          {/* 删除选中常驻可见 —— 用户口径：动作收进 ⋯ = 藏起来了（曾被打回过一次）。
-              其余低频清理（按时间/清空）留在 ⋯ 里。 */}
-          <button
-            type="button"
-            className="btn btn-sm"
-            style={{ color: "var(--color-err)" }}
-            disabled={busy || selected.size === 0}
-            onClick={() => void deleteSelected()}
-          >
-            删除选中{selected.size > 0 ? `（${selected.size}）` : ""}
-          </button>
-          <div className="relative" ref={menuRef}>
-            <button
-              type="button"
-              aria-haspopup="menu"
-              aria-expanded={menu}
-              title="按时间清理 / 清空"
-              onClick={() => setMenu((v) => !v)}
-              className="min-h-[36px] min-w-[40px] rounded-[8px] border px-2.5 text-[13px] hover:bg-[var(--color-surface-2)]"
-              style={{ borderColor: "var(--color-border)" }}
-            >
-              ⋯
-            </button>
-            {menu && (
-              <div
-                role="menu"
-                className="absolute right-0 z-30 mt-1 w-[190px] overflow-hidden rounded-[10px] border shadow-lg"
-                style={{ background: "var(--color-surface)", borderColor: "var(--color-border)" }}
-              >
-                <button
-                  type="button"
-                  role="menuitem"
-                  disabled={busy}
-                  onClick={() => void pruneOld()}
-                  className="flex min-h-[38px] w-full items-center gap-2 px-3 text-left text-[12px] hover:bg-[var(--color-surface-2)] disabled:opacity-40"
-                >
-                  按时间清理
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  disabled={busy || items.length === 0}
-                  onClick={() => void clearAll()}
-                  className="flex min-h-[38px] w-full items-center gap-2 px-3 text-left text-[12px] hover:bg-[var(--color-surface-2)] disabled:opacity-40"
-                  style={{ color: "var(--color-err)" }}
-                >
-                  清空执行记录
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
       </div>
 
       {/* ── 列表：一段行列表，桌面手机同一套（响应式换行） ─────────────── */}

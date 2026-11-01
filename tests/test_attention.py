@@ -72,7 +72,11 @@ async def test_没有待办时是空列表而不是报错(client):
     async with SessionLocal() as s:
         from sqlalchemy import delete
 
+        from agent_studio.models import Event
+
         await s.execute(delete(Run))
+        # 待办还有一路来源是事件账本（护栏拦下的派发），一起清掉才能验"真的一条都没有"
+        await s.execute(delete(Event))
         await s.commit()
     d = (await client.get("/api/runs/attention")).json()
     assert d["counts"]["total"] == 0

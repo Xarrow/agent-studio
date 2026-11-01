@@ -173,3 +173,25 @@ async def test_树的token记账只记在根上():
         # 子执行不记账（各自记就等于没上限）
         kids = list((await s.execute(select(Run).where(Run.parent_run_id == root.id))).scalars())
         assert all(int(k.tree_spent or 0) == 0 for k in kids)
+
+
+async def test_真派发被拦会落一条事件():
+    """拦不只在日志里：dispatch 的拦截分支要往事件账本记一条（待办读它）。"""
+    await init_db()
+    from agent_studio.events import store as event_store
+
+    root = await _run(agent_id="ag_ev", dispatch_path="ag_ev", tree_budget=100, tree_spent=999)
+    res = await fanout.dispatch(
+        parent_run=root,
+        agent_id="ag_ev",
+        definition_snapshot={"runtime": SpanRuntime.name, "name": "甲", "tools": []},
+        items=["这一项"],
+        wait_s=0.5,
+    )
+    assert res["ok"] is False and res["blocked"] == "budget"
+
+    async with SessionLocal() as s:
+        rows = await event_store.recent(s, kind="fanout.blocked", limit=20)
+    mine = [e for e in rows if e.subject_id == root.id]
+    assert mine, "被拦了却没有事件 = 用户永远看不到原因"
+    assert (mine[0].payload or {}).get("blocked") == "budget"

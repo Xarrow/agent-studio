@@ -746,14 +746,16 @@ export interface AttentionItem {
   run_id: string;
   agent_id: string;
   agent_name: string;
-  /** hitl = 停在等你确认 / stalled = 判死停滞 / failed = 普通失败 */
-  kind: "hitl" | "stalled" | "failed";
+  /** hitl = 停在等你确认 / stalled = 判死停滞 / failed = 普通失败 / blocked = 被护栏拦下 */
+  kind: "hitl" | "stalled" | "failed" | "blocked";
   reason: string;
+  /** 被拦时给"下一步怎么办"（服务端写好的话，前端直接显示） */
+  hint?: string;
   at: number;
 }
 
 export interface AttentionRead {
-  counts: { hitl: number; stalled: number; failed: number; total: number };
+  counts: { hitl: number; stalled: number; failed: number; blocked: number; total: number };
   items: AttentionItem[];
 }
 

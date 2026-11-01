@@ -418,6 +418,10 @@ app.include_router(a2a.router)
 from .api import app_settings as app_settings_api  # noqa: E402
 
 app.include_router(app_settings_api.router)
+# 事件账本（只读）：最近发生了什么、死信里躺着什么 —— 藏起来的队列等于没建
+from .api import events as events_api  # noqa: E402
+
+app.include_router(events_api.router)
 
 
 @app.get("/api/health")

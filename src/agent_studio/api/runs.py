@@ -1258,7 +1258,7 @@ async def attention(session: AsyncSession = Depends(get_session)) -> dict:
     )
     agents = {a.id: a.name for a in (await session.execute(select(Agent))).scalars()}
 
-    _prio = {"hitl": 0, "stalled": 1, "failed": 2}
+    _prio = {"hitl": 0, "stalled": 1, "failed": 2, "blocked": 3}
     items: list[dict[str, Any]] = []
     for r in rows:
         err = str(r.error or "")
@@ -1278,6 +1278,38 @@ async def attention(session: AsyncSession = Depends(get_session)) -> dict:
                 "at": int(r.started_at or 0),
             }
         )
+
+    # ── 护栏拦下的派发（来自事件账本，不是 run 的状态）──────────────────
+    # run 的状态只会说"这一步失败了"；被拦的原因（预算/成环/重复）在事件里。
+    # 不并进来，用户就只能看到"助手又抽风了"，然后重试、再被拦、再重试。
+    from ..events import store as event_store
+
+    for ev in await event_store.recent(session, kind="fanout.blocked", limit=50):
+        at = int(ev.created_at or 0)
+        if at < since:
+            continue
+        payload = ev.payload if isinstance(ev.payload, dict) else {}
+        # 事件里的 reason 自带「分派被拦：」前缀，前端徽标已经说了"被拦"——
+        # 再拼一次就是「被拦 | 派发被拦：树额度用完：分派被拦：…」这种叠词。
+        reason_text = str(payload.get("reason") or "")
+        for prefix in ("分派被拦：", "分派被拦:"):
+            if reason_text.startswith(prefix):
+                reason_text = reason_text[len(prefix):]
+                break
+        items.append(
+            {
+                "run_id": str(ev.subject_id or ""),
+                "agent_id": str(payload.get("agent_id") or ""),
+                "agent_name": agents.get(str(payload.get("agent_id") or ""))
+                or str(payload.get("agent_id") or "分派"),
+                "kind": "blocked",
+                "reason": str(payload.get("title") or "派发被拦")
+                + "："
+                + reason_text[:120],
+                "hint": str(payload.get("hint") or ""),
+                "at": at,
+            }
+        )
     items.sort(key=lambda x: (_prio.get(str(x["kind"]), 9), -int(x["at"])))
 
     def _n(kind: str) -> int:
@@ -1288,6 +1320,7 @@ async def attention(session: AsyncSession = Depends(get_session)) -> dict:
             "hitl": _n("hitl"),
             "stalled": _n("stalled"),
             "failed": _n("failed"),
+            "blocked": _n("blocked"),
             "total": len(items),
         },
         "items": items[:20],

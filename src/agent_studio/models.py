@@ -995,3 +995,54 @@ class SessionAllow(Base):
     session_id: Mapped[str] = mapped_column(String(32), index=True)
     tool_name: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[int] = mapped_column(Integer, default=now_ms)
+
+
+class Event(Base):
+    """平台内部「发生了什么事」的账本（事件层的地基）。
+
+    为什么要有它
+    ------------
+    现在所有状态都挤在 ``run.status`` 一列里：谁都可以改、改了就没人知道为什么。
+    「派发被护栏拦下了」这种事只能写进某个 run 的 error 文本，翻不出来、也没法
+    追溯是谁引起的。事件是**事实**（append-only），状态是**事实的投影**。
+
+    三条设计约束
+    ------------
+    * ``dedupe_key`` 唯一：同一件事重复投递只入队一次（推送/重试/幂等都是靠它）。
+    * ``causation_id`` + ``hop``：一条事件由哪条引起、传了几手 —— 没有它就没法
+      判断"是不是我自己引起的回声"，事件驱动会变成无限自激。
+    * 租约（``lease_until``）：消费方先抢再干，进程挂了租约过期自动回队。
+      抢的方式是 ``UPDATE … RETURNING``，不是"先查后改"（并发下会双跑）。
+    """
+
+    __tablename__ = "event"
+    __table_args__ = (
+        Index("idx_event_status", "status", "available_at"),
+        Index("idx_event_subject", "subject_kind", "subject_id"),
+        UniqueConstraint("dedupe_key", name="uq_event_dedupe"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("ev_"))
+    #: 事件类型，如 fanout.blocked / run.finished / notice.raise
+    kind: Mapped[str] = mapped_column(String(64), index=True)
+    #: 主体（run / orchestration / tree / agent …）；没有主体的平台事件可以为空
+    subject_kind: Mapped[str | None] = mapped_column(String(16), default=None)
+    subject_id: Mapped[str | None] = mapped_column(String(32), default=None)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+    #: 幂等键（NULL = 不去重）。同 kind 同主体的"同一件事"用它压住重复入队
+    dedupe_key: Mapped[str | None] = mapped_column(String(160), default=None)
+    #: 由哪条事件引起（回声治理的锚点）
+    causation_id: Mapped[str | None] = mapped_column(String(32), default=None)
+    #: 传了几手（0 = 人/系统直接触发；≥2 通常只记录不再扇出）
+    hop: Mapped[int] = mapped_column(Integer, default=0)
+
+    #: queued（待处理）/ handling（有人抢到了）/ done / dead（重试用尽）
+    status: Mapped[str] = mapped_column(String(16), default="queued")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    #: 到点才可被抢（退避重试用；正常就是 created_at）
+    available_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+    lease_until: Mapped[int | None] = mapped_column(BigInteger, default=None)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+    ended_at: Mapped[int | None] = mapped_column(BigInteger, default=None)
+    error: Mapped[str | None] = mapped_column(LongText, default=None)
