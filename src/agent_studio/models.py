@@ -161,6 +161,20 @@ class Run(Base):
     # 但直接 INSERT 不带这一列时，只有 DB 端默认值才兜得住（不然会撞 NOT NULL）。
     isolated: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
 
+    # ── 一棵「分派树」的身份证 ──────────────────────────────────────────
+    #: 这棵树的根（没有任何父执行的那一条）。**预算必须记在根上**：
+    #: 记在 run 上等于没有 —— 子执行各自一份额度，一棵树能派出无穷多份。
+    root_run_id: Mapped[str | None] = mapped_column(String(32), default=None, index=True)
+    #: 派发路径（``ag_a>ag_b>ag_c``）：既用来判断结构环（A→B→A），
+    #: 也是界面上「这一步是谁派下来的」唯一可靠依据。
+    dispatch_path: Mapped[str | None] = mapped_column(String(512), default=None)
+    #: 任务指纹 = sha1(agent_id + 归一化后的任务文本)。同一棵树里**同一助手同一任务**
+    #: 再派一次就是语义环，默认拒绝（要真需要重复得显式 allow_duplicate）。
+    task_fingerprint: Mapped[str | None] = mapped_column(String(40), default=None, index=True)
+    #: 这棵树允许花多少 token（只在根上有值）；tree_spent 是累计已花
+    tree_budget: Mapped[int | None] = mapped_column(Integer, default=None)
+    tree_spent: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
     input: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     output: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
     definition_snapshot: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)

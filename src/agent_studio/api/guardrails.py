@@ -18,10 +18,13 @@ from ..db import get_session
 from ..quota import (
     DAILY_LIMIT_CHOICES,
     DEPTH_CHOICES,
+    TREE_BUDGET_CHOICES,
     daily_quota,
     get_depth_limit,
+    get_tree_budget,
     set_daily_limit,
     set_depth_limit,
+    set_tree_budget,
 )
 
 router = APIRouter(prefix="/api/guardrails", tags=["guardrails"])
@@ -32,9 +35,13 @@ async def read_guardrails(session: AsyncSession = Depends(get_session)) -> dict[
     """护栏现状：今日用量 + 两个上限（外加可选档位 —— 界面上只让选、不让手打）。"""
     daily = await daily_quota(session)
     depth = await get_depth_limit(session)
+    tree = await get_tree_budget(session)
     return {
         "daily": {**daily, "choices": list(DAILY_LIMIT_CHOICES)},
         "depth": {"limit": depth, "choices": list(DEPTH_CHOICES)},
+        # 一棵分派树最多花多少（0 = 不限）。为什么单独一档：日额度是"这一天"的闸，
+        # 它是"这一件事"的闸 —— 一棵写坏了的树能在一小时里把一天用光。
+        "tree": {"limit": int(tree or 0), "choices": list(TREE_BUDGET_CHOICES)},
     }
 
 
@@ -55,4 +62,14 @@ async def update_depth_limit(
 ) -> dict[str, Any]:
     """设「允许分派几层」。默认 1；2 层会成倍放大调用量，界面上会说明代价。"""
     await set_depth_limit(session, limit)
+    return await read_guardrails(session)
+
+
+@router.put("/tree")
+async def update_tree_budget(
+    limit: int = Body(..., embed=True, description="一棵分派树最多花多少 token；0 = 不限"),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """设「一棵树最多花多少」。超了只拦**新的派发**，在跑的不打断。"""
+    await set_tree_budget(session, limit)
     return await read_guardrails(session)

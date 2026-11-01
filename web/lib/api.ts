@@ -822,6 +822,12 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ limit }),
     }),
+  /** 一棵分派树最多花多少（0 = 不限） */
+  setTreeBudget: (limit: number) =>
+    request<GuardrailsRead>("/api/guardrails/tree", {
+      method: "PUT",
+      body: JSON.stringify({ limit }),
+    }),
   /** 补齐失败的那几路（分派这一步重跑；已成功的路不会重跑） */
   refillFanout: (id: string) =>
     post<{ run_id: string; status: string }>(`/api/runs/${id}/refill`, {}),

@@ -743,6 +743,14 @@ class RunService:
                         break
                     _depth += 1
                 _depth_limit = await get_depth_limit(session)
+                # ── 树的身份证（防无限 fork 的三列）────────────────────
+                # 根：没有父的这条就是根，路径就是它自己；
+                # 子：父是谁由 fanout 写好了，这里只兜底补空（老数据）。
+                if not run.root_run_id:
+                    run.root_run_id = run.id
+                if not run.dispatch_path:
+                    run.dispatch_path = str(run.agent_id or "")
+                await session.flush()
                 from .ctx import set_run_ctx
 
                 set_run_ctx(

@@ -31,7 +31,7 @@
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, fmt } from "@/lib/api";
-import type { ActivityItem, Agent, LlmCall, RunDeleteResult } from "@/lib/types";
+import type { ActivityItem, Agent, GuardrailsRead, LlmCall, RunDeleteResult } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
 import { KIND_LABEL } from "@/components/RunDetailDialog";
 import { SpanWaterfall } from "@/components/SpanWaterfall";
@@ -152,6 +152,10 @@ export function RunsPanel() {
   const [retryArm, setRetryArm] = useState<string | null>(null);
   /** 用了多少 / 花了多少（今日 + 近 7 天）—— 与列表同一个请求里取，不额外等一轮 */
   const [usage, setUsage] = useState<Usage | null>(null);
+  /** 护栏（今日上限 / 分派层数 / 每棵树额度）—— 点「用量」就地展开 */
+  const [guardOpen, setGuardOpen] = useState(false);
+  const [guard, setGuard] = useState<GuardrailsRead | null>(null);
+  const [guardBusy, setGuardBusy] = useState(false);
   /** 分页：一页 50 条，「加载更多」往后翻（游标式 —— 翻页时新记录插进来也不会错位） */
   const [hasMore, setHasMore] = useState(false);
   const [serverTotal, setServerTotal] = useState(0);
@@ -452,6 +456,38 @@ export function RunsPanel() {
     }
   };
 
+  /** 点「用量」：就地展开护栏（只取一次；之后改值直接回写，不再重复请求） */
+  const openGuard = useCallback(async () => {
+    setGuardOpen((v) => !v);
+    if (guard) return;
+    try {
+      setGuard(await api.guardrails());
+    } catch {
+      fb?.error?.("读取护栏失败");
+    }
+  }, [guard, fb]);
+
+  /** 改一档护栏：选完立刻生效（服务端返回全量，直接覆盖，不做乐观更新） */
+  const saveGuard = useCallback(
+    async (which: "daily" | "depth" | "tree", value: number) => {
+      setGuardBusy(true);
+      try {
+        const next =
+          which === "daily"
+            ? await api.setDailyLimit(value)
+            : which === "depth"
+              ? await api.setDepthLimit(value)
+              : await api.setTreeBudget(value);
+        setGuard(next);
+      } catch {
+        fb?.error?.("保存失败（护栏没变）");
+      } finally {
+        setGuardBusy(false);
+      }
+    },
+    [fb],
+  );
+
   return (
     <div className="flex flex-col gap-2.5">
       {/* ── 工具条（一行）：类型段控 · 搜索 · 状态 · 助手 · 用量 · ⋯ ──────
@@ -533,8 +569,12 @@ export function RunsPanel() {
         <div className="ml-auto flex items-center gap-2 max-md:order-5">
           {/* 用量一行 —— 老版四张卡的位置。数字一个不少，只是不再各占一张卡。 */}
           {usage && (
-            <div
-              className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[12px] tabular-nums"
+            <button
+              type="button"
+              data-tap
+              onClick={() => void openGuard()}
+              title="今日用量 —— 点开调整护栏（今日上限 / 分派层数 / 每棵树最多花多少）"
+              className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-left text-[12px] tabular-nums"
               style={{ color: "var(--color-muted)" }}
             >
               <span title={`今日 ${usage.today.calls} 次 · 近 ${usage.days} 天 ${usage.period.calls} 次`}>
@@ -571,6 +611,82 @@ export function RunsPanel() {
                 >
                   {usage.unpriced.length} 个没单价
                 </Link>
+              )}
+              <span aria-hidden style={{ color: "var(--color-muted)" }}>
+                {guardOpen ? "▴" : "▾"}
+              </span>
+            </button>
+          )}
+
+          {/* 护栏（点「用量」就地展开一行，不弹框、不跳页）：三档全是枚举，
+              选完立刻生效 —— 这三条是"别在没人看着的时候烧光额度"的唯一旋钮。 */}
+          {guardOpen && (
+            <div
+              className="w-full max-md:order-9 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t pt-1.5 text-[12px]"
+              style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
+            >
+              {!guard ? (
+                <span>读取护栏…</span>
+              ) : (
+                <>
+                  <label className="flex items-center gap-1.5">
+                    今日上限
+                    <select
+                      className="input input-inline h-[32px] max-md:h-[44px]"
+                      value={guard.daily.limit}
+                      disabled={guardBusy}
+                      onChange={(e) => void saveGuard("daily", Number(e.target.value))}
+                    >
+                      {guard.daily.choices.map((v) => (
+                        <option key={v} value={v}>
+                          {v === 0 ? "不限" : fmt.num(v)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex items-center gap-1.5" title="分派出来的实例还能不能再分派">
+                    分派层数
+                    <select
+                      className="input input-inline h-[32px] max-md:h-[44px]"
+                      value={guard.depth.limit}
+                      disabled={guardBusy}
+                      onChange={(e) => void saveGuard("depth", Number(e.target.value))}
+                    >
+                      {guard.depth.choices.map((v) => (
+                        <option key={v} value={v}>
+                          {v} 层
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label
+                    className="flex items-center gap-1.5"
+                    title="一棵分派树最多花多少 token —— 超了只拦新的派发，在跑的不打断"
+                  >
+                    每棵树
+                    <select
+                      className="input input-inline h-[32px] max-md:h-[44px]"
+                      value={guard.tree?.limit ?? 0}
+                      disabled={guardBusy}
+                      onChange={(e) => void saveGuard("tree", Number(e.target.value))}
+                    >
+                      {(guard.tree?.choices ?? [0]).map((v) => (
+                        <option key={v} value={v}>
+                          {v === 0 ? "不限" : fmt.num(v)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <span className="tabular-nums">
+                    今日已用{" "}
+                    <b style={{ color: guard.daily.exceeded ? "var(--color-err)" : "var(--color-text)" }}>
+                      {fmt.num(guard.daily.used)}
+                    </b>
+                  </span>
+                  {guard.daily.exceeded && (
+                    <span style={{ color: "var(--color-err)" }}>{guard.daily.message}</span>
+                  )}
+                </>
               )}
             </div>
           )}

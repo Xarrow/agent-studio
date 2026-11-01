@@ -214,6 +214,18 @@ async def loop() -> None:
             # 放这里而不是另起循环 —— 它和定时任务一样是「后台自己动」的事。
             from . import remote_health
 
+            # 停滞判死：在跑但没进展的执行（进程已不在的那些）
+            try:
+                from .db import SessionLocal as _SL
+                from .runner import watchdog as _wd
+
+                async with _SL() as _s:
+                    _dead = await _wd.sweep(_s)
+                if _dead:
+                    logger.info("watchdog 判死 %d 条停滞执行", len(_dead))
+            except Exception:  # noqa: BLE001
+                logger.exception("watchdog 这一轮出错（继续）")
+
             try:
                 probed = await remote_health.sweep()
                 for item in probed.get("flipped") or []:

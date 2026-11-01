@@ -239,6 +239,14 @@ _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("memory", "layer", "layer VARCHAR(8) DEFAULT 'memory'"),
     # 保存方式：auto（直接存）/ confirm（先问）/ off（不许存）
     ("memory_policy", "save_mode", "save_mode VARCHAR(8) DEFAULT 'auto'"),
+    # ── 分派树（防无限 fork / 成环 / 烧穿额度）─────────────────────────
+    # 老库补列：新库由 models.Run 直接建出这几列，老库必须 ALTER 补，
+    # 否则启动后一读 run 表就报 no such column。
+    ("run", "root_run_id", "root_run_id VARCHAR(32)"),
+    ("run", "dispatch_path", "dispatch_path VARCHAR(512)"),
+    ("run", "task_fingerprint", "task_fingerprint VARCHAR(40)"),
+    ("run", "tree_budget", "tree_budget INTEGER"),
+    ("run", "tree_spent", "tree_spent INTEGER NOT NULL DEFAULT 0"),
 )
 
 

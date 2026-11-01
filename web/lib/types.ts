@@ -755,6 +755,8 @@ export interface GuardrailsRead {
   };
   /** 允许的分派层数（默认 1） */
   depth: { limit: number; choices: number[] };
+  /** 一棵分派树最多花多少 token（0 = 不限）—— 防「一棵写坏的树烧穿一天额度」 */
+  tree?: { limit: number; choices: number[] };
 }
 
 export interface EvalCase {

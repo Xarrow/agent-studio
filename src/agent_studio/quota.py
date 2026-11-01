@@ -136,6 +136,32 @@ async def set_depth_limit(session: AsyncSession, depth: int) -> int:
     return depth
 
 
+#: 一棵分派树最多能花多少 token（0 / 空 = 不限，保持现状）。
+#: 为什么另设一个「树」额度而不复用平台日额度：日额度是**这一天**的总闸，
+#: 树额度是**这一件事**的闸 —— 没有它，一棵写坏了的树可以在十分钟里把一天用光。
+TREE_BUDGET_KEY = "tree_token_budget"
+
+#: 界面给的档位（枚举，不让手打数字；0 = 不限）
+TREE_BUDGET_CHOICES: tuple[int, ...] = (0, 20_000, 50_000, 100_000, 300_000, 1_000_000)
+
+
+async def get_tree_budget(session: AsyncSession) -> int | None:
+    """一棵树允许花多少 token（None = 不限）。"""
+    raw = await get_setting(session, TREE_BUDGET_KEY, 0)
+    try:
+        val = int(raw or 0)
+    except (TypeError, ValueError):
+        return None
+    return val if val > 0 else None
+
+
+async def set_tree_budget(session: AsyncSession, tokens: int) -> int:
+    tokens = max(0, int(tokens or 0))
+    await set_setting(session, TREE_BUDGET_KEY, tokens)
+    await session.commit()
+    return tokens
+
+
 def now_ms_export() -> int:
     """（给调用方图省事的小出口，避免各处再 import 一遍。）"""
     return now_ms()

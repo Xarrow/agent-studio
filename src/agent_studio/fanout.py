@@ -29,7 +29,8 @@ from sqlalchemy import select
 
 from .config import settings
 from .db import SessionLocal
-from .models import Run, now_ms
+from .limits import extend_path, fingerprint_of, remaining as _remaining, stall_reason, would_cycle
+from .models import Run, ToolCall, now_ms
 from .runner.ctx import current_run_ctx
 
 logger = logging.getLogger(__name__)
@@ -323,6 +324,110 @@ async def dispatch_remote(
     }
 
 
+async def _chain_of(session: Any, run: Run) -> tuple[Run, str]:
+    """这棵树的根 + 从根到 ``run`` 的派发路径（并顺手给老数据补上这两列）。
+
+    为什么不直接读 ``dispatch_path``：老执行根本没这一列（上线前跑的），
+    而"没有路径"不能当成"没有环" —— 那正好是 A→B→A 最容易被放过的那一类。
+    所以这里沿父链现算一次（最多 9 层），算出来就写回。
+    """
+    chain: list[Run] = [run]
+    cur = run
+    for _ in range(9):
+        if not cur.parent_run_id:
+            break
+        nxt = await session.get(Run, cur.parent_run_id)
+        if nxt is None:
+            break
+        chain.append(nxt)
+        cur = nxt
+    root = chain[-1]
+    path = ">".join(str(r.agent_id or "") for r in reversed(chain))
+    if not run.root_run_id:
+        run.root_run_id = root.id
+    if not run.dispatch_path:
+        run.dispatch_path = path
+    return root, path
+
+
+async def _tree_gate(
+    *,
+    parent_run: Run,
+    agent_id: str,
+    picked: list[str],
+    allow_duplicate: bool = False,
+    db_factory: Any = SessionLocal,
+) -> dict[str, Any]:
+    """派发前必须过的三关：结构环 → 树预算 → 语义重复。
+
+    返回 ``{"blocked": True, "kind": ..., "reason": ...}`` 或
+    ``{"root": Run, "path": str, "reuse": {item_index: Run}}``。
+    """
+    async with db_factory() as session:
+        root, path = await _chain_of(session, parent_run)
+
+        # 根上没有额度就先按平台设定补一个（老执行没这一列，不能当成"不限"）
+        if root.tree_budget is None:
+            from .quota import get_tree_budget as _budget_of
+
+            root.tree_budget = await _budget_of(session)
+            await session.commit()
+
+        # ① 结构环：链里已经有这个助手，再派就是自己派自己
+        if would_cycle(path, agent_id):
+            return {
+                "blocked": True,
+                "kind": "cycle",
+                "reason": (
+                    f"分派被拦：这棵树里已经有「{agent_id}」在链上（{path}）。"
+                    "再派给它自己 = A→B→A 的死循环 —— 换一个助手，"
+                    "或者直接在当前这一步把事情做完。"
+                ),
+            }
+
+        # ② 树预算：额度记在根上，子执行花掉的都算这棵树
+        rem = _remaining(root.tree_budget, root.tree_spent)
+        if rem is not None and rem <= 0:
+            return {
+                "blocked": True,
+                "kind": "budget",
+                "reason": (
+                    f"分派被拦：这棵树的预算已用完（上限 {root.tree_budget} token，"
+                    f"已花 {root.tree_spent}）。先把已有产出收口，"
+                    "或到「护栏」里调高整棵树的额度。"
+                ),
+            }
+
+        # ③ 语义重复：同一棵树里同一助手跑过同一个任务 → 复用，不再排一路
+        reuse: dict[int, Run] = {}
+        if not allow_duplicate:
+            fps = {i: fingerprint_of(agent_id, item) for i, item in enumerate(picked)}
+            rows = list(
+                (
+                    await session.execute(
+                        select(Run).where(
+                            Run.root_run_id == root.id,
+                            Run.task_fingerprint.in_(list(fps.values())),
+                            Run.status.in_(("pending", "running", "ok")),
+                        )
+                    )
+                ).scalars()
+            )
+            by_fp: dict[str, Run] = {}
+            for r in rows:
+                # 同一条不算重复（重跑自己）
+                if r.id == parent_run.id:
+                    continue
+                by_fp.setdefault(str(r.task_fingerprint or ""), r)
+            for i, fp in fps.items():
+                hit = by_fp.get(fp)
+                if hit is not None:
+                    reuse[i] = hit
+            if reuse:
+                logger.info("分派：%d 项在同一棵树里已有同样任务的执行，直接复用", len(reuse))
+        return {"root": root, "path": path, "reuse": reuse}
+
+
 async def dispatch(
     *,
     parent_run: Run,
@@ -333,6 +438,7 @@ async def dispatch(
     wait_s: float | None = None,
     budget_tokens: int | None = None,
     isolate_workspace: bool = False,
+    allow_duplicate: bool = False,
     db_factory: Any = SessionLocal,
 ) -> dict[str, Any]:
     """建 N 条子 run → 交给调度队列（受并发闸）→ 等齐 → 汇总。
@@ -348,6 +454,28 @@ async def dispatch(
     picked = items[:cap]
     if not picked:
         return {"ok": False, "reason": "没有可分派的项", "items": [], "total": 0}
+
+    # ── 闸：这棵树还能不能再派（结构环 / 语义重复 / 树预算）───────────────
+    # 位置很关键：必须在**建子 run 之前**。建完再拦等于钱已经花了。
+    gate = await _tree_gate(
+        parent_run=parent_run,
+        agent_id=agent_id,
+        picked=picked,
+        allow_duplicate=allow_duplicate,
+        db_factory=db_factory,
+    )
+    if gate.get("blocked"):
+        logger.warning("分派被拦（%s）：%s", gate.get("kind"), gate.get("reason"))
+        return {
+            "ok": False,
+            "blocked": str(gate.get("kind") or ""),
+            "reason": str(gate.get("reason") or "分派被拦"),
+            "items": [],
+            "total": 0,
+        }
+    root_run = gate["root"]
+    parent_path = gate["path"]
+    reuse: dict[int, Run] = dict(gate.get("reuse") or {})
 
     # ── 幂等：同一次分派里已成功的项直接复用（重试/重跑不重复扣费）──────
     async with db_factory() as session:
@@ -365,6 +493,9 @@ async def dispatch(
         # 否则「补齐失败的那几路」点了等于没点（现场实测：容器重跑 53s 后，
         # 失败那一项原封不动，因为它也被当成了"已完成"）。终态 ≠ 成功。
         done = {int(r.item_index): r for r in existing if r.status == "ok"}
+        # 语义去重命中的项（同一棵树里这个助手跑过同一个任务）也算"已完成"
+        for _i, _r in reuse.items():
+            done.setdefault(int(_i), _r)
 
         created: list[Run] = []
         for i, item in enumerate(picked):
@@ -401,6 +532,10 @@ async def dispatch(
                 orchestration_id=parent_run.orchestration_id,
                 # 来源沿用父 run（定时/外部触发的分派仍然是"它自己跑的"）
                 origin=parent_run.origin,
+                # 树的身份证：根、路径、任务指纹（三样都要落在子 run 上）
+                root_run_id=root_run.id,
+                dispatch_path=extend_path(parent_path, agent_id),
+                task_fingerprint=fingerprint_of(agent_id, item),
             )
             session.add(child)
             created.append(child)
@@ -476,6 +611,19 @@ async def dispatch(
                     budget_hit = True
         if all(r.status in TERMINAL for r in rows):
             break
+        # ── 停滞闸：在跑但没进展的，就地判死 ────────────────────────────
+        # 判据是「最后几次是同一步反复」或「连续若干步没有任何成功结果」——
+        # 这类执行等下去只会等到超时，报告却会说成"跑太久"，把原因说歪了。
+        _running = [r for r in rows if r.status == "running"]
+        if _running:
+            _stalled = await _mark_stalled(session, _running, db_factory)
+            if _stalled:
+                await session.commit()
+                for _rid in _stalled:
+                    from .runner import run_service as _rs2
+
+                    await _rs2.abort(_rid)
+                logger.warning("分派：%d 路被判停滞，已停止等待", len(_stalled))
         # 某一路在等人点头 → 立即收尾：人什么时候点是未知的，傻等只会把这一步拖到
         # 「最长等多久」超时，而超时报告会把原因说成"跑太久"（误导）。
         _waiting_now = [r.id for r in rows if r.status in WAITING]
@@ -516,6 +664,10 @@ async def dispatch(
             }
         )
     ok_n = sum(1 for x in out_items if x["status"] == "ok")
+    # ── 记到这棵树的账上（预算的唯一账本是根）────────────────────────────
+    _spent_after = int(getattr(root_run, "tree_spent", 0) or 0) + tok_in + tok_out
+    await _add_tree_spend(getattr(root_run, "id", None), tok_in + tok_out, db_factory)
+    _budget = getattr(root_run, "tree_budget", None)
     waiting_items = [
         {"index": x["index"], "label": x["label"], "run_id": x["run_id"]}
         for x in out_items
@@ -542,7 +694,66 @@ async def dispatch(
         "budget_stopped": sum(1 for x in out_items if (x["status"] == "aborted" and "超出预算" in (x.get("error_text") or ""))),
         "timed_out": timed_out,
         "wait_s": timeout,
+        # 这棵树的账：还剩多少一眼可见（模型据此决定还要不要继续派）
+        "tree": {
+            "root_run_id": getattr(root_run, "id", None),
+            "budget": _budget,
+            "spent": _spent_after,
+            "remaining": _remaining(_budget, _spent_after),
+        },
     }
+
+
+async def _mark_stalled(session: Any, runs: list[Run], db_factory: Any = SessionLocal) -> list[str]:
+    """把「在跑但没进展」的那几路就地判死，返回被判死的 run id。
+
+    判据在 ``limits.stall_reason``（纯函数，单测盯着）。这里只负责取数据、写状态：
+    状态改成 error 并写明原因 —— 别让汇总里出现"耗时 900 秒、无产出"这种谜语。
+    """
+    if not runs:
+        return []
+    ids = [r.id for r in runs]
+    rows = list(
+        (
+            await session.execute(
+                select(ToolCall)
+                .where(ToolCall.run_id.in_(ids))
+                .order_by(ToolCall.run_id, ToolCall.iteration, ToolCall.id)
+            )
+        ).scalars()
+    )
+    by_run: dict[str, list[dict[str, Any]]] = {}
+    for t in rows:
+        by_run.setdefault(t.run_id, []).append(
+            {
+                "tool": t.tool_name,
+                "args": json.dumps(t.args or {}, ensure_ascii=False, sort_keys=True),
+                "status": t.status,
+            }
+        )
+
+    dead: list[str] = []
+    for r in runs:
+        reason = stall_reason(by_run.get(r.id) or [])
+        if not reason:
+            continue
+        r.status = "error"
+        r.error = f"停滞：{reason}（已停止等待，可单独重跑这一路）"
+        r.ended_at = now_ms()
+        dead.append(r.id)
+    return dead
+
+
+async def _add_tree_spend(root_id: str | None, tokens: int, db_factory: Any = SessionLocal) -> None:
+    """把这一批真花掉的 token 记到**根**上（树预算的唯一账本）。"""
+    if not root_id or tokens <= 0:
+        return
+    async with db_factory() as session:
+        root = await session.get(Run, root_id)
+        if root is None:
+            return
+        root.tree_spent = int(root.tree_spent or 0) + int(tokens)
+        await session.commit()
 
 
 async def _tokens_of(ids: list[str], db_factory: Any = SessionLocal) -> int:
@@ -750,6 +961,9 @@ async def handle_tool_call(**kwargs: Any) -> str:
         max_items=kwargs.get("max_items"),
         wait_s=kwargs.get("wait_s"),
         budget_tokens=kwargs.get("budget_tokens"),
+        # 同一棵树里「同一助手 + 同一任务」默认不再排一路（那是语义环）。
+        # 确实需要重复跑第二次，模型要显式说 allow_duplicate —— 留下意图的痕迹。
+        allow_duplicate=bool(kwargs.get("allow_duplicate")),
     )
     return render_summary(result)
 
