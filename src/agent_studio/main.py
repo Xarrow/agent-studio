@@ -422,6 +422,10 @@ app.include_router(app_settings_api.router)
 from .api import events as events_api  # noqa: E402
 
 app.include_router(events_api.router)
+# 意图路由：助手自己的「收这些话」（关键词/正则）+ 试算「这句话会交给谁」
+from .api import routes as routes_api  # noqa: E402
+
+app.include_router(routes_api.router)
 
 
 @app.get("/api/health")

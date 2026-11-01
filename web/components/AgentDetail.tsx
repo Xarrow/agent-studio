@@ -61,6 +61,7 @@ type ViewMode = "chat" | "table" | "raw";
  */
 import { AgentEvalPanel } from "@/components/AgentEvalPanel";
 import { CapabilityPicker } from "@/components/CapabilityPicker";
+import { RouteRules } from "@/components/RouteRules";
 
 export function AgentDetail({
   agentId,
@@ -1105,6 +1106,12 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
               onSave={save}
             />
           </section>
+
+          {/* ── 收这些话：路由的第一层 ────────────────────────────────
+              为什么放在助手自己的配置页：写这句话的语境就是"我在给这个助手定范围"，
+              放到全局路由表里，改的时候得在两处之间对照（用户口径：绑定动作归属
+              对象自己的配置页）。 */}
+          <RouteRules agentId={agentId} />
 
           <Fold title="更多（历史版本 · 评测 · 记忆）">
             <div className="space-y-4">

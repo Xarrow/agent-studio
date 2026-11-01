@@ -83,7 +83,11 @@ test("全站扫描：Enter 提交的地方都有 IME 守卫（中文组字中回
       for (const block of keyBlocks(src)) {
         const enter = ENTER_KEYS.some((r) => r.test(block));
         if (!enter) continue;
-        const guarded = block.includes("isImeEvent(") || block.includes("ime.blocked(");
+        // 守卫的形态是 `<hook>.blocked(e)` 或直接 `isImeEvent(e)`。
+        // 不写死变量名 `ime` —— 变量叫什么（ime / addIme / probeIme）跟有没有守卫无关，
+        // 写死会让"改了变量名"看起来像"没加守卫"（真被这条拦过一次）。
+        const guarded =
+          block.includes("isImeEvent(") || /\b[A-Za-z_$][\w$]*\.blocked\(/.test(block);
         if (!guarded) offenders.push(`${rel} :: ${block.split("\n")[0].trim()}`);
       }
     }

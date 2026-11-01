@@ -1,0 +1,331 @@
+"""意图路由：这段话该交给哪个助手 —— 纯函数，不碰数据库。
+
+为什么是纯函数
+--------------
+路由错了**不会报错**：话被交给了不合适的助手，它老老实实跑完，给出一个像模像样但
+不对的结果。这种失败比崩了更难发现，所以判定必须单独可测、每一步都能解释。
+数据库只提供"候选与规则"，判定本身在这里。
+
+四层（越靠前越硬）
+------------------
+L0 显式指名   用户自己点了助手 / 调用方传了 agent_id —— 不猜。
+L1 规则命中   助手自己的「收这些话」（关键词/正则）。规则是用户写的，命中就算数。
+L2 内容打分   助手名 / 能力标签 / 描述在话里出现了多少。
+L3 兜底       当前会话的助手；只有一个候选时也用它；都没有 → 交给用户选（不硬猜）。
+
+打分刻意简单到能口算：名字 3 分、标签 2 分、描述 1 分、规则 10 分。
+不用向量、不调模型 —— 前者解释不了"为什么是它"，后者每次路由都要花一次钱、还不可复现。
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+from typing import Any
+
+#: 这些字/词出现在任何描述里都不说明问题（否则"帮我"会把所有助手都算命中）
+STOPWORDS = {
+    "帮我", "可以", "使用", "支持", "进行", "通过", "以及", "或者", "如果", "然后",
+    "一个", "这个", "那个", "我们", "你们", "他们", "自己", "需要", "能够", "负责",
+    "助手", "个助手", "小助手", "agent", "assistant",
+    "the", "and", "for", "with", "that", "this", "you", "are",
+}
+
+#: 分数（刻意简单到能口算）
+W_NAME = 3   # 名字本体（去掉"助手/专家"这类尾巴）
+W_TAG = 2    # 能力标签（技能名 / 工具名）/ 名字拆出来的两字词
+W_CAP = 2    # 描述里的能力片段（"代码""测试"这种）
+W_WORD = 1   # 描述里的英文词
+#: 规则命中直接定局
+W_RULE = 10
+
+#: 到这个分就算"敢派"
+HIGH_SCORE = 3
+#: 描述只当佐证：再多也只能贡献这么多分（不然一段长描述能把任何话都拉过来）
+DESC_CAP = 4
+
+#: 名字里的尾巴 —— "周报助手"该命中"周报"，而不是要求用户说出"周报助手"四个字
+NAME_SUFFIX = ("小助手", "助手", "专家", "机器人", "agent", "bot", "服务")
+#: 出现这些字的片段不算能力词（"帮我处理"这种片段到处都是，加它会糊掉整张成绩单）
+STOPCHARS = set("的了把被我你他它一这下些这那和或与并就都还也很大太小多少吗呢啊吧么"
+               "个给件们事时比更又再先后上中里让做用看说想会能要")
+
+
+@dataclass(frozen=True)
+class Candidate:
+    """一个候选助手 —— 只管路由需要的字段，不传 ORM 行。"""
+
+    agent_id: str
+    name: str
+    description: str = ""
+    tags: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class Rule:
+    """一条「收这些话」。``kind="regex"`` 时 pattern 是正则，否则是关键词。"""
+
+    agent_id: str
+    pattern: str
+    kind: str = "keyword"
+    priority: int = 100
+
+
+@dataclass
+class Decision:
+    agent_id: str | None
+    layer: int
+    score: int
+    confidence: str
+    reason: str
+    alternatives: list[dict[str, Any]] = field(default_factory=list)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "agent_id": self.agent_id,
+            "layer": self.layer,
+            "score": self.score,
+            "confidence": self.confidence,
+            "reason": self.reason,
+            "alternatives": self.alternatives,
+        }
+
+
+def _norm(text: str) -> str:
+    return (text or "").strip().lower()
+
+
+def _hits(needle: str, haystack: str) -> bool:
+    """命中判定：英文按词边界，中文按子串。
+
+    中文没有空格，"财报" 出现在"帮我看看这季度财报"里就是命中 —— 用子串；
+    英文可不能这样（"go" 会命中 "google"），所以按词边界。
+    """
+    n = _norm(needle)
+    h = _norm(haystack)
+    if not n or not h:
+        return False
+    if re.search(r"[a-z0-9]", n):
+        return re.search(rf"(?<![a-z0-9]){re.escape(n)}(?![a-z0-9])", h) is not None
+    return n in h
+
+
+def _name_words(name: str) -> list[tuple[str, int]]:
+    """从名字里取「能代表它」的词 + 各自的权重。
+
+    中文名字的尾巴（助手/专家）是通用后缀，不算信息：用户说"周报"就该命中"周报助手"，
+    不该逼他说全名。英文名字反过来 —— 整词才准，拆了没意义。
+    """
+    out: list[tuple[str, int]] = []
+    for part in re.split(r"[\s·/、,，\-—_]+", name or ""):
+        part = part.strip()
+        if len(part) < 2 or _norm(part) in STOPWORDS:
+            continue
+        core = part
+        low = part.lower()
+        for suf in NAME_SUFFIX:
+            if low.endswith(suf) and len(part) > len(suf):
+                core = part[: -len(suf)].strip()
+                break
+        if core and _norm(core) not in STOPWORDS:
+            out.append((core, W_NAME))
+        if core != part:
+            out.append((part, W_NAME))          # 全名也算（写得越全越精确）
+        # 长名字再拆两字词：「视频下载」→ 视频 / 下载
+        if len(core) >= 4 and re.search(r"[\u4e00-\u9fa5]", core):
+            for i in range(len(core) - 1):
+                gram = core[i : i + 2]
+                if gram not in STOPWORDS and not (set(gram) & STOPCHARS):
+                    out.append((gram, W_TAG))
+    # 去重保序（同一个词只加一次）
+    seen: set[str] = set()
+    uniq: list[tuple[str, int]] = []
+    for w, wt in out:
+        k = _norm(w)
+        if k in seen:
+            continue
+        seen.add(k)
+        uniq.append((w, wt))
+    return uniq
+
+
+def _cap_words(desc: str) -> list[str]:
+    """描述里的能力片段：英文整词 + 中文 2~4 字片段（滤掉虚词碎片）。
+
+    中文没有分词，用 n-gram 是最省的近似；代价是"帮我处理"这类碎片也会冒出来，
+    所以带虚词的片段一律丢掉，并且描述总分封顶（见 DESC_CAP）。
+    """
+    out: list[str] = []
+    for w in re.findall(r"[A-Za-z][A-Za-z0-9_]{1,}", desc or ""):
+        if w.lower() not in STOPWORDS:
+            out.append(w)
+    for chunk in re.findall(r"[\u4e00-\u9fa5]{2,}", desc or ""):
+        for n in (4, 3, 2):
+            for i in range(len(chunk) - n + 1):
+                piece = chunk[i : i + n]
+                if piece in STOPWORDS or (set(piece) & STOPCHARS):
+                    continue
+                out.append(piece)
+    seen: set[str] = set()
+    uniq: list[str] = []
+    for w in out:
+        k = _norm(w)
+        if k in seen:
+            continue
+        seen.add(k)
+        uniq.append(w)
+    return uniq[:120]
+
+
+def score_candidates(text: str, candidates: list[Candidate]) -> list[dict[str, Any]]:
+    """给每个候选打分，返回按分数降序的列表（带 why，能解释给用户听）。"""
+    rows: list[dict[str, Any]] = []
+    for cand in candidates:
+        score = 0
+        why: list[str] = []
+
+        for word, weight in _name_words(cand.name):
+            if _hits(word, text):
+                score += weight
+                why.append(f"名字「{word}」")
+
+        for tag in cand.tags:
+            t = (tag or "").strip()
+            if len(t) >= 2 and _norm(t) not in STOPWORDS and _hits(t, text):
+                score += W_TAG
+                why.append(f"能力「{t}」")
+
+        desc_score = 0
+        for piece in _cap_words(cand.description or ""):
+            if desc_score >= DESC_CAP:
+                break
+            if not _hits(piece, text):
+                continue
+            weight = W_WORD if re.search(r"[A-Za-z]", piece) else W_CAP
+            desc_score += weight
+            why.append(f"描述「{piece}」")
+        score += min(desc_score, DESC_CAP)
+
+        rows.append(
+            {
+                "agent_id": cand.agent_id,
+                "name": cand.name,
+                "score": score,
+                "why": why[:8],
+            }
+        )
+    rows.sort(key=lambda r: (-int(r["score"]), str(r["agent_id"])))
+    return rows
+
+
+def match_rules(text: str, rules: list[Rule]) -> list[Rule]:
+    """命中的规则，按（优先级小 → 模式长）排序：写得越具体越优先。"""
+    hit: list[Rule] = []
+    for r in rules:
+        pat = (r.pattern or "").strip()
+        if not pat:
+            continue
+        if r.kind == "regex":
+            try:
+                if re.search(pat, text or "", re.IGNORECASE):
+                    hit.append(r)
+            except re.error:
+                # 正则写错了不能把整条路由搞崩：跳过它，界面上会显示"规则无效"
+                continue
+        elif _hits(pat, text):
+            hit.append(r)
+    hit.sort(key=lambda r: (int(r.priority), -len(r.pattern)))
+    return hit
+
+
+def route(
+    text: str,
+    *,
+    candidates: list[Candidate],
+    rules: list[Rule] | None = None,
+    explicit_agent_id: str | None = None,
+    default_agent_id: str | None = None,
+) -> Decision:
+    """四层判定。返回的 ``reason`` 是给人看的，不要在这里拼 UI 文案。"""
+    by_id = {c.agent_id: c for c in candidates}
+    text = (text or "").strip()
+
+    # ── L0 显式指名 ──────────────────────────────────────────────
+    if explicit_agent_id:
+        cand = by_id.get(explicit_agent_id)
+        return Decision(
+            agent_id=explicit_agent_id,
+            layer=0,
+            score=100,
+            confidence="explicit",
+            reason="你指名了助手，不猜。",
+            alternatives=[] if not cand else [{"agent_id": cand.agent_id, "name": cand.name, "score": 100}],
+        )
+
+    # ── L1 规则（用户自己写的「收这些话」）────────────────────────
+    hits = match_rules(text, list(rules or []))
+    hits = [h for h in hits if h.agent_id in by_id]  # 规则指向已不存在的助手当没写
+    if hits:
+        top = hits[0]
+        cand = by_id[top.agent_id]
+        return Decision(
+            agent_id=top.agent_id,
+            layer=1,
+            score=W_RULE,
+            confidence="rule",
+            reason=f"命中「{cand.name}」的收话规则：{top.pattern}",
+            alternatives=[
+                {"agent_id": h.agent_id, "name": by_id[h.agent_id].name, "score": W_RULE, "rule": h.pattern}
+                for h in hits[1:4]
+            ],
+        )
+
+    # ── L2 内容打分 ─────────────────────────────────────────────
+    rows = score_candidates(text, list(candidates))
+    best = rows[0] if rows else None
+    alts = [r for r in rows[:4]]
+    if best and int(best["score"]) > 0:
+        conf = "high" if int(best["score"]) >= HIGH_SCORE else "low"
+        tie = [r for r in rows[1:] if int(r["score"]) == int(best["score"])]
+        reason = f"「{best['name']}」命中 " + "、".join(best["why"])
+        if tie:
+            conf = "low"
+            reason += f"；但它和「{tie[0]['name']}」同分，得问你一句"
+        return Decision(
+            agent_id=best["agent_id"] if conf == "high" else None,
+            layer=2,
+            score=int(best["score"]),
+            confidence=conf,
+            reason=reason,
+            alternatives=alts,
+        )
+
+    # ── L3 兜底 ────────────────────────────────────────────────
+    if default_agent_id and default_agent_id in by_id:
+        cand = by_id[default_agent_id]
+        return Decision(
+            agent_id=cand.agent_id,
+            layer=3,
+            score=0,
+            confidence="fallback",
+            reason=f"没有哪位助手明确认得这些话，先用当前对话的「{cand.name}」。",
+            alternatives=alts,
+        )
+    if len(by_id) == 1:
+        only = next(iter(by_id.values()))
+        return Decision(
+            agent_id=only.agent_id,
+            layer=3,
+            score=0,
+            confidence="fallback",
+            reason=f"只有一位助手「{only.name}」，就它了。",
+            alternatives=alts,
+        )
+    return Decision(
+        agent_id=None,
+        layer=3,
+        score=0,
+        confidence="unknown",
+        reason="没有哪位助手的名字/标签/描述能对上这些话，也没配规则 —— 需要你选一个。",
+        alternatives=alts,
+    )

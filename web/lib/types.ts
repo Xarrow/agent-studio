@@ -759,6 +759,30 @@ export interface AttentionRead {
   items: AttentionItem[];
 }
 
+/** 一条「收这些话」规则（意图路由的第一层，用户自己写的） */
+export interface RouteRule {
+  id: string;
+  agent_id: string;
+  /** keyword = 子串/词边界；regex = 正则 */
+  kind: "keyword" | "regex";
+  pattern: string;
+  priority: number;
+  enabled: boolean;
+  note?: string | null;
+  updated_at: number;
+}
+
+/** 试算结果：这段话会交给谁、为什么、还有哪些候选 */
+export interface RouteDecision {
+  agent_id: string | null;
+  agent_name?: string;
+  layer: number;
+  score: number;
+  confidence: "explicit" | "rule" | "high" | "low" | "fallback" | "unknown";
+  reason: string;
+  alternatives: { agent_id: string; name: string; score: number; why?: string[]; rule?: string }[];
+}
+
 export interface GuardrailsRead {
   /** 今日额度：used/limit 都是 token；limit=0 表示不限 */
   daily: {

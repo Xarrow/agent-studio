@@ -1046,3 +1046,33 @@ class Event(Base):
     created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
     ended_at: Mapped[int | None] = mapped_column(BigInteger, default=None)
     error: Mapped[str | None] = mapped_column(LongText, default=None)
+
+
+class RouteRule(Base):
+    """「这些话交给这个助手」—— 路由的第一层（用户自己写的，命中就算数）。
+
+    为什么挂在助手身上，而不是一张全局的"路由表"：写这句话的语境就是"我在给这个
+    助手定范围"，放在它自己的配置里，改的时候不用在两处之间对照（这也是"绑定动作
+    归属对象自己的配置页"的同一口径）。
+
+    为什么不用模型分类：分类一次要花一次钱、结果不可复现，而且解释不了"为什么是它"。
+    关键词/正则慢一点笨一点，但用户看得懂、改得动。
+    """
+
+    __tablename__ = "route_rule"
+    __table_args__ = (
+        UniqueConstraint("agent_id", "pattern", name="uq_route_rule"),
+        Index("idx_route_agent", "agent_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("rr_"))
+    agent_id: Mapped[str] = mapped_column(String(32), index=True)
+    #: keyword（子串/词边界）或 regex
+    kind: Mapped[str] = mapped_column(String(16), default="keyword")
+    pattern: Mapped[str] = mapped_column(String(160))
+    #: 越小越优先（写得越具体，越该先看一眼）
+    priority: Mapped[int] = mapped_column(Integer, default=100)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    note: Mapped[str | None] = mapped_column(String(200), default=None)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+    updated_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)

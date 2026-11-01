@@ -13,6 +13,8 @@ import type {
   EvalSuiteRead,
   AttentionRead,
   GuardrailsRead,
+  RouteDecision,
+  RouteRule,
   SkillLifecycle,
   TranscodeResult,
   WorkProbe,
@@ -831,6 +833,14 @@ export const api = {
     }),
   /** 待你处理的事（等你确认 / 停滞 / 失败可重跑）—— 按紧急度排好 */
   attention: () => request<AttentionRead>("/api/runs/attention"),
+  /** 这个助手「收哪些话」（路由规则）+ 给一句话看会交给谁 */
+  routes: (agentId: string) =>
+    request<{ items: RouteRule[]; total: number }>(`/api/routes?agent_id=${encodeURIComponent(agentId)}`),
+  addRoute: (body: { agent_id: string; pattern: string; kind?: "keyword" | "regex"; priority?: number }) =>
+    post<RouteRule>("/api/routes", body),
+  delRoute: (id: string) => del<{ deleted: string }>(`/api/routes/${encodeURIComponent(id)}`),
+  routePreview: (body: { text: string; agent_id?: string; default_agent_id?: string }) =>
+    post<RouteDecision>("/api/routes/preview", body),
   /** 补齐失败的那几路（分派这一步重跑；已成功的路不会重跑） */
   refillFanout: (id: string) =>
     post<{ run_id: string; status: string }>(`/api/runs/${id}/refill`, {}),
