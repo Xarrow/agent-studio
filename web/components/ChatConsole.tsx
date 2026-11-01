@@ -22,6 +22,7 @@ import BgProcsStrip from "@/components/BgProcsStrip";
 import TodoStrip from "@/components/TodoStrip";
 import SessionJobs, { JobButton } from "@/components/SessionJobs";
 import { pushFrame, clearFrame } from "@/lib/browser-frame";
+import { pushSessionLayer, useHistoryLayer } from "@/lib/use-history-layer";
 import { SlashMenu, type CommandItem } from "@/components/SlashMenu";
 import { useImeGuard, isImeEvent } from "@/lib/ime";
 import Markdown from "@/components/Markdown";
@@ -179,6 +180,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     setBrowserActions((prev) => [...prev, ...batch].slice(-60));
   }, []);
   const [browserOpen, setBrowserOpen] = useState(false);
+  /* 左滑/返回键 = 关掉浏览器画面，而不是退出网页（手机上手势会被当成浏览器返回） */
+  useHistoryLayer(browserOpen, () => setBrowserOpen(false));
   /* 执行过程留档：每步动作 + 当时那一屏（后端写在会话目录 browser/<run>/ 下） */
   const [browserSteps, setBrowserSteps] = useState<BrowserStep[]>([]);
   const lastBrowserRun = useRef<string>("");
@@ -1041,6 +1044,18 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   // （Rendered more hooks than during the previous render），整页变错误页（踩过两次）。
   const [navOpen, setNavOpen] = useState(true);
   const [mobileNav, setMobileNav] = useState(false);
+  /* 手机抽屉也是一层历史：左滑先关抽屉（不是退出网页） */
+  useHistoryLayer(mobileNav, () => setMobileNav(false));
+
+  /* 切会话也记一层：手机上左滑回到**上一个会话**，而不是退出网页。
+     抽屉里点会话会顺带关抽屉 —— close() 对非栈顶层只摘记录不回退，
+     所以先 push 会话层，抽屉那条记录随后被静默摘掉，不会多退一级。 */
+  const pickSession = (id: string, takeOver = false) => {
+    if (!id || id === sessionId) return;
+    const prev = sessionId;
+    setSessionId(id);
+    if (prev) pushSessionLayer(() => setSessionId(prev), takeOver);
+  };
   /** 抽屉两个视图：会话（默认）/ 功能与配置。手机上全站只有这一个抽屉，
       功能入口不能另开一个抽屉，也不能塞成横向短标签条（短名和侧栏的完整
       标签对不上，就是"不统一"的来源）。 */
@@ -1148,6 +1163,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
      之前 ≤3 个默认摊开 —— 文件面板带遮罩直接糊在对话上，用户一进会话就被挡（实测反馈）。
      用户手动点过就记住他的选择（localStorage），别每次刷新都跟他对着来。 */
   const openFiles = filesOpenPref ?? false;
+  /* 文件面板同样是一层：打开时左滑关面板，而不是退出网页（手机实测最容易被踩到） */
+  useHistoryLayer(openFiles && fileCount > 0 && sessionId !== "", () => setFilesOpenPref(false));
 
   /* ---- 文件查询 / 删除 ----
      文件多了要能找、能一次删掉几个。搜索只在本会话目录里过滤（名字或后缀），
@@ -1354,7 +1371,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               }
               sessions={sessions}
               sessionId={sessionId}
-              onPick={setSessionId}
+              onPick={pickSession}
               onNew={() => void newChat()}
               onRename={(s) => void renameSession(s)}
               onRemove={(s) => void removeSession(s)}
@@ -1467,7 +1484,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     sessions={sessions}
                     sessionId={sessionId}
                     onPick={(id) => {
-                      setSessionId(id);
+                      pickSession(id, true); // 接管抽屉那条历史，免得左滑出现「空退」
                       setMobileNav(false);
                     }}
                     onNew={() => {
@@ -2941,6 +2958,8 @@ function Bubble({
   const [loadingEv, setLoadingEv] = useState(false);
   /** 完整记录弹框（气泡内自己持有 —— 它是独立组件，不是 ChatConsole 的作用域） */
   const [detailOpen, setDetailOpen] = useState(false);
+  /* 完整记录弹框也能用左滑关掉（手机上返回手势先关弹框，不退页面） */
+  useHistoryLayer(detailOpen, () => setDetailOpen(false));
   /** 这一轮的用量与耗时（历史消息挂载即拉——收起态也要显示 tokens/耗时） */
   const [meta, setMeta] = useState<{ tokens: number; seconds: number } | null>(null);
   /** 就地编辑态 */
