@@ -1522,7 +1522,88 @@ async def _tool_call(name: str, arguments: Any = None) -> str:
     return _render_tool_result(res)
 
 
+DISPATCH_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "task": {"type": "string", "description": "要它做什么、产出什么（写清楚，越具体越好）"},
+        "agent": {"type": "string", "description": "派给谁（助手名字）；不填=第一位干活的助手"},
+        "title": {"type": "string", "description": "这张票叫什么（不填就取 task 前 24 字）"},
+    },
+    "required": ["task"],
+}
+
+
+async def _dispatch(task: str, agent: str | None = None, title: str | None = None) -> str:
+    """把一件事派给一位 worker，**它有自己的会话和上下文**，回来只写一条报告。
+
+    这是 Router 唯一"做事"的方式：它不自己搜、不自己读、不自己写，只决定"派给谁、做什么"。
+    返回值就是 worker 的结果摘要 —— Router 拿到后决定继续派、还是回报给人。
+    """
+    from sqlalchemy import select
+
+    from . import supervisor
+    from .db import SessionLocal
+    from .models import Agent
+    from .runner.ctx import current_run_ctx
+
+    text = (task or "").strip()
+    if not text:
+        return "task 不能为空：写清楚要它做什么。"
+    ctx = current_run_ctx()
+    agent_id = str(ctx.get("agent_id") or "")
+    session_id = str(ctx.get("session_id") or "")
+
+    async with SessionLocal() as session:
+        target = None
+        if agent:
+            row = (
+                await session.execute(select(Agent).where(Agent.name == agent.strip()))
+            ).scalar_one_or_none()
+            if row is None:
+                names = list((await session.execute(select(Agent.name).order_by(Agent.created_at))).scalars())
+                return f"没有叫「{agent}」的助手。现有：{'、'.join(names) or '（一个都没有）'}"
+            target = row
+        if target is None:
+            rows = (await session.execute(select(Agent).order_by(Agent.created_at))).scalars().all()
+            for a in rows:
+                if a.id != agent_id and ((a.definition or {}).get("role") or "worker") != "orchestrator":
+                    target = a
+                    break
+        if target is None:
+            return "没有可派的助手：先去建一个干活（role=worker）的助手。"
+
+        ticket = await supervisor.ensure_ticket(
+            session,
+            thread_id=supervisor.thread_of(session_id),
+            title=(title or text)[:200],
+            agent_id=target.id,
+            source="chat",
+        )
+        run = await supervisor.start_worker(session, ticket, target, text)
+        done = await supervisor.wait_run(session, run.id, timeout_s=900)
+        body = supervisor.summarize(done)
+        kind = "ready" if done.status == "ok" else ("failed" if done.status == "error" else "blocked")
+        await supervisor.report(
+            session, ticket, kind, body or (done.error or ""), run_id=done.id, run_status=done.status
+        )
+        st, label = supervisor.stage_of(ticket)
+        head = f"【{target.name}】{kind}（票 {ticket.id}，现在「{label}」）"
+        return f"{head}\n\n{body or ('（没有产出：' + (done.error or done.status) + '）')}"
+
+
 NATIVE_TOOLS: dict[str, dict[str, Any]] = {
+    "dispatch": {
+        "fn": _dispatch,
+        "description": (
+            "把一件事派给一位 worker 去做：它有自己的会话和上下文，做完只写一条报告回来。"
+            "你自己不要动手做（搜网页、读文件、跑命令），只决定派给谁、做什么。"
+        ),
+        "schema": DISPATCH_SCHEMA,
+        # 按"只读"对待：派活本身不改任何外部状态（真正的写发生在 worker 自己的工具里，
+        # 由那个会话的权限策略把关）。按非只读处理的话，AgentScope 会在每次派活前要人确认 ——
+        # 定时/事件触发的场景会直接卡死在 waiting_hitl（fork 当年就是这么踩的）。
+        "flags": {"read_only": True, "concurrency_safe": False, "dangerous": False, "native": True},
+    },
     "fetch": {
         "fn": _fetch,
         "description": "抓取一个网页或接口，返回文本（HTML 自动转成可读文本）。不能访问内网地址。",

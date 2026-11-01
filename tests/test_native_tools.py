@@ -27,6 +27,7 @@ def test_builtin_registry_shape():
         "python",
         "memory_search",
         "memory_save",
+        "dispatch",
         "browser",
         # 跨会话检索：用户问"以前聊过什么"时用
         "session_search",

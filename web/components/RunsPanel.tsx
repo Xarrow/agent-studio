@@ -167,13 +167,6 @@ export function RunsPanel() {
   /** 待办（等你确认 / 停滞 / 失败可重跑）—— 工具条上一颗常驻数字，点开就地列出 */
   const [attention, setAttention] = useState<AttentionRead | null>(null);
   const [attentionOpen, setAttentionOpen] = useState(false);
-  /** 新建一次编排（就地展开，不做弹窗/画布） */
-  const [newOpen, setNewOpen] = useState(false);
-  const [newMode, setNewMode] = useState<"single" | "serial" | "parallel" | "master_worker">("master_worker");
-  /** 参与者：点的顺序就是执行顺序；主从模式下第一位是汇总者 */
-  const [picked, setPicked] = useState<string[]>([]);
-  const [newTask, setNewTask] = useState("");
-  const [newBusy, setNewBusy] = useState(false);
   /** 分页：一页 50 条，「加载更多」往后翻（游标式 —— 翻页时新记录插进来也不会错位） */
   const [hasMore, setHasMore] = useState(false);
   const [serverTotal, setServerTotal] = useState(0);
@@ -541,55 +534,6 @@ export function RunsPanel() {
     [fb],
   );
 
-  /**
-   * 发起一次编排。
-   *
-   * 模式语义（和画布那套一致，这里用一句话就能表达）：
-   *   单个  —— 一位助手干一件
-   *   串行  —— 按点的顺序接力，后一步**接上一步的产出**（只有串行线才传产出）
-   *   并行  —— 同时开始，谁都不接谁的产出
-   *   主从  —— 第一位当汇总者：拆活 → 其余并行干 → 它收口并验证
-   */
-  const startNewOrch = async () => {
-    const ids = picked;
-    if (!ids.length || !newTask.trim()) return;
-    setNewBusy(true);
-    try {
-      const isMW = newMode === "master_worker";
-      // 主从 = **编排者在入口**：用户只指定谁来拆活与汇总，其余人交它自己挑
-      // （steps 留空、给 roster）。其余模式才是"用户点名谁干"。
-      const orc = await api.createOrchestration(
-        isMW
-          ? {
-              mode: "master_worker",
-              worker_mode: "parallel",
-              master_agent_id: ids[0],
-              roster: agents.map((a) => a.id).filter((id) => id !== ids[0]),
-              steps: [],
-              task: newTask.trim(),
-            }
-          : {
-              mode: newMode,
-              steps: ids.map((agent_id, i) => ({
-                agent_id,
-                // 串行模式下第二步起才接上一步产出；并行一律不接
-                carry_prev: newMode === "serial" && i > 0,
-              })),
-              task: newTask.trim(),
-            },
-      );
-      setNewOpen(false);
-      setPicked([]);
-      setNewTask("");
-      await load();
-      fb.info?.("编排已开始", orc.name || "跑起来了，列表最上面那条");
-    } catch (e) {
-      fb.error("没能开始编排", e instanceof Error ? e.message : String(e));
-    } finally {
-      setNewBusy(false);
-    }
-  };
-
   return (
     <div className="flex flex-col gap-2.5">
       {/* ── 工具条（一行）：类型段控 · 搜索 · 状态 · 助手 · 用量 · ⋯ ──────
@@ -672,32 +616,6 @@ export function RunsPanel() {
           className="ml-auto flex flex-wrap items-center gap-2 max-md:order-5"
           style={{ minWidth: 0 }}
         >
-          {/* 主操作常驻可见（用户口径：收进 ⋯ = 藏起来了） */}
-          <button
-            type="button"
-            data-tap
-            className="btn btn-sm"
-            style={{
-              background: newOpen ? "var(--color-accent)" : undefined,
-              color: newOpen ? "#fff" : "var(--color-accent)",
-              borderColor: "var(--color-accent)",
-            }}
-            aria-expanded={newOpen}
-            title="挑几位助手，立刻跑一次编排（串行 / 并行 / 主从）"
-            onClick={() =>
-              setNewOpen((v) => {
-                const next = !v;
-                // 打开时先把「编排者」选上：用户委托的是它，不是某位干活的
-                if (next && picked.length === 0) {
-                  const pref = agents.find((a) => a.name.includes("编排")) ?? null;
-                  if (pref) setPicked([pref.id]);
-                }
-                return next;
-              })
-            }
-          >
-            {newOpen ? "收起" : "新建编排"}
-          </button>
           {/* 用量一行 —— 老版四张卡的位置。数字一个不少，只是不再各占一张卡。 */}
           {usage && (
             <button
@@ -808,146 +726,6 @@ export function RunsPanel() {
           </div>
         </div>
 
-          {/* 新建编排（就地展开一行：模式 · 参与者 · 任务 · 开始跑）。
-              为什么不给画布：用户明确不要画布；"一行一对象 + 就地展开"就够表达
-              串行/并行/主从 —— 点选的顺序就是执行顺序，比连线少一半动作。 */}
-          {newOpen && (
-            <div
-              className="w-full basis-full max-md:order-8 flex flex-col gap-2 border-t pt-2"
-              style={{ borderColor: "var(--color-border)", minWidth: 0, width: "100%" }}
-            >
-              <div className="flex flex-wrap items-center gap-2 text-[12.5px]">
-                <span style={{ color: "var(--color-muted)" }}>模式</span>
-                <div
-                  className="flex items-center gap-0.5 rounded-[8px] border p-0.5"
-                  style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
-                >
-                  {(
-                    [
-                      ["master_worker", "编排者拆活"],
-                      ["serial", "串行（接力）"],
-                      ["parallel", "并行（各干各的）"],
-                      ["single", "单个"],
-                    ] as const
-                  ).map(([m, label]) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => setNewMode(m)}
-                      className="min-h-[36px] whitespace-nowrap rounded-[6px] px-2.5 text-[12px] max-md:h-[44px]"
-                      style={{
-                        background: newMode === m ? "var(--color-accent)" : undefined,
-                        color: newMode === m ? "#fff" : "var(--color-muted)",
-                      }}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <span style={{ color: "var(--color-muted)" }}>
-                  {newMode === "master_worker"
-                    ? "只指定谁来拆活与汇总：派给谁、派几路由它自己定"
-                    : newMode === "serial"
-                      ? "按点的顺序接力，后一步接上一步的产出"
-                      : newMode === "parallel"
-                        ? "同时开始，谁都不接谁的产出"
-                        : "一位助手干完这一件"}
-                </span>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-1.5" style={{ minWidth: 0 }}>
-                <span className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
-                  {newMode === "master_worker" ? "编排者" : "参与者"}
-                </span>
-                {agents.map((a) => {
-                  const at = picked.indexOf(a.id);
-                  const on = at >= 0;
-                  return (
-                    <button
-                      key={a.id}
-                      type="button"
-                      data-tap
-                      onClick={() =>
-                        newMode === "master_worker"
-                          ? setPicked([a.id])
-                          : setPicked((prev) =>
-                              prev.includes(a.id) ? prev.filter((x) => x !== a.id) : [...prev, a.id],
-                            )
-                      }
-                      title={
-                        newMode === "master_worker"
-                          ? "它来拆活与汇总（点别人可换）"
-                          : "点一下加进来，点的顺序就是执行顺序"
-                      }
-                      className="flex h-[32px] items-center gap-1 rounded-full border px-2.5 text-[12px] max-md:h-[44px]"
-                      style={{
-                        borderColor: on ? "var(--color-accent)" : "var(--color-border)",
-                        color: on ? "var(--color-accent)" : "var(--color-muted)",
-                        background: on ? "var(--color-accent-soft, rgba(37,99,235,.08))" : undefined,
-                      }}
-                    >
-                      {on && (
-                        <span className="tabular-nums" aria-hidden>
-                          {newMode === "master_worker" ? "编" : at + 1}
-                        </span>
-                      )}
-                      {a.name}
-                    </button>
-                  );
-                })}
-                {newMode === "master_worker" && picked.length === 1 && (
-                  <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
-                    其余 {Math.max(agents.length - 1, 0)} 位由它挑
-                  </span>
-                )}
-                {picked.length > 0 && newMode !== "master_worker" && (
-                  <button
-                    type="button"
-                    className="text-[12px] underline decoration-dotted"
-                    style={{ color: "var(--color-muted)" }}
-                    onClick={() => setPicked([])}
-                  >
-                    清空
-                  </button>
-                )}
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2" style={{ minWidth: 0 }}>
-                <input
-                  className="input input-inline h-[36px] max-md:h-[44px] min-w-0 flex-1"
-                  placeholder="这次要干什么？（例如：把本周零散记录整理成三条结论）"
-                  value={newTask}
-                  onChange={(e) => setNewTask(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") void startNewOrch();
-                  }}
-                />
-                <button
-                  type="button"
-                  data-tap
-                  className="btn btn-sm max-md:h-[44px]"
-                  style={{ background: "var(--color-accent)", color: "#fff", borderColor: "var(--color-accent)" }}
-                  disabled={
-                    newBusy ||
-                    !newTask.trim() ||
-                    picked.length === 0 ||
-                    (newMode === "master_worker" && picked.length !== 1) ||
-                    (newMode === "serial" && picked.length < 2)
-                  }
-                  onClick={() => void startNewOrch()}
-                >
-                  {newBusy ? "正在起…" : "开始跑"}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-sm max-md:h-[44px]"
-                  onClick={() => setNewOpen(false)}
-                >
-                  取消
-                </button>
-              </div>
-            </div>
-          )}
           {/* 护栏（点「用量」就地展开一行，不弹框、不跳页）：三档全是枚举，
               选完立刻生效 —— 这三条是"别在没人看着的时候烧光额度"的唯一旋钮。 */}
           {guardOpen && (

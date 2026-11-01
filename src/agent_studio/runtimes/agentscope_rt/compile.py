@@ -378,6 +378,9 @@ CORE_TOOL_NAMES: frozenset[str] = frozenset(
         "web_search",
         "skill_save",
         "fork",
+        # 派活是 Router 的**核心动作**，必须直接下发：走 tool_call 会被权限引擎当成
+        # "执行任意工具"要求人确认，事件/定时触发时直接卡死在 waiting_hitl（实测踩到）
+        "dispatch",
     }
 )
 
@@ -399,7 +402,8 @@ ORCHESTRATOR_ALLOW_TOOLS: frozenset[str] = frozenset(
         # 只保留"认路"用的：看技能目录（不读正文）、检索工具表
         "Skill",
         "skill_viewer",
-        # 派活
+        # 派活：dispatch 开一张票、建一个独立 worker 会话；fork 是旧的同会话分派（保留兼容）
+        "dispatch",
         "fork",
         # 按需取用（懒加载三步）——它只能取到上面这些，取不到被摘掉的执行工具
         "tool_search",

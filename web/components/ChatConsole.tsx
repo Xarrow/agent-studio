@@ -923,36 +923,6 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     }
   };
 
-  /**
-   * 一句话拆给几位一起干：走编排（master_worker），几位并行、最后由汇总者收口。
-   * 不走"连着起几个 run" —— 并行跑完总得有人并起来、还得看得见哪一路错了。
-   */
-  const runFanout = async (text: string, ids: string[], master: string) => {
-    setRouteAsk(null);
-    setBusy(true);
-    try {
-      const r = await api.orchestrateFromRoute({
-        input: text,
-        agent_ids: ids,
-        master_agent_id: master || undefined,
-        origin: "chat",
-      });
-      const workers = r.worker_names.filter(Boolean).join("、") || "几位助手";
-      setRouteNote({
-        name: r.master_name || "汇总者",
-        reason: `已拆给 ${workers} 并行干，由「${r.master_name}」汇总`,
-        switched: false,
-        href: "/runs",
-      });
-      setInput("");
-      setPendingFiles([]);
-    } catch (e) {
-      fb.error("没能拆给几位一起跑", e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const send = async (override?: unknown) => {
     // 允许传文本进来（重试时用）—— 传进来的可能是事件对象，所以只认字符串
     const text = (typeof override === "string" ? override : input).trim();
@@ -2422,36 +2392,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
-                      {routeAsk.multi.length >= 2 ? "这句有几位都沾边：" : "这句该交给谁？"}
+                      这句该交给谁？
                     </span>
-                    {/* 一起干优先摆出来：路由认为这句话同时落在几个人的能力范围里，
-                        并行跑再由其中一位汇总，比硬挑一个更接近用户本意 */}
-                    {routeAsk.multi.length >= 2 && (
-                      <button
-                        data-tap
-                        type="button"
-                        className="btn h-[32px] px-3 text-[12.5px] max-md:h-[44px]"
-                        style={{
-                          background: "var(--color-accent)",
-                          color: "#fff",
-                          borderColor: "var(--color-accent)",
-                        }}
-                        title={`${routeAsk.multi.map((m) => m.name).join("、")} 并行跑，最后由汇总者把结论并起来`}
-                        onClick={() =>
-                          void runFanout(
-                            routeAsk.text,
-                            routeAsk.multi.map((m) => m.agent_id),
-                            routeAsk.master,
-                          )
-                        }
-                      >
-                        一起跑（{routeAsk.multi
-                          .filter((m) => m.agent_id !== routeAsk.master)
-                          .map((m) => m.name)
-                          .join(" + ")}{" "}
-                        并行 → {routeAsk.multi.find((m) => m.agent_id === routeAsk.master)?.name ?? "?"} 汇总）
-                      </button>
-                    )}
                     {(routeAsk.multi.length >= 2 ? routeAsk.multi : routeAsk.options).map((o) => (
                       <button
                         key={o.agent_id}
