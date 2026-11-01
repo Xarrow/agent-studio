@@ -74,12 +74,18 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     text: string;
     reason: string;
     options: { agent_id: string; name: string }[];
+    /** 值得一起干的几位（≥2 才有意义）；空 = 只是"选一位" */
+    multi: { agent_id: string; name: string }[];
+    /** 一起跑时谁汇总 */
+    master: string;
   } | null>(null);
   /** 刚刚这句话交给了谁 + 为什么（常驻在输入框上方，不用翻日志） */
   const [routeNote, setRouteNote] = useState<{
     name: string;
     reason: string;
     switched: boolean;
+    /** 扇出跑的是编排、没有 run 可挂流 —— 给一个去看它的入口 */
+    href?: string;
   } | null>(null);
 
   useEffect(() => {
@@ -879,6 +885,10 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
         setLive(null);
         setInput("");
         setPendingFiles([]);
+        const multi = (res.decision.multi ?? []).map((m) => ({
+          agent_id: m.agent_id,
+          name: m.name || m.agent_id,
+        }));
         setRouteAsk({
           text,
           reason: res.decision.reason,
@@ -886,6 +896,9 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             agent_id: a.agent_id,
             name: a.name || a.agent_id,
           })),
+          multi,
+          // 汇总者：优先路由选中的那位（它就是分最高/规则命中的），否则第一位
+          master: res.decision.agent_id || multi[0]?.agent_id || "",
         });
         return;
       }
@@ -906,6 +919,36 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     } catch (e) {
       setFailed({ text, message: e instanceof Error ? e.message : String(e) });
       setLive(null);
+      setBusy(false);
+    }
+  };
+
+  /**
+   * 一句话拆给几位一起干：走编排（master_worker），几位并行、最后由汇总者收口。
+   * 不走"连着起几个 run" —— 并行跑完总得有人并起来、还得看得见哪一路错了。
+   */
+  const runFanout = async (text: string, ids: string[], master: string) => {
+    setRouteAsk(null);
+    setBusy(true);
+    try {
+      const r = await api.orchestrateFromRoute({
+        input: text,
+        agent_ids: ids,
+        master_agent_id: master || undefined,
+        origin: "chat",
+      });
+      const workers = r.worker_names.filter(Boolean).join("、") || "几位助手";
+      setRouteNote({
+        name: r.master_name || "汇总者",
+        reason: `已拆给 ${workers} 并行干，由「${r.master_name}」汇总`,
+        switched: false,
+        href: "/runs",
+      });
+      setInput("");
+      setPendingFiles([]);
+    } catch (e) {
+      fb.error("没能拆给几位一起跑", e instanceof Error ? e.message : String(e));
+    } finally {
       setBusy(false);
     }
   };
@@ -2379,9 +2422,37 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
-                      这句该交给谁？
+                      {routeAsk.multi.length >= 2 ? "这句有几位都沾边：" : "这句该交给谁？"}
                     </span>
-                    {routeAsk.options.map((o) => (
+                    {/* 一起干优先摆出来：路由认为这句话同时落在几个人的能力范围里，
+                        并行跑再由其中一位汇总，比硬挑一个更接近用户本意 */}
+                    {routeAsk.multi.length >= 2 && (
+                      <button
+                        data-tap
+                        type="button"
+                        className="btn h-[32px] px-3 text-[12.5px] max-md:h-[44px]"
+                        style={{
+                          background: "var(--color-accent)",
+                          color: "#fff",
+                          borderColor: "var(--color-accent)",
+                        }}
+                        title={`${routeAsk.multi.map((m) => m.name).join("、")} 并行跑，最后由汇总者把结论并起来`}
+                        onClick={() =>
+                          void runFanout(
+                            routeAsk.text,
+                            routeAsk.multi.map((m) => m.agent_id),
+                            routeAsk.master,
+                          )
+                        }
+                      >
+                        一起跑（{routeAsk.multi
+                          .filter((m) => m.agent_id !== routeAsk.master)
+                          .map((m) => m.name)
+                          .join(" + ")}{" "}
+                        并行 → {routeAsk.multi.find((m) => m.agent_id === routeAsk.master)?.name ?? "?"} 汇总）
+                      </button>
+                    )}
+                    {(routeAsk.multi.length >= 2 ? routeAsk.multi : routeAsk.options).map((o) => (
                       <button
                         key={o.agent_id}
                         data-tap
@@ -2425,6 +2496,17 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                   <span className="truncate" title={routeNote.reason}>
                     {routeNote.reason}
                   </span>
+                  {routeNote.href && (
+                    <a
+                      href={routeNote.href}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="shrink-0 underline"
+                      style={{ color: "var(--color-accent)" }}
+                    >
+                      看编排
+                    </a>
+                  )}
                 </div>
               )}
 

@@ -20,6 +20,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -119,6 +120,93 @@ async def _get_or_404(session: AsyncSession, orc_id: str) -> Orchestration:
     if orc is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"编排不存在: {orc_id}")
     return orc
+
+
+class FromRouteIn(BaseModel):
+    """路由判定「这句话该几个人一起干」之后，直接把那次扇出起起来。"""
+
+    input: str
+    #: 一起干的助手（≥2 位）。第一位之外的都当干活的，第一位/指定的当汇总者
+    agent_ids: list[str]
+    #: 汇总者（不填 = agent_ids[0]）
+    master_agent_id: str | None = None
+    origin: str | None = "chat"
+
+
+@router.post("/from-route", response_model=dict)
+async def orchestration_from_route(
+    payload: FromRouteIn, session: AsyncSession = Depends(get_session)
+) -> dict[str, Any]:
+    """一句话拆给几位助手并行干，再由其中一位汇总。
+
+    为什么走编排而不是"连着起几个 run"：并行跑完总得有人把几路的结论并起来，
+    并且要能看见哪一路错了 —— 这些编排器已经做完了（含汇总前验证）。这里只负责
+    把「路由选出来的人」翻译成一份 master_worker 的 spec。
+
+    语义对齐画布：**worker 之间不连线**（=并行、互不依赖），只有汇入汇总者的那一步
+    才带产出。所以 worker_mode 固定 parallel，步骤一律 carry_prev=False。
+    """
+    task = (payload.input or "").strip()
+    if not task:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "任务描述不能为空")
+
+    ids = [a for a in dict.fromkeys(payload.agent_ids or []) if a]
+    if len(ids) < 2:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, "至少要两位助手才谈得上扇出"
+        )
+
+    found = (await session.execute(select(Agent.id).where(Agent.id.in_(ids)))).scalars().all()
+    missing = sorted(set(ids) - set(found))
+    if missing:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"这些助手不存在: {', '.join(missing)}")
+
+    master = payload.master_agent_id or ids[0]
+    if master not in ids:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "汇总者不在这几位里")
+    workers = [a for a in ids if a != master]
+    if not workers:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, "除了汇总者之外还得有一位干活的"
+        )
+
+    spec: dict[str, Any] = {
+        "mode": "master_worker",
+        "worker_mode": "parallel",
+        "master_agent_id": master,
+        "steps": [{"agent_id": a, "carry_prev": False} for a in workers],
+        "task": task,
+        "acceptance": [],
+        "on_hitl": "wait",
+        "origin": payload.origin or "chat",
+    }
+    spec = await freeze_spec(session, spec)
+
+    names = {
+        a.id: a.name
+        for a in (await session.execute(select(Agent).where(Agent.id.in_(ids)))).scalars()
+    }
+    orc = Orchestration(
+        name=f"扇出 · {task[:24]}",
+        mode="master_worker",
+        worker_mode="parallel",
+        spec=spec,
+        input={"text": task},
+        status="pending",
+        started_at=now_ms(),
+    )
+    session.add(orc)
+    await session.commit()
+    await session.refresh(orc)
+
+    asyncio.create_task(orchestrator.run(orc.id, spec))
+    return {
+        "orchestration_id": orc.id,
+        "master_agent_id": master,
+        "master_name": names.get(master, ""),
+        "worker_ids": workers,
+        "worker_names": [names.get(a, "") for a in workers],
+    }
 
 
 # --------------------------------------------------------------------------- #

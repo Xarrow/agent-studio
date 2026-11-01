@@ -849,6 +849,20 @@ export const api = {
     origin?: string;
     force_agent_id?: string;
   }) => post<AutoStartResult>("/api/runs/auto-start", body),
+  /** 一句话拆给几位助手并行干，再由其中一位汇总（路由选出来的人 → 一次 master_worker） */
+  orchestrateFromRoute: (body: {
+    input: string;
+    agent_ids: string[];
+    master_agent_id?: string;
+    origin?: string;
+  }) =>
+    post<{
+      orchestration_id: string;
+      master_agent_id: string;
+      master_name: string;
+      worker_ids: string[];
+      worker_names: string[];
+    }>("/api/orchestrations/from-route", body),
   /** 补齐失败的那几路（分派这一步重跑；已成功的路不会重跑） */
   refillFanout: (id: string) =>
     post<{ run_id: string; status: string }>(`/api/runs/${id}/refill`, {}),

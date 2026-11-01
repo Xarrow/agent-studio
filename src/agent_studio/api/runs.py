@@ -227,7 +227,8 @@ async def auto_start(
     confident = d.confidence in ("rule", "high", "explicit") or (
         d.confidence == "fallback" and len(cands) == 1
     )
-    if not confident or not d.agent_id:
+    # 两位以上都沾边 → 不替用户决定"合并干还是单跑"（合并要花多份钱，也可能不需要）
+    if not confident or not d.agent_id or len(d.multi) >= 2:
         return {"kind": "needs_choice", "decision": decision}
 
     agent = next(a for a in agents if a.id == d.agent_id)

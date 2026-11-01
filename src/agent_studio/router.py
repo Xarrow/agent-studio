@@ -89,6 +89,10 @@ class Decision:
     confidence: str
     reason: str
     alternatives: list[dict[str, Any]] = field(default_factory=list)
+    #: 「这句话值得几个人一起干」的候选（≥2 位才填）。
+    #: 和 ``alternatives`` 的区别：alternatives 是"也可以给谁"（二选一），
+    #: multi 是"这几位都沾边、一起干更好"（扇出 + 汇总）。
+    multi: list[dict[str, Any]] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -98,6 +102,7 @@ class Decision:
             "confidence": self.confidence,
             "reason": self.reason,
             "alternatives": self.alternatives,
+            "multi": self.multi,
         }
 
 
@@ -330,6 +335,37 @@ def _alts(
     return out
 
 
+#: 一起干的门槛：第二位至少要够到最高分的这个比例
+MULTI_RATIO = 0.6
+
+
+def _multi(rows: list[dict[str, Any]], limit: int = 3) -> list[dict[str, Any]]:
+    """哪几位值得一起干。
+
+    判据刻意简单：最高分够"敢派"，且第二位也够到最高分的 6 成 —— 说明这句话
+    同时落在两个人的能力范围里。差得远的（4 成以下）宁可只给一位：多派一路就是
+    多一份钱、多一份要汇总的噪音，而扇出本身不便宜。
+    """
+    if not rows:
+        return []
+    hi = int(rows[0].get("score") or 0)
+    if hi < HIGH_SCORE:
+        return []
+    floor = max(HIGH_SCORE, int(hi * MULTI_RATIO))
+    picked = [r for r in rows if int(r.get("score") or 0) >= floor][:limit]
+    if len(picked) < 2:
+        return []
+    return [
+        {
+            "agent_id": r["agent_id"],
+            "name": r["name"],
+            "score": int(r.get("score") or 0),
+            "why": list(r.get("why") or r.get("rule") or []),
+        }
+        for r in picked
+    ]
+
+
 def route(
     text: str,
     *,
@@ -373,6 +409,13 @@ def route(
                 ],
                 exclude=top.agent_id,
             ),
+            # 不止一位助手配了命中同一句话的规则 → 这句话本来就该几个人一起干
+            multi=_multi(
+                [
+                    {"agent_id": h.agent_id, "name": by_id[h.agent_id].name, "score": W_RULE, "rule": h.pattern}
+                    for h in hits
+                ]
+            ),
         )
 
     # ── L2 内容打分 ─────────────────────────────────────────────
@@ -393,6 +436,7 @@ def route(
             confidence=conf,
             reason=reason,
             alternatives=_alts(rows[:4], exclude=best["agent_id"] if conf == "high" else None),
+            multi=_multi(rows),
         )
 
     # ── L3 兜底 ────────────────────────────────────────────────

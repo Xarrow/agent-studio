@@ -793,6 +793,8 @@ export interface RouteDecision {
   confidence: "explicit" | "rule" | "high" | "low" | "fallback" | "unknown";
   reason: string;
   alternatives: { agent_id: string; name: string; score: number; why?: string[]; rule?: string }[];
+  /** 这句话值得几个人一起干的候选（≥2 位才非空）—— 与 alternatives 的「二选一」不同 */
+  multi?: { agent_id: string; name: string; score: number; why?: string[] }[];
 }
 
 export interface GuardrailsRead {
