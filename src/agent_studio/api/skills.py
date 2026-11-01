@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -36,6 +38,8 @@ from ..skills_repo import (
 )
 
 router = APIRouter(prefix="/api/skills", tags=["skills"])
+
+logger = logging.getLogger(__name__)
 
 _FRONTMATTER = re.compile(r"^---\s*\n(.*?)\n---\s*\n?", re.DOTALL)
 
@@ -391,9 +395,19 @@ async def delete_skill(skill_id: str, session: AsyncSession = Depends(get_sessio
     row = await session.get(Skill, skill_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Skill 不存在: {skill_id}")
+    name = row.name
     await session.execute(delete(AgentSkill).where(AgentSkill.skill_id == skill_id))
     await session.delete(row)
     await session.commit()
+    # DB 删了、磁盘还留着 = 工作目录里永远有这份「不存在的技能」，看着像删不掉。
+    # 只动技能库里那一个目录（名字由 DB 决定，不接受外部路径）。
+    try:
+        target = (settings.work_dir / "skills" / name).resolve()
+        root = (settings.work_dir / "skills").resolve()
+        if target.parent == root and target.is_dir():
+            shutil.rmtree(target)
+    except OSError:  # 删不掉不该让接口失败（DB 已经提交）
+        logger.warning("技能已从库里删除，但磁盘目录清理失败: %s", name, exc_info=True)
 
 
 # --------------------------------------------------------------------------- #
