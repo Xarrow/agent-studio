@@ -1002,6 +1002,8 @@ class OrchestrationCreate(BaseModel):
     task: str
     #: 显示名（可空，服务端按模式自动起一个）
     name: str | None = None
+    #: 完成判据：写成几句"做完意味着什么"，跑完会逐条对照并在汇总里报未覆盖的
+    acceptance: list[str] | None = None
     #: 中途要人工确认时怎么办：wait（默认，结果页给允许/拒绝）| abort（直接中止）
     #: 定时/外部触发这类无人值守场景传 abort —— 没人能点，等着只是白等
     on_hitl: str = "wait"

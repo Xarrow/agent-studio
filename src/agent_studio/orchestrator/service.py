@@ -56,12 +56,18 @@ HITL_WAIT_S = 900
 #: ``definition_snapshot``（所以"到底给它什么交代"是可追溯、可复查的 ✓）。
 ORCHESTRATOR_BRIEF = """你是这条流程的**编排者**，对整条流程的结果负责（而不是只做完手里这一小步）：
 
+**边界（硬规则，先记住这一条）**
+- 你**不亲自执行**：不跑命令、不写文件、不跑测试。平台没有把这些工具发给你 —— 如果你发现自己需要"直接动手"，那说明该把一个 worker 派下去。
+- 你**只看结论与证据**，不去读别人的工具日志；要细节就让对方补交证据。
+- 你**不直接对用户说话**：结论回到编排汇总，由平台统一出口。
+- 你的总结里每个断言都要能指到具体证据（文件行、命令输出、跑过的测试）。没有证据的判断写成"未验证"，不许当事实陈述。
+
 1) **分析任务** —— 先把用户的目标拆清楚：这一步要产出什么、下游需要什么、判断标准是什么；
    目标含糊就把它收敛成可执行的一条，不要笼统复述。
 2) **管理上下文** —— 只保留与目标相关的事实，把上游与自己的产出整理成**结构化**的上下文；
-   无关信息丢掉，冲突的信息明确指出。
-3) **验证结果** —— 对拿到的产出做核验：有没有缺项、有没有自相矛盾、有没有声称做了但其实没做的；
-   验证结论要写出来（通过/不通过 + 依据）。
+   无关信息丢掉，冲突的信息明确指出（"A 说 X，B 说非 X，依据分别是…"）。
+3) **验证结果** —— 对拿到的产出做核验：有没有缺项、有没有自相矛盾、有没有声称做了但其实没做的
+   （声称改了文件就去看文件是否真变了；声称跑了测试就要求退出码）；验证结论要写出来（通过/不通过 + 依据）。
 4) **归纳总结** —— 给出结论性交付：先给结论，再给依据与关键证据；最后明确列出
    **待确认项 / 风险 / 建议的下一步**。
 
@@ -197,6 +203,7 @@ class Orchestrator:
             status=self._status_of([done]),
             output={"content": self._text(done)},
             runs=[done],
+            acceptance=self._acceptance(spec),
         )
 
     async def _serial(self, orc_id: str, spec: dict[str, Any]) -> None:
@@ -226,6 +233,7 @@ class Orchestrator:
             status=self._status_of(done),
             output={"content": prev_text or ""},
             runs=done,
+            acceptance=self._acceptance(spec),
         )
 
     async def _parallel(self, orc_id: str, spec: dict[str, Any]) -> None:
@@ -259,8 +267,9 @@ class Orchestrator:
         await self._finish(
             orc_id,
             status=self._status_of(done),
-            output={"content": _last or "\n\n".join(parts)},
+            output={"content": "\n\n".join(parts)},
             runs=done,
+            acceptance=self._acceptance(spec),
         )
 
     async def _dag(self, orc_id: str, spec: dict[str, Any]) -> None:
@@ -413,6 +422,7 @@ class Orchestrator:
             status=self._status_of(done),
             output={"content": "\n\n".join(parts)},
             runs=done,
+            acceptance=self._acceptance(spec),
         )
 
     async def _deposit_memory(self, run: Run, to_agent_id: str, content: str) -> None:
@@ -524,6 +534,7 @@ class Orchestrator:
             status=self._status_of(done),
             output={"content": self._text(sum_done)},
             runs=done,
+            acceptance=self._acceptance(spec),
         )
 
     # ------------------------------------------------------------------ #
@@ -725,13 +736,31 @@ class Orchestrator:
             merged = "\n\n".join(
                 f"## {it['label']}\n{it['summary']}" for it in result.get("items") or []
             )
+            # 每一路都是独立结论 —— **逐路核引用**，别拼成一大坨再核（那时就分不清是谁说的）
+            from . import verify as _verify
+
+            _wd = str(child_snapshot.get("workspace") or "") or None
+            _res = [
+                _verify.verify_run(
+                    run_id=f"{run.id}#{it.get('index')}",
+                    name=str(it.get("label") or f"第 {int(it.get('index') or 0) + 1} 项"),
+                    status=str(it.get("status") or ""),
+                    text=str(it.get("summary") or ""),
+                    workdir=_wd,
+                )
+                for it in (result.get("items") or [])
+            ]
+            _sum = _verify.summarise(_res) if _res else {}
+            _block = _verify.render_block(_sum)
+            if _block:
+                merged = f"{merged}\n\n{_block}".strip()
             # 有路在等人工确认 → 这一步标「等你确认」（画布/记录上直接看得见要人做什么），
             # 而不是假装跑完了，也不是硬等到超时。确认完再重跑这一步即可收拢（幂等）。
             if result.get("waiting"):
                 fresh.status = "waiting_hitl"
             else:
                 fresh.status = "ok" if result.get("succeeded") else "error"
-            fresh.output = {"content": merged}
+            fresh.output = {"content": merged, **({"verification": _sum} if _block else {})}
             fresh.usage = {
                 **(fresh.usage or {}),
                 "fanout": {
@@ -990,9 +1019,16 @@ class Orchestrator:
         output: dict[str, Any] | None = None,
         error: str | None = None,
         runs: list[Run] | None = None,
+        acceptance: list[str] | None = None,
     ) -> None:
-        """落终态：状态、最终结果、错误、汇总用量。"""
+        """落终态：状态、最终结果、错误、汇总用量。
+
+        汇总前先过一遍**验证层**（引用核验 / 冲突 / 覆盖）：多路文本拼起来当结论
+        等于没验证，幻觉会被原样呈给用户。这里把能机械核的东西核掉，并在结论
+        末尾追加几行"哪处找不到、哪两条打架、哪条判据没覆盖"。
+        """
         usage = self._merge_usage(runs or [])
+        output = self._with_verification(output, runs or [], acceptance)
         async with SessionLocal() as session:
             orc = await session.get(Orchestration, orc_id)
             if orc is None:  # pragma: no cover
@@ -1005,6 +1041,44 @@ class Orchestrator:
             orc.usage = usage
             orc.ended_at = now_ms()
             await session.commit()
+
+    @staticmethod
+    def _with_verification(
+        output: dict[str, Any] | None,
+        runs: list[Run],
+        acceptance: list[str] | None,
+    ) -> dict[str, Any] | None:
+        """把验证结果并进 output（``content`` 末尾追加一块人话，另存结构化 ``verification``）。
+
+        没有可报内容时**一个字都不加** —— 干净的结果不该被"验证通过"这种噪声占地方。
+        """
+        from . import verify as _verify
+
+        if not runs:
+            return output
+        workdir = ""
+        for r in runs:
+            workdir = str(((r.definition_snapshot or {}).get("workspace") or "")) or workdir
+            if workdir:
+                break
+        results = [
+            _verify.verify_run(
+                run_id=r.id,
+                name=Orchestrator._agent_name_of(r),
+                status=str(r.status or ""),
+                text=Orchestrator._text(r),
+                workdir=workdir or None,
+            )
+            for r in runs
+        ]
+        summary = _verify.summarise(results, acceptance=acceptance)
+        block = _verify.render_block(summary)
+        if not block:
+            return output
+        merged = dict(output or {})
+        merged["verification"] = summary
+        merged["content"] = (str(merged.get("content") or "").rstrip() + "\n\n" + block).strip()
+        return merged
 
     async def _patch(self, orc_id: str, **fields: Any) -> None:
         async with SessionLocal() as session:
@@ -1041,6 +1115,18 @@ class Orchestrator:
     @staticmethod
     def _task(spec: dict[str, Any]) -> str:
         return str(spec.get("task") or "").strip()
+
+    @staticmethod
+    def _acceptance(spec: dict[str, Any]) -> list[str]:
+        """这份编排的**完成判据**（用户或编排者写下的"做完意味着什么"）。
+
+        没有它，验证层只能核引用、无法判断"够不够" —— 所以留空是允许的，
+        但界面上给了入口，写了的就会逐条对照并报 gap。
+        """
+        raw = spec.get("acceptance") or []
+        if isinstance(raw, str):
+            raw = [ln for ln in raw.splitlines()]
+        return [str(x).strip() for x in raw if str(x).strip()][:12]
 
     @staticmethod
     def _steps(spec: dict[str, Any]) -> list[dict[str, Any]]:

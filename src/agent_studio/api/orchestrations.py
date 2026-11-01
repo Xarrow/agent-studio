@@ -155,6 +155,8 @@ async def create_orchestration(
         "master_agent_id": payload.master_agent_id,
         "steps": [s.model_dump() for s in payload.steps],
         "task": task,
+        # 完成判据（可空）：写了就会在汇总里逐条对照，没覆盖的显式报 gap
+        "acceptance": [str(x).strip() for x in (payload.acceptance or []) if str(x).strip()][:12],
         # 中途要确认时：等人点（默认）还是直接中止（无人值守传 abort）
         "on_hitl": (payload.on_hitl or "wait").strip().lower(),
     }

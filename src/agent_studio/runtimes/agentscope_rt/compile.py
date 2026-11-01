@@ -381,6 +381,60 @@ CORE_TOOL_NAMES: frozenset[str] = frozenset(
     }
 )
 
+#: 编排者（``role=orchestrator``）**只拿这些**工具。
+#:
+#: 为什么用白名单而不是"摘掉 bash"：模型一旦能自己动手，就不会再把活派下去 ——
+#: 实测里它宁可直接 `bash` 跑一遍，也不肯多花一次往返去分派（原文实验也是这个结论：
+#: 中性提示下 5/5 次都不委派）。能力边界必须由平台给，不能靠提示词劝。
+#:
+#: 允许的是"看"和"派"：读文件、检索、查资料、看技能、派活、排班。
+#: 不在名单里的一律不下发 —— 包括 MCP 工具（能力未知，编排者不该直接调）。
+ORCHESTRATOR_ALLOW_TOOLS: frozenset[str] = frozenset(
+    {
+        # 内置（AgentScope）
+        "Read",
+        "Grep",
+        "Glob",
+        "Skill",
+        # 平台内置/原生
+        "read",
+        "grep",
+        "glob",
+        "fetch",
+        "web_search",
+        "skill_viewer",
+        "skill_save",
+        "fork",
+        # 按需取用（懒加载三步）——它只能取到上面这些，取不到被摘掉的执行工具
+        "tool_search",
+        "tool_describe",
+        "tool_call",
+        # 排班（只作用于当前会话，风险等同于对话本身）
+        "job_create",
+        "job_list",
+        "job_cancel",
+    }
+)
+
+
+def narrow_tools_for_role(role: str | None, tools: list[Any], name_of: Any) -> tuple[list[Any], list[str]]:
+    """按角色收窄工具集，返回 ``(保留, 被摘掉的名字)``。
+
+    只对 ``orchestrator`` 生效；其它角色原样返回（改变他们等于改产品行为）。
+    """
+    if str(role or "") != "orchestrator":
+        return tools, []
+    kept: list[Any] = []
+    dropped: list[str] = []
+    for t in tools:
+        n = name_of(t)
+        if n in ORCHESTRATOR_ALLOW_TOOLS:
+            kept.append(t)
+        else:
+            dropped.append(n or type(t).__name__)
+    return kept, dropped
+
+
 
 def tool_catalog(tools: list[Any]) -> str:
     """把「按需加载」的工具列成清单拼进提示：名字 + 一句话，不占 schema 的钱。"""
@@ -857,6 +911,15 @@ def build_agent(
     # ``work_dir`` 也要落到 Bash 的 cwd 上：不给的话命令在服务进程的当前目录
     # （源码仓库根）里跑 —— 助手嘴里的"当前目录"是错的，`rm -rf .` 删的也是仓库。
     raw_tools = [*build_tools(tools, cwd=cwd), *(mcp_tools or [])]
+
+    # 编排者不执行：执行类工具在**编译期**就摘掉（不是提示词里劝）。
+    # 这一步必须在"懒加载拆分"之前 —— 否则 bash 只是躲进 deferred，
+    # 模型照样能用 tool_call 把它取出来（那样白名单等于没有）。
+    from ...native_tools import tool_name as _name_of
+
+    raw_tools, _dropped = narrow_tools_for_role(getattr(defn, "role", None), raw_tools, _name_of)
+    if _dropped:
+        logger.info("编排者不下发执行类工具（%d 个）：%s", len(_dropped), "、".join(_dropped[:12]))
 
     # 「助手自己排班」的三个工具**总是**带上（不用用户去 Agents 页一个个勾）：
     # 它们只作用于当前会话、且有明确边界（没有会话就报错），风险等同于对话本身。

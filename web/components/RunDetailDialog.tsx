@@ -28,6 +28,7 @@ import type {
 } from "@/lib/types";
 import { RunTimeline, eventsToSteps } from "@/components/ui/run-timeline";
 import { HitlPrompt } from "@/components/HitlPrompt";
+import { OrchestrationSteps } from "@/components/OrchestrationSteps";
 import { summarizeCalls } from "@/lib/hitl";
 import { useFeedback } from "@/components/ui/feedback";
 import { SpanWaterfall } from "@/components/SpanWaterfall";
@@ -388,43 +389,8 @@ export function RunDetailDialog({
               </div>
             </Section>
             <Section title={`执行步骤（${orch.steps.length} 步）`}>
-              <div className="space-y-1.5">
-                {orch.steps.map((st, i) => (
-                  <div key={st.run_id} className="space-y-1.5">
-                  <div
-                    className="rounded-md p-2.5 bg-[var(--color-surface-2)] flex items-center gap-2.5 text-[12px]"
-                  >
-                    <span className="text-[var(--color-muted)] mono w-5 shrink-0">{i + 1}</span>
-                    <span
-                      className="mono text-[12px] shrink-0"
-                      style={{ color: STATUS_STYLE[st.status] ?? "var(--color-text)" }}
-                    >
-                      {st.status}
-                    </span>
-                    <span className="truncate">{st.agent_name}</span>
-                    {st.item_label && (
-                      <span className="text-[var(--color-muted)] truncate">· {st.item_label}</span>
-                    )}
-                    {st.error && (
-                      <span className="text-[var(--color-err)] truncate ml-auto" title={st.error}>
-                        {st.error}
-                      </span>
-                    )}
-                  </div>
-                  {/* 这一步停在「要你确认」：就地给允许/拒绝，点了编排继续跑完
-                      （以前编排会把这种步骤静默收成 partial，界面上没有任何入口） */}
-                  {st.status === "waiting_hitl" && st.hitl ? (
-                    <HitlPrompt
-                      runId={st.run_id}
-                      payload={st.hitl}
-                      compact
-                      onResumed={() => void load(true)}
-                      onError={(m) => fb.error("恢复失败", m)}
-                    />
-                  ) : null}
-                  </div>
-                ))}
-              </div>
+              {/* 一行一对象 + 行尾微条 + 点行就地展开；并行靠时间重叠分组，不做画布 */}
+              <OrchestrationSteps orch={orch} onRefresh={() => void load(true)} />
             </Section>
             <Section title="总结输出">
               <div className="rounded-md p-2.5 bg-[var(--color-surface-2)] text-[12px]">
