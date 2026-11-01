@@ -25,6 +25,7 @@ from ..orchestrator.graph import (
     normalise,
     topo_layers,
 )
+from ..orchestrator.snapshot import freeze_spec
 from ..orchestrator.service import orchestrator
 from ..schemas import (
     WorkflowCreate,
@@ -439,6 +440,7 @@ async def run_node(
     spec = graph_to_spec(one, "dag", task)
     if payload.timeout_s:
         spec["timeout_s"] = payload.timeout_s
+    spec = await freeze_spec(session, spec)
 
     orc = Orchestration(
         name=f"{wf.name} · 只跑一步 · {task[:20]}",
@@ -490,6 +492,8 @@ async def start_run_for_workflow(
     # 这次执行是**谁发起**的（playground / schedule / webhook）——
     # 记进 run.origin，运行记录里才分得清"我点的"和"它自己跑的"
     spec["origin"] = origin
+    # 冻结"这次到底是谁、第几版"（结构指纹 + 每位助手的名字/版本/技能名）
+    spec = await freeze_spec(session, spec)
 
     orc = Orchestration(
         name=f"{wf.name}{name_suffix} · {task[:24]}",

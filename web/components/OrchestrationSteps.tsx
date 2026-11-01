@@ -102,6 +102,18 @@ export function OrchestrationSteps({
   const now = Date.now();
   const groups = useMemo(() => groupByOverlap(orch.steps, now), [orch.steps, now]);
 
+  /** 这份编排当时由谁跑、第几版 —— 从冻结的 spec 里取，缺失（老记录）就整行不显示 */
+  const snapshot = useMemo(() => {
+    const snap = (orch.spec ?? {}).snapshot as
+      | { hash?: string; agents?: Record<string, { name?: string | null; version?: number | null }> }
+      | undefined;
+    if (!snap?.hash) return null;
+    const rows = Object.values(snap.agents ?? {})
+      .map((a) => (a?.name ? `${a.name} v${a.version ?? "?"}` : ""))
+      .filter(Boolean);
+    return { hash: snap.hash, team: rows.join("、") || "（团队信息缺失）" };
+  }, [orch.spec]);
+
   const span = useMemo(() => {
     if (orch.steps.length === 0) return { start: orch.started_at, end: orch.ended_at ?? now };
     const start = Math.min(...orch.steps.map((s) => s.started_at));
@@ -168,6 +180,16 @@ export function OrchestrationSteps({
           >
             · 验证 {verification.ok}/{verification.total}
             {verification.gaps > 0 ? ` · 未覆盖 ${verification.gaps}` : ""}
+          </span>
+        )}
+        {/* 这次跑的是哪一份编排：结构指纹 + 每位助手的版本。
+            助手会被改（v3→v4），没有这一行，复盘时说不清"当时它是什么样"。 */}
+        {snapshot && (
+          <span
+            className="mono"
+            title={`结构指纹 ${snapshot.hash}\n${snapshot.team}`}
+          >
+            · {snapshot.hash.slice(0, 6)} · {snapshot.team}
           </span>
         )}
       </div>

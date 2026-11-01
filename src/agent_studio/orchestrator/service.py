@@ -38,6 +38,8 @@ from typing import Any
 from ..db import SessionLocal
 from ..models import Agent, Orchestration, Run, now_ms
 from ..schemas import AgentDefinition
+from .graph import back_edges, is_dependency, shares_context, shares_memory, topo_layers
+from .snapshot import team_catalog
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +94,11 @@ _PLAN_PROMPT = """你是一个任务协调者。用户交给整个团队的任�
 
 {task}
 
-团队里有 {n} 位助手。请你把任务拆成 {n} 个子任务，每位助手负责一个。
+团队里有 {n} 位助手（这是花名册，只有名字、一句话职责和技能名 —— 具体怎么做是它们自己的事）：
+
+{team}
+
+请你把任务拆成 {n} 个子任务，每位助手负责一个，尽量让每个子任务落在**对应助手擅长的那一类事**上。
 
 要求：
 1. 每个子任务要**具体、可独立完成**，写清楚要产出什么
@@ -475,7 +481,11 @@ class Orchestrator:
         done: list[Run] = []
 
         # ── 第一步：主控拆任务 ────────────────────────────────────────
-        plan_payload = _PLAN_PROMPT.format(task=task, n=n)
+        # 主控只看「花名册」（名字 / 一句话 / 技能名），不看技能全文 —— 它是协调者，
+        # 不是干活的；把技能内容注进来只会让拆任务这一步被细节淹没
+        plan_payload = _PLAN_PROMPT.format(
+            task=task, n=n, team=team_catalog(spec) or f"（{n} 位助手，没有更多说明）"
+        )
         plan_run = await self._start_step(orc_id, master_id, "master", 0, plan_payload, node_id=spec.get("master_nid"))
         plan_done = await self._await(plan_run.id, spec.get("master_wait_timeout_s"))
         done.append(plan_done)

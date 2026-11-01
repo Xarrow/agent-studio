@@ -116,16 +116,34 @@ async def test_删规则(client):
 
 async def test_试算会解释为什么是它(client):
     await init_db()
-    await _agent("编程助手", "写代码、跑测试")
+    # 测试库是整会话共用的：别的模块也造过"编程助手"，所以这里用唯一词把结果钉住
+    tok = f"CSV转XLSX-{uuid.uuid4().hex[:6]}"
+    a = await _agent("表格助手", f"把 {tok} 报表整理好")
     await _agent("周报助手", "整理周报")
     d = (
-        await client.post(
-            "/api/routes/preview", json={"text": "帮我写点代码，跑一下测试"}
-        )
+        await client.post("/api/routes/preview", json={"text": f"帮我把 {tok} 报表整理一下"})
     ).json()
-    assert d["agent_name"] == "编程助手"
-    assert d["alternatives"], "得把候选摆出来，用户才能一眼看出有没有选错"
-    assert any(a.get("name") for a in d["alternatives"])
+    assert d["agent_id"] == a, d
+    # 候选位只放真的沾边的（0 分候选列出来只是噪音），且不重复摆已选中的那个
+    assert all(x["score"] > 0 for x in d["alternatives"]), d["alternatives"]
+    assert d["agent_id"] not in {x["agent_id"] for x in d["alternatives"]}
+
+
+async def test_候选只列真的沾边的(client):
+    await init_db()
+    tok = f"沾边{uuid.uuid4().hex[:6]}"
+    # 两位都能沾上这句话：名字里带唯一词的那位赢；另一位"跑测试"也沾"测试"
+    a = await _agent(f"代码{tok}", "写代码")
+    b = await _agent("测试助手", "跑测试")
+    d = (
+        await client.post("/api/routes/preview", json={"text": f"{tok} 写代码并跑测试"})
+    ).json()
+    assert d["agent_id"] == a, d
+    names = [x.get("name") for x in d["alternatives"]]
+    assert d["agent_name"] not in names, "已选中的那个不该再当'其他候选'"
+    assert all(x["score"] > 0 for x in d["alternatives"])
+    assert "测试助手" in names, "另一位也沾边（跑测试），必须摆出来让人看有没有选错"
+    assert b
 
 
 async def test_指名了就按指名的来(client):

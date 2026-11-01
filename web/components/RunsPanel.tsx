@@ -1119,8 +1119,24 @@ export function RunsPanel() {
                       {/* 编排：步骤清单 + 待你确认的那一步（就地允许/拒绝，点了编排接着跑） */}
                       {d?.orch ? (
                         <div className="mb-2.5 space-y-1.5">
-                          <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>
-                            执行步骤（{d.orch.steps.length} 步）
+                          <div className="flex flex-wrap items-center gap-x-2 text-[12px]" style={{ color: "var(--color-muted)" }}>
+                            <span>执行步骤（{d.orch.steps.length} 步）</span>
+                            {/* 这次跑的是哪一份编排：结构指纹 + 每位助手版本（助手会被改，没有这行就说不清当时是什么样） */}
+                            {(() => {
+                              const snap = (d.orch.spec ?? {}).snapshot as
+                                | { hash?: string; agents?: Record<string, { name?: string | null; version?: number | null }> }
+                                | undefined;
+                              if (!snap?.hash) return null;
+                              const team = Object.values(snap.agents ?? {})
+                                .map((a) => (a?.name ? `${a.name} v${a.version ?? "?"}` : ""))
+                                .filter(Boolean)
+                                .join("、");
+                              return (
+                                <span className="mono truncate" title={`结构指纹 ${snap.hash}\n${team}`}>
+                                  · {snap.hash.slice(0, 6)} · {team}
+                                </span>
+                              );
+                            })()}
                           </div>
                           {d.orch.steps.map((st, i) => (
                             <div key={st.run_id} className="space-y-1.5">

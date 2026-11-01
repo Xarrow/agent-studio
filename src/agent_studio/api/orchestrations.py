@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..db import SessionLocal, get_session
 from ..models import Agent, Orchestration, Run, RunEvent, now_ms
 from ..orchestrator import orchestrator
+from ..orchestrator.snapshot import freeze_spec
 from ..schemas import (
     OrchestrationCreate,
     OrchestrationDetail,
@@ -160,6 +161,8 @@ async def create_orchestration(
         # 中途要确认时：等人点（默认）还是直接中止（无人值守传 abort）
         "on_hitl": (payload.on_hitl or "wait").strip().lower(),
     }
+    # 冻结"这次到底是谁、第几版"：助手会被改，光有 agent_id 复盘时说不清
+    spec = await freeze_spec(session, spec)
 
     orc = Orchestration(
         name=(payload.name or "").strip() or MODE_LABEL.get(payload.mode, payload.mode),
