@@ -64,6 +64,10 @@ def _agent_ids(spec: dict[str, Any]) -> list[str]:
     for n in spec.get("nodes") or []:
         if n.get("agent_id"):
             ids.append(str(n["agent_id"]))
+    # 编排者自己挑人的场景：备选名单也要进快照（否则复盘时看不出"当时能挑谁"）
+    for a in spec.get("roster") or []:
+        if a:
+            ids.append(str(a))
     return list(dict.fromkeys(ids))
 
 
@@ -130,6 +134,14 @@ def team_catalog(spec: dict[str, Any], limit_desc: int = 40, limit_skills: int =
             continue
         seen.add(aid)
         entries.append(_line(len(entries) + 1, a, limit_desc, limit_skills))
+    if not entries:
+        # 编排者自己挑人：花名册就是当时那份备选名单
+        for a in (spec.get("snapshot") or {}).get("agents", {}).values():
+            aid = str((a or {}).get("agent_id") or "")
+            if not aid or aid in seen:
+                continue
+            seen.add(aid)
+            entries.append(_line(len(entries) + 1, a, limit_desc, limit_skills))
     if not entries:
         for n in spec.get("nodes") or []:
             a = (n.get("agent") or {}) if isinstance(n.get("agent"), dict) else {}

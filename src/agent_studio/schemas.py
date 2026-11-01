@@ -996,8 +996,9 @@ class OrchestrationCreate(BaseModel):
     worker_mode: str | None = None
     #: 主从模式的主控
     master_agent_id: str | None = None
-    #: 参与的助手（按槽位顺序）；主从模式下这里只放干活的
-    steps: list[OrchestrationStep]
+    #: 参与的助手（按槽位顺序）；主从模式下这里只放干活的。
+    #: 用 roster 让编排者自己挑人时这里留空。
+    steps: list[OrchestrationStep] = []
     #: 任务描述
     task: str
     #: 显示名（可空，服务端按模式自动起一个）
@@ -1007,6 +1008,9 @@ class OrchestrationCreate(BaseModel):
     #: 中途要人工确认时怎么办：wait（默认，结果页给允许/拒绝）| abort（直接中止）
     #: 定时/外部触发这类无人值守场景传 abort —— 没人能点，等着只是白等
     on_hitl: str = "wait"
+    #: 备选干活的人（**编排者自己挑**）：填了就不该再填 steps —— 用户只把事交给编排者，
+    #: 它拆完自己决定派给其中哪几位。steps 非空时以 steps 为准（老调用方不受影响）。
+    roster: list[str] | None = None
 
 
 class OrchestrationStepRead(BaseModel):

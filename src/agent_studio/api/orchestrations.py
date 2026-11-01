@@ -221,11 +221,17 @@ async def create_orchestration(
     task = (payload.task or "").strip()
     if not task:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "任务描述不能为空")
-    if not payload.steps:
+    roster = [a for a in dict.fromkeys(payload.roster or []) if a]
+    if not payload.steps and not roster:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "至少要选一个助手")
+    if roster and not payload.master_agent_id:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "让编排者自己挑人时，得先指定哪位是编排者（master_agent_id）",
+        )
 
     # 校验助手都存在（避免跑到一半才发现名字写错）
-    ids = [s.agent_id for s in payload.steps]
+    ids = [s.agent_id for s in payload.steps] + roster
     if payload.master_agent_id:
         ids.append(payload.master_agent_id)
     found = (
@@ -249,11 +255,15 @@ async def create_orchestration(
         # 中途要确认时：等人点（默认）还是直接中止（无人值守传 abort）
         "on_hitl": (payload.on_hitl or "wait").strip().lower(),
     }
+    if roster:
+        # 编排者在入口：用户只说做什么，派给谁由它拆完自己决定
+        spec["roster"] = roster
     # 冻结"这次到底是谁、第几版"：助手会被改，光有 agent_id 复盘时说不清
     spec = await freeze_spec(session, spec)
 
     orc = Orchestration(
-        name=(payload.name or "").strip() or MODE_LABEL.get(payload.mode, payload.mode),
+        name=(payload.name or "").strip()
+        or ("编排者拆活" if roster and not payload.steps else MODE_LABEL.get(payload.mode, payload.mode)),
         mode=payload.mode,
         worker_mode=spec["worker_mode"],
         spec=spec,

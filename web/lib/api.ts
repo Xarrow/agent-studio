@@ -924,7 +924,10 @@ export const api = {
     mode: string;
     worker_mode?: string | null;
     master_agent_id?: string | null;
-    steps: OrchStep[];
+    /** 用户点名的人（每人一格）。让编排者自己挑人时留空、改用 roster */
+    steps?: OrchStep[];
+    /** 备选名单：填了就是「编排者拆完自己决定派给谁」 */
+    roster?: string[];
     task: string;
     name?: string | null;
   }) => post<Orchestration>("/api/orchestrations", body),

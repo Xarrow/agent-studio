@@ -136,6 +136,27 @@ def _not_fork_tool(ref: Any) -> bool:
     return str(ref or "") != "fork"
 
 
+#: 编排者自己挑人时的拆解提示词：它看到的是**整份花名册**，派给谁由它决定。
+#: 和下面的 _PLAN_PROMPT 的区别：那个是"每人一格"，这个是"你挑"。
+_PLAN_ROSTER_PROMPT = """你是一位编排者。用户把这件事交给你，由你决定怎么拆、派给谁：
+
+{task}
+
+你可以把这些活派给下面这些人（只有名字、一句话职责和技能名 —— 具体怎么做是它们自己的事）：
+
+{team}
+
+怎么做：
+1. 先想清楚这件事要拆成几个**独立**子任务；一件事能一个人干完就别拆
+2. 每个子任务挑一个最合适的人，用它的 agent_id 指定
+3. **不必人人都用**：不合适的不要派；同一个人也可以接多个子任务
+4. 最多 {max_n} 个子任务
+
+只输出一个 JSON 数组，不要解释、不要 markdown 代码块，格式严格如下：
+[{{"agent_id": "ag_xxx", "task": "具体要它做什么、产出什么"}}]
+"""
+
+
 def _fanout_of(step: dict[str, Any]) -> dict[str, Any] | None:
     """把节点上的「分派」配置整理成内核要的形状；没配 = None（按单实例跑）。
 
@@ -469,41 +490,65 @@ class Orchestrator:
         """
         task = self._task(spec)
         master_id = spec.get("master_agent_id")
-        steps = self._steps(spec)
+        picking_roster = [a for a in (spec.get("roster") or []) if a and a != master_id]
+        steps = self._steps(spec, allow_empty=bool(picking_roster))
         worker_mode = spec.get("worker_mode") or "parallel"
         n = len(steps)
+        # 编排者自己挑人：用户只把事交给编排者（steps 为空 + roster 有名单）
+        roster = [a for a in (spec.get("roster") or []) if a and a != master_id]
+        picking = not steps and bool(roster)
 
         if not master_id:
             raise OrchestratorError("主从模式必须指定一个主控助手")
-        if n == 0:
+        if n == 0 and not picking:
             raise OrchestratorError("主从模式至少需要一位干活的助手")
 
         done: list[Run] = []
 
-        # ── 第一步：主控拆任务 ────────────────────────────────────────
-        # 主控只看「花名册」（名字 / 一句话 / 技能名），不看技能全文 —— 它是协调者，
+        # ── 第一步：编排者拆任务（顺便决定派给谁）────────────────────
+        # 编排者只看「花名册」（名字 / 一句话 / 技能名），不看技能全文 —— 它是协调者，
         # 不是干活的；把技能内容注进来只会让拆任务这一步被细节淹没
-        plan_payload = _PLAN_PROMPT.format(
-            task=task, n=n, team=team_catalog(spec) or f"（{n} 位助手，没有更多说明）"
-        )
+        team = team_catalog(spec)
+        if picking:
+            plan_payload = _PLAN_ROSTER_PROMPT.format(
+                task=task,
+                team=team or "（名单里没有助手说明，只能凭名字判断）",
+                max_n=min(len(roster), 8),
+            )
+        else:
+            plan_payload = _PLAN_PROMPT.format(
+                task=task, n=n, team=team or f"（{n} 位助手，没有更多说明）"
+            )
         plan_run = await self._start_step(orc_id, master_id, "master", 0, plan_payload, node_id=spec.get("master_nid"))
         plan_done = await self._await(plan_run.id, spec.get("master_wait_timeout_s"))
         done.append(plan_done)
 
-        subtasks = self._parse_plan(self._text(plan_done), n)
-        if subtasks is None:
-            logger.info("编排 %s：主控没给出可解析的任务清单，降级为各拿原任务", orc_id)
-            subtasks = [task] * n
-        # 数量对不上时（模型有时多给或少给）按位补齐/截断
-        subtasks = (subtasks + [task] * n)[:n]
+        # 指派表：[(agent_id, 子任务, 槽位 or None)] —— 挑人/不挑人最后都归一到这里
+        assignments: list[tuple[str, str, dict[str, Any] | None]] = []
+        if picking:
+            items = self._parse_plan_items(self._text(plan_done), roster)
+            if not items:
+                # 拆解失败不让整次编排死掉：名单里各领原任务（最多 4 位，别一开口就十几路）
+                logger.info("编排 %s：编排者没给出可解析的派工单，降级为名单前几位各领原任务", orc_id)
+                items = [(a, task) for a in roster[:4]]
+            assignments = [(aid, sub, None) for aid, sub in items]
+        else:
+            subtasks = self._parse_plan(self._text(plan_done), n)
+            if subtasks is None:
+                logger.info("编排 %s：主控没给出可解析的任务清单，降级为各拿原任务", orc_id)
+                subtasks = [task] * n
+            # 数量对不上时（模型有时多给或少给）按位补齐/截断
+            subtasks = (subtasks + [task] * n)[:n]
+            assignments = [(step["agent_id"], subtasks[i], step) for i, step in enumerate(steps)]
 
         # ── 第二步：干活的做 ──────────────────────────────────────────
         worker_runs: list[Run] = []
-        if worker_mode == "serial":
+        if worker_mode == "serial" and not picking:
             prev: str | None = None
-            for i, step in enumerate(steps):
-                payload = self._compose_worker(subtasks[i], prev, i)
-                r = await self._start_step(orc_id, step["agent_id"], "worker", i + 1, payload, node_id=step.get("nid"), fanout=_fanout_of(step))
+            for i, (aid, sub, step) in enumerate(assignments):
+                step = step or {}
+                payload = self._compose_worker(sub, prev, i)
+                r = await self._start_step(orc_id, aid, "worker", i + 1, payload, node_id=step.get("nid"), fanout=_fanout_of(step))
                 d = await self._await(r.id, step.get("wait_timeout_s"))
                 worker_runs.append(d)
                 if d.status == "ok" and (t := self._text(d)):
@@ -511,12 +556,15 @@ class Orchestrator:
         else:
             runs = [
                 await self._start_step(
-                    orc_id, step["agent_id"], "worker", i + 1, subtasks[i], node_id=step.get("nid"), fanout=_fanout_of(step)
+                    orc_id, aid, "worker", i + 1, sub, node_id=(step or {}).get("nid"), fanout=_fanout_of(step or {})
                 )
-                for i, step in enumerate(steps)
+                for i, (aid, sub, step) in enumerate(assignments)
             ]
             results = await asyncio.gather(
-                *(self._await(r.id, step.get("wait_timeout_s")) for r, step in zip(runs, steps)),
+                *(
+                    self._await(r.id, (step or {}).get("wait_timeout_s"))
+                    for r, (_, _, step) in zip(runs, assignments)
+                ),
                 return_exceptions=True,
             )
             for r, res in zip(runs, results):
@@ -533,8 +581,9 @@ class Orchestrator:
             for r in worker_runs
         )
         summary_payload = _SUMMARY_PROMPT.format(task=task, parts=parts or "（各位助手都没有产出）")
+        # 汇总的序号接着**实际跑了几个**走（挑人模式下 n 是 0，用 n+1 会和第一条干活的撞号）
         sum_run = await self._start_step(
-            orc_id, master_id, "master", n + 1, summary_payload, node_id=spec.get("master_nid")
+            orc_id, master_id, "master", len(worker_runs) + 1, summary_payload, node_id=spec.get("master_nid")
         )
         sum_done = await self._await(sum_run.id, spec.get("master_wait_timeout_s"))
         done.append(sum_done)
@@ -973,6 +1022,41 @@ class Orchestrator:
     # 主控的任务清单解析
     # ------------------------------------------------------------------ #
     @staticmethod
+    @staticmethod
+    def _parse_plan_items(text: str, roster: list[str]) -> list[tuple[str, str]]:
+        """从编排者的派工单里抠出 [(agent_id, 子任务)]。
+
+        只收**名单里**的人：模型偶尔会编一个看起来很像的 id，或者用名字代替 id ——
+        那种一律丢掉，而不是拿它去建一条注定失败的 run。
+        解析不出来返回空表，调用方降级（名单里各领原任务）。
+        """
+        if not text:
+            return []
+        cleaned = text.strip()
+        fence = re.search(r"```(?:json)?\s*(.+?)```", cleaned, re.S)
+        if fence:
+            cleaned = fence.group(1).strip()
+        start, end = cleaned.find("["), cleaned.rfind("]")
+        if not (start >= 0 and end > start):
+            return []
+        try:
+            parsed = json.loads(cleaned[start : end + 1])
+        except json.JSONDecodeError:
+            return []
+        if not isinstance(parsed, list):
+            return []
+        ok: list[tuple[str, str]] = []
+        for row in parsed[:8]:
+            if isinstance(row, str):
+                continue
+            if not isinstance(row, dict):
+                continue
+            aid = str(row.get("agent_id") or row.get("agent") or row.get("id") or "").strip()
+            sub = str(row.get("task") or row.get("subtask") or row.get("title") or "").strip()
+            if aid in roster and sub:
+                ok.append((aid, sub))
+        return ok
+
     def _parse_plan(text: str, expected: int) -> list[str] | None:
         """从主控的输出里抠出子任务清单。
 
@@ -1139,9 +1223,13 @@ class Orchestrator:
         return [str(x).strip() for x in raw if str(x).strip()][:12]
 
     @staticmethod
-    def _steps(spec: dict[str, Any]) -> list[dict[str, Any]]:
+    def _steps(spec: dict[str, Any], allow_empty: bool = False) -> list[dict[str, Any]]:
+        """取槽位。``allow_empty`` 只给「编排者自己挑人」用 —— 那时 slots 本来就该是空的，
+        真正干活的人要等它拆完才知道。"""
         steps = spec.get("steps") or []
-        if not isinstance(steps, list) or not steps:
+        if not isinstance(steps, list):
+            raise OrchestratorError("编排至少要有一个助手")
+        if not steps and not allow_empty:
             raise OrchestratorError("编排至少要有一个助手")
         if len(steps) > MAX_STEPS:
             raise OrchestratorError(f"一次编排最多 {MAX_STEPS} 个助手")

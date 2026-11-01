@@ -556,19 +556,28 @@ export function RunsPanel() {
     setNewBusy(true);
     try {
       const isMW = newMode === "master_worker";
-      const workers = isMW ? ids.slice(1) : ids;
-      const steps = workers.map((agent_id, i) => ({
-        agent_id,
-        // 串行模式下第二步起才接上一步产出；并行/主从一律不接
-        carry_prev: newMode === "serial" && i > 0,
-      }));
-      const orc = await api.createOrchestration({
-        mode: newMode,
-        worker_mode: isMW ? "parallel" : undefined,
-        master_agent_id: isMW ? ids[0] : undefined,
-        steps,
-        task: newTask.trim(),
-      });
+      // 主从 = **编排者在入口**：用户只指定谁来拆活与汇总，其余人交它自己挑
+      // （steps 留空、给 roster）。其余模式才是"用户点名谁干"。
+      const orc = await api.createOrchestration(
+        isMW
+          ? {
+              mode: "master_worker",
+              worker_mode: "parallel",
+              master_agent_id: ids[0],
+              roster: agents.map((a) => a.id).filter((id) => id !== ids[0]),
+              steps: [],
+              task: newTask.trim(),
+            }
+          : {
+              mode: newMode,
+              steps: ids.map((agent_id, i) => ({
+                agent_id,
+                // 串行模式下第二步起才接上一步产出；并行一律不接
+                carry_prev: newMode === "serial" && i > 0,
+              })),
+              task: newTask.trim(),
+            },
+      );
       setNewOpen(false);
       setPicked([]);
       setNewTask("");
@@ -675,7 +684,17 @@ export function RunsPanel() {
             }}
             aria-expanded={newOpen}
             title="挑几位助手，立刻跑一次编排（串行 / 并行 / 主从）"
-            onClick={() => setNewOpen((v) => !v)}
+            onClick={() =>
+              setNewOpen((v) => {
+                const next = !v;
+                // 打开时先把「编排者」选上：用户委托的是它，不是某位干活的
+                if (next && picked.length === 0) {
+                  const pref = agents.find((a) => a.name.includes("编排")) ?? null;
+                  if (pref) setPicked([pref.id]);
+                }
+                return next;
+              })
+            }
           >
             {newOpen ? "收起" : "新建编排"}
           </button>
@@ -805,7 +824,7 @@ export function RunsPanel() {
                 >
                   {(
                     [
-                      ["master_worker", "主从（谁汇总）"],
+                      ["master_worker", "编排者拆活"],
                       ["serial", "串行（接力）"],
                       ["parallel", "并行（各干各的）"],
                       ["single", "单个"],
@@ -827,7 +846,7 @@ export function RunsPanel() {
                 </div>
                 <span style={{ color: "var(--color-muted)" }}>
                   {newMode === "master_worker"
-                    ? "第一位当汇总者，其余并行干、最后由它收口"
+                    ? "只指定谁来拆活与汇总：派给谁、派几路由它自己定"
                     : newMode === "serial"
                       ? "按点的顺序接力，后一步接上一步的产出"
                       : newMode === "parallel"
@@ -838,7 +857,7 @@ export function RunsPanel() {
 
               <div className="flex flex-wrap items-center gap-1.5" style={{ minWidth: 0 }}>
                 <span className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
-                  参与者
+                  {newMode === "master_worker" ? "编排者" : "参与者"}
                 </span>
                 {agents.map((a) => {
                   const at = picked.indexOf(a.id);
@@ -849,13 +868,15 @@ export function RunsPanel() {
                       type="button"
                       data-tap
                       onClick={() =>
-                        setPicked((prev) =>
-                          prev.includes(a.id) ? prev.filter((x) => x !== a.id) : [...prev, a.id],
-                        )
+                        newMode === "master_worker"
+                          ? setPicked([a.id])
+                          : setPicked((prev) =>
+                              prev.includes(a.id) ? prev.filter((x) => x !== a.id) : [...prev, a.id],
+                            )
                       }
                       title={
-                        newMode === "master_worker" && picked[0] === a.id
-                          ? "它是汇总者（点掉再点一次可换）"
+                        newMode === "master_worker"
+                          ? "它来拆活与汇总（点别人可换）"
                           : "点一下加进来，点的顺序就是执行顺序"
                       }
                       className="flex h-[32px] items-center gap-1 rounded-full border px-2.5 text-[12px] max-md:h-[44px]"
@@ -867,14 +888,19 @@ export function RunsPanel() {
                     >
                       {on && (
                         <span className="tabular-nums" aria-hidden>
-                          {newMode === "master_worker" && at === 0 ? "汇" : at + 1}
+                          {newMode === "master_worker" ? "编" : at + 1}
                         </span>
                       )}
                       {a.name}
                     </button>
                   );
                 })}
-                {picked.length > 0 && (
+                {newMode === "master_worker" && picked.length === 1 && (
+                  <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+                    其余 {Math.max(agents.length - 1, 0)} 位由它挑
+                  </span>
+                )}
+                {picked.length > 0 && newMode !== "master_worker" && (
                   <button
                     type="button"
                     className="text-[12px] underline decoration-dotted"
@@ -905,7 +931,7 @@ export function RunsPanel() {
                     newBusy ||
                     !newTask.trim() ||
                     picked.length === 0 ||
-                    (newMode === "master_worker" && picked.length < 2) ||
+                    (newMode === "master_worker" && picked.length !== 1) ||
                     (newMode === "serial" && picked.length < 2)
                   }
                   onClick={() => void startNewOrch()}
