@@ -1048,6 +1048,42 @@ class Event(Base):
     error: Mapped[str | None] = mapped_column(LongText, default=None)
 
 
+class Ticket(Base):
+    """一件要有人干的事（Ticket）—— 阶段由 ``tickets_core.stage()`` 从事实算出。
+
+    为什么不复用 run / orchestration：
+      run 是**一次执行**（有开始有结束），orchestration 是**一次批量协作**；
+      ticket 是**一件持续的事**：它可能被多次唤醒、多次派活、等人回答、等人验收。
+      三者生命周期不同，硬塞进一张表会让"它到底做完了没"永远说不清。
+
+    ``facts`` 里放的都是事实，不放状态：
+      reports   [{kind: ready|blocked|failed|waiting, text, at}]
+      attention {question, at}           —— 有它就在等你回话
+      assignment {run_id, status}        —— 当前这次派活
+      undelivered int                    —— 有几条消息没送到
+      last_human_at int                  —— 人最后一次说话的时间
+    """
+
+    __tablename__ = "ticket"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("tk_"))
+    title: Mapped[str] = mapped_column(String(200), default="")
+    #: 它属于哪条串（同一 PR / 同一 IM 话题 / 同一会话）
+    thread_id: Mapped[str | None] = mapped_column(String(160), default=None, index=True)
+    #: 干活的会话（executor session）
+    session_id: Mapped[str | None] = mapped_column(String(32), default=None, index=True)
+    agent_id: Mapped[str | None] = mapped_column(String(32), default=None)
+    source: Mapped[str | None] = mapped_column(String(64), default=None)
+    #: open | ended（ended_by: human | done）
+    status: Mapped[str] = mapped_column(String(16), default="open", index=True)
+    ended_by: Mapped[str | None] = mapped_column(String(16), default=None)
+
+    facts: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+    updated_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, index=True)
+    ended_at: Mapped[int | None] = mapped_column(BigInteger, default=None)
+
+
 class ThreadSub(Base):
     """一条 thread 认了谁 —— 「订阅直通」的账本。
 

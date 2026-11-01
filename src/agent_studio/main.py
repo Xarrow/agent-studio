@@ -426,6 +426,10 @@ app.include_router(events_api.router)
 from .api import routes as routes_api  # noqa: E402
 
 app.include_router(routes_api.router)
+# 票（Ticket）：一件持续的事 —— 阶段由事实算出，面板按"卡在谁那里"排
+from .api import tickets as tickets_api  # noqa: E402
+
+app.include_router(tickets_api.router)
 
 
 @app.get("/api/health")
