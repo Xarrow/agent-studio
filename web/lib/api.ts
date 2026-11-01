@@ -11,6 +11,7 @@ import type {
   EvalRunDetail,
   EvalRunRead,
   EvalSuiteRead,
+  AttentionRead,
   GuardrailsRead,
   SkillLifecycle,
   TranscodeResult,
@@ -828,6 +829,8 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ limit }),
     }),
+  /** 待你处理的事（等你确认 / 停滞 / 失败可重跑）—— 按紧急度排好 */
+  attention: () => request<AttentionRead>("/api/runs/attention"),
   /** 补齐失败的那几路（分派这一步重跑；已成功的路不会重跑） */
   refillFanout: (id: string) =>
     post<{ run_id: string; status: string }>(`/api/runs/${id}/refill`, {}),

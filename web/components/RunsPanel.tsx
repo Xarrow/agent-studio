@@ -31,7 +31,15 @@
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, fmt } from "@/lib/api";
-import type { ActivityItem, Agent, GuardrailsRead, LlmCall, RunDeleteResult } from "@/lib/types";
+import type {
+  ActivityItem,
+  Agent,
+  AttentionItem,
+  AttentionRead,
+  GuardrailsRead,
+  LlmCall,
+  RunDeleteResult,
+} from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
 import { KIND_LABEL } from "@/components/RunDetailDialog";
 import { SpanWaterfall } from "@/components/SpanWaterfall";
@@ -156,6 +164,9 @@ export function RunsPanel() {
   const [guardOpen, setGuardOpen] = useState(false);
   const [guard, setGuard] = useState<GuardrailsRead | null>(null);
   const [guardBusy, setGuardBusy] = useState(false);
+  /** 待办（等你确认 / 停滞 / 失败可重跑）—— 工具条上一颗常驻数字，点开就地列出 */
+  const [attention, setAttention] = useState<AttentionRead | null>(null);
+  const [attentionOpen, setAttentionOpen] = useState(false);
   /** 分页：一页 50 条，「加载更多」往后翻（游标式 —— 翻页时新记录插进来也不会错位） */
   const [hasMore, setHasMore] = useState(false);
   const [serverTotal, setServerTotal] = useState(0);
@@ -176,7 +187,7 @@ export function RunsPanel() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [u, tl, a] = await Promise.all([
+      const [u, tl, a, at] = await Promise.all([
         api.usage(7),
         api.runTimeline({
           kind: kind === "all" ? undefined : kind,
@@ -186,6 +197,8 @@ export function RunsPanel() {
           limit: PAGE,
         }),
         api.agents(),
+        // 待办：和列表同一次请求里取（不额外等一轮，也不自己轮询）
+        api.attention().catch(() => null),
       ]);
       setUsage(u);
       setItems(tl.items);
@@ -193,6 +206,7 @@ export function RunsPanel() {
       setHasMore(Boolean(tl.has_more));
       setServerTotal(tl.total ?? tl.items.length);
       setAgents(a);
+      setAttention(at);
       setSelected(new Set());
       setExpanded(new Set());
       setDetails({});
@@ -456,6 +470,38 @@ export function RunsPanel() {
     }
   };
 
+  /** 待办条目 → 展开列表里那一条（找不到就切到「全部」并说明，不假装成功） */
+  // 用普通函数而不是 useCallback：它要调 toggleRow（普通函数），
+  // 依赖数组写不对就会出现"展开了但详情永远是空的"。
+  const jumpToRun = (it: AttentionItem) => {
+    const row = items.find(
+      (x) =>
+        x.id === it.run_id ||
+        (x.fanout?.items ?? []).some((f) => f.run_id === it.run_id),
+    );
+    if (!row) {
+      setKind("all");
+      setStatus("");
+      setAgentId("");
+      fb.info?.("已切到「全部」记录", "待办那条不在当前筛选里，切过来后点它查看");
+      return;
+    }
+    // 走和「点行」完全同一条路径 —— 它会同时把详情取回来
+    if (!expanded.has(row.id)) toggleRow(row);
+    setAttentionOpen(false);
+    requestAnimationFrame(() => {
+      document
+        .querySelector(`[data-run-id="${row.id}"]`)
+        ?.scrollIntoView({ block: "center", behavior: "smooth" });
+    });
+  };
+
+  /** 待办条目 → 重跑（与行内「重跑」同一条接口，重跑完刷新待办） */
+  const retryOneFromAttention = async (it: AttentionItem) => {
+    await retryFanoutItem(it.run_id);
+    setAttentionOpen(false);
+  };
+
   /** 点「用量」：就地展开护栏（只取一次；之后改值直接回写，不再重复请求） */
   const openGuard = useCallback(async () => {
     setGuardOpen((v) => !v);
@@ -691,6 +737,79 @@ export function RunsPanel() {
             </div>
           )}
 
+          {/* 待办：有事才出现（0 条不占地方）。点开就地列出，按紧急度排好 ——
+              「等你确认」排在失败之前：它是唯一"不动就永远不动"的一类。 */}
+          {attention && attention.counts.total > 0 && (
+            <button
+              type="button"
+              data-tap
+              onClick={() => setAttentionOpen((v) => !v)}
+              className="flex h-[32px] items-center gap-1 rounded-[8px] border px-2 text-[12px] max-md:h-[44px]"
+              style={{
+                borderColor: attention.counts.hitl > 0 ? "var(--color-err)" : "var(--color-warn)",
+                color: attention.counts.hitl > 0 ? "var(--color-err)" : "var(--color-warn)",
+                background: "var(--color-surface)",
+              }}
+              title={
+                `等你确认 ${attention.counts.hitl} · 停滞 ${attention.counts.stalled} · 失败 ${attention.counts.failed}` +
+                " —— 点开看是哪几件"
+              }
+            >
+              待办 <b className="tabular-nums">{attention.counts.total}</b>
+              <span aria-hidden>{attentionOpen ? "▴" : "▾"}</span>
+            </button>
+          )}
+
+          {attentionOpen && attention && (
+            <div
+              className="w-full max-md:order-9 rounded-[10px] border p-2 text-[12px]"
+              style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+            >
+              {attention.items.map((it) => (
+                <div
+                  key={`${it.kind}-${it.run_id}`}
+                  className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b py-1.5 last:border-b-0"
+                  style={{ borderColor: "var(--color-border)" }}
+                >
+                  <span
+                    className="rounded-full px-1.5 py-0.5 text-[11px]"
+                    style={{
+                      color: it.kind === "hitl" ? "var(--color-err)" : it.kind === "stalled" ? "var(--color-warn)" : "var(--color-muted)",
+                      background: "var(--color-bg)",
+                    }}
+                  >
+                    {it.kind === "hitl" ? "等你确认" : it.kind === "stalled" ? "停滞" : "失败"}
+                  </span>
+                  <b style={{ color: "var(--color-text)" }}>{it.agent_name}</b>
+                  <span className="min-w-0 flex-1 truncate" title={it.reason} style={{ color: "var(--color-muted)" }}>
+                    {it.reason}
+                  </span>
+                  {it.kind === "hitl" ? (
+                    <button
+                      type="button"
+                      data-tap
+                      className="inline-flex h-[28px] items-center underline decoration-dotted max-md:h-[44px] max-md:px-1"
+                      style={{ color: "var(--color-accent)" }}
+                      onClick={() => void jumpToRun(it)}
+                    >
+                      去确认
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      data-tap
+                      className="inline-flex h-[28px] items-center underline decoration-dotted max-md:h-[44px] max-md:px-1"
+                      style={{ color: "var(--color-accent)" }}
+                      onClick={() => void retryOneFromAttention(it)}
+                    >
+                      重跑
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* 选择总数 + 清理菜单（自研下拉，禁用原生 confirm/alert） */}
           {selected.size > 0 && (
             <span className="text-[12px] tabular-nums" style={{ color: "var(--color-accent)" }}>
@@ -817,6 +936,7 @@ export function RunsPanel() {
                   <div
                     role="button"
                     tabIndex={0}
+                    data-run-id={it.id}
                     onClick={() => toggleRow(it)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" || e.key === " ") {
@@ -951,8 +1071,10 @@ export function RunsPanel() {
                     </span>
                   </div>
 
-                  {/* ── 就地展开：这一条的全貌，全在列表里，不弹窗 ────────── */}
-                  {isOpen && (
+                  {/* ── 就地展开：这一条的全貌，全在列表里，不弹窗 ──────────
+                      必须同时要求 d 存在：详情还没取回来（或刚被清空）时展开，
+                      下面的 `d.llmCalls` 会把这个页面整片打崩（实测崩过一次）。 */}
+                  {isOpen && d && (
                     <div
                       className="border-b px-3 pb-3 pt-2.5"
                       style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}

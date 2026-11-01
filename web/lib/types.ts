@@ -742,6 +742,21 @@ export interface OrchStep {
 
 /** 编排下的一个子步骤（后端返回，就是一条 Run 的摘要） */
 /** 分派出来的一路（fan-out 的一个实例）—— 画布就地叠卡、抽屉按项看、徽标计数都用它 */
+export interface AttentionItem {
+  run_id: string;
+  agent_id: string;
+  agent_name: string;
+  /** hitl = 停在等你确认 / stalled = 判死停滞 / failed = 普通失败 */
+  kind: "hitl" | "stalled" | "failed";
+  reason: string;
+  at: number;
+}
+
+export interface AttentionRead {
+  counts: { hitl: number; stalled: number; failed: number; total: number };
+  items: AttentionItem[];
+}
+
 export interface GuardrailsRead {
   /** 今日额度：used/limit 都是 token；limit=0 表示不限 */
   daily: {

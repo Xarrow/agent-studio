@@ -1224,6 +1224,76 @@ async def activity_timeline(
     )
 
 
+@router.get("/attention", response_model=dict)
+async def attention(session: AsyncSession = Depends(get_session)) -> dict:
+    """「待你处理」的事：停着等你点头的、判死停滞的、失败可重跑的。
+
+    为什么单独一个端点而不是让前端自己筛：这三类混在列表里**看不出优先级**——
+    一条 ``waiting_hitl``（它在等你，不动就永远不动）和一条三天前的失败长得一样。
+    这里只回答一个问题："现在有什么在等我"，并且**按紧急度排**。
+
+    范围刻意收窄（宁可少报也不要制造噪音）：
+    * 只看**直接发起**的执行：分派出来的子执行（parent_run_id）和编排的 worker
+      （orchestration_id）不算 —— 它们的失败已经在父执行/编排那一行里说过一次了，
+      再列一遍就是同一个问题出现两次。
+    * 只看最近 24 小时：翻半个月前的失败当"待办"等于逼人清理列表。
+    * ``aborted`` 不算待办：那是人自己停的。
+    """
+    now = now_ms()
+    since = now - 24 * 3600 * 1000
+    rows = list(
+        (
+            await session.execute(
+                select(Run)
+                .where(
+                    Run.parent_run_id.is_(None),
+                    Run.orchestration_id.is_(None),
+                    Run.status.in_(("waiting_hitl", "error")),
+                    Run.started_at >= since,
+                )
+                .order_by(Run.started_at.desc())
+                .limit(200)
+            )
+        ).scalars()
+    )
+    agents = {a.id: a.name for a in (await session.execute(select(Agent))).scalars()}
+
+    _prio = {"hitl": 0, "stalled": 1, "failed": 2}
+    items: list[dict[str, Any]] = []
+    for r in rows:
+        err = str(r.error or "")
+        if r.status == "waiting_hitl":
+            kind, reason = "hitl", "停在等你确认（不动它就一直等）"
+        elif err.startswith("停滞："):
+            kind, reason = "stalled", err
+        else:
+            kind, reason = "failed", err[:160] or "执行失败"
+        items.append(
+            {
+                "run_id": r.id,
+                "agent_id": r.agent_id,
+                "agent_name": agents.get(r.agent_id) or r.agent_id,
+                "kind": kind,
+                "reason": reason,
+                "at": int(r.started_at or 0),
+            }
+        )
+    items.sort(key=lambda x: (_prio.get(str(x["kind"]), 9), -int(x["at"])))
+
+    def _n(kind: str) -> int:
+        return sum(1 for i in items if i["kind"] == kind)
+
+    return {
+        "counts": {
+            "hitl": _n("hitl"),
+            "stalled": _n("stalled"),
+            "failed": _n("failed"),
+            "total": len(items),
+        },
+        "items": items[:20],
+    }
+
+
 @router.get("/usage", response_model=dict)
 async def usage_summary(
     days: int = Query(7, ge=1, le=90, description="统计最近多少天"),
