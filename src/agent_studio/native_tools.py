@@ -1576,9 +1576,13 @@ async def _dispatch(
         if agent:
             # 同名可能有两个：本地的助手，和远端 A2A 注册进来的影子 Agent。
             # 用户说名字时默认指本地那个；要派远端就写远端自己的名字。
-            rows = (
-                await session.execute(select(Agent).where(Agent.name == agent.strip()).order_by(Agent.created_at))
-            ).scalars().all()
+            rows = [
+                a
+                for a in (
+                    await session.execute(select(Agent).where(Agent.name == agent.strip()).order_by(Agent.created_at))
+                ).scalars().all()
+                if (a.definition or {}).get("disabled") is not True
+            ]
             if not rows:
                 names = list((await session.execute(select(Agent.name).order_by(Agent.created_at))).scalars())
                 uniq = list(dict.fromkeys(names))
@@ -1714,6 +1718,8 @@ async def _workers() -> str:
     for a in rows:
         d = a.definition or {}
         if (d.get("role") or "worker") == "orchestrator":
+            continue
+        if d.get("disabled") is True:  # 远端已停用：不在可派清单里
             continue
         desc = (a.description or "").strip().replace("\n", " ") or "（没写域/能力，按名字判断）"
         remote = str(d.get("runtime") or "") == "a2a"

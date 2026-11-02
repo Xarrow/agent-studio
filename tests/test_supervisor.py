@@ -157,10 +157,12 @@ async def test_同一件活派给两个助手_各用一个会话(monkeypatch):
         run_ctx.clear_run_ctx()
 
     async with SessionLocal() as s:
-        tk = (await s.execute(select(Ticket).where(Ticket.thread_id == thread_of("ses_multi")))).scalar_one()
-        sessions = (tk.facts or {}).get("sessions") or {}
+        # 一张票=一块活：两个域各开一张票，各自一个会话
+        tks = (await s.execute(select(Ticket).where(Ticket.thread_id == thread_of("ses_multi")))).scalars().all()
+        assert len(tks) == 2, f"两个助手应各一张票，实际 {len(tks)}"
+        sessions = [sid for tk in tks for sid in ((tk.facts or {}).get("sessions") or {}).values()]
         assert len(sessions) == 2, f"两个助手应各有一个 worker 会话，实际 {sessions}"
-        rows = [await s.get(ChatSession, sid) for sid in sessions.values()]
+        rows = [await s.get(ChatSession, sid) for sid in sessions]
         assert len({r.agent_id for r in rows}) == 2
 
 

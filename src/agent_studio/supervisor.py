@@ -396,6 +396,13 @@ async def kick_summary(*, parent_run_id: str, session_id: str, agent_name: str =
             if any((r.started_at or 0) >= latest_child for r in recent):
                 return
 
+            # run → 票 一次建表，别在循环里反复扫票
+            run_to_ticket: dict[str, str] = {}
+            for tk_row in (await s.execute(_select(Ticket))).scalars().all():
+                for rid in (tk_row.facts or {}).get("run_ids") or []:
+                    run_to_ticket[str(rid)] = tk_row.id
+
+            tickets_of_batch: list[tuple[str, str]] = []
             rows: list[str] = []
             for i, r in enumerate(siblings, 1):
                 ag = await s.get(Agent, r.agent_id) if r.agent_id else None
@@ -406,6 +413,10 @@ async def kick_summary(*, parent_run_id: str, session_id: str, agent_name: str =
                 rows.append(
                     f"{head} {i}. {name}｜任务：{task[:120]}\n   结果：{body[:600] or '（没有产出）'}"
                 )
+                # 这一条 run 属于哪张票（票上记过 run_ids）
+                tk_id = run_to_ticket.get(r.id)
+                if tk_id:
+                    tickets_of_batch.append((tk_id, ""))
             digest = (
                 "【自动汇报 · 你派的活都回来了】\n"
                 + "\n".join(rows)
@@ -430,6 +441,18 @@ async def kick_summary(*, parent_run_id: str, session_id: str, agent_name: str =
                 origin="router",
             )
             s.add(run)
+            # 这一批活都回来了、收口也起了 —— 票的使命就结束了。
+            # 不自动关的话，每派一次活就永久多一张「等你验收」，一天下来侧栏/运行页堆成山
+            # （实测：测试跑几十轮就攒出 23 件"等你验收"）。人工验收由 Router 是否收口替代。
+            for tk_id, _title in tickets_of_batch:
+                tk = await s.get(Ticket, tk_id)
+                if tk is not None and tk.status == "open":
+                    tk.status = "ended"
+                    tk.ended_at = now_ms()
+                    facts = _facts(tk)
+                    facts["closed_by"] = "router"
+                    tk.facts = facts
+                    tk.updated_at = now_ms()
             await s.commit()
             await s.refresh(run)
             from .runner import run_service

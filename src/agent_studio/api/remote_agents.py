@@ -64,6 +64,8 @@ async def sync_shadow_agent(session: AsyncSession, row: RemoteAgent) -> Agent:
         "remote_id": row.id,
         "remote_url": row.url,
         "remote_agent_id": row.remote_agent_id,
+        # 停用的远端不该出现在 agent 管理里、也不该被派活（见 agents/workers/dispatch 的过滤）
+        "disabled": not bool(row.enabled),
     }
     if existing is None:
         existing = Agent(
@@ -498,6 +500,8 @@ async def patch_remote_agent(
     row.tool_id = tool.id
     await session.commit()
     await session.refresh(row)
+    # 管理页的启停/改名/换地址都要落到影子 Agent 上，否则"停用了还能在 Agent 管理里看到"
+    await sync_shadow_agent(session, row)
     return _to_read(row, tool=tool, bound=await remote_agents.bindings_of(row.id))
 
 
@@ -582,6 +586,12 @@ async def delete_remote_agent(remote_id: str) -> dict[str, Any]:
         tool = await session.get(Tool, row.tool_id) if row.tool_id else None
         if tool is not None:
             await session.delete(tool)
+        # 影子 Agent 一起删：注册项没了，Agent 管理里就不该再留一条
+        shadow = (
+            await session.execute(select(Agent).where(Agent.slug == f"a2a-{row.id}"))
+        ).scalar_one_or_none()
+        if shadow is not None:
+            await session.delete(shadow)
         await session.delete(row)
         await session.commit()
     return {"deleted": remote_id}

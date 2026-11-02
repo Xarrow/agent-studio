@@ -837,26 +837,23 @@ export function RunsPanel() {
 
           {/* 票：一件持续的事。「等你处理 N」常驻在工具栏 —— 这是新一轮运行记录页的
               第一屏语义：先看"有几件事在等人"，再看执行流水。点开就地列，不跳页、不弹框。 */}
-          {tickets && tickets.items.length > 0 && (
+          {/* 票：一件持续的事。只在**真有人等**的时候才出现（openHot>0）——
+              以前只要有一张票就常驻显示，派活自动收口之后它会一直是 0，
+              留着一个「票 0 件等你」只是噪音。 */}
+          {tickets && openHot > 0 && (
             <button
               type="button"
               data-tap
               onClick={() => setTicketsOpen((v) => !v)}
               className="flex h-[32px] items-center gap-1 rounded-[8px] border px-2 text-[12px] max-md:h-[44px]"
               style={{
-                borderColor:
-                  openHot
-                    ? "var(--color-warn)"
-                    : "var(--color-border)",
-                color:
-                  openHot
-                    ? "var(--color-warn)"
-                    : "var(--color-muted)",
+                borderColor: "var(--color-warn)",
+                color: "var(--color-warn)",
                 background: "var(--color-surface)",
               }}
-              title="票 = 一件持续的事：可能被别人唤醒、可能等你回答、可能等你验收"
+              title="票 = 一件持续的事：可能等你回答、可能卡住等你看"
             >
-              票 <b className="tabular-nums">{openHot}</b> 件等你
+              待处理 <b className="tabular-nums">{openHot}</b> 件
               <span aria-hidden>{ticketsOpen ? "▴" : "▾"}</span>
             </button>
           )}

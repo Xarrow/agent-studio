@@ -86,7 +86,9 @@ async def list_agents(session: AsyncSession = Depends(get_session)) -> list[Agen
     rows = (
         (await session.execute(select(Agent).order_by(Agent.updated_at.desc()))).scalars().all()
     )
-    return [to_read(r) for r in rows]
+    # 远端 A2A 的影子 Agent：注册项被停用的就不列出来（它跑在对面，这里停用=不可用）。
+    # 不停用仍可见，是"能在 Agents 页发现并使用"的前提；停用还看得见就是自相矛盾。
+    return [to_read(r) for r in rows if not ((r.definition or {}).get("disabled") is True)]
 
 
 @router.post("", response_model=AgentRead, status_code=status.HTTP_201_CREATED)
