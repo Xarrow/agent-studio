@@ -78,17 +78,30 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     setPickedAgent(id);
     setOwnAgentId(id);
   };
+  /** 切换助手时想落到哪条会话（点树上的子节点用；不然会被"选最近一条"覆盖） */
+  const pendingPick = useRef<string | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
-  /** 全量会话：Router 与它派出去的活不在"当前助手"的过滤里，侧栏要单独看得到 */
+  /** 全量会话：只用来把"我这条对话派出去的 worker"捞出来挂树，别的助手的一律不显示 */
   const [allSessions, setAllSessions] = useState<Session[]>([]);
-  /** 侧栏用的是这份：当前助手的对话 + Router/派活（跨助手），按 id 去重 */
+  /**
+   * 侧栏显示哪些会话：**当前助手的对话** + 它们派出去的 worker（别的助手的会话）。
+   *
+   * 之前是把所有 router/worker 会话都并进来 —— 结果选「编排者」时，能看到
+   * 「简明助手」自己的对话、别的助手派出去的活，全混在一个列表里。
+   * 现在只认血缘：worker 的父会话必须是我这儿的某条会话，否则不出现。
+   */
   const navSessions = useMemo(() => {
+    const mine = new Set(sessions.map((s) => s.id));
     const seen = new Set<string>();
     const out: Session[] = [];
-    for (const s of [
-      ...allSessions.filter((x) => x.kind === "router" || x.kind === "worker"),
-      ...sessions,
-    ]) {
+    for (const s of sessions) {
+      if (seen.has(s.id)) continue;
+      seen.add(s.id);
+      out.push(s);
+    }
+    for (const s of allSessions) {
+      if (s.kind !== "worker") continue;
+      if (!s.parent_session_id || !mine.has(s.parent_session_id)) continue;
       if (seen.has(s.id)) continue;
       seen.add(s.id);
       out.push(s);
@@ -408,7 +421,11 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     if (!agentId) return;
     void (async () => {
       const list = await loadSessions(agentId);
-      if (list.length > 0) {
+      const want = pendingPick.current;
+      pendingPick.current = null;
+      if (want && list.some((x) => x.id === want)) {
+        setSessionId(want);
+      } else if (list.length > 0) {
         setSessionId(list[0].id);
       } else {
         try {
@@ -1216,7 +1233,15 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   const pickSession = (id: string, takeOver = false) => {
     if (!id || id === sessionId) return;
     const prev = sessionId;
-    setSessionId(id);
+    // 侧栏树里的子节点是**别的助手**的会话：直接打开会"会话变了、助手没变"，
+    // 所以要连助手一起切；切完还要回到这一条（切 Agent 的 effect 默认选最近一条）。
+    const target = [...sessions, ...allSessions].find((x) => x.id === id);
+    if (target && target.agent_id && target.agent_id !== agentId) {
+      pendingPick.current = id;
+      setAgentId(target.agent_id);
+    } else {
+      setSessionId(id);
+    }
     if (prev) pushSessionLayer(() => setSessionId(prev), takeOver);
   };
   /** 抽屉两个视图：会话（默认）/ 功能与配置。手机上全站只有这一个抽屉，
@@ -1790,6 +1815,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                         const all = await api.sessions();
                         const r = all.find((x) => x.kind === "router");
                         if (r) {
+                          // 跨助手跳转：先记下要落到哪条，否则切 Agent 的 effect 会把它重置掉
+                          pendingPick.current = r.id;
                           setAgentId(r.agent_id);
                           setSessionId(r.id);
                         }
@@ -1818,6 +1845,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     const all = await api.sessions();
                     const r = all.find((x) => x.kind === "router");
                     if (r) {
+                      pendingPick.current = r.id;
                       setAgentId(r.agent_id);
                       setSessionId(r.id);
                     }
