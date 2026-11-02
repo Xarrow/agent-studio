@@ -1296,3 +1296,32 @@ export type BrowserRun = {
   last_url: string;
   started_at: number;
 };
+
+/** 票：一件持续的事。阶段是服务端从事实算出来的（不落库），前端只负责显示 */
+export interface TicketItem {
+  id: string;
+  title: string;
+  thread_id?: string | null;
+  /** worker 会话（这张票的活跑在哪条会话里） */
+  session_id?: string | null;
+  agent_id?: string | null;
+  source?: string | null;
+  status: "open" | "ended";
+  stage: string;
+  stage_label: string;
+  needs_person: boolean;
+  facts?: {
+    assignment?: { run_id?: string | null; status?: string; task?: string } | null;
+    reports?: { kind: string; text: string; run_id?: string | null; at: number }[];
+    attention?: { kind: string; text: string; at: number } | null;
+  };
+  created_at: number;
+  updated_at: number;
+  ended_at?: number | null;
+}
+
+export interface TicketList {
+  items: TicketItem[];
+  counts: Record<string, number>;
+  labels: Record<string, string>;
+}

@@ -39,6 +39,8 @@ import type {
   GuardrailsRead,
   LlmCall,
   RunDeleteResult,
+  TicketItem,
+  TicketList,
 } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
 import { KIND_LABEL } from "@/components/RunDetailDialog";
@@ -167,6 +169,10 @@ export function RunsPanel() {
   /** 待办（等你确认 / 停滞 / 失败可重跑）—— 工具条上一颗常驻数字，点开就地列出 */
   const [attention, setAttention] = useState<AttentionRead | null>(null);
   const [attentionOpen, setAttentionOpen] = useState(false);
+  // 票（一件持续的事）：运行时第一屏要能看出"有几件在等人"
+  const [tickets, setTickets] = useState<TicketList | null>(null);
+  const [ticketsOpen, setTicketsOpen] = useState(false);
+  const [ticketArm, setTicketArm] = useState<string | null>(null);
   /** 分页：一页 50 条，「加载更多」往后翻（游标式 —— 翻页时新记录插进来也不会错位） */
   const [hasMore, setHasMore] = useState(false);
   const [serverTotal, setServerTotal] = useState(0);
@@ -184,10 +190,16 @@ export function RunsPanel() {
     }
   };
 
+  // 还开着、并且要点人手的票有几张（结束掉的不算 —— 否则点完"结束"数字不动）
+  const openHot = useMemo(
+    () => (tickets?.items ?? []).filter((t) => t.needs_person && t.status === "open").length,
+    [tickets],
+  );
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [u, tl, a, at] = await Promise.all([
+      const [u, tl, a, at, tk] = await Promise.all([
         api.usage(7),
         api.runTimeline({
           kind: kind === "all" ? undefined : kind,
@@ -199,6 +211,8 @@ export function RunsPanel() {
         api.agents(),
         // 待办：和列表同一次请求里取（不额外等一轮，也不自己轮询）
         api.attention().catch(() => null),
+        // 票和列表同一轮取：多一个请求，页面不多一轮空白
+        api.tickets().catch(() => null),
       ]);
       setUsage(u);
       setItems(tl.items);
@@ -207,6 +221,7 @@ export function RunsPanel() {
       setServerTotal(tl.total ?? tl.items.length);
       setAgents(a);
       setAttention(at);
+      setTickets(tk);
       setSelected(new Set());
       setExpanded(new Set());
       setDetails({});
@@ -473,6 +488,27 @@ export function RunsPanel() {
   /** 待办条目 → 展开列表里那一条（找不到就切到「全部」并说明，不假装成功） */
   // 用普通函数而不是 useCallback：它要调 toggleRow（普通函数），
   // 依赖数组写不对就会出现"展开了但详情永远是空的"。
+  /** 结束一张票：第一次点只是"举枪"，第二次才真结束（破坏性操作两步确认） */
+  const endTicket = async (tk: TicketItem) => {
+    if (ticketArm !== tk.id) {
+      setTicketArm(tk.id);
+      setTimeout(() => setTicketArm((v) => (v === tk.id ? null : v)), 4000);
+      return;
+    }
+    setTicketArm(null);
+    try {
+      await api.endTicket(tk.id);
+      setTickets((prev) =>
+        prev
+          ? { ...prev, items: prev.items.map((x) => (x.id === tk.id ? { ...x, status: "ended" as const } : x)) }
+          : prev,
+      );
+      fb.info?.("已结束", tk.title || tk.id);
+    } catch (e) {
+      fb.error("结束失败", e instanceof Error ? e.message : String(e));
+    }
+  };
+
   const jumpToRun = (it: AttentionItem) => {
     const row = items.find(
       (x) =>
@@ -796,6 +832,98 @@ export function RunsPanel() {
                   )}
                 </>
               )}
+            </div>
+          )}
+
+          {/* 票：一件持续的事。「等你处理 N」常驻在工具栏 —— 这是新一轮运行记录页的
+              第一屏语义：先看"有几件事在等人"，再看执行流水。点开就地列，不跳页、不弹框。 */}
+          {tickets && tickets.items.length > 0 && (
+            <button
+              type="button"
+              data-tap
+              onClick={() => setTicketsOpen((v) => !v)}
+              className="flex h-[32px] items-center gap-1 rounded-[8px] border px-2 text-[12px] max-md:h-[44px]"
+              style={{
+                borderColor:
+                  openHot
+                    ? "var(--color-warn)"
+                    : "var(--color-border)",
+                color:
+                  openHot
+                    ? "var(--color-warn)"
+                    : "var(--color-muted)",
+                background: "var(--color-surface)",
+              }}
+              title="票 = 一件持续的事：可能被别人唤醒、可能等你回答、可能等你验收"
+            >
+              票 <b className="tabular-nums">{openHot}</b> 件等你
+              <span aria-hidden>{ticketsOpen ? "▴" : "▾"}</span>
+            </button>
+          )}
+
+          {ticketsOpen && tickets && (
+            <div
+              className="w-full basis-full max-md:order-9 rounded-[10px] border p-2 text-[12px]"
+              style={{
+                borderColor: "var(--color-border)",
+                background: "var(--color-surface)",
+                minWidth: 0,
+                width: "100%",
+              }}
+            >
+              {tickets.items.map((tk: TicketItem) => {
+                const rpt = (tk.facts?.reports ?? []).slice(-1)[0];
+                const who = agents.find((a) => a.id === tk.agent_id)?.name ?? "（助手已删）";
+                const hot = tk.needs_person;
+                return (
+                  <div
+                    key={tk.id}
+                    className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b py-1.5 last:border-b-0"
+                    style={{ borderColor: "var(--color-border)" }}
+                  >
+                    <span
+                      className="rounded-full px-1.5 py-0.5 text-[11px]"
+                      style={{
+                        color: hot ? "var(--color-warn)" : "var(--color-muted)",
+                        background: "var(--color-bg)",
+                      }}
+                    >
+                      {tk.stage_label}
+                    </span>
+                    <b className="min-w-0 max-w-[46%] truncate" style={{ color: "var(--color-text)" }} title={tk.title}>
+                      {tk.title || "（没有标题）"}
+                    </b>
+                    <span className="min-w-0 flex-1 truncate" style={{ color: "var(--color-muted)" }}>
+                      {who}
+                      {rpt ? ` · ${rpt.text.replace(/\s+/g, " ").slice(0, 60)}` : ""}
+                    </span>
+                    <span className="tabular-nums text-[11px]" style={{ color: "var(--color-muted)" }}>
+                      {new Date(tk.updated_at).toLocaleString("zh-CN", {
+                        month: "2-digit",
+                        day: "2-digit",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                    {tk.status !== "open" && (
+                      <span className="ml-auto text-[11px]" style={{ color: "var(--color-muted)" }}>
+                        已结束
+                      </span>
+                    )}
+                    {tk.status === "open" && (
+                      <button
+                        type="button"
+                        data-tap
+                        className="ml-auto inline-flex h-[28px] items-center justify-center text-[11px] underline decoration-dotted max-md:h-[44px] max-md:min-w-[44px] max-md:px-2"
+                        style={{ color: ticketArm === tk.id ? "var(--color-err)" : "var(--color-muted)" }}
+                        onClick={() => void endTicket(tk)}
+                      >
+                        {ticketArm === tk.id ? "再点一次结束" : "结束"}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
 

@@ -12,6 +12,8 @@ import type {
   EvalRunRead,
   EvalSuiteRead,
   AttentionRead,
+  TicketItem,
+  TicketList,
   GuardrailsRead,
   AutoStartResult,
   RouteDecision,
@@ -834,6 +836,10 @@ export const api = {
     }),
   /** 待你处理的事（等你确认 / 停滞 / 失败可重跑）—— 按紧急度排好 */
   attention: () => request<AttentionRead>("/api/runs/attention"),
+  // 票：一件持续的事（阶段由服务端从事实算出来）
+  tickets: () => request<TicketList>("/api/tickets?limit=30"),
+  endTicket: (id: string) =>
+    request<TicketItem>(`/api/tickets/${id}/end`, { method: "POST", body: JSON.stringify({ by: "human" }) }),
   /** 这个助手「收哪些话」（路由规则）+ 给一句话看会交给谁 */
   routes: (agentId: string) =>
     request<{ items: RouteRule[]; total: number }>(`/api/routes?agent_id=${encodeURIComponent(agentId)}`),
