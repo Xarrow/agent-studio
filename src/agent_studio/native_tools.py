@@ -1579,7 +1579,9 @@ async def _dispatch(task: str, agent: str | None = None, title: str | None = Non
             agent_id=target.id,
             source="chat",
         )
-        run = await supervisor.start_worker(session, ticket, target, text)
+        run = await supervisor.start_worker(
+            session, ticket, target, text, parent_run_id=str(ctx.get("run_id") or "") or None
+        )
         done = await supervisor.wait_run(session, run.id, timeout_s=900)
         body = supervisor.summarize(done)
         kind = "ready" if done.status == "ok" else ("failed" if done.status == "error" else "blocked")

@@ -44,6 +44,40 @@ from ..runtimes.base import HitlResponse
 router = APIRouter(prefix="/api/runs", tags=["runs"])
 
 
+@router.get("/{run_id}/delegations")
+async def run_delegations(run_id: str, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """这次执行**派出去**的活（Router → Worker）。
+
+    为什么要单独一个端点：worker 跑在**自己的会话**里，不在 Router 的 run 上，
+    前端只看 Router 的事件流永远看不到"派给谁了、做完没有、做成什么样"。
+    """
+    rows = (
+        await session.execute(select(Run).where(Run.parent_run_id == run_id).order_by(Run.started_at.asc()))
+    ).scalars().all()
+    names = {a.id: a.name for a in (await session.execute(select(Agent))).scalars().all()}
+    items: list[dict[str, Any]] = []
+    for r in rows:
+        out = r.output or {}
+        text = (out.get("content") if isinstance(out, dict) else "") or ""
+        inp = r.input or {}
+        items.append(
+            {
+                "run_id": r.id,
+                "agent_id": r.agent_id,
+                "agent_name": names.get(r.agent_id or "", "（助手已删）"),
+                "task": (inp.get("text") if isinstance(inp, dict) else "") or "",
+                "status": r.status,
+                "started_at": r.started_at,
+                "ended_at": r.ended_at,
+                "output_excerpt": str(text)[:600],
+                "error": r.error,
+                "session_id": r.session_id,
+            }
+        )
+    return {"items": items, "count": len(items)}
+
+
+
 def to_read(run: Run) -> RunRead:
     return RunRead(
         id=run.id,

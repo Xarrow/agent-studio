@@ -13,6 +13,7 @@ import type {
   EvalSuiteRead,
   AttentionRead,
   TicketItem,
+  Delegation,
   TicketList,
   GuardrailsRead,
   AutoStartResult,
@@ -838,6 +839,9 @@ export const api = {
   attention: () => request<AttentionRead>("/api/runs/attention"),
   // 票：一件持续的事（阶段由服务端从事实算出来）
   tickets: () => request<TicketList>("/api/tickets?limit=30"),
+  // 这次执行派出去的活（worker 跑在别的会话里，只能从这里看）
+  delegations: (runId: string) =>
+    request<{ items: Delegation[]; count: number }>(`/api/runs/${runId}/delegations`),
   endTicket: (id: string) =>
     request<TicketItem>(`/api/tickets/${id}/end`, { method: "POST", body: JSON.stringify({ by: "human" }) }),
   /** 这个助手「收哪些话」（路由规则）+ 给一句话看会交给谁 */

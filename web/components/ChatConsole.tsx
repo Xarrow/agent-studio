@@ -13,7 +13,8 @@
 
 import Link from "next/link";
 import { HitlPrompt } from "@/components/HitlPrompt";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { DelegationBlock } from "@/components/DelegationBlock";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api, fmt, withToken } from "@/lib/api";
 import type { Agent, RunEvent, Session, SearchHit, Skill, Tool, Memory } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
@@ -1868,9 +1869,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     m.role === "assistant"
                       ? ([...history.slice(0, i)].reverse().find((x) => x.role === "user")?.content ?? undefined)
                       : undefined;
-                  return (
+                  const bubble = (
                     <Bubble
-                      key={m.id ?? i}
                       role={m.role}
                       content={m.content}
                       runId={m.run_id}
@@ -1899,6 +1899,16 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                       }
                     />
                   );
+                  return m.role === "assistant" && m.run_id ? (
+                    <div key={m.id ?? i} className="space-y-2">
+                      {bubble}
+                      <div className="max-w-[88%] max-md:max-w-[90%]">
+                        <DelegationBlock runId={m.run_id} />
+                      </div>
+                    </div>
+                  ) : (
+                    <Fragment key={m.id ?? i}>{bubble}</Fragment>
+                  );
                 })}
 
                 {/* 生成中：实时分色显示执行过程（思考 / 工具 / 结果 / 回答） */}
@@ -1918,12 +1928,15 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     想看它每一步在干嘛，点开这一行（默认不摊开，
                     否则一屏全是"思考/调用工具"，结果反而被挤到看不见）。 */}
                 {busy && (
-                  <div className="w-full max-w-[88%] max-md:max-w-[90%]">
+                  <div className="w-full max-w-[88%] max-md:max-w-[90%] space-y-2">
                     <ProcessBar
                       steps={liveSteps}
                       running
                       elapsedMs={liveElapsed}
                     />
+                    {/* Router 把活派出去之后，最要紧的是"派给谁、干到哪了" ——
+                        以前这一屏什么都没有，用户只能等一条最终答复。 */}
+                    {liveRunId && <DelegationBlock runId={liveRunId} live />}
                   </div>
                 )}
                 {/* 流式回答：过程条在上面（它现在在干嘛），结果在下面实时长出来。

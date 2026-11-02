@@ -173,7 +173,13 @@ async def report(
 
 
 async def start_worker(
-    session: AsyncSession, ticket: Ticket, agent: Agent, task: str, *, timeout_s: int | None = None
+    session: AsyncSession,
+    ticket: Ticket,
+    agent: Agent,
+    task: str,
+    *,
+    timeout_s: int | None = None,
+    parent_run_id: str | None = None,
 ) -> Run:
     """给这张票开一次 worker 执行（独立会话、独立上下文）。"""
     chat = await worker_session(session, ticket, agent)
@@ -192,6 +198,8 @@ async def start_worker(
         session_id=chat.id,
         turn_index=turn,
         origin="worker",
+        # 记清「这次的活是谁派的」：界面上要能把 worker 的过程挂回派活那一条
+        parent_run_id=parent_run_id,
     )
     session.add(run)
     await record(session, ticket, assignment={"run_id": run.id, "status": "running", "task": task[:500]})

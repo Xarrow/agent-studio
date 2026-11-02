@@ -1325,3 +1325,17 @@ export interface TicketList {
   counts: Record<string, number>;
   labels: Record<string, string>;
 }
+
+/** 一次派活：Router 把活交给某个 worker（worker 有自己的会话与 run） */
+export interface Delegation {
+  run_id: string;
+  agent_id: string | null;
+  agent_name: string;
+  task: string;
+  status: string;
+  started_at: number;
+  ended_at: number | null;
+  output_excerpt: string;
+  error?: string | null;
+  session_id?: string | null;
+}

@@ -61,7 +61,7 @@ async def test_派活用独立会话_不是复用router的(monkeypatch):
     monkeypatch.setattr("agent_studio.runner.run_service.start", fake_start)
     monkeypatch.setattr("agent_studio.supervisor.wait_run", fake_wait)
 
-    token = run_ctx.set_run_ctx(agent_id=orch, session_id="ses_router_test")
+    token = run_ctx.set_run_ctx(agent_id=orch, session_id="ses_router_test", run_id="run_parent_router")
     try:
         out = await _dispatch(task="写三句话总结", agent=worker_name, title="总结一下")
     finally:
