@@ -15,7 +15,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import type { Delegation, RunEvent } from "@/lib/types";
 import { RunTimeline, eventsToSteps, type Step } from "@/components/ui/run-timeline";
-import { LIVE_STATUS, liveHint, secs, statusText, turnStats } from "@/lib/turn";
+import { LIVE_STATUS, agentColor, liveHint, secs, statusText, turnStats } from "@/lib/turn";
 
 export function DelegationBlock({
   runId,
@@ -235,6 +235,8 @@ export function DelegationBlock({
         // 取第一个分句，最多 12 字 —— 标签是给人扫的，不是给人读的。
         const rawDomain = (d.agent_domain || "").split(/[，。；;:：]/)[0].trim();
         const domain = rawDomain.length > 8 ? rawDomain.slice(0, 8) + "…" : rawDomain;
+        // 同一个人在整个产品里一个颜色：侧栏的树、这里的行、它自己的会话身份带都一致
+        const tint = agentColor(d.agent_id);
         return (
           <div key={d.run_id} className="border-b last:border-b-0" style={{ borderColor: "var(--color-border)" }}>
             <button
@@ -246,25 +248,15 @@ export function DelegationBlock({
             >
               <div className="flex items-center gap-1.5 min-w-0">
                 <span
-                  className={hot ? "live-dot shrink-0" : "shrink-0"}
-                  style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: 999,
-                    background: hot
-                      ? "var(--color-accent)"
-                      : d.status === "ok"
-                        ? "var(--color-ok)"
-                        : "var(--color-err)",
-                    display: "inline-block",
-                  }}
+                  className="shrink-0 rounded-full"
+                  style={{ width: 7, height: 7, background: tint, display: "inline-block" }}
                   aria-hidden
                 />
                 <b className="shrink-0" style={{ color: "var(--color-text)", fontWeight: 600 }}>{d.agent_name}</b>
                 {domain && (
                   <span
                     className="shrink-0 max-w-[40%] truncate rounded px-1 py-[1px] text-[10.5px]"
-                    style={{ background: "var(--color-surface-2)", color: "var(--color-muted)" }}
+                    style={{ background: `color-mix(in srgb, ${tint} 13%, transparent)`, color: tint }}
                     title={d.agent_domain}
                   >
                     {domain}

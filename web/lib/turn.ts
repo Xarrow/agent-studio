@@ -67,3 +67,17 @@ export function secs(a: number, b: number | null): string {
   if (ms < 60_000) return `${Math.round(ms / 1000)}s`;
   return `${Math.floor(ms / 60_000)}m${Math.round((ms % 60_000) / 1000)}s`;
 }
+
+
+/**
+ * 每个 worker 一个固定色：同一个助手在侧栏、编排区、会话身份带上都是同一个颜色。
+ * 颜色不是装饰 —— 用户在侧栏看到"琥珀那一条"，翻到对话里还是琥珀，才认得出是同一个人。
+ */
+const AGENT_COLORS = ["#d97706", "#0d9488", "#7c3aed", "#db2777", "#2563eb", "#65a30d"];
+
+export function agentColor(agentId: string | null | undefined): string {
+  if (!agentId) return "#64748b";
+  let h = 0;
+  for (let i = 0; i < agentId.length; i++) h = (h * 31 + agentId.charCodeAt(i)) >>> 0;
+  return AGENT_COLORS[h % AGENT_COLORS.length];
+}

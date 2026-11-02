@@ -144,7 +144,7 @@ async def list_sessions(
     # worker 会话 → 票（票上记着这件活的标题与任务）
     from agent_studio.models import Ticket
 
-    tmap: dict[str, tuple[str, str]] = {}
+    tmap: dict[str, tuple[str, str, str | None]] = {}
     # 票号短名（tk_ 后 8 位）→ 票：worker 会话标题就是 worker-<短名>
     by_short: dict[str, tuple[str, str]] = {}
     for tk in (await session.execute(select(Ticket))).scalars().all():
@@ -152,7 +152,9 @@ async def list_sessions(
         facts = tk.facts or {}
         sid = ((facts.get("assignment") or {}) or {}).get("session_id")
         if sid:
-            tmap[str(sid)] = (tk.id, tk.title or "")
+            # thread_id 形如 ses:<派活的那个会话>，侧栏据此把 worker 挂回父会话
+            parent = (tk.thread_id or "")[len("ses:") :] if (tk.thread_id or "").startswith("ses:") else None
+            tmap[str(sid)] = (tk.id, tk.title or "", parent)
 
     out: list[SessionRead] = []
     for r in rows:
@@ -169,9 +171,10 @@ async def list_sessions(
             hit = tmap.get(r.id)
             if not hit:
                 # 老票上没记 session_id：worker 会话标题就是 worker-<票号短名>，按短号兜底
-                hit = by_short.get((r.title or "")[len(WORKER_PREFIX):])
+                hit0 = by_short.get((r.title or "")[len(WORKER_PREFIX):])
+                hit = (hit0[0], hit0[1], None) if hit0 else None
             if hit:
-                read.ticket_id, read.ticket_title = hit
+                read.ticket_id, read.ticket_title, read.parent_session_id = hit
         out.append(read)
     return out
 
@@ -204,6 +207,8 @@ async def get_session_detail(
         ).scalar_one_or_none()
         if tk is not None:
             head.ticket_id, head.ticket_title = tk.id, tk.title or ""
+            th = tk.thread_id or ""
+            head.parent_session_id = th[len("ses:") :] if th.startswith("ses:") else None
     return SessionDetail(
         session=head,
         messages=[

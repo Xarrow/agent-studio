@@ -755,6 +755,8 @@ class SessionRead(BaseModel):
     #: 派生：worker 会话对应的票（展示「由谁派、干什么」用）
     ticket_id: str | None = None
     ticket_title: str | None = None
+    #: 派生：这条 worker 会话是哪个会话派出来的（侧栏要挂成树）
+    parent_session_id: str | None = None
     #: 派生：这个会话的工作目录（绝对路径）—— 会话的文件隔离边界
     work_dir: str = ""
 

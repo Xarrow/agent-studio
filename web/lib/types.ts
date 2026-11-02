@@ -597,6 +597,8 @@ export interface Session {
   /** worker 会话对应的票 */
   ticket_id?: string | null;
   ticket_title?: string | null;
+  /** worker 会话是哪个会话派出来的（侧栏挂树用） */
+  parent_session_id?: string | null;
 }
 
 /** 后台进程（会话级）。状态：running 在跑 / exited 正常结束 / failed 非零退出 / killed 被停 / unknown 重启后对不上 */

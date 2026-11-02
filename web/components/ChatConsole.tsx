@@ -14,6 +14,7 @@
 import Link from "next/link";
 import { HitlPrompt } from "@/components/HitlPrompt";
 import { DelegationBlock } from "@/components/DelegationBlock";
+import { agentColor } from "@/lib/turn";
 
 /** worker 会话的识别色：Router 是蓝、派出去的活是琥珀、普通对话不上色 */
 const WORKER_COLOR = "#d97706";
@@ -97,6 +98,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   /** 当前会话的角色 —— 派活会话要一眼看出"这不是你直接聊的那个"，并给回 Router 的门 */
   const [curKind, setCurKind] = useState<"router" | "worker" | "chat">("chat");
   const [curTicket, setCurTicket] = useState<string | null>(null);
+  /** 当前 worker 会话是哪个助手 —— 身份带要用它的固定色，跟侧栏/编排区对上 */
+  const [curAgentId, setCurAgentId] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string>("");
   /**
    * 「自动挑」——这一句交给谁由内容决定。默认**关**：多数时候人心里有数，
@@ -374,6 +377,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
       const detail = await api.session(sid);
       setCurKind(detail.session.kind ?? "chat");
       setCurTicket(detail.session.ticket_title ?? null);
+      setCurAgentId(detail.session.agent_id ?? null);
       setHistory(
         detail.messages
           // system = 心跳这类"平台说的话"：不属于任何一轮，但要留在历史里
@@ -1773,9 +1777,9 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             <div
               className={`shrink-0 flex items-center gap-2 px-3 h-7 text-[12px] max-lg:mt-[calc(44px+env(safe-area-inset-top))] max-lg:h-[44px] ${curKind === "worker" ? "max-lg:cursor-pointer" : ""}`}
               style={{
-                background: "color-mix(in srgb, #d97706 9%, var(--color-surface))",
-                color: "#b45309",
-                borderBottom: "1px solid color-mix(in srgb, #d97706 22%, transparent)",
+                background: `color-mix(in srgb, ${agentColor(curAgentId)} 9%, var(--color-surface))`,
+                color: agentColor(curAgentId),
+                borderBottom: `1px solid color-mix(in srgb, ${agentColor(curAgentId)} 22%, transparent)`,
               }}
               data-session-kind={curKind}
               onClick={
@@ -1798,7 +1802,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             >
               <span
                 className="shrink-0 rounded-full"
-                style={{ width: 6, height: 6, background: "#d97706" }}
+                style={{ width: 6, height: 6, background: agentColor(curAgentId) }}
                 aria-hidden="true"
               />
               <span className="min-w-0 truncate">
@@ -2954,6 +2958,8 @@ function SessionsPane({
 }) {
   /** 「派活」那一组默认收起：它们是 Router 干的活，不是你要点的对话 */
   const [showWorkers, setShowWorkers] = useState(false);
+  /** 树：哪些父会话展开了它派出去的 worker（当前会话是 worker 时自动展开其父） */
+  const [openTree, setOpenTree] = useState<Set<string>>(() => new Set());
   const [q, setQ] = useState("");
   /** 打开菜单的会话 id（一次只开一个） */
   const [menuFor, setMenuFor] = useState<string | null>(null);
@@ -2990,6 +2996,13 @@ function SessionsPane({
     };
   }, [q]);
 
+  // 当前正看的是某个 worker 的会话：把父会话自动展开，别让人找不到自己是从哪进来的
+  useEffect(() => {
+    const cur = sessions.find((x) => x.id === sessionId);
+    const pid = cur?.kind === "worker" ? cur.parent_session_id : null;
+    if (pid) setOpenTree((prev) => (prev.has(pid) ? prev : new Set(prev).add(pid)));
+  }, [sessionId, sessions]);
+
   const kw = q.trim().toLowerCase();
   const list = kw
     ? sessions.filter((s) => (s.title || "未命名对话").toLowerCase().includes(kw))
@@ -2999,9 +3012,24 @@ function SessionsPane({
   const dayStart = new Date();
   dayStart.setHours(0, 0, 0, 0);
   const today = dayStart.getTime();
+  // 树：worker 挂在**派出它的那个会话**下面（票的 thread_id 记的就是父会话）。
+  // 1 个 Router 对 N 个 worker，这件事在列表里就该长成树，而不是两排平铺。
+  const kids = new Map<string, Session[]>();
+  const orphans: Session[] = [];
+  for (const s of list) {
+    if (s.kind !== "worker") continue;
+    const pid = s.parent_session_id || "";
+    if (pid && list.some((x) => x.id === pid)) {
+      const arr = kids.get(pid) ?? [];
+      arr.push(s);
+      kids.set(pid, arr);
+    } else {
+      orphans.push(s); // 父会话不在当前列表里（别的助手的）：退回到「派活」组
+    }
+  }
+
   const groups: { label: string; items: Session[]; kind?: "router" | "worker" }[] = [
     { label: "Router", items: [], kind: "router" },
-    { label: "派活", items: [], kind: "worker" },
     { label: "今天", items: [] },
     { label: "昨天", items: [] },
     { label: "过去 7 天", items: [] },
@@ -3009,15 +3037,15 @@ function SessionsPane({
   ];
   for (const s of list) {
     const t = s.last_active_at || 0;
-    // Router 与它派出去的活单独归拢 —— 它们不是"聊出来的对话"，
-    // 混在日期分组里会把真正要点的对话淹掉
+    // Router 单独归拢（它不是"聊出来的对话"）；worker 全部进树，不进日期组
     if (s.kind === "router") groups[0].items.push(s);
-    else if (s.kind === "worker") groups[1].items.push(s);
-    else if (t >= today) groups[2].items.push(s);
-    else if (t >= today - 86_400_000) groups[3].items.push(s);
-    else if (t >= today - 7 * 86_400_000) groups[4].items.push(s);
-    else groups[5].items.push(s);
+    else if (s.kind === "worker") continue;
+    else if (t >= today) groups[1].items.push(s);
+    else if (t >= today - 86_400_000) groups[2].items.push(s);
+    else if (t >= today - 7 * 86_400_000) groups[3].items.push(s);
+    else groups[4].items.push(s);
   }
+  if (orphans.length) groups.splice(1, 0, { label: "派活", items: orphans, kind: "worker" });
 
   return (
     <>
@@ -3124,9 +3152,10 @@ function SessionsPane({
                     return (
                       <div
                         key={s.id}
-                        className={`group relative flex items-center gap-1 rounded-xl pl-3 pr-1 py-2 max-md:py-2.5 cursor-pointer transition-colors ${
-                          active ? "bg-[var(--color-surface-2)]" : "hover:bg-[var(--color-surface-2)]"
-                        }`}
+                        className={`rounded-xl transition-colors ${active ? "bg-[var(--color-surface-2)]" : ""}`}
+                      >
+                      <div
+                        className="group relative flex items-center gap-1 rounded-xl pl-3 pr-1 py-2 max-md:py-2.5 cursor-pointer hover:bg-[var(--color-surface-2)]"
                         onClick={() => onPick(s.id)}
                       >
                         {/* 当前会话：左边一条竖色条 */}
@@ -3159,6 +3188,40 @@ function SessionsPane({
                             {s.turn_count} 轮 · {fmt.relative(s.last_active_at)}
                           </div>
                         </div>
+                        {(kids.get(s.id)?.length ?? 0) > 0 && (
+                          <button
+                            className="shrink-0 h-7 max-md:h-[44px] max-md:min-w-[44px] max-md:justify-center px-1.5 flex items-center gap-0.5 rounded-lg text-[10.5px] tabular-nums"
+                            style={{ color: WORKER_COLOR, background: "color-mix(in srgb, #d97706 10%, transparent)" }}
+                            data-tap
+                            title={`这个对话派出了 ${kids.get(s.id)!.length} 件活`}
+                            aria-expanded={openTree.has(s.id)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setOpenTree((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(s.id)) next.delete(s.id);
+                                else next.add(s.id);
+                                return next;
+                              });
+                            }}
+                          >
+                            <svg
+                              width="10"
+                              height="10"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2.4"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              aria-hidden="true"
+                              style={{ transform: openTree.has(s.id) ? "rotate(90deg)" : "none", transition: "transform .12s" }}
+                            >
+                              <path d="M9 6l6 6-6 6" />
+                            </svg>
+                            {kids.get(s.id)!.length}
+                          </button>
+                        )}
                         <button
                           className="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-[var(--color-muted)] hover:bg-[var(--color-surface)] hover:text-[var(--color-text)] opacity-60 lg:opacity-0 lg:group-hover:opacity-100"
                           data-tap-lg
@@ -3218,6 +3281,51 @@ function SessionsPane({
                             </div>
                           </>
                         )}
+                      </div>
+
+                      {/* 子树：这个对话派出去的 worker。竖线 + 短横线，是树，不是另一组列表 */}
+                      {openTree.has(s.id) && (kids.get(s.id)?.length ?? 0) > 0 && (
+                        <div className="relative">
+                          <span
+                            className="absolute left-[19px] top-0 bottom-3 w-px"
+                            style={{ background: "color-mix(in srgb, #d97706 35%, transparent)" }}
+                            aria-hidden
+                          />
+                          {kids.get(s.id)!.map((c) => {
+                            const cActive = c.id === sessionId;
+                            return (
+                              <div
+                                key={c.id}
+                                className={`relative pl-8 pr-1 py-1.5 max-md:py-3 cursor-pointer rounded-lg ${cActive ? "bg-[var(--color-surface-2)]" : "hover:bg-[var(--color-surface-2)]"}`}
+                                onClick={() => onPick(c.id)}
+                              >
+                                <span
+                                  className="absolute left-[19px] top-1/2 w-3.5 h-px"
+                                  style={{ background: "color-mix(in srgb, #d97706 35%, transparent)" }}
+                                  aria-hidden
+                                />
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <span
+                                    className="shrink-0 rounded-full"
+                                    style={{ width: 6, height: 6, background: agentColor(c.agent_id), display: "inline-block" }}
+                                    aria-hidden
+                                  />
+                                  <span
+                                    className="min-w-0 flex-1 truncate text-[12px] max-md:text-[13px]"
+                                    style={{ color: cActive ? "var(--color-accent)" : "var(--color-text)" }}
+                                    title={c.ticket_title || c.title}
+                                  >
+                                    {c.ticket_title || c.title.replace(/^worker-/, "派活 ")}
+                                  </span>
+                                  <span className="shrink-0 text-[10.5px] tabular-nums" style={{ color: "var(--color-muted)" }}>
+                                    {c.turn_count} 轮
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                       </div>
                     );
                   })}

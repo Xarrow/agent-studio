@@ -83,3 +83,13 @@ test("状态与耗时：秒/分档都要能读", () => {
   assert.equal(secs(0, 3000), "3s");
   assert.equal(secs(0, 65_000), "1m5s");
 });
+
+test("同一个助手永远同一个颜色，不同助手要分得开", async () => {
+  const { agentColor } = await import("./turn.ts");
+  assert.equal(agentColor("ag_abc"), agentColor("ag_abc"));
+  assert.match(agentColor("ag_abc"), /^#[0-9a-f]{6}$/);
+  // 调色板真的被用上：一批 id 至少能分出两种颜色
+  const set = new Set(["ag_1", "ag_2", "ag_3", "ag_4", "ag_5", "ag_6", "ag_7"].map((x) => agentColor(x)));
+  assert.ok(set.size >= 2, `只有一种颜色：${[...set]}`);
+  assert.equal(agentColor(null), "#64748b");
+});
