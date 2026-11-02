@@ -111,6 +111,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   /** 当前会话的角色 —— 派活会话要一眼看出"这不是你直接聊的那个"，并给回 Router 的门 */
   const [curKind, setCurKind] = useState<"router" | "worker" | "chat">("chat");
   const [curTicket, setCurTicket] = useState<string | null>(null);
+  /** 这条 worker 会话是被哪条对话派出来的（票的父会话）——「回到 Router」就回它 */
+  const [curParent, setCurParent] = useState<string | null>(null);
   /** 当前 worker 会话是哪个助手 —— 身份带要用它的固定色，跟侧栏/编排区对上 */
   const [curAgentId, setCurAgentId] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string>("");
@@ -390,6 +392,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
       const detail = await api.session(sid);
       setCurKind(detail.session.kind ?? "chat");
       setCurTicket(detail.session.ticket_title ?? null);
+      setCurParent(detail.session.parent_session_id ?? null);
       setCurAgentId(detail.session.agent_id ?? null);
       setHistory(
         detail.messages
@@ -1812,14 +1815,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                   ? async () => {
                       // 手机上整条身份条就是"回 Router"的按钮 —— 30px 高的小药丸点不中
                       try {
-                        const all = await api.sessions();
-                        const r = all.find((x) => x.kind === "router");
-                        if (r) {
-                          // 跨助手跳转：先记下要落到哪条，否则切 Agent 的 effect 会把它重置掉
-                          pendingPick.current = r.id;
-                          setAgentId(r.agent_id);
-                          setSessionId(r.id);
-                        }
+                        // 回到"派我出来的那条对话"（票的父会话），而不是另造一个常驻入口
+                        if (curParent) pickSession(curParent);
                       } catch {
                         /* 拿不到就算了 */
                       }
@@ -1835,20 +1832,14 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               <span className="min-w-0 truncate">
                 派活会话{curTicket ? ` · 票「${curTicket}」` : ""}
               </span>
-              {curKind === "worker" && (
+              {curKind === "worker" && curParent && (
               <button
                 className="ml-auto shrink-0 px-2 h-6 rounded-md text-[11.5px] max-lg:hidden"
                 style={{ background: "color-mix(in srgb, currentColor 12%, transparent)", color: "inherit" }}
                 data-tap
                 onClick={async () => {
                   try {
-                    const all = await api.sessions();
-                    const r = all.find((x) => x.kind === "router");
-                    if (r) {
-                      pendingPick.current = r.id;
-                      setAgentId(r.agent_id);
-                      setSessionId(r.id);
-                    }
+                    if (curParent) pickSession(curParent);
                   } catch {
                     /* 拿不到就算了：不打断正在看的对话 */
                   }

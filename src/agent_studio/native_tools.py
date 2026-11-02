@@ -1595,12 +1595,6 @@ async def _dispatch(
         if target is None:
             return "没有可派的助手：先去建一个干活（role=worker）的助手。"
 
-        # 派活这件事本身要有"常驻入口"：编排者的 Router 会话第一次派活时即刻建出来，
-        # 侧栏里才有那条 Router 常驻，worker 会话的「回到 Router」也才有地方可去
-        rt = await supervisor.router_agent(session)
-        if rt is not None:
-            await supervisor.router_session(session, rt)
-
         # ── 复用还是新开 ──────────────────────────────────────────────
         # 一个 Router 对 N 个 worker，但不是"每句话都新起一个人"：
         #   · 他手上还有没跑完的活 → 不派（同一段上下文里并发两件，结果会互相踩）
