@@ -16,6 +16,7 @@ from sqlalchemy import select
 
 from agent_studio.db import SessionLocal, init_db
 from agent_studio.models import Agent, Run, Session as ChatSession, Ticket
+from agent_studio.schemas import AgentDefinition
 from agent_studio.native_tools import _dispatch
 from agent_studio.runner import ctx as run_ctx
 from agent_studio.supervisor import ROUTER_SESSION_TITLE, WORKER_PREFIX, kick_summary, thread_of
@@ -330,3 +331,55 @@ async def test_手上还有活就不派第二件(monkeypatch):
     finally:
         run_ctx.clear_run_ctx()
     assert "手上还有一件在跑" in out
+
+
+async def test_收口启动失败要退避重试_失败也要留话(monkeypatch):
+    """worker 都干完了、票也结了，唯独"把结论送回去"失败 —— 不能静默。"""
+    from agent_studio import supervisor as sup
+    from agent_studio.models import SessionMessage
+
+    await init_db()
+    monkeypatch.setattr(sup, "SUMMARIZE_RETRY_DELAYS", (0.0, 0.0, 0.0))
+
+    async with SessionLocal() as s:
+        orch = await _agent("编排者", "orchestrator")
+        sid = uniq("ses_sum_retry")
+        s.add(ChatSession(id=sid, agent_id=orch, title="收口重试"))
+        run = Run(agent_id=orch, agent_version=1, runtime="agentscope", status="pending",
+                  input={"text": "汇总"}, started_at=1, session_id=sid, origin="router")
+        s.add(run)
+        await s.commit()
+        await s.refresh(run)
+        run_id = run.id
+        definition = AgentDefinition.model_validate(
+            {"runtime": "agentscope", "name": "编排者", "role": "orchestrator"}
+        )
+
+    calls: list[int] = []
+
+    async def flaky(run_id_, definition_, text):
+        calls.append(1)
+        if len(calls) < 3:
+            raise RuntimeError("dispatcher down")
+
+    monkeypatch.setattr("agent_studio.runner.run_service.start", flaky)
+    ok = await sup._start_with_retry(run_id, definition, "汇总", sid)
+    assert ok is True and len(calls) == 3, f"应当重试到成功，实际 {len(calls)} 次"
+
+    calls.clear()
+
+    async def always_fail(run_id_, definition_, text):
+        calls.append(1)
+        raise RuntimeError("still down")
+
+    monkeypatch.setattr("agent_studio.runner.run_service.start", always_fail)
+    ok2 = await sup._start_with_retry(run_id, definition, "汇总", sid)
+    assert ok2 is False and len(calls) == len(sup.SUMMARIZE_RETRY_DELAYS)
+
+    async with SessionLocal() as s:
+        row = await s.get(Run, run_id)
+        assert row.status == "error" and "没能启动" in (row.error or "")
+        msgs = (
+            await s.execute(select(SessionMessage).where(SessionMessage.session_id == sid))
+        ).scalars().all()
+        assert any("收口那一轮没能启动" in (m.content or "") for m in msgs), "失败必须留一条能看见的消息"

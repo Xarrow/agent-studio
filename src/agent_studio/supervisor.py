@@ -32,6 +32,11 @@ from .tickets_core import STAGE_LABEL, stage
 
 logger = logging.getLogger(__name__)
 
+#: 收口那轮"投递"失败时的退避（秒）。2s 起翻倍，封顶 60s，共 5 次 ——
+#: 派活的活都干完了、却没把结论送到，等于白干，所以宁可重试。
+#: 测试里把它改成全 0，避免真睡。
+SUMMARIZE_RETRY_DELAYS: tuple[float, ...] = (2.0, 4.0, 8.0, 16.0, 32.0)
+
 #: Router 常驻会话的标题。同一份标题只留一个 —— 上下文连续是 Router 的全部价值
 ROUTER_SESSION_TITLE = "Router · 常驻"
 
@@ -455,9 +460,7 @@ async def kick_summary(*, parent_run_id: str, session_id: str, agent_name: str =
                     tk.updated_at = now_ms()
             await s.commit()
             await s.refresh(run)
-            from .runner import run_service
-
-            await run_service.start(run.id, definition, digest)
+            await _start_with_retry(run.id, definition, digest, chat.id)
             logger.info("派活收口：parent=%s 汇总 %d 件 → run=%s", parent_run_id, len(siblings), run.id)
 
 
@@ -627,3 +630,48 @@ async def exec_remote_worker(
             logger.exception("远端触发收口失败")
 
     asyncio.create_task(_go())
+
+
+async def _start_with_retry(run_id: str, definition: AgentDefinition, digest: str, session_id: str) -> bool:
+    """把收口那一轮投出去；失败按 2s→32s 退避重试，全失败就留一条能看见的消息。
+
+    为什么要有：worker 都跑完了、票也结了，唯独"结论送回去"这一步失败 —— 用户那边
+    什么都没发生，界面上只有一堆完成的活、没有总结。这种沉默比报错更糟。
+    """
+    import asyncio
+
+    from .db import SessionLocal
+    from .models import SessionMessage
+
+    last: Exception | None = None
+    for i, wait in enumerate(SUMMARIZE_RETRY_DELAYS, 1):
+        try:
+            await run_service.start(run_id, definition, digest)
+            return True
+        except Exception as exc:  # noqa: BLE001 - 任何启动失败都重试
+            last = exc
+            logger.warning("收口投递失败（第 %d 次）：%s", i, exc)
+            if i < len(SUMMARIZE_RETRY_DELAYS):
+                await asyncio.sleep(max(0.0, wait))
+    # 全失败：把这件事写到会话里（界面能看见），并把 run 标成失败
+    try:
+        async with SessionLocal() as s:
+            row = await s.get(Run, run_id)
+            if row is not None:
+                row.status = "error"
+                row.error = f"收口那一轮没能启动：{last}"
+                row.ended_at = now_ms()
+            s.add(
+                SessionMessage(
+                    session_id=session_id,
+                    turn_index=1,
+                    role="system",
+                    content=f"【自动汇报】这一批活都回来了，但收口那一轮没能启动：{last}。"
+                    "运行记录里有每件的产出，可以手动再问一次。",
+                    run_id=run_id,
+                )
+            )
+            await s.commit()
+    except Exception:  # noqa: BLE001
+        logger.exception("收口失败也写不进会话 run=%s", run_id)
+    return False
