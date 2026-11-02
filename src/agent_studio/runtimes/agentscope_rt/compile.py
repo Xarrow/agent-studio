@@ -399,20 +399,10 @@ CORE_TOOL_NAMES: frozenset[str] = frozenset(
 #: 它要看资料就 fork 一个 worker 去看 —— 这也正是 worker 存在的意义。
 ORCHESTRATOR_ALLOW_TOOLS: frozenset[str] = frozenset(
     {
-        # 只保留"认路"用的：看技能目录（不读正文）、检索工具表
-        "Skill",
-        "skill_viewer",
-        # 派活：dispatch 开一张票、建一个独立 worker 会话；fork 是旧的同会话分派（保留兼容）
+        # 只剩派活。技能目录、工具表、排班工具都不给它：
+        # 实测每多一个选择，它就多一次"也许我自己能干"的犹豫 —— Router 的价值在决断，
+        # 不在手里能抓多少东西。fork 是旧的同会话分派，已由 dispatch 取代。
         "dispatch",
-        "fork",
-        # 按需取用（懒加载三步）——它只能取到上面这些，取不到被摘掉的执行工具
-        "tool_search",
-        "tool_describe",
-        "tool_call",
-        # 排班（只作用于当前会话，风险等同于对话本身）
-        "job_create",
-        "job_list",
-        "job_cancel",
     }
 )
 
@@ -948,29 +938,36 @@ def build_agent(
                 build_native_tool("tool_call"),
             ]
         logger.info("工具按需加载：直接下发 %d 个，按需 %d 个", len(raw_tools), len(deferred))
-    toolkit = assemble_toolkit(raw_tools, skills_dir)
+    # Router（role=orchestrator）**不挂技能**：技能目录一挂上，它就开始想"我自己按某个
+    # 流程做完"，派活率直接掉。技能是 worker 的事。
+    _is_router = str(getattr(defn, "role", "") or "") == "orchestrator"
+    toolkit = assemble_toolkit(raw_tools, None if _is_router else skills_dir)
     model_cfg, context_cfg, react_cfg, injection_cfg = build_configs(defn)
 
     system_prompt = defn.system_prompt or ""
-    # 常驻记忆先于检索记忆：前者是"你本来就该知道的事"（用户是谁、环境事实），
-    # 后者是"这次任务相关". 顺序反了模型容易把身份事实当成任务备注。
-    if pinned_text:
-        system_prompt = f"{system_prompt.rstrip()}\n\n{pinned_text}".strip()
-    if memory_text:
-        system_prompt = f"{system_prompt.rstrip()}\n\n{memory_text}".strip()
-    # 项目上下文：工作目录里的 AGENTS.md（"这个目录该怎么做"）
-    proj = project_context(cwd)
-    if proj:
-        system_prompt = f"{system_prompt.rstrip()}\n\n{proj}".strip()
+    # Router 的提示里只留"我是谁、怎么派、怎么收口"。记忆、项目上下文、技能清单、
+    # 工具清单一律不拼 —— 全是它是用不上的信息，只会稀释判断（用户原话：
+    # 「过多的 skills 工具 记忆会影响 router 判断」）。
+    if not _is_router:
+        # 常驻记忆先于检索记忆：前者是"你本来就该知道的事"（用户是谁、环境事实），
+        # 后者是"这次任务相关". 顺序反了模型容易把身份事实当成任务备注。
+        if pinned_text:
+            system_prompt = f"{system_prompt.rstrip()}\n\n{pinned_text}".strip()
+        if memory_text:
+            system_prompt = f"{system_prompt.rstrip()}\n\n{memory_text}".strip()
+        # 项目上下文：工作目录里的 AGENTS.md（"这个目录该怎么做"）
+        proj = project_context(cwd)
+        if proj:
+            system_prompt = f"{system_prompt.rstrip()}\n\n{proj}".strip()
 
-    # 技能清单：让模型知道「平台里到底有哪些做法」，否则挂载了也发现不了
-    catalog = skill_catalog(skills_dir)
-    if catalog:
-        system_prompt = f"{system_prompt.rstrip()}\n\n{catalog}".strip()
-    # 按需加载的工具清单：告诉模型「还有这些能用、怎么取」，否则它只会用眼前这几个
-    tool_list = tool_catalog(deferred)
-    if tool_list:
-        system_prompt = f"{system_prompt.rstrip()}\n\n{tool_list}".strip()
+        # 技能清单：让模型知道「平台里到底有哪些做法」，否则挂载了也发现不了
+        catalog = skill_catalog(skills_dir)
+        if catalog:
+            system_prompt = f"{system_prompt.rstrip()}\n\n{catalog}".strip()
+        # 按需加载的工具清单：告诉模型「还有这些能用、怎么取」，否则它只会用眼前这几个
+        tool_list = tool_catalog(deferred)
+        if tool_list:
+            system_prompt = f"{system_prompt.rstrip()}\n\n{tool_list}".strip()
 
     # 记录器：把每次模型调用的**完整请求与响应**落库（llm_call.request_blob/
     # response_blob）。以前这两列一直是空的 —— 只能看到"花了多少 token"，

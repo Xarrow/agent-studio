@@ -66,6 +66,8 @@ export function DelegationBlock({
   /** 还在跑的：直接吃它自己的事件流（每 200ms 把累积事件重算一遍步骤） */
   const [liveSteps, setLiveSteps] = useState<Record<string, Step[]>>({});
   const [busyStep, setBusyStep] = useState<string | null>(null);
+  /** Router 这一轮自己的状态：用来判断"分派完了没有、收口了没有" */
+  const [parentStatus, setParentStatus] = useState<string | null>(null);
   const [, setTick] = useState(0);
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const streams = useRef<Record<string, EventSource>>({});
@@ -75,8 +77,12 @@ export function DelegationBlock({
   const load = useCallback(async () => {
     if (!runId) return;
     try {
-      const r = await api.delegations(runId);
+      const [r, run] = await Promise.all([
+        api.delegations(runId),
+        api.run(runId).catch(() => null),
+      ]);
       setItems(r.items ?? []);
+      if (run) setParentStatus(run.status);
     } catch {
       /* 拿不到就保持上一次的样子，不要闪 */
     }
@@ -215,8 +221,14 @@ export function DelegationBlock({
           <path d="M4 6h6M4 12h6M4 18h6M14 6h6M14 12h6M14 18h6" />
         </svg>
         <span>
-          派了 <b className="tabular-nums" style={{ color: "var(--color-text)" }}>{items.length}</b> 件活
-          {running > 0 ? ` · ${running} 件在干` : " · 都回来了"}
+          Router 分派 <b className="tabular-nums" style={{ color: "var(--color-text)" }}>{items.length}</b> 件
+          {running > 0
+            ? ` · ${running} 件在干`
+            : parentStatus === "error"
+              ? " · 收口时出错"
+              : parentStatus === "ok"
+                ? " · 已收口"
+                : " · 等它收口"}
         </span>
       </div>
 

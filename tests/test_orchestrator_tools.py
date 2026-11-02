@@ -30,16 +30,21 @@ def test_编排者拿不到执行类工具():
         _name_of,
     )
     # 读文件/搜索也算"自己动手"—— 现场实测：给它 web_search，它宁可自己搜一遍
-    # 也不派 worker，回复里连"派给谁"都没提。Router 只留"认路 + 派活"。
-    assert [k.name for k in kept] == ["fork"]
-    assert set(dropped) == {"bash", "write", "edit", "proc_start", "read", "web_search"}
+    # 也不派 worker，回复里连"派给谁"都没提。Router 只留 dispatch。
+    assert kept == []
+    assert set(dropped) == {"bash", "write", "edit", "proc_start", "read", "fork", "web_search"}
 
 
-def test_编排者保留分派和认路的能力():
-    # 分派 + 看技能目录 + 检索工具表 + 排班；不含任何"能自己把活干完"的工具
-    assert {"fork", "skill_viewer", "tool_search", "job_create"} <= ORCHESTRATOR_ALLOW_TOOLS
+def test_编排者手里只剩派活():
+    """白名单只留 dispatch。
+
+    每多一个选择，Router 就多一次"也许我自己能干"的犹豫（用户原话：过多的
+    skills/工具/记忆会影响 router 判断）。认路用的 skill_viewer / tool_* 也一并收走：
+    它不需要看技能目录，也不需要查工具表 —— 那是 worker 的事。
+    """
+    assert ORCHESTRATOR_ALLOW_TOOLS == frozenset({"dispatch"})
     assert not (
-        {"bash", "write", "edit", "python", "reset_tools", "read", "grep", "glob", "fetch", "web_search"}
+        {"fork", "skill_viewer", "Skill", "tool_search", "tool_describe", "tool_call", "job_create"}
         & ORCHESTRATOR_ALLOW_TOOLS
     )
 
@@ -66,10 +71,10 @@ def test_摘掉之后工具清单里还能用tool_call取到的也不含执行�
     这个用例盯的是**顺序**：白名单必须在懒加载拆分之前跑（compile.build_agent 里
     的那处调用就是为此）。这里用同一份清单模拟拆分，确认 deferred 里没有 bash。
     """
-    raw = _tools("bash", "browser_open", "read", "fork")
+    raw = _tools("bash", "browser_open", "read", "fork", "dispatch")
     kept, _ = narrow_tools_for_role("orchestrator", raw, _name_of)
-    core_names = {"read", "fork"}
+    core_names = {"dispatch"}
     core = [t for t in kept if t.name in core_names]
     deferred = [t for t in kept if t.name not in core_names]
-    assert [t.name for t in core] == ["fork"]
+    assert [t.name for t in core] == ["dispatch"]
     assert deferred == []  # 一个都不剩，tool_call 也就无从取用

@@ -1748,18 +1748,16 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             </div>
           </header>
 
-          {/* 会话身份条 —— 派活会话/ Router 会话换一条色带，一眼知道自己在哪种会话里。
-              普通对话不显示（不给自己加一条没信息的横线）。 */}
-          {curKind !== "chat" && (
+          {/* 会话身份条 —— 只在**派活会话**上出现，说的都是事实：这是哪件活的会话、
+              能回到 Router。Router 会话本身不再挂一句「它派活你只跟它说话」——
+              这种话应该在跑的时候由它自己讲，不是印在页面上。 */}
+          {curKind === "worker" && (
             <div
               className={`shrink-0 flex items-center gap-2 px-3 h-7 text-[12px] max-lg:mt-[calc(44px+env(safe-area-inset-top))] max-lg:h-[44px] ${curKind === "worker" ? "max-lg:cursor-pointer" : ""}`}
               style={{
-                background:
-                  curKind === "worker"
-                    ? "color-mix(in srgb, #d97706 9%, var(--color-surface))"
-                    : "color-mix(in srgb, var(--color-accent) 9%, var(--color-surface))",
-                color: curKind === "worker" ? "#b45309" : "var(--color-accent)",
-                borderBottom: `1px solid color-mix(in srgb, ${curKind === "worker" ? "#d97706" : "var(--color-accent)"} 22%, transparent)`,
+                background: "color-mix(in srgb, #d97706 9%, var(--color-surface))",
+                color: "#b45309",
+                borderBottom: "1px solid color-mix(in srgb, #d97706 22%, transparent)",
               }}
               data-session-kind={curKind}
               onClick={
@@ -1782,16 +1780,12 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             >
               <span
                 className="shrink-0 rounded-full"
-                style={{ width: 6, height: 6, background: curKind === "worker" ? "#d97706" : "var(--color-accent)" }}
+                style={{ width: 6, height: 6, background: "#d97706" }}
                 aria-hidden="true"
               />
-              {curKind === "worker" ? (
-                <span className="min-w-0 truncate">
-                  派活会话{curTicket ? ` · 票「${curTicket}」` : ""} · 由 Router 派出，过程会写回对话
-                </span>
-              ) : (
-                <span className="min-w-0 truncate">Router · 常驻，它派活，你只跟它说话</span>
-              )}
+              <span className="min-w-0 truncate">
+                派活会话{curTicket ? ` · 票「${curTicket}」` : ""}
+              </span>
               {curKind === "worker" && (
               <button
                 className="ml-auto shrink-0 px-2 h-6 rounded-md text-[11.5px] max-lg:hidden"
@@ -3094,7 +3088,6 @@ function SessionsPane({
                   {g.kind === "worker" && (
                     <span aria-hidden style={{ marginLeft: 2 }}>{showWorkers ? "▴" : "▾"}</span>
                   )}
-                  {g.kind === "router" && <span className="font-normal normal-case tracking-normal">常驻 · 你只跟它说话</span>}
                 </div>
                 <div className="space-y-0.5">
                   {/* 派活组收起时只藏行，组头留着（组头就是收起的开关） */}
