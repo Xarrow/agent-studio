@@ -181,7 +181,8 @@ export function AgentSwitcher({
                  由 min-w-0 + truncate 收住，不会把右边的箭头挤出去。 */
               /* w-full 而不是 flex-1：这一档的外层是块级 div（不是 flex 容器），
                  flex-1 在这儿等于没写，按钮会缩成内容宽度、把中间留成死白。 */
-              : "w-full min-w-0 flex items-center gap-2 h-9 pl-1 pr-2 rounded-lg transition-colors hover:bg-[var(--color-surface-2)]"
+              /* 手机上 44px：这一档是顶栏最主要的点击目标，36 会显得"点不中" */
+              : "w-full min-w-0 flex items-center gap-2 h-9 max-md:h-[44px] pl-1 pr-2 rounded-lg transition-colors hover:bg-[var(--color-surface-2)]"
         }
       >
         <span

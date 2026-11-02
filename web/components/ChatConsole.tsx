@@ -60,8 +60,19 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
    * 没传时才用自己这份（老的单独用法仍然成立）。
    */
   const [ownAgentId, setOwnAgentId] = useState<string>("");
-  const agentId = controlledAgentId ?? ownAgentId;
-  const setAgentId = setOwnAgentId;
+  /**
+   * 用户在这里亲手选过的助手。
+   *
+   * 受外层控制（/exec?agent=xxx）时以前是纯文本、点不动 —— 从助手页「跑一次」
+   * 进来的用户就再也换不了人，只能回上页重进。现在：外层给了初始值，但**用户点过
+   * 之后以他点的为准**（页面级状态只提供初始值，不该变成一道锁）。
+   */
+  const [pickedAgent, setPickedAgent] = useState<string | null>(null);
+  const agentId = pickedAgent ?? controlledAgentId ?? ownAgentId;
+  const setAgentId = (id: string) => {
+    setPickedAgent(id);
+    setOwnAgentId(id);
+  };
   const [sessions, setSessions] = useState<Session[]>([]);
   const [sessionId, setSessionId] = useState<string>("");
   /**
@@ -1480,7 +1491,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
           </aside>
         ) : (
           <div className="hidden lg:flex w-11 shrink-0 flex-col items-center gap-2 py-3 border-r border-[var(--color-border)] bg-[var(--color-surface)]">
-            {controlledAgentId === undefined && (
+            {(
               <AgentSwitcher
                 variant="mini"
                 agents={agents}
@@ -1576,10 +1587,20 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 <>
                   <SessionsPane
                     agentSlot={
-                      controlledAgentId === undefined ? (
-                        <div className="px-0.5">
-                              </div>
-                      ) : null
+                      <div className="px-0.5">
+                        {(
+                          <AgentSwitcher
+                            variant="sidebar"
+                            agents={agents}
+                            value={agentId}
+                            onChange={setAgentId}
+                            busy={busy}
+                            open={switcherOpen === "sidebar"}
+                            onOpenChange={(v) => setSwitcherOpen(v ? "sidebar" : null)}
+                            onSettings={agentId ? () => setConfigAgent(agentId) : undefined}
+                          />
+                        )}
+                      </div>
                     }
                     sessions={sessions}
                     sessionId={sessionId}
@@ -1659,9 +1680,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               </svg>
             </button>
 
-            {/* 助手身份：受外层控制时是纯文本（参与者条是唯一入口），
-                否则用下拉 —— 两处都能选助手就是两套真相 */}
-            {controlledAgentId === undefined ? (
+            {/* 助手身份：任何时候都是下拉（受外层控制时外层只给初始值） */}
+            {(
               <AgentSwitcher
                 variant="bar"
                 className="flex-1"
@@ -1672,28 +1692,6 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 open={switcherOpen === "bar"}
                 onOpenChange={(v) => setSwitcherOpen(v ? "bar" : null)}
               />
-            ) : (
-              <span className="min-w-0 flex items-center gap-2">
-                <span className="text-[13.5px] font-medium truncate">
-                  {currentAgent?.name ?? "（未选助手）"}
-                </span>
-                <span
-                  className="shrink-0 inline-flex items-center gap-1 text-[11.5px]"
-                  style={{ color: busy ? "var(--color-accent)" : "var(--color-muted)" }}
-                >
-                  <span
-                    className={busy ? "live-dot" : ""}
-                    style={{
-                      width: 6,
-                      height: 6,
-                      borderRadius: 999,
-                      background: busy ? "var(--color-accent)" : "var(--color-ok)",
-                      display: "inline-block",
-                    }}
-                  />
-                  {busy ? "执行中" : "就绪"}
-                </span>
-              </span>
             )}
 
             <div className="ml-auto flex items-center gap-0.5 shrink-0">
@@ -1741,7 +1739,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     ✦
                   </div>
                   <p className="text-[15px] font-medium">{currentAgent?.name || "Agent"}</p>
-                  {controlledAgentId === undefined && agents.length > 1 && (
+                  {agents.length > 1 && (
                     <button
                       data-tap
                       onClick={() =>
