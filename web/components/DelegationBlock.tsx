@@ -345,6 +345,15 @@ export function DelegationBlock({
         {st.running > 0 && (
           <span style={{ flex: st.running, background: "var(--color-accent)", opacity: 0.55 }} />
         )}
+        {st.queued > 0 && (
+          // 排队中：同一条进度条上的浅灰段 —— 用户能看出"派出去了但还没轮到"
+          <span
+            style={{
+              flex: st.queued,
+              background: "repeating-linear-gradient(45deg, var(--color-border) 0 4px, transparent 4px 8px)",
+            }}
+          />
+        )}
       </div>
 
       {tree

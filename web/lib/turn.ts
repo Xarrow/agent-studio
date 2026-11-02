@@ -13,6 +13,8 @@ export const LIVE_STATUS = new Set(["pending", "queued", "running"]);
 export interface TurnStats {
   total: number;
   running: number;
+  /** 排队中（runner 并发上限 4，多出来的先排着，别把它算成"在干"） */
+  queued: number;
   ok: number;
   failed: number;
   /** 一句话状态：几件在干 / 都回来了 */
@@ -25,11 +27,21 @@ export interface TurnStats {
 
 export function turnStats(items: Delegation[], parentStatus: string | null): TurnStats {
   const total = items.length;
-  const running = items.filter((d) => LIVE_STATUS.has(d.status)).length;
+  const running = items.filter((d) => d.status === "running").length;
+  const queued = items.filter((d) => d.status === "pending" || d.status === "queued").length;
   const ok = items.filter((d) => d.status === "ok").length;
-  const failed = total - running - ok;
-  const active = running > 0;
-  const phrase = total === 0 ? "还没派活" : running > 0 ? `${running} 件在干` : "都回来了";
+  const failed = total - running - queued - ok;
+  const active = running > 0 || queued > 0;
+  const phrase =
+    total === 0
+      ? "还没派活"
+      : running > 0 && queued > 0
+        ? `${running} 件在干 · ${queued} 件排队`
+        : running > 0
+          ? `${running} 件在干`
+          : queued > 0
+            ? `${queued} 件排队`
+            : "都回来了";
   const closing = active
     ? "等它收口"
     : parentStatus === "error"
@@ -37,7 +49,7 @@ export function turnStats(items: Delegation[], parentStatus: string | null): Tur
       : parentStatus === "ok"
         ? "已收口"
         : "等它收口";
-  return { total, running, ok, failed, phrase, closing, active };
+  return { total, running, queued, ok, failed, phrase, closing, active };
 }
 
 /** worker 当前在干嘛（收起状态也要能看出动静） */

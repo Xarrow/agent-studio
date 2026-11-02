@@ -109,3 +109,19 @@ test("按票归组：同票的几件归一起，顺序不乱", async () => {
   // 一票一件：不画树
   assert.equal(needsTree(groupByTicket([d({ ticket_id: "tk_9" })])), false);
 });
+
+test("排队不算在干：并发上限之外的是 pending，读数要分开", async () => {
+  const { turnStats } = await import("./turn.ts");
+  const st = turnStats(
+    [
+      d({ run_id: "r1", status: "running", ended_at: null }),
+      d({ run_id: "r2", status: "pending", ended_at: null }),
+      d({ run_id: "r3", status: "pending", ended_at: null }),
+    ],
+    "running",
+  );
+  assert.equal(st.running, 1);
+  assert.equal(st.queued, 2);
+  assert.equal(st.phrase, "1 件在干 · 2 件排队");
+  assert.equal(st.active, true);
+});
