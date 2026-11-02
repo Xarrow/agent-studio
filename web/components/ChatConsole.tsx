@@ -2956,8 +2956,6 @@ function SessionsPane({
   /** 助手身份块：会话都属于某个助手，它排在列表最上面 */
   agentSlot?: React.ReactNode;
 }) {
-  /** 「派活」那一组默认收起：它们是 Router 干的活，不是你要点的对话 */
-  const [showWorkers, setShowWorkers] = useState(false);
   /** 树：哪些父会话展开了它派出去的 worker（当前会话是 worker 时自动展开其父） */
   const [openTree, setOpenTree] = useState<Set<string>>(() => new Set());
   const [q, setQ] = useState("");
@@ -3015,7 +3013,6 @@ function SessionsPane({
   // 树：worker 挂在**派出它的那个会话**下面（票的 thread_id 记的就是父会话）。
   // 1 个 Router 对 N 个 worker，这件事在列表里就该长成树，而不是两排平铺。
   const kids = new Map<string, Session[]>();
-  const orphans: Session[] = [];
   for (const s of list) {
     if (s.kind !== "worker") continue;
     const pid = s.parent_session_id || "";
@@ -3023,8 +3020,6 @@ function SessionsPane({
       const arr = kids.get(pid) ?? [];
       arr.push(s);
       kids.set(pid, arr);
-    } else {
-      orphans.push(s); // 父会话不在当前列表里（别的助手的）：退回到「派活」组
     }
   }
 
@@ -3037,15 +3032,17 @@ function SessionsPane({
   ];
   for (const s of list) {
     const t = s.last_active_at || 0;
-    // Router 单独归拢（它不是"聊出来的对话"）；worker 全部进树，不进日期组
+    // Router 单独归拢（它不是"聊出来的对话"）。
+    // worker：能找到父会话的已经挂进树里（kids），只有孤儿才落到日期分组 ——
+    // 不再单独开一个「派活 N 件」组（用户要求移除，树已经表达清楚了）。
     if (s.kind === "router") groups[0].items.push(s);
-    else if (s.kind === "worker") continue;
+    else if (s.kind === "worker" && kids.has(s.parent_session_id || "")) continue;
     else if (t >= today) groups[1].items.push(s);
     else if (t >= today - 86_400_000) groups[2].items.push(s);
     else if (t >= today - 7 * 86_400_000) groups[3].items.push(s);
     else groups[4].items.push(s);
   }
-  if (orphans.length) groups.splice(1, 0, { label: "派活", items: orphans, kind: "worker" });
+
 
   return (
     <>
@@ -3113,36 +3110,21 @@ function SessionsPane({
               g.items.length === 0 ? null : (
               <div key={g.label} className="mb-1">
                 <div
-                  className={`sticky top-0 z-10 flex items-center gap-1.5 px-3 pt-3 pb-1.5 text-[11px] font-semibold tracking-[0.06em] text-[var(--color-muted)] backdrop-blur-sm ${g.kind === "worker" ? "cursor-pointer select-none" : ""}`}
+                  className="sticky top-0 z-10 flex items-center gap-1.5 px-3 pt-3 pb-1.5 text-[11px] font-semibold tracking-[0.06em] text-[var(--color-muted)] backdrop-blur-sm"
                   style={{ background: "color-mix(in srgb, var(--color-surface) 88%, transparent)" }}
-                  onClick={g.kind === "worker" ? () => setShowWorkers((v) => !v) : undefined}
-                  role={g.kind === "worker" ? "button" : undefined}
-                  aria-expanded={g.kind === "worker" ? showWorkers : undefined}
-                  data-tap={g.kind === "worker" ? true : undefined}
                 >
                   <span
                     className="w-1.5 h-1.5 rounded-full"
                     style={{
                       background:
-                        g.kind === "router"
-                          ? "var(--color-accent)"
-                          : g.kind === "worker"
-                            ? WORKER_COLOR
-                            : "var(--color-border-strong, var(--color-border))",
+                        g.kind === "router" ? "var(--color-accent)" : "var(--color-border-strong, var(--color-border))",
                     }}
                     aria-hidden="true"
                   />
                   {g.label}
-                  {g.kind === "worker" && (
-                    <span className="tabular-nums">{g.items.length} 件</span>
-                  )}
-                  {g.kind === "worker" && (
-                    <span aria-hidden style={{ marginLeft: 2 }}>{showWorkers ? "▴" : "▾"}</span>
-                  )}
                 </div>
                 <div className="space-y-0.5">
-                  {/* 派活组收起时只藏行，组头留着（组头就是收起的开关） */}
-                  {(g.kind === "worker" && !showWorkers ? [] : g.items).map((s) => {
+                  {g.items.map((s) => {
                     const active = s.id === sessionId;
                     const isWorker = s.kind === "worker";
                     const isRouter = s.kind === "router";

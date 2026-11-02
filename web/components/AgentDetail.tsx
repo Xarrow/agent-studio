@@ -30,6 +30,35 @@ import { AgentQuickRun } from "@/components/AgentQuickRun";
 import { Segmented } from "@/components/ui/kit";
 import { useFeedback } from "@/components/ui/feedback";
 
+/**
+ * 后端存的是**原始定义**：远端 A2A 影子 Agent（runtime=a2a）没有 model/tools/skills
+ * 这些字段（它跑在对面平台）。编辑器却处处读 `def.model.provider` 之类的路径 ——
+ * 少一个字段就整页白掉（报错正是 Cannot read properties of undefined (reading 'provider')）。
+ * 所以进来先补齐：编辑远端没有意义，但"点进去就崩"更没道理。
+ */
+function withDefaults(d: AgentDefinition | null | undefined): AgentDefinition {
+  const base = (d ?? {}) as AgentDefinition;
+  const emptyModel = {
+    provider: "",
+    name: "",
+    params: {},
+    credential_ref: null,
+    base_url: null,
+  } as unknown as ModelSpec;
+  return {
+    ...base,
+    model: base.model ?? emptyModel,
+    fallback: base.fallback ?? null,
+    tools: base.tools ?? [],
+    skills: base.skills ?? [],
+    mcp_servers: base.mcp_servers ?? [],
+    runtime_options: base.runtime_options ?? {},
+    limits: (base.limits ?? {}) as AgentDefinition["limits"],
+    middlewares: base.middlewares ?? [],
+    system_prompt: base.system_prompt ?? "",
+  };
+}
+
 /** 可折叠分段：**段头常驻 + 一句状态摘要**，内容按需展开 —— 一屏看一段 ✓
     用户准绳「操作更少、看到更多」：折叠不是藏起来，摘要一直在段头上 ✓ */
 function Fold({ title, summary, defaultOpen = false, children }: { title: string; summary?: ReactNode; defaultOpen?: boolean; children: ReactNode }) {
@@ -157,8 +186,9 @@ export function AgentDetail({
         api.runtimes(),
       ]);
       setAgent(a);
-      setDef(a.definition);
-      setSavedSnap(snap(a.definition, a.description ?? ""));
+      setDef(withDefaults(a.definition));
+      // 快照也要用"补过默认值"的那份，否则远端 A2A（没 model 字段）一进来就判成"有未保存改动"
+      setSavedSnap(snap(withDefaults(a.definition), a.description ?? ""));
       setDesc(a.description ?? "");
       setProviders(p);
       setCreds(c);
@@ -350,7 +380,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
         definition: { ...((defRef.current ?? def) as AgentDefinition), name: next },
       });
       setAgent(updated);
-      setDef(updated.definition);
+      setDef(withDefaults(updated.definition));
       setSavedSnap(snap(updated.definition, updated.description ?? ""));
       setMsg("名称已保存");
       setTimeout(() => setMsg(null), 2000);
@@ -380,7 +410,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
         description: desc.trim() || undefined,
       });
       setAgent(updated);
-      setDef(updated.definition);
+      setDef(withDefaults(updated.definition));
       setSavedSnap(snap(updated.definition, updated.description ?? ""));
       setMsg(`已保存（v${updated.version}）`);
       setTimeout(() => setMsg(null), 2500);
@@ -480,6 +510,44 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
             )}
             <span className="mono opacity-70">{agent.slug} · v{agent.version}</span>
           </div>
+
+          {/* 远端 A2A：模型/工具/记忆都在对面平台，这里改了也不会生效。
+              与其让人白改一通，不如把"它能干什么、怎么调、去哪管"一句话摆出来。 */}
+          {def.runtime === "a2a" && (
+            <div
+              className="mt-2.5 rounded-[10px] border px-3 py-2 text-[12px] leading-relaxed max-w-[720px]"
+              style={{
+                borderColor: "color-mix(in srgb, var(--color-accent) 28%, transparent)",
+                background: "color-mix(in srgb, var(--color-accent) 6%, transparent)",
+              }}
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  className="rounded-full px-1.5 py-[1px] text-[10.5px] font-semibold"
+                  style={{ background: "color-mix(in srgb, var(--color-accent) 16%, transparent)", color: "var(--color-accent)" }}
+                >
+                  远端 A2A
+                </span>
+                <span style={{ color: "var(--color-text)" }}>
+                  它跑在别的平台上：模型、工具、记忆都由远端管理，这里只是它的影子条目，改这些不会生效。
+                </span>
+              </div>
+              <div className="mt-1 mono text-[11.5px] break-all text-[var(--color-muted)]">
+                {String((def as unknown as Record<string, unknown>).remote_url || "（没有记录远端地址）")}
+                {String((def as unknown as Record<string, unknown>).remote_agent_id || "")
+                  ? ` · 远端助手 ${String((def as unknown as Record<string, unknown>).remote_agent_id)}`
+                  : ""}
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <Link className="btn btn-sm" href="/remote-agents">
+                  去远程 Agent 管理
+                </Link>
+                <span className="text-[var(--color-muted)]">
+                  编排里可以直接按名字派给它 · 解析失败时在这里看到的技能是上次快照
+                </span>
+              </div>
+            </div>
+          )}
           {/* 最近 run 失败时的就地错误详情行（点上面的 error 展开/收起）：
               信息默认可见 vs 页面干净之间的取舍 —— 错误摘要只占一行，折叠时
               用户也始终知道"最近一次失败了"，展开才给完整原因。 */}
