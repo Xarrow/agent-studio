@@ -28,6 +28,7 @@ from ..config import settings
 from ..context import clear_context
 from ..db import get_session
 from ..models import Agent, Run, Session as ChatSession, SessionMessage, new_id, now_ms
+from ..supervisor import ROUTER_SESSION_TITLE, WORKER_PREFIX
 from ..runner.service import SESSION_DIR_NAME, session_work_dir
 from ..schemas import (
     SessionClearContextRequest,
@@ -72,6 +73,16 @@ def _remove_session_dir(session_id: str) -> str | None:
     return str(resolved)
 
 
+def _kind_of(title: str) -> str:
+    """这个会话是什么：Router 常驻 / 派出去的一件活 / 普通对话。"""
+    t = title or ""
+    if t == ROUTER_SESSION_TITLE:
+        return "router"
+    if t.startswith(WORKER_PREFIX):
+        return "worker"
+    return "chat"
+
+
 def _to_read(row: ChatSession, turn_count: int = 0, agent_name: str | None = None) -> SessionRead:
     return SessionRead(
         id=row.id,
@@ -88,6 +99,7 @@ def _to_read(row: ChatSession, turn_count: int = 0, agent_name: str | None = Non
         turn_count=turn_count,
         agent_name=agent_name,
         work_dir=str(session_work_dir(row.id)),
+        kind=_kind_of(row.title or ""),
     )
 
 
@@ -128,6 +140,20 @@ async def list_sessions(
     rows = list((await session.execute(stmt)).scalars().all())
 
     names = await _agent_names(session, [r.agent_id for r in rows])
+
+    # worker 会话 → 票（票上记着这件活的标题与任务）
+    from agent_studio.models import Ticket
+
+    tmap: dict[str, tuple[str, str]] = {}
+    # 票号短名（tk_ 后 8 位）→ 票：worker 会话标题就是 worker-<短名>
+    by_short: dict[str, tuple[str, str]] = {}
+    for tk in (await session.execute(select(Ticket))).scalars().all():
+        by_short[tk.id[3:11]] = (tk.id, tk.title or "")
+        facts = tk.facts or {}
+        sid = ((facts.get("assignment") or {}) or {}).get("session_id")
+        if sid:
+            tmap[str(sid)] = (tk.id, tk.title or "")
+
     out: list[SessionRead] = []
     for r in rows:
         turns = (
@@ -137,7 +163,16 @@ async def list_sessions(
                 )
             )
         ).scalar_one()
-        out.append(_to_read(r, int(turns or 0), names.get(r.agent_id)))
+        read = _to_read(r, int(turns or 0), names.get(r.agent_id))
+        read.kind = _kind_of(r.title or "")
+        if read.kind == "worker":
+            hit = tmap.get(r.id)
+            if not hit:
+                # 老票上没记 session_id：worker 会话标题就是 worker-<票号短名>，按短号兜底
+                hit = by_short.get((r.title or "")[len(WORKER_PREFIX):])
+            if hit:
+                read.ticket_id, read.ticket_title = hit
+        out.append(read)
     return out
 
 
@@ -158,8 +193,19 @@ async def get_session_detail(
     ).scalars().all()
     names = await _agent_names(session, [row.agent_id])
     turns = len({r.turn_index for r in rows})
+    head = _to_read(row, turns, names.get(row.agent_id))
+    if head.kind == "worker":
+        # worker-<票号短名> → 票，身份条上要写清"这是哪一件活"
+        from agent_studio.models import Ticket
+
+        short = (row.title or "")[len(WORKER_PREFIX):]
+        tk = (
+            await session.execute(select(Ticket).where(Ticket.id.like(f"tk_{short}%")).limit(1))
+        ).scalar_one_or_none()
+        if tk is not None:
+            head.ticket_id, head.ticket_title = tk.id, tk.title or ""
     return SessionDetail(
-        session=_to_read(row, turns, names.get(row.agent_id)),
+        session=head,
         messages=[
             SessionMessageRead(
                 id=r.id, turn_index=r.turn_index, role=r.role,

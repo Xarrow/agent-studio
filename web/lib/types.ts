@@ -592,6 +592,11 @@ export interface Session {
   last_active_at: number;
   turn_count: number;
   agent_name: string | null;
+  /** 会话角色：router（常驻派活入口）/ worker（派出去的一件活）/ chat */
+  kind?: "router" | "worker" | "chat";
+  /** worker 会话对应的票 */
+  ticket_id?: string | null;
+  ticket_title?: string | null;
 }
 
 /** 后台进程（会话级）。状态：running 在跑 / exited 正常结束 / failed 非零退出 / killed 被停 / unknown 重启后对不上 */

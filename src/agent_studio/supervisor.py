@@ -202,7 +202,18 @@ async def start_worker(
         parent_run_id=parent_run_id,
     )
     session.add(run)
-    await record(session, ticket, assignment={"run_id": run.id, "status": "running", "task": task[:500]})
+    await record(
+        session,
+        ticket,
+        assignment={
+            "run_id": run.id,
+            "status": "running",
+            "task": task[:500],
+            # 票 ↔ worker 会话的对应关系：界面上要能从会话反查"这是哪件活"
+            "session_id": chat.id,
+            "agent_id": agent.id,
+        },
+    )
     await session.refresh(run)
     await run_service.start(run.id, definition, task)
     return run

@@ -14,6 +14,9 @@
 import Link from "next/link";
 import { HitlPrompt } from "@/components/HitlPrompt";
 import { DelegationBlock } from "@/components/DelegationBlock";
+
+/** worker 会话的识别色：Router 是蓝、派出去的活是琥珀、普通对话不上色 */
+const WORKER_COLOR = "#d97706";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api, fmt, withToken } from "@/lib/api";
 import type { Agent, RunEvent, Session, SearchHit, Skill, Tool, Memory } from "@/lib/types";
@@ -75,6 +78,25 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     setOwnAgentId(id);
   };
   const [sessions, setSessions] = useState<Session[]>([]);
+  /** 全量会话：Router 与它派出去的活不在"当前助手"的过滤里，侧栏要单独看得到 */
+  const [allSessions, setAllSessions] = useState<Session[]>([]);
+  /** 侧栏用的是这份：当前助手的对话 + Router/派活（跨助手），按 id 去重 */
+  const navSessions = useMemo(() => {
+    const seen = new Set<string>();
+    const out: Session[] = [];
+    for (const s of [
+      ...allSessions.filter((x) => x.kind === "router" || x.kind === "worker"),
+      ...sessions,
+    ]) {
+      if (seen.has(s.id)) continue;
+      seen.add(s.id);
+      out.push(s);
+    }
+    return out;
+  }, [allSessions, sessions]);
+  /** 当前会话的角色 —— 派活会话要一眼看出"这不是你直接聊的那个"，并给回 Router 的门 */
+  const [curKind, setCurKind] = useState<"router" | "worker" | "chat">("chat");
+  const [curTicket, setCurTicket] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string>("");
   /**
    * 「自动挑」——这一句交给谁由内容决定。默认**关**：多数时候人心里有数，
@@ -317,6 +339,11 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
       try {
         const list = await api.sessions(aid);
         setSessions(list);
+        // 侧栏另外挂 Router / 派活两组 —— 它们跨助手，不能只按当前助手过滤
+        void api
+          .sessions()
+          .then((all) => setAllSessions(all))
+          .catch(() => undefined);
         return list;
       } catch (e) {
         fb.error("加载会话失败", e instanceof Error ? e.message : String(e));
@@ -333,6 +360,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     }
     try {
       const detail = await api.session(sid);
+      setCurKind(detail.session.kind ?? "chat");
+      setCurTicket(detail.session.ticket_title ?? null);
       setHistory(
         detail.messages
           // system = 心跳这类"平台说的话"：不属于任何一轮，但要留在历史里
@@ -1481,7 +1510,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                   </>
                   ) : null
               }
-              sessions={sessions}
+              sessions={navSessions}
               sessionId={sessionId}
               onPick={pickSession}
               onNew={() => void newChat()}
@@ -1603,7 +1632,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                         )}
                       </div>
                     }
-                    sessions={sessions}
+                    sessions={navSessions}
                     sessionId={sessionId}
                     onPick={(id) => {
                       pickSession(id, true); // 接管抽屉那条历史，免得左滑出现「空退」
@@ -1718,6 +1747,74 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               )}
             </div>
           </header>
+
+          {/* 会话身份条 —— 派活会话/ Router 会话换一条色带，一眼知道自己在哪种会话里。
+              普通对话不显示（不给自己加一条没信息的横线）。 */}
+          {curKind !== "chat" && (
+            <div
+              className={`shrink-0 flex items-center gap-2 px-3 h-7 text-[12px] max-lg:mt-[calc(44px+env(safe-area-inset-top))] max-lg:h-[44px] ${curKind === "worker" ? "max-lg:cursor-pointer" : ""}`}
+              style={{
+                background:
+                  curKind === "worker"
+                    ? "color-mix(in srgb, #d97706 9%, var(--color-surface))"
+                    : "color-mix(in srgb, var(--color-accent) 9%, var(--color-surface))",
+                color: curKind === "worker" ? "#b45309" : "var(--color-accent)",
+                borderBottom: `1px solid color-mix(in srgb, ${curKind === "worker" ? "#d97706" : "var(--color-accent)"} 22%, transparent)`,
+              }}
+              data-session-kind={curKind}
+              onClick={
+                curKind === "worker"
+                  ? async () => {
+                      // 手机上整条身份条就是"回 Router"的按钮 —— 30px 高的小药丸点不中
+                      try {
+                        const all = await api.sessions();
+                        const r = all.find((x) => x.kind === "router");
+                        if (r) {
+                          setAgentId(r.agent_id);
+                          setSessionId(r.id);
+                        }
+                      } catch {
+                        /* 拿不到就算了 */
+                      }
+                    }
+                  : undefined
+              }
+            >
+              <span
+                className="shrink-0 rounded-full"
+                style={{ width: 6, height: 6, background: curKind === "worker" ? "#d97706" : "var(--color-accent)" }}
+                aria-hidden="true"
+              />
+              {curKind === "worker" ? (
+                <span className="min-w-0 truncate">
+                  派活会话{curTicket ? ` · 票「${curTicket}」` : ""} · 由 Router 派出，过程会写回对话
+                </span>
+              ) : (
+                <span className="min-w-0 truncate">Router · 常驻，它派活，你只跟它说话</span>
+              )}
+              {curKind === "worker" && (
+              <button
+                className="ml-auto shrink-0 px-2 h-6 rounded-md text-[11.5px] max-lg:hidden"
+                style={{ background: "color-mix(in srgb, currentColor 12%, transparent)", color: "inherit" }}
+                data-tap
+                onClick={async () => {
+                  try {
+                    const all = await api.sessions();
+                    const r = all.find((x) => x.kind === "router");
+                    if (r) {
+                      setAgentId(r.agent_id);
+                      setSessionId(r.id);
+                    }
+                  } catch {
+                    /* 拿不到就算了：不打断正在看的对话 */
+                  }
+                }}
+              >
+                回到 Router
+              </button>
+              )}
+            </div>
+          )}
 
           {/* 消息流 —— 阅读宽度封顶 768px 居中：一行扫 1000px 是眼睛的负担 */}
           <div className="relative flex-1 min-h-0 flex flex-col">
@@ -2838,6 +2935,8 @@ function SessionsPane({
   /** 助手身份块：会话都属于某个助手，它排在列表最上面 */
   agentSlot?: React.ReactNode;
 }) {
+  /** 「派活」那一组默认收起：它们是 Router 干的活，不是你要点的对话 */
+  const [showWorkers, setShowWorkers] = useState(false);
   const [q, setQ] = useState("");
   /** 打开菜单的会话 id（一次只开一个） */
   const [menuFor, setMenuFor] = useState<string | null>(null);
@@ -2883,7 +2982,9 @@ function SessionsPane({
   const dayStart = new Date();
   dayStart.setHours(0, 0, 0, 0);
   const today = dayStart.getTime();
-  const groups: { label: string; items: Session[] }[] = [
+  const groups: { label: string; items: Session[]; kind?: "router" | "worker" }[] = [
+    { label: "Router", items: [], kind: "router" },
+    { label: "派活", items: [], kind: "worker" },
     { label: "今天", items: [] },
     { label: "昨天", items: [] },
     { label: "过去 7 天", items: [] },
@@ -2891,10 +2992,14 @@ function SessionsPane({
   ];
   for (const s of list) {
     const t = s.last_active_at || 0;
-    if (t >= today) groups[0].items.push(s);
-    else if (t >= today - 86_400_000) groups[1].items.push(s);
-    else if (t >= today - 7 * 86_400_000) groups[2].items.push(s);
-    else groups[3].items.push(s);
+    // Router 与它派出去的活单独归拢 —— 它们不是"聊出来的对话"，
+    // 混在日期分组里会把真正要点的对话淹掉
+    if (s.kind === "router") groups[0].items.push(s);
+    else if (s.kind === "worker") groups[1].items.push(s);
+    else if (t >= today) groups[2].items.push(s);
+    else if (t >= today - 86_400_000) groups[3].items.push(s);
+    else if (t >= today - 7 * 86_400_000) groups[4].items.push(s);
+    else groups[5].items.push(s);
   }
 
   return (
@@ -2962,15 +3067,44 @@ function SessionsPane({
             {groups.map((g) =>
               g.items.length === 0 ? null : (
               <div key={g.label} className="mb-1">
-                <div className="sticky top-0 z-10 flex items-center gap-1.5 px-3 pt-3 pb-1.5 text-[11px] font-semibold tracking-[0.06em] text-[var(--color-muted)] backdrop-blur-sm"
+                <div
+                  className={`sticky top-0 z-10 flex items-center gap-1.5 px-3 pt-3 pb-1.5 text-[11px] font-semibold tracking-[0.06em] text-[var(--color-muted)] backdrop-blur-sm ${g.kind === "worker" ? "cursor-pointer select-none" : ""}`}
                   style={{ background: "color-mix(in srgb, var(--color-surface) 88%, transparent)" }}
+                  onClick={g.kind === "worker" ? () => setShowWorkers((v) => !v) : undefined}
+                  role={g.kind === "worker" ? "button" : undefined}
+                  aria-expanded={g.kind === "worker" ? showWorkers : undefined}
+                  data-tap={g.kind === "worker" ? true : undefined}
                 >
-                  <span className="w-1 h-1 rounded-full" style={{ background: "var(--color-border-strong, var(--color-border))" }} aria-hidden="true" />
+                  <span
+                    className="w-1.5 h-1.5 rounded-full"
+                    style={{
+                      background:
+                        g.kind === "router"
+                          ? "var(--color-accent)"
+                          : g.kind === "worker"
+                            ? WORKER_COLOR
+                            : "var(--color-border-strong, var(--color-border))",
+                    }}
+                    aria-hidden="true"
+                  />
                   {g.label}
+                  {g.kind === "worker" && (
+                    <span className="tabular-nums">{g.items.length} 件</span>
+                  )}
+                  {g.kind === "worker" && (
+                    <span aria-hidden style={{ marginLeft: 2 }}>{showWorkers ? "▴" : "▾"}</span>
+                  )}
+                  {g.kind === "router" && <span className="font-normal normal-case tracking-normal">常驻 · 你只跟它说话</span>}
                 </div>
                 <div className="space-y-0.5">
-                  {g.items.map((s) => {
+                  {/* 派活组收起时只藏行，组头留着（组头就是收起的开关） */}
+                  {(g.kind === "worker" && !showWorkers ? [] : g.items).map((s) => {
                     const active = s.id === sessionId;
+                    const isWorker = s.kind === "worker";
+                    const isRouter = s.kind === "router";
+                    const labelText = isWorker
+                      ? s.ticket_title || s.title.replace(/^worker-/, "派活 ")
+                      : s.title || "未命名对话";
                     return (
                       <div
                         key={s.id}
@@ -2982,7 +3116,16 @@ function SessionsPane({
                         {/* 当前会话：左边一条竖色条 */}
                         <span
                           className="absolute left-0 top-2.5 bottom-2.5 w-[3px] rounded-full"
-                          style={{ background: active ? "var(--color-accent)" : "transparent" }}
+                          style={{
+                            background: active
+                              ? "var(--color-accent)"
+                              : isWorker
+                                ? WORKER_COLOR
+                                : isRouter
+                                  ? "var(--color-accent)"
+                                  : "transparent",
+                            opacity: active ? 1 : isWorker ? 0.55 : 1,
+                          }}
                           aria-hidden="true"
                         />
                         <div className="min-w-0 flex-1">
@@ -2994,7 +3137,7 @@ function SessionsPane({
                                 : undefined
                             }
                           >
-                            {s.title || "未命名对话"}
+                            {labelText}
                           </div>
                           <div className="text-[11.5px] max-md:text-[12.5px] text-[var(--color-muted)] truncate mt-1 tabular-nums">
                             {s.turn_count} 轮 · {fmt.relative(s.last_active_at)}

@@ -750,6 +750,11 @@ class SessionRead(BaseModel):
     turn_count: int = 0
     #: 派生：Agent 名称（列表展示用，避免前端再查一次）
     agent_name: str | None = None
+    #: 派生：这个会话是什么角色 —— "router"（常驻派活入口）/ "worker"（派出去的一件活）/ "chat"
+    kind: str = "chat"
+    #: 派生：worker 会话对应的票（展示「由谁派、干什么」用）
+    ticket_id: str | None = None
+    ticket_title: str | None = None
     #: 派生：这个会话的工作目录（绝对路径）—— 会话的文件隔离边界
     work_dir: str = ""
 
