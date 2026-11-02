@@ -2009,11 +2009,13 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     />
                   );
                   return m.role === "assistant" && m.run_id ? (
+                    // 顺序即心智：先看它拆给谁、各自干到哪，最后才是结论。
+                    // 反过来的话，用户先读到"都办好了"，过程只能往回找。
                     <div key={m.id ?? i} className="space-y-2">
-                      {bubble}
                       <div className="max-w-[88%] max-md:max-w-[90%]">
                         <DelegationBlock runId={m.run_id} />
                       </div>
+                      {bubble}
                     </div>
                   ) : (
                     <Fragment key={m.id ?? i}>{bubble}</Fragment>

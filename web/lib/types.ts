@@ -1336,6 +1336,8 @@ export interface Delegation {
   run_id: string;
   agent_id: string | null;
   agent_name: string;
+  /** 业务域（助手描述的前 40 字）：Router 按域派活，界面上要分组用 */
+  agent_domain: string;
   task: string;
   status: string;
   started_at: number;

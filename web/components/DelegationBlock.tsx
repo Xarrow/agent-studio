@@ -1,52 +1,21 @@
 "use client";
 
 /**
- * 「这次派了谁去干」—— Router/Worker 最缺的那一屏。
+ * 「这一轮编排」—— Router 对一个需求做了什么：拆给谁、谁在干、干到哪、收口没有。
  *
- * 问题（用户原话）：派了哪个 worker、干了什么、过程、结果，界面上什么都看不到。
- * 原因是 worker 跑在**自己的会话**里（`worker-<票>`），Router 的事件流里只有一行
- * `dispatch` 工具调用；翻过去也看不到那边发生了什么。
+ * 为什么要单独一块（而不是塞在消息气泡下面）：worker 跑在**自己的会话**里
+ * （`worker-<票>-<助手>`），Router 的事件流里只有一行 `dispatch`；不这样摆出来，
+ * 用户看到的就只是一句结论，过程全在暗处。
  *
- * 这个组件把「派出去的活」摆成一张清单：谁 · 干什么 · 什么状态 · 多久 · 结果摘要。
- * 还在干的那些会**直接订阅那个 worker 自己的事件流**（SSE），于是：
- *   - 收起时这一行跟着跳（现在在做什么 + 已经多久）；
- *   - 点开就地看到它的六段过程实时长出来，不用等它跑完。
+ * 布局是"总读数 → 进度 → 一行一个人"，收起状态也在动（实时订阅每个 worker 的事件流），
+ * 点开就地看到它自己的过程与产出。不跳页、不弹框、不需要画布。
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import type { Delegation, RunEvent } from "@/lib/types";
 import { RunTimeline, eventsToSteps, type Step } from "@/components/ui/run-timeline";
-
-const LIVE_STATUS = new Set(["pending", "queued", "running"]);
-
-function statusText(s: string): string {
-  if (s === "ok") return "做完了";
-  if (s === "error") return "失败了";
-  if (s === "aborted") return "中断了";
-  if (s === "pending" || s === "queued") return "排队中";
-  return "在干";
-}
-
-function secs(a: number, b: number | null): string {
-  const ms = Math.max(0, (b ?? Date.now()) - a);
-  if (ms < 1000) return "<1s";
-  if (ms < 60_000) return `${Math.round(ms / 1000)}s`;
-  return `${Math.floor(ms / 60_000)}m${Math.round((ms % 60_000) / 1000)}s`;
-}
-
-/** 一行说清"它现在在干嘛"（收起状态也要能看出动静；回答段不占这句） */
-function liveHint(steps: Step[]): string {
-  for (let i = steps.length - 1; i >= 0; i--) {
-    const s = steps[i];
-    if (s.kind === "output") continue;
-    const body = (s.body || "").replace(/\s+/g, " ").trim();
-    const label = (s.label || "").replace(/\s+/g, " ").trim();
-    const text = label && body ? `${label}：${body}` : label || body;
-    if (text) return text.slice(0, 60);
-  }
-  return "";
-}
+import { LIVE_STATUS, liveHint, secs, statusText, turnStats } from "@/lib/turn";
 
 export function DelegationBlock({
   runId,
@@ -97,7 +66,7 @@ export function DelegationBlock({
     void load();
   }, [load]);
 
-  // 只要还有活没干完就 2 秒一拍：dispatch 现在是"派完就回"，Router 那一轮早就结束了，
+  // 只要还有活没干完就 2 秒一拍：dispatch 是"派完就回"，Router 那一轮早就结束了，
   // 但 worker 还在跑 —— 不能因为外层忙完了就停止刷新。
   const anyRunning = items.some((d) => LIVE_STATUS.has(d.status));
   useEffect(() => {
@@ -208,30 +177,52 @@ export function DelegationBlock({
 
   if (items.length === 0) return null;
 
-  const running = items.filter((d) => LIVE_STATUS.has(d.status)).length;
+  const st = turnStats(items, parentStatus);
 
   return (
     <div
-      className={`rounded-[10px] border text-[12px] ${className}`}
-      style={{ borderColor: "var(--color-border)", background: "var(--color-surface)", minWidth: 0 }}
+      className={`rounded-[12px] text-[12px] overflow-hidden ${className}`}
+      style={{
+        border: "1px solid var(--color-border)",
+        background: "color-mix(in srgb, var(--color-accent) 3%, var(--color-surface))",
+        minWidth: 0,
+      }}
+      data-orchestration
     >
-      <div
-        className="flex items-center gap-1.5 px-2 py-1.5 border-b"
-        style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
-      >
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M4 6h6M4 12h6M4 18h6M14 6h6M14 12h6M14 18h6" />
-        </svg>
-        <span>
-          Router 分派 <b className="tabular-nums" style={{ color: "var(--color-text)" }}>{items.length}</b> 件
-          {running > 0
-            ? ` · ${running} 件在干`
-            : parentStatus === "error"
-              ? " · 收口时出错"
-              : parentStatus === "ok"
-                ? " · 已收口"
-                : " · 等它收口"}
+      {/* 抬头：这一轮编排的总读数 —— 派了几件、几件在干、收口没有 */}
+      <div className="flex items-center gap-2 pl-2.5 pr-2 pt-1.5 pb-1">
+        <span
+          className="shrink-0 rounded-full px-1.5 py-[1px] text-[10.5px] font-semibold tracking-[0.04em]"
+          style={{
+            background: "color-mix(in srgb, var(--color-accent) 14%, transparent)",
+            color: "var(--color-accent)",
+          }}
+        >
+          编排
         </span>
+        <span className="min-w-0 truncate" style={{ color: "var(--color-muted)" }}>
+          分派 <b className="tabular-nums" style={{ color: "var(--color-text)" }}>{st.total}</b> 件
+          <span aria-hidden> · </span>
+          {st.phrase}
+          <span aria-hidden> · </span>
+          {st.closing}
+        </span>
+        {st.active && (
+          <span
+            className="live-dot shrink-0 ml-auto"
+            style={{ width: 6, height: 6, borderRadius: 999, background: "var(--color-accent)", display: "inline-block" }}
+            aria-hidden
+          />
+        )}
+      </div>
+
+      {/* 进度条：绿=完成、红=失败、蓝=在干。没有它，用户得数行才知道进展 */}
+      <div className="flex h-[3px] w-full" aria-hidden>
+        {st.ok > 0 && <span style={{ flex: st.ok, background: "var(--color-ok)" }} />}
+        {st.failed > 0 && <span style={{ flex: st.failed, background: "var(--color-err)" }} />}
+        {st.running > 0 && (
+          <span style={{ flex: st.running, background: "var(--color-accent)", opacity: 0.55 }} />
+        )}
       </div>
 
       {items.map((d) => {
@@ -239,51 +230,72 @@ export function DelegationBlock({
         const open = openId === d.run_id;
         const shown = liveSteps[d.run_id] ?? steps[d.run_id] ?? [];
         const hint = hot ? liveHint(shown) : "";
+        const line = hot && hint ? hint : d.task.replace(/\s+/g, " ").slice(0, 90);
+        // 描述的整句（"按 Hermes 的行为口径配置：直接、动手…"）当标签太长：
+        // 取第一个分句，最多 12 字 —— 标签是给人扫的，不是给人读的。
+        const rawDomain = (d.agent_domain || "").split(/[，。；;:：]/)[0].trim();
+        const domain = rawDomain.length > 8 ? rawDomain.slice(0, 8) + "…" : rawDomain;
         return (
           <div key={d.run_id} className="border-b last:border-b-0" style={{ borderColor: "var(--color-border)" }}>
             <button
               type="button"
               data-tap
               onClick={() => void openChild(d)}
-              className="w-full flex flex-wrap items-center gap-x-2 gap-y-1 px-2 py-1.5 text-left hover:bg-[var(--color-surface-2)] max-md:h-[44px] max-md:flex-nowrap"
+              className="w-full text-left px-2.5 py-1.5 max-md:py-[11px] hover:bg-[var(--color-surface-2)]"
               title={d.task}
             >
-              <span
-                className={hot ? "live-dot shrink-0" : "shrink-0"}
-                style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: 999,
-                  background: hot
-                    ? "var(--color-accent)"
-                    : d.status === "ok"
-                      ? "var(--color-ok)"
-                      : "var(--color-err)",
-                  display: "inline-block",
-                }}
-              />
-              <b className="shrink-0" style={{ color: "var(--color-text)" }}>{d.agent_name}</b>
-              <span
-                className="min-w-0 flex-1 truncate"
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span
+                  className={hot ? "live-dot shrink-0" : "shrink-0"}
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: 999,
+                    background: hot
+                      ? "var(--color-accent)"
+                      : d.status === "ok"
+                        ? "var(--color-ok)"
+                        : "var(--color-err)",
+                    display: "inline-block",
+                  }}
+                  aria-hidden
+                />
+                <b className="shrink-0" style={{ color: "var(--color-text)", fontWeight: 600 }}>{d.agent_name}</b>
+                {domain && (
+                  <span
+                    className="shrink-0 max-w-[40%] truncate rounded px-1 py-[1px] text-[10.5px]"
+                    style={{ background: "var(--color-surface-2)", color: "var(--color-muted)" }}
+                    title={d.agent_domain}
+                  >
+                    {domain}
+                  </span>
+                )}
+                <span
+                  className="ml-auto shrink-0 tabular-nums"
+                  style={{ color: hot ? "var(--color-accent)" : "var(--color-muted)" }}
+                >
+                  {statusText(d.status)} · {secs(d.started_at, d.ended_at)}
+                </span>
+                <span className="shrink-0" aria-hidden style={{ color: "var(--color-muted)" }}>{open ? "▴" : "▾"}</span>
+              </div>
+              <div
+                className="mt-0.5 pl-[14px] truncate"
                 style={{ color: hot && hint ? "var(--color-text)" : "var(--color-muted)" }}
               >
-                {hot && hint ? hint : d.task.replace(/\s+/g, " ").slice(0, 70)}
-              </span>
-              <span className="shrink-0 tabular-nums" style={{ color: hot ? "var(--color-accent)" : "var(--color-muted)" }}>
-                {statusText(d.status)} · {secs(d.started_at, d.ended_at)}
-              </span>
-              <span className="shrink-0" aria-hidden style={{ color: "var(--color-muted)" }}>
-                {open ? "▴" : "▾"}
-              </span>
+                {line}
+              </div>
             </button>
 
             {open && (
-              <div className="px-2 pb-2">
+              <div className="px-2.5 pb-2">
                 {busyStep === d.run_id && (
                   <div className="py-1" style={{ color: "var(--color-muted)" }}>正在取它的过程…</div>
                 )}
                 {shown.length > 0 && (
-                  <div className="rounded-md border p-1.5" style={{ borderColor: "var(--color-border)" }}>
+                  <div
+                    className="rounded-md border p-1.5"
+                    style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+                  >
                     <RunTimeline steps={shown} compact running={hot} />
                   </div>
                 )}
@@ -299,7 +311,10 @@ export function DelegationBlock({
                   </div>
                 )}
                 {d.error && (
-                  <div className="mt-1.5 rounded-md p-1.5" style={{ background: "color-mix(in srgb, var(--color-err) 10%, transparent)", color: "var(--color-err)" }}>
+                  <div
+                    className="mt-1.5 rounded-md p-1.5"
+                    style={{ background: "color-mix(in srgb, var(--color-err) 10%, transparent)", color: "var(--color-err)" }}
+                  >
                     {d.error}
                   </div>
                 )}

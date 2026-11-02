@@ -54,7 +54,7 @@ async def run_delegations(run_id: str, session: AsyncSession = Depends(get_sessi
     rows = (
         await session.execute(select(Run).where(Run.parent_run_id == run_id).order_by(Run.started_at.asc()))
     ).scalars().all()
-    names = {a.id: a.name for a in (await session.execute(select(Agent))).scalars().all()}
+    agents = {a.id: a for a in (await session.execute(select(Agent))).scalars().all()}
     items: list[dict[str, Any]] = []
     for r in rows:
         out = r.output or {}
@@ -64,7 +64,9 @@ async def run_delegations(run_id: str, session: AsyncSession = Depends(get_sessi
             {
                 "run_id": r.id,
                 "agent_id": r.agent_id,
-                "agent_name": names.get(r.agent_id or "", "（助手已删）"),
+                "agent_name": (agents[r.agent_id].name if r.agent_id in agents else "（助手已删）"),
+                # 业务域：Router 是按域派活的，界面上要能一眼看出"这条是谁那个域的"
+                "agent_domain": ((agents[r.agent_id].description or "").strip()[:40] if r.agent_id in agents else ""),
                 "task": (inp.get("text") if isinstance(inp, dict) else "") or "",
                 "status": r.status,
                 "started_at": r.started_at,
