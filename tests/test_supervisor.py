@@ -15,10 +15,10 @@ import pytest
 from sqlalchemy import select
 
 from agent_studio.db import SessionLocal, init_db
-from agent_studio.models import Agent, Session as ChatSession, Ticket
+from agent_studio.models import Agent, Run, Session as ChatSession, Ticket
 from agent_studio.native_tools import _dispatch
 from agent_studio.runner import ctx as run_ctx
-from agent_studio.supervisor import ROUTER_SESSION_TITLE, WORKER_PREFIX, thread_of
+from agent_studio.supervisor import ROUTER_SESSION_TITLE, WORKER_PREFIX, kick_summary, thread_of
 
 
 def uniq(p: str) -> str:
@@ -63,7 +63,7 @@ async def test_派活用独立会话_不是复用router的(monkeypatch):
 
     token = run_ctx.set_run_ctx(agent_id=orch, session_id="ses_router_test", run_id="run_parent_router")
     try:
-        out = await _dispatch(task="写三句话总结", agent=worker_name, title="总结一下")
+        out = await _dispatch(task="写三句话总结", agent=worker_name, title="总结一下", wait=True)
     finally:
         run_ctx.clear_run_ctx()
         _ = token
@@ -96,14 +96,109 @@ async def test_同一thread反复派活认同一张票(monkeypatch):
 
     run_ctx.set_run_ctx(agent_id=orch, session_id="ses_same_thread")
     try:
-        await _dispatch(task="第一件", agent=w)
-        await _dispatch(task="第二件", agent=w)
+        await _dispatch(task="第一件", agent=w, wait=True)
+        await _dispatch(task="第二件", agent=w, wait=True)
     finally:
         run_ctx.clear_run_ctx()
 
     async with SessionLocal() as s:
         rows = (await s.execute(select(Ticket).where(Ticket.thread_id == thread_of("ses_same_thread")))).scalars().all()
     assert len(rows) == 1, "同一条串上不该开出第二张票"
+
+
+async def test_默认不等_派完就回(monkeypatch):
+    """dispatch 默认不阻塞：1 个 Router 要能同时派出 N 件活。"""
+    await init_db()
+    orch = await _agent("编排者", "orchestrator")
+    w = await _names(await _agent("干活的人"))
+
+    async def fake_start(*a, **k):
+        return None
+
+    watched: list[str] = []
+
+    async def fake_watch(**kw):
+        watched.append(kw.get("run_id") or "")
+
+    monkeypatch.setattr("agent_studio.runner.run_service.start", fake_start)
+    monkeypatch.setattr("agent_studio.supervisor.watch_worker", fake_watch)
+
+    run_ctx.set_run_ctx(agent_id=orch, session_id="ses_async", run_id="run_parent_async")
+    try:
+        out = await _dispatch(task="查一下资料", agent=w)
+    finally:
+        run_ctx.clear_run_ctx()
+
+    assert "已派给" in out and "自己回来汇报" in out
+    assert watched, "异步派活必须挂 watcher，否则结果永远回不来"
+
+
+async def test_同一件活派给两个助手_各用一个会话(monkeypatch):
+    """1 个 Router 对 N 个 worker：不同域的助手不能共用一个 worker 会话。"""
+    await init_db()
+    orch = await _agent("编排者", "orchestrator")
+    w1 = await _names(await _agent("查行情的人"))
+    w2 = await _names(await _agent("写文档的人"))
+
+    async def fake_start(*a, **k):
+        return None
+
+    async def fake_wait(session, run_id, timeout_s=900):
+        return SimpleNamespace(id=run_id, status="ok", output={"content": "好了"}, error=None)
+
+    monkeypatch.setattr("agent_studio.runner.run_service.start", fake_start)
+    monkeypatch.setattr("agent_studio.supervisor.wait_run", fake_wait)
+
+    run_ctx.set_run_ctx(agent_id=orch, session_id="ses_multi", run_id="run_parent_multi")
+    try:
+        await _dispatch(task="查金价", agent=w1, wait=True)
+        await _dispatch(task="写周报", agent=w2, wait=True)
+    finally:
+        run_ctx.clear_run_ctx()
+
+    async with SessionLocal() as s:
+        tk = (await s.execute(select(Ticket).where(Ticket.thread_id == thread_of("ses_multi")))).scalar_one()
+        sessions = (tk.facts or {}).get("sessions") or {}
+        assert len(sessions) == 2, f"两个助手应各有一个 worker 会话，实际 {sessions}"
+        rows = [await s.get(ChatSession, sid) for sid in sessions.values()]
+        assert len({r.agent_id for r in rows}) == 2
+
+
+async def test_一批活都回来就叫router收口(monkeypatch):
+    """事件驱动：最后一件汇报回来时，自动在该会话里起一轮收口。"""
+    await init_db()
+    orch = await _agent("编排者", "orchestrator")
+    sid = uniq("ses_sum")
+    async with SessionLocal() as s:
+        s.add(ChatSession(id=sid, agent_id=orch, title="RDO 测试会话", status="active"))
+        await s.commit()
+        kid = Run(
+            agent_id=orch,
+            agent_version=1,
+            runtime="agentscope",
+            status="ok",
+            input={"text": "查一下天气"},
+            output={"content": "晴 16°C"},
+            started_at=1,
+            ended_at=2,
+            parent_run_id="run_parent_sum",
+            origin="worker",
+        )
+        s.add(kid)
+        await s.commit()
+
+    started: list[str] = []
+
+    async def fake_start(run_id, definition, text):
+        started.append(run_id)
+
+    monkeypatch.setattr("agent_studio.runner.run_service.start", fake_start)
+    await kick_summary(parent_run_id="run_parent_sum", session_id=sid)
+    assert started, "一收尾就该起一轮收口"
+    async with SessionLocal() as s:
+        rows = (await s.execute(select(Run).where(Run.session_id == sid))).scalars().all()
+        summ = [r for r in rows if r.origin == "router"]
+        assert summ and "自动汇报" in ((summ[0].input or {}).get("text") or "")
 
 
 async def test_没有可派的助手就说清楚(monkeypatch):

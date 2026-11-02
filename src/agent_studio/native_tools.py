@@ -1528,12 +1528,18 @@ DISPATCH_SCHEMA = {
         "task": {"type": "string", "description": "要它做什么、产出什么（写清楚，越具体越好）"},
         "agent": {"type": "string", "description": "派给谁（助手名字）；不填=第一位干活的助手"},
         "title": {"type": "string", "description": "这张票叫什么（不填就取 task 前 24 字）"},
+        "wait": {
+            "type": "boolean",
+            "description": "true=站在这儿等它做完再回话（只有必须拿到结果才能继续时才用）；默认 false，派完就回",
+        },
     },
     "required": ["task"],
 }
 
 
-async def _dispatch(task: str, agent: str | None = None, title: str | None = None) -> str:
+async def _dispatch(
+    task: str, agent: str | None = None, title: str | None = None, wait: bool = False
+) -> str:
     """把一件事派给一位 worker，**它有自己的会话和上下文**，回来只写一条报告。
 
     这是 Router 唯一"做事"的方式：它不自己搜、不自己读、不自己写，只决定"派给谁、做什么"。
@@ -1585,9 +1591,26 @@ async def _dispatch(task: str, agent: str | None = None, title: str | None = Non
             agent_id=target.id,
             source="chat",
         )
-        run = await supervisor.start_worker(
-            session, ticket, target, text, parent_run_id=str(ctx.get("run_id") or "") or None
-        )
+        parent_run = str(ctx.get("run_id") or "") or None
+        run = await supervisor.start_worker(session, ticket, target, text, parent_run_id=parent_run)
+
+        # 默认**不等**：派完就把手腾出来继续判断、继续派（1 个 Router 对 N 个 worker）。
+        # 活干完是事件 —— 由 supervisor 盯着，跑完自动写报告，攒齐一批再叫 Router 收口。
+        if not wait:
+            if parent_run:
+                await supervisor.watch_worker(
+                    parent_run_id=parent_run,
+                    session_id=str(ctx.get("session_id") or "") or "",
+                    run_id=run.id,
+                    ticket_id=ticket.id,
+                    agent_name=target.name,
+                )
+            st, label = supervisor.stage_of(ticket)
+            return (
+                f"已派给【{target.name}】（票 {ticket.id}，现在「{label}」）。"
+                f"它跑完会自己回来汇报；这期间你可以继续派别的活，或先回答用户。"
+            )
+
         done = await supervisor.wait_run(session, run.id, timeout_s=900)
         body = supervisor.summarize(done)
         kind = "ready" if done.status == "ok" else ("failed" if done.status == "error" else "blocked")
@@ -1598,6 +1621,39 @@ async def _dispatch(task: str, agent: str | None = None, title: str | None = Non
         head = f"【{target.name}】{kind}（票 {ticket.id}，现在「{label}」）"
         return f"{head}\n\n{body or ('（没有产出：' + (done.error or done.status) + '）')}"
 
+
+
+WORKERS_SCHEMA = {
+    "type": "object",
+    "properties": {},
+    "required": [],
+}
+
+
+async def _workers() -> str:
+    """列出现在可以派的 worker：名字 + 业务域/能力 + 挂了哪些工具。
+
+    Router 是「项目 RDO」：需求常常跨域，得先知道有哪些域的人，再按域派。
+    这个工具只读目录，不动任何东西。
+    """
+    from sqlalchemy import select
+
+    from .db import SessionLocal
+    from .models import Agent
+
+    async with SessionLocal() as s:
+        rows = (await s.execute(select(Agent).order_by(Agent.created_at.asc()))).scalars().all()
+    out = []
+    for a in rows:
+        d = a.definition or {}
+        if (d.get("role") or "worker") == "orchestrator":
+            continue
+        desc = (a.description or "").strip().replace("\n", " ") or "（没写域/能力，按名字判断）"
+        tools = [t.get("ref") for t in (d.get("tools") or []) if isinstance(t, dict)]
+        out.append(f"- {a.name}：{desc[:160]}｜工具 {len(tools)} 个")
+    if not out:
+        return "现在没有可派的 worker（去 Agents 页建一个 role=worker 的助手）。"
+    return "可以派的 worker（按业务域分）：\n" + "\n".join(out)
 
 NATIVE_TOOLS: dict[str, dict[str, Any]] = {
     "dispatch": {
@@ -1611,6 +1667,15 @@ NATIVE_TOOLS: dict[str, dict[str, Any]] = {
         # 由那个会话的权限策略把关）。按非只读处理的话，AgentScope 会在每次派活前要人确认 ——
         # 定时/事件触发的场景会直接卡死在 waiting_hitl（fork 当年就是这么踩的）。
         "flags": {"read_only": True, "concurrency_safe": False, "dangerous": False, "native": True},
+    },
+    "workers": {
+        "fn": _workers,
+        "description": (
+            "看现在有哪些 worker 可派、各自是什么业务域/能力（名字 + 域 + 工具数）。"
+            "需求跨域时先用它看清谁合适，再按域派活。"
+        ),
+        "schema": WORKERS_SCHEMA,
+        "flags": {"read_only": True, "concurrency_safe": True, "dangerous": False, "native": True},
     },
     "fetch": {
         "fn": _fetch,

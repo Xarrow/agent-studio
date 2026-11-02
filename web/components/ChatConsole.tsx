@@ -103,6 +103,18 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
    * 平台别抢方向盘。开了之后每句话都先过路由，认不出来就问一句。
    */
   const [autoPick, setAutoPick] = useState(false);
+  /** 当前选的是不是 Router（role=orchestrator）。
+   *  选了它，消息就该**直接交给它**：由它分析、拆解、按域分派 —— 不该再让用户挑"这句交给谁"。
+   *  那一步是把 Router 的活抢回来给人干，等于把编排退回到人工路由。 */
+  const curAgent = agents.find((a) => a.id === agentId);
+  const isRouterAgent = (curAgent?.definition?.role || "") === "orchestrator";
+  // 换到 Router 时，把上一次"这句该交给谁"的候选清掉：那句话已经交给 Router 了
+  useEffect(() => {
+    if (isRouterAgent) {
+      setRouteAsk(null);
+      setRouteNote(null);
+    }
+  }, [isRouterAgent]);
   /** 认不出来时的候选条（点了谁就用谁发，不再猜第二遍） */
   const [routeAsk, setRouteAsk] = useState<{
     text: string;
@@ -368,7 +380,12 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
           // （关掉页面回来还能看到后台任务跑到哪了）
           .filter((m) => m.role === "user" || m.role === "assistant" || m.role === "system")
           .map((m) => ({
-            role: m.role as "user" | "assistant" | "system",
+            // 平台的自动汇报（派活收口那一轮）不是用户说的话：按"系统消息"渲染，
+            // 否则界面上看起来像用户自己贴了一段表格
+            role: (m.content.startsWith("【自动汇报") ? "system" : m.role) as
+              | "user"
+              | "assistant"
+              | "system",
             // 框架的内部话术（"I notice the interruption…"）不能原样给用户看
             content: m.role === "assistant" ? humanizeAssistantText(m.content) : m.content,
             run_id: m.run_id,
@@ -980,8 +997,9 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
         : "";
     const composed = (text || "（请处理附件）") + attachNote;
 
-    // 自动挑助手：先问平台这句话归谁，再决定要不要开跑（认不出来就把候选摆出来）
-    if (autoPick) {
+    // 自动挑助手：先问平台这句话归谁，再决定要不要开跑（认不出来就把候选摆出来）。
+    // Router 例外：它就是那个"决定交给谁"的角色，再问用户一遍纯属多余。
+    if (autoPick && !isRouterAgent) {
       await runAuto(composed);
       return;
     }
@@ -2689,7 +2707,9 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                           : ""}
                   </span>
                   <div className="ml-auto flex items-center gap-1">
-                    {/* 自动挑：开着的时候每句话先过路由 —— 认不出来会问，不会闷头猜 */}
+                    {/* 自动挑：开着的时候每句话先过路由 —— 认不出来会问，不会闷头猜。
+                        选了 Router（编排者）就不出现：路由是它的本职，再让用户挑人等于把它架空。 */}
+                    {!isRouterAgent && (
                     <button
                       data-tap
                       type="button"
@@ -2737,6 +2757,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                       </svg>
                       自动
                     </button>
+                    )}
                     {paths && (
                       <button
                         data-tap

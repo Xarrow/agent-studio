@@ -28,6 +28,7 @@ def test_builtin_registry_shape():
         "memory_search",
         "memory_save",
         "dispatch",
+        "workers",
         "browser",
         # 跨会话检索：用户问"以前聊过什么"时用
         "session_search",
@@ -49,7 +50,7 @@ def test_builtin_registry_shape():
         "tool_call",
     }
     #: 无参工具（proc_list）的 required 本来就该是空的
-    NO_ARG = {"proc_list", "proc_poll", "job_list"}  # 都不填参数也合法（默认看最新那个）
+    NO_ARG = {"proc_list", "proc_poll", "job_list", "workers"}  # 都不填参数也合法（默认看最新那个）
     for name, entry in NATIVE_TOOLS.items():
         assert entry["description"], name
         if name not in NO_ARG:

@@ -74,30 +74,6 @@ async def router_session(session: AsyncSession, agent: Agent) -> ChatSession:
     return row
 
 
-async def worker_session(session: AsyncSession, ticket: Ticket, agent: Agent) -> ChatSession:
-    """一张票一个会话；已有就复用（续做同一件事，上下文才算连续）。"""
-    if ticket.session_id:
-        existing = await session.get(ChatSession, ticket.session_id)
-        if existing is not None:
-            return existing
-    short = ticket.id.replace("tk_", "")[:8]
-    row = ChatSession(
-        id=new_id("ses_"),
-        agent_id=agent.id,
-        title=f"{WORKER_PREFIX}{short}",
-        status="active",
-        created_at=now_ms(),
-        last_active_at=now_ms(),
-    )
-    session.add(row)
-    await session.commit()
-    await session.refresh(row)
-    ticket.session_id = row.id
-    ticket.updated_at = now_ms()
-    await session.commit()
-    return row
-
-
 async def ensure_ticket(
     session: AsyncSession, *, thread_id: str | None, title: str, agent_id: str | None = None, source: str | None = None
 ) -> Ticket:
@@ -138,6 +114,56 @@ async def _fresh(session: AsyncSession, ticket: Ticket) -> Ticket:
 
 def _facts(ticket: Ticket) -> dict[str, Any]:
     return dict(ticket.facts or {})
+
+
+async def worker_session(session: AsyncSession, ticket: Ticket, agent: Agent) -> ChatSession:
+    """这张票 + 这个助手 一个会话；已有就复用（续做同一件事，上下文才算连续）。
+
+    **按 (票, 助手) 而不是按票**：一个 Router 对 N 个 worker，同一件跨域需求会同时派给
+    好几个域的人。若按票共用一个会话，两个助手会在同一段历史里交替说话 ——
+    上下文互相污染，等于又回到"一个人分身"。实测：简明助手和通用助手曾被塞进
+    同一个 `worker-xxx` 会话里，turn 1 / turn 1 各说各话。
+    """
+    import re as _re
+
+    facts = _facts(ticket)
+    smap: dict[str, str] = dict(facts.get("sessions") or {})
+    sid = smap.get(agent.id)
+    if sid:
+        row = await session.get(ChatSession, sid)
+        if row is not None:
+            return row
+    # 老数据：ticket.session_id 是这张票最早那个 worker 的会话，只归它自己
+    if ticket.session_id:
+        old = await session.get(ChatSession, ticket.session_id)
+        if old is not None and old.agent_id == agent.id:
+            smap[agent.id] = old.id
+            await record(session, ticket, sessions=smap)
+            return old
+
+    short = ticket.id.replace("tk_", "")[:8]
+    suffix = ""
+    if smap:  # 这张票已经有别的 worker 会话了：标题里带上助手名，别看起来像同一个
+        suffix = "-" + (_re.sub(r"\W+", "", agent.name) or "w")[:4]
+    row = ChatSession(
+        id=new_id("ses_"),
+        agent_id=agent.id,
+        title=f"{WORKER_PREFIX}{short}{suffix}",
+        status="active",
+        created_at=now_ms(),
+        last_active_at=now_ms(),
+    )
+    session.add(row)
+    await session.commit()
+    await session.refresh(row)
+    smap[agent.id] = row.id
+    if not ticket.session_id:
+        ticket.session_id = row.id
+    # 先单独提交：record() 一进来会 refresh(ticket)，未提交的字段改动会被冲掉
+    await session.commit()
+    await record(session, ticket, sessions=smap)
+    await session.refresh(row)
+    return row
 
 
 async def record(session: AsyncSession, ticket: Ticket, **patch: Any) -> Ticket:
@@ -251,3 +277,154 @@ def summarize(run: Run) -> str:
 def stage_of(ticket: Ticket) -> tuple[str, str]:
     st = stage({**(ticket.facts or {}), "ended_at": ticket.ended_at})
     return st, STAGE_LABEL.get(st, st)
+
+
+# --------------------------------------------------------------------------- #
+# 事件驱动：worker 跑完自己回来汇报，攒齐一批后叫 Router 收口
+# --------------------------------------------------------------------------- #
+
+#: 同一批（同一个 Router run 派出去的）只允许收口一次。进程内锁够用：
+#: 部署是单进程 uvicorn；重启后即便重复触发，下面还会用"有没有在跑"再挡一层。
+_summary_locks: dict[str, Any] = {}
+
+
+def _run_text(run: Run) -> str:
+    out = run.output or {}
+    if isinstance(out, dict):
+        return str(out.get("content") or "")
+    return str(out or "")
+
+
+async def watch_worker(
+    *, parent_run_id: str, session_id: str, run_id: str, ticket_id: str, agent_name: str
+) -> None:
+    """盯住一个 worker：它收尾 → 写报告 → 同一批都回来了就叫 Router 收口。
+
+    为什么要这样：dispatch 现在**不阻塞**（Router 派完就继续判断/继续派），
+    所以"活干完了"这件事必须是**事件**推回来，而不是让 Router 在那儿等。
+    """
+    import asyncio
+
+    async def _watch() -> None:
+        from .db import SessionLocal
+
+        try:
+            async with SessionLocal() as poll:
+                done = await wait_run(poll, run_id, timeout_s=1800)
+                status, text = done.status, _run_text(done)
+        except Exception:  # noqa: BLE001 - 盯人失败不能把进程带崩
+            logger.exception("等 worker 收尾失败 run=%s", run_id)
+            return
+        try:
+            async with SessionLocal() as s:
+                tk = await s.get(Ticket, ticket_id)
+                if tk is not None:
+                    await report(
+                        s,
+                        tk,
+                        "ready" if status == "ok" else "failed",
+                        text,
+                        run_id=run_id,
+                        run_status=status,
+                    )
+        except Exception:  # noqa: BLE001
+            logger.exception("写报告失败 ticket=%s", ticket_id)
+        try:
+            await kick_summary(parent_run_id=parent_run_id, session_id=session_id, agent_name=agent_name)
+        except Exception:  # noqa: BLE001
+            logger.exception("触发收口失败 parent=%s", parent_run_id)
+
+    asyncio.create_task(_watch())
+
+
+async def kick_summary(*, parent_run_id: str, session_id: str, agent_name: str = "") -> None:
+    """同一批 worker 全部收尾 → 在该会话里起一轮 Router，把结果收口。
+
+    判断三件事：①这一批还有没有在跑的 ②会话里是不是已经有一轮在跑 ③这一批是不是
+    已经收口过。
+    """
+    import asyncio
+
+    from sqlalchemy import select as _select
+
+    from .db import SessionLocal
+
+    lock = _summary_locks.setdefault(parent_run_id, asyncio.Lock())
+    if lock.locked():
+        return
+    async with lock:
+        async with SessionLocal() as s:
+            siblings = (
+                await s.execute(_select(Run).where(Run.parent_run_id == parent_run_id))
+            ).scalars().all()
+            if not siblings:
+                return
+            if any(r.status in ("pending", "running") for r in siblings):
+                return  # 还有活没交回来，等最后一个再来叫
+            chat = await s.get(ChatSession, session_id) if session_id else None
+            if chat is None:
+                return
+            # 会话里已经有一轮在跑（人工又发了话）—— 不插队，让那一轮自己看历史
+            busy = (
+                await s.execute(
+                    _select(Run).where(
+                        Run.session_id == session_id, Run.status.in_(("pending", "running"))
+                    )
+                )
+            ).scalars().first()
+            if busy is not None:
+                return
+            # 这一批 5 分钟内已经收口过就不再重复（防止两次收尾擦肩各触发一次）
+            recent = (
+                await s.execute(
+                    _select(Run).where(
+                        Run.session_id == session_id,
+                        Run.origin == "router",
+                        Run.started_at >= now_ms() - 300_000,
+                    )
+                )
+            ).scalars().all()
+            latest_child = max((r.ended_at or r.started_at for r in siblings), default=0)
+            if any((r.started_at or 0) >= latest_child for r in recent):
+                return
+
+            rows: list[str] = []
+            for i, r in enumerate(siblings, 1):
+                ag = await s.get(Agent, r.agent_id) if r.agent_id else None
+                name = ag.name if ag else (agent_name or "worker")
+                task = ((r.input or {}).get("text") or "").strip().replace("\n", " ")
+                body = _run_text(r).strip().replace("\n", " ")
+                head = "✅" if r.status == "ok" else "❌"
+                rows.append(
+                    f"{head} {i}. {name}｜任务：{task[:120]}\n   结果：{body[:600] or '（没有产出）'}"
+                )
+            digest = (
+                "【自动汇报 · 你派的活都回来了】\n"
+                + "\n".join(rows)
+                + "\n\n现在收口：先一句结论，再列必要依据；哪件不合格就说清要重做什么。"
+                " 不要复述整段产出，不要重新派已经做完的活。"
+            )
+            agent = await s.get(Agent, chat.agent_id)
+            if agent is None:
+                return
+            definition = AgentDefinition.model_validate(agent.definition)
+            turn = await next_turn_index(s, chat.id)
+            run = Run(
+                agent_id=agent.id,
+                agent_version=agent.version,
+                runtime=definition.runtime,
+                status="pending",
+                input={"text": digest},
+                definition_snapshot=definition.model_dump(mode="json", exclude={"model": {"api_key"}}),
+                started_at=now_ms(),
+                session_id=chat.id,
+                turn_index=turn,
+                origin="router",
+            )
+            s.add(run)
+            await s.commit()
+            await s.refresh(run)
+            from .runner import run_service
+
+            await run_service.start(run.id, definition, digest)
+            logger.info("派活收口：parent=%s 汇总 %d 件 → run=%s", parent_run_id, len(siblings), run.id)

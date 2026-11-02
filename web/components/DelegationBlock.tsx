@@ -97,9 +97,11 @@ export function DelegationBlock({
     void load();
   }, [load]);
 
-  // 父执行还在跑：2 秒一拍拉清单（有几件、各自状态）。清单本身很轻。
+  // 只要还有活没干完就 2 秒一拍：dispatch 现在是"派完就回"，Router 那一轮早就结束了，
+  // 但 worker 还在跑 —— 不能因为外层忙完了就停止刷新。
+  const anyRunning = items.some((d) => LIVE_STATUS.has(d.status));
   useEffect(() => {
-    if (!live || !runId) return;
+    if ((!live && !anyRunning) || !runId) return;
     let stopped = false;
     const tick = async () => {
       await load();
@@ -111,7 +113,7 @@ export function DelegationBlock({
       stopped = true;
       if (pollTimer.current) clearTimeout(pollTimer.current);
     };
-  }, [live, runId, load]);
+  }, [live, anyRunning, runId, load]);
 
   // 还在干的行：每秒重算一次"多久了"
   useEffect(() => {

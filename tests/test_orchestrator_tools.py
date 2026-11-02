@@ -42,7 +42,8 @@ def test_编排者手里只剩派活():
     skills/工具/记忆会影响 router 判断）。认路用的 skill_viewer / tool_* 也一并收走：
     它不需要看技能目录，也不需要查工具表 —— 那是 worker 的事。
     """
-    assert ORCHESTRATOR_ALLOW_TOOLS == frozenset({"dispatch"})
+    # dispatch（派活）+ workers（看清有哪些域的人）：这两个都不干活，只做判断。
+    assert ORCHESTRATOR_ALLOW_TOOLS == frozenset({"dispatch", "workers"})
     assert not (
         {"fork", "skill_viewer", "Skill", "tool_search", "tool_describe", "tool_call", "job_create"}
         & ORCHESTRATOR_ALLOW_TOOLS

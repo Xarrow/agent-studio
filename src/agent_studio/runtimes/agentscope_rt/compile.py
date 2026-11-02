@@ -366,6 +366,8 @@ CORE_TOOL_NAMES: frozenset[str] = frozenset(
         "Glob",
         "Grep",
         "Bash",
+        "dispatch",  # 直接下发：走懒加载会被权限引擎当成"执行任意工具"再要一次授权
+        "workers",
         "Skill",  # 运行时自动挂的那个技能工具
         "read",
         "write",
@@ -399,10 +401,12 @@ CORE_TOOL_NAMES: frozenset[str] = frozenset(
 #: 它要看资料就 fork 一个 worker 去看 —— 这也正是 worker 存在的意义。
 ORCHESTRATOR_ALLOW_TOOLS: frozenset[str] = frozenset(
     {
-        # 只剩派活。技能目录、工具表、排班工具都不给它：
+        # 派活 + 认路（有哪些域的 worker）。
         # 实测每多一个选择，它就多一次"也许我自己能干"的犹豫 —— Router 的价值在决断，
         # 不在手里能抓多少东西。fork 是旧的同会话分派，已由 dispatch 取代。
+        # workers 是只读目录：Router 像项目 RDO，得知道有哪些业务域的人可派。
         "dispatch",
+        "workers",
     }
 )
 
