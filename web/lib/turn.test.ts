@@ -93,3 +93,19 @@ test("同一个助手永远同一个颜色，不同助手要分得开", async ()
   assert.ok(set.size >= 2, `只有一种颜色：${[...set]}`);
   assert.equal(agentColor(null), "#64748b");
 });
+
+test("按票归组：同票的几件归一起，顺序不乱", async () => {
+  const { groupByTicket, needsTree } = await import("./turn.ts");
+  const gs = groupByTicket([
+    d({ run_id: "r1", ticket_id: "tk_1", ticket_title: "查天气" }),
+    d({ run_id: "r2", ticket_id: "tk_1", ticket_title: "查天气" }),
+    d({ run_id: "r3", ticket_id: "tk_2", ticket_title: "写周报" }),
+  ]);
+  assert.equal(gs.length, 2);
+  assert.equal(gs[0].ticketId, "tk_1");
+  assert.equal(gs[0].runs.length, 2);
+  assert.equal(gs[1].title, "写周报");
+  assert.equal(needsTree(gs), true);
+  // 一票一件：不画树
+  assert.equal(needsTree(groupByTicket([d({ ticket_id: "tk_9" })])), false);
+});

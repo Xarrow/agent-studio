@@ -81,3 +81,34 @@ export function agentColor(agentId: string | null | undefined): string {
   for (let i = 0; i < agentId.length; i++) h = (h * 31 + agentId.charCodeAt(i)) >>> 0;
   return AGENT_COLORS[h % AGENT_COLORS.length];
 }
+
+export interface TicketGroup {
+  ticketId: string;
+  title: string;
+  runs: Delegation[];
+}
+
+/**
+ * 按票归组：一张票 = 一件事，票下可以有多个 worker 的执行。
+ * 界面上「编排 → 票 → worker」才是树；只有一条时不必套三层，直接平铺。
+ */
+export function groupByTicket(items: Delegation[]): TicketGroup[] {
+  const order: string[] = [];
+  const map = new Map<string, TicketGroup>();
+  for (const d of items) {
+    const key = d.ticket_id || d.run_id; // 没有票号的（老数据）自己一组
+    let g = map.get(key);
+    if (!g) {
+      g = { ticketId: key, title: d.ticket_title || "", runs: [] };
+      map.set(key, g);
+      order.push(key);
+    }
+    g.runs.push(d);
+  }
+  return order.map((k) => map.get(k)!);
+}
+
+/** 要不要真的画树：一票多人，或者多票 —— 否则平铺更省眼睛 */
+export function needsTree(groups: TicketGroup[]): boolean {
+  return groups.length > 1 || groups.some((g) => g.runs.length > 1);
+}

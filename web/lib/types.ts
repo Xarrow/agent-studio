@@ -1340,6 +1340,9 @@ export interface Delegation {
   agent_name: string;
   /** 业务域（助手描述的前 40 字）：Router 按域派活，界面上要分组用 */
   agent_domain: string;
+  /** 这张票（= 一件活）：同一票的几件在界面上归成一棵树 */
+  ticket_id?: string | null;
+  ticket_title?: string | null;
   task: string;
   status: string;
   started_at: number;

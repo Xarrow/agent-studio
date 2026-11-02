@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import a2a_client, remote_agents
 from ..db import SessionLocal, get_session
-from ..models import RemoteAgent, RemoteAgentEvent, Run, Tool, now_ms
+from ..models import Agent, RemoteAgent, RemoteAgentEvent, Run, Tool, now_ms
 from ..schemas import (
     RemoteAgentTestIn,
     RemoteAgentCreateIn,
@@ -34,6 +34,55 @@ from ..schemas import (
 from ..security.crypto import encrypt
 
 router = APIRouter(tags=["remote-agents"])
+
+
+async def sync_shadow_agent(session: AsyncSession, row: RemoteAgent) -> Agent:
+    """把一个远端 A2A agent 同步成本地一条**影子 Agent**。
+
+    为什么要有：注册表里的远端 agent 本来是"工具"，Router 看不见、Agents 页也看不见。
+    用户要求"远端 A2A agent 也要进 agent 管理、能被发现和使用" —— 那就让它以
+    ``runtime="a2a"`` 的助手身份出现在同一张表里：Agents 页能列、Router 的 workers() 能列、
+    dispatch 能按名字派。执行时不走本地运行时，走 A2A（见 native_tools._dispatch）。
+    """
+    parsed = row.parsed or {}
+    slug = f"a2a-{row.id}"
+    existing = (
+        await session.execute(select(Agent).where(Agent.slug == slug, Agent.workspace_id == row.workspace_id))
+    ).scalar_one_or_none()
+    card_desc = str(parsed.get("description") or "")
+    skills = parsed.get("skills") or []
+    if isinstance(skills, list) and skills and not card_desc:
+        card_desc = "、".join(str((s or {}).get("name") or "") for s in skills[:4] if s)
+    definition = {
+        "runtime": "a2a",
+        "name": row.name or parsed.get("name") or row.url,
+        "role": "worker",
+        "system_prompt": "",
+        "tools": [],
+        "skills": [],
+        # 远端执行要用的三样
+        "remote_id": row.id,
+        "remote_url": row.url,
+        "remote_agent_id": row.remote_agent_id,
+    }
+    if existing is None:
+        existing = Agent(
+            slug=slug,
+            name=row.name or str(parsed.get("name") or row.url),
+            description=card_desc[:500] or None,
+            runtime="a2a",
+            definition=definition,
+        )
+        session.add(existing)
+    else:
+        existing.name = row.name or str(parsed.get("name") or row.url)
+        existing.description = card_desc[:500] or None
+        existing.definition = definition
+        existing.updated_at = now_ms()
+    await session.commit()
+    await session.refresh(existing)
+    return existing
+
 
 
 def _bearer_of(request: Request) -> str:
@@ -161,6 +210,8 @@ async def create_remote_agent(
     row.updated_at = now_ms()
     await session.commit()
     await session.refresh(row)
+    # 同时进 agent 管理：影子 Agent（runtime=a2a），Agents 页/worker 目录都能看到并可派
+    await sync_shadow_agent(session, row)
     await remote_agents.log_event(
         session, row, "register",
         f"注册远程 Agent「{row.name}」（{len((row.parsed or {}).get('skills') or [])} 个技能）",
@@ -214,6 +265,7 @@ async def self_register_remote_agent(
     row, tool, created = got["remote"], got["tool"], got["created"]
     bound = await remote_agents.bindings_of(row.id)
     # 重推（created=False）也返回 200/201 由框架决定；语义在 note 里可见（「远端自注册」）
+    await sync_shadow_agent(session, row)
     resp = _to_read(row, tool=tool, bound=bound)
     resp.note = (f"{resp.note} · 重推已更新卡片" if not created else resp.note)
     await remote_agents.log_event(
@@ -293,6 +345,7 @@ async def refresh_remote_agent(
     row.tool_id = tool.id
     await session.commit()
     await session.refresh(row)
+    await sync_shadow_agent(session, row)
     await remote_agents.log_event(
         session, row, "refresh",
         (f"重新解析「{row.name}」：{len((row.parsed or {}).get('skills') or [])} 个技能"

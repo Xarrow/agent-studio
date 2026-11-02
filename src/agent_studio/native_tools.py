@@ -1532,13 +1532,25 @@ DISPATCH_SCHEMA = {
             "type": "boolean",
             "description": "true=站在这儿等它做完再回话（只有必须拿到结果才能继续时才用）；默认 false，派完就回",
         },
+        "mode": {
+            "type": "string",
+            "enum": ["auto", "reuse", "new"],
+            "description": (
+                "复用还是新开：auto（默认）=这条对话里他手上那件还开着且他闲着，就续用同一个 worker 会话；"
+                "reuse=必须复用；new=另起一件活（新会话，上下文不共享）"
+            ),
+        },
     },
     "required": ["task"],
 }
 
 
 async def _dispatch(
-    task: str, agent: str | None = None, title: str | None = None, wait: bool = False
+    task: str,
+    agent: str | None = None,
+    title: str | None = None,
+    wait: bool = False,
+    mode: str = "auto",
 ) -> str:
     """把一件事派给一位 worker，**它有自己的会话和上下文**，回来只写一条报告。
 
@@ -1562,13 +1574,18 @@ async def _dispatch(
     async with SessionLocal() as session:
         target = None
         if agent:
-            row = (
-                await session.execute(select(Agent).where(Agent.name == agent.strip()))
-            ).scalar_one_or_none()
-            if row is None:
+            # 同名可能有两个：本地的助手，和远端 A2A 注册进来的影子 Agent。
+            # 用户说名字时默认指本地那个；要派远端就写远端自己的名字。
+            rows = (
+                await session.execute(select(Agent).where(Agent.name == agent.strip()).order_by(Agent.created_at))
+            ).scalars().all()
+            if not rows:
                 names = list((await session.execute(select(Agent.name).order_by(Agent.created_at))).scalars())
-                return f"没有叫「{agent}」的助手。现有：{'、'.join(names) or '（一个都没有）'}"
-            target = row
+                uniq = list(dict.fromkeys(names))
+                return f"没有叫「{agent}」的助手。现有：{'、'.join(uniq) or '（一个都没有）'}"
+            target = next(
+                (a for a in rows if str((a.definition or {}).get("runtime") or "") != "a2a"), rows[0]
+            )
         if target is None:
             rows = (await session.execute(select(Agent).order_by(Agent.created_at))).scalars().all()
             for a in rows:
@@ -1584,14 +1601,58 @@ async def _dispatch(
         if rt is not None:
             await supervisor.router_session(session, rt)
 
-        ticket = await supervisor.ensure_ticket(
-            session,
-            thread_id=supervisor.thread_of(session_id),
-            title=(title or text)[:200],
-            agent_id=target.id,
-            source="chat",
+        # ── 复用还是新开 ──────────────────────────────────────────────
+        # 一个 Router 对 N 个 worker，但不是"每句话都新起一个人"：
+        #   · 他手上还有没跑完的活 → 不派（同一段上下文里并发两件，结果会互相踩）
+        #   · 这条对话里他还开着一件、且他闲着 → 续用那个 worker 会话（上下文连续）
+        #   · 否则 → 新开一件（新票 + 新会话）
+        thread = supervisor.thread_of(session_id)
+        busy = await supervisor.agent_busy(session, target.id)
+        if busy is not None and mode != "new":
+            return (
+                f"{target.name} 手上还有一件在跑（run {busy.id}），先等它回来再派；"
+                f"要并行就换个人，或显式 mode=new 另起一件（上下文不共享）。"
+            )
+        existing = await supervisor.open_ticket_for(session, thread, target.id)
+        reuse = mode == "reuse" or (mode == "auto" and existing is not None)
+        ticket = (
+            existing
+            if (reuse and existing is not None)
+            else await supervisor.ensure_ticket(
+                session,
+                thread_id=thread,
+                title=(title or text)[:200],
+                agent_id=target.id,
+                source="chat",
+                # 一张票 = 一件事（一块活）。同一个域的人再派同一块才复用；
+                # 换个人/换块活就是另一张票 —— 否则一张票上会同时挂着几个域的人。
+                force_new=True,
+            )
         )
+        if ticket is None:  # pragma: no cover - 类型收敛
+            return "派活失败：没有拿到票。"
         parent_run = str(ctx.get("run_id") or "") or None
+
+        # 远端 A2A 助手：同一条派活语义，只是"谁在干"在别的平台。
+        # 本地照样开 run（runtime=a2a）当记录与链路，执行走后端任务。
+        if str((target.definition or {}).get("runtime") or "") == "a2a":
+            run = await supervisor.start_remote_worker(
+                session, ticket, target, text, parent_run_id=parent_run
+            )
+            st, label = supervisor.stage_of(ticket)
+            await supervisor.exec_remote_worker(
+                run_id=run.id,
+                agent_id=target.id,
+                ticket_id=ticket.id,
+                parent_run_id=parent_run or "",
+                session_id=session_id or "",
+            )
+            how = "复用了他手上的会话" if reuse else "新开了一件"
+            return (
+                f"已派给【{target.name}】（远端 A2A · 票 {ticket.id}，现在「{label}」，{how}）。"
+                f"它在对面平台执行，跑完会自己回来汇报。"
+            )
+
         run = await supervisor.start_worker(session, ticket, target, text, parent_run_id=parent_run)
 
         # 默认**不等**：派完就把手腾出来继续判断、继续派（1 个 Router 对 N 个 worker）。
@@ -1606,8 +1667,9 @@ async def _dispatch(
                     agent_name=target.name,
                 )
             st, label = supervisor.stage_of(ticket)
+            how = "复用了他手上的会话" if reuse else "新开了一件"
             return (
-                f"已派给【{target.name}】（票 {ticket.id}，现在「{label}」）。"
+                f"已派给【{target.name}】（票 {ticket.id}，现在「{label}」，{how}）。"
                 f"它跑完会自己回来汇报；这期间你可以继续派别的活，或先回答用户。"
             )
 
@@ -1618,7 +1680,8 @@ async def _dispatch(
             session, ticket, kind, body or (done.error or ""), run_id=done.id, run_status=done.status
         )
         st, label = supervisor.stage_of(ticket)
-        head = f"【{target.name}】{kind}（票 {ticket.id}，现在「{label}」）"
+        how = "复用了他手上的会话" if reuse else "新开了一件"
+        head = f"【{target.name}】{kind}（票 {ticket.id}，现在「{label}」，{how}）"
         return f"{head}\n\n{body or ('（没有产出：' + (done.error or done.status) + '）')}"
 
 
@@ -1641,16 +1704,30 @@ async def _workers() -> str:
     from .db import SessionLocal
     from .models import Agent
 
+    from .models import Run
+
     async with SessionLocal() as s:
         rows = (await s.execute(select(Agent).order_by(Agent.created_at.asc()))).scalars().all()
+        running = {
+            r.agent_id
+            for r in (
+                await s.execute(
+                    select(Run).where(Run.origin == "worker", Run.status.in_(("pending", "running")))
+                )
+            ).scalars().all()
+        }
     out = []
     for a in rows:
         d = a.definition or {}
         if (d.get("role") or "worker") == "orchestrator":
             continue
         desc = (a.description or "").strip().replace("\n", " ") or "（没写域/能力，按名字判断）"
+        remote = str(d.get("runtime") or "") == "a2a"
         tools = [t.get("ref") for t in (d.get("tools") or []) if isinstance(t, dict)]
-        out.append(f"- {a.name}：{desc[:160]}｜工具 {len(tools)} 个")
+        # 手上有没有活：Router 据此决定"复用他的会话 / 等他回来 / 另开一件"
+        hand = "手上还有一件在跑（先别派，或 mode=new 另起）" if a.id in running else "空闲（可以复用他的会话）"
+        tail = "远端 A2A" if remote else f"工具 {len(tools)} 个"
+        out.append(f"- {a.name}：{desc[:120]}｜{tail}｜{hand}")
     if not out:
         return "现在没有可派的 worker（去 Agents 页建一个 role=worker 的助手）。"
     return "可以派的 worker（按业务域分）：\n" + "\n".join(out)

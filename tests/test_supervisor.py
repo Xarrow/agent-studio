@@ -231,3 +231,100 @@ async def test_派给不存在的助手要报名字(monkeypatch):
     finally:
         run_ctx.clear_run_ctx()
     assert "没有叫" in out
+
+
+async def test_同一对话同一人_默认复用他的会话(monkeypatch):
+    """auto：他手上那件还开着、人闲着 → 续用同一个 worker 会话（上下文连续）。"""
+    await init_db()
+    orch = await _agent("编排者", "orchestrator")
+    w = await _names(await _agent("干活的人"))
+
+    async def fake_start(*a, **k):
+        return None
+
+    async def fake_wait(session, run_id, timeout_s=900):
+        return SimpleNamespace(id=run_id, status="ok", output={"content": "好"}, error=None)
+
+    monkeypatch.setattr("agent_studio.runner.run_service.start", fake_start)
+    monkeypatch.setattr("agent_studio.supervisor.wait_run", fake_wait)
+
+    run_ctx.set_run_ctx(agent_id=orch, session_id="ses_reuse", run_id="run_parent_reuse")
+    try:
+        out1 = await _dispatch(task="第一件", agent=w, wait=True)
+        # 真跑时 runner 会把 run 置成终态；这里手动补上，否则第二件会被判成"他还在忙"
+        async with SessionLocal() as s:
+            for r in (await s.execute(select(Run).where(Run.parent_run_id == "run_parent_reuse"))).scalars().all():
+                r.status = "ok"
+            await s.commit()
+        out2 = await _dispatch(task="接着同一件", agent=w, wait=True)
+    finally:
+        run_ctx.clear_run_ctx()
+
+    assert "新开了一件" in out1
+    assert "复用" in out2
+    async with SessionLocal() as s:
+        tk = (await s.execute(select(Ticket).where(Ticket.thread_id == thread_of("ses_reuse")))).scalar_one()
+        sessions = (tk.facts or {}).get("sessions") or {}
+        assert len(sessions) == 1, f"应复用一个会话，实际 {sessions}"
+        runs = (await s.execute(select(Run).where(Run.parent_run_id == "run_parent_reuse"))).scalars().all()
+        assert len({r.session_id for r in runs}) == 1
+
+
+async def test_mode_new_同一对话里另起一件(monkeypatch):
+    await init_db()
+    orch = await _agent("编排者", "orchestrator")
+    w = await _names(await _agent("干活的人"))
+
+    async def fake_start(*a, **k):
+        return None
+
+    async def fake_wait(session, run_id, timeout_s=900):
+        return SimpleNamespace(id=run_id, status="ok", output={"content": "好"}, error=None)
+
+    monkeypatch.setattr("agent_studio.runner.run_service.start", fake_start)
+    monkeypatch.setattr("agent_studio.supervisor.wait_run", fake_wait)
+
+    run_ctx.set_run_ctx(agent_id=orch, session_id="ses_newmode", run_id="run_parent_newmode")
+    try:
+        await _dispatch(task="第一件", agent=w, wait=True)
+        await _dispatch(task="另一件独立的事", agent=w, wait=True, mode="new")
+    finally:
+        run_ctx.clear_run_ctx()
+
+    async with SessionLocal() as s:
+        tks = (
+            await s.execute(select(Ticket).where(Ticket.thread_id == thread_of("ses_newmode")))
+        ).scalars().all()
+    assert len(tks) == 2, f"mode=new 应另开一张票，实际 {len(tks)}"
+
+
+async def test_手上还有活就不派第二件(monkeypatch):
+    await init_db()
+    orch = await _agent("编排者", "orchestrator")
+    wid = await _agent("忙人")
+    w = await _names(wid)
+
+    async with SessionLocal() as s:
+        s.add(
+            Run(
+                agent_id=wid,
+                agent_version=1,
+                runtime="agentscope",
+                status="running",
+                input={"text": "正在干的事"},
+                started_at=1,
+                origin="worker",
+            )
+        )
+        await s.commit()
+
+    async def fake_start(*a, **k):
+        return None
+
+    monkeypatch.setattr("agent_studio.runner.run_service.start", fake_start)
+    run_ctx.set_run_ctx(agent_id=orch, session_id="ses_busy", run_id="run_parent_busy")
+    try:
+        out = await _dispatch(task="再来一件", agent=w)
+    finally:
+        run_ctx.clear_run_ctx()
+    assert "手上还有一件在跑" in out

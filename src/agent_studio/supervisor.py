@@ -75,14 +75,20 @@ async def router_session(session: AsyncSession, agent: Agent) -> ChatSession:
 
 
 async def ensure_ticket(
-    session: AsyncSession, *, thread_id: str | None, title: str, agent_id: str | None = None, source: str | None = None
+    session: AsyncSession,
+    *,
+    thread_id: str | None,
+    title: str,
+    agent_id: str | None = None,
+    source: str | None = None,
+    force_new: bool = False,
 ) -> Ticket:
     """按 thread 认票：同一条串上开着的票就复用。
 
     "一件事"的边界由 thread 定，不由调用方定 —— 否则同一个 PR 会被开成五张票，
     面板上永远看不出哪张是真的。
     """
-    if thread_id:
+    if thread_id and not force_new:
         row = (
             await session.execute(
                 select(Ticket).where(Ticket.thread_id == thread_id, Ticket.status == "open").limit(1)
@@ -228,6 +234,7 @@ async def start_worker(
         parent_run_id=parent_run_id,
     )
     session.add(run)
+    await session.flush()  # 先落 id：票上要记"这一票是哪几条 run 跑出来的"
     await record(
         session,
         ticket,
@@ -239,6 +246,7 @@ async def start_worker(
             "session_id": chat.id,
             "agent_id": agent.id,
         },
+        run_ids=[*((_facts(ticket).get("run_ids") or [])[-49:]), run.id],
     )
     await session.refresh(run)
     await run_service.start(run.id, definition, task)
@@ -428,3 +436,171 @@ async def kick_summary(*, parent_run_id: str, session_id: str, agent_name: str =
 
             await run_service.start(run.id, definition, digest)
             logger.info("派活收口：parent=%s 汇总 %d 件 → run=%s", parent_run_id, len(siblings), run.id)
+
+
+async def agent_busy(session: AsyncSession, agent_id: str) -> Run | None:
+    """这个人手上还有没有没跑完的活（worker 执行）。"""
+    return (
+        await session.execute(
+            select(Run)
+            .where(Run.agent_id == agent_id, Run.origin == "worker", Run.status.in_(("pending", "running")))
+            .order_by(Run.started_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
+
+async def open_ticket_for(session: AsyncSession, thread_id: str | None, agent_id: str) -> Ticket | None:
+    """这条串上，这个助手还开着的票（有就可能复用它那个 worker 会话）。"""
+    if not thread_id:
+        return None
+    rows = (
+        await session.execute(
+            select(Ticket).where(Ticket.thread_id == thread_id, Ticket.status == "open").order_by(Ticket.updated_at.desc())
+        )
+    ).scalars().all()
+    for tk in rows:
+        if str(((tk.facts or {}).get("sessions") or {}).get(agent_id) or ""):
+            return tk
+        if (tk.facts or {}).get("assignment", {}).get("agent_id") == agent_id:
+            return tk
+    return None
+
+
+# --------------------------------------------------------------------------- #
+# 远端 A2A worker：同一条 dispatch 语义，只是"谁来干"在别的平台上
+# --------------------------------------------------------------------------- #
+
+async def start_remote_worker(
+    session: AsyncSession,
+    ticket: Ticket,
+    agent: Agent,
+    task: str,
+    *,
+    parent_run_id: str | None = None,
+) -> Run:
+    """给远端 A2A agent 开一次执行：本地只留一条 run（runtime=a2a）当记录与链路。"""
+    d = agent.definition or {}
+    remote_url = str(d.get("remote_url") or "")
+    remote_id = str(d.get("remote_id") or "")
+    if not remote_url:
+        raise ValueError(f"远端助手 {agent.name} 缺 remote_url（注册表里重新解析一次）")
+
+    chat = await worker_session(session, ticket, agent)
+    turn = await next_turn_index(session, chat.id)
+    run = Run(
+        agent_id=agent.id,
+        agent_version=agent.version,
+        runtime="a2a",
+        status="pending",
+        input={"text": task, "remote": remote_url, "remote_name": agent.name},
+        definition_snapshot={},
+        started_at=now_ms(),
+        session_id=chat.id,
+        turn_index=turn,
+        origin="worker",
+        parent_run_id=parent_run_id,
+    )
+    session.add(run)
+    await session.flush()  # 同上：先拿到 id
+    await record(
+        session,
+        ticket,
+        assignment={
+            "run_id": run.id,
+            "status": "running",
+            "task": task[:500],
+            "session_id": chat.id,
+            "agent_id": agent.id,
+            "remote": remote_url,
+        },
+        run_ids=[*((_facts(ticket).get("run_ids") or [])[-49:]), run.id],
+    )
+    await session.refresh(run)
+    return run
+
+
+async def exec_remote_worker(
+    *,
+    run_id: str,
+    agent_id: str,
+    ticket_id: str,
+    parent_run_id: str,
+    session_id: str,
+) -> None:
+    """后台把这条远端执行跑完：发消息 → 等终态 → 落 run → 写票 → 触发收口。"""
+    import asyncio
+
+    async def _go() -> None:
+        from . import a2a_client, remote_agents as ra
+        from .db import SessionLocal
+        from .models import RemoteAgent, SessionMessage
+
+        status, out, task_id = "error", "", ""
+        try:
+            async with SessionLocal() as s:
+                ag = await s.get(Agent, agent_id)
+                d = (ag.definition if ag else {}) or {}
+                base = str(d.get("remote_url") or "")
+                remote_agent_id = d.get("remote_agent_id")
+                rid = str(d.get("remote_id") or "")
+                row = await s.get(RemoteAgent, rid) if rid else None
+                timeout = float((row.timeout_s if row else 900.0) or 900.0)
+                headers = ra.auth_headers(row) if row is not None else None
+                r = await s.get(Run, run_id)
+                chat_id = str(r.session_id or "") if r is not None else ""
+                task = str(((r.input or {}).get("text") if r is not None else "") or "")
+                await s.commit()
+            status, out, task_id = await a2a_client.run_until_done(
+                base, task, agent_id=remote_agent_id, timeout_s=timeout, headers=headers
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("远端派活失败 run=%s", run_id)
+            status, out = "error", str(exc)
+
+        try:
+            async with SessionLocal() as s2:
+                r2 = await s2.get(Run, run_id)
+                if r2 is not None:
+                    r2.status = status
+                    r2.output = {"content": out} if out else None
+                    r2.error = None if status == "ok" else (out or "远端执行失败")
+                    r2.ended_at = now_ms()
+                    if task_id:
+                        r2.usage = {**(r2.usage or {}), "remote_task_id": task_id}
+                    # 会话里也留一条：用户点进这个 worker 会话时能看到它说了什么
+                    if chat_id:
+                        s2.add(
+                            SessionMessage(
+                                session_id=chat_id,
+                                turn_index=int(r2.turn_index or 1),
+                                role="assistant",
+                                content=out or (r2.error or "（远端没有返回内容）"),
+                                run_id=run_id,
+                            )
+                        )
+                    await s2.commit()
+        except Exception:  # noqa: BLE001
+            logger.exception("远端执行落库失败 run=%s", run_id)
+
+        try:
+            async with SessionLocal() as s3:
+                tk = await s3.get(Ticket, ticket_id)
+                if tk is not None:
+                    await report(
+                        s3,
+                        tk,
+                        "ready" if status == "ok" else "failed",
+                        out,
+                        run_id=run_id,
+                        run_status=status,
+                    )
+        except Exception:  # noqa: BLE001
+            logger.exception("远端报告落票失败 ticket=%s", ticket_id)
+        try:
+            if parent_run_id:
+                await kick_summary(parent_run_id=parent_run_id, session_id=session_id)
+        except Exception:  # noqa: BLE001
+            logger.exception("远端触发收口失败")
+
+    asyncio.create_task(_go())

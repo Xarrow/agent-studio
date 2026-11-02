@@ -437,3 +437,40 @@ async def test_自注册卡片没地址_拒绝():
     async with SessionLocal() as s:
         with pytest.raises(agent_studio.a2a_client.A2AError, match="地址"):
             await ra.self_register(None, {"name": "无地址远端", "protocolVersion": "0.3.0"}, declared_base="")
+
+
+async def test_注册的远端会在_agent_管理里出现_并标成远端():
+    """用户要求：远端 A2A agent 也要进 agent 管理、能被发现和使用。
+
+    做法是给每个远端同步一条**影子 Agent**（runtime=a2a）：Agents 页能列、
+    Router 的 workers() 能列、dispatch 能按名字派。
+    """
+    from agent_studio.api.remote_agents import sync_shadow_agent
+    from agent_studio.db import SessionLocal, init_db
+
+    await init_db()
+    async with SessionLocal() as s:
+        row = RemoteAgent(
+            name="远端情报助手",
+            url="https://remote.example",
+            card=CARD,
+            parsed={"name": "远端情报助手", "description": "擅长检索与摘要的外部 agent", "skills": CARD["skills"]},
+            status="ok",
+        )
+        s.add(row)
+        await s.commit()
+        await s.refresh(row)
+
+        agent = await sync_shadow_agent(s, row)
+        assert agent.runtime == "a2a"
+        assert (agent.definition or {}).get("runtime") == "a2a"
+        assert (agent.definition or {}).get("remote_id") == row.id
+        assert (agent.definition or {}).get("role") == "worker"
+        assert "检索" in (agent.description or "")
+
+        # 再同步一次：更新而不是新建
+        row.name = "远端情报助手（改名）"
+        await s.commit()
+        again = await sync_shadow_agent(s, row)
+        assert again.id == agent.id
+        assert again.name == "远端情报助手（改名）"

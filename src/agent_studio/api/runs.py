@@ -55,11 +55,25 @@ async def run_delegations(run_id: str, session: AsyncSession = Depends(get_sessi
         await session.execute(select(Run).where(Run.parent_run_id == run_id).order_by(Run.started_at.asc()))
     ).scalars().all()
     agents = {a.id: a for a in (await session.execute(select(Agent))).scalars().all()}
+    # worker 的 run 不直接记票；票的 assignment.run_id 记着"这一票是哪次跑出来的"。
+    # 前端要把同票的几件归到一棵树里，所以这里反查一次（票不多，一次扫完）。
+    from agent_studio.models import Ticket
+
+    ticket_of: dict[str, tuple[str, str]] = {}
+    for tk in (await session.execute(select(Ticket))).scalars().all():
+        facts = tk.facts or {}
+        ids = list(facts.get("run_ids") or [])
+        rid = (facts.get("assignment") or {}).get("run_id")
+        if rid and rid not in ids:
+            ids.append(rid)
+        for x in ids:
+            ticket_of[str(x)] = (tk.id, tk.title or "")
     items: list[dict[str, Any]] = []
     for r in rows:
         out = r.output or {}
         text = (out.get("content") if isinstance(out, dict) else "") or ""
         inp = r.input or {}
+        tid, ttitle = ticket_of.get(r.id, (None, ""))
         items.append(
             {
                 "run_id": r.id,
@@ -67,6 +81,9 @@ async def run_delegations(run_id: str, session: AsyncSession = Depends(get_sessi
                 "agent_name": (agents[r.agent_id].name if r.agent_id in agents else "（助手已删）"),
                 # 业务域：Router 是按域派活的，界面上要能一眼看出"这条是谁那个域的"
                 "agent_domain": ((agents[r.agent_id].description or "").strip()[:40] if r.agent_id in agents else ""),
+                # 同一张票的几件，在界面上归成一个树节点
+                "ticket_id": tid,
+                "ticket_title": ttitle,
                 "task": (inp.get("text") if isinstance(inp, dict) else "") or "",
                 "status": r.status,
                 "started_at": r.started_at,

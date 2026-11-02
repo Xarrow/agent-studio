@@ -7,15 +7,24 @@
  * （`worker-<票>-<助手>`），Router 的事件流里只有一行 `dispatch`；不这样摆出来，
  * 用户看到的就只是一句结论，过程全在暗处。
  *
- * 布局是"总读数 → 进度 → 一行一个人"，收起状态也在动（实时订阅每个 worker 的事件流），
- * 点开就地看到它自己的过程与产出。不跳页、不弹框、不需要画布。
+ * 结构是树：编排 → 一件活（票）→ 派出去干这件事的人。只有一票一件时退化成平铺，
+ * 不为「像树」白套三层；每个 worker 的配色固定（侧栏 / 这里 / 它自己的会话同一个色）。
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import type { Delegation, RunEvent } from "@/lib/types";
 import { RunTimeline, eventsToSteps, type Step } from "@/components/ui/run-timeline";
-import { LIVE_STATUS, agentColor, liveHint, secs, statusText, turnStats } from "@/lib/turn";
+import {
+  LIVE_STATUS,
+  agentColor,
+  groupByTicket,
+  liveHint,
+  needsTree,
+  secs,
+  statusText,
+  turnStats,
+} from "@/lib/turn";
 
 export function DelegationBlock({
   runId,
@@ -178,6 +187,119 @@ export function DelegationBlock({
   if (items.length === 0) return null;
 
   const st = turnStats(items, parentStatus);
+  const groups = groupByTicket(items);
+  const tree = needsTree(groups);
+
+  /** worker 那一行；tree=true 时左边有一条竖线 + 短横线，缩进一级 */
+  const renderRow = (d: Delegation, nested: boolean) => {
+    const hot = LIVE_STATUS.has(d.status);
+    const open = openId === d.run_id;
+    const shown = liveSteps[d.run_id] ?? steps[d.run_id] ?? [];
+    const hint = hot ? liveHint(shown) : "";
+    const line = hot && hint ? hint : d.task.replace(/\s+/g, " ").slice(0, 90);
+    // 描述的整句当标签太长：取第一个分句，最多 8 字 —— 标签是给人扫的
+    const rawDomain = (d.agent_domain || "").split(/[，。；;:：]/)[0].trim();
+    const domain = rawDomain.length > 8 ? rawDomain.slice(0, 8) + "…" : rawDomain;
+    // 同一个人在整个产品里一个颜色：侧栏的树、这里、它自己的会话身份带都一致
+    const tint = agentColor(d.agent_id);
+    return (
+      <div
+        key={d.run_id}
+        className="relative border-b last:border-b-0"
+        style={{ borderColor: "var(--color-border)" }}
+      >
+        {nested && (
+          <>
+            <span
+              className="absolute left-[19px] top-0 bottom-0 w-px"
+              style={{ background: `color-mix(in srgb, ${tint} 28%, transparent)` }}
+              aria-hidden
+            />
+            <span
+              className="absolute left-[19px] top-[17px] w-3 h-px"
+              style={{ background: `color-mix(in srgb, ${tint} 40%, transparent)` }}
+              aria-hidden
+            />
+          </>
+        )}
+        <button
+          type="button"
+          data-tap
+          onClick={() => void openChild(d)}
+          className={`w-full text-left py-1.5 pr-2.5 max-md:py-[11px] hover:bg-[var(--color-surface-2)] ${
+            nested ? "pl-9" : "pl-2.5"
+          }`}
+          title={d.task}
+        >
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span
+              className="shrink-0 rounded-full"
+              style={{ width: 7, height: 7, background: tint, display: "inline-block" }}
+              aria-hidden
+            />
+            <b className="shrink-0" style={{ color: "var(--color-text)", fontWeight: 600 }}>{d.agent_name}</b>
+            {domain && (
+              <span
+                className="shrink-0 max-w-[40%] truncate rounded px-1 py-[1px] text-[10.5px]"
+                style={{ background: `color-mix(in srgb, ${tint} 13%, transparent)`, color: tint }}
+                title={d.agent_domain}
+              >
+                {domain}
+              </span>
+            )}
+            <span
+              className="ml-auto shrink-0 tabular-nums"
+              style={{ color: hot ? "var(--color-accent)" : "var(--color-muted)" }}
+            >
+              {statusText(d.status)} · {secs(d.started_at, d.ended_at)}
+            </span>
+            <span className="shrink-0" aria-hidden style={{ color: "var(--color-muted)" }}>{open ? "▴" : "▾"}</span>
+          </div>
+          <div
+            className={`mt-0.5 truncate ${nested ? "" : "pl-[14px]"}`}
+            style={{ color: hot && hint ? "var(--color-text)" : "var(--color-muted)" }}
+          >
+            {line}
+          </div>
+        </button>
+
+        {open && (
+          <div className="px-2.5 pb-2">
+            {busyStep === d.run_id && (
+              <div className="py-1" style={{ color: "var(--color-muted)" }}>正在取它的过程…</div>
+            )}
+            {shown.length > 0 && (
+              <div
+                className="rounded-md border p-1.5"
+                style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+              >
+                <RunTimeline steps={shown} compact running={hot} />
+              </div>
+            )}
+            {d.output_excerpt && (
+              <div className="mt-1.5">
+                <div className="mb-0.5" style={{ color: "var(--color-muted)" }}>它的产出</div>
+                <div
+                  className="whitespace-pre-wrap break-words rounded-md p-1.5"
+                  style={{ background: "var(--color-bg)", color: "var(--color-text)" }}
+                >
+                  {d.output_excerpt}
+                </div>
+              </div>
+            )}
+            {d.error && (
+              <div
+                className="mt-1.5 rounded-md p-1.5"
+                style={{ background: "color-mix(in srgb, var(--color-err) 10%, transparent)", color: "var(--color-err)" }}
+              >
+                {d.error}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div
@@ -225,96 +347,39 @@ export function DelegationBlock({
         )}
       </div>
 
-      {items.map((d) => {
-        const hot = LIVE_STATUS.has(d.status);
-        const open = openId === d.run_id;
-        const shown = liveSteps[d.run_id] ?? steps[d.run_id] ?? [];
-        const hint = hot ? liveHint(shown) : "";
-        const line = hot && hint ? hint : d.task.replace(/\s+/g, " ").slice(0, 90);
-        // 描述的整句（"按 Hermes 的行为口径配置：直接、动手…"）当标签太长：
-        // 取第一个分句，最多 12 字 —— 标签是给人扫的，不是给人读的。
-        const rawDomain = (d.agent_domain || "").split(/[，。；;:：]/)[0].trim();
-        const domain = rawDomain.length > 8 ? rawDomain.slice(0, 8) + "…" : rawDomain;
-        // 同一个人在整个产品里一个颜色：侧栏的树、这里的行、它自己的会话身份带都一致
-        const tint = agentColor(d.agent_id);
-        return (
-          <div key={d.run_id} className="border-b last:border-b-0" style={{ borderColor: "var(--color-border)" }}>
-            <button
-              type="button"
-              data-tap
-              onClick={() => void openChild(d)}
-              className="w-full text-left px-2.5 py-1.5 max-md:py-[11px] hover:bg-[var(--color-surface-2)]"
-              title={d.task}
-            >
-              <div className="flex items-center gap-1.5 min-w-0">
-                <span
-                  className="shrink-0 rounded-full"
-                  style={{ width: 7, height: 7, background: tint, display: "inline-block" }}
+      {tree
+        ? groups.map((g) => (
+            // 票节点：一件事。下面是派出去干这件事的人（可能不止一个）
+            <div key={g.ticketId}>
+              <div className="flex items-center gap-1.5 pl-2.5 pr-2 pt-1.5 pb-1">
+                <svg
+                  width="11"
+                  height="11"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="var(--color-accent)"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
                   aria-hidden
-                />
-                <b className="shrink-0" style={{ color: "var(--color-text)", fontWeight: 600 }}>{d.agent_name}</b>
-                {domain && (
-                  <span
-                    className="shrink-0 max-w-[40%] truncate rounded px-1 py-[1px] text-[10.5px]"
-                    style={{ background: `color-mix(in srgb, ${tint} 13%, transparent)`, color: tint }}
-                    title={d.agent_domain}
-                  >
-                    {domain}
-                  </span>
-                )}
-                <span
-                  className="ml-auto shrink-0 tabular-nums"
-                  style={{ color: hot ? "var(--color-accent)" : "var(--color-muted)" }}
                 >
-                  {statusText(d.status)} · {secs(d.started_at, d.ended_at)}
+                  <path d="M4 5h16v6H4zM4 15h16v4H4z" />
+                </svg>
+                <span
+                  className="min-w-0 truncate text-[11.5px]"
+                  style={{ color: "var(--color-text)", fontWeight: 500 }}
+                  title={g.title}
+                >
+                  {g.title || "一件活"}
                 </span>
-                <span className="shrink-0" aria-hidden style={{ color: "var(--color-muted)" }}>{open ? "▴" : "▾"}</span>
+                <span className="shrink-0 text-[10.5px] tabular-nums" style={{ color: "var(--color-muted)" }}>
+                  {g.runs.length} 人
+                </span>
               </div>
-              <div
-                className="mt-0.5 pl-[14px] truncate"
-                style={{ color: hot && hint ? "var(--color-text)" : "var(--color-muted)" }}
-              >
-                {line}
-              </div>
-            </button>
-
-            {open && (
-              <div className="px-2.5 pb-2">
-                {busyStep === d.run_id && (
-                  <div className="py-1" style={{ color: "var(--color-muted)" }}>正在取它的过程…</div>
-                )}
-                {shown.length > 0 && (
-                  <div
-                    className="rounded-md border p-1.5"
-                    style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
-                  >
-                    <RunTimeline steps={shown} compact running={hot} />
-                  </div>
-                )}
-                {d.output_excerpt && (
-                  <div className="mt-1.5">
-                    <div className="mb-0.5" style={{ color: "var(--color-muted)" }}>它的产出</div>
-                    <div
-                      className="whitespace-pre-wrap break-words rounded-md p-1.5"
-                      style={{ background: "var(--color-bg)", color: "var(--color-text)" }}
-                    >
-                      {d.output_excerpt}
-                    </div>
-                  </div>
-                )}
-                {d.error && (
-                  <div
-                    className="mt-1.5 rounded-md p-1.5"
-                    style={{ background: "color-mix(in srgb, var(--color-err) 10%, transparent)", color: "var(--color-err)" }}
-                  >
-                    {d.error}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        );
-      })}
+              {g.runs.map((d) => renderRow(d, true))}
+            </div>
+          ))
+        : items.map((d) => renderRow(d, false))}
     </div>
   );
 }
