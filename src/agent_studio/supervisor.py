@@ -315,6 +315,9 @@ async def watch_worker(
 
     为什么要这样：dispatch 现在**不阻塞**（Router 派完就继续判断/继续派），
     所以"活干完了"这件事必须是**事件**推回来，而不是让 Router 在那儿等。
+    另外 Router 可能还没结束自己的那一轮（它在巡检/继续派别的）——
+    worker 一收尾就把状态**插话**进正在跑的 Router 轮（steer 通道），
+    它下一步推理就能看到「谁回来了、结果是什么」，不用干等到 kick_summary。
     """
     import asyncio
 
@@ -328,6 +331,17 @@ async def watch_worker(
         except Exception:  # noqa: BLE001 - 盯人失败不能把进程带崩
             logger.exception("等 worker 收尾失败 run=%s", run_id)
             return
+        # Router 那一轮还在跑 → 直接推给它（它正等着呢）；结束了 → 走收口通道
+        mark = {"ok": "✅ 完成", "error": "❌ 失败", "aborted": "⏹ 被停"}.get(status, status)
+        digest = (text or done.error or "").strip().replace("\n", " ")[:300]
+        from . import steer as steer_registry
+
+        result = await steer_registry.deliver(
+            parent_run_id,
+            f"[worker 回报] 【{agent_name}】{mark}（run {run_id}）。结果摘要：{digest or '（无产出）'}",
+        )
+        if result == steer_registry.SteerResult.DELIVERED:
+            logger.info("worker 回报已推给在跑的 Router parent=%s worker=%s", parent_run_id, run_id)
         try:
             async with SessionLocal() as s:
                 tk = await s.get(Ticket, ticket_id)

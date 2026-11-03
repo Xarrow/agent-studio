@@ -1668,8 +1668,8 @@ async def _dispatch(
             how = "复用了他手上的会话" if reuse else "新开了一件"
             return (
                 f"已派给【{target.name}】（票 {ticket.id}，run {run.id}，现在「{label}」，{how}）。"
-                f"它跑完会自己回来汇报；这期间你可以继续派别的活，或先回答用户。"
-                f"要中途停它：worker_stop 工具，worker 填「{target.name}」。"
+                f"派完不撒手：用 worker_status 巡它的进度，发现绕路/失败用 worker_steer 纠偏，"
+                f"方向错了用 worker_stop 停掉重派。它跑完的结果会自动回到这张票上。"
             )
 
         done = await supervisor.wait_run(session, run.id, timeout_s=900)

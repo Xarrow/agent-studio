@@ -130,7 +130,7 @@ async def test_默认不等_派完就回(monkeypatch):
     finally:
         run_ctx.clear_run_ctx()
 
-    assert "已派给" in out and "自己回来汇报" in out
+    assert "已派给" in out and "worker_status" in out  # 派完不撒手：返回要引导巡检
     assert watched, "异步派活必须挂 watcher，否则结果永远回不来"
 
 
