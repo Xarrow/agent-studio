@@ -131,17 +131,35 @@ class AgentDefinition(BaseModel):
 # Agent CRUD DTO
 # --------------------------------------------------------------------------- #
 class AgentCreate(BaseModel):
-    name: str
+    name: str = Field(min_length=1, max_length=80)  # 纯空白会被 strip 掉，下面再挡一道
     slug: str | None = None
     description: str | None = None
     definition: AgentDefinition
 
+    @field_validator("name")
+    @classmethod
+    def _name_not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("名字不能是空白")
+        return v
+
 
 class AgentUpdate(BaseModel):
-    name: str | None = None
+    name: str | None = Field(default=None, max_length=80)
     description: str | None = None
     definition: AgentDefinition | None = None
     bump_version: bool = True       # 默认生成新版本（可回滚）
+
+    @field_validator("name")
+    @classmethod
+    def _name_not_blank(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
+        if not v:
+            raise ValueError("名字不能是空白")
+        return v
 
 
 class AgentRead(BaseModel):

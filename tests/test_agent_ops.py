@@ -159,3 +159,42 @@ async def test_删除助手_连带清掉它的会话():
         await agents_api.delete_agent(aid, session=s)
         left = (await s.execute(select(ChatSession).where(ChatSession.agent_id == aid))).scalars().all()
         assert left == [], f"删除助手后不应再留下它的会话，实际还有 {len(left)} 条"
+
+
+async def test_空白名字_超长名字_拒绝():
+    """名字的边界：纯空白和超长都不该进库（此前 201 通过）。"""
+    from agent_studio.db import init_db, SessionLocal
+    from agent_studio.schemas import AgentCreate
+
+    await init_db()
+    # pydantic 直接校验
+    import pytest
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        AgentCreate.model_validate({"name": "  ", "definition": {"runtime": "agentscope", "name": "x"}})
+    with pytest.raises(ValidationError):
+        AgentCreate.model_validate({"name": "x" * 300, "definition": {"runtime": "agentscope", "name": "x"}})
+
+
+async def test_改名成重名_409():
+    """改名时和别人撞名 → 409，不能悄悄变成同名两条。"""
+    from agent_studio.db import init_db, SessionLocal
+    from agent_studio.models import Agent, new_id
+    from agent_studio.api import agents as agents_api
+    from agent_studio.schemas import AgentUpdate
+    import pytest
+    from fastapi import HTTPException
+
+    await init_db()
+    async with SessionLocal() as s:
+        a = Agent(id=new_id("ag"), slug="rename-a", name="助手A", version=1, definition={})
+        b = Agent(id=new_id("ag"), slug="rename-b", name="助手B", version=1, definition={})
+        s.add(a); s.add(b)
+        await s.commit()
+        await s.refresh(a); await s.refresh(b)
+        aid, bid = a.id, b.id
+
+    async with SessionLocal() as s:
+        with pytest.raises(HTTPException) as ei:
+            await agents_api.update_agent(bid, AgentUpdate(name="助手A"), session=s)
+        assert ei.value.status_code == 409
