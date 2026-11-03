@@ -12,6 +12,7 @@
  */
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { HitlPrompt } from "@/components/HitlPrompt";
 import { DelegationBlock } from "@/components/DelegationBlock";
 import { agentColor } from "@/lib/turn";
@@ -1254,6 +1255,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   /** 助手选择面板开合：「哪个形态被点开了」。三种挂载点只认自己那一份，
    *  共用布尔值会让面板在窗口跨断点缩放后凭空冒出来（桌面开着的面板飘到手机上）。 */
   const [switcherOpen, setSwitcherOpen] = useState<null | "bar" | "sidebar" | "mini">(null);
+  const router = useRouter();
   /** 底部输入坞的高度：它是浮在消息之上的（毛玻璃要透出下面滚过的内容），
    *  所以消息区要留出这么一块内边距，否则最后一条会被压在底下。 */
   const [dockH, setDockH] = useState(150);
@@ -1643,7 +1645,12 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                           <Link
                             key={item.href}
                             href={item.href}
-                            onClick={() => setMobileNav(false)}
+                            onClick={() => {
+                              setMobileNav(false);
+                              // 刚关抽屉 React 还没把那一批 Link 卸载，真实点击会落到旧元素上 → 路由不走。
+                              // 直接用 router 跳，别赌那一帧。
+                              router.push(item.href);
+                            }}
                             className="flex items-center gap-2.5 rounded-lg px-2 py-2 min-h-[48px] active:bg-[var(--color-surface-2)] transition-colors"
                           >
                             <span className="shrink-0" style={{ color: "var(--color-muted)" }}>
