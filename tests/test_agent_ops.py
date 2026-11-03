@@ -19,6 +19,8 @@ from agent_studio.agent_ops import (
     _fork_agent,
     _list_agents,
     _read_agent,
+    _worker_status,
+    _worker_steer,
     _worker_stop,
 )
 from agent_studio.db import SessionLocal
@@ -138,19 +140,26 @@ def test_registry_shape():
 
 
 async def _seed_running_worker_run() -> tuple[Agent, "Run"]:
-    """落一个 worker 助手 + 一条 running 的 worker run（模拟 dispatch 派出去正在跑）。"""
+    """落一个 worker 助手 + 一条 running 的 worker run（模拟 dispatch 派出去正在跑）。
+
+    先清掉这个 agent 的旧 run：agent_busy 按 started_at 倒序找"在跑的"，
+    之前用例留下的 running run 会串场（单跑绿、全套红就是它）。
+    """
     from agent_studio.db import init_db
     from agent_studio.models import Run, now_ms
+    from sqlalchemy import delete as _delete, select as _select
 
     await init_db()
     async with SessionLocal() as s:
         a = (
-            await s.execute(select(Agent).where(Agent.name == "测试干活乙"))
+            await s.execute(_select(Agent).where(Agent.name == "测试干活乙"))
         ).scalars().first()
         if a is None:
             a = Agent(slug="测试干活乙", name="测试干活乙", description="干活", definition={"tools": []})
             s.add(a)
             await s.flush()
+        else:
+            await s.execute(_delete(Run).where(Run.agent_id == a.id))
         run = Run(
             agent_id=a.id,
             runtime="agentscope",
@@ -223,7 +232,6 @@ async def test_worker_stop_rejected_outside_run_context():
 
 async def test_worker_stop_by_run_id():
     from agent_studio.runner.ctx import clear_run_ctx, set_run_ctx
-    from agent_studio.models import Run
 
     _, run = await _seed_running_worker_run()
     set_run_ctx(run_id="run_stopper", agent_id="ag_x", depth=0)
@@ -235,6 +243,146 @@ async def test_worker_stop_by_run_id():
     async with SessionLocal() as s:
         row = await s.get(Run, run.id)
         assert row.status == "aborted"
+
+
+# --------------------------------------------------------------------------- #
+# worker_status / worker_steer：Router 巡检与中途纠偏
+# --------------------------------------------------------------------------- #
+
+
+async def test_worker_status_shows_running_progress():
+    """在跑的 run：报状态 + 已跑时长 + 最近动作（事件流里来）。"""
+    from agent_studio.models import RunEvent, now_ms
+    from agent_studio.runner.ctx import clear_run_ctx, set_run_ctx
+
+    a, run = await _seed_running_worker_run()
+    async with SessionLocal() as s:
+        s.add(RunEvent(run_id=run.id, seq=1, type="tool_exec_start",
+                       payload={"tool_call_id": "c1", "tool_call_name": "Bash"}, ts=now_ms()))
+        s.add(RunEvent(run_id=run.id, seq=2, type="tool_exec_end",
+                       payload={"tool_call_id": "c1", "state": "success"}, ts=now_ms()))
+        s.add(RunEvent(run_id=run.id, seq=3, type="tool_exec_start",
+                       payload={"tool_call_id": "c2", "tool_call_name": "browser"}, ts=now_ms()))
+        await s.commit()
+    set_run_ctx(run_id="run_router", agent_id="ag_router", depth=0)
+    try:
+        out = await _worker_status(a.name)
+    finally:
+        clear_run_ctx()
+    assert "执行中" in out
+    assert "Bash" in out and "browser" in out  # 已完成的 + 正在跑的都可见
+    assert run.id in out
+
+
+async def test_worker_status_idle_shows_last_run():
+    """没在跑：报最近一次执行的终态与产出摘要，不装作还在跑。"""
+    from agent_studio.runner.ctx import clear_run_ctx, set_run_ctx
+    from agent_studio.runner.service import run_service
+
+    a, run = await _seed_running_worker_run()
+    async with SessionLocal() as s:
+        row = await s.get(Run, run.id)
+        row.status = "ok"
+        row.output = {"content": "任务完成了"}
+        await s.commit()
+    set_run_ctx(run_id="run_router", agent_id="ag_router", depth=0)
+    try:
+        out = await _worker_status(a.name)
+    finally:
+        clear_run_ctx()
+    assert "空闲" in out and "任务完成了" in out
+
+
+async def test_worker_status_unknown_agent():
+    from agent_studio.runner.ctx import clear_run_ctx, set_run_ctx
+
+    await _seed_running_worker_run()
+    set_run_ctx(run_id="run_router", agent_id="ag_router", depth=0)
+    try:
+        out = await _worker_status("不存在的助手")
+    finally:
+        clear_run_ctx()
+    assert "没有叫" in out and "测试干活乙" in out
+
+
+async def test_worker_status_reports_tool_failures():
+    """事件流里有失败的工具调用要标出来——Router 判断"要不要纠偏"的依据。"""
+    from agent_studio.models import RunEvent, now_ms
+    from agent_studio.runner.ctx import clear_run_ctx, set_run_ctx
+
+    a, run = await _seed_running_worker_run()
+    async with SessionLocal() as s:
+        s.add(RunEvent(run_id=run.id, seq=1, type="tool_exec_start",
+                       payload={"tool_call_id": "c1", "tool_call_name": "Bash"}, ts=now_ms()))
+        s.add(RunEvent(run_id=run.id, seq=2, type="tool_exec_end",
+                       payload={"tool_call_id": "c1", "state": "error"}, ts=now_ms()))
+        await s.commit()
+    set_run_ctx(run_id="run_router", agent_id="ag_router", depth=0)
+    try:
+        out = await _worker_status(a.name)
+    finally:
+        clear_run_ctx()
+    assert "失败" in out and "Bash" in out
+
+
+async def test_worker_steer_idle_worker_says_nothing_running():
+    from agent_studio.runner.ctx import clear_run_ctx, set_run_ctx
+
+    a, run = await _seed_running_worker_run()
+    from agent_studio.runner.service import run_service
+    await run_service.abort(run.id)
+    set_run_ctx(run_id="run_router", agent_id="ag_router", depth=0)
+    try:
+        out = await _worker_steer(a.name, "改成用 API")
+    finally:
+        clear_run_ctx()
+    assert "没有在跑的活" in out
+
+
+async def test_worker_steer_rejected_outside_run_context():
+    from agent_studio.runner.ctx import clear_run_ctx
+
+    await _seed_running_worker_run()
+    clear_run_ctx()
+    out = await _worker_steer("测试干活乙", "改成用 API")
+    assert "正在运行的助手" in out
+
+
+async def test_worker_steer_empty_message_rejected():
+    from agent_studio.runner.ctx import clear_run_ctx, set_run_ctx
+
+    await _seed_running_worker_run()
+    set_run_ctx(run_id="run_router", agent_id="ag_router", depth=0)
+    try:
+        out = await _worker_steer("测试干活乙", "  ")
+    finally:
+        clear_run_ctx()
+    assert "message 不能为空" in out
+
+
+async def test_worker_steer_delivers_via_registry():
+    """ steer 通道真实投递：run 在注册表里挂着时，插话能到。"""
+    from agent_studio import steer as steer_registry
+    from agent_studio.runner.ctx import clear_run_ctx, set_run_ctx
+
+    a, run = await _seed_running_worker_run()
+
+    class _FakeRuntime:
+        async def steer(self, compiled, text):
+            self.seen = text
+
+    rt = _FakeRuntime()
+    await steer_registry.attach(run.id, rt, object())
+    try:
+        set_run_ctx(run_id="run_router", agent_id="ag_router", depth=0)
+        try:
+            out = await _worker_steer(a.name, "改成用 API，别爬页面")
+        finally:
+            clear_run_ctx()
+        assert "已向" in out and "插话纠偏" in out
+        assert "[Router 纠偏]" in rt.seen and "改成用 API" in rt.seen
+    finally:
+        await steer_registry.detach(run.id)
 
 
 

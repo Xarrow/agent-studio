@@ -23,7 +23,7 @@ import copy
 import json
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select as _select
 
 from .db import SessionLocal
 from .models import Agent, Tool, new_id, now_ms
@@ -41,7 +41,7 @@ def _brief(a: Agent) -> str:
 async def _list_agents() -> str:
     """列出平台里全部助手（一行一个：名字、职责、工具数）。"""
     async with SessionLocal() as session:
-        rows = list((await session.execute(select(Agent).order_by(Agent.created_at))).scalars())
+        rows = list((await session.execute(_select(Agent).order_by(Agent.created_at))).scalars())
     if not rows:
         return "平台里还没有助手。"
     return f"共 {len(rows)} 个助手：\n" + "\n".join(_brief(a) for a in rows)
@@ -51,11 +51,11 @@ async def _read_agent(name: str) -> str:
     """查看某个助手的完整配置：提示词、模型、工具、技能。"""
     async with SessionLocal() as session:
         row = (
-            await session.execute(select(Agent).where(Agent.name == name))
+            await session.execute(_select(Agent).where(Agent.name == name))
         ).scalars().first()
         if row is None:
             all_names = [
-                a.name for a in (await session.execute(select(Agent))).scalars()
+                a.name for a in (await session.execute(_select(Agent))).scalars()
             ]
             return f"没有叫「{name}」的助手（现有：{'、'.join(all_names) or '无'}）"
         d = row.definition or {}
@@ -91,7 +91,7 @@ async def _fork_agent(
 
     async with SessionLocal() as session:
         src = (
-            await session.execute(select(Agent).where(Agent.name == source))
+            await session.execute(_select(Agent).where(Agent.name == source))
         ).scalars().first()
         if src is None:
             return f"复制失败：没有叫「{source}」的助手。"
@@ -101,13 +101,13 @@ async def _fork_agent(
             n = 2
             names = {
                 a.name
-                for a in (await session.execute(select(Agent))).scalars()
+                for a in (await session.execute(_select(Agent))).scalars()
             }
             while f"{src.name}-v{n}" in names:
                 n += 1
             name = f"{src.name}-v{n}"
         dup = (
-            await session.execute(select(Agent).where(Agent.name == name))
+            await session.execute(_select(Agent).where(Agent.name == name))
         ).scalars().first()
         if dup is not None:
             return f"复制失败：已经有叫「{name}」的助手（复制来源：{source}）。"
@@ -119,7 +119,7 @@ async def _fork_agent(
         fork_tool_ids = {
             t.id
             for t in (
-                await session.execute(select(Tool).where(Tool.name == "fork"))
+                await session.execute(_select(Tool).where(Tool.name == "fork"))
             ).scalars()
         }
         definition["tools"] = [
@@ -141,6 +141,167 @@ async def _fork_agent(
         return f"已创建助手「{name}」（复制自 {source}）。之后用 fork 工具、agent 参数填「{name}」就能把活派给它。"
 
 
+async def _find_worker_run(session: Any, want: str) -> tuple[str, "Run | None", bool]:
+    """按名字或 run_id 定位 worker 在跑的执行。
+
+    返回 (显示名, run, agent_exists)。agent_exists=False 表示连助手都没有。
+    """
+    from sqlalchemy import select as _select
+
+    from .models import Run
+    from .supervisor import agent_busy
+
+    want = (want or "").strip()
+    run: Run | None = None
+    agent_name = want
+    if want.startswith("run_"):
+        run = await session.get(Run, want)
+        return agent_name, run, run is not None
+    a = (
+        await session.execute(_select(Agent).where(Agent.name == want))
+    ).scalars().first()
+    if a is None:
+        return agent_name, None, False
+    agent_name = a.name
+    return agent_name, await agent_busy(session, a.id), True
+
+
+async def _worker_status(worker: str) -> str:
+    """查某个 worker 正在跑的执行的进度：状态、轮次、最近在调什么工具、有没有报错。
+
+    Router 不是派完就撒手：要盯着进度判断方向对不对，出问题好及时纠偏或停下。
+    """
+    from .models import Run, RunEvent
+
+    want = (worker or "").strip()
+    if not want:
+        return "worker 不能为空：填要查的助手名字。"
+
+    ctx = current_run_ctx()
+    if not ctx.get("run_id"):
+        return "查询失败：worker_status 只能由正在运行的助手调用。"
+
+    async with SessionLocal() as session:
+        agent_name, run, agent_exists = await _find_worker_run(session, want)
+        if not agent_exists and not want.startswith("run_"):
+            all_names = [
+                x.name for x in (await session.execute(_select(Agent))).scalars()
+            ]
+            return f"查询失败：没有叫「{want}」的助手（现有：{'、'.join(all_names) or '无'}）。"
+        if run is None:
+            # 没在跑：看他最近一条结束的执行（上次干成什么样也是 Router 要知道的）
+            if want.startswith("run_"):
+                last = await session.get(Run, want)
+            else:
+                a = (
+                    await session.execute(_select(Agent).where(Agent.name == want))
+                ).scalars().first()
+                last = None
+                if a is not None:
+                    last = (
+                        await session.execute(
+                            _select(Run)
+                            .where(Run.agent_id == a.id, Run.origin == "worker")
+                            .order_by(Run.started_at.desc())
+                            .limit(1)
+                        )
+                    ).scalars().first()
+            if last is None:
+                return f"{want} 没有执行记录。"
+            out = last.output if isinstance(last.output, dict) else {}
+            text = str(out.get("content") or "")[:300]
+            return (
+                f"【{want}】当前空闲。最近一次执行：{last.status}"
+                f"（{last.id}）。\n产出摘要：{text or '（无）'}"
+            )
+
+        # 在跑：从事件流取进度画像
+        started = run.started_at
+        now_ms_val = now_ms()
+        elapsed_s = max(0, (now_ms_val - started) // 1000) if started else 0
+        tool_rows = (
+            await session.execute(
+                _select(RunEvent.type, RunEvent.payload)
+                .where(
+                    RunEvent.run_id == run.id,
+                    RunEvent.type.in_(("tool_exec_start", "tool_exec_end", "tool_call_start")),
+                )
+                .order_by(RunEvent.seq.desc())
+                .limit(40)
+            )
+        ).all()
+        # 最近在做的几件事（名字 + 成败）
+        recent: list[str] = []
+        open_calls: dict[str, str] = {}
+        err_count = 0
+        for t, p in reversed(tool_rows):
+            name = (p or {}).get("tool_call_name") or (p or {}).get("tool_name") or "?"
+            cid = (p or {}).get("tool_call_id") or ""
+            if t in ("tool_exec_start", "tool_call_start"):
+                open_calls[cid] = str(name)
+            elif t == "tool_exec_end" and cid in open_calls:
+                nm = open_calls.pop(cid)
+                state = str((p or {}).get("state") or "ok")
+                if state.lower() not in ("success", "ok", "completed"):
+                    err_count += 1
+                    recent.append(f"{nm}（失败: {state}）")
+                else:
+                    recent.append(nm)
+        # 当前卡在哪个工具上（start 了还没 end）
+        current = "、".join(open_calls.values()) if open_calls else "（推理中）"
+        out = run.output if isinstance(run.output, dict) else {}
+        partial = str(out.get("content") or "")[:200]
+        lines = [
+            f"【{agent_name}】执行中（run {run.id}，状态 {run.status}，已跑 {elapsed_s}s）",
+            f"当前正在：{current}",
+            f"最近动作：{' → '.join(recent[-8:]) or '（还没有工具调用）'}",
+        ]
+        if err_count:
+            lines.append(f"⚠️ 近期有 {err_count} 次工具失败 —— 可能方向有问题，考虑 steer 纠偏或 stop")
+        if partial:
+            lines.append(f"已产出片段：{partial}")
+        return "\n".join(lines)
+
+
+async def _worker_steer(worker: str, message: str) -> str:
+    """给正在跑的 worker 插话纠偏（平台 steer 通道，下一步推理就能看到）。
+
+    场景：Router 盯着进度发现方向跑偏（worker_status 里看到失败/绕路），
+    不用停了重来 —— 插一句"改成 XX"，worker 下一步就按新指示走。
+    当前这次工具调用会照常完成，插话从下一轮生效（这是刻意的粒度）。
+    """
+    from . import steer as steer_registry
+
+    want = (worker or "").strip()
+    msg = (message or "").strip()
+    if not want:
+        return "worker 不能为空：填要纠偏的助手名字。"
+    if not msg:
+        return "message 不能为空：写清楚要它改成什么。"
+
+    ctx = current_run_ctx()
+    if not ctx.get("run_id"):
+        return "纠偏失败：worker_steer 只能由正在运行的助手调用。"
+
+    async with SessionLocal() as session:
+        agent_name, run, agent_exists = await _find_worker_run(session, want)
+        if not agent_exists:
+            if want.startswith("run_"):
+                return f"纠偏失败：没有 run {want}。"
+            all_names = [
+                x.name for x in (await session.execute(_select(Agent))).scalars()
+            ]
+            return f"纠偏失败：没有叫「{want}」的助手（现有：{'、'.join(all_names) or '无'}）。"
+        if run is None:
+            return f"{want} 现在没有在跑的活，没法插话（要看它上次干了什么用 worker_status）。"
+
+    result = await steer_registry.deliver(run.id, f"[Router 纠偏] {msg}")
+    if result != steer_registry.SteerResult.DELIVERED:
+        why = steer_registry.SteerResult.MESSAGES.get(result, "插话没送出去")
+        return f"纠偏失败：{why}（run {run.id}）"
+    return f"已向【{agent_name}】插话纠偏（run {run.id}）：{msg[:100]}——它下一步推理就会看到。"
+
+
 async def _worker_stop(worker: str, reason: str = "") -> str:
     """强制停止某个 worker 正在跑的执行（平台控制通道，不是发消息）。
 
@@ -148,11 +309,8 @@ async def _worker_stop(worker: str, reason: str = "") -> str:
       worker worker 助手名字（必填）；也可填 run_id（ag 前缀名字优先按名字查）
       reason 停止原因一句话（记进中止记录，Router 收口/界面上能看到）
     """
-    from sqlalchemy import select as _select
-
     from .models import Run
     from .runner import service as _run_service
-    from .supervisor import agent_busy
 
     want = (worker or "").strip()
     if not want:
@@ -163,25 +321,14 @@ async def _worker_stop(worker: str, reason: str = "") -> str:
         return "停止失败：worker_stop 只能由正在运行的助手调用（防止接口误触）。"
 
     async with SessionLocal() as session:
-        # 名字优先；直接给了 run id（run_ 前缀）就按 run 查
-        run: Run | None = None
-        agent_name = want
-        if want.startswith("run_"):
-            run = await session.get(Run, want)
-            if run is None:
+        agent_name, run, agent_exists = await _find_worker_run(session, want)
+        if not agent_exists:
+            if want.startswith("run_"):
                 return f"停止失败：没有 run {want}。"
-        if run is None:
-            a = (
-                await session.execute(_select(Agent).where(Agent.name == want))
-            ).scalars().first()
-            if a is None:
-                all_names = [
-                    x.name for x in (await session.execute(_select(Agent))).scalars()
-                ]
-                return f"停止失败：没有叫「{want}」的助手（现有：{'、'.join(all_names) or '无'}）。"
-            agent_name = a.name
-            # 只停 worker 自己的执行（origin=worker），不动编排/对话轮次
-            run = await agent_busy(session, a.id)
+            all_names = [
+                x.name for x in (await session.execute(_select(Agent))).scalars()
+            ]
+            return f"停止失败：没有叫「{want}」的助手（现有：{'、'.join(all_names) or '无'}）。"
         if run is None:
             return f"{agent_name} 现在没有在跑的活，不用停。"
         run_id, run_status = run.id, run.status
@@ -225,6 +372,24 @@ WORKER_STOP_SCHEMA: dict[str, Any] = {
     },
     "required": ["worker"],
 }
+WORKER_STATUS_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "worker": {
+            "type": "string",
+            "description": "要查的 worker：助手名字（常用）或 run id（run_ 开头）",
+        },
+    },
+    "required": ["worker"],
+}
+WORKER_STEER_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "worker": {"type": "string", "description": "要纠偏的 worker：助手名字"},
+        "message": {"type": "string", "description": "要它改成什么（一句话说清楚，别含糊）"},
+    },
+    "required": ["worker", "message"],
+}
 
 AGENT_OPS_TOOLS: dict[str, dict[str, Any]] = {
     "list_agents": {
@@ -257,5 +422,23 @@ AGENT_OPS_TOOLS: dict[str, dict[str, Any]] = {
         "schema": WORKER_STOP_SCHEMA,
         # 改外部状态（把别人的 run 打成终态）、非并发安全：同 fork_agent 一档
         "flags": {"read_only": False, "concurrency_safe": False, "dangerous": True, "native": True},
+    },
+    "worker_status": {
+        "fn": _worker_status,
+        "description": (
+            "查某个 worker 正在跑的执行的进度：状态、跑了多久、最近在调什么工具、"
+            "有没有失败。Router 派完活要盯进度，发现不对劲好纠偏或停。"
+        ),
+        "schema": WORKER_STATUS_SCHEMA,
+        "flags": {"read_only": True, "concurrency_safe": True, "dangerous": False, "native": True},
+    },
+    "worker_steer": {
+        "fn": _worker_steer,
+        "description": (
+            "给正在跑的 worker 插话纠偏（它下一步推理就能看到，不用停了重派）。"
+            "场景：worker_status 发现它绕路/失败/方向偏，插一句改成什么。"
+        ),
+        "schema": WORKER_STEER_SCHEMA,
+        "flags": {"read_only": False, "concurrency_safe": False, "dangerous": False, "native": True},
     },
 }
