@@ -1667,13 +1667,16 @@ async def _dispatch(
             st, label = supervisor.stage_of(ticket)
             how = "复用了他手上的会话" if reuse else "新开了一件"
             return (
-                f"已派给【{target.name}】（票 {ticket.id}，现在「{label}」，{how}）。"
+                f"已派给【{target.name}】（票 {ticket.id}，run {run.id}，现在「{label}」，{how}）。"
                 f"它跑完会自己回来汇报；这期间你可以继续派别的活，或先回答用户。"
+                f"要中途停它：worker_stop 工具，worker 填「{target.name}」。"
             )
 
         done = await supervisor.wait_run(session, run.id, timeout_s=900)
         body = supervisor.summarize(done)
         kind = "ready" if done.status == "ok" else ("failed" if done.status == "error" else "blocked")
+        if done.status == "aborted":
+            body = f"（执行被中止：{done.error or '无需原因'}）\n{body}"
         await supervisor.report(
             session, ticket, kind, body or (done.error or ""), run_id=done.id, run_status=done.status
         )

@@ -332,11 +332,13 @@ async def watch_worker(
             async with SessionLocal() as s:
                 tk = await s.get(Ticket, ticket_id)
                 if tk is not None:
+                    # aborted 是「被停的」不是「干砸的」：单独标 kind，Router 收口时才分得清
+                    kind = {"ok": "ready", "error": "failed"}.get(status, "stopped")
                     await report(
                         s,
                         tk,
-                        "ready" if status == "ok" else "failed",
-                        text,
+                        kind,
+                        text or (done.error if status == "aborted" else ""),
                         run_id=run_id,
                         run_status=status,
                     )

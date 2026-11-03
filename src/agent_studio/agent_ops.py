@@ -1,15 +1,20 @@
-"""平台原生「Agent 互操作」工具 —— 让正在运行的助手能盘点、查看、复制其他助手。
+"""平台原生「Agent 互操作」工具 —— 让正在运行的助手能盘点、查看、复制、停止其他助手。
 
-三个能力（P1.5，2026-09-27 方案）：
+四个能力（P1.5，2026-09-27 方案；worker_stop 2026-11-03 增补）：
   list_agents  看看平台里有哪些助手（名字/职责一句话/工具数）
   read_agent   看某个助手的完整配置（提示词、模型、工具、技能）—— 判断"它适不适合接这活"
   fork_agent   把某个助手复制一份变体（可改名字/职责）—— 之后 fork 派发指名它
+  worker_stop  强制停止某个 worker 正在跑的执行 —— Router 干预 worker 的硬通道
 
 设计口径：
   * 全部走 ORM 直接读写（和 api/agents.py 同一张表），不经过 HTTP —— 工具在进程内执行
   * 只读工具不设限；fork_agent 挂 guard：只能由**正在执行**的助手调用（与 fork 工具同一条纪律），
     且新变体**不带 fork 工具**（防止自我复制失控；要放开也在界面上放开，不靠模型自觉）
   * 新助手的 parent_id 指回源助手 —— 血缘在 Agents 页已有展示，不新增列
+  * worker_stop 是**平台控制通道**（run_service.abort → dispatcher task.cancel → 落终态），
+    不是"给 worker 发一句话"——那种消息式弱关联在 worker 独立会话里根本送不进去。
+    停止后 run 落 aborted 终态，watch_worker 的事件回流照常走（报告 kind=failed 但带
+    run_status=aborted），Router 收口时能知道是"被停的"不是"干砸的"。
 """
 
 from __future__ import annotations
@@ -136,6 +141,61 @@ async def _fork_agent(
         return f"已创建助手「{name}」（复制自 {source}）。之后用 fork 工具、agent 参数填「{name}」就能把活派给它。"
 
 
+async def _worker_stop(worker: str, reason: str = "") -> str:
+    """强制停止某个 worker 正在跑的执行（平台控制通道，不是发消息）。
+
+    参数：
+      worker worker 助手名字（必填）；也可填 run_id（ag 前缀名字优先按名字查）
+      reason 停止原因一句话（记进中止记录，Router 收口/界面上能看到）
+    """
+    from sqlalchemy import select as _select
+
+    from .models import Run
+    from .runner import service as _run_service
+    from .supervisor import agent_busy
+
+    want = (worker or "").strip()
+    if not want:
+        return "worker 不能为空：填要停的助手名字。"
+
+    ctx = current_run_ctx()
+    if not ctx.get("run_id"):
+        return "停止失败：worker_stop 只能由正在运行的助手调用（防止接口误触）。"
+
+    async with SessionLocal() as session:
+        # 名字优先；直接给了 run id（run_ 前缀）就按 run 查
+        run: Run | None = None
+        agent_name = want
+        if want.startswith("run_"):
+            run = await session.get(Run, want)
+            if run is None:
+                return f"停止失败：没有 run {want}。"
+        if run is None:
+            a = (
+                await session.execute(_select(Agent).where(Agent.name == want))
+            ).scalars().first()
+            if a is None:
+                all_names = [
+                    x.name for x in (await session.execute(_select(Agent))).scalars()
+                ]
+                return f"停止失败：没有叫「{want}」的助手（现有：{'、'.join(all_names) or '无'}）。"
+            agent_name = a.name
+            # 只停 worker 自己的执行（origin=worker），不动编排/对话轮次
+            run = await agent_busy(session, a.id)
+        if run is None:
+            return f"{agent_name} 现在没有在跑的活，不用停。"
+        run_id, run_status = run.id, run.status
+
+    ok = await _run_service.run_service.abort(run_id)
+    if not ok:
+        return f"停止失败：run {run_id} 不在可停止状态（当前 {run_status}）。"
+    why = (reason or "").strip()
+    return (
+        f"已停止【{agent_name}】的执行（run {run_id}{'，原因：' + why if why else ''}）。"
+        f"它的收尾报告会照常回流到票上（状态=已中止）。"
+    )
+
+
 # --------------------------------------------------------------------------- #
 # 工具注册表（sync_builtins / compile 共用，同 fetch/web_search/python）
 # --------------------------------------------------------------------------- #
@@ -153,6 +213,17 @@ FORK_AGENT_SCHEMA: dict[str, Any] = {
         "description": {"type": "string", "description": "新职责一句话（不填继承源）"},
     },
     "required": ["source"],
+}
+WORKER_STOP_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "worker": {
+            "type": "string",
+            "description": "要停的 worker：助手名字（常用）或 run id（run_ 开头）",
+        },
+        "reason": {"type": "string", "description": "停止原因一句话（记进中止记录）"},
+    },
+    "required": ["worker"],
 }
 
 AGENT_OPS_TOOLS: dict[str, dict[str, Any]] = {
@@ -176,5 +247,15 @@ AGENT_OPS_TOOLS: dict[str, dict[str, Any]] = {
         ),
         "schema": FORK_AGENT_SCHEMA,
         "flags": {"read_only": False, "concurrency_safe": False, "dangerous": False, "native": True},
+    },
+    "worker_stop": {
+        "fn": _worker_stop,
+        "description": (
+            "强制停止某个 worker 正在跑的执行（平台控制通道，立即生效，不是给它发消息）。"
+            "场景：派错了、方向不对要重派、或用户要求停下。停完它的收尾报告照常回流到票上。"
+        ),
+        "schema": WORKER_STOP_SCHEMA,
+        # 改外部状态（把别人的 run 打成终态）、非并发安全：同 fork_agent 一档
+        "flags": {"read_only": False, "concurrency_safe": False, "dangerous": True, "native": True},
     },
 }

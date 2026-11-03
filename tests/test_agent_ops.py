@@ -19,9 +19,10 @@ from agent_studio.agent_ops import (
     _fork_agent,
     _list_agents,
     _read_agent,
+    _worker_stop,
 )
 from agent_studio.db import SessionLocal
-from agent_studio.models import Agent, Tool
+from agent_studio.models import Agent, Run, Tool
 
 
 async def _seed_agents() -> None:
@@ -120,15 +121,121 @@ async def test_sync_builtins_registers_agent_ops(client):
             await session.execute(select(Tool).where(Tool.kind == "native"))
         ).scalars().all()
         names = {r.name for r in rows}
-        assert {"list_agents", "read_agent", "fork_agent"} <= names
+        assert {"list_agents", "read_agent", "fork_agent", "worker_stop"} <= names
 
 
 def test_registry_shape():
-    for name in ("list_agents", "read_agent", "fork_agent"):
+    for name in ("list_agents", "read_agent", "fork_agent", "worker_stop"):
         e = AGENT_OPS_TOOLS[name]
         assert e["schema"].get("type") == "object"
         assert e["description"]
         assert callable(e["fn"])
+
+
+# --------------------------------------------------------------------------- #
+# worker_stop：Router 干预 worker 的硬通道（run_service.abort）
+# --------------------------------------------------------------------------- #
+
+
+async def _seed_running_worker_run() -> tuple[Agent, "Run"]:
+    """落一个 worker 助手 + 一条 running 的 worker run（模拟 dispatch 派出去正在跑）。"""
+    from agent_studio.db import init_db
+    from agent_studio.models import Run, now_ms
+
+    await init_db()
+    async with SessionLocal() as s:
+        a = (
+            await s.execute(select(Agent).where(Agent.name == "测试干活乙"))
+        ).scalars().first()
+        if a is None:
+            a = Agent(slug="测试干活乙", name="测试干活乙", description="干活", definition={"tools": []})
+            s.add(a)
+            await s.flush()
+        run = Run(
+            agent_id=a.id,
+            runtime="agentscope",
+            status="running",
+            input={"text": "测试任务"},
+            definition_snapshot={"runtime": "agentscope"},
+            started_at=now_ms(),
+            origin="worker",
+        )
+        s.add(run)
+        await s.commit()
+        await s.refresh(a)
+        await s.refresh(run)
+        return a, run
+
+
+async def test_worker_stop_aborts_running_run():
+    """名字 → agent_busy 找到在跑的 run → run_service.abort 落终态。"""
+    from agent_studio.runner.ctx import clear_run_ctx, set_run_ctx
+    from agent_studio.models import Run
+
+    a, run = await _seed_running_worker_run()
+    set_run_ctx(run_id="run_stopper", agent_id="ag_x", depth=0)
+    try:
+        out = await _worker_stop("测试干活乙", reason="方向不对")
+    finally:
+        clear_run_ctx()
+    assert "已停止" in out and a.name in out
+    async with SessionLocal() as s:
+        row = await s.get(Run, run.id)
+        assert row.status == "aborted"
+        assert "已中止" in (row.error or "")
+
+
+async def test_worker_stop_idle_worker_says_nothing_running():
+    """没活可停要明说，不能假装停了。"""
+    from agent_studio.runner.ctx import clear_run_ctx, set_run_ctx
+    from agent_studio.runner.service import run_service
+
+    a, run = await _seed_running_worker_run()
+    await run_service.abort(run.id)  # 先停掉，人就闲了
+    set_run_ctx(run_id="run_stopper", agent_id="ag_x", depth=0)
+    try:
+        out = await _worker_stop(a.name)
+    finally:
+        clear_run_ctx()
+    assert "没有在跑的活" in out
+
+
+async def test_worker_stop_unknown_agent_lists_names():
+    from agent_studio.runner.ctx import clear_run_ctx, set_run_ctx
+
+    await _seed_running_worker_run()
+    set_run_ctx(run_id="run_stopper", agent_id="ag_x", depth=0)
+    try:
+        out = await _worker_stop("不存在的助手")
+    finally:
+        clear_run_ctx()
+    assert "没有叫" in out and "测试干活乙" in out
+
+
+async def test_worker_stop_rejected_outside_run_context():
+    from agent_studio.runner.ctx import clear_run_ctx
+
+    await _seed_running_worker_run()
+    clear_run_ctx()
+    out = await _worker_stop("测试干活乙")
+    assert "正在运行的助手" in out
+
+
+async def test_worker_stop_by_run_id():
+    from agent_studio.runner.ctx import clear_run_ctx, set_run_ctx
+    from agent_studio.models import Run
+
+    _, run = await _seed_running_worker_run()
+    set_run_ctx(run_id="run_stopper", agent_id="ag_x", depth=0)
+    try:
+        out = await _worker_stop(run.id)
+    finally:
+        clear_run_ctx()
+    assert "已停止" in out
+    async with SessionLocal() as s:
+        row = await s.get(Run, run.id)
+        assert row.status == "aborted"
+
 
 
 async def test_删除助手_连带清掉它的会话():
