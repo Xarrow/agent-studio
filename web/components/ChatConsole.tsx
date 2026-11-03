@@ -1621,7 +1621,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                       data-tap
                       aria-label="返回对话列表"
                       onClick={() => setNavView("sessions")}
-                      className="shrink-0 w-9 h-9 flex items-center justify-center rounded-lg text-[var(--color-muted)] active:bg-[var(--color-surface-2)]"
+                      className="shrink-0 w-9 h-9 flex items-center justify-center rounded-lg text-[var(--color-muted)] active:bg-[var(--color-surface-2)] border"
+                      style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
                     >
                       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                         <path d="M15 18l-6-6 6-6" />
@@ -2850,7 +2851,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                         onClick={() => void send()}
                         /* 同样不要底板：一根箭头。有内容时是强调色，空的时候是灰的，
                            点不了就 40% 透明 —— 状态靠颜色，不靠画个圆。 */
-                        className="w-9 h-9 shrink-0 grid place-items-center rounded-full transition-colors hover:bg-[var(--color-surface-2)] disabled:opacity-40"
+                        className="w-11 h-11 shrink-0 grid place-items-center rounded-full transition-colors hover:bg-[var(--color-surface-2)] disabled:opacity-40"
                         style={{
                           color:
                             input.trim() || pendingFiles.length > 0
@@ -3202,6 +3203,7 @@ function SessionsPane({
                             style={{ color: WORKER_COLOR, background: "color-mix(in srgb, #d97706 10%, transparent)" }}
                             data-tap
                             title={`这个对话派出了 ${kids.get(s.id)!.length} 件活`}
+                            aria-label={`这个对话派出了 ${kids.get(s.id)!.length} 件活，点开看`}
                             aria-expanded={openTree.has(s.id)}
                             onClick={(e) => {
                               e.stopPropagation();
@@ -3407,7 +3409,7 @@ function MsgAction({
       title={label}
       aria-label={label}
       onClick={onClick}
-      className="flex h-[30px] w-[30px] items-center justify-center rounded-md transition-colors hover:bg-[var(--color-surface-2)]"
+      className="flex h-[44px] w-[44px] items-center justify-center rounded-md transition-colors hover:bg-[var(--color-surface-2)] max-md:h-[44px] max-md:w-[44px]"
       style={{ color: tone === "ok" ? "var(--color-ok)" : "var(--color-muted)" }}
     >
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -3831,7 +3833,7 @@ function Bubble({
             桌面 hover 显形，手机**常驻**（hover 不存在的东西必须常驻）。 */}
         {!streaming && (
           <div
-            className={`mt-1 flex items-center gap-0.5 ${isUser ? "justify-end" : ""} lg:opacity-0 lg:group-hover:opacity-100 focus-within:opacity-100 transition-opacity`}
+            className={`mt-1 flex items-center gap-1 ${isUser ? "justify-end" : ""} lg:opacity-0 lg:group-hover:opacity-100 focus-within:opacity-100 transition-opacity`}
           >
             {ts ? (
               <span className="mr-1.5 text-[11px] tabular-nums" style={{ color: "var(--color-muted)" }}>

@@ -359,7 +359,7 @@ export default function AgentsPage() {
                     >
                       <span className="inline-flex min-w-0 items-center gap-1" title="模型">
                         <IconSpark size={12} className="shrink-0" />
-                        <span className="truncate mono">{a.definition?.model?.name || "未指定模型"}</span>
+                        <span className="truncate mono">{a.definition?.model?.name || (a.runtime === "a2a" ? "远端管理" : "未指定模型")}</span>
                       </span>
                       <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap" title="挂了多少工具">
                         <IconWrench size={12} />
@@ -411,7 +411,7 @@ export default function AgentsPage() {
                           </Chip>
                         )}
                         <Chip tone="muted">{runtime}</Chip>
-                        <span className="mono">{a.definition?.model?.name || "未指定模型"}</span>
+                        <span className="mono">{a.definition?.model?.name || (a.runtime === "a2a" ? "远端管理" : "未指定模型")}</span>
                         <span>v{a.version}</span>
                       </>
                     }

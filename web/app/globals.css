@@ -808,6 +808,14 @@ body {
   text-align: left;
   cursor: pointer;
 }
+/* 触屏（含 412 手机档）：过程条是"点开看过程"的唯一入口，必须达到 44px 触控高度。 */
+@media (max-width: 767px) {
+  .proc-head { min-height: 44px; }
+  /* [data-tap] 在 ≤1023px 把 min-height 压回 36px —— 过程条自己带 data-tap，
+     那条规则比这条更通用、也排在前头，就把 44px 盖掉了（实测计算值 36px）。
+     用同权选择器点名它自己，把 44px 要回来。 */
+  [data-tap].proc-head:not(.hidden) { min-height: 44px; }
+}
 .proc-title {
   font-size: 12.5px;
   color: #414651;

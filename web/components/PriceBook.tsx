@@ -83,6 +83,54 @@ export function PriceBook() {
   };
 
   const used = (r: Row) => r.tokens_in + r.tokens_out;
+  const [showIdle, setShowIdle] = useState(false);
+
+  const renderRow = (r: Row) => (
+    <div
+      key={r.model}
+      className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b px-3 py-2.5 last:border-b-0"
+      style={{ borderColor: "var(--color-border)" }}
+    >
+      <div className="min-w-0 flex-1 basis-[170px]">
+        <div className="mono truncate">{r.model}</div>
+        <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+          {r.calls ? `${r.calls} 次调用` : "还没跑过"}
+          {used(r) ? ` · 输入 ${fmt.num(r.tokens_in)} / 输出 ${fmt.num(r.tokens_out)}` : ""}
+          {r.priced ? " · 已填单价" : ""}
+        </div>
+      </div>
+      <div className="shrink-0 text-right text-[12px]" style={{ color: "var(--color-muted)" }}>
+        <div className="text-[12px]">已用 tokens</div>
+        {used(r) ? fmt.num(used(r)) : "—"}
+      </div>
+      <label className="flex shrink-0 items-center gap-1.5 text-[12px]" style={{ color: "var(--color-muted)" }}>
+        输入/百万
+        <input
+          inputMode="decimal"
+          value={draft[r.model]?.i ?? ""}
+          onChange={(e) =>
+            setDraft((d) => ({ ...d, [r.model]: { i: e.target.value, o: d[r.model]?.o ?? "" } }))
+          }
+          placeholder="例如 1"
+          className="input text-right text-[13px]"
+          style={{ width: 92 }}
+        />
+      </label>
+      <label className="flex shrink-0 items-center gap-1.5 text-[12px]" style={{ color: "var(--color-muted)" }}>
+        输出/百万
+        <input
+          inputMode="decimal"
+          value={draft[r.model]?.o ?? ""}
+          onChange={(e) =>
+            setDraft((d) => ({ ...d, [r.model]: { i: d[r.model]?.i ?? "", o: e.target.value } }))
+          }
+          placeholder="例如 2"
+          className="input text-right text-[13px]"
+          style={{ width: 92 }}
+        />
+      </label>
+    </div>
+  );
 
   return (
     <section id="prices">
@@ -128,53 +176,31 @@ export function PriceBook() {
           {/* 一行一个模型。原来是 4 列表格（模型 + 已用 + 输入 + 输出），表宽 ~600px，
               外层是 overflow-hidden —— 手机上右侧「输入/输出」两个输入框被**静默裁掉**，
               既看不见也点不到 ✗。改成响应式行：宽屏时数字成列右对齐，窄屏自动折成两行，
-              仍是同一份 DOM（不做桌面/手机两套）。 */}
-          {rows.map((r) => (
-            <div
-              key={r.model}
-              className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b px-3 py-2.5 last:border-b-0"
-              style={{ borderColor: "var(--color-border)" }}
-            >
-              <div className="min-w-0 flex-1 basis-[170px]">
-                <div className="mono truncate">{r.model}</div>
-                <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>
-                  {r.calls ? `${r.calls} 次调用` : "还没跑过"}
-                  {used(r) ? ` · 输入 ${fmt.num(r.tokens_in)} / 输出 ${fmt.num(r.tokens_out)}` : ""}
-                  {r.priced ? " · 已填单价" : ""}
-                </div>
-              </div>
-              <div className="shrink-0 text-right text-[12px]" style={{ color: "var(--color-muted)" }}>
-                <div className="text-[12px]">已用 tokens</div>
-                {used(r) ? fmt.num(used(r)) : "—"}
-              </div>
-              <label className="flex shrink-0 items-center gap-1.5 text-[12px]" style={{ color: "var(--color-muted)" }}>
-                输入/百万
-                <input
-                  inputMode="decimal"
-                  value={draft[r.model]?.i ?? ""}
-                  onChange={(e) =>
-                    setDraft((d) => ({ ...d, [r.model]: { i: e.target.value, o: d[r.model]?.o ?? "" } }))
-                  }
-                  placeholder="例如 1"
-                  className="input text-right text-[13px]"
-                  style={{ width: 92 }}
-                />
-              </label>
-              <label className="flex shrink-0 items-center gap-1.5 text-[12px]" style={{ color: "var(--color-muted)" }}>
-                输出/百万
-                <input
-                  inputMode="decimal"
-                  value={draft[r.model]?.o ?? ""}
-                  onChange={(e) =>
-                    setDraft((d) => ({ ...d, [r.model]: { i: d[r.model]?.i ?? "", o: e.target.value } }))
-                  }
-                  placeholder="例如 2"
-                  className="input text-right text-[13px]"
-                  style={{ width: 92 }}
-                />
-              </label>
-            </div>
-          ))}
+              仍是同一份 DOM（不做桌面/手机两套）。
+              "还没跑过"的占位行默认收起来 —— 8 行重复的「已用 tokens — / 输入/百万」
+              信息量零却占满一屏（QA P1-4）；点开才改单价。 */}
+          {(() => {
+            const active = rows.filter((r) => r.calls || used(r));
+            const idle = rows.filter((r) => !r.calls && !used(r));
+            return (
+              <>
+                {active.map(renderRow)}
+                {idle.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowIdle((v) => !v)}
+                    className="flex w-full items-center gap-2 border-b px-3 py-2.5 text-left text-[12.5px] last:border-b-0"
+                    style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
+                  >
+                    <span aria-hidden>{showIdle ? "▾" : "▸"}</span>
+                    {idle.length} 个已配置但还没跑过的模型
+                    <span className="text-[11.5px]">（{showIdle ? "收起" : "点开填单价"}）</span>
+                  </button>
+                )}
+                {showIdle && idle.map(renderRow)}
+              </>
+            );
+          })()}
         </div>
       )}
     </section>

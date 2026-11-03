@@ -129,3 +129,33 @@ def test_registry_shape():
         assert e["schema"].get("type") == "object"
         assert e["description"]
         assert callable(e["fn"])
+
+
+async def test_删除助手_连带清掉它的会话():
+    """删助手不能把它的会话留成孤儿——否则侧栏还会出现这些对话，点进去身份带/操作
+    都落到不存在的 agent 上（生产实测攒了 7 条）。"""
+    from agent_studio.db import init_db, SessionLocal
+    from agent_studio.models import Agent, Session as ChatSession, new_id
+    from agent_studio.api import agents as agents_api
+    from sqlalchemy import select
+
+    await init_db()
+    async with SessionLocal() as s:
+        a = Agent(id=new_id("ag"), slug="del-cascade", name="将被删", version=1, definition={})
+        s.add(a)
+        await s.commit()
+        await s.refresh(a)
+        sid = new_id("ses")
+        s.add(ChatSession(id=sid, agent_id=a.id, title="孤儿候选"))
+        await s.commit()
+        aid = a.id
+
+    class _S:  # 复用依赖注入的 session
+        def __init__(self, s): self._s = s
+        async def __aenter__(self): return self._s
+        async def __aexit__(self, *a): pass
+
+    async with SessionLocal() as s:
+        await agents_api.delete_agent(aid, session=s)
+        left = (await s.execute(select(ChatSession).where(ChatSession.agent_id == aid))).scalars().all()
+        assert left == [], f"删除助手后不应再留下它的会话，实际还有 {len(left)} 条"

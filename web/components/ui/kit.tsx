@@ -92,12 +92,12 @@ export function Segmented<T extends string>({
               fontWeight: on ? 500 : undefined,
             }}
           >
-            {o.label}
             {o.count != null ? (
-              <span className="ml-1 tabular-nums" style={{ opacity: on ? 0.85 : 0.6 }}>
+              <span className="mr-1 tabular-nums" style={{ opacity: on ? 0.9 : 0.6 }}>
                 {o.count}
               </span>
             ) : null}
+            {o.label}
           </button>
         );
       })}

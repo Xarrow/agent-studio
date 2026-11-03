@@ -668,11 +668,11 @@ export function RunsPanel() {
               <span
                 title={
                   usage.stats && usage.stats.runs > 0
-                    ? `${usage.stats.ok} 成功 · ${usage.stats.failed} 失败`
+                    ? `近 ${usage.days} 天：${usage.stats.ok} 成功 · ${usage.stats.failed} 失败`
                     : "暂无执行"
                 }
               >
-                成功{" "}
+                历史成功率{" "}
                 <b style={{ color: usage.stats && usage.stats.failed > 0 ? "var(--color-err)" : "var(--color-text)" }}>
                   {usage.stats?.success_rate != null ? `${usage.stats.success_rate}%` : "—"}
                 </b>
@@ -845,7 +845,7 @@ export function RunsPanel() {
               type="button"
               data-tap
               onClick={() => setTicketsOpen((v) => !v)}
-              className="flex h-[32px] items-center gap-1 rounded-[8px] border px-2 text-[12px] max-md:h-[44px]"
+              className="flex h-[32px] items-center gap-1 whitespace-nowrap rounded-[8px] border px-2 text-[12px] max-md:h-[44px]"
               style={{
                 borderColor: "var(--color-warn)",
                 color: "var(--color-warn)",
@@ -868,7 +868,11 @@ export function RunsPanel() {
                 width: "100%",
               }}
             >
-              {tickets.items.map((tk: TicketItem) => {
+              {/* 「待处理」只看**要你动**的：开着 + 需要人。完成的/已结束的混在里面，
+                  名字和内容就打架了（实测：4 件里混一条"完成"）。 */}
+              {tickets.items
+                .filter((tk) => tk.status === "open" && tk.needs_person)
+                .map((tk: TicketItem) => {
                 const rpt = (tk.facts?.reports ?? []).slice(-1)[0];
                 const who = agents.find((a) => a.id === tk.agent_id)?.name ?? "（助手已删）";
                 const hot = tk.needs_person;

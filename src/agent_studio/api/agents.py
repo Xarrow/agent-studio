@@ -187,6 +187,17 @@ async def delete_agent(agent_id: str, session: AsyncSession = Depends(get_sessio
     await session.execute(
         delete(Revision).where(Revision.kind == "agent", Revision.target_id == agent_id)
     )
+    # 它的会话也一并删：留着的话侧栏还会出现这些"孤儿对话"，点进去身份带/操作
+    # 都落到不存在的 agent 上（实测攒了 7 条）。
+    from ..models import Session as SessionModel
+
+    orphan_sessions = (
+        (await session.execute(select(SessionModel).where(SessionModel.agent_id == agent_id)))
+        .scalars()
+        .all()
+    )
+    for s in orphan_sessions:
+        await session.delete(s)
     await session.delete(row)
     await session.commit()
 
