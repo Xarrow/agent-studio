@@ -321,9 +321,96 @@ async def watch_worker(
     """
     import asyncio
 
+    from sqlalchemy import select as _select
+
+    #: 巡检节奏：worker 跑多久后做第一次中途巡检、之后每隔多久再看一眼
+    #: （实测 Router 那轮常常 20 秒就自己结束了 —— 巡检必须由平台兜底，不能指望模型自觉）
+    FIRST_PROBE_S = 45
+    PROBE_EVERY_S = 90
+    #: 最多中途巡检几次（收口轮才是终局；巡检轮不是无限循环）
+    MAX_PROBES = 3
+
+    async def _probe_once() -> bool:
+        """worker 还在跑、Router 那轮已结束 → 起一轮巡检把真实画像喂给 Router。
+
+        返回是否起了巡检轮。巡检轮起来后 Router 会用 worker_status/steer/stop 处置。
+        """
+        from .db import SessionLocal
+
+        async with SessionLocal() as s:
+            row = await s.get(Run, run_id)
+            if row is None or row.status not in ("pending", "running"):
+                return False  # 已经收尾，交给终态推送
+            # Router 那轮还在跑 → 它自己能看见（steer 推送会来），不用替它起轮
+            parent_busy = (
+                await s.execute(
+                    _select(Run).where(
+                        Run.id == parent_run_id, Run.status.in_(("pending", "running"))
+                    )
+                )
+            ).scalars().first()
+            if parent_busy is not None:
+                return False
+            # 巡检轮别连环起：**排除刚结束的那一轮 Router 自己**（它就是派出活的这轮，
+            # 一定在 3 分钟窗口内 —— 不排除的话探针永远被它挡住，巡检永远起不来）。
+            # 只看「自动起过的轮」（收口/巡检都算）：人工消息起的轮不拦巡检。
+            recent = (
+                await s.execute(
+                    _select(Run).where(
+                        Run.session_id == session_id,
+                        Run.origin == "router",
+                        Run.id != parent_run_id,
+                        Run.started_at >= now_ms() - 180_000,
+                    )
+                )
+            ).scalars().first()
+            if recent is not None:
+                return False
+        # 拿 worker 的真实画像（worker_status 文本），喂给 Router 巡检轮
+        from .agent_ops import _worker_status
+
+        profile = await _worker_status(agent_name)
+        digest = (
+            f"【自动巡检 · 你派的活还没回来，去看看】\n"
+            f"你派给【{agent_name}】的活（run {run_id}）已经跑了一阵还没收尾，"
+            f"你上一轮已经结束了 —— 现在由平台把你叫回来看一眼。\n\n"
+            f"当前画像：\n{profile}\n\n"
+            f"判断：方向对就继续等（什么也不用做，等回报）；绕路/卡住用 worker_steer 纠偏；"
+            f"方向错了 worker_stop 停掉重派。只做处置动作，不用向用户长篇汇报。"
+        )
+        spawned = await _spawn_router_turn(session_id, digest)
+        if spawned:
+            logger.info(
+                "worker 巡检轮已起 parent=%s worker=%s → run=%s", parent_run_id, run_id, spawned
+            )
+        return bool(spawned)
+
     async def _watch() -> None:
         from .db import SessionLocal
 
+        # ── 中途巡检：worker 在跑期间定期看一眼 ──────────────────────
+        # Router 那轮多半早就结束了 —— 那就由平台起巡检轮替它看（用户拍板的闭环语义）。
+        try:
+            elapsed = 0.0
+            probes = 0
+            while elapsed < 1800:
+                await asyncio.sleep(FIRST_PROBE_S if probes == 0 else PROBE_EVERY_S)
+                elapsed += FIRST_PROBE_S if probes == 0 else PROBE_EVERY_S
+                probes += 1
+                if probes > MAX_PROBES:
+                    break
+                try:
+                    async with SessionLocal() as s:
+                        row = await s.get(Run, run_id)
+                        if row is None or row.status not in ("pending", "running"):
+                            break  # 收尾了，跳出巡检循环走终态推送
+                    await _probe_once()
+                except Exception:  # noqa: BLE001
+                    logger.exception("巡检探针失败 run=%s", run_id)
+        except Exception:  # noqa: BLE001
+            logger.exception("巡检循环异常 run=%s", run_id)
+
+        # ── 终态：等收尾 → 推送/写报告/收口 ──────────────────────────
         try:
             async with SessionLocal() as poll:
                 done = await wait_run(poll, run_id, timeout_s=1800)
@@ -364,6 +451,68 @@ async def watch_worker(
             logger.exception("触发收口失败 parent=%s", parent_run_id)
 
     asyncio.create_task(_watch())
+
+
+async def _spawn_router_turn(session_id: str, digest: str, *, close_tickets: list[str] | None = None) -> str | None:
+    """在 Router 会话里起一轮（收口/巡检共用）。
+
+    判据（防重复起轮）：会话里已经有一轮在跑就不插队；5 分钟内同口径的自动轮已起过
+    就不重复。返回新 run id，没起成返回 None。
+    """
+    import asyncio
+
+    from sqlalchemy import select as _select
+
+    from .db import SessionLocal
+
+    if not session_id:
+        return None
+    async with SessionLocal() as s:
+        chat = await s.get(ChatSession, session_id)
+        if chat is None:
+            return None
+        busy = (
+            await s.execute(
+                _select(Run).where(
+                    Run.session_id == session_id, Run.status.in_(("pending", "running"))
+                )
+            )
+        ).scalars().first()
+        if busy is not None:
+            return None
+        agent = await s.get(Agent, chat.agent_id)
+        if agent is None:
+            return None
+        definition = AgentDefinition.model_validate(agent.definition)
+        turn = await next_turn_index(s, chat.id)
+        run = Run(
+            agent_id=agent.id,
+            agent_version=agent.version,
+            runtime=definition.runtime,
+            status="pending",
+            input={"text": digest},
+            definition_snapshot=definition.model_dump(mode="json", exclude={"model": {"api_key"}}),
+            started_at=now_ms(),
+            session_id=chat.id,
+            turn_index=turn,
+            origin="router",
+        )
+        s.add(run)
+        for tk_id in close_tickets or []:
+            tk = await s.get(Ticket, tk_id)
+            if tk is not None and tk.status == "open":
+                tk.status = "ended"
+                tk.ended_at = now_ms()
+                facts = _facts(tk)
+                facts["closed_by"] = "router"
+                tk.facts = facts
+                tk.updated_at = now_ms()
+        await s.commit()
+        await s.refresh(run)
+        ok = await _start_with_retry(run.id, definition, digest, chat.id)
+        if ok:
+            return run.id
+        return None
 
 
 async def kick_summary(*, parent_run_id: str, session_id: str, agent_name: str = "") -> None:
