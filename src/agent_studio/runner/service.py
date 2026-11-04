@@ -1588,6 +1588,16 @@ class RunService:
         except Exception:  # noqa: BLE001 —— 心跳失败不影响执行
             logger.debug("lease 续约失败 run=%s", run_id, exc_info=True)
 
+    async def _flush_stop_loss_note(self, run_id: str) -> None:
+        try:
+            from ..stop_loss import flush_pending_note
+
+            async with SessionLocal() as s:
+                await flush_pending_note(s, run_id)
+                await s.commit()
+        except Exception:  # noqa: BLE001
+            logger.debug("止损注入(延迟)失败 run=%s", run_id, exc_info=True)
+
     async def _stop_loss_check(self, run_id: str, payload: dict) -> None:
         """可靠性护栏判定（独立会话，失败不影响执行主链路）。"""
         try:
@@ -1612,6 +1622,13 @@ class RunService:
                 asyncio.ensure_future(self._stop_loss_check(run_id, dict(ev.payload or {})))
             except Exception:  # noqa: BLE001
                 logger.debug("止损检查调度失败 run=%s", run_id, exc_info=True)
+        # ── 可靠性护栏的注入时机：llm_call_start 时 tool result 必已入上下文，──
+        # 此时才把排队的止损提示 observe 进去（tool_exec_end 时插入会 400，见 stop_loss.py）。
+        if ev.type == "llm_call_start" and run_id.startswith("run_"):
+            try:
+                asyncio.ensure_future(self._flush_stop_loss_note(run_id))
+            except Exception:  # noqa: BLE001
+                logger.debug("止损注入调度失败 run=%s", run_id, exc_info=True)
         # ── worker 树的事件自动转报（事件驱动管理的一半来源）──────────
         # 这里是所有运行时事件的必经点：被派出来的执行报错/结束时，
         # 平台代替 worker 转投给 Router（worker 模型无感、不耗它的轮次）。

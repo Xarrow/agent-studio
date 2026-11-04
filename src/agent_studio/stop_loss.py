@@ -94,6 +94,25 @@ async def _name(session, run_id: str, ev_payload: dict) -> str:
     return "?"
 
 
+async def flush_pending_note(session, run_id: str) -> None:
+    """在 llm_call_start 时把排队的注入送进上下文（此刻时序安全）。**调用方负责 commit**。"""
+    from .steer import deliver as steer_deliver
+
+    row = await session.get(Run, run_id)
+    if row is None:
+        return
+    note = str((row.usage or {}).get("pending_note") or "").strip()
+    if not note:
+        return
+    usage = dict(row.usage or {})
+    usage.pop("pending_note", None)
+    row.usage = usage
+    try:
+        await steer_deliver(run_id, note)
+    except Exception:  # noqa: BLE001 —— 注入失败不拦主链路
+        logger.debug("止损注入(延迟)失败 run=%s", run_id, exc_info=True)
+
+
 async def on_tool_exec_end(session: AsyncSession, run_id: str, payload: dict) -> None:
     """工具结束后判一次：要不要提示、要不要上报死路。**调用方负责 commit**。"""
     from .reliability import DEAD_END_KEY, STOP_LOSS_KEY, get_setting
@@ -140,13 +159,13 @@ async def on_tool_exec_end(session: AsyncSession, run_id: str, payload: dict) ->
         )
 
     if notes:
-        from .steer import deliver as steer_deliver
-
-        text = STEER_MARK + " ".join(notes)
-        try:
-            await steer_deliver(run_id, text)
-        except Exception:  # noqa: BLE001 —— 注入失败不拦主链路，计数仍在
-            logger.debug("止损注入失败 run=%s", run_id, exc_info=True)
+        # 不能在这里 observe：tool_exec_end 事件 yield 出来时，AgentScope 还没把
+        # tool result 写进 context（它 yield 事件在前、_save_to_context 在后）。
+        # 此刻插 user 消息会落在 assistant(tool_calls) 与 tool 结果之间 →
+        # 下一轮请求 OpenAI 400（"tool_calls must be followed by tool messages"）。
+        # 改为记 pending，由 flush_pending_note 在下一个 llm_call_start 时注入
+        # —— 那个时刻 tool result 必已在 context，插话位置合法。
+        usage["pending_note"] = (str(usage.get("pending_note") or "") + "\n" + STEER_MARK + " ".join(notes)).strip()[:2000]
         if dead_end and streak_all >= dead_end:
             # 死路另走账本：Router 结束时也能被唤醒
             try:
