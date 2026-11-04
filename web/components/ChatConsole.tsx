@@ -420,6 +420,15 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     }
   }, []);
 
+  /* 平台自动轮的消息（巡检/收口）是在你上一轮 SSE 结束**之后**才落库的 ——
+     页面开着不动就永远看不到，用户观感就是「派完就没了，worker 咋样不知道」。
+     空闲时轻轮询消息：会话有新消息（含平台自动轮）自动拉进来。 */
+  useEffect(() => {
+    if (busy || !sessionId) return;
+    const t = setInterval(() => void loadMessages(sessionId), 10000);
+    return () => clearInterval(t);
+  }, [busy, sessionId, loadMessages]);
+
   // 切 Agent：重载会话列表，选中最近一个；没有就自动建一个
   useEffect(() => {
     if (!agentId) return;
