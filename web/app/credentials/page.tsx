@@ -327,7 +327,9 @@ export default function CredentialsPage() {
                     >
                       <span className="inline-flex min-w-0 items-center gap-1" title="密钥（掩码）">
                         <IconKey size={12} className="shrink-0" />
-                        <span className="truncate mono">{revealed[c.id] || c.masked_key}</span>
+                        {/* 行里永远只放掩码 —— 明文只出现在下面展开面板的 API Key 区块（点「显示」才有）。
+                            之前这里也渲染 revealed，等于同一份明文同时挂在两处、收起面板后行里还留着。 */}
+                        <span className="truncate mono">{c.masked_key}</span>
                       </span>
                       <span className="inline-flex min-w-0 items-center gap-1" title="请求端点">
                         <IconLink size={12} className="shrink-0" />
@@ -881,9 +883,13 @@ function EditCredentialDialog({
                 setProvider(e.target.value);
                 setFound([]);
                 setProbeNote(null);
-                // 切 Provider 联动 Base URL（编辑弹窗原来不联动，可保存出
-                // 「Ollama + 火山端点」错配；新建弹窗本来就是清空的，行为拉齐）
-                setBaseUrl("");
+                // 切 Provider 联动 Base URL —— 但**不清空已保存的值**：
+                // 用户存的 /api/plan/v3 切走再切回来就没了，静默丢数据（真机复现过：
+                // 火山 Agent Plan 的端点是它唯一能通的写法，一保存生产凭据就断）。
+                // 规约：切 option 只过滤显示，值还在；只有新 Provider 明确不允许
+                // 自定义端点（allows_base_url=false）才重置，否则原值原样保留。
+                const nextMeta = providers.find((p) => p.name === e.target.value);
+                if (nextMeta?.allows_base_url === false) setBaseUrl("");
               }}
             >
               {providers.map((p) => (

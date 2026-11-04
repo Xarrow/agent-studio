@@ -546,8 +546,15 @@ function ImportDialog({
   }
 
   const submit = async () => {
-    setBusy(true);
     setErr(null);
+    // 手写导入：内容还是**预填模板原样**就拦下来 —— 直接提交会多一条叫
+    // my-skill 的占位技能（真机审计确认过路径全程可点）。改过一个字才放行。
+    const TEMPLATE = "---\nname: my-skill\ndescription: 一句话说明这个 Skill 做什么\n---\n\n# 使用说明\n\n在这里写给 Agent 的指令…\n";
+    if (source === "inline" && content.trim() === TEMPLATE.trim()) {
+      setErr("内容还是模板原样 —— 先把 name / description / 指令改成你的，再导入。");
+      return;
+    }
+    setBusy(true);
     try {
       const r = await api.importSkill({
         source,

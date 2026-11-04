@@ -129,6 +129,13 @@ type Detail = {
   /** LLM 测试记录：展开的是「对话 + 原始请求/响应」，没有执行过程 */
   llmTest?: boolean;
   note?: string;
+  /**
+   * 多轮会话行：当前正在看哪一轮的执行过程（run id）。
+   * 行本身是 session id，没有自己的事件流 —— 必须落在具体某一轮上才查得到。
+   */
+  turnRunId?: string | null;
+  /** 每一轮拉到的执行过程（run_id → steps），点开过就缓存 */
+  turnSteps?: Record<string, { steps?: Step[]; spans?: Span[]; llmCalls?: LlmCall[]; note?: string; loading?: boolean }>;
 };
 
 //: 一页多少条。50 是「看得见一屏内容」与「别一次读上千行」之间的取舍。
@@ -333,6 +340,17 @@ export function RunsPanel() {
       })();
       return;
     }
+    // 多轮会话行的 id 是 **session id** —— 拿它查 run 事件流必然「Run 不存在」。
+    // 会话该看的是某一轮的执行过程：默认落最近一轮，轮次列表里点哪轮看哪轮。
+    if (it.kind === "chat" && it.fanout && it.fanout.items.length > 0) {
+      const latest = it.fanout.items[it.fanout.items.length - 1];
+      setDetails((d) => ({
+        ...d,
+        [it.id]: { loading: false, turnRunId: latest.run_id, turnSteps: {} },
+      }));
+      openTurn(it, latest.run_id);
+      return;
+    }
     void (async () => {
       try {
         // 两个请求一起发：事件流（分色过程）+ trace（耗时瀑布）。瀑布在旧详情
@@ -355,6 +373,67 @@ export function RunsPanel() {
           ...d,
           [it.id]: { loading: false, note: e instanceof Error ? e.message : String(e) },
         }));
+      }
+    })();
+  };
+
+  /**
+   * 多轮会话：看某一轮的执行过程。事件流按这一轮自己的 run id 查 ——
+   * 会话行本身没有事件流（它只是 N 轮的壳）。
+   * 点开过就缓存（turnSteps），反复切换不重复请求。
+   */
+  const openTurn = (it: ActivityItem, runId: string) => {
+    setDetails((d) => {
+      const cur = d[it.id] ?? { loading: false };
+      return { ...d, [it.id]: { ...cur, turnRunId: runId } };
+    });
+    setDetails((d) => {
+      const cur = d[it.id];
+      if (!cur || cur.turnSteps?.[runId]) return d; // 已有缓存
+      return {
+        ...d,
+        [it.id]: { ...cur, turnSteps: { ...(cur.turnSteps ?? {}), [runId]: { loading: true } } },
+      };
+    });
+    void (async () => {
+      try {
+        const [evts, trace] = await Promise.all([
+          api.runEvents(runId) as unknown as Promise<Evts>,
+          api.runTrace(runId).catch(() => null),
+        ]);
+        setDetails((d) => {
+          const cur = d[it.id];
+          if (!cur) return d;
+          return {
+            ...d,
+            [it.id]: {
+              ...cur,
+              turnSteps: {
+                ...(cur.turnSteps ?? {}),
+                [runId]: {
+                  steps: eventsToSteps(evts, it.title),
+                  spans: (trace as { spans?: Span[] } | null)?.spans,
+                  llmCalls: (trace as { llm_calls?: LlmCall[] } | null)?.llm_calls,
+                },
+              },
+            },
+          };
+        });
+      } catch (e) {
+        setDetails((d) => {
+          const cur = d[it.id];
+          if (!cur) return d;
+          return {
+            ...d,
+            [it.id]: {
+              ...cur,
+              turnSteps: {
+                ...(cur.turnSteps ?? {}),
+                [runId]: { note: e instanceof Error ? e.message : String(e) },
+              },
+            },
+          };
+        });
       }
     })();
   };
@@ -1348,8 +1427,31 @@ export function RunsPanel() {
                             {it.fanout.items.map((f) => (
                               <div
                                 key={f.index}
-                                className="flex items-center gap-2 rounded-[6px] border px-2 py-1 text-[12px]"
-                                style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+                                className={
+                                  "flex items-center gap-2 rounded-[6px] border px-2 py-1 text-[12px]"
+                                  + (it.kind === "chat" && d?.turnRunId === f.run_id
+                                    ? " ring-1"
+                                    : "")
+                                }
+                                style={{
+                                  borderColor:
+                                    it.kind === "chat" && d?.turnRunId === f.run_id
+                                      ? "var(--color-accent)"
+                                      : "var(--color-border)",
+                                  background: "var(--color-surface)",
+                                  ...(it.kind === "chat"
+                                    ? { cursor: "pointer", userSelect: "none" as const }
+                                    : {}),
+                                }}
+                                onClick={
+                                  it.kind === "chat"
+                                    ? (e) => {
+                                        e.stopPropagation();
+                                        openTurn(it, f.run_id);
+                                      }
+                                    : undefined
+                                }
+                                title={it.kind === "chat" ? "点这轮看它的执行过程" : undefined}
                               >
                                 <span
                                   className="shrink-0"
@@ -1387,7 +1489,7 @@ export function RunsPanel() {
                                 )}
                                 {f.duration_ms ? (
                                   <span className="shrink-0 tabular-nums" style={{ color: "var(--color-muted)" }}>
-                                    {(f.duration_ms / 1000).toFixed(1)}s
+                                    {fmt.ms(f.duration_ms)}
                                   </span>
                                 ) : null}
                                 {f.status !== "ok" && (
@@ -1426,17 +1528,45 @@ export function RunsPanel() {
                           style={{ borderColor: "var(--color-border)" }}
                         >
                           <span className="text-[12px] font-medium" style={{ color: "var(--color-muted)" }}>
-                            执行过程
+                            {it.kind === "chat" && d?.turnRunId ? "执行过程（当前轮）" : "执行过程"}
                           </span>
-                          {it.id && it.kind !== "llm_test" && (
+                          {it.id && it.kind !== "llm_test" && !(it.kind === "chat") && (
                             <span className="mono text-[12px]" style={{ color: "var(--color-muted)" }}>
                               {it.id}
+                            </span>
+                          )}
+                          {it.kind === "chat" && d?.turnRunId && (
+                            <span className="mono text-[12px]" style={{ color: "var(--color-muted)" }}>
+                              {d.turnRunId}
                             </span>
                           )}
                         </div>
                         <div className="px-2.5 py-2">
                           {d?.llmTest ? (
                             <ModelTestDetail testId={it.id} hasPayload={it.has_payload} />
+                          ) : it.kind === "chat" ? (
+                            /* 多轮会话：展示的是当前选中轮的执行过程（轮次列表里点选切换） */
+                            (() => {
+                              const rid = d?.turnRunId ?? "";
+                              const t = rid ? d?.turnSteps?.[rid] : undefined;
+                              if (!rid) return (
+                                <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+                                  在上面的轮次里点一轮，看它的执行过程。
+                                </div>
+                              );
+                              if (t?.loading) return (
+                                <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>读取中…</div>
+                              );
+                              if (t?.note) return (
+                                <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>{t.note}</div>
+                              );
+                              if (t?.steps && t.steps.length > 0) return <RunTimeline steps={t.steps} />;
+                              return (
+                                <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+                                  这一轮没有留下事件。
+                                </div>
+                              );
+                            })()
                           ) : d?.loading ? (
                             <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>读取中…</div>
                           ) : d?.note ? (

@@ -1269,7 +1269,13 @@ export const fmt = {
   ms(v: number | null | undefined): string {
     if (v === null || v === undefined) return "—";
     if (v < 1000) return `${v}ms`;
-    return `${(v / 1000).toFixed(2)}s`;
+    // 进位：5096.48s 用户还得自己除 60 —— ≥60s 出分钟、≥1h 出小时（口径全站统一）
+    const s = v / 1000;
+    if (s < 60) return `${s.toFixed(1)}s`;
+    if (s < 3600) return `${Math.floor(s / 60)}m${Math.round(s % 60)}s`;
+    const h = Math.floor(s / 3600);
+    const m = Math.round((s % 3600) / 60);
+    return m ? `${h}h${m}m` : `${h}h`;
   },
   bytes(v: number | null | undefined): string {
     if (!v) return "0B";

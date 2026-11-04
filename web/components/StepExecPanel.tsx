@@ -47,8 +47,16 @@ export type StepBrief = {
   order_index?: number;
 };
 
-const fmtMs = (ms?: number | null) =>
-  ms == null ? "—" : ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}秒`;
+const fmtMs = (ms?: number | null) => {
+  if (ms == null) return "—";
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  const s = ms / 1000;
+  if (s < 60) return `${s.toFixed(1)}秒`;
+  if (s < 3600) return `${Math.floor(s / 60)}分${Math.round(s % 60)}秒`;
+  const h = Math.floor(s / 3600);
+  const m = Math.round((s % 3600) / 60);
+  return m ? `${h}时${m}分` : `${h}时`;
+};
 
 const statusText: Record<string, string> = {
   pending: "等待",

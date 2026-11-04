@@ -1166,7 +1166,15 @@ async def activity_timeline(
                     tokens_out=k_out,
                 )
             )
-        whole_status = "error" if err_n else ("ok" if ok_n else first.status)
+        # 整次对话的状态口径：有失败≠整次"失败"。排序是 aborted（人停的）>
+        # error（真砸了）> waiting_hitl（还在等）> running/pending（在跑）> ok。
+        # 按「最严重的终态」说话，筛「已中断」能看到「已中断」徽标，对得上词。
+        _sev = {"aborted": 5, "error": 4, "waiting_hitl": 3, "running": 2, "pending": 1}
+        worst = max(rows, key=lambda k: _sev.get(k.status, 0))
+        if all(k.status == "ok" for k in rows):
+            whole_status = "ok"
+        else:
+            whole_status = worst.status
         times = [x.started_at for x in rows if x.started_at] + [x.ended_at for x in rows if x.ended_at]
         dur = (max(times) - min(times)) if times else None
         model_name = next(
@@ -1306,6 +1314,7 @@ async def activity_timeline(
     # 编排按**整次**计（= orchestration 行数）——worker run 在 SQL 里没法只按
     # "编排本体"去重（每步都带 orchestration_id），所以 playground 计数单独查本体表，
     # 与列表"一次一行"的口径一致（否则徽标 18、列表 6 行，用户又该数不对了）。
+    # ⚠️ chat 同理：多轮会话在列表里是"一行=一个会话"，徽标也要按 session 去重计。
     counts: dict[str, int] = {}
     for kind_name, cnt in (
         await session.execute(
@@ -1315,6 +1324,21 @@ async def activity_timeline(
         )
     ).all():
         counts[str(kind_name)] = int(cnt)
+    chat_runs = counts.get("chat", 0)
+    if chat_runs:
+        chat_sessions = int(
+            (
+                await session.execute(
+                    select(func.count(func.distinct(Run.session_id))).where(
+                        Run.parent_run_id.is_(None),
+                        Run.orchestration_id.is_(None),
+                        Run.session_id.is_not(None),
+                    )
+                )
+            ).scalar()
+            or 0
+        )
+        counts["chat"] = chat_sessions
     orc_count = int(
         (
             await session.execute(
@@ -1336,15 +1360,36 @@ async def activity_timeline(
     # 当前筛选下的总条数（界面用来说"还有 N 条"）—— 与列表同源同条件。
     # 编排 worker 不算独立条目：总数 = 非 worker 的 run 数 + **去重后**的编排次数。
     # （同一次编排的 N 条 worker 在列表里只有 1 行，total 若按 run 数会把"还有 N 条"虚报。）
+    # ⚠️ 多轮会话同理：同一 session 的 N 轮在列表里只有 1 行 —— total 按 run 数
+    #    会出现「全部 26」+「共 26 条，已到底」但列表只有 3 行的矛盾（对不上账）。
+    #    所以 chat 部分按**去重后的 session 数**计，与归组后的行数一致。
 
 
     base_conds = _run_conds(kind, status, agent_id, q, None, None)
-    non_worker_total = int(
+    # 多轮会话行数：按 session 去重（单轮会话也是 1 行，同样被去重覆盖）
+    chat_session_total = int(
+        (
+            await session.execute(
+                select(func.count(func.distinct(Run.session_id))).where(
+                    *base_conds,
+                    Run.orchestration_id.is_(None),
+                    Run.session_id.is_not(None),
+                )
+            )
+        ).scalar()
+        or 0
+    )
+    # 无会话的单发 run（preview / 裸执行）：一条就是一行
+    plain_total = int(
         (
             await session.execute(
                 select(func.count())
                 .select_from(Run)
-                .where(*base_conds, Run.orchestration_id.is_(None))
+                .where(
+                    *base_conds,
+                    Run.orchestration_id.is_(None),
+                    Run.session_id.is_(None),
+                )
             )
         ).scalar()
         or 0
@@ -1357,7 +1402,7 @@ async def activity_timeline(
         ).scalar()
         or 0
     )
-    total_runs = non_worker_total + orc_total
+    total_runs = chat_session_total + plain_total + orc_total
     total_tests = 0
     if not agent_id:
         total_tests = int(
