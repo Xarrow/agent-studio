@@ -228,6 +228,24 @@ async def dispatch_remote(
 
     timeout = float(wait_s if wait_s is not None else DEFAULT_WAIT_S)
 
+    # 事件回调：远端若实现事件上报，跑到中途可把进展/卡点推回本平台
+    # （metadata.event_callback；远端不认就忽略，不影响执行）。
+    callback = None
+    try:
+        from .config import settings as _settings
+
+        base_url = str(_settings.public_base_url or "").rstrip("/")
+        if base_url:
+            from .settings_store import ensure_register_token
+
+            callback = {
+                "callback_url": f"{base_url}/api/remote-agents/events",
+                "parent_run_id": parent_run.id,
+                "token": await ensure_register_token(),
+            }
+    except Exception:  # noqa: BLE001 —— 回调是增量能力，拿不到就不带
+        callback = None
+
     async def _one(child: Run, text: str) -> None:
         """跑一路：发消息 → 等终态 → 落库。任何异常都变成这一路的失败原因。"""
         try:
@@ -237,6 +255,7 @@ async def dispatch_remote(
                 agent_id=remote_agent_id,
                 timeout_s=timeout,
                 headers=headers,
+                callback={**(callback or {}), "worker_run_id": child.id} if callback else None,
             )
         except a2a_client.A2AError as exc:
             status, out, task_id = "error", "", ""

@@ -595,3 +595,66 @@ async def delete_remote_agent(remote_id: str) -> dict[str, Any]:
         await session.delete(row)
         await session.commit()
     return {"deleted": remote_id}
+
+
+@router.post("/events")
+async def remote_worker_event(request: Request, session: AsyncSession = Depends(get_session)) -> dict:
+    """远端 worker 事件回调：远端实例跑到中途把进展/卡点推回来。
+
+    谁能用：远端平台（注册时拿到过自注册口令）。鉴权同 /self：内网直连放行，
+    公网必须带 X-Register-Token。防冒领：parent_run_id 必须存在且是本平台
+    发出的 a2a 执行 —— 报别家的事件直接 403。
+    入账后走同一条投递链（账本 → handler → steer 直注/唤醒轮）。
+    """
+    from ..db import is_lan_peer
+    from ..settings_store import ensure_register_token
+    from ..worker_events import emit_worker_event
+
+    if not is_lan_peer(request):
+        expect = await ensure_register_token()
+        given = (
+            (request.headers.get("x-register-token") or "").strip()
+            or _bearer_of(request)
+        )
+        if not given or not secrets.compare_digest(given, expect):
+            raise HTTPException(
+                status.HTTP_401_UNAUTHORIZED,
+                "远端事件回调需要口令：请求头 X-Register-Token（自注册口令）。",
+            )
+
+    try:
+        body = await request.json()
+    except Exception as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "body 必须是 JSON") from exc
+    if not isinstance(body, dict):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "body 必须是 JSON 对象")
+
+    parent = str(body.get("parent_run_id") or "").strip()
+    worker_run = str(body.get("worker_run_id") or "").strip()
+    if not parent or not worker_run:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "parent_run_id 与 worker_run_id 必填")
+
+    from ..models import Run
+
+    async with session.begin():
+        row = await session.get(Run, parent)
+        if row is None or row.runtime != "a2a":
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "parent_run_id 不存在或不是 a2a 执行 —— 只能报自己被派的那单活",
+            )
+        usage = dict(row.usage or {})
+        usage["lease_until"] = now_ms() + 120_000  # 远端有动静也续约
+        row.usage = usage
+        root = str(row.root_run_id or parent)
+
+    await emit_worker_event(
+        worker_run_id=worker_run,
+        parent_run_id=parent,
+        root_run_id=root,
+        kind=str(body.get("kind") or "progress"),
+        text=str(body.get("text") or "")[:2000],
+        progress=body.get("progress") if isinstance(body.get("progress"), int) else None,
+        source="a2a",
+    )
+    return {"ok": True, "note": "事件已入账本，投递进行中"}

@@ -25,7 +25,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .context import next_turn_index
-from .models import Agent, Run, Session as ChatSession, Ticket, now_ms, new_id
+from .models import Agent, Event, Run, Session as ChatSession, Ticket, now_ms, new_id
 from .runner import run_service
 from .schemas import AgentDefinition
 from .tickets_core import STAGE_LABEL, stage
@@ -323,92 +323,87 @@ async def watch_worker(
 
     from sqlalchemy import select as _select
 
-    #: 巡检节奏：worker 跑多久后做第一次中途巡检、之后每隔多久再看一眼
-    #: （实测 Router 那轮常常 20 秒就自己结束了 —— 巡检必须由平台兜底，不能指望模型自觉）
-    FIRST_PROBE_S = 45
-    PROBE_EVERY_S = 90
-    #: 最多中途巡检几次（收口轮才是终局；巡检轮不是无限循环）
-    MAX_PROBES = 3
+    #: lease 心跳：worker 每次「有动作」（上报/工具调用）都续约；
+    #: 心跳断了多久算失联（合成 blocked 事件走账本投递）
+    LEASE_TIMEOUT_S = 120
+    #: 失联后最多合成几次心跳超时事件（之后交给终态兜底/用户自己看）
+    MAX_LEASE_MISSES = 2
 
-    async def _probe_once() -> bool:
-        """worker 还在跑、Router 那轮已结束 → 起一轮巡检把真实画像喂给 Router。
+    async def _refresh_lease(seconds: int = LEASE_TIMEOUT_S) -> None:
+        """续约：lease_until = now + seconds（写在 run.usage 里，无迁移成本）。"""
+        from .db import SessionLocal
 
-        返回是否起了巡检轮。巡检轮起来后 Router 会用 worker_status/steer/stop 处置。
-        """
+        try:
+            async with SessionLocal() as s:
+                row = await s.get(Run, run_id)
+                if row is None:
+                    return
+                usage = dict(row.usage or {})
+                usage["lease_until"] = now_ms() + seconds * 1000
+                row.usage = usage
+                await s.commit()
+        except Exception:  # noqa: BLE001 —— lease 刷新失败不该影响主链路
+            logger.debug("lease 续约失败 run=%s", run_id, exc_info=True)
+
+    async def _lease_left_ms() -> float:
+        """距失联还有多久（worker 上报与工具调用都会续约）。"""
         from .db import SessionLocal
 
         async with SessionLocal() as s:
             row = await s.get(Run, run_id)
-            if row is None or row.status not in ("pending", "running"):
-                return False  # 已经收尾，交给终态推送
-            # Router 那轮还在跑 → 它自己能看见（steer 推送会来），不用替它起轮
-            parent_busy = (
-                await s.execute(
-                    _select(Run).where(
-                        Run.id == parent_run_id, Run.status.in_(("pending", "running"))
-                    )
-                )
-            ).scalars().first()
-            if parent_busy is not None:
-                return False
-            # 巡检轮别连环起：**排除刚结束的那一轮 Router 自己**（它就是派出活的这轮，
-            # 一定在 3 分钟窗口内 —— 不排除的话探针永远被它挡住，巡检永远起不来）。
-            # 只看「自动起过的轮」（收口/巡检都算）：人工消息起的轮不拦巡检。
-            recent = (
-                await s.execute(
-                    _select(Run).where(
-                        Run.session_id == session_id,
-                        Run.origin == "router",
-                        Run.id != parent_run_id,
-                        Run.started_at >= now_ms() - 180_000,
-                    )
-                )
-            ).scalars().first()
-            if recent is not None:
-                return False
-        # 拿 worker 的真实画像（worker_status 文本），喂给 Router 巡检轮
-        from .agent_ops import _worker_status
-
-        profile = await _worker_status(agent_name)
-        digest = (
-            f"【自动巡检 · 你派的活还没回来，去看看】\n"
-            f"你派给【{agent_name}】的活（run {run_id}）已经跑了一阵还没收尾，"
-            f"你上一轮已经结束了 —— 现在由平台把你叫回来看一眼。\n\n"
-            f"当前画像：\n{profile}\n\n"
-            f"判断：方向对就继续等（什么也不用做，等回报）；绕路/卡住用 worker_steer 纠偏；"
-            f"方向错了 worker_stop 停掉重派。只做处置动作，不用向用户长篇汇报。"
-        )
-        spawned = await _spawn_router_turn(session_id, digest)
-        if spawned:
-            logger.info(
-                "worker 巡检轮已起 parent=%s worker=%s → run=%s", parent_run_id, run_id, spawned
-            )
-        return bool(spawned)
+            if row is None:
+                return -1.0
+            lease = int((row.usage or {}).get("lease_until") or 0)
+            return (lease - now_ms()) / 1000.0
 
     async def _watch() -> None:
         from .db import SessionLocal
 
-        # ── 中途巡检：worker 在跑期间定期看一眼 ──────────────────────
-        # Router 那轮多半早就结束了 —— 那就由平台起巡检轮替它看（用户拍板的闭环语义）。
+        # ── lease 心跳监听：worker「该来没来」也是一种事件 ────────────
+        # 事件驱动模型下不搞定时巡检：worker 每次动作都续约（lease），
+        # watcher 睡到 lease 到期再检查 —— 心跳正常就继续睡，断约就合成
+        # blocked 事件走账本投递（与 worker 主动上报同一条路）。
+        # 开跑先给一笔初始 lease（长于模型起跑第一脚的时间）。
         try:
-            elapsed = 0.0
-            probes = 0
-            while elapsed < 1800:
-                await asyncio.sleep(FIRST_PROBE_S if probes == 0 else PROBE_EVERY_S)
-                elapsed += FIRST_PROBE_S if probes == 0 else PROBE_EVERY_S
-                probes += 1
-                if probes > MAX_PROBES:
-                    break
-                try:
-                    async with SessionLocal() as s:
-                        row = await s.get(Run, run_id)
-                        if row is None or row.status not in ("pending", "running"):
-                            break  # 收尾了，跳出巡检循环走终态推送
-                    await _probe_once()
-                except Exception:  # noqa: BLE001
-                    logger.exception("巡检探针失败 run=%s", run_id)
+            await _refresh_lease(LEASE_TIMEOUT_S)
+            misses = 0
+            while misses < MAX_LEASE_MISSES:
+                left = await _lease_left_ms()
+                if left < 0:
+                    break  # run 没了，交给终态兜底
+                # 睡到 lease 到期（封顶 5 分钟，防 lease 值异常时永远睡死）
+                await asyncio.sleep(min(max(left, 1.0), 300.0))
+                async with SessionLocal() as s:
+                    row = await s.get(Run, run_id)
+                    if row is None or row.status not in ("pending", "running"):
+                        break  # 收尾了，跳出走终态推送
+                left = await _lease_left_ms()
+                if left > 0:
+                    continue  # 续约来了（上报/工具调用），接着睡
+                # 心跳断约：合成 blocked 事件 → 账本 → 投递给 Router
+                from .worker_events import emit_worker_event
+
+                async with SessionLocal() as s:
+                    row = await s.get(Run, run_id)
+                    parent = str((row.parent_run_id if row else "") or parent_run_id)
+                    root = str((row.root_run_id if row else "") or parent)
+                misses += 1
+                await emit_worker_event(
+                    worker_run_id=run_id,
+                    parent_run_id=parent,
+                    root_run_id=root,
+                    kind="blocked",
+                    text=(
+                        f"心跳超时：已 {LEASE_TIMEOUT_S}s 没有任何动作（工具调用/上报都没有）。"
+                        f"可能是长计算在跑，也可能卡死了 —— 用 worker_status 看一眼再定。"
+                        f"（第 {misses}/{MAX_LEASE_MISSES} 次失联提醒）"
+                    ),
+                    source="platform",
+                )
+                # 合成事件本身也算一次「看过」：再给一笔观察 lease，别连环轰炸
+                await _refresh_lease(LEASE_TIMEOUT_S)
         except Exception:  # noqa: BLE001
-            logger.exception("巡检循环异常 run=%s", run_id)
+            logger.exception("lease 监听异常 run=%s", run_id)
 
         # ── 终态：等收尾 → 推送/写报告/收口 ──────────────────────────
         try:
@@ -587,9 +582,33 @@ async def kick_summary(*, parent_run_id: str, session_id: str, agent_name: str =
                 tk_id = run_to_ticket.get(r.id)
                 if tk_id:
                     tickets_of_batch.append((tk_id, ""))
+            # 留账的 worker 事件（progress/done 上报、平台转报）随收口带给 Router
+            # —— 不然这些事件只有账本知道，Router 和用户永远看不到。
+            events_note = ""
+            from .worker_events import EV_KIND
+
+            ev_rows = (
+                await s.execute(
+                    _select(Event).where(Event.kind == EV_KIND).order_by(Event.created_at.desc()).limit(30)
+                )
+            ).scalars().all()
+            ev_lines: list[str] = []
+            for e in ev_rows:
+                pl = e.payload or {}
+                if str(pl.get("parent_run_id")) != parent_run_id:
+                    continue
+                if pl.get("event_kind") in ("blocked", "failed"):
+                    continue  # 紧急事件已经实时投递/唤醒过了，收口不重复
+                mark = {"progress": "🔹", "done": "✅"}.get(str(pl.get("event_kind")), "·")
+                ev_lines.append(f"  {mark} 【{pl.get('agent_name', '?')}】{pl.get('text', '')[:160]}")
+            if ev_lines:
+                events_note = (
+                    "\n\n过程事件（worker 上报/平台转报，时间序）：\n" + "\n".join(reversed(ev_lines))
+                )
             digest = (
                 "【自动汇报 · 你派的活都回来了】\n"
                 + "\n".join(rows)
+                + events_note
                 + "\n\n现在收口：先一句结论，再列必要依据；哪件不合格就说清要重做什么。"
                 " 不要复述整段产出，不要重新派已经做完的活。"
             )

@@ -142,19 +142,28 @@ async def send(
     agent_id: str | None = None,
     timeout: float = 60.0,
     headers: dict[str, str] | None = None,
+    callback: dict[str, str] | None = None,
 ) -> str:
     """发一条消息，返回远端 Task id。
 
     ``agent_id`` 会放进 message.metadata.agentId —— 远端平台据此选具体助手
     （本平台的 a2a.py 认这个字段；远端若不认，忽略即可，走它的默认助手）。
+    ``callback``（可选）：worker 事件回调参数（callback_url / parent_run_id /
+    worker_run_id），放进 message.metadata —— 远端平台若实现了事件上报，
+    跑到中途就能把进展/卡点推回来（同一张事件网）；不认就忽略，不影响执行。
     """
     url = _rpc_url(base)
     message: dict[str, Any] = {
         "role": "user",
         "parts": [{"kind": "text", "text": text}],
     }
+    meta: dict[str, Any] = {}
     if agent_id:
-        message["metadata"] = {"agentId": agent_id}
+        meta["agentId"] = agent_id
+    if callback:
+        meta["event_callback"] = callback
+    if meta:
+        message["metadata"] = meta
     body = await _post_json(
         url,
         {"jsonrpc": "2.0", "id": 1, "method": "message/send", "params": {"message": message}},
@@ -225,6 +234,7 @@ async def run_until_done(
     agent_id: str | None = None,
     timeout_s: float = DEFAULT_TIMEOUT_S,
     headers: dict[str, str] | None = None,
+    callback: dict[str, str] | None = None,
 ) -> tuple[str, str, str]:
     """发一条消息并等到终态。
 
@@ -235,7 +245,7 @@ async def run_until_done(
     import asyncio
     import time
 
-    task_id = await send(base, text, agent_id=agent_id, headers=headers)
+    task_id = await send(base, text, agent_id=agent_id, headers=headers, callback=callback)
     deadline = time.monotonic() + max(30.0, timeout_s)
     seen_hitl = False
     while True:

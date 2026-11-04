@@ -13,7 +13,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import SessionLocal, get_session
-from ..models import Agent, LlmCall, ModelTest, Run, RunEvent, Span, ToolCall, new_id, now_ms
+from ..models import Agent, Event, LlmCall, ModelTest, Run, RunEvent, Span, ToolCall, new_id, now_ms
 from ..pricing import cost_of, currency_of, load_prices, price_key, tokens_of
 from .. import steer as steer_registry
 from ..runner import run_service
@@ -1891,6 +1891,46 @@ async def clear_runs(
 # --------------------------------------------------------------------------- #
 # 浏览器用户输入（用户在页面的浏览器画面里亲自操作 —— 登录/验证码等）
 # --------------------------------------------------------------------------- #
+@router.get("/{run_id}/worker-events")
+async def worker_events_of(run_id: str, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """某次执行相关的 worker 事件（按派发树的根查，时间正序）。
+
+    界面上 run 详情/会话页用它展示「worker 上报/平台转报」的过程线；
+    steer 直注与唤醒轮的投递状态也在 payload.delivery 里可见。
+    """
+    from ..models import Event
+    from ..worker_events import EV_KIND
+
+    run = await session.get(Run, run_id)
+    if run is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"没有 {run_id} 这条执行")
+    root = str(run.root_run_id or run.id)
+    rows = (
+        await session.execute(
+            select(Event)
+            .where(Event.kind == EV_KIND)
+            .order_by(Event.created_at.desc())
+            .limit(60)
+        )
+    ).scalars().all()
+    items = []
+    for e in reversed(rows):
+        pl = e.payload or {}
+        if str(pl.get("root_run_id")) != root:
+            continue
+        items.append({
+            "id": e.id,
+            "kind": pl.get("event_kind"),
+            "text": pl.get("text"),
+            "progress": pl.get("progress"),
+            "agent_name": pl.get("agent_name"),
+            "source": pl.get("source"),
+            "delivery": (pl.get("delivery") or {}).get("route"),
+            "ts": pl.get("ts") or e.created_at,
+        })
+    return {"root_run_id": root, "total": len(items), "items": items}
+
+
 @router.post("/{run_id}/browser-input")
 async def browser_input(run_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     """把用户在浏览器画面上的操作打进该 run 的 Chromium。

@@ -90,7 +90,7 @@ async def test_远端分派每一路落一条run并标a2a(client, monkeypatch):
     async def fake_discover(base, timeout=15.0, *, headers=None):
         return {"name": "远端平台"}
 
-    async def fake_run_until_done(base, text, *, agent_id=None, timeout_s=900.0, headers=None):
+    async def fake_run_until_done(base, text, *, agent_id=None, timeout_s=900.0, headers=None, callback=None):
         if "第二" in text:
             return "error", "远端说这条做不了", "task-2"
         return "ok", f"远端产出：{text}", "task-1"

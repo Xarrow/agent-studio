@@ -1512,7 +1512,30 @@ class RunService:
             self.bus.close(run_id)
 
     # ------------------------------------------------------------------ #
+    async def _touch_lease(self, run_id: str) -> None:
+        """工具动作续约（lease 心跳）。只动在跑的 worker 执行，别的不碰。"""
+        try:
+            async with SessionLocal() as s:
+                row = await s.get(Run, run_id)
+                if row is None or not row.parent_run_id:
+                    return  # 只有被派出来的执行才有 watcher 在盯
+                if row.status not in ("pending", "running"):
+                    return
+                usage = dict(row.usage or {})
+                usage["lease_until"] = now_ms() + 120_000
+                row.usage = usage
+                await s.commit()
+        except Exception:  # noqa: BLE001 —— 心跳失败不影响执行
+            logger.debug("lease 续约失败 run=%s", run_id, exc_info=True)
+
     async def _persist_event(self, run_id: str, ev: UnifiedEvent) -> None:
+        # ── lease 心跳：worker 树里每次工具动作都续约 ─────────────────
+        # （事件驱动巡查：watcher 睡到 lease 到期，动作频繁就永远不吵）
+        if ev.type == "tool_exec_end" and run_id.startswith("run_"):
+            try:
+                asyncio.ensure_future(self._touch_lease(run_id))
+            except Exception:  # noqa: BLE001
+                logger.debug("lease 续约调度失败 run=%s", run_id, exc_info=True)
         # ── worker 树的事件自动转报（事件驱动管理的一半来源）──────────
         # 这里是所有运行时事件的必经点：被派出来的执行报错/结束时，
         # 平台代替 worker 转投给 Router（worker 模型无感、不耗它的轮次）。

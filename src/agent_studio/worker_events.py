@@ -58,6 +58,10 @@ async def emit_worker_event(
 
             a = await s.get(Agent, wrun.agent_id)
             agent_name = a.name if a else "?"
+        # root 以父执行（或父的 root）为准 —— worker 自己的 root 列在旧数据/特殊
+        # 时序下可能为空，fallback 到 worker.id 会让「按树查事件」查不到。
+        pr = await s.get(Run, parent_run_id) if parent_run_id else None
+        root_run_id = str((pr.root_run_id if pr else "") or parent_run_id or root_run_id)
         await event_store.append(
             s,
             EV_KIND,
@@ -76,6 +80,12 @@ async def emit_worker_event(
             },
             dedupe_key=None,  # 上报不设幂等键：同一句话发两次是两次事实
         )
+        # 上报即续约（lease 心跳）：watcher 知道它活着
+        wr = await s.get(Run, worker_run_id)
+        if wr is not None and wr.status in ("pending", "running"):
+            usage = dict(wr.usage or {})
+            usage["lease_until"] = now_ms() + 120_000
+            wr.usage = usage
         await s.commit()
     # 入账即回「已受理」；route 要等 handler 跑完才知道（异步），工具回显不阻塞在这
     return {
