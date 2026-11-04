@@ -819,6 +819,13 @@ export interface GuardrailsRead {
   depth: { limit: number; choices: number[] };
   /** 一棵分派树最多花多少 token（0 = 不限）—— 防「一棵写坏的树烧穿一天额度」 */
   tree?: { limit: number; choices: number[] };
+  /** 可靠性护栏（止损/死路/软预算/partial 回收）—— 每档带可选枚举 */
+  reliability?: {
+    stop_loss: { value: number; choices: number[] };
+    dead_end: { value: number; choices: number[] };
+    soft_budget: { value: number; choices: number[] };
+    partial: { value: string; choices: string[] };
+  };
 }
 
 export interface EvalCase {

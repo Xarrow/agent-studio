@@ -15,6 +15,7 @@ from fastapi import APIRouter, Body, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_session
+from ..reliability import get_reliability
 from ..quota import (
     DAILY_LIMIT_CHOICES,
     DEPTH_CHOICES,
@@ -42,7 +43,28 @@ async def read_guardrails(session: AsyncSession = Depends(get_session)) -> dict[
         # 一棵分派树最多花多少（0 = 不限）。为什么单独一档：日额度是"这一天"的闸，
         # 它是"这一件事"的闸 —— 一棵写坏了的树能在一小时里把一天用光。
         "tree": {"limit": int(tree or 0), "choices": list(TREE_BUDGET_CHOICES)},
+        "reliability": await get_reliability(session),
     }
+
+
+@router.get("/reliability")
+async def read_reliability(session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """可靠性护栏现状（止损/死路/软预算/partial 回收）—— 每档带可选枚举。"""
+    from ..reliability import get_reliability
+
+    return await get_reliability(session)
+
+
+@router.put("/reliability")
+async def update_reliability(
+    patch: dict[str, int | str] = Body(..., description="要改的档位；只收界面给出的枚举值"),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """改可靠性护栏（改完立刻生效：下一次工具失败/预算检查就按新值判）。"""
+    from ..reliability import set_reliability
+
+    await set_reliability(session, patch)
+    return await read_guardrails(session)  # 全量返回：前端直接覆盖状态，不做二次拼装
 
 
 @router.put("/daily")

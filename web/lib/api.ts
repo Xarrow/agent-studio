@@ -835,6 +835,12 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ limit }),
     }),
+  /** 可靠性护栏（止损/死路/软预算/partial）—— 传要改的档位，服务端回全量 */
+  setReliability: (patch: Record<string, number | string>) =>
+    request<GuardrailsRead>("/api/guardrails/reliability", {
+      method: "PUT",
+      body: JSON.stringify(patch),
+    }),
   /** 待你处理的事（等你确认 / 停滞 / 失败可重跑）—— 按紧急度排好 */
   attention: () => request<AttentionRead>("/api/runs/attention"),
   // 票：一件持续的事（阶段由服务端从事实算出来）

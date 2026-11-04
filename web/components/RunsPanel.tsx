@@ -630,15 +630,17 @@ export function RunsPanel() {
 
   /** 改一档护栏：选完立刻生效（服务端返回全量，直接覆盖，不做乐观更新） */
   const saveGuard = useCallback(
-    async (which: "daily" | "depth" | "tree", value: number) => {
+    async (which: "daily" | "depth" | "tree" | "reliability", value: number | Record<string, number | string>) => {
       setGuardBusy(true);
       try {
         const next =
           which === "daily"
-            ? await api.setDailyLimit(value)
+            ? await api.setDailyLimit(value as number)
             : which === "depth"
-              ? await api.setDepthLimit(value)
-              : await api.setTreeBudget(value);
+              ? await api.setDepthLimit(value as number)
+              : which === "reliability"
+                ? await api.setReliability(value as Record<string, number | string>)
+                : await api.setTreeBudget(value as number);
         setGuard(next);
       } catch {
         fb?.error?.("保存失败（护栏没变）");
@@ -896,6 +898,83 @@ export function RunsPanel() {
                       {(guard.tree?.choices ?? [0]).map((v) => (
                         <option key={v} value={v}>
                           {v === 0 ? "不限" : fmt.num(v)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex items-center gap-1.5" title="一个工具连续失败几次后，平台自动在下一轮注入「换一条路或上报」的止损提示">
+                    止损
+                    <select
+                      className="input input-inline h-[32px] max-md:h-[44px]"
+                      value={guard.reliability?.stop_loss.value ?? 3}
+                      disabled={guardBusy}
+                      onChange={(e) =>
+                        void saveGuard("reliability", { stop_loss: Number(e.target.value) })
+                      }
+                    >
+                      {(guard.reliability?.stop_loss.choices ?? [0, 2, 3, 5]).map((v) => (
+                        <option key={v} value={v}>
+                          {v === 0 ? "关" : `连败 ${v} 次`}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label
+                    className="flex items-center gap-1.5"
+                    title="连续多少次工具调用全部失败就判定为死路，自动上报 blocked 唤醒 Router"
+                  >
+                    死路
+                    <select
+                      className="input input-inline h-[32px] max-md:h-[44px]"
+                      value={guard.reliability?.dead_end.value ?? 0}
+                      disabled={guardBusy}
+                      onChange={(e) =>
+                        void saveGuard("reliability", { dead_end: Number(e.target.value) })
+                      }
+                    >
+                      {(guard.reliability?.dead_end.choices ?? [0, 5, 8, 12]).map((v) => (
+                        <option key={v} value={v}>
+                          {v === 0 ? "关" : `${v} 次`}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label
+                    className="flex items-center gap-1.5"
+                    title="执行时间用到超时的几成时，自动注入「开始收尾」提醒（0=关）"
+                  >
+                    软预算
+                    <select
+                      className="input input-inline h-[32px] max-md:h-[44px]"
+                      value={guard.reliability?.soft_budget.value ?? 80}
+                      disabled={guardBusy}
+                      onChange={(e) =>
+                        void saveGuard("reliability", { soft_budget: Number(e.target.value) })
+                      }
+                    >
+                      {(guard.reliability?.soft_budget.choices ?? [0, 60, 80, 90]).map((v) => (
+                        <option key={v} value={v}>
+                          {v === 0 ? "关" : `${v}%`}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label
+                    className="flex items-center gap-1.5"
+                    title="超时被停时把最后的正文存为断点，收口时带给 Router，重派可从断点续"
+                  >
+                    断点回收
+                    <select
+                      className="input input-inline h-[32px] max-md:h-[44px]"
+                      value={guard.reliability?.partial.value ?? "on"}
+                      disabled={guardBusy}
+                      onChange={(e) =>
+                        void saveGuard("reliability", { partial: e.target.value })
+                      }
+                    >
+                      {(guard.reliability?.partial.choices ?? ["off", "on"]).map((v) => (
+                        <option key={v} value={v}>
+                          {v === "on" ? "开" : "关"}
                         </option>
                       ))}
                     </select>

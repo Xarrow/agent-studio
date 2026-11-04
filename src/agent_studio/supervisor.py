@@ -381,6 +381,10 @@ async def watch_worker(
         # blocked 事件走账本投递（与 worker 主动上报同一条路）。
         # 开跑先给一笔初始 lease（长于模型起跑第一脚的时间）。
         try:
+            async with SessionLocal() as s:
+                from .reliability import SOFT_BUDGET_PCT_KEY, get_setting
+
+                soft_budget_pct = int(await get_setting(s, SOFT_BUDGET_PCT_KEY, 80) or 0)
             await _refresh_lease(LEASE_TIMEOUT_S)
             misses = 0
             while misses < MAX_LEASE_MISSES:
@@ -393,6 +397,27 @@ async def watch_worker(
                     row = await s.get(Run, run_id)
                     if row is None or row.status not in ("pending", "running"):
                         break  # 收尾了，跳出走终态推送
+                # ── 软预算：用到几成时提醒收尾（可配置；0=关）────────────
+                # 超时杀执行时部分产出全丢是双倍浪费 —— 先给它一脚刹车。
+                # 判定零成本：started_at 和 lease 都在手上，只查一次配置。
+                if soft_budget_pct:
+                    async with SessionLocal() as s:
+                        row = await s.get(Run, run_id)
+                        if row is not None and row.started_at:
+                            total_s = int(
+                                ((row.definition_snapshot or {}).get("limits") or {}).get("timeout_s") or 900
+                            )
+                            used_pct = int((now_ms() - row.started_at) / (total_s * 10))  # /1000*100
+                            if used_pct >= soft_budget_pct:
+                                soft_budget_pct = 0  # 只提醒一次
+                                from .steer import deliver as _sd
+
+                                await _sd(
+                                    run_id,
+                                    "⏳ 时间预算提示（平台注入）：这次执行的剩余时间不足两成，"
+                                    "现在开始收尾 —— 停止开新的调查，整理已有发现，"
+                                    "给出结论和凭据。半份答案好过超时归零。",
+                                )
                 left = await _lease_left_ms()
                 if left > 0:
                     continue  # 续约来了（上报/工具调用），接着睡
@@ -591,9 +616,13 @@ async def kick_summary(*, parent_run_id: str, session_id: str, agent_name: str =
                 task = ((r.input or {}).get("text") or "").strip().replace("\n", " ")
                 body = _run_text(r).strip().replace("\n", " ")
                 head = "✅" if r.status == "ok" else "❌"
-                rows.append(
-                    f"{head} {i}. {name}｜任务：{task[:120]}\n   结果：{body[:600] or '（没有产出）'}"
-                )
+                line = f"{head} {i}. {name}｜任务：{task[:120]}\n   结果：{body[:600] or '（没有产出）'}"
+                # 超时/失败但有 partial：把断点带给 Router —— 重派从断点续，不从零再来
+                if r.status != "ok":
+                    partial = str(((r.usage or {}).get("partial")) or "").strip()
+                    if partial:
+                        line += f"\n   ⚠️ 超时部分产出（断点，重派可续）：…{partial[-400:]}"
+                rows.append(line)
                 # 这一条 run 属于哪张票（票上记过 run_ids）
                 tk_id = run_to_ticket.get(r.id)
                 if tk_id:

@@ -1086,6 +1086,36 @@ class RunService:
                 f"执行超时：这一轮超过 {timeout or '?'} 秒上限被停止"
                 "（可在助手配置里调大「执行超时」，或把这件活拆成几步）",
             )
+            # ── partial 回收：超时不再全损 ────────────────────────────
+            # 死前它写过/说过的话都在 run_event 的 text_delta 里，抓最后一段
+            # 存进 usage.partial —— Router 重派时能从断点续，而不是从零再来。
+            try:
+                from .reliability import PARTIAL_KEY, get_setting
+
+                async with SessionLocal() as s:
+                    if str(await get_setting(s, PARTIAL_KEY, "on")) == "on":
+                        rows = (
+                            await s.execute(
+                                select(RunEvent.payload)
+                                .where(RunEvent.run_id == run_id, RunEvent.type == "text_delta")
+                                .order_by(RunEvent.seq)
+                            )
+                        ).scalars()
+                        full = "".join(
+                            str((p or {}).get("delta") or "") for p in rows if p
+                        ).strip()
+                        if full:
+                            row = await s.get(Run, run_id)
+                            if row is not None:
+                                usage = dict(row.usage or {})
+                                usage["partial"] = full[-4000:]
+                                usage["partial_note"] = (
+                                    f"超时回收：正文最后 {len(full)} 字符的尾部（断点）"
+                                )
+                                row.usage = usage
+                                await s.commit()
+            except Exception:  # noqa: BLE001 —— 回收失败不影响终态落库
+                logger.debug("partial 回收失败 run=%s", run_id, exc_info=True)
         except GateTimeout as exc:
             # 拿不到并发槽位：说清是「排队太久」，别让用户以为是模型不行
             logger.warning("Run %s 排队超时：%s", run_id, exc)
@@ -1488,6 +1518,36 @@ class RunService:
                 f"执行超时：这一轮超过 {timeout or '?'} 秒上限被停止"
                 "（可在助手配置里调大「执行超时」，或把这件活拆成几步）",
             )
+            # ── partial 回收：超时不再全损 ────────────────────────────
+            # 死前它写过/说过的话都在 run_event 的 text_delta 里，抓最后一段
+            # 存进 usage.partial —— Router 重派时能从断点续，而不是从零再来。
+            try:
+                from .reliability import PARTIAL_KEY, get_setting
+
+                async with SessionLocal() as s:
+                    if str(await get_setting(s, PARTIAL_KEY, "on")) == "on":
+                        rows = (
+                            await s.execute(
+                                select(RunEvent.payload)
+                                .where(RunEvent.run_id == run_id, RunEvent.type == "text_delta")
+                                .order_by(RunEvent.seq)
+                            )
+                        ).scalars()
+                        full = "".join(
+                            str((p or {}).get("delta") or "") for p in rows if p
+                        ).strip()
+                        if full:
+                            row = await s.get(Run, run_id)
+                            if row is not None:
+                                usage = dict(row.usage or {})
+                                usage["partial"] = full[-4000:]
+                                usage["partial_note"] = (
+                                    f"超时回收：正文最后 {len(full)} 字符的尾部（断点）"
+                                )
+                                row.usage = usage
+                                await s.commit()
+            except Exception:  # noqa: BLE001 —— 回收失败不影响终态落库
+                logger.debug("partial 回收失败 run=%s", run_id, exc_info=True)
         except Exception as exc:  # pragma: no cover
             logger.exception("Run %s 恢复失败", run_id)
             status, error = "error", f"{type(exc).__name__}: {exc}"
@@ -1528,6 +1588,17 @@ class RunService:
         except Exception:  # noqa: BLE001 —— 心跳失败不影响执行
             logger.debug("lease 续约失败 run=%s", run_id, exc_info=True)
 
+    async def _stop_loss_check(self, run_id: str, payload: dict) -> None:
+        """可靠性护栏判定（独立会话，失败不影响执行主链路）。"""
+        try:
+            from ..stop_loss import on_tool_exec_end
+
+            async with SessionLocal() as s:
+                await on_tool_exec_end(s, run_id, payload)
+                await s.commit()
+        except Exception:  # noqa: BLE001 —— 护栏是配菜
+            logger.debug("止损判定失败 run=%s", run_id, exc_info=True)
+
     async def _persist_event(self, run_id: str, ev: UnifiedEvent) -> None:
         # ── lease 心跳：worker 树里每次工具动作都续约 ─────────────────
         # （事件驱动巡查：watcher 睡到 lease 到期，动作频繁就永远不吵）
@@ -1536,6 +1607,11 @@ class RunService:
                 asyncio.ensure_future(self._touch_lease(run_id))
             except Exception:  # noqa: BLE001
                 logger.debug("lease 续约调度失败 run=%s", run_id, exc_info=True)
+            # ── 可靠性护栏：失败计数 → 止损提示/死路上报（可配置，读 reliability 档）──
+            try:
+                asyncio.ensure_future(self._stop_loss_check(run_id, dict(ev.payload or {})))
+            except Exception:  # noqa: BLE001
+                logger.debug("止损检查调度失败 run=%s", run_id, exc_info=True)
         # ── worker 树的事件自动转报（事件驱动管理的一半来源）──────────
         # 这里是所有运行时事件的必经点：被派出来的执行报错/结束时，
         # 平台代替 worker 转投给 Router（worker 模型无感、不耗它的轮次）。
