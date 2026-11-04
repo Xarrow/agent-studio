@@ -152,7 +152,15 @@ async def _web_search(query: str, max_results: int = 8) -> str:
     out = await _search_bing(query)
     if out is not None:
         return out
-    return "✗ 搜索不可达（DuckDuckGo 与 Bing 都失败了）—— 服务器可能无法直连外网搜索"
+    return (
+        "✗ 搜索不可达：DuckDuckGo 与 Bing 都连不上 —— 本机出海直连不通（已实测确认），"
+        "这不是查询词的问题，换关键词、换引擎、用 curl 重试都一样会失败。\n"
+        "正确的做法（选一个，别在搜索上烧超过 2 次调用）：\n"
+        "1. 改用已知域名直接 fetch（官方文档/GitHub 链接，不经过搜索引擎）；\n"
+        "2. 基于你已有的知识作答，并明确标注「未能联网核实」；\n"
+        "3. 被派活时：worker_report(kind=blocked) 上报「搜索通道不可用，"
+        "需要提供入口 URL 或改派有网络的执行」。"
+    )
 
 
 async def _search_ddg(query: str, max_results: int = 8) -> str | None:

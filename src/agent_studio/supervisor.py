@@ -218,7 +218,23 @@ async def start_worker(
     timeout_s: int | None = None,
     parent_run_id: str | None = None,
 ) -> Run:
-    """给这张票开一次 worker 执行（独立会话、独立上下文）。"""
+    """给这张票开一次 worker 执行（独立会话、独立上下文）。
+
+    任务文本会附上「环境事实 + 止损护栏」：worker 是新开的上下文，不知道
+    这台机器的网络状况 —— 实测教训是 worker 拿着不可达的搜索工具连刷 10+
+    次 curl 手搓搜索引擎（全是反爬验证码），烧掉整个执行预算。环境事实
+    放在任务末尾，模型第一步就能看到，不用自己踩一遍。
+    """
+    task = (
+        f"{task.rstrip()}\n\n"
+        "【环境事实（平台附加，先读完再动手）】\n"
+        "- 本机出海直连不通：web_search/fetch 对境外站点（duckduckgo/bing/google）都会失败，"
+        "curl 手搓搜索引擎只会拿到反爬验证码 —— 别在检索通道上反复重试。\n"
+        "- 国内可达：GitHub API（api.github.com）、gitee、各官方文档站的直连要看站点。"
+        "检索类任务优先「已知域名直接 fetch」，搜索不可用时基于已有知识作答并标注未核实。\n"
+        "- 止损红线：同一 URL 失败 2 次就放弃；连续 5 次调用没有新信息就停下来 —— "
+        "用 worker_report(blocked) 上报卡点，或基于现有材料交差。半个答案好过无限查询。"
+    )
     chat = await worker_session(session, ticket, agent)
     definition = AgentDefinition.model_validate(agent.definition)
     if timeout_s:
