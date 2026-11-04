@@ -44,7 +44,7 @@ async def _seed_agents() -> None:
                 await s.execute(select(Agent).where(Agent.name == name))
             ).scalars().first()
             if exists is None:
-                s.add(Agent(slug=name, name=name, description=desc, definition={"tools": ["fetch"]}))
+                s.add(Agent(slug=name, name=name, description=desc, definition={"name": name, "runtime": "agentscope", "tools": []}))
         await s.commit()
 
 

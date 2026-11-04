@@ -390,6 +390,57 @@ WORKER_STEER_SCHEMA: dict[str, Any] = {
     },
     "required": ["worker", "message"],
 }
+WORKER_REPORT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "kind": {
+            "type": "string",
+            "enum": ["progress", "blocked", "done", "failed"],
+            "description": (
+                "事件类型（枚举）：progress=阶段性进展；blocked=卡住了需要派活方决策"
+                "（链接失效/权限不够/多种方案选哪个）；done=提前完工；failed=干砸了"
+            ),
+        },
+        "text": {"type": "string", "description": "一句话说清现状。blocked 必须带上卡在哪、需要什么决定"},
+        "progress": {"type": "integer", "description": "进度 0-100（可选，估算即可）"},
+    },
+    "required": ["kind", "text"],
+}
+
+
+async def _worker_report(kind: str, text: str, progress: int | None = None) -> str:
+    """worker 主动上报：把进展/卡点/结论推给派活方（Router）。
+
+    谁能用：被 dispatch 派出来的执行（ctx 里有 parent_run_id）。
+    收件人是平台注入的 —— worker 不需要也不允许指定发给谁。
+    """
+    from . import worker_events as event_router
+
+    ctx = current_run_ctx()
+    run_id = str(ctx.get("run_id") or "")
+    parent = str(ctx.get("parent_run_id") or "")
+    root = str(ctx.get("root_run_id") or run_id)
+    if not run_id or not parent:
+        return (
+            "上报失败：worker_report 只能被【被派活的执行】调用 —— "
+            "独立对话/试跑没有派活方，说了也没人收。"
+        )
+    if not (text or "").strip():
+        return "上报失败：text 不能为空 —— 一句话说清现状。"
+
+    r = await event_router.emit_worker_event(
+        worker_run_id=run_id,
+        parent_run_id=parent,
+        root_run_id=root,
+        kind=(kind or "progress").strip(),
+        text=(text or "").strip()[:2000],
+        progress=progress if isinstance(progress, int) and 0 <= progress <= 100 else None,
+        source="report",
+    )
+    if not r.get("ok"):
+        return f"上报失败：{r}"
+    return f"已上报【{kind}】{r.get('note', '')}"
+
 
 AGENT_OPS_TOOLS: dict[str, dict[str, Any]] = {
     "list_agents": {
@@ -440,5 +491,15 @@ AGENT_OPS_TOOLS: dict[str, dict[str, Any]] = {
         ),
         "schema": WORKER_STEER_SCHEMA,
         "flags": {"read_only": False, "concurrency_safe": False, "dangerous": False, "native": True},
+    },
+    "worker_report": {
+        "fn": _worker_report,
+        "description": (
+            "【被派活时用】向派活方上报：阶段进展(progress)、卡住了需要决策(blocked)、"
+            "提前完工(done)、失败(failed)。Router 实时收到，卡住的事会立刻被处理 —— "
+            "比闷头硬扛或默默失败都好。独立对话里调它没有意义。"
+        ),
+        "schema": WORKER_REPORT_SCHEMA,
+        "flags": {"read_only": False, "concurrency_safe": True, "dangerous": False, "native": True},
     },
 }

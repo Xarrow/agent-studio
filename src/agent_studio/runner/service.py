@@ -760,6 +760,10 @@ class RunService:
                     orchestration_id=run.orchestration_id,
                     depth=_depth,
                     origin=run.origin,
+                    # 树身份：worker_report 上报时靠它找到收件人（父执行），
+                    # 模型填不了也伪装不了 —— 收件人由平台注入，不是参数
+                    parent_run_id=str(run.parent_run_id or ""),
+                    root_run_id=str(run.root_run_id or run.id),
                     # 只有定时任务是"确实没人看"：它自己发起、跑完才通知。
                     # 其余（对话/试跑/接口调试/origin 为空的旧数据）都当有人在 ——
                     # 否则手动发起的一次运行里，连 `rm -rf ./build` 都会被判成无人值守。
@@ -790,6 +794,9 @@ class RunService:
                     workspace=str(work_dir),
                     session_id=str(run.session_id or ""),
                     origin=run.origin,
+                    # 整体覆盖所以再补一次：worker_report 的收件人（见上面第一处）
+                    parent_run_id=str(run.parent_run_id or ""),
+                    root_run_id=str(run.root_run_id or run.id),
                     interactive=(run.origin != "schedule"),
                 )
                 run_input = _with_work_dir_hint(run_input, work_dir)
@@ -1343,6 +1350,8 @@ class RunService:
                 workspace=str(_resume_work_dir),
                 session_id=str(_resume_session_id or ""),
                 origin=run.origin,
+                parent_run_id=str(run.parent_run_id or ""),
+                root_run_id=str(run.root_run_id or run.id),
                 # 能走到续跑这一步，说明刚才就有人在点「允许」
                 interactive=True,
             )
@@ -1504,6 +1513,17 @@ class RunService:
 
     # ------------------------------------------------------------------ #
     async def _persist_event(self, run_id: str, ev: UnifiedEvent) -> None:
+        # ── worker 树的事件自动转报（事件驱动管理的一半来源）──────────
+        # 这里是所有运行时事件的必经点：被派出来的执行报错/结束时，
+        # 平台代替 worker 转投给 Router（worker 模型无感、不耗它的轮次）。
+        # 转报是后台任务：绝不阻塞事件落库主链路。
+        if ev.type in ("error", "run_end") and run_id.startswith("run_"):
+            try:
+                from .worker_events import _maybe_forward_platform_event
+
+                asyncio.ensure_future(_maybe_forward_platform_event(run_id, ev))
+            except Exception:  # noqa: BLE001 —— 观测是配菜，执行是主菜
+                logger.debug("worker 事件转报调度失败 run=%s", run_id, exc_info=True)
         async with SessionLocal() as session:
             session.add(
                 RunEvent(

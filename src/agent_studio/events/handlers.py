@@ -30,6 +30,30 @@ _TITLES = {
 }
 
 
+@register("worker.report")
+async def _worker_report(session: AsyncSession, ev: Event) -> None:
+    """worker 上报 → 投递给派活方（Router）。
+
+    投递动作在 worker_events.deliver_to_router（steer 直注 / 唤醒轮 / 留账）。
+    结果写回 payload：界面上能看到每条上报「走的是哪条路、到没到」。
+    handler 抛异常会走账本重试（lease 回收后再投）——投递失败不丢事件。
+    """
+    from .. import worker_events
+
+    payload = dict(ev.payload or {})
+    result = await worker_events.deliver_to_router(payload)
+    payload["delivery"] = result
+    payload["surfaced"] = result.get("route") in ("steer", "wakeup")
+    ev.payload = payload
+    ev.status = "done"
+    ev.ended_at = now_ms()
+    await session.commit()
+    logger.info(
+        "worker 上报已投递：%s → %s（%s）",
+        payload.get("agent_name", "?"), result.get("route"), result.get("note", "")[:60],
+    )
+
+
 @register("fanout.blocked")
 async def _fanout_blocked(session: AsyncSession, ev: Event) -> None:
     """一次分派被护栏拦下 → 落一条待办（含"下一步怎么办"）。
