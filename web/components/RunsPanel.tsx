@@ -921,6 +921,26 @@ export function RunsPanel() {
                   </label>
                   <label
                     className="flex items-center gap-1.5"
+                    title="同一工具连续失败这么多次，平台直接中止执行（不等 Router、不再给模型尝试的机会；中止前回收已产出的正文片段供重派续跑）"
+                  >
+                    硬停
+                    <select
+                      className="input input-inline h-[32px] max-md:h-[44px]"
+                      value={guard.reliability?.hard_stop.value ?? 5}
+                      disabled={guardBusy}
+                      onChange={(e) =>
+                        void saveGuard("reliability", { hard_stop: Number(e.target.value) })
+                      }
+                    >
+                      {(guard.reliability?.hard_stop.choices ?? [0, 3, 5, 8]).map((v) => (
+                        <option key={v} value={v}>
+                          {v === 0 ? "关" : `连败 ${v} 次`}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label
+                    className="flex items-center gap-1.5"
                     title="连续多少次工具调用全部失败就判定为死路，自动上报 blocked 唤醒 Router"
                   >
                     死路

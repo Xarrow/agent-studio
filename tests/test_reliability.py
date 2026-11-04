@@ -106,3 +106,59 @@ async def test_护栏全关零触发(session: AsyncSession, monkeypatch):
     for _ in range(6):
         await on_tool_exec_end(s, "run_w2", {"tool_call_name": "fetch", "state": "error", "error": "x"})
     assert not fired
+
+
+async def test_硬停护栏_连败即中止(session: AsyncSession, monkeypatch):
+    """连败到 hard_stop 档位：平台直接 abort（不再排提示），并上报 failed 事件。"""
+    from agent_studio.models import now_ms
+
+    await set_reliability(session, {"stop_loss": 0, "dead_end": 0, "hard_stop": 3})
+    s = session
+    s.add(_mk_run("run_w3"))
+    s.add(Run(id="run_parent3", agent_id="ag_x", agent_version=1, runtime="agentscope",
+              status="running", input={}, started_at=now_ms(), origin="chat"))
+    await s.commit()
+
+    aborted: list[str] = []
+
+    class FakeRunService:
+        async def abort(self, run_id: str) -> bool:
+            aborted.append(run_id)
+            return True
+
+    import agent_studio.runner.service as svc_mod
+
+    monkeypatch.setattr(svc_mod, "run_service", FakeRunService())
+    emitted: list[dict] = []
+    import agent_studio.worker_events as we_mod
+
+    async def fake_emit(**kw):
+        emitted.append(kw)
+        return {}
+
+    monkeypatch.setattr(we_mod, "emit_worker_event", fake_emit)
+
+    fail = {"tool_call_name": "fetch", "state": "error", "error": "boom"}
+    await on_tool_exec_end(s, "run_w3", fail)
+    await on_tool_exec_end(s, "run_w3", fail)
+    assert not aborted  # 2 连败 < 3：只计数，不打断
+
+    await on_tool_exec_end(s, "run_w3", fail)
+    assert aborted == ["run_w3"]  # 第 3 次连败 → 立即中止
+    row = await s.get(Run, "run_w3")
+    assert row.usage.get("hard_stop_reason")
+    assert len(emitted) == 1 and emitted[0]["kind"] == "failed"
+
+    # 计数已清零，再来失败不再触发（run 已终态，引擎也会跳过）
+    await on_tool_exec_end(s, "run_w3", fail)
+    assert len(aborted) == 1
+
+    # hard_stop=0 关掉：不打断
+    await set_reliability(session, {"hard_stop": 0})
+    s2 = session
+    s2.add(_mk_run("run_w4"))
+    await s2.commit()
+    monkeypatch.setattr(svc_mod, "run_service", FakeRunService())
+    for _ in range(6):
+        await on_tool_exec_end(s2, "run_w4", fail)
+    assert aborted == ["run_w3"]

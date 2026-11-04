@@ -112,9 +112,43 @@ class Dispatcher:
         task = self._tasks.get(run_id)
         if task is not None and not task.done():
             task.cancel()
+            self._abort_watchdog(run_id, task)
             return True
         # 排队中（还没被取走）也要能取消：从队列里摘掉
         return self._queue.pop(run_id, None) is not None
+
+    def _abort_watchdog(self, run_id: str, task: "asyncio.Task") -> None:
+        """cancel 后 8 秒还没终态 → 直接落库 aborted。
+
+        为什么要有：cancel 打进 AgentScope 内部（工具执行循环）时可能被吞，
+        run 会卡在 running 永远不出终态 —— 界面停不掉、票也结不了（实测踩到，
+        e2e 硬停护栏触发后 run 卡 running 3 分钟）。cancel 只是"请求"，
+        落终态才是"完成"，watchdog 保证完成一定发生。
+        """
+        import asyncio as _asyncio
+
+        async def _watch():
+            await _asyncio.sleep(8)
+            if task.done():
+                return
+            from .models import Run, now_ms
+
+            from .db import SessionLocal
+
+            try:
+                async with SessionLocal() as s:
+                    row = await s.get(Run, run_id)
+                    if row is not None and row.status in ("pending", "running"):
+                        row.status = "aborted"
+                        row.error = row.error or "已中止（cancel 未在时限内生效，平台直接落终态）"
+                        row.ended_at = now_ms()
+                        row.pending_hitl = None
+                        await s.commit()
+                        logger.warning("abort watchdog：cancel 未生效，强制落终态 run=%s", run_id)
+            except Exception:  # noqa: BLE001
+                logger.debug("abort watchdog 失败 run=%s", run_id, exc_info=True)
+
+        _asyncio.ensure_future(_watch())
 
     def is_running(self, run_id: str) -> bool:
         task = self._tasks.get(run_id)

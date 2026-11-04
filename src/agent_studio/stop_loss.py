@@ -115,12 +115,13 @@ async def flush_pending_note(session, run_id: str) -> None:
 
 async def on_tool_exec_end(session: AsyncSession, run_id: str, payload: dict) -> None:
     """工具结束后判一次：要不要提示、要不要上报死路。**调用方负责 commit**。"""
-    from .reliability import DEAD_END_KEY, STOP_LOSS_KEY, get_setting
+    from .reliability import DEAD_END_KEY, HARD_STOP_KEY, STOP_LOSS_KEY, get_setting
 
     stop_loss = int(await get_setting(session, STOP_LOSS_KEY, 3) or 0)
     dead_end = int(await get_setting(session, DEAD_END_KEY, 0) or 0)
-    if not stop_loss and not dead_end:
-        return  # 两档全关：零开销
+    hard_stop = int(await get_setting(session, HARD_STOP_KEY, 5) or 0)
+    if not stop_loss and not dead_end and not hard_stop:
+        return  # 全关：零开销
 
     row = await session.get(Run, run_id)
     if row is None or not row.parent_run_id:
@@ -145,6 +146,38 @@ async def on_tool_exec_end(session: AsyncSession, run_id: str, payload: dict) ->
     stats[name] = per
     usage["tool_stats"] = stats
     row.usage = usage
+
+    # ── 硬停：连败 N 次，平台直接中止执行（不等 Router、不给模型再烧的机会）──
+    # 与提示档（stop_loss）的分工：3 次先劝（可能只是换个 URL 就好），5 次硬停 ——
+    # 熔断的价值在「立即」：连败到 5 次还在跑的 worker，剩下的只有 token 消耗。
+    if hard_stop and failed and per["streak"] >= hard_stop:
+        usage["hard_stop_reason"] = f"{name} 连续失败 {per['streak']} 次: {per['last_err']}"[:300]
+        row.usage = usage
+        await session.commit()  # 先落 reason 再 abort —— CancelledError 处理器要读它做 partial 回收
+        try:
+            from .runner.service import run_service
+
+            ok = await run_service.abort(run_id)
+            logger.info("硬停护栏触发 run=%s abort=%s（%s）", run_id, ok, usage["hard_stop_reason"])
+        except Exception:  # noqa: BLE001
+            logger.warning("硬停护栏 abort 失败 run=%s", run_id, exc_info=True)
+        try:
+            from .worker_events import emit_worker_event
+
+            await emit_worker_event(
+                worker_run_id=run_id,
+                parent_run_id=str(row.parent_run_id),
+                root_run_id=str(row.root_run_id or ""),
+                kind="failed",
+                text=f"🛑 硬停护栏：{name} 连续失败 {per['streak']} 次（{per['last_err']}），平台已中止执行（源=stop_loss 引擎）",
+                source="guardrail",
+            )
+        except Exception:  # noqa: BLE001
+            logger.debug("硬停上报失败 run=%s", run_id, exc_info=True)
+        stats["_streak_all"] = 0
+        stats[name] = {"streak": 0, "last_err": per["last_err"]}
+        row.usage = usage
+        return  # 已中止，不再排提示
 
     notes: list[str] = []
     if stop_loss and failed and per["streak"] >= stop_loss:

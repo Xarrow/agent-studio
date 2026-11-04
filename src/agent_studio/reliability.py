@@ -33,12 +33,17 @@ SOFT_BUDGET_CHOICES: tuple[int, ...] = (0, 60, 80, 90)
 PARTIAL_KEY = "reliability_partial_recovery"
 PARTIAL_CHOICES: tuple[str, ...] = ("off", "on")
 
+#: 同一工具连续失败几次后平台直接中止执行（0 = 关；先于它的是 stop_loss 的提示档）
+HARD_STOP_KEY = "reliability_hard_stop_fails"
+HARD_STOP_CHOICES: tuple[int, ...] = (0, 3, 5, 8)
+
 
 DEFAULTS: dict[str, Any] = {
     STOP_LOSS_KEY: 3,          # 连续 3 次同名工具失败 → 注入止损提示
     DEAD_END_KEY: 0,           # 默认关：死路判定保守一些，先只开提示
     SOFT_BUDGET_PCT_KEY: 80,   # 默认开：用到 80% 提示收尾
     PARTIAL_KEY: "on",         # 默认开：超时不再全损
+    HARD_STOP_KEY: 5,          # 连败 5 次 → 平台直接中止（先提示劝、再硬停）
 }
 
 
@@ -62,6 +67,10 @@ async def get_reliability(session: AsyncSession) -> dict[str, Any]:
             "value": str(raw[PARTIAL_KEY]),
             "choices": list(PARTIAL_CHOICES),
         },
+        "hard_stop": {
+            "value": int(raw[HARD_STOP_KEY]),
+            "choices": list(HARD_STOP_CHOICES),
+        },
     }
 
 
@@ -72,12 +81,14 @@ async def set_reliability(session: AsyncSession, patch: dict[str, int | str]) ->
         "dead_end": DEAD_END_CHOICES,
         "soft_budget": SOFT_BUDGET_CHOICES,
         "partial": PARTIAL_CHOICES,
+        "hard_stop": HARD_STOP_CHOICES,
     }
     key_of = {
         "stop_loss": STOP_LOSS_KEY,
         "dead_end": DEAD_END_KEY,
         "soft_budget": SOFT_BUDGET_PCT_KEY,
         "partial": PARTIAL_KEY,
+        "hard_stop": HARD_STOP_KEY,
     }
     for name, val in patch.items():
         if name in allowed and val in allowed[name]:

@@ -983,7 +983,16 @@ class RunService:
                                 )
                             elif status == "ok" and finished_reason == "interrupted":
                                 _elapsed = time.monotonic() - _t0
-                                if timeout > 0 and _elapsed >= timeout - 1.0:
+                                # 硬停护栏触发的打断：interrupted 分支也要认领 ——
+                                # 否则护栏 abort 的 run 会顶着「用户中断」终态收场。
+                                _hard_stop_reason = str((run.usage or {}).get("hard_stop_reason") or "")
+                                if _hard_stop_reason:
+                                    status, error = (
+                                        "aborted",
+                                        f"硬停护栏触发：{_hard_stop_reason}"
+                                        "（可在「用量→护栏」调低/关闭硬停档）",
+                                    )
+                                elif timeout > 0 and _elapsed >= timeout - 1.0:
                                     status, error = (
                                         "error",
                                         f"执行超时：这一轮超过 {timeout} 秒上限被停止"
@@ -994,6 +1003,8 @@ class RunService:
                                 # 那句自动补的插话不是回答，别当 output 存下来/写进会话
                                 if compiled is not None:
                                     setattr(compiled, "last_output", None)
+                                if _hard_stop_reason:
+                                    await self._recover_partial(run_id, "硬停回收")
                             break
                         except asyncio.CancelledError:
                             raise
@@ -1064,6 +1075,15 @@ class RunService:
 
         except asyncio.CancelledError:
             status = "aborted"
+            # ── 硬停护栏的 partial 回收：中止也不全损 ──
+            # 只有护栏触发时才抓尾段；普通用户中断不需要。
+            try:
+                async with SessionLocal() as s:
+                    _row = await s.get(Run, run_id)
+                    if _row is not None and (_row.usage or {}).get("hard_stop_reason"):
+                        await self._recover_partial(run_id, "硬停回收")
+            except Exception:  # noqa: BLE001
+                logger.debug("硬停 partial 回收调度失败 run=%s", run_id, exc_info=True)
             if denied:
                 _what = "、".join(dict.fromkeys(denied))
                 _who = f" {_what} " if _what else "这一步"
@@ -1597,6 +1617,36 @@ class RunService:
                 await s.commit()
         except Exception:  # noqa: BLE001
             logger.debug("止损注入(延迟)失败 run=%s", run_id, exc_info=True)
+
+    @staticmethod
+    async def _recover_partial(run_id: str, note: str) -> None:
+        """把死前正文尾段抓进 usage.partial（超时/硬停共用）。失败不影响终态落库。"""
+        try:
+            from .reliability import PARTIAL_KEY, get_setting
+
+            async with SessionLocal() as s:
+                if str(await get_setting(s, PARTIAL_KEY, "on")) != "on":
+                    return
+                rows = (
+                    await s.execute(
+                        select(RunEvent.payload)
+                        .where(RunEvent.run_id == run_id, RunEvent.type == "text_delta")
+                        .order_by(RunEvent.seq)
+                    )
+                ).scalars()
+                full = "".join(str((p or {}).get("delta") or "") for p in rows if p).strip()
+                if not full:
+                    return
+                row = await s.get(Run, run_id)
+                if row is None:
+                    return
+                usage = dict(row.usage or {})
+                usage["partial"] = full[-4000:]
+                usage["partial_note"] = f"{note}：正文最后 {len(full)} 字符的尾部（断点，可重派续跑）"
+                row.usage = usage
+                await s.commit()
+        except Exception:  # noqa: BLE001 —— 回收失败不影响终态落库
+            logger.debug("partial 回收失败 run=%s", run_id, exc_info=True)
 
     async def _stop_loss_check(self, run_id: str, payload: dict) -> None:
         """可靠性护栏判定（独立会话，失败不影响执行主链路）。"""
