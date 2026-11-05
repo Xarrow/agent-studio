@@ -631,6 +631,26 @@ export const api = {
     }>(`/api/revisions?kind=${kind}&target_id=${targetId}${withPayload ? "&with_payload=true" : ""}`),
   /** 回到某一版（**新建一条记录，不改写历史**） */
   restoreRevision: (revId: string) => post<{ ok: boolean; version: number; restored_from: number }>(`/api/revisions/${revId}/restore`, {}),
+  /** 这一版相对「上一版 / 当前 / 指定版本」改了什么（字段级） */
+  revisionDiff: (revId: string, against: "prev" | "current" | string = "prev") =>
+    request<{
+      id: string;
+      version: number;
+      against: string;
+      against_label: string;
+      summary: string;
+      changes: {
+        path: string;
+        before?: unknown;
+        after?: unknown;
+        added?: string[];
+        removed?: string[];
+      }[];
+      payload: Record<string, unknown>;
+      base_payload: Record<string, unknown>;
+    }>(`/api/revisions/${revId}/diff?against=${encodeURIComponent(against)}`),
+  /** 删掉一条历史（当前配置在助手本身上，不受影响） */
+  deleteRevision: (revId: string) => del<{ ok: boolean; id: string }>(`/api/revisions/${revId}`),
 
   // ── 备份与迁移（数据带走）──────────────────────────────────────────────
   // ── 远程 Agent（A2A 注册治理）────────────────────────────────────────

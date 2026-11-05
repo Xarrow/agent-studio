@@ -97,6 +97,48 @@ def summarize(kind: str, old: dict[str, Any] | None, new: dict[str, Any]) -> str
 
 
 # --------------------------------------------------------------------------- #
+# 差异：字段级「旧 → 新」清单
+# --------------------------------------------------------------------------- #
+#: 不作为"改动"报告的关系字段（它们由 definition 里的 refs 表达，重复看是噪声）
+DIFF_SKIP_KEYS = {"tool_names", "skill_names"}
+
+
+def _walk(old: Any, new: Any, path: str, out: list[dict[str, Any]]) -> None:
+    if isinstance(old, dict) and isinstance(new, dict):
+        for key in sorted(set(old) | set(new)):
+            _walk(old.get(key), new.get(key), f"{path}.{key}" if path else key, out)
+        return
+    if old == new:
+        return
+    out.append({"path": path, "before": old, "after": new})
+
+
+def diff_payload(old: dict[str, Any] | None, new: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """两版快照之间**逐字段**的差异（纯函数）。
+
+    为什么不做文本 diff：快照是结构化的（名字 / 模型 / 工具 / 提示词各在固定位置），
+    字段级差异能直接说"哪一项从什么变成了什么"，用户不用去读一堆上下文行；
+    提示词那种长文本由界面自己再做行级对比。
+    """
+    out: list[dict[str, Any]] = []
+    o = {k: v for k, v in dict(old or {}).items() if k not in DIFF_SKIP_KEYS}
+    n = {k: v for k, v in dict(new or {}).items() if k not in DIFF_SKIP_KEYS}
+    _walk(o, n, "", out)
+    # 关系（工具 / Skill）单独算增删，比整块列表对比好读
+    for key in ("tool_names", "skill_names"):
+        before, after = set((old or {}).get(key) or []), set((new or {}).get(key) or [])
+        if before != after:
+            out.append({
+                "path": key,
+                "before": sorted(before),
+                "after": sorted(after),
+                "added": sorted(after - before),
+                "removed": sorted(before - after),
+            })
+    return out
+
+
+# --------------------------------------------------------------------------- #
 # 快照 / 列表 / 回滚
 # --------------------------------------------------------------------------- #
 async def _payload_of(session: AsyncSession, kind: str, target_id: str) -> dict[str, Any] | None:
@@ -269,3 +311,19 @@ async def backfill_initial(session: AsyncSession) -> int:
     if made:
         await session.commit()
     return made
+
+
+async def delete_revision(session: AsyncSession, rev_id: str) -> str:
+    """删掉一条历史快照。返回 ``kind``（给调用方回显）。
+
+    允许删任何一条，包括最新的那条 —— 最新版的内容本来就在助手行上，
+    快照只是"曾经的样子"；删掉它不会丢当前配置。删除后下一个快照从
+    剩下的最大值 +1 继续编号（不会重号）。
+    """
+    row = await session.get(Revision, rev_id)
+    if row is None:
+        raise LookupError("这个版本不存在（可能已被删除）")
+    kind = row.kind
+    await session.delete(row)
+    await session.flush()
+    return kind

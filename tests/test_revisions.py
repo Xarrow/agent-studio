@@ -138,3 +138,68 @@ async def test_workflow_revisions_capture_graph(client):
     graph = (await client.get(f"/api/workflows/{wid}")).json()["graph"]
     assert len(graph["nodes"]) == 1, "流程回滚没把图退回去"
     assert graph["nodes"][0]["agent_id"] == v1["nodes"][0]["agent_id"]
+
+
+# --------------------------------------------------------------------------- #
+# 3. 差异 / 删除（v2 补的两个能力）
+# --------------------------------------------------------------------------- #
+def test_diff_payload_字段级():
+    from agent_studio.revisions import diff_payload
+
+    old = agent_payload("甲", "旧提示词", model="deepseek-flash", tools=["fetch"])
+    old["tool_names"] = ["fetch"]
+    new = agent_payload("乙", "新提示词", model="deepseek-v4-pro", tools=["fetch", "Bash"])
+    new["tool_names"] = ["fetch", "Bash"]
+
+    rows = {r["path"]: r for r in diff_payload(old, new)}
+    assert rows["name"]["before"] == "甲" and rows["name"]["after"] == "乙"
+    assert rows["definition.system_prompt"]["after"] == "新提示词"
+    assert rows["definition.model.name"]["before"] == "deepseek-flash"
+    # 工具单独算增删，比整块列表对比好读
+    assert rows["tool_names"]["added"] == ["Bash"] and rows["tool_names"]["removed"] == []
+
+    # 只差一个字段时，差异里不该混进没变的字段
+    same = {r["path"] for r in diff_payload(old, {**old, "name": "丙"})}
+    assert same == {"name"}, same
+
+
+async def test_diff_接口_默认对比上一版(client):
+    name = uniq("差异助手")
+    aid = (await client.post("/api/agents", json=agent_payload(name, "第一版"))).json()["id"]
+    await client.put(f"/api/agents/{aid}", json=agent_payload(name, "第二版"))
+    items = (await client.get("/api/revisions", params={"kind": "agent", "target_id": aid})).json()["items"]
+    v2 = items[0]["id"]
+
+    d = (await client.get(f"/api/revisions/{v2}/diff")).json()
+    assert d["against_label"] == "v1"
+    assert any(c["path"] == "definition.system_prompt" for c in d["changes"])
+    assert d["summary"], "差异要有一句人话"
+
+    # 和「当前」比：v2 就是当前，应该没有差异
+    dc = (await client.get(f"/api/revisions/{v2}/diff", params={"against": "current"})).json()
+    assert dc["changes"] == []
+    # 首版没有上一版：不给更早的版本，也不报错
+    v1 = items[1]["id"]
+    d1 = (await client.get(f"/api/revisions/{v1}/diff")).json()
+    assert d1["against_label"] == "（没有更早的版本）"
+
+
+async def test_删除历史_不影响当前配置(client):
+    name = uniq("删除助手")
+    aid = (await client.post("/api/agents", json=agent_payload(name, "甲"))).json()["id"]
+    await client.put(f"/api/agents/{aid}", json=agent_payload(name, "乙"))
+    items = (await client.get("/api/revisions", params={"kind": "agent", "target_id": aid})).json()["items"]
+    assert [i["version"] for i in items] == [2, 1]
+
+    r = await client.delete(f"/api/revisions/{items[0]['id']}")
+    assert r.status_code == 200 and r.json()["ok"] is True
+
+    items = (await client.get("/api/revisions", params={"kind": "agent", "target_id": aid})).json()["items"]
+    assert [i["version"] for i in items] == [1], "删了没生效"
+    # 当前配置在助手行上，删历史不该动它
+    detail = (await client.get(f"/api/agents/{aid}")).json()
+    assert detail["definition"]["system_prompt"] == "乙"
+
+    # 再删一次 → 404（不存在了）
+    assert (await client.delete(f"/api/revisions/{items[0]['id']}")).status_code == 200
+    assert (await client.delete("/api/revisions/rev_gone")).status_code == 404

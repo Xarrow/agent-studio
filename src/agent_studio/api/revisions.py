@@ -16,11 +16,20 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_session
 from ..models import Revision
-from ..revisions import KINDS, list_revisions, restore
+from ..revisions import (
+    KINDS,
+    _payload_of,
+    delete_revision,
+    diff_payload,
+    list_revisions,
+    restore,
+    summarize,
+)
 
 router = APIRouter(prefix="/api/revisions", tags=["revisions"])
 
@@ -75,3 +84,82 @@ async def restore_revision(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     await session.commit()
     return {"ok": True, "kind": row.kind, "target_id": row.target_id, **info}
+
+
+@router.get("/{rev_id}", response_model=dict)
+async def read_revision(rev_id: str, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """单个版本（带完整快照，用于预览这一版长什么样）。"""
+    row = await session.get(Revision, rev_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "这个版本不存在（可能已被删除）")
+    return {**_to_read(row), "payload": row.payload or {}}
+
+
+@router.get("/{rev_id}/diff", response_model=dict)
+async def diff_revision(
+    rev_id: str,
+    against: str = Query(
+        "prev",
+        description="和谁比：prev=上一版（默认）/ current=当前状态 / rev_xxx=指定版本",
+    ),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """这一版相对「上一版 / 当前 / 指定版」改了什么。
+
+    「上一版」是默认口径：用户点开某条历史，想知道的是"这一版动了什么"。
+    """
+    row = await session.get(Revision, rev_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "这个版本不存在（可能已被删除）")
+
+    if against == "current":
+        base_payload = await _payload_of(session, row.kind, row.target_id) or {}
+        base_label = "当前状态"
+    elif against == "prev":
+        prev = (
+            await session.execute(
+                select(Revision)
+                .where(
+                    Revision.kind == row.kind,
+                    Revision.target_id == row.target_id,
+                    Revision.version < row.version,
+                )
+                .order_by(Revision.version.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        base_payload = dict(prev.payload or {}) if prev else {}
+        base_label = f"v{prev.version}" if prev else "（没有更早的版本）"
+    else:
+        base = await session.get(Revision, against)
+        if base is None or base.kind != row.kind or base.target_id != row.target_id:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "用来对比的版本不在同一个对象上")
+        base_payload = dict(base.payload or {})
+        base_label = f"v{base.version}"
+
+    target = dict(row.payload or {})
+    changes = diff_payload(base_payload, target)
+    return {
+        "id": row.id,
+        "version": row.version,
+        "against": against,
+        "against_label": base_label,
+        # 一句人话（与列表里的 label 同口径），差异清单给界面渲染成表格
+        "summary": summarize(row.kind, base_payload, target),
+        "changes": changes,
+        "payload": target,
+        "base_payload": base_payload,
+    }
+
+
+@router.delete("/{rev_id}", response_model=dict)
+async def delete_revision_endpoint(
+    rev_id: str, session: AsyncSession = Depends(get_session)
+) -> dict[str, Any]:
+    """删掉一条历史（当前配置不受影响 —— 它存在助手/流程本身上）。"""
+    try:
+        kind = await delete_revision(session, rev_id)
+    except LookupError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    await session.commit()
+    return {"ok": True, "id": rev_id, "kind": kind}
