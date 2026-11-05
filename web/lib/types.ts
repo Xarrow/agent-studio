@@ -826,6 +826,7 @@ export interface GuardrailsRead {
     soft_budget: { value: number; choices: number[] };
     partial: { value: string; choices: string[] };
     hard_stop: { value: number; choices: number[] };
+    review: { value: number; choices: number[] };
   };
 }
 

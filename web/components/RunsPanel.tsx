@@ -941,6 +941,26 @@ export function RunsPanel() {
                   </label>
                   <label
                     className="flex items-center gap-1.5"
+                    title="worker 跑着的时候，平台每隔这么久把它的实时画像送进 Router 会话判一次要不要纠偏（没有新动作不打扰）；0=关"
+                  >
+                    巡检
+                    <select
+                      className="input input-inline h-[32px] max-md:h-[44px]"
+                      value={guard.reliability?.review?.value ?? 180}
+                      disabled={guardBusy}
+                      onChange={(e) =>
+                        void saveGuard("reliability", { review: Number(e.target.value) })
+                      }
+                    >
+                      {(guard.reliability?.review?.choices ?? [0, 90, 180, 300]).map((v) => (
+                        <option key={v} value={v}>
+                          {v === 0 ? "关" : `${v}秒`}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label
+                    className="flex items-center gap-1.5"
                     title="连续多少次工具调用全部失败就判定为死路，自动上报 blocked 唤醒 Router"
                   >
                     死路

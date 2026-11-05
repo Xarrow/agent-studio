@@ -37,6 +37,12 @@ PARTIAL_CHOICES: tuple[str, ...] = ("off", "on")
 HARD_STOP_KEY = "reliability_hard_stop_fails"
 HARD_STOP_CHOICES: tuple[int, ...] = (0, 3, 5, 8)
 
+#: 巡检间隔：worker 跑着的时候，平台每隔多少秒把它的实时画像送给 Router 判一次
+#: （0 = 关）。这是「不断纠正」的节拍器 —— Router 一轮结束就没人盯着了，
+#: 光靠 worker 上报（出事才报）补不上"方向偏了但没报错"这种沉默跑偏。
+REVIEW_KEY = "reliability_review_interval_s"
+REVIEW_CHOICES: tuple[int, ...] = (0, 90, 180, 300)
+
 
 DEFAULTS: dict[str, Any] = {
     STOP_LOSS_KEY: 3,          # 连续 3 次同名工具失败 → 注入止损提示
@@ -44,6 +50,7 @@ DEFAULTS: dict[str, Any] = {
     SOFT_BUDGET_PCT_KEY: 80,   # 默认开：用到 80% 提示收尾
     PARTIAL_KEY: "on",         # 默认开：超时不再全损
     HARD_STOP_KEY: 5,          # 连败 5 次 → 平台直接中止（先提示劝、再硬停）
+    REVIEW_KEY: 180,           # 每 3 分钟送一次实时画像给 Router 判要不要纠偏
 }
 
 
@@ -71,6 +78,10 @@ async def get_reliability(session: AsyncSession) -> dict[str, Any]:
             "value": int(raw[HARD_STOP_KEY]),
             "choices": list(HARD_STOP_CHOICES),
         },
+        "review": {
+            "value": int(raw[REVIEW_KEY]),
+            "choices": list(REVIEW_CHOICES),
+        },
     }
 
 
@@ -82,6 +93,7 @@ async def set_reliability(session: AsyncSession, patch: dict[str, int | str]) ->
         "soft_budget": SOFT_BUDGET_CHOICES,
         "partial": PARTIAL_CHOICES,
         "hard_stop": HARD_STOP_CHOICES,
+        "review": REVIEW_CHOICES,
     }
     key_of = {
         "stop_loss": STOP_LOSS_KEY,
@@ -89,6 +101,7 @@ async def set_reliability(session: AsyncSession, patch: dict[str, int | str]) ->
         "soft_budget": SOFT_BUDGET_PCT_KEY,
         "partial": PARTIAL_KEY,
         "hard_stop": HARD_STOP_KEY,
+        "review": REVIEW_KEY,
     }
     for name, val in patch.items():
         if name in allowed and val in allowed[name]:

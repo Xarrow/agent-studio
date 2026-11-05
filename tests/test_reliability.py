@@ -162,3 +162,56 @@ async def test_硬停护栏_连败即中止(session: AsyncSession, monkeypatch):
     for _ in range(6):
         await on_tool_exec_end(s2, "run_w4", fail)
     assert aborted == ["run_w3"]
+
+
+async def test_巡检间隔档位(session: AsyncSession):
+    """巡检是「不断纠正」的节拍器：档位存 KV、可关、非法值忽略。"""
+    cfg = await get_reliability(session)
+    assert cfg["review"]["value"] == 180
+    assert cfg["review"]["choices"] == [0, 90, 180, 300]
+    await set_reliability(session, {"review": 999})
+    assert (await get_reliability(session))["review"]["value"] == 180  # 非法值忽略
+    await set_reliability(session, {"review": 90})
+    assert (await get_reliability(session))["review"]["value"] == 90
+    await set_reliability(session, {"review": 0})
+    assert (await get_reliability(session))["review"]["value"] == 0
+
+
+async def test_巡检画像_含动作与失败(session: AsyncSession, monkeypatch):
+    """_live_digest 要把「正卡在哪个工具 / 最近动作 / 失败数」拼成人能读的一行行。"""
+    from agent_studio.models import RunEvent, now_ms
+    from agent_studio.supervisor import _live_digest
+
+    s = session
+    s.add(Run(id="run_rv1", agent_id="ag_x", agent_version=1, runtime="agentscope",
+              status="running", input={}, started_at=now_ms() - 60_000, origin="worker",
+              parent_run_id="run_p"))
+    s.add_all([
+        RunEvent(run_id="run_rv1", seq=1, ts=now_ms(), type="tool_call_start",
+                 payload={"tool_call_id": "c1", "tool_call_name": "fetch"}),
+        RunEvent(run_id="run_rv1", seq=2, ts=now_ms(), type="tool_exec_end",
+                 payload={"tool_call_id": "c1", "state": "error"}),
+        RunEvent(run_id="run_rv1", seq=3, ts=now_ms(), type="tool_call_start",
+                 payload={"tool_call_id": "c2", "tool_call_name": "web_search"}),
+    ])
+    await s.commit()
+
+    # _live_digest 自己开会话 —— 把 SessionLocal 指到测试库
+    import agent_studio.db as db_mod
+
+    class _Ctx:
+        def __call__(self):
+            return _Ctx()
+
+        async def __aenter__(self):
+            return s
+
+        async def __aexit__(self, *a):
+            return False
+
+    monkeypatch.setattr(db_mod, "SessionLocal", _Ctx())
+    text, seq = await _live_digest("run_rv1")
+    assert seq == 3
+    assert "fetch✗" in text and "web_search" in text
+    assert "1 次工具失败" in text
+    assert "当前在：web_search" in text
