@@ -168,6 +168,14 @@ export function AgentSwitcher({
       <button
         data-tap
         onClick={() => onOpenChange(!open)}
+        onKeyDown={(e) => {
+          /* 空格不呼出面板。
+             `<button>` 的原生行为是"空格 = 点击"，而这块徽章在点开/关闭之后
+             焦点就留在它身上 —— 用户接着按空格（想滚动、或以为在输入框里打字）
+             面板就会自己弹出来（用户反馈："空格键会自动呼出 Agent 弹窗"）。
+             回车仍然打开，键盘可达性不受影响。 */
+          if (e.key === " ") e.preventDefault();
+        }}
         aria-haspopup="listbox"
         aria-expanded={open}
         title={current?.name ? `当前助手：${current.name}` : "选择助手"}

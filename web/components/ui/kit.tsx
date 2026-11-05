@@ -178,7 +178,11 @@ export function Row({
           tabIndex={0}
           onClick={onToggle}
           onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
+            /* 只认回车，**不认空格**。
+               空格是"滚动页面 / 继续输入"的本能键，行还能拿到焦点（点击后就留在它身上），
+               于是按空格会莫名其妙把行展开/弹出详情 —— 用户报的"空格自动呼出 Agent 弹窗"
+               就是这一类。回车仍然可达（键盘用户不受影响）。 */
+            if (e.key === "Enter") {
               e.preventDefault();
               onToggle();
             }

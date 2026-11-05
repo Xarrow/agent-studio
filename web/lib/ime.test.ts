@@ -140,3 +140,27 @@ test("组字状态：静默窗口过后，Enter 恢复成正常提交", async ()
   assert.equal(isImeEvent({ nativeEvent: { isComposing: false, keyCode: 13 } }), false);
   __resetImeState();
 });
+
+/* ─────────────── 源码扫描：空格不得当"激活键" ─────────────── */
+
+test("空格只能用来阻止默认，不得触发打开/展开", () => {
+  // 背景（用户反馈）：点开助手面板后焦点留在徽章上，用户按空格想滚动页面，
+  // 面板又自己弹出来。空格是"滚动 / 输入空格"，不是"确认"。
+  const allowed = new Set(["components/AgentSwitcher.tsx"]); // 唯一允许：空格 → preventDefault
+  const offenders: string[] = [];
+  for (const dir of SCAN_DIRS) {
+    for (const file of walk(join(WEB, dir))) {
+      const rel = file.slice(WEB.length + 1);
+      const src = readFileSync(file, "utf8");
+      const hits = src.match(/e\.key\s*===\s*" "/g) || [];
+      if (!hits.length) continue;
+      if (allowed.has(rel)) {
+        // 必须紧跟着 preventDefault（即"拦掉"，不是"当成提交"）
+        if (!/if \(e\.key === " "\) e\.preventDefault\(\);/.test(src)) offenders.push(rel);
+        continue;
+      }
+      offenders.push(`${rel}（${hits.length} 处）`);
+    }
+  }
+  assert.deepEqual(offenders, [], `空格被当成激活键了（按空格会弹窗/展开行）：\n${offenders.join("\n")}`);
+});

@@ -1297,7 +1297,9 @@ export function RunsPanel() {
                     data-run-id={it.id}
                     onClick={() => toggleRow(it)}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
+                      // 空格不展开：它在浏览器里是"滚动/输入"，行拿到焦点后按空格
+                      // 会突然把详情抽出来（与"空格呼出助手面板"同一类）。回车仍然可达。
+                      if (e.key === "Enter") {
                         e.preventDefault();
                         toggleRow(it);
                       }
