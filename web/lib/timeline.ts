@@ -43,6 +43,7 @@ export type Row = {
 
 export const KIND_LABEL: Record<string, string> = {
   llm: "请求",
+  worker: "分派",
   think: "思考",
   tool: "工具",
   hitl: "等你点",
@@ -51,6 +52,7 @@ export const KIND_LABEL: Record<string, string> = {
 
 export const KIND_COLOR: Record<string, string> = {
   llm: "var(--color-accent)",
+  worker: "var(--color-accent)",
   think: "var(--color-warn)",
   tool: "var(--color-ok)",
   hitl: "var(--color-err)",
@@ -111,6 +113,13 @@ export function digest(item: TimelineItem): string {
       if (a.args_preview) bits.push(String(a.args_preview).slice(0, 60));
       return bits.join(" · ");
     }
+    case "worker": {
+      const bits: string[] = [];
+      if (a.status && a.status !== "ok") bits.push(String(a.status));
+      if (a.tokens_in || a.tokens_out) bits.push(`${fmtTokens(a.tokens_in)} → ${fmtTokens(a.tokens_out)}`);
+      bits.push("点开看这一路的执行");
+      return bits.join(" · ");
+    }
     case "hitl": {
       const bits: string[] = [];
       if (a.decision) bits.push(`你选了${a.decision}`);
@@ -155,10 +164,23 @@ export function headline(data: TimelineData): string {
 }
 
 export function labelOf(item: TimelineItem): string {
+  const a = (item.attributes || {}) as Record<string, any>;
   if (item.kind === "llm") {
-    const model = (item.attributes || {}).model;
-    const iter = (item.attributes || {}).iteration;
-    return `第 ${iter || "?"} 轮${model ? ` · ${model}` : ""}`;
+    const iter = a.iteration;
+    return `第 ${iter || "?"} 轮${a.model ? ` · ${a.model}` : ""}`;
   }
+  // 派活类工具带上"派给谁"：时间和颜色都要能落到某个助手身上
+  if (item.kind === "worker") return a.agent || item.name;
+  if (a.agent) return `${item.name || "派活"} → ${a.agent}`;
   return item.name || KIND_LABEL[item.kind] || item.kind;
+}
+
+/** 时间线里出现过的被派助手（按首次出现顺序）—— 颜色按这个顺序发 */
+export function agentsIn(items: TimelineItem[]): string[] {
+  const seen: string[] = [];
+  for (const it of items) {
+    const agent = (it.attributes || {}).agent;
+    if (typeof agent === "string" && agent.trim() && !seen.includes(agent.trim())) seen.push(agent.trim());
+  }
+  return seen;
 }

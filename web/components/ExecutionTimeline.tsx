@@ -26,7 +26,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { api, fmt } from "@/lib/api";
 import { LlmCallPayloadView } from "@/components/LlmCallsPanel";
+import { agentColorMap, colorFor } from "@/lib/agent-colors";
 import {
+  agentsIn,
   KIND_COLOR,
   KIND_LABEL,
   digest,
@@ -74,6 +76,9 @@ export function ExecutionTimeline({
   }, [load]);
 
   const rows = useMemo(() => (data ? layout(data) : []), [data]);
+  // 编排查派多个助手时，每条派活按"派给谁"上色；顺序取首次出现 → 刷新不变色
+  const agents = useMemo(() => (data ? agentsIn(data.items) : []), [data]);
+  const agentColors = useMemo(() => agentColorMap(agents), [agents]);
 
   const toggle = async (item: TimelineItem) => {
     const next = openId === item.id ? null : item.id;
@@ -134,10 +139,27 @@ export function ExecutionTimeline({
         </div>
       )}
 
+      {agents.length > 1 && (
+        <div
+          className="mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px]"
+          style={{ color: "var(--color-muted)" }}
+        >
+          <span>按助手分色</span>
+          {agents.map((name) => (
+            <span key={name} className="flex items-center gap-1">
+              <span className="h-1.5 w-1.5 rounded-full" style={{ background: agentColors[name] }} />
+              <span className="max-w-[120px] truncate">{name}</span>
+            </span>
+          ))}
+        </div>
+      )}
+
       <div className="divide-y" style={{ borderColor: "var(--color-border)" }}>
         {rows.map(({ item, depth, left, width }) => {
           const expanded = openId === item.id;
-          const color = KIND_COLOR[item.kind] ?? "var(--color-muted)";
+          const agent = (item.attributes || {}).agent as string | undefined;
+          const baseColor = KIND_COLOR[item.kind] ?? "var(--color-muted)";
+          const color = colorFor(agentColors, agent, baseColor);
           const failed = (item.attributes || {}).status === "error";
           return (
             <div key={item.id} style={{ borderColor: "var(--color-border)" }}>
@@ -295,6 +317,7 @@ function ItemDetail({
         <Meta
           rows={[
             ["工具", item.name],
+            ...(a.agent ? [["派给", String(a.agent)] as [string, string]] : []),
             ["耗时", fmtSeconds(item.duration_ms)],
             ["结果", a.status === "error" ? "失败" : "成功"],
             ...(a.result_size ? [["体积", `${fmt.int(a.result_size)} 字节`] as [string, string]] : []),
@@ -320,6 +343,28 @@ function ItemDetail({
             </pre>
           )}
         </div>
+      </div>
+    );
+  }
+
+  if (item.kind === "worker") {
+    const childRun = a.run_id as string | undefined;
+    return (
+      <div className="space-y-2">
+        <Meta
+          rows={[
+            ["助手", String(a.agent || item.name)],
+            ["耗时", fmtSeconds(item.duration_ms)],
+            ["结果", a.status === "ok" ? "完成" : String(a.status || "—")],
+            ...(a.tokens_in || a.tokens_out
+              ? [["tokens", `${fmt.int(a.tokens_in as number)} → ${fmt.int(a.tokens_out as number)}`] as [string, string]]
+              : []),
+          ]}
+        />
+        {childRun ? (
+          // 这一路自己也有完整的请求/思考/工具 —— 就地展开，不用跳去另一条记录
+          <ExecutionTimeline runId={childRun} compact title="这一路的执行" />
+        ) : null}
       </div>
     );
   }

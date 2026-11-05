@@ -1989,7 +1989,28 @@ async def _timeline_bundle(session: AsyncSession, run_id: str) -> dict[str, Any]
     tool_rows = (
         await session.execute(select(ToolCall).where(ToolCall.run_id == run_id).order_by(ToolCall.id))
     ).scalars().all()
-    return {"run": run, "events": events, "llm_calls": llm_rows, "tool_calls": tool_rows}
+    # 派出去的子执行（编排者/派活）：它们才是"分派多个助手"里真正在跑的那几路
+    child_rows = (
+        await session.execute(
+            select(Run).where(Run.parent_run_id == run_id).order_by(Run.started_at)
+        )
+    ).scalars().all()
+    names: dict[str, str] = {}
+    if child_rows:
+        agent_ids = {c.agent_id for c in child_rows}
+        for agent in (
+            await session.execute(select(Agent).where(Agent.id.in_(agent_ids)))
+        ).scalars().all():
+            names[agent.id] = agent.name
+    for child in child_rows:
+        child.agent_name = names.get(child.agent_id)  # 供 timeline 上色/命名
+    return {
+        "run": run,
+        "events": events,
+        "llm_calls": llm_rows,
+        "tool_calls": tool_rows,
+        "children": child_rows,
+    }
 
 
 @router.get("/{run_id}/timeline", response_model=dict)
@@ -2010,6 +2031,7 @@ async def get_timeline(
         events=bundle["events"],
         llm_calls=bundle["llm_calls"],
         tool_calls=bundle["tool_calls"],
+        children=bundle["children"],
     )
     data["agent_name"] = agent.name if agent else None
     return data
@@ -2031,6 +2053,7 @@ async def get_timeline_text(
         events=bundle["events"],
         llm_calls=bundle["llm_calls"],
         tool_calls=bundle["tool_calls"],
+        children=bundle["children"],
     )
     item = next((i for i in data["items"] if i["id"] == item_id), None)
     if item is None:

@@ -8,8 +8,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import {
-  depthOf,
+import { agentsIn, depthOf,
   digest,
   fmtSeconds,
   fmtTokens,
@@ -105,4 +104,17 @@ test("轮次标题带模型名", () => {
     "第 3 轮 · deepseek-v4-pro",
   );
   assert.equal(labelOf(item({ kind: "tool", name: "fetch" })), "fetch");
+});
+
+test("派活行带上目标助手，多个助手按出现顺序列出", () => {
+  const items = [
+    item({ id: "t0" }),
+    item({ id: "t1", kind: "tool", name: "dispatch", attributes: { agent: "简明助手" } }),
+    item({ id: "t2", kind: "tool", name: "dispatch", attributes: { agent: "Hermes 对齐助手" } }),
+    item({ id: "t3", kind: "tool", name: "dispatch", attributes: { agent: "简明助手" } }),
+    item({ id: "t4", kind: "tool", name: "fetch" }),
+  ];
+  assert.equal(labelOf(items[1]), "dispatch → 简明助手");
+  assert.equal(labelOf(items[4]), "fetch");
+  assert.deepEqual(agentsIn(items), ["简明助手", "Hermes 对齐助手"]);
 });

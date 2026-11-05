@@ -57,6 +57,25 @@ def _hitl_tool(payload: dict[str, Any]) -> str:
     return "操作"
 
 
+#: 派活类工具：这些调用「派给谁」决定了它在时间线上该是什么颜色
+DISPATCH_TOOLS = {"dispatch", "fork_agent", "fork", "worker_steer", "worker_status", "worker_stop", "call_agent"}
+
+
+def _target_agent(name: str, args: Any) -> str | None:
+    """从参数里认出「这次派给了谁」。
+
+    编排者分派多个助手时，界面上如果所有 dispatch 一个颜色，用户根本分不清
+    哪一段是谁在跑——颜色必须跟着**被派的那个助手**走。
+    """
+    if not isinstance(args, dict):
+        return None
+    for key in ("agent", "agent_name", "target", "target_agent", "worker", "worker_name", "remote_agent"):
+        value = args.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
 def _tool_key(payload: dict[str, Any]) -> str:
     key = _first(payload, "tool_call_id", "call_id", "tool_call")
     if isinstance(key, dict):
@@ -65,7 +84,10 @@ def _tool_key(payload: dict[str, Any]) -> str:
 
 
 class _Builder:
-    def __init__(self, run: Any, llm_calls: list[Any], tool_calls: list[Any]) -> None:
+    def __init__(
+        self, run: Any, llm_calls: list[Any], tool_calls: list[Any], children: list[Any] | None = None
+    ) -> None:
+        self.children = list(children or [])
         self.run = run
         self.llm_calls = list(llm_calls)
         self.tool_calls = list(tool_calls)
@@ -192,12 +214,16 @@ class _Builder:
         key = _tool_key(p) or f"#{len(self._tools)}"
         name = _first(p, "tool_name", "tool_call_name", "name") or "工具"
         rec = next((t for t in self.tool_calls if (t.call_id or "") == key), None)
+        args = getattr(rec, "args", None) if rec else None
+        target = _target_agent(str(name), args) if str(name).lower() in DISPATCH_TOOLS else None
         item = self._add(
             "tool", str(name), ts, self._turn_id(),
             call_id=key,
             tool_call_id=getattr(rec, "id", None) if rec else None,
-            args_preview=_preview(getattr(rec, "args", None) if rec else None),
+            args_preview=_preview(args),
             status=getattr(rec, "status", None) if rec else None,
+            # 派给谁 —— 前端按它给这条上色（同一个 helper 的多次派活同色）
+            agent=target,
         )
         item["_seq_from"] = None
         self._tools[key] = item
@@ -263,6 +289,40 @@ class _Builder:
         self._close(self._hitl, ts, decision="未答复")
         self._hitl = None
 
+    def add_worker_runs(self) -> None:
+        """把派出去的子执行也画成条。
+
+        只有 ``dispatch`` 那一行 33ms 是看不出"派出去之后谁在跑、跑多久"的 ——
+        编排者真正的耗时都在子执行里。子执行按**助手**上色，几路并行时
+        颜色叠在一起就是"谁和谁同时在跑"。
+        """
+        for child in self.children:
+            started = int(getattr(child, "started_at", 0) or 0)
+            if not started:
+                continue
+            agent = str(getattr(child, "agent_name", "") or getattr(child, "agent_id", "") or "子执行")
+            # 挂到它开始时的那一轮下面（找不到就挂在最近的一轮）
+            parent = None
+            for it in self.items:
+                if it["kind"] == "llm" and it["started_at"] <= started:
+                    parent = it["id"]
+            item = {
+                "id": f"w{getattr(child, 'id', len(self.items))}",
+                "kind": "worker",
+                "name": agent,
+                "started_at": started,
+                "ended_at": getattr(child, "ended_at", None),
+                "parent_id": parent,
+                "attributes": {
+                    "agent": agent,
+                    "run_id": getattr(child, "id", None),
+                    "status": getattr(child, "status", None),
+                    "tokens_in": (getattr(child, "usage", None) or {}).get("tokens_in"),
+                    "tokens_out": (getattr(child, "usage", None) or {}).get("tokens_out"),
+                },
+            }
+            self.items.append(item)
+
     def result(self, *, end_ts: int | None = None) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = list(self.items)
         if end_ts:
@@ -284,11 +344,13 @@ def build_timeline(
     events: Iterable[Any],
     llm_calls: list[Any] | None = None,
     tool_calls: list[Any] | None = None,
+    children: list[Any] | None = None,
 ) -> dict[str, Any]:
     """事件流 → 时间线条目（含总时长与最慢项）。"""
-    builder = _Builder(run, llm_calls or [], tool_calls or [])
+    builder = _Builder(run, llm_calls or [], tool_calls or [], children or [])
     for ev in events:
         builder.on(ev)
+    builder.add_worker_runs()
     items = builder.result(end_ts=int(getattr(run, "ended_at", 0) or 0) or None)
 
     starts: list[int] = [int(i["started_at"]) for i in items]

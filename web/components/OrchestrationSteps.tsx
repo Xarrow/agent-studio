@@ -29,6 +29,7 @@ import Markdown from "@/components/Markdown";
 import { HitlPrompt } from "@/components/HitlPrompt";
 import { api } from "@/lib/api";
 import type { OrchestrationDetail, OrchestrationStepRead } from "@/lib/types";
+import { agentColorMap } from "@/lib/agent-colors";
 
 const STATUS_TEXT: Record<string, string> = {
   pending: "待跑",
@@ -161,6 +162,9 @@ export function OrchestrationSteps({
     [onRefresh],
   );
 
+  // 同一个助手始终同色：并行/串行、重跑之后都保持一致（按首次出现顺序发色）
+  const agentColors = agentColorMap(orch.steps.map((st) => st.agent_name));
+
   const conclusion =
     orch.status === "ok" ? "全部完成" : failed > 0 ? `${failed} 步失败` : orch.status === "running" ? "进行中" : orch.status;
 
@@ -225,6 +229,10 @@ export function OrchestrationSteps({
                     >
                       <div className="flex items-center gap-2 text-[12px]">
                         <span className="mono text-[var(--color-muted)] w-6 shrink-0">{idx}</span>
+                        <span
+                          className="h-1.5 w-1.5 shrink-0 rounded-full"
+                          style={{ background: agentColors[st.agent_name] || "var(--color-muted)" }}
+                        />
                         <span className="truncate font-medium">{st.agent_name}</span>
                         {st.item_label && (
                           <span className="text-[var(--color-muted)] truncate shrink-0 max-w-[30%]">
@@ -254,9 +262,8 @@ export function OrchestrationSteps({
                             background:
                               st.status === "error"
                                 ? "var(--color-err)"
-                                : st.status === "ok"
-                                  ? "var(--color-accent)"
-                                  : "var(--color-muted)",
+                                : agentColors[st.agent_name] || "var(--color-muted)",
+                            opacity: st.status === "ok" ? 0.9 : 0.55,
                           }}
                         />
                       </div>

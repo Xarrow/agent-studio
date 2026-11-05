@@ -180,3 +180,56 @@ def test_轮次结束后才跑的工具_仍归那一轮():
     llm1 = [i for i in data["items"] if i["kind"] == "llm"][0]
     tool_item = [i for i in data["items"] if i["kind"] == "tool"][0]
     assert tool_item["parent_id"] == llm1["id"], "工具要缩进在派它的那一轮下面"
+
+
+def test_派活带上目标助手_用于分色():
+    events = [
+        ev(0, "run_start", 1000),
+        ev(1, "llm_call_start", 1000),
+        ev(2, "tool_exec_start", 1100, tool_name="dispatch", tool_call_id="d1"),
+        ev(3, "tool_exec_end", 2100, tool_call_id="d1"),
+        ev(4, "tool_exec_start", 2200, tool_name="dispatch", tool_call_id="d2"),
+        ev(5, "tool_exec_end", 2600, tool_call_id="d2"),
+        ev(6, "tool_exec_start", 2700, tool_name="fetch", tool_call_id="f1"),
+        ev(7, "tool_exec_end", 2900, tool_call_id="f1"),
+    ]
+    data = build_timeline(
+        run=run(ended=3000), events=events, llm_calls=[call(1, 1000)],
+        tool_calls=[
+            tool(1, "d1", name="dispatch", args={"agent": "简明助手", "task": "抓页面"}),
+            tool(2, "d2", name="dispatch", args={"agent": "Hermes 对齐助手", "task": "对照口径"}),
+            tool(3, "f1", name="fetch", args={"url": "https://example.com"}),
+        ],
+    )
+    tools = {i["attributes"]["call_id"]: i["attributes"] for i in data["items"] if i["kind"] == "tool"}
+    assert tools["d1"]["agent"] == "简明助手"
+    assert tools["d2"]["agent"] == "Hermes 对齐助手"
+    # 普通工具不参与分色（同一个 fetch 抓一百个页面还是一个颜色）
+    assert tools["f1"]["agent"] is None
+
+
+def child(id_="run_w1", agent="简明助手", started=1500, ended=6000, status="ok", tokens=(1200, 300)):
+    return SimpleNamespace(id=id_, agent_id="ag_w", agent_name=agent, started_at=started,
+                           ended_at=ended, status=status,
+                           usage={"tokens_in": tokens[0], "tokens_out": tokens[1]})
+
+
+def test_派出去的子执行也画成条_按助手上色():
+    events = [
+        ev(0, "run_start", 1000),
+        ev(1, "llm_call_start", 1000),
+        ev(2, "tool_exec_start", 1200, tool_name="dispatch", tool_call_id="d1"),
+        ev(3, "tool_exec_end", 1300, tool_call_id="d1"),
+    ]
+    data = build_timeline(
+        run=run(ended=7000), events=events, llm_calls=[call(1, 1000)],
+        tool_calls=[tool(1, "d1", name="dispatch", args={"agent": "简明助手"})],
+        children=[child("run_w1", "简明助手", 1500, 6000), child("run_w2", "Hermes 对齐助手", 1600, 4000)],
+    )
+    workers = [i for i in data["items"] if i["kind"] == "worker"]
+    assert len(workers) == 2
+    assert {w["attributes"]["agent"] for w in workers} == {"简明助手", "Hermes 对齐助手"}
+    assert workers[0]["duration_ms"] == 4500
+    # 挂到派它出去的那一轮下面（缩进才对得上）
+    llm = [i for i in data["items"] if i["kind"] == "llm"][0]
+    assert all(w["parent_id"] == llm["id"] for w in workers)
