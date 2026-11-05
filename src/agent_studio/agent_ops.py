@@ -299,7 +299,18 @@ async def _worker_steer(worker: str, message: str) -> str:
     if result != steer_registry.SteerResult.DELIVERED:
         why = steer_registry.SteerResult.MESSAGES.get(result, "插话没送出去")
         return f"纠偏失败：{why}（run {run.id}）"
-    return f"已向【{agent_name}】插话纠偏（run {run.id}）：{msg[:100]}——它下一步推理就会看到。"
+
+    # 落一个观察点：插话之后盯它下一批动作，看是不是真照做了。
+    # 没有这一步，"纠了但没用"就永远没人知道（日志/事件里都看不见）。
+    usage = dict(run.usage or {})
+    usage["steer_watch"] = {"at": __import__("time").time() * 1000, "calls_after": 0, "fails_after": 0, "msg": msg[:120]}
+    run.usage = usage
+    await session.commit()
+
+    return (
+        f"已向【{agent_name}】插话纠偏（run {run.id}）：{msg[:100]}——它下一步推理就会看到。"
+        "平台会盯它接下来两次调用：照做了我就撤观察，没照做会再报给你。"
+    )
 
 
 async def _worker_stop(worker: str, reason: str = "") -> str:

@@ -215,3 +215,92 @@ async def test_巡检画像_含动作与失败(session: AsyncSession, monkeypatc
     assert "fetch✗" in text and "web_search" in text
     assert "1 次工具失败" in text
     assert "当前在：web_search" in text
+
+
+async def test_纠偏观察_未生效上报(session: AsyncSession, monkeypatch):
+    """steer 之后连续失败 → 上报「纠偏未生效」；插话后成功 → 撤观察不再报。"""
+    from agent_studio.stop_loss import check_steer_watch
+
+    s = session
+    r1 = _mk_run("run_sw1")
+    r1.usage = {"steer_watch": {"calls_after": 0, "fails_after": 0, "msg": "改用 A 接口"}}
+    r2 = _mk_run("run_sw2")
+    r2.usage = {"steer_watch": {"calls_after": 0, "fails_after": 0, "msg": "改用 A 接口"}}
+    s.add_all([r1, r2])
+    await s.commit()
+
+    events: list[dict] = []
+    import agent_studio.worker_events as we_mod
+
+    async def fake_emit(**kw):
+        events.append(kw)
+        return {}
+
+    monkeypatch.setattr(we_mod, "emit_worker_event", fake_emit)
+
+    # 场景一：插话后两次都失败 → 报一次（且只报一次）
+    await check_steer_watch(s, "run_sw1", True)
+    assert not events  # 第一次还不够
+    await check_steer_watch(s, "run_sw1", True)
+    assert len(events) == 1 and "纠偏未生效" in events[0]["text"]
+    row = await s.get(Run, "run_sw1")
+    assert "steer_watch" not in (row.usage or {})
+    await check_steer_watch(s, "run_sw1", True)
+    assert len(events) == 1  # 不连环轰炸
+
+    # 场景二：插话后第一次就成功 → 观察撤掉，不报
+    await check_steer_watch(s, "run_sw2", True)
+    await check_steer_watch(s, "run_sw2", False)
+    assert len(events) == 1
+    row2 = await s.get(Run, "run_sw2")
+    assert "steer_watch" not in (row2.usage or {})
+
+
+async def test_编排者拿得到管理工具(session: AsyncSession):
+    """Router 必须拿得到 worker_status/steer/stop —— 否则巡检里提示它纠偏，它没手可用。"""
+    from agent_studio.runtimes.agentscope_rt.compile import ORCHESTRATOR_ALLOW_TOOLS
+
+    assert {"worker_status", "worker_steer", "worker_stop"} <= ORCHESTRATOR_ALLOW_TOOLS
+    # 执行类工具仍不给（一给它就会自己干活，不派 worker 了）
+    assert not ({"Read", "Bash", "fetch", "web_search", "Write"} & ORCHESTRATOR_ALLOW_TOOLS)
+
+
+async def test_巡检合并画像_多worker一张图(session: AsyncSession, monkeypatch):
+    """汇聚式巡检：一次给 Router 看所有在跑的 worker（并行时不再互相挤掉）。"""
+    from agent_studio.models import RunEvent, now_ms
+    from agent_studio.supervisor import _batch_digest
+
+    s = session
+    for rid, tool in (("run_b1", "fetch"), ("run_b2", "Bash")):
+        s.add(Run(id=rid, agent_id="ag_x", agent_version=1, runtime="agentscope",
+                  status="running", input={}, started_at=now_ms() - 30_000,
+                  origin="worker", parent_run_id="run_bp"))
+        s.add_all([
+            RunEvent(run_id=rid, seq=1, ts=now_ms(), type="tool_call_start",
+                     payload={"tool_call_id": "c1", "tool_call_name": tool}),
+            RunEvent(run_id=rid, seq=2, ts=now_ms(), type="text_delta",
+                     payload={"delta": f"我正在用 {tool} 查这个问题的答案"}),
+        ])
+    # 已收尾的 worker 不该出现在画像里
+    s.add(Run(id="run_b3", agent_id="ag_x", agent_version=1, runtime="agentscope",
+              status="ok", input={}, started_at=now_ms() - 90_000,
+              origin="worker", parent_run_id="run_bp"))
+    await s.commit()
+
+    import agent_studio.db as db_mod
+
+    class _Ctx:
+        def __call__(self):
+            return _Ctx()
+
+        async def __aenter__(self):
+            return s
+
+        async def __aexit__(self, *a):
+            return False
+
+    monkeypatch.setattr(db_mod, "SessionLocal", _Ctx())
+    text, seq = await _batch_digest("run_bp")
+    assert "run_b1" in text and "run_b2" in text and "run_b3" not in text
+    assert "它最近自己说" in text and "我正在用 fetch" in text
+    assert seq > 0

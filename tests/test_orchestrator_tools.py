@@ -35,19 +35,27 @@ def test_编排者拿不到执行类工具():
     assert set(dropped) == {"bash", "write", "edit", "proc_start", "read", "fork", "web_search"}
 
 
-def test_编排者手里只剩派活():
-    """白名单只留 dispatch。
+def test_编排者手里只剩派活与巡查():
+    """白名单 = 派活 + 认路 + 巡查纠偏（管理面），没有执行面。
 
     每多一个选择，Router 就多一次"也许我自己能干"的犹豫（用户原话：过多的
     skills/工具/记忆会影响 router 判断）。认路用的 skill_viewer / tool_* 也一并收走：
     它不需要看技能目录，也不需要查工具表 —— 那是 worker 的事。
+
+    worker_status / worker_steer / worker_stop 属于**管理面**：看进度、插话纠偏、喊停，
+    一个都干不了活。它们缺过一次代价很大 —— 巡检把 worker 画像送到 Router 面前、
+    提示它「用 worker_steer 纠偏」，而它手里没有这个工具，只能回「继续观察」。
     """
-    # dispatch（派活）+ workers（看清有哪些域的人）：这两个都不干活，只做判断。
-    assert ORCHESTRATOR_ALLOW_TOOLS == frozenset({"dispatch", "workers"})
+    # dispatch（派活）+ workers（看清有哪些域的人）+ 三件管理工具：都不干活，只做判断。
+    assert ORCHESTRATOR_ALLOW_TOOLS == frozenset(
+        {"dispatch", "workers", "worker_status", "worker_steer", "worker_stop"}
+    )
     assert not (
         {"fork", "skill_viewer", "Skill", "tool_search", "tool_describe", "tool_call", "job_create"}
         & ORCHESTRATOR_ALLOW_TOOLS
     )
+    # 执行面一律不给（给了它就会自己干，不派 worker 了）
+    assert not ({"Read", "Bash", "Write", "fetch", "web_search"} & ORCHESTRATOR_ALLOW_TOOLS)
 
 
 def test_编排者拿不到未知工具_MCP之类也不放过():

@@ -113,6 +113,69 @@ async def flush_pending_note(session, run_id: str) -> None:
         logger.debug("止损注入(延迟)失败 run=%s", run_id, exc_info=True)
 
 
+async def check_steer_watch(session: AsyncSession, run_id: str, failed: bool) -> None:
+    """纠偏有没有生效：worker_steer 插话之后盯它的下一批动作。
+
+    为什么要这样：steer 只是往上下文里插一句话，**平台原来不检查它是否照做** ——
+    弱模型经常"嘴上应、行为照旧"，纠正发出去就再没人管了，闭环在这里断掉。
+    判据（便宜、客观、不需要再调 LLM）：
+      · 插话后第一次成功工具调用 → 视作纠正生效，撤掉观察
+      · 插话后连续 2 次失败/无效调用 → 纠偏没起作用，上报 blocked 让 Router 决定停
+    """
+    row = await session.get(Run, run_id)
+    if row is None:
+        return
+    usage = dict(row.usage or {})
+    watch = usage.get("steer_watch")
+    if not isinstance(watch, dict):
+        return
+    if row.status not in ("pending", "running"):
+        usage.pop("steer_watch", None)
+        row.usage = usage
+        await session.commit()
+        return
+
+    calls = int(watch.get("calls_after") or 0) + 1
+    fails = int(watch.get("fails_after") or 0) + (1 if failed else 0)
+
+    if not failed:
+        usage.pop("steer_watch", None)
+        row.usage = usage
+        await session.commit()
+        logger.info("纠偏生效 run=%s（插话后第一次成功调用）", run_id)
+        return
+
+    if calls >= 2 and fails >= 2:
+        usage.pop("steer_watch", None)  # 只报一次，别连环轰炸
+        row.usage = usage
+        await session.commit()
+        logger.info("纠偏未生效 run=%s（插话后 %s 次调用仍失败 %s 次）", run_id, calls, fails)
+        try:
+            from .worker_events import emit_worker_event
+
+            await emit_worker_event(
+                worker_run_id=run_id,
+                parent_run_id=str(row.parent_run_id or ""),
+                root_run_id=str(row.root_run_id or ""),
+                kind="blocked",
+                text=(
+                    f"⚠️ 纠偏未生效：你插话之后它又失败了 {fails} 次（共 {calls} 次调用），"
+                    f"看来没照新指示走。原话：{str(watch.get('msg') or '')[:80]}。"
+                    "建议 worker_stop 停掉重派，或换一种说法再 steer 一次。"
+                ),
+                source="platform",
+            )
+        except Exception:  # noqa: BLE001 —— 上报失败不影响执行
+            logger.warning("纠偏未生效上报失败 run=%s", run_id, exc_info=True)
+        return
+
+    watch["calls_after"] = calls
+    watch["fails_after"] = fails
+    usage["steer_watch"] = watch
+    row.usage = usage
+    await session.commit()
+
+
 async def on_tool_exec_end(session: AsyncSession, run_id: str, payload: dict) -> None:
     """工具结束后判一次：要不要提示、要不要上报死路。**调用方负责 commit**。"""
     from .reliability import DEAD_END_KEY, HARD_STOP_KEY, STOP_LOSS_KEY, get_setting

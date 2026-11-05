@@ -362,6 +362,20 @@ async def _live_digest(run_id: str) -> tuple[str, int]:
                 .limit(40)
             )
         ).all()
+        # 它自己说在做什么 —— 光看动作序列判断不了「方向对不对」：
+        # fetch → fetch → fetch 既可能是正常抓三页，也可能是死磕一个答不了的问题。
+        # 模型自己的一句话是最便宜、信息量最大的语义信号（比再调一次 LLM 判便宜得多）。
+        said = (
+            await s.execute(
+                select(RunEvent.payload)
+                .where(RunEvent.run_id == run_id, RunEvent.type == "text_delta")
+                .order_by(RunEvent.seq.desc())
+                .limit(40)
+            )
+        ).scalars().all()
+        last_said = "".join(
+            str((x or {}).get("delta") or "") for x in reversed(said or [])
+        ).strip()
         out = row.output if isinstance(row.output, dict) else {}
 
     recent: list[str] = []
@@ -388,20 +402,83 @@ async def _live_digest(run_id: str) -> tuple[str, int]:
     ]
     if err:
         lines.append(f"⚠️ 近期 {err} 次工具失败")
+    if last_said:
+        lines.append(f"它最近自己说：{last_said[-200:]}")
     if partial:
         lines.append(f"已产出片段：{partial}")
     return "\n".join(lines), last_seq
 
 
-async def _review_loop(*, run_id: str, session_id: str, agent_name: str) -> None:
-    """巡检：worker 跑着的时候，每个间隔把实时画像送进 Router 会话判一次要不要纠偏。
+async def _batch_digest(parent_run_id: str) -> tuple[str, int]:
+    """把该 Router 名下**所有在跑的 worker** 合成一张画像。
+
+    为什么要合并（原来是每个 worker 一条巡检线）：巡检轮都投进同一个 Router 会话，
+    会话忙就跳过 —— 多个 worker 并行时后到的巡检互相挤掉，而 Router 每次只看到
+    一个 worker，恰恰最需要横向比较的场景丢了全局视角。合并成一条线后：
+    一次巡检 = 一次调用 = 一份全局画像。
+    """
+    from .db import SessionLocal
+
+    async with SessionLocal() as s:
+        rows = (
+            await s.execute(
+                select(Run.id, Run.agent_id)
+                .where(
+                    Run.parent_run_id == parent_run_id,
+                    Run.origin == "worker",
+                    Run.status.in_(("pending", "running")),
+                )
+                .order_by(Run.started_at)
+            )
+        ).all()
+        if not rows:
+            return "", 0
+        # agent 名字（画像里要写"谁"）
+        names: dict[str, str] = {}
+        for _rid, _aid in rows:
+            if _aid and _aid not in names:
+                ag = await s.get(Agent, _aid)
+                names[_aid] = ag.name if ag else ""
+
+    parts: list[str] = []
+    total_seq = 0
+    for rid, aid in rows:
+        text, seq = await _live_digest(rid)
+        if not text:
+            continue
+        total_seq += seq
+        parts.append(f"──【{names.get(aid, '?')}】run {rid}\n{text}")
+    return "\n".join(parts), total_seq
+
+
+# 同一个 Router（parent run）只跑一条巡检线：多个 worker 共用，不互相挤
+_SUPERVISORS: dict[str, Any] = {}
+
+
+def ensure_supervisor(*, parent_run_id: str, session_id: str) -> None:
+    """给这个 Router 挂上巡检线（幂等：已经在跑就不重复挂）。"""
+    import asyncio
+
+    if not parent_run_id or not session_id:
+        return
+    task = _SUPERVISORS.get(parent_run_id)
+    if task is not None and not task.done():
+        return
+    _SUPERVISORS[parent_run_id] = asyncio.create_task(
+        _supervise_loop(parent_run_id=parent_run_id, session_id=session_id)
+    )
+
+
+async def _supervise_loop(*, parent_run_id: str, session_id: str) -> None:
+    """巡检：把所有在跑的 worker 的实时画像按节拍送进 Router 会话，判一次要不要纠偏。
 
     为什么要有（这是「不断纠正」的节拍器）：事件驱动只能覆盖「出事」——
     worker 主动上报、心跳断约、硬停触发。可「方向偏了但没有报错」是最常见的跑偏，
     它不会产生任何事件；Router 一轮答完就静默了，等它自己想起来巡是不可能的。
     所以平台按节拍把画像推到 Router 面前，它才有机会 steer/stop。
 
-    成本控制：①没有新动作（seq 没前进）就跳过 ②最多 REVIEW_MAX_ROUNDS 次
+    成本控制：①没有新动作（事件 seq 没前进）就跳过 ②轮数按任务超时窗口算
+    （够长才巡得完，超长任务不会因为"固定 8 轮"在后半段裸奔）
     ③会话里已有一轮在跑就不插队（_spawn_router_turn 自己判）。
     """
     import asyncio
@@ -411,46 +488,50 @@ async def _review_loop(*, run_id: str, session_id: str, agent_name: str) -> None
 
     rounds = 0
     seen_seq = 0
-    logger.info("巡检循环启动 worker=%s session=%s", run_id, session_id or "(空)")
-    while rounds < REVIEW_MAX_ROUNDS:
-        try:
-            async with SessionLocal() as s:
-                interval = int(await get_setting(s, REVIEW_KEY, 180) or 0)
+    try:
+        while True:
+            try:
+                async with SessionLocal() as s:
+                    interval = int(await get_setting(s, REVIEW_KEY, 180) or 0)
+            except Exception:  # noqa: BLE001
+                logger.warning("巡检间隔读取失败，按 180s 继续", exc_info=True)
+                interval = 180
             if interval <= 0:
                 return  # 关掉了
-        except Exception:  # noqa: BLE001
-            logger.warning("巡检间隔读取失败 run=%s，按 180s 继续", run_id, exc_info=True)
-            interval = 180
-        await asyncio.sleep(interval)
+            await asyncio.sleep(interval)
 
-        async with SessionLocal() as s:
-            row = await s.get(Run, run_id)
-            if row is None or row.status not in ("pending", "running"):
-                return  # 收尾了，交给终态推送
-        digest, seq = await _live_digest(run_id)
-        if not digest:
-            return
-        if seq <= seen_seq:
-            continue  # 上次巡检之后没有新动作：同一张图不用再看一遍
-        seen_seq = seq
-        rounds += 1
-        text = (
-            f"[worker 巡检 {rounds}/{REVIEW_MAX_ROUNDS}] 【{agent_name}】执行中（run {run_id}）\n"
-            f"{digest}\n\n"
-            "这不是终局报告，它还在跑。判断它有没有跑偏：\n"
-            "- 方向对、只是慢 → 什么都不用做，回一句「继续观察」即可；\n"
-            "- 方向偏了/在重复无效操作 → 用 worker_steer 插话纠偏（说清改成什么）；\n"
-            "- 彻底错了 → worker_stop 停掉重派。"
-        )
-        try:
-            new_run = await _spawn_router_turn(session_id, text)
-            if new_run:
-                logger.info("巡检已起轮 run=%s 巡检轮=%s（第 %s 次）", run_id, new_run, rounds)
-            else:
-                logger.info("巡检跳过（会话忙/会话不存在）run=%s 第 %s 次", run_id, rounds)
-        except Exception:  # noqa: BLE001
-            # 护栏类降级不能只打 debug：静默失败=功能没跑而没人知道（踩过）
-            logger.warning("巡检起轮失败 run=%s", run_id, exc_info=True)
+            text, seq = await _batch_digest(parent_run_id)
+            if not text:
+                return  # 已经没有在跑的 worker 了
+            if seq <= seen_seq:
+                continue  # 上次巡检之后没有任何新动作：同一张图不用再看一遍
+            seen_seq = seq
+            rounds += 1
+            # 覆盖窗口跟着任务超时走：默认 900s 的任务 → 5 次；长任务自动多给
+            budget_rounds = max(REVIEW_MAX_ROUNDS, 900 // max(interval, 30))
+            if rounds > budget_rounds:
+                logger.info("巡检轮数到顶（%s），Run %s 后续不再巡检", budget_rounds, parent_run_id)
+                return
+            msg = (
+                f"[worker 巡检 {rounds}/{budget_rounds}] 你名下正在跑的 worker：\n"
+                f"{text}\n\n"
+                "这不是终局报告，它们还在跑。判断有没有跑偏：\n"
+                "- 方向对、只是慢 → 什么都不用做，回一句「继续观察」即可；\n"
+                "- 方向偏了/在重复无效操作/纠正了却没改 → 用 worker_steer 插话（说清改成什么），"
+                "或用 worker_stop 停掉重派；\n"
+                "- 要看更细的进度用 worker_status。"
+            )
+            try:
+                new_run = await _spawn_router_turn(session_id, msg)
+                if new_run:
+                    logger.info("巡检已起轮 parent=%s 巡检轮=%s（第 %s 次）", parent_run_id, new_run, rounds)
+                else:
+                    logger.info("巡检跳过（会话忙/会话不存在）parent=%s 第 %s 次", parent_run_id, rounds)
+            except Exception:  # noqa: BLE001
+                # 护栏类降级不能只打 debug：静默失败=功能没跑而没人知道（踩过）
+                logger.warning("巡检起轮失败 parent=%s", parent_run_id, exc_info=True)
+    finally:
+        _SUPERVISORS.pop(parent_run_id, None)
 
 
 async def watch_worker(
@@ -616,9 +697,8 @@ async def watch_worker(
             logger.exception("触发收口失败 parent=%s", parent_run_id)
 
     asyncio.create_task(_watch())
-    # 巡检节拍器：与终态监听并行跑，worker 收尾后自己退（下一轮读库发现不在跑）
-    if session_id:
-        asyncio.create_task(_review_loop(run_id=run_id, session_id=session_id, agent_name=agent_name))
+    # 巡检节拍器：同一个 Router 只挂一条（多个 worker 共用一张画像，不互相挤）
+    ensure_supervisor(parent_run_id=parent_run_id, session_id=session_id)
 
 
 async def _spawn_router_turn(session_id: str, digest: str, *, close_tickets: list[str] | None = None) -> str | None:

@@ -576,6 +576,13 @@ def _with_work_dir_hint(run_input: Any, work_dir: Any) -> Any:
     return run_input
 
 
+#: 已请求中止的 run（进程级，跨会话共享）。
+#: 为什么需要：``task.cancel()`` 打进 AgentScope 内部会被吞（实测 run 卡 running），
+#: 只靠 cancel 等于"请求了但没停"。事件流是每轮执行必经之路，在那里看一眼
+#: 才能真正把执行掐断 —— 这才是"立即打断"。
+_CANCEL_REQUESTED: set[str] = set()
+
+
 class RunService:
     """执行编排：compile → run → 落库 → 广播。
 
@@ -611,6 +618,7 @@ class RunService:
         永远挂着一条"待跑/进行中"，既停不掉也删不掉（实测踩到）。这种情况直接把它
         落成终态（和 A2A 的 tasks/cancel 同一口径）。
         """
+        _CANCEL_REQUESTED.add(run_id)  # 事件流里的真中止开关：下一个事件点掐断执行
         from .dispatcher import dispatcher
 
         if await dispatcher.abort(run_id):
@@ -1099,7 +1107,15 @@ class RunService:
                         "（不会换个工具再试一遍；要继续就再发一条消息，把做法说清楚）"
                     )
             else:
-                error = "用户中断"
+                # 取消有两个来源：用户点停止 / 硬停护栏。文案要说清是哪个 ——
+                # 护栏触发时说「用户中断」是错的（用户没点任何东西，是平台掐的）。
+                async with SessionLocal() as s:
+                    _row = await s.get(Run, run_id)
+                    _hs = str(((_row.usage or {}) if _row else {}).get("hard_stop_reason") or "")
+                if _hs:
+                    error = f"硬停护栏触发：{_hs}（可在「用量→护栏」调低/关闭硬停档）"
+                else:
+                    error = "已停止（你点了停止）"
         except TimeoutError:
             status, error = (
                 "error",
@@ -1531,7 +1547,15 @@ class RunService:
                     "（不会换个工具再试一遍；要继续就再发一条消息，把做法说清楚）"
                 )
             else:
-                error = "用户中断"
+                # 取消有两个来源：用户点停止 / 硬停护栏。文案要说清是哪个 ——
+                # 护栏触发时说「用户中断」是错的（用户没点任何东西，是平台掐的）。
+                async with SessionLocal() as s:
+                    _row = await s.get(Run, run_id)
+                    _hs = str(((_row.usage or {}) if _row else {}).get("hard_stop_reason") or "")
+                if _hs:
+                    error = f"硬停护栏触发：{_hs}（可在「用量→护栏」调低/关闭硬停档）"
+                else:
+                    error = "已停止（你点了停止）"
         except TimeoutError:
             status, error = (
                 "error",
@@ -1651,15 +1675,24 @@ class RunService:
     async def _stop_loss_check(self, run_id: str, payload: dict) -> None:
         """可靠性护栏判定（独立会话，失败不影响执行主链路）。"""
         try:
-            from ..stop_loss import on_tool_exec_end
+            from ..stop_loss import _failed_with_result, check_steer_watch, on_tool_exec_end
 
             async with SessionLocal() as s:
+                failed, _why = await _failed_with_result(s, run_id, payload)
+                # 纠偏生效性：插话之后盯下一批动作（与护栏档位无关，始终生效）
+                await check_steer_watch(s, run_id, failed)
                 await on_tool_exec_end(s, run_id, payload)
                 await s.commit()
         except Exception:  # noqa: BLE001 —— 护栏是配菜
             logger.debug("止损判定失败 run=%s", run_id, exc_info=True)
 
     async def _persist_event(self, run_id: str, ev: UnifiedEvent) -> None:
+        # ── 真中止：平台已经要求停这个 run，就在下一个事件点掐断 ────────
+        # （cancel 被 AgentScope 内部吞掉的情况下，这里是唯一可靠的下手处：
+        #  事件流是每一轮执行的必经之路，掐在这里 = 不再产出、不再烧 token）
+        if run_id in _CANCEL_REQUESTED:
+            raise asyncio.CancelledError(f"平台已要求中止 run={run_id}")
+
         # ── lease 心跳：worker 树里每次工具动作都续约 ─────────────────
         # （事件驱动巡查：watcher 睡到 lease 到期，动作频繁就永远不吵）
         if ev.type == "tool_exec_end" and run_id.startswith("run_"):
@@ -1741,6 +1774,8 @@ class RunService:
         clear_output: bool = False,
     ) -> None:
         ts = now_ms()
+        # 收尾即撤中止开关：run id 不复用，但集合不该无限长
+        _CANCEL_REQUESTED.discard(run_id)
         collector.flush_open(ts)
         usage = collector.summary()
         # 最后一轮的 iteration span 也要收口（否则它没有结束时间、瀑布图上悬空）

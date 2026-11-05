@@ -407,6 +407,15 @@ ORCHESTRATOR_ALLOW_TOOLS: frozenset[str] = frozenset(
         # workers 是只读目录：Router 像项目 RDO，得知道有哪些业务域的人可派。
         "dispatch",
         "workers",
+        # 巡查 + 纠偏 + 喊停（管理面，不是执行面）。
+        # ⚠️ 这三个曾经不在名单里 —— 后果是"Router 不断纠正"整条链路根本走不通：
+        # 巡检轮把 worker 画像送到 Router 面前，提示它「用 worker_steer 纠偏」，
+        # 而它手里压根没有这个工具，只能回一句「继续观察」（真机踩到，巡检白跑）。
+        # 判据：能管 worker 但不干活 —— 看一眼进度、插一句话、喊一声停，
+        # 都不会让它变成"自己动手"的那个（仍拿不到 Read/Bash/fetch）。
+        "worker_status",
+        "worker_steer",
+        "worker_stop",
     }
 )
 
