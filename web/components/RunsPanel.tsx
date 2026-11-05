@@ -44,11 +44,11 @@ import type {
 } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
 import { KIND_LABEL } from "@/components/RunDetailDialog";
-import { SpanWaterfall } from "@/components/SpanWaterfall";
 import type { Span } from "@/lib/types";
 import { RunTimeline, eventsToSteps, type Step } from "@/components/ui/run-timeline";
 import { Mermaid } from "@/components/Mermaid";
-import { LlmCallsPanel, ModelTestDetail } from "@/components/LlmCallsPanel";
+import { ModelTestDetail } from "@/components/LlmCallsPanel";
+import { ExecutionTimeline } from "@/components/ExecutionTimeline";
 import { HitlPrompt } from "@/components/HitlPrompt";
 import type { OrchestrationDetail } from "@/lib/types";
 
@@ -1641,86 +1641,48 @@ export function RunsPanel() {
                         </div>
                       )}
 
-                      {/* 编排已经有上面那份「步骤清单」了，这里不再摆一条空的执行过程 */}
+                      {/* 执行过程：一条时间线（轮次 / 思考 / 工具 / 等你点），
+                          点哪一行详情就在那一行下面展开。编排有上面的步骤清单，
+                          这里不再摆一条空的。 */}
                       {d?.orch ? null : (
-                      <div className="rounded-[8px] border" style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}>
                         <div
-                          className="flex items-center gap-2 border-b px-2.5 py-1.5"
-                          style={{ borderColor: "var(--color-border)" }}
+                          className="rounded-[8px] border"
+                          style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
                         >
-                          <span className="text-[12px] font-medium" style={{ color: "var(--color-muted)" }}>
-                            {it.kind === "chat" && d?.turnRunId ? "执行过程（当前轮）" : "执行过程"}
-                          </span>
-                          {it.id && it.kind !== "llm_test" && !(it.kind === "chat") && (
-                            <span className="mono text-[12px]" style={{ color: "var(--color-muted)" }}>
-                              {it.id}
+                          <div
+                            className="flex items-center gap-2 border-b px-2.5 py-1.5"
+                            style={{ borderColor: "var(--color-border)" }}
+                          >
+                            <span className="text-[12px] font-medium" style={{ color: "var(--color-muted)" }}>
+                              {it.kind === "chat" && d?.turnRunId ? "执行过程（当前轮）" : "执行过程"}
                             </span>
-                          )}
-                          {it.kind === "chat" && d?.turnRunId && (
-                            <span className="mono text-[12px]" style={{ color: "var(--color-muted)" }}>
-                              {d.turnRunId}
-                            </span>
-                          )}
-                        </div>
-                        <div className="px-2.5 py-2">
-                          {d?.llmTest ? (
-                            <ModelTestDetail testId={it.id} hasPayload={it.has_payload} />
-                          ) : it.kind === "chat" ? (
-                            /* 多轮会话：展示的是当前选中轮的执行过程（轮次列表里点选切换） */
-                            (() => {
-                              const rid = d?.turnRunId ?? "";
-                              const t = rid ? d?.turnSteps?.[rid] : undefined;
-                              if (!rid) return (
+                            {it.kind === "chat" && d?.turnRunId ? (
+                              <span className="mono text-[12px]" style={{ color: "var(--color-muted)" }}>
+                                {d.turnRunId}
+                              </span>
+                            ) : it.id && it.kind !== "llm_test" ? (
+                              <span className="mono text-[12px]" style={{ color: "var(--color-muted)" }}>
+                                {it.id}
+                              </span>
+                            ) : null}
+                          </div>
+                          <div className="px-2.5 py-2">
+                            {d?.llmTest ? (
+                              <ModelTestDetail testId={it.id} hasPayload={it.has_payload} />
+                            ) : it.kind === "chat" ? (
+                              d?.turnRunId ? (
+                                <ExecutionTimeline runId={d.turnRunId} compact />
+                              ) : (
                                 <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>
                                   在上面的轮次里点一轮，看它的执行过程。
                                 </div>
-                              );
-                              if (t?.loading) return (
-                                <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>读取中…</div>
-                              );
-                              if (t?.note) return (
-                                <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>{t.note}</div>
-                              );
-                              if (t?.steps && t.steps.length > 0) return <RunTimeline steps={t.steps} />;
-                              return (
-                                <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>
-                                  这一轮没有留下事件。
-                                </div>
-                              );
-                            })()
-                          ) : d?.loading ? (
-                            <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>读取中…</div>
-                          ) : d?.note ? (
-                            <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>{d.note}</div>
-                          ) : d?.steps && d.steps.length > 0 ? (
-                            <RunTimeline steps={d.steps} />
-                          ) : (
-                            <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>
-                              这一步没有留下事件。
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      )}
-
-                      {/* 耗时瀑布（谁在吃时间）—— 与执行过程并列，懒加载、有 span 才显示 */}
-                      {d?.spans && d.spans.length > 0 && (
-                        <div className="rounded-[8px] border" style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}>
-                          <div className="border-b px-2.5 py-1.5" style={{ borderColor: "var(--color-border)" }}>
-                            <span className="text-[12px] font-medium" style={{ color: "var(--color-muted)" }}>
-                              耗时瀑布（谁在吃时间）
-                            </span>
-                          </div>
-                          <div className="px-2.5 py-2">
-                            <SpanWaterfall spans={d.spans} />
+                              )
+                            ) : (
+                              <ExecutionTimeline runId={it.id} compact />
+                            )}
                           </div>
                         </div>
                       )}
-
-                      {/* 模型请求：每次调用发了什么、回了什么（原文按需展开） */}
-                      <div className="mt-2">
-                        <LlmCallsPanel runId={it.id} calls={d.llmCalls} />
-                      </div>
                     </div>
                   )}
                 </Fragment>

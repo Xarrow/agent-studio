@@ -26,14 +26,12 @@ import type {
   RunTrace,
   ToolCallRow,
 } from "@/lib/types";
-import { RunTimeline, eventsToSteps } from "@/components/ui/run-timeline";
 import { HitlPrompt } from "@/components/HitlPrompt";
 import { OrchestrationSteps } from "@/components/OrchestrationSteps";
+import { ExecutionTimeline } from "@/components/ExecutionTimeline";
 import { summarizeCalls } from "@/lib/hitl";
 import { useFeedback } from "@/components/ui/feedback";
-import { SpanWaterfall } from "@/components/SpanWaterfall";
 import { DLG_BACKDROP, DLG_CARD } from "@/components/ui/kit";
-import { LlmCallsPanel } from "@/components/LlmCallsPanel";
 
 /** 状态配色（与全局一致） */
 const STATUS_STYLE: Record<string, string> = {
@@ -210,7 +208,6 @@ export function RunDetailDialog({
 
   const run = trace?.run;
   const events: RunEvent[] = trace?.events ?? [];
-  const steps = events.length ? eventsToSteps(events, item.summary ?? undefined) : [];
 
   /**
    * 输入/输出的取数源**按记录类型分流** —— 编排行手里没有 run（都是 orchestration
@@ -441,50 +438,12 @@ export function RunDetailDialog({
               </div>
             </Section>
 
-            {steps.length > 0 && (
-              <Section title="它想了什么、做了什么">
-                <div className="rounded-md p-3 bg-[var(--color-surface-2)]">
-                  <RunTimeline steps={steps} />
-                </div>
-              </Section>
-            )}
-
-            {trace?.spans && trace.spans.length > 0 && (
-              <Section title="耗时瀑布（谁在吃时间）">
-                <SpanWaterfall spans={trace.spans} />
-              </Section>
-            )}
-
-            {trace?.llm_calls && trace.llm_calls.length > 0 && (
-              <Section title="模型请求（发了什么、回了什么）">
-                <LlmCallsPanel runId={item.id} calls={trace.llm_calls} title="" />
-              </Section>
-            )}
-
-            {trace?.tool_calls && trace.tool_calls.length > 0 && (
-              <Section title={`工具调用（${trace.tool_calls.length} 次）`}>
-                <div className="space-y-1.5">
-                  {trace.tool_calls.map((t: ToolCallRow) => (
-                    <div
-                      key={t.id}
-                      className="rounded-md p-2.5 bg-[var(--color-surface-2)] text-[12px]"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="mono">{t.tool_name}</span>
-                        <span className="text-[var(--color-muted)]">
-                          {fmt.ms(t.duration_ms)} · {t.status}
-                        </span>
-                      </div>
-                      {t.args && Object.keys(t.args).length > 0 && (
-                        <pre className="mt-1.5 text-[12px] text-[var(--color-muted)] whitespace-pre-wrap break-all">
-                          {JSON.stringify(t.args, null, 1)}
-                        </pre>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </Section>
-            )}
+            {/* 执行过程合成一条时间线：轮次 / 思考 / 工具 / 等你点，
+                点哪一行详情就在那一行下面展开（原「模型请求」「工具调用」
+                「步骤流」三块的内容都并进来了 —— 同一件事不该摆三遍）。 */}
+            <Section title="执行过程">
+              <ExecutionTimeline runId={item.id} title="" />
+            </Section>
 
             <Section title="原始记录">
               <button className="btn btn-sm" onClick={() => setRawOpen((v) => !v)}>

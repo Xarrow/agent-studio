@@ -1345,12 +1345,63 @@ class RunService:
             await session.commit()
 
         hitl.payload = {**payload, **(hitl.payload or {})}
+        await self._record_hitl_decision(run_id, payload, hitl)
         task = asyncio.create_task(
             self._resume_execute(run_id, definition, hitl, fanout_wait_s=fanout_wait_s)
         )
         self._tasks[run_id] = task
         task.add_done_callback(lambda _t, rid=run_id: self._tasks.pop(rid, None))
         return True
+
+    async def _record_hitl_decision(
+        self, run_id: str, pending: dict[str, Any], hitl: HitlResponse
+    ) -> None:
+        """把"用户点了确认"记进事件流。
+
+        为什么必须有这一条：``hitl_request`` 只是"开始等"，没有它就没有"等完"——
+        瀑布上那条「等你确认」会永远张开，或者只能拿 run 的结束时间瞎猜。
+        有了它，等待时长是实测值（用户真正卡在那儿多久），也解释了
+        "这次执行为什么花了 40 秒却只跑了 3 秒的活"。
+        """
+        ts = now_ms()
+        try:
+            async with SessionLocal() as session:
+                last = (
+                    await session.execute(
+                        select(RunEvent.seq)
+                        .where(RunEvent.run_id == run_id)
+                        .order_by(RunEvent.seq.desc())
+                        .limit(1)
+                    )
+                ).scalar_one_or_none()
+                req = (
+                    await session.execute(
+                        select(RunEvent)
+                        .where(RunEvent.run_id == run_id, RunEvent.type == "hitl_request")
+                        .order_by(RunEvent.seq.desc())
+                        .limit(1)
+                    )
+                ).scalar_one_or_none()
+                calls = pending.get("tool_calls")
+                tool = pending.get("tool_name") or pending.get("name") or pending.get("tool")
+                if not tool and isinstance(calls, list) and calls and isinstance(calls[0], dict):
+                    tool = calls[0].get("name")  # AgentScope 把工具名放在 tool_calls[] 里
+                session.add(
+                    RunEvent(
+                        run_id=run_id,
+                        seq=(last if last is not None else -1) + 1,
+                        type="hitl_decided",
+                        ts=ts,
+                        payload={
+                            "tool": str(tool) if tool else None,
+                            "confirm": bool(hitl.confirm),
+                            "waited_ms": max(0, ts - int(req.ts)) if req is not None else None,
+                        },
+                    )
+                )
+                await session.commit()
+        except Exception:  # noqa: BLE001 - 记这条不该影响续跑
+            logger.warning("记录 HITL 选择失败 run=%s", run_id, exc_info=True)
 
     async def _resume_execute(
         self,

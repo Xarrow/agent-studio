@@ -1,5 +1,6 @@
 /** 后端 API 客户端（类型化 fetch 封装）。 */
 
+import type { TimelineItem } from "@/lib/timeline";
 import type {
   WorkPreview,
   BgProcInfo,
@@ -1220,6 +1221,30 @@ export const api = {
     request<LlmCallPayload>(`/api/runs/model-tests/${testId}/payload`),
   llmCallPayload: (runId: string, callId: number) =>
     request<LlmCallPayload>(`/api/runs/${runId}/llm-calls/${callId}/payload`),
+  /** 执行时间线：一次交互 = 一条（轮次 / 思考 / 工具 / 等你点） */
+  executionTimeline: (runId: string) =>
+    request<{
+      items: {
+        id: string;
+        kind: string;
+        name: string;
+        started_at: number;
+        ended_at: number | null;
+        duration_ms: number | null;
+        parent_id: string | null;
+        attributes: Record<string, unknown>;
+      }[];
+      started_at: number;
+      ended_at: number;
+      total_ms: number;
+      slowest: TimelineItem | null;
+      agent_name?: string | null;
+    }>(`/api/runs/${runId}/timeline`),
+  /** 某一条的正文（思考全文 / 工具完整结果），只在展开时拉 */
+  runTimelineText: (runId: string, itemId: string) =>
+    request<{ id: string; kind: string; chars: number; truncated: boolean; text: string }>(
+      `/api/runs/${runId}/timeline/${itemId}/text`,
+    ),
   /** 外部记忆服务配置（读/写/探连通） */
   externalMemory: () => request<ExternalMemoryConfig>("/api/memories/external-config"),
   saveExternalMemory: (

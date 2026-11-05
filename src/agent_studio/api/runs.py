@@ -1967,3 +1967,103 @@ async def browser_input(run_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         raise
     except Exception as exc:  # pragma: no cover
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, str(exc))
+
+
+# --------------------------------------------------------------------------- #
+# 执行时间线（一次交互 = 一条）
+# --------------------------------------------------------------------------- #
+#: 详情正文的硬上限：思考/工具结果偶尔几十万字符，单条接口也不该无边界
+TIMELINE_TEXT_LIMIT = 200_000
+
+
+async def _timeline_bundle(session: AsyncSession, run_id: str) -> dict[str, Any]:
+    run = await session.get(Run, run_id)
+    if run is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "执行记录不存在")
+    events = (
+        await session.execute(select(RunEvent).where(RunEvent.run_id == run_id).order_by(RunEvent.seq))
+    ).scalars().all()
+    llm_rows = (
+        await session.execute(select(LlmCall).where(LlmCall.run_id == run_id).order_by(LlmCall.id))
+    ).scalars().all()
+    tool_rows = (
+        await session.execute(select(ToolCall).where(ToolCall.run_id == run_id).order_by(ToolCall.id))
+    ).scalars().all()
+    return {"run": run, "events": events, "llm_calls": llm_rows, "tool_calls": tool_rows}
+
+
+@router.get("/{run_id}/timeline", response_model=dict)
+async def get_timeline(
+    run_id: str, session: AsyncSession = Depends(get_session)
+) -> dict[str, Any]:
+    """整条执行的时间线：轮次 / 思考 / 工具 / 等待确认，各带一句预览。
+
+    取代原来的三块（轮次与工具表、模型请求表、步骤流）—— 它们本来就是
+    同一件事的三种投影，合成一条才对得上"这一步为什么慢"。
+    """
+    from ..timeline import build_timeline
+
+    bundle = await _timeline_bundle(session, run_id)
+    agent = await session.get(Agent, bundle["run"].agent_id)
+    data = build_timeline(
+        run=bundle["run"],
+        events=bundle["events"],
+        llm_calls=bundle["llm_calls"],
+        tool_calls=bundle["tool_calls"],
+    )
+    data["agent_name"] = agent.name if agent else None
+    return data
+
+
+@router.get("/{run_id}/timeline/{item_id}/text", response_model=dict)
+async def get_timeline_text(
+    run_id: str, item_id: str, session: AsyncSession = Depends(get_session)
+) -> dict[str, Any]:
+    """某一条的正文（按需拉：思考全文 / 工具完整结果）。
+
+    预览在列表里已经够判断"是不是这条"，这里只在用户真的点「看全文」时才付出带宽。
+    """
+    from ..timeline import build_timeline
+
+    bundle = await _timeline_bundle(session, run_id)
+    data = build_timeline(
+        run=bundle["run"],
+        events=bundle["events"],
+        llm_calls=bundle["llm_calls"],
+        tool_calls=bundle["tool_calls"],
+    )
+    item = next((i for i in data["items"] if i["id"] == item_id), None)
+    if item is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "这条交互不存在（执行记录可能被清理了）")
+
+    kind = item["kind"]
+    lo, hi = int(item["started_at"]), int(item["ended_at"] or item["started_at"])
+    chunks: list[str] = []
+    if kind in ("think", "tool"):
+        want = {"think": {"thinking_delta"}, "tool": {"tool_result_delta", "tool_result"}}[kind]
+        call_id = (item.get("attributes") or {}).get("call_id")
+        for ev in bundle["events"]:
+            if ev.type not in want:
+                continue
+            if not (lo <= int(ev.ts) <= hi + 1000):
+                continue
+            payload = ev.payload or {}
+            if kind == "tool" and call_id:
+                ev_key = payload.get("tool_call_id") or payload.get("call_id")
+                if isinstance(payload.get("tool_call"), dict):
+                    ev_key = payload["tool_call"].get("id")
+                if ev_key and str(ev_key) != str(call_id):
+                    continue
+            chunk = payload.get("delta") or payload.get("text") or payload.get("result") or payload.get("content")
+            if isinstance(chunk, str):
+                chunks.append(chunk)
+            elif chunk is not None:
+                chunks.append(str(chunk))
+    text = "".join(chunks)
+    return {
+        "id": item_id,
+        "kind": kind,
+        "chars": len(text),
+        "truncated": len(text) > TIMELINE_TEXT_LIMIT,
+        "text": text[:TIMELINE_TEXT_LIMIT],
+    }
