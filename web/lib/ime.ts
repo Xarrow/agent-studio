@@ -30,7 +30,34 @@
 import { useRef } from "react";
 
 /** 组字刚结束的静默窗口：这段时间内来的 Enter 仍算「在选字」 */
-const SETTLE_MS = 120;
+const SETTLE_MS = 250;
+
+/**
+ * 全局组字状态（模块级，document 上监听一次）
+ * ==========================================
+ *
+ * 为什么要有：Safari / 部分安卓输入法是**先 `compositionend` 再派发 keydown**，
+ * 而且那次 keydown 的 `isComposing` 已经是 false、`keyCode` 也是 13 ——
+ * 只看事件本身的 `isImeEvent` 判不出来，于是「按 Enter 选字」被当成「提交」。
+ * 这是「改 Agent 名字时，中文一确认就自动保存，英文不会」的真因（用户反馈）。
+ *
+ * 把组字起止挂在 document 上记进模块状态，任何调用 `isImeEvent(e)` 的地方
+ * 都自动获得这层判断 —— 不用挨个改成 hook，也不怕以后新写的地方漏掉。
+ */
+let composing = false;
+let endedAt = 0;
+let installed = false;
+
+function ensureGlobal() {
+  if (installed || typeof document === "undefined") return;
+  installed = true;
+  // capture 阶段：输入框自己 stopPropagation 也不会漏
+  document.addEventListener("compositionstart", () => { composing = true; }, true);
+  document.addEventListener("compositionend", () => { composing = false; endedAt = Date.now(); }, true);
+}
+
+/** 组字刚结束的静默窗口（导出给测试与 hook 共用） */
+export const IME_SETTLE_MS = SETTLE_MS;
 
 type AnyKeyEvent = {
   nativeEvent?: { isComposing?: boolean; keyCode?: number } | null;
@@ -41,11 +68,25 @@ type AnyKeyEvent = {
 
 /** 事件本身是否就是「组字中」的信号（React 合成事件与原生事件都吃） */
 export function isImeEvent(e: AnyKeyEvent | null | undefined): boolean {
-  if (!e) return false;
-  const native = e.nativeEvent ?? undefined;
-  if (native?.isComposing || e.isComposing) return true;
+  ensureGlobal();
+  const native = e?.nativeEvent ?? undefined;
+  if (native?.isComposing || e?.isComposing) return true;
   // 229 = IME 正在处理这次按键（老浏览器 / 部分输入法只给这个）
-  return native?.keyCode === 229 || e.keyCode === 229 || e.which === 229;
+  if (native?.keyCode === 229 || e?.keyCode === 229 || e?.which === 229) return true;
+  // 组字中（事件本身没带信号的情况）以及刚结束组字的那一小段
+  if (composing) return true;
+  return endedAt > 0 && Date.now() - endedAt < SETTLE_MS;
+}
+
+// 模块加载即装监听：等到第一次按键才装就晚了 —— 那次交互的
+// compositionstart/end 已经过去，模块什么都没记到（真机验证时踩到：
+// 合成 compositionend + Enter，Enter 照样把名字存了）。
+if (typeof document !== "undefined") ensureGlobal();
+
+/** 供测试重置模块级状态（生产不调用） */
+export function __resetImeState() {
+  composing = false;
+  endedAt = 0;
 }
 
 /**

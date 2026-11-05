@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-import { isImeEvent } from "./ime.ts";
+import { IME_SETTLE_MS, __resetImeState, isImeEvent } from "./ime.ts";
 
 test("isImeEvent：React 合成事件的 nativeEvent.isComposing", () => {
   assert.equal(isImeEvent({ nativeEvent: { isComposing: true } }), true);
@@ -97,4 +97,46 @@ test("全站扫描：Enter 提交的地方都有 IME 守卫（中文组字中回
     [],
     `这些 Enter 处理没有输入法守卫（中文没打完就回车会被当提交）：\n${offenders.join("\n")}`,
   );
+});
+
+/* ─────────────── 全局组字状态：Safari 顺序（先 compositionend 再 keydown） ─────────────── */
+
+const imeHandlers: Record<string, Array<() => void>> = {};
+function fakeDocument() {
+  // 模块级监听只装一次 —— 第二次再换新 document 就接不到事件了
+  (globalThis as unknown as { document: unknown }).document = {
+    addEventListener: (type: string, fn: () => void) => {
+      (imeHandlers[type] ||= []).push(fn);
+    },
+  };
+  isImeEvent({ nativeEvent: {} }); // 触发一次，让模块把监听装上
+  return imeHandlers;
+}
+
+test("组字状态：compositionend 之后紧跟的 Enter 仍算选字（Safari 顺序）", () => {
+  const handlers = fakeDocument();
+  __resetImeState();
+
+  handlers["compositionstart"][0]();
+  // 组字中：事件本身什么信号都不带（isComposing=false / keyCode=13）
+  assert.equal(isImeEvent({ nativeEvent: { isComposing: false, keyCode: 13 } }), true);
+
+  handlers["compositionend"][0]();
+  // Safari 就在这一下之后立刻派发 keydown —— 这是「中文一确认就保存」的真因
+  assert.equal(isImeEvent({ nativeEvent: { isComposing: false, keyCode: 13 } }), true);
+  // 静默窗口内一直是「选字」
+  assert.equal(isImeEvent({ key: "Enter" } as never), true);
+
+  __resetImeState();
+  assert.equal(isImeEvent({ nativeEvent: { isComposing: false, keyCode: 13 } }), false);
+});
+
+test("组字状态：静默窗口过后，Enter 恢复成正常提交", async () => {
+  const handlers = fakeDocument();
+  __resetImeState();
+  handlers["compositionstart"][0]();
+  handlers["compositionend"][0]();
+  await new Promise((r) => setTimeout(r, IME_SETTLE_MS + 60));
+  assert.equal(isImeEvent({ nativeEvent: { isComposing: false, keyCode: 13 } }), false);
+  __resetImeState();
 });
