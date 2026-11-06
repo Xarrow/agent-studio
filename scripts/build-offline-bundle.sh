@@ -43,7 +43,7 @@ export http_proxy="${http_proxy-http://192.168.2.7:7890}"
 echo "[1/6] 准备目录 $STAGE"
 mkdir -p "$WORK" "$STAGE/app/src" "$STAGE/app/web" "$STAGE/runtime/$DIR_ARCH/python" "$STAGE/vendor/$DIR_ARCH"
 
-echo "[2/6] 内置 Python 运行时 ($PBS_VER·$ARCH)"
+echo "[2/6] 内置 Python 运行时 (${PBS_VER}·$ARCH)"
 if [ ! -x "$STAGE/runtime/$DIR_ARCH/python/bin/python3" ]; then
   PBS_URL="${PBS_URL_BASE-https://gh-proxy.com/}https://github.com/astral-sh/python-build-standalone/releases/download/$PBS_TAG/cpython-$PBS_VER%2B$PBS_TAG-$PBS_ARCH-install_only_stripped.tar.gz"
   curl -fL --retry 3 -m 900 -o "$WORK/pbs.tar.gz" "$PBS_URL"

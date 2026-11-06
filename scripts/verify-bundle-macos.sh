@@ -65,7 +65,7 @@ if [ -x "$PY" ]; then
   echo "  架构: $ARCHS"
   case "$ARCHS" in
     *arm64*) ok "二进制含 arm64" ;;
-    *) bad "不是 arm64（$ARCHS）" ;;
+    *) bad "不是 arm64（${ARCHS}）" ;;
   esac
   "$PY" -V 2>&1 | sed 's/^/  /'
   "$PY" - <<'PYEOF' || bad "运行时自检失败"
@@ -75,7 +75,7 @@ assert platform.machine() == "arm64", platform.machine()
 print(f"  [OK]   {sys.platform} / {platform.machine()} / macOS {platform.mac_ver()[0]} / {sys.version.split()[0]}")
 PYEOF
 else
-  bad "找不到内置 python（$PY）"
+  bad "找不到内置 python（${PY}）"
 fi
 
 echo "=== 3) 启动（真跑 start.sh）==="
@@ -122,15 +122,15 @@ curl -s -m 10 -X POST "http://127.0.0.1:$PORT/api/agents" \
   -o "$WORK/agent.json" -w '%{http_code}' > "$WORK/agent.code" 2>/dev/null || true
 ac="$(cat "$WORK/agent.code" 2>/dev/null || echo 000)"
 if [ "$ac" = "200" ] || [ "$ac" = "201" ]; then
-  ok "写入助手 → $ac（SQLAlchemy async 正常）"
+  ok "写入助手 → ${ac}（SQLAlchemy async 正常）"
   AID="$(sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$WORK/agent.json" | head -1)"
   if [ -n "$AID" ]; then
     n="$(curl -s -m 10 "http://127.0.0.1:$PORT/api/agents" | grep -c "$AID" || true)"
-    [ "$n" -ge 1 ] && ok "读回刚写的助手（$AID）" || bad "读不回刚写的助手"
+    [ "$n" -ge 1 ] && ok "读回刚写的助手（${AID}）" || bad "读不回刚写的助手"
     curl -s -m 10 -X DELETE "http://127.0.0.1:$PORT/api/agents/$AID" -o /dev/null || true
   fi
 else
-  bad "写入助手 → $ac（异步引擎/数据库有问题）"
+  bad "写入助手 → ${ac}（异步引擎/数据库有问题）"
   tail -20 "$WORK/start.log"
 fi
 

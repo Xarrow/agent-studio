@@ -20,7 +20,7 @@ ARCH="${BUNDLE_ARCH:-$(uname -m)}"
 case "$ARCH" in
   x86_64|amd64) ARCH=x86_64 ;;
   aarch64|arm64) ARCH=aarch64 ;;
-  *) echo "[!] 不支持的架构：$ARCH（包内提供 x86_64 / aarch64）"; exit 1 ;;
+  *) echo "[!] 不支持的架构：${ARCH}（包内提供 x86_64 / aarch64）"; exit 1 ;;
 esac
 PY="runtime/$ARCH/python/bin/python3"
 if [ ! -x "$PY" ]; then
@@ -36,7 +36,7 @@ echo "[1/3] 内置运行时：$("$PY" -V 2>&1) ($ARCH)"
 GLIBC_MIN="2.28"
 GLIBC_VER="$(ldd --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+$' || true)"
 if [ -n "$GLIBC_VER" ] && [ "$(printf '%s\n%s\n' "$GLIBC_MIN" "$GLIBC_VER" | sort -V | head -1)" != "$GLIBC_MIN" ]; then
-  echo "[!] 本机 glibc $GLIBC_VER 低于依赖要求的 $GLIBC_MIN（cryptography 等原生扩展需要）"
+  echo "[!] 本机 glibc $GLIBC_VER 低于依赖要求的 ${GLIBC_MIN}（cryptography 等原生扩展需要）"
   echo "    可用系统：Ubuntu 22.04+ / Debian 12+ / RHEL·Rocky·CentOS Stream 9+"
   exit 1
 fi
@@ -54,7 +54,7 @@ if [ -z "${STUDIO_MASTER_KEY:-}" ]; then
     mkdir -p data
     "$PY" -c "import secrets;print(secrets.token_urlsafe(48))" > "$KEYFILE"
     chmod 600 "$KEYFILE"
-    echo "[2/3] 已生成主密钥 → $KEYFILE（请备份，换机迁移时要一起带走）"
+    echo "[2/3] 已生成主密钥 → ${KEYFILE}（请备份，换机迁移时要一起带走）"
   else
     echo "[2/3] 沿用已有主密钥 → $KEYFILE"
   fi
