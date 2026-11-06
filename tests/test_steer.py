@@ -250,3 +250,45 @@ async def test_一轮跑完了再插话会被拒(client, monkeypatch):
     late = await client.post(f"/api/runs/{run_id}/steer", json={"text": "慢着"})
     assert late.status_code == 409, late.text
     assert "结束" in late.json()["detail"]
+
+
+# --------------------------------------------------------------------------- #
+# 工具执行中插话：不能直接塞（会插进 tool_calls 和工具结果中间，服务商 400）
+# --------------------------------------------------------------------------- #
+@pytest.mark.asyncio
+async def test_工具执行中先收下_这一步收尾才注入():
+    rt = _FakeRuntime()
+    await registry.attach("run_busy", rt, compiled=object())
+    registry.mark_step("run_busy", True)  # 助手已发 tool_calls，工具还在跑
+
+    assert await registry.deliver("run_busy", "别删那个目录") == SteerResult.DEFERRED
+    assert rt.calls == [], "工具还没回结果就插，下一轮请求会被服务商 400 拒掉"
+    assert registry.pending_count("run_busy") == 1
+
+    registry.mark_step("run_busy", False)  # tool_exec_end
+    assert await registry.flush("run_busy") == 1
+    assert rt.calls == ["别删那个目录"]
+    assert registry.pending_count("run_busy") == 0
+    await registry.detach("run_busy")
+
+
+@pytest.mark.asyncio
+async def test_还在不安全的时候_flush_不会硬插():
+    rt = _FakeRuntime()
+    await registry.attach("run_busy2", rt, compiled=object())
+    registry.mark_step("run_busy2", True)
+    await registry.deliver("run_busy2", "停一下")
+    assert await registry.flush("run_busy2") == 0
+    assert rt.calls == []
+    await registry.detach("run_busy2")
+
+
+@pytest.mark.asyncio
+async def test_没等到的插话也要留在这一轮的记录里():
+    """这一轮在我这句话生效前就结束了 —— 至少别让人以为自己没说。"""
+    rt = _FakeRuntime()
+    await registry.attach("run_late", rt, compiled=object())
+    registry.mark_step("run_late", True)
+    await registry.deliver("run_late", "改成用 API 别爬页面")
+    await registry.detach("run_late")
+    assert registry.take_texts("run_late") == ["改成用 API 别爬页面"]

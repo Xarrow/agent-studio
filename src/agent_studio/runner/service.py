@@ -70,6 +70,46 @@ BUDGET_POLL_S = 3.0
 #: run_id → 预算看门狗任务（收尾时取消，别留个空转的协程）
 _BUDGET_GUARDS: dict[str, asyncio.Task] = {}
 
+#: 插话注入的「步骤代数」：每进入一个不可插的步骤就 +1。
+#: 定时注入前对一下代数 —— 对不上说明这几毫秒里又进了工具调用，得继续等。
+_STEP_GEN: dict[str, int] = {}
+
+#: 还没跑完的定时注入任务（收尾时一起取消）
+_FLUSH_TASKS: dict[str, set[asyncio.Task]] = {}
+
+
+def _bump_step(run_id: str) -> None:
+    _STEP_GEN[run_id] = _STEP_GEN.get(run_id, 0) + 1
+
+
+def _flush_soon(run_id: str, delay: float = 0.08) -> None:
+    """这一步收尾了，但先别急着插 —— 隔一小段确认后面没有紧跟着的工具调用。
+
+    为什么不能直接 ``mark_step(False)``：``llm_call_end`` 之后几毫秒就是
+    ``tool_exec_start``。如果那一步真去调工具了，此刻插进去的 user 消息会卡在
+    assistant(tool_calls) 和工具结果中间，下一轮请求被服务商 400 拒掉。
+    """
+    gen = _STEP_GEN.get(run_id, 0)
+
+    async def _go() -> None:
+        await asyncio.sleep(delay)
+        if _STEP_GEN.get(run_id, 0) != gen:  # 这期间又进了工具调用 / 又生成了一轮
+            return
+        if not steer_registry.is_live(run_id) or steer_registry.pending_count(run_id) == 0:
+            return
+        steer_registry.mark_step(run_id, False)
+        await steer_registry.flush(run_id)
+
+    task = asyncio.create_task(_go())
+    _FLUSH_TASKS.setdefault(run_id, set()).add(task)
+    task.add_done_callback(lambda t: _FLUSH_TASKS.get(run_id, set()).discard(t))
+
+
+def _drop_step_state(run_id: str) -> None:
+    _STEP_GEN.pop(run_id, None)
+    for task in _FLUSH_TASKS.pop(run_id, set()):
+        task.cancel()
+
 
 async def reap_orphan_runs(boot_ms: int) -> int:
     """把「本进程启动前就处于在途状态」的执行记录判为中断。
@@ -906,6 +946,23 @@ class RunService:
                                         if ev.type == "hitl_request":
                                             status = "waiting_hitl"
                                             hitl_payload = dict(ev.payload)
+                                        # ── 插话的注入时机 ────────────────────────────
+                                        # 模型生成中 / 工具执行中都不能插：AgentScope 的
+                                        # observe() 直接追加到 memory 末尾，会落到
+                                        # assistant(tool_calls) 和 tool 结果中间，下一轮请求
+                                        # 被服务商 400 拒掉（实测整轮变 error）。
+                                        # 所以这两段先「收下不插」，等这一步收尾再注入。
+                                        if ev.type in ("llm_call_start", "tool_exec_start"):
+                                            _bump_step(run_id)
+                                            steer_registry.mark_step(run_id, True)
+                                        elif ev.type == "tool_exec_end":
+                                            steer_registry.mark_step(run_id, False)
+                                            await steer_registry.flush(run_id)
+                                        elif ev.type == "llm_call_end":
+                                            # 这一步要是没有后续工具调用，就是安全时机 ——
+                                            # 但不能立刻判：tool_exec_start 就在几毫秒后。
+                                            # 交给 _flush_soon 隔一gap再看一眼。
+                                            _flush_soon(run_id)
                                         # 被拒绝就**停在这里**：不拦的话模型会换个工具再试一遍
                                         # （实测：拒绝 proc_start 之后它改用 python 删同一个目录），
                                         # 用户得连点两次拒绝 —— 拒绝的意思本来就是"这条别做"。
@@ -949,6 +1006,7 @@ class RunService:
                                     await consume()
                             finally:
                                 await steer_registry.detach(run_id)
+                                _drop_step_state(run_id)
                                 # 清单要**在 dispose 之前**导出（dispose 会收掉 agent）
                                 await todo_store.save(
                                     run.session_id, runtime.snapshot_plan(compiled)

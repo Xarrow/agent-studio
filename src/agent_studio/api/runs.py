@@ -612,12 +612,20 @@ async def steer_run(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "插话内容不能为空")
 
     result = await steer_registry.deliver(run_id, payload.text)
-    if result != steer_registry.SteerResult.DELIVERED:
+    if result not in (
+        steer_registry.SteerResult.DELIVERED,
+        steer_registry.SteerResult.DEFERRED,
+    ):
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             steer_registry.SteerResult.MESSAGES.get(result, "插话没送出去"),
         )
-    return {"delivered": True, "message": steer_registry.SteerResult.MESSAGES[result]}
+    return {
+        "delivered": True,
+        # 「已经进上下文」和「收下了，这一步做完就进」对用户是两件事，别糊成一句
+        "deferred": result == steer_registry.SteerResult.DEFERRED,
+        "message": steer_registry.SteerResult.MESSAGES[result],
+    }
 
 
 @router.post("/{run_id}/refill")
