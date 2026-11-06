@@ -117,6 +117,10 @@ class CompiledAgent(ABC):
     runtime: str = ""
     #: 物化后的工作目录（Skill / 工具的落地点）
     work_dir: str | None = None
+    #: 本轮最终输出。**平台从这里取 ``run.output``** —— 运行时跑完不填就是空。
+    #: 之前这条只活在 runner 的 ``getattr`` 里，第三方插件写出来输出为空、
+    #: 排查半天才发现契约没写。写在这里，让插件作者看得见。
+    last_output: Any = None
 
     @abstractmethod
     async def dispose(self) -> None:
