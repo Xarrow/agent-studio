@@ -54,6 +54,33 @@ async def _agent_names(session: AsyncSession, agent_ids: list[str]) -> dict[str,
     return {r[0]: r[1] for r in rows}
 
 
+def _published_roots() -> list[Path]:
+    """可能发布到的位置（和交付时同一套优先级，只取本机存在的）。"""
+    roots: list[Path] = []
+    if settings.publish_dir:
+        roots.append(Path(settings.publish_dir).expanduser())
+    else:
+        www = Path("/srv/www")
+        if www.is_dir():
+            roots.append(www)
+        roots.append(Path(settings.work_dir) / "published")
+    return roots
+
+
+def _remove_published(session_id: str) -> list[str]:
+    """删会话时顺便收掉它的发布副本（名字来自同一个 slug 规则）。"""
+    import shutil
+
+    gone: list[str] = []
+    slug = dlv.slug_for(session_id)
+    for root in _published_roots():
+        target = root / slug
+        if target.is_dir():
+            shutil.rmtree(target, ignore_errors=True)
+            gone.append(str(target))
+    return gone
+
+
 def _remove_session_dir(session_id: str) -> str | None:
     """删掉会话的工作目录。
 
@@ -469,7 +496,14 @@ async def delete_session(
     await session.delete(row)
     await session.commit()
     removed = _remove_session_dir(session_id)
-    return {"deleted": 1, "unbound_runs": len(runs), "removed_dir": removed}
+    # 发布出去的产物也要收走：会话没了、链接还活着，等于留了一份没人认领的公开副本
+    published = _remove_published(session_id)
+    return {
+        "deleted": 1,
+        "unbound_runs": len(runs),
+        "removed_dir": removed,
+        "removed_published": published,
+    }
 
 
 @router.patch("/{session_id}/messages/{message_id}", response_model=SessionMessageRead)
