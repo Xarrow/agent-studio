@@ -66,3 +66,25 @@ def test_navigation_with_cookie_passes(client: TestClient) -> None:
 def test_wrong_token_still_rejected(client: TestClient) -> None:
     r = client.get("/api/version", headers={**FETCH, "Cookie": "studio_token=nope"})
     assert r.status_code == 401
+
+
+def test_query_token_plants_a_cookie(client: TestClient) -> None:
+    """地址栏带 ?token= 过闸时，必须顺手种 cookie。
+
+    否则首页 HTML 能过闸，但它引用的 /_next/*.js 是另起的请求 ——
+    带不上查询参数、也还没有 cookie → 全部 401 → 白屏。
+    东京首次部署就这么白了一次，用户看到的只是"打不开"。
+    """
+    r = client.get("/api/version", params={"token": TOKEN}, headers=FETCH)
+    assert r.status_code == 200
+    set_cookie = r.headers.get("set-cookie", "")
+    assert set_cookie.startswith("studio_token="), set_cookie
+    assert TOKEN in set_cookie
+    assert "Path=/" in set_cookie or "path=/" in set_cookie
+
+
+def test_bearer_does_not_plant_cookie(client: TestClient) -> None:
+    """只有地址栏那条路要种 —— 接口调用不该被塞 cookie。"""
+    r = client.get("/api/version", headers={**FETCH, "Authorization": f"Bearer {TOKEN}"})
+    assert r.status_code == 200
+    assert "set-cookie" not in {k.lower() for k in r.headers}

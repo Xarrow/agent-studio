@@ -287,7 +287,20 @@ async def require_access_token(request: "Request", call_next):
         return await call_next(request)          # 内网直连放行
 
     if secrets.compare_digest(_presented_token(request), ACCESS_TOKEN):
-        return await call_next(request)
+        response = await call_next(request)
+        # 口令是地址栏带进来的（``?token=…``）就顺手种 cookie。
+        # 不种的话：首页 HTML 能过闸，但它引用的 ``/_next/*.js`` 是**另起的请求**，
+        # 带不上查询参数也没有 cookie → 全部 401 → 白屏。东京首次部署实测，
+        # 用户能看到的只有"打不开"，而他明明已经把口令输对了。
+        if request.query_params.get("token") and not request.cookies.get("studio_token"):
+            response.set_cookie(
+                "studio_token",
+                ACCESS_TOKEN,
+                max_age=2592000,
+                path="/",
+                samesite="lax",
+            )
+        return response
 
     logger.warning(
         "ACCESS 拒绝（口令无效） src=%s via=%s %s %s",
