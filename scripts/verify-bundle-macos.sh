@@ -52,7 +52,9 @@ PKG="$WORK/agent-studio"
 [ -x "$PKG/start.sh" ] && ok "start.sh 可执行" || bad "start.sh 缺失"
 [ -d "$PKG/runtime/aarch64/python" ] && ok "内置 aarch64 运行时在" || bad "缺 runtime/aarch64"
 [ -f "$PKG/app/web/out/index.html" ] && ok "前端静态产物在" || bad "缺 web/out/index.html"
-if tar tzf "$TAR" | grep -qE "node_modules|/\.venv/|/data/|/\.git/"; then
+# 只看包根下的这些目录：site-packages 里本来就有 numpy/.../tests/data 这类
+# 深路径，用「/data/」全串匹配会把合法依赖误判成"夹带数据库"（真踩过）。
+if tar tzf "$TAR" | grep -qE '^agent-studio/(node_modules|\.venv|\.git|data)/'; then
   bad "包里夹带了依赖/虚拟环境/数据/git"
 else
   ok "无 node_modules / .venv / data / git 夹带"
