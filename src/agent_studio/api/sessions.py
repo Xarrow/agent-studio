@@ -30,7 +30,7 @@ from ..config import settings
 from ..context import clear_context
 from ..db import get_session
 from .. import deliverables as dlv
-from ..models import Agent, Run, Session as ChatSession, SessionMessage, new_id, now_ms
+from ..models import Agent, Run, Session as ChatSession, SessionMessage, ToolCall, new_id, now_ms
 from ..supervisor import ROUTER_SESSION_TITLE, WORKER_PREFIX
 from ..runner.service import SESSION_DIR_NAME, session_work_dir
 from ..schemas import (
@@ -43,6 +43,28 @@ from ..schemas import (
 )
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
+
+
+async def _sources_counts(session: AsyncSession, run_ids: list[str]) -> dict[str, int]:
+    """每个 run 读过多少网页（只查搜索/抓取这几种工具的行，别的工具不参与）。"""
+    from .. import sources as source_scan
+
+    if not run_ids:
+        return {}
+    rows = (
+        await session.execute(
+            select(ToolCall.run_id, ToolCall.tool_name, ToolCall.args, ToolCall.result_preview)
+            .where(ToolCall.run_id.in_(run_ids))
+            .where(ToolCall.tool_name.in_(tuple(source_scan.SEARCH_TOOLS | source_scan.FETCH_TOOLS | source_scan.BROWSE_TOOLS)))
+            .order_by(ToolCall.id)
+        )
+    ).all()
+    by_run: dict[str, list[dict]] = {}
+    for run_id, name, args, result in rows:
+        by_run.setdefault(run_id, []).append(
+            {"tool_name": name, "args": args, "result_preview": result}
+        )
+    return {rid: source_scan.collect(items)["count"] for rid, items in by_run.items()}
 
 
 async def _agent_names(session: AsyncSession, agent_ids: list[str]) -> dict[str, str]:
@@ -239,12 +261,16 @@ async def get_session_detail(
             head.ticket_id, head.ticket_title = tk.id, tk.title or ""
             th = tk.thread_id or ""
             head.parent_session_id = th[len("ses:") :] if th.startswith("ses:") else None
+    # 「引用」标识要能一进来就看见，所以计数在详情里一次算完（一条 SQL），
+    # 而不是让前端对每条消息各拉一次来源清单 —— 五十条的会话就是五十个请求。
+    counts = await _sources_counts(session, [r.run_id for r in rows if r.run_id])
     return SessionDetail(
         session=head,
         messages=[
             SessionMessageRead(
                 id=r.id, turn_index=r.turn_index, role=r.role,
                 content=r.content, run_id=r.run_id, ts=r.ts,
+                sources_count=counts.get(r.run_id or "", 0),
             )
             for r in rows
         ],

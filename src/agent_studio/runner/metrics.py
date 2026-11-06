@@ -42,6 +42,17 @@ class LlmCallRecord:
         return max(0, self.ended_at - self.started_at)
 
 
+#: 哪些工具的结果要多留一点。
+#: 500 字是"给人看的一行预览"的标准，但 ``web_search`` 的结果是**一组带 URL 的条目**，
+#: 500 字只够装一两条 —— 后面的 URL 全断在半路，引用来源就只剩一个。
+#: 这几个工具按"够解析完"给额度，其余仍是 500。
+_PREVIEW_LIMITS = {"web_search": 8000, "fetch": 4000, "web_fetch": 4000}
+
+
+def preview_cap(tool_name: str) -> int:
+    return _PREVIEW_LIMITS.get(tool_name, 500)
+
+
 @dataclass
 class ToolCallRecord:
     tool_name: str
@@ -349,7 +360,7 @@ class MetricsCollector:
             text = chunk if isinstance(chunk, str) else str(chunk)
             rec.result_size += len(text.encode("utf-8"))
             if rec.result_preview is None:
-                rec.result_preview = text[:500]
+                rec.result_preview = text[: preview_cap(rec.tool_name)]
 
     def _on_tool_exec_end(self, ev: UnifiedEvent) -> None:
         key = self._tool_key(ev)
@@ -371,7 +382,7 @@ class MetricsCollector:
             if chunk is not None:
                 text = chunk if isinstance(chunk, str) else str(chunk)
                 rec.result_size = len(text.encode("utf-8"))
-                rec.result_preview = text[:500]
+                rec.result_preview = text[: preview_cap(rec.tool_name)]
         self._close_span(
             self._tool_spans.pop(key, None), ev.ts, result_size=rec.result_size, status=rec.status
         )

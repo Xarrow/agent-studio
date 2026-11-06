@@ -786,6 +786,8 @@ class SessionMessageRead(BaseModel):
     content: str
     run_id: str | None = None
     ts: int
+    #: 这条回复对应的那一轮读过多少网页（0 = 不显示「引用」标识）
+    sources_count: int = 0
 
 
 class SessionDetail(BaseModel):

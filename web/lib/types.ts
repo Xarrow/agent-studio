@@ -665,6 +665,8 @@ export interface SessionMessage {
   content: string;
   run_id: string | null;
   ts: number;
+  /** 这一轮读过几个网页（0 = 不显示「引用」标识） */
+  sources_count?: number;
 }
 
 export interface SessionDetail {

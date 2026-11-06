@@ -41,6 +41,7 @@ import { Sheet } from "./ui/Sheet";
 import { MemoryPicker } from "./MemoryPicker";
 import { QuickTags } from "./QuickTags";
 import { DeliverableBar } from "./DeliverableBar";
+import { SourceBadge } from "./SourceBadge";
 import { FileOpenerProvider, FileRowButton } from "@/components/FileDialog";
 import { copyText } from "@/lib/clipboard";
 import { middleEllipsis, fileTypeKey, shortFilePath } from "@/lib/files";
@@ -216,6 +217,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
       turn_index: number;
       id?: number;
       ts?: number;
+      /** 这一轮读过几个网页（0 = 不显示「引用」标识） */
+      sources_count?: number;
     }[]
   >([]);
   /** history 的镜像 ref：刷新恢复块要读"刚加载完"的最新历史，
@@ -423,6 +426,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             turn_index: m.turn_index,
             id: m.id,
             ts: m.ts,
+            sources_count: m.sources_count ?? 0,
           })),
       );
     } catch {
@@ -2109,6 +2113,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                         <DelegationBlock runId={m.run_id} />
                       </div>
                       {bubble}
+                      {/* 引用标识：这条回答读过哪些网页（只认工具真返回过的链接） */}
+                      <SourceBadge runId={m.run_id} count={m.sources_count ?? 0} />
                     </div>
                   ) : (
                     <Fragment key={m.id ?? i}>{bubble}</Fragment>

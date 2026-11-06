@@ -2021,6 +2021,32 @@ async def _timeline_bundle(session: AsyncSession, run_id: str) -> dict[str, Any]
     }
 
 
+@router.get("/{run_id}/sources", response_model=dict)
+async def get_sources(run_id: str, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """这一轮模型实际读过哪些网页（从工具调用里解析，不落库）。
+
+    判定标准只有一条：**工具真的返回过的 URL**。模型自己写在正文里的链接不算，
+    编的也不算 —— 用户要的是"这条说法基于什么"，不是"模型声称看过什么"。
+    """
+    from .. import sources as source_scan
+
+    run = await session.get(Run, run_id)
+    if run is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Run 不存在: {run_id}")
+    rows = (
+        await session.execute(
+            select(ToolCall.tool_name, ToolCall.args, ToolCall.result_preview)
+            .where(ToolCall.run_id == run_id)
+            .order_by(ToolCall.id)
+        )
+    ).all()
+    data = source_scan.collect(
+        [{"tool_name": r[0], "args": r[1], "result_preview": r[2]} for r in rows]
+    )
+    data["run_id"] = run_id
+    return data
+
+
 @router.get("/{run_id}/timeline", response_model=dict)
 async def get_timeline(
     run_id: str, session: AsyncSession = Depends(get_session)

@@ -1102,6 +1102,14 @@ export const api = {
       count: number;
       files: { path: string; size: number; mtime: number; url: string }[];
     }>(`/api/sessions/${id}/files?limit=${limit}`),
+  /** 这一轮读过哪些网页（后端从工具调用解析，不落库） */
+  runSources: (id: string) =>
+    request<{
+      run_id: string;
+      count: number;
+      sites: string[];
+      items: { url: string; url_key: string; title: string; site: string; kind: string; snippet: string }[];
+    }>(`/api/runs/${id}/sources`),
   /** 这个会话交付了什么（会话目录下 product/；没有就是 exists=false） */
   sessionDeliverable: (id: string) =>
     request<{
