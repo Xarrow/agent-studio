@@ -53,10 +53,15 @@ echo "=== 2) 一键启动 ==="
 cd "$PKG"
 STUDIO_PORT="$API_PORT" WEB_PORT="$WEB_PORT" bash start.sh > "$WORK/start.log" 2>&1 &
 SPID=$!
-for i in $(seq 1 90); do
+for i in $(seq 1 300); do
   code=$(curl -s -o /dev/null -m 3 -w '%{http_code}' "http://127.0.0.1:$API_PORT/api/health" || true)
   [ "$code" = "200" ] && break
   kill -0 "$SPID" 2>/dev/null || { bad "启动脚本提前退出"; tail -30 "$WORK/start.log"; break; }
+  # 冷 runner 上 uv sync 要重下 CPython + 上百个包，两三分钟很正常 ——
+  # 每 30 秒报一次进度，别让日志看起来像卡死
+  if [ $((i % 15)) -eq 0 ]; then
+    echo "  … 还在启动（已等 $((i * 2))s，最后 HTTP=$code）"
+  fi
   sleep 2
 done
 [ "$code" = "200" ] && ok "后端 /api/health → 200" || { bad "后端未就绪（最后 HTTP=$code）"; tail -30 "$WORK/start.log"; }
