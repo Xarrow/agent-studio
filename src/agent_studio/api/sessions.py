@@ -15,11 +15,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..config import settings
 from ..context import clear_context
 from ..db import get_session
+from .. import deliverables as dlv
 from ..models import Agent, Run, Session as ChatSession, SessionMessage, new_id, now_ms
 from ..supervisor import ROUTER_SESSION_TITLE, WORKER_PREFIX
 from ..runner.service import SESSION_DIR_NAME, session_work_dir
@@ -635,3 +638,129 @@ async def clear_session_context(
         session, session_id, keep_summary=bool(payload and payload.keep_summary)
     )
     return {"removed_messages": removed}
+
+
+# --------------------------------------------------------------------------- #
+# 产物（deliverable）
+#
+# 会话的「交付物」= 工作目录下的 ``product/``。它和上面「会话文件」不是一回事：
+# 文件是过程（脚本、日志、中间结果），产物是**这一轮要给人的东西**。
+# 分开的理由是可操作：产物能预览、能打包、能发布成链接；过程文件不能。
+# --------------------------------------------------------------------------- #
+@router.get("/{session_id}/deliverable")
+async def get_session_deliverable(
+    session_id: str, session: AsyncSession = Depends(get_session)
+) -> dict:
+    """这个会话交付了什么（没有就是 exists=false，不报错）。"""
+    row = await session.get(ChatSession, session_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"会话不存在: {session_id}")
+    data = dlv.scan(session_work_dir(session_id)).to_dict()
+    data["session_id"] = session_id
+    if data.get("entry"):
+        rel = f"{dlv.PRODUCT_DIR}/{data['entry']}"
+        # 取文件走既有产物端点（它自带白名单/越界防护/HEAD）
+        data["entry_url"] = f"/api/work/file/{SESSION_DIR_NAME}/{session_id}/{rel}"
+    return data
+
+
+@router.get("/{session_id}/deliverable/zip")
+async def download_session_deliverable(
+    session_id: str, session: AsyncSession = Depends(get_session)
+):
+    """把产物打成 zip 下载（过程文件不进包）。"""
+    import io
+    import zipfile
+
+    row = await session.get(ChatSession, session_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"会话不存在: {session_id}")
+    root = dlv.product_path(session_work_dir(session_id))
+    info = dlv.scan(session_work_dir(session_id))
+    if not info.exists:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "这个会话还没有产物")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+        for f in info.files:
+            p = root / f["path"]
+            try:
+                zf.write(p, f["path"])
+            except OSError:
+                continue
+    buf.seek(0)
+    name = f"{dlv.slug_for(session_id)}.zip"
+    from fastapi.responses import Response
+
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+    )
+
+
+class PublishIn(BaseModel):
+    """留空就用默认发布位置（本机 /srv/www，其它机器落到工作目录下）。"""
+
+    dir: str = ""
+
+
+@router.post("/{session_id}/deliverable/publish")
+async def publish_session_deliverable(
+    session_id: str,
+    payload: PublishIn | None = None,
+    request: Request = None,  # type: ignore[assignment]
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """把产物发到一个能直接打开/分享的地址。
+
+    发布位置按顺序取：请求里的 ``dir`` > ``STUDIO_PUBLISH_DIR`` > 本机 ``/srv/www``
+    （用户的静态站点根，:8081 直接对外）> 工作目录下的 ``published/``。
+    同一个会话反复发布 = 覆盖同一个 slug，链接不会遍地都是。
+    """
+    import os
+
+    row = await session.get(ChatSession, session_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"会话不存在: {session_id}")
+
+    want = (payload.dir if payload else "").strip()
+    if want:
+        root = Path(want).expanduser()
+    elif settings.publish_dir:
+        root = Path(settings.publish_dir).expanduser()
+    elif Path("/srv/www").is_dir() and os.access("/srv/www", os.W_OK):
+        root = Path("/srv/www")
+    else:
+        root = Path(settings.work_dir) / "published"
+
+    try:
+        # 发布是纯 IO（拷贝几十个文件），别占事件循环
+        info = await asyncio.to_thread(dlv.publish, session_work_dir(session_id), root, session_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, f"发布失败：{exc}（目录可能没有写权限）"
+        ) from exc
+
+    slug, entry = info["slug"], info.get("entry") or ""
+    # 链接怎么拼：优先显式配置的对外基址；否则看发布目录是不是静态站根
+    base = (settings.public_base or "").strip().rstrip("/")
+    if base:
+        url = f"{base}/{slug}/{entry}" if entry else f"{base}/{slug}/"
+    elif root == Path("/srv/www"):
+        host = (request.url.hostname if request else "") or "127.0.0.1"
+        url = f"http://{host}:8081/{slug}/{entry}" if entry else f"http://{host}:8081/{slug}/"
+    else:
+        # 没有静态站托管，就走平台自己的文件端点（同源、免登录）
+        rel = f"{root.name}/{slug}/{entry}" if root.name == "published" else f"{slug}/{entry}"
+        url = f"/api/work/file/{rel}" if entry else ""
+    return {
+        "slug": slug,
+        "dir": str(root),
+        "entry": entry,
+        "file_count": info["file_count"],
+        "size": info["size"],
+        "published_at": info["published_at"],
+        "url": url,
+    }

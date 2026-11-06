@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     # 工作目录：Skill 物化、代码工具临时文件都放这里
     work_dir: Path = PROJECT_ROOT / "data" / "work"
 
+    # 产物发布：留空 = 自动（本机有 /srv/www 就发到那儿，否则落到工作目录的 published/）
+    publish_dir: Path | None = None
+    # 发布链接的对外基址（例如 https://as.example.com/static）。
+    # 留空时按发布目录推断：/srv/www → http://<访问主机>:8081，否则用平台自己的文件端点。
+    public_base: str = ""
+
     # API
     host: str = "0.0.0.0"
     port: int = 8848

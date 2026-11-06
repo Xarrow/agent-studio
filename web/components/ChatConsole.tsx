@@ -40,6 +40,7 @@ import { SkillEntry, ToolEntry, MemoryEntry } from "./ToolEntries";
 import { Sheet } from "./ui/Sheet";
 import { MemoryPicker } from "./MemoryPicker";
 import { QuickTags } from "./QuickTags";
+import { DeliverableBar } from "./DeliverableBar";
 import { FileOpenerProvider, FileRowButton } from "@/components/FileDialog";
 import { copyText } from "@/lib/clipboard";
 import { middleEllipsis, fileTypeKey, shortFilePath } from "@/lib/files";
@@ -2555,6 +2556,9 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             )}
 
             <div className="max-w-3xl mx-auto relative">
+              {/* 产物条：助手把成品写进会话目录的 product/ 之后常驻在这里 ——
+                  和在对话里读一段文字相比，用户要的是「能打开的东西」。 */}
+              <DeliverableBar sessionId={sessionId || undefined} />
               {/* 快速标签：常说的几句点一下就填进输入框（标签本身在设置里增删）。
                   空会话不出现 —— 一句话都没有的时候，「询问是否完成」没上下文，
                   只是白占输入区上方一行。 */}

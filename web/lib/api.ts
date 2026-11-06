@@ -1102,6 +1102,26 @@ export const api = {
       count: number;
       files: { path: string; size: number; mtime: number; url: string }[];
     }>(`/api/sessions/${id}/files?limit=${limit}`),
+  /** 这个会话交付了什么（会话目录下 product/；没有就是 exists=false） */
+  sessionDeliverable: (id: string) =>
+    request<{
+      session_id: string;
+      exists: boolean;
+      entry: string | null;
+      entry_url?: string;
+      kind: "web" | "doc" | "file";
+      files: { path: string; size: number; kind: string }[];
+      file_count: number;
+      size: number;
+      updated_at: number | null;
+    }>(`/api/sessions/${id}/deliverable`),
+  deliverableZipUrl: (id: string) => `/api/sessions/${id}/deliverable/zip`,
+  /** 发布产物，拿到一个能直接打开的地址（同一会话反复发布覆盖同一个 slug） */
+  publishSessionDeliverable: (id: string, dir = "") =>
+    post<{ slug: string; dir: string; entry: string; file_count: number; size: number; url: string }>(
+      `/api/sessions/${id}/deliverable/publish`,
+      { dir },
+    ),
   /** 删掉本会话目录里的一个文件（路径是相对会话目录的；越界后端会拒） */
   deleteSessionFile: (id: string, path: string) =>
     del<{ deleted: string; session_id: string }>(

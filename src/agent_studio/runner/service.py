@@ -608,6 +608,9 @@ def _with_work_dir_hint(run_input: Any, work_dir: Any) -> Any:
     hint = (
         f"\n\n【平台信息】你的工作目录：{work_dir}\n"
         f"读写文件请用这个目录下的**绝对路径**（例如 {work_dir}/result.md）。"
+        f"\n要交付成品（页面 / 小工具 / 文档）时，把成品放进 {work_dir}/product/："
+        f"网页入口用 index.html（同目录资源用相对路径引用），文档用 README.md —— "
+        f"这个目录会被平台认成「这一轮的产物」，用户能直接预览、下载、发布。"
     )
     if isinstance(run_input, str):
         return run_input + hint
