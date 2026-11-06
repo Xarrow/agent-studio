@@ -21,7 +21,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api } from "@/lib/api";
-import type { BrowserDriverEngine, BrowserDriverRow } from "@/lib/api";
+import type { BrowserDriverEngine, BrowserDriverRow, BrowserDriverVerify } from "@/lib/api";
 import { useFeedback } from "@/components/ui/feedback";
 
 const PROTO_LABEL: Record<string, string> = { cdp: "CDP", bidi: "BiDi" };
@@ -32,6 +32,8 @@ export function BrowserDriversCard() {
   const [rows, setRows] = useState<BrowserDriverRow[]>([]);
   const [engines, setEngines] = useState<BrowserDriverEngine[]>([]);
   const [busy, setBusy] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [depsBusy, setDepsBusy] = useState(false);
   const [loading, setLoading] = useState(true);
 
   /** 装新版本：引擎 → 版本清单 → 进度 */
@@ -86,6 +88,45 @@ export function BrowserDriversCard() {
     }
   };
 
+  /** 补系统运行库：能自己装就装，装不了把命令摊开给用户 */
+  const fixDeps = async () => {
+    setDepsBusy(true);
+    try {
+      const r = await api.browserInstallDeps();
+      if (r.ok) {
+        fb.success("系统依赖装好了", r.active?.verify?.ok ? "浏览器现在能真跑起来" : "装完了，但自检还没过 —— 看下面的原因");
+      } else if (r.needs_root) {
+        fb.error("这台机器上装不了（进程没有 root）", `请用 root 执行：\n${r.command}`);
+      } else {
+        fb.error("装依赖失败", r.output.slice(-400) || r.command);
+      }
+      await load();
+    } catch (e) {
+      fb.error("装依赖失败", e instanceof Error ? e.message : String(e));
+    } finally {
+      setDepsBusy(false);
+    }
+  };
+
+  /** 自检：真拉起来跑一次，把"能不能用"当场说清楚 */
+  const checkActive = async () => {
+    setChecking(true);
+    try {
+      const r = await api.browserCheck(active?.path ?? "", active?.kind ?? "");
+      const v = r.verify;
+      if (v.ok) {
+        fb.success("自检通过", "这个浏览器在这台机器上能真跑起来");
+      } else {
+        fb.error("起不来", `${v.problem ?? ""}${v.hint ? `\n${v.hint}` : ""}`);
+      }
+      await load();
+    } catch (e) {
+      fb.error("自检失败", e instanceof Error ? e.message : String(e));
+    } finally {
+      setChecking(false);
+    }
+  };
+
   const install = async () => {
     const target = versions.find((v) => v.version === version);
     if (!target) return;
@@ -103,7 +144,14 @@ export function BrowserDriversCard() {
             timer.current = null;
             setJob(null);
             setBusy(false);
-            fb.success("装好了", `${kind === "firefox" ? "Firefox" : "Chrome"} ${target.version}`);
+            // 「装好」不等于「能用」：缺系统库的机器上解压成功、文件也在，
+            // 但一启动就死在 libnss3/libnspr4 上。这里必须把自检结论说出来。
+            const v = s.verify as BrowserDriverVerify | undefined;
+            if (v && v.ok === false) {
+              fb.error("装好了，但这台机器上跑不起来", `${v.problem ?? ""}${v.hint ? `\n${v.hint}` : ""}`);
+            } else {
+              fb.success("装好了，自检通过", `${kind === "firefox" ? "Firefox" : "Chrome"} ${target.version}`);
+            }
             await load();
           } else if (s.status === "error") {
             if (timer.current) clearInterval(timer.current);
@@ -226,6 +274,66 @@ export function BrowserDriversCard() {
             {active.path}
           </div>
         ) : null}
+
+        {/* 能不能真跑起来 —— 「装好了」和「能用」是两件事，必须在这里说清楚 */}
+        <div className="mt-1.5 flex flex-wrap items-start gap-x-2 gap-y-1">
+          {(() => {
+            const v = active?.verify as BrowserDriverVerify | undefined;
+            if (!v || v.checked_at === undefined) {
+              return (
+                <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+                  还没自检过
+                </span>
+              );
+            }
+            return v.ok ? (
+              <span className="text-[12px]" style={{ color: "var(--color-ok)" }}>
+                ✓ 自检通过（真拉起跑过一次）
+              </span>
+            ) : (
+              <span className="text-[12px]" style={{ color: "var(--color-err)" }}>
+                ✗ 起不来：{v.problem}
+              </span>
+            );
+          })()}
+          <button
+            type="button"
+            className="ml-auto rounded-[5px] px-2 py-0.5 text-[12px]"
+            style={{ color: "var(--color-accent)", border: "1px solid color-mix(in srgb, var(--color-accent) 34%, transparent)" }}
+            onClick={() => void checkActive()}
+            disabled={checking || !active?.path}
+          >
+            {checking ? "自检中…" : "自检"}
+          </button>
+        </div>
+        {(() => {
+          const v = active?.verify as BrowserDriverVerify | undefined;
+          if (!v || v.ok !== false) return null;
+          return (
+            <div className="mt-1 space-y-1 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+              {v.hint ? (
+                <div className="mono break-all" style={{ color: "var(--color-err)" }}>
+                  {v.hint}
+                </div>
+              ) : null}
+              {v.stderr ? <div className="mono break-all opacity-70">{v.stderr.slice(0, 200)}</div> : null}
+              {v.missing && v.missing.length ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span>缺的是系统运行库，不是驱动本身：</span>
+                  <button
+                    type="button"
+                    className="rounded-[5px] px-2 py-0.5"
+                    style={{ color: "var(--color-accent)", border: "1px solid color-mix(in srgb, var(--color-accent) 34%, transparent)" }}
+                    onClick={() => void fixDeps()}
+                    disabled={depsBusy}
+                  >
+                    {depsBusy ? "正在装…" : "装系统依赖"}
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          );
+        })()}
       </div>
 
       {/* 这台机器上能用的驱动 */}

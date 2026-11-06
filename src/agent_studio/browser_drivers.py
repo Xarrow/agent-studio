@@ -32,6 +32,7 @@ import logging
 import os
 import re
 import shutil
+import subprocess
 import tarfile
 import time
 import zipfile
@@ -229,15 +230,24 @@ def installed() -> list[dict[str, Any]]:
         {**r, "label": _BY_KIND[r["kind"]]["label"], "proto": _BY_KIND[r["kind"]]["proto"]}
         for r in _managed_dirs()
     )
+    for r in rows:
+        # 只读缓存：列表里不跑进程（一屏几十个版本 × 每个 1s 起不来就卡死了）。
+        # 想知道某个到底能不能跑，走 /api/browser-drivers/check。
+        r["verify"] = cached_verify(r["path"])
     return rows
 
 
 async def get_active(session: Any) -> dict[str, Any]:
-    """当前生效的驱动。没设过 = 系统 Chromium（平台一直以来的默认）。"""
+    """当前生效的驱动。没设过 = 系统 Chromium（平台一直以来的默认）。
+
+    除了"设的是哪个"，还带上**它到底能不能跑**（``verify``）—— 用户遇到的真实场景是：
+    列表里明明"已选中"，一到用的时候就是"启动失败"，中间没有任何地方告诉他为什么。
+    """
     raw = await get_setting(session, SETTING_KEY, None) or {}
     kind = str(raw.get("kind") or "")
     path = str(raw.get("path") or "")
     if path and Path(path).exists() and kind in _BY_KIND:
+        check = verify(path, kind)
         return {
             "kind": kind,
             "label": _BY_KIND[kind]["label"],
@@ -246,6 +256,7 @@ async def get_active(session: Any) -> dict[str, Any]:
             "path": path,
             "source": str(raw.get("source") or "managed"),
             "custom": True,
+            "verify": check,
         }
     # 默认：系统 chromium
     p = _which(_BY_KIND["chromium"]["bins"]) or ""
@@ -257,6 +268,13 @@ async def get_active(session: Any) -> dict[str, Any]:
         "path": p,
         "source": "system",
         "custom": False,
+        "verify": verify(p, "chromium") if p else {
+            "ok": False,
+            "problem": "这台机器上没有系统 Chromium（也没选托管版本）—— 到「环境配置 → 浏览器驱动」装一个",
+            "missing": [],
+            "stderr": "",
+            "checked_at": int(time.time() * 1000),
+        },
     }
 
 
@@ -291,6 +309,237 @@ async def resolve_bin() -> dict[str, Any]:
 
     async with SessionLocal() as s:
         return await get_active(s)
+
+
+# --------------------------------------------------------------------------- #
+# 自检：它到底能不能起来
+# --------------------------------------------------------------------------- #
+#: 自检结果缓存（key = 二进制路径 + mtime）—— 自检要真起一个进程（~1s），
+#: 不能每次打开页面都跑一遍；文件变了（重装/换版本）才重跑。
+_VERIFY: dict[str, dict[str, Any]] = {}
+
+#: 自检结果的有效期 —— 补装系统库后不必重启服务就能重新判定
+_VERIFY_TTL_MS = 5 * 60 * 1000
+
+#: 缺库时给的补救方向。Linux 上 Chrome 起不来 99% 是这几个包没装。
+#: Debian/Ubuntu 的包名；CentOS 系需要换成 nss nspr alsa-lib atk at-spi2-atk …
+DEP_PACKAGES = [
+    "libnss3",
+    "libnspr4",
+    "libasound2t64",
+    "libatk1.0-0t64",
+    "libatk-bridge2.0-0t64",
+    "libatspi2.0-0t64",
+    "libcairo2",
+    "libcups2t64",
+    "libgbm1",
+    "libpango-1.0-0",
+    "libxcomposite1",
+    "libxdamage1",
+    "libxfixes3",
+    "libxkbcommon0",
+    "libxrandr2",
+    "libdrm2",
+    "fonts-liberation",
+]
+_APT_HINT = "apt-get install -y " + " ".join(DEP_PACKAGES)
+
+
+def deps_dir() -> Path:
+    """随包带的系统库（可选）。
+
+    全新机器上「什么都不用装」这条承诺，对浏览器是有代价的：Chromium 依赖
+    十几个系统库。要么让运维装（apt），要么把库随包带过来、启动时用
+    ``LD_LIBRARY_PATH`` 指过去（不需要 root）。两条路都留着：
+    这里存在就优先用包里的，不存在就按缺库提示装系统包。
+    """
+    env = os.environ.get("STUDIO_BROWSER_LIBS")
+    if env:
+        return Path(env)
+    return ROOT.parent / "browser-deps" / "lib"
+
+
+def chrome_env() -> dict[str, str]:
+    """起浏览器时该带的环境变量（包内自带库 → LD_LIBRARY_PATH）。"""
+    d = deps_dir()
+    if d.is_dir() and any(d.iterdir()):
+        return {"LD_LIBRARY_PATH": str(d)}
+    return {}
+
+
+
+def _missing_libs(path: str) -> list[str]:
+    """``ldd`` 里 not found 的库名（拿不到 ldd 就算了，不编）。"""
+    try:
+        out = subprocess.run(
+            ["ldd", path],
+            capture_output=True,
+            timeout=20,
+            text=True,
+            env={**os.environ, **chrome_env()},
+        )
+    except Exception:
+        return []
+    missing = []
+    for raw in ((out.stdout or "") + (out.stderr or "")).splitlines():
+        if "not found" in raw:
+            name = raw.strip().split("=>")[0].strip()
+            if name and name not in missing:
+                missing.append(name)
+    return missing
+
+
+def _verify_uncached(path: str, kind: str, timeout: float = 25.0) -> dict[str, Any]:
+    e = _BY_KIND.get(kind) or _BY_KIND["chromium"]
+    if not Path(path).exists():
+        return {"ok": False, "problem": f"可执行文件不存在：{path}", "stderr": "", "missing": []}
+    if not os.access(path, os.X_OK):
+        return {"ok": False, "problem": "没有执行权限（chmod +x 都没做）", "stderr": "", "missing": []}
+
+    if e["proto"] == "bidi":
+        args = [path, "--version"]
+    else:
+        # 真拉起一个 headless 实例并渲染一页 —— 比 --version 狠得多：
+        # 缺 sandbox/缺字体/缺 gbm 这类问题只有真启动才会暴露。
+        args = [path, "--headless=new", "--no-sandbox", "--disable-gpu", "--dump-dom", "about:blank"]
+    try:
+        proc = subprocess.run(args, capture_output=True, timeout=timeout, text=True, env={**os.environ, **chrome_env()})
+    except subprocess.TimeoutExpired:
+        return {
+            "ok": False,
+            "problem": f"启动后 {int(timeout)}s 没退出（卡死在启动阶段，通常还是缺库或缺 /dev/shm）",
+            "stderr": "",
+            "missing": _missing_libs(path),
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "problem": f"起不来：{exc}", "stderr": "", "missing": []}
+
+    err = (proc.stderr or "").strip()
+    missing = _missing_libs(path)
+    if not missing:
+        # ldd 不可用/输出被裁剪时，从原始报错里把库名抠出来 —— 至少能指名道姓
+        m = re.search(r"error while loading shared libraries:\s*([^\s:]+)", err)
+        if m:
+            missing = [m.group(1)]
+    if "error while loading shared libraries" in err or missing:
+        # 这是最常见的「装好了却用不了」：包是官方的、权限也对，纯粹缺系统库。
+        # 原来的报错只有一句"启动失败（没有 DevTools 行）" —— 用户完全无从下手。
+        names = ", ".join(missing) if missing else "（见下面的原始报错）"
+        return {
+            "ok": False,
+            "problem": f"缺系统运行库：{names}",
+            "hint": _APT_HINT,
+            "stderr": err[-800:],
+            "missing": missing,
+        }
+    if e["proto"] == "bidi":
+        ok = proc.returncode == 0 and bool((proc.stdout or "").strip())
+    else:
+        ok = proc.returncode == 0 and "<html" in (proc.stdout or "").lower()
+    if not ok:
+        return {
+            "ok": False,
+            "problem": f"启动失败（退出码 {proc.returncode}）",
+            "stderr": err[-800:],
+            "missing": missing,
+        }
+    stdout = (proc.stdout or "").strip()
+    return {"ok": True, "problem": "", "stderr": "", "missing": [], "sample": stdout[:120]}
+
+
+def verify(path: str, kind: str = "chromium", *, force: bool = False) -> dict[str, Any]:
+    """能不能真跑起来（带缓存）。
+
+    结果里 ``ok`` 才是唯一可信的判据 —— 「装好了」和「能用」是两件事。
+    缓存 5 分钟：用户补装系统库之后不需要重启服务，下一次自检就能翻案。
+    """
+    try:
+        mtime = Path(path).stat().st_mtime_ns
+    except OSError:
+        mtime = 0
+    key = f"{path}@{mtime}"
+    hit = _VERIFY.get(key)
+    if not force and hit and time.time() * 1000 - int(hit.get("checked_at") or 0) < _VERIFY_TTL_MS:
+        return hit
+    res = _verify_uncached(path, kind)
+    res["checked_at"] = int(time.time() * 1000)
+    _VERIFY[key] = res
+    return res
+
+
+def cached_verify(path: str) -> dict[str, Any]:
+    """只读缓存（不跑进程）—— 列表页用它，避免一屏几百次 subprocess。"""
+    for k, v in _VERIFY.items():
+        if k.rsplit("@", 1)[0] == path:
+            return v
+    return {}
+
+
+# --------------------------------------------------------------------------- #
+# 全新机器：把缺的系统库补上
+# --------------------------------------------------------------------------- #
+def _apt_cmd() -> list[str] | None:
+    """这台机器上该用哪条命令装依赖（认不出包管理器就不猜）。"""
+    if shutil.which("apt-get"):
+        return ["apt-get", "install", "-y", *DEP_PACKAGES]
+    if shutil.which("dnf"):
+        return ["dnf", "install", "-y", "nss", "nspr", "alsa-lib", "atk", "at-spi2-atk",
+                "cairo", "cups-libs", "mesa-libgbm", "pango", "libXcomposite", "libXdamage",
+                "libXfixes", "libxkbcommon", "libXrandr", "libdrm", "google-noto-sans-cjk-fonts"]
+    if shutil.which("apk"):
+        return ["apk", "add", "nss", "nspr", "alsa-lib", "atk", "at-spi2-atk", "cairo",
+                "cups-libs", "mesa", "pango", "libxcomposite", "libxdamage", "libxfixes",
+                "libxkbcommon", "libxrandr", "libdrm", "font-noto-cjk"]
+    return None
+
+
+def install_system_deps(timeout: float = 600.0) -> dict[str, Any]:
+    """给浏览器补系统依赖。**能自己装就装，装不了就把命令原样交出去。**
+
+    进程自己有没有 root、能不能 sudo，现场差别很大：
+    平台的 systemd 单元是 ``User=agentstudio`` 跑的，多半装不了；
+    而"全新机器上解包就能用"这个场景里，动手的往往是 root。
+    所以这里两条路都走一遍，最后如实回报发生了什么 —— 不假装成功。
+    """
+    cmd = _apt_cmd()
+    if cmd is None:
+        return {"ok": False, "needs_root": True, "command": "", "output": "认不出包管理器（apt/dnf/apk 都没有）"}
+
+    attempts: list[list[str]] = []
+    if os.geteuid() == 0:
+        attempts.append(cmd)
+    else:
+        if shutil.which("sudo"):
+            # -n：不给交互机会。要密码就是"装不了"，别把整个请求挂死在这里。
+            attempts.append(["sudo", "-n", *cmd])
+        attempts.append(cmd)  # 没有 sudo 也试一次，至少把真实报错带回来
+
+    output: list[str] = []
+    for argv in attempts:
+        stage = " ".join(argv[:2])
+        try:
+            env = {**os.environ, "DEBIAN_FRONTEND": "noninteractive"}
+            if shutil.which("apt-get") and "apt-get" in argv:
+                subprocess.run(["apt-get", "update", "-qq"] if argv[0] == "apt-get" else ["sudo", "-n", "apt-get", "update", "-qq"],
+                               capture_output=True, timeout=180, text=True, env=env)
+            proc = subprocess.run(argv, capture_output=True, timeout=timeout, text=True, env=env)
+        except Exception as exc:  # noqa: BLE001
+            output.append(f"[{stage}] {exc}")
+            continue
+        tail = ((proc.stdout or "") + (proc.stderr or "")).strip().splitlines()[-6:]
+        output.append(f"[{stage}] exit={proc.returncode}\n" + "\n".join(tail))
+        if proc.returncode == 0:
+            _VERIFY.clear()  # 依赖变了，之前的自检结论作废
+            return {"ok": True, "needs_root": False, "command": " ".join(cmd), "output": "\n".join(output)}
+
+    return {
+        "ok": False,
+        "needs_root": os.geteuid() != 0,
+        "command": " ".join(cmd),
+        "output": "\n".join(output),
+    }
+
+
 
 
 # --------------------------------------------------------------------------- #
@@ -494,8 +743,20 @@ async def _install(job_id: str, kind: str, version: str, url: str) -> None:
         _fix_perms(dest)
         os.chmod(exe, 0o755)
         shutil.rmtree(tmp, ignore_errors=True)
-        j.update({"status": "ok", "phase": "完成", "percent": 100, "path": str(exe)})
-        logger.info("浏览器驱动装好了：%s %s → %s", kind, version, exe)
+        # 装完立刻真拉一次：缺系统库的机器上"安装成功"是个假象，
+        # 用户会在用的时候才发现起不来，而且报错完全指不到根因。
+        j["phase"] = "自检"
+        check = verify(str(exe), kind, force=True)
+        j.update(
+            {
+                "status": "ok",
+                "phase": "完成" if check.get("ok") else "装好了，但起不来",
+                "percent": 100,
+                "path": str(exe),
+                "verify": check,
+            }
+        )
+        logger.info("浏览器驱动装好了：%s %s → %s（自检 %s）", kind, version, exe, check.get("ok"))
     except Exception as exc:  # noqa: BLE001
         logger.exception("浏览器驱动安装失败：%s %s", kind, version)
         shutil.rmtree(tmp, ignore_errors=True)

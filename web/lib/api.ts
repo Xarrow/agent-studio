@@ -246,6 +246,17 @@ const put = <T>(p: string, body?: unknown) =>
 const del = <T = void,>(p: string) => request<T>(p, { method: "DELETE" });
 
 
+/** 一个浏览器驱动的自检结果：装好了 ≠ 能用 */
+export type BrowserDriverVerify = {
+  ok: boolean;
+  problem?: string;
+  hint?: string;
+  missing?: string[];
+  stderr?: string;
+  sample?: string;
+  checked_at?: number;
+};
+
 /** 一个浏览器驱动（系统装的或平台托管的） */
 export type BrowserDriverRow = {
   kind: string;
@@ -258,6 +269,7 @@ export type BrowserDriverRow = {
   size_mb?: number;
   active?: boolean;
   custom?: boolean;
+  verify?: BrowserDriverVerify | Record<string, never>;
 };
 
 export type BrowserDriverEngine = {
@@ -282,10 +294,32 @@ export const api = {
     ),
   browserInstall: (kind: string, version: string, url: string) =>
     post<{ id: string }>("/api/browser-drivers/install", { kind, version, url }),
-  browserInstallStatus: (id: string) =>
-    request<{ id: string; status: string; phase: string; percent: number; error: string; path: string }>(
-      `/api/browser-drivers/install/${id}`,
-    ),
+  browserInstallStatus: (id: string) => {
+    return request<{
+      id: string;
+      status: string;
+      phase: string;
+      percent: number;
+      error: string;
+      path: string;
+      verify?: BrowserDriverVerify;
+    }>(`/api/browser-drivers/install/${id}`);
+  },
+  /** 真拉起跑一次：这台机器上它到底能不能用 */
+  browserCheck: (path?: string, kind?: string) =>
+    post<{ path: string; kind: string; verify: BrowserDriverVerify }>("/api/browser-drivers/check", {
+      kind: kind ?? "",
+      path: path ?? "",
+    }),
+  /** 补系统运行库：能自己装就装，装不了把命令交回来（全新机器常见） */
+  browserInstallDeps: () =>
+    post<{
+      ok: boolean;
+      needs_root: boolean;
+      command: string;
+      output: string;
+      active?: BrowserDriverRow;
+    }>("/api/browser-drivers/deps", {}),
   browserActivate: (row: { kind: string; path: string; version: string; source: string }) =>
     post<BrowserDriverRow>("/api/browser-drivers/active", row),
   browserReset: () => post<BrowserDriverRow>("/api/browser-drivers/active/reset", {}),

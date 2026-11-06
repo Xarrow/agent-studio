@@ -102,6 +102,45 @@ async def reset(session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     return await bd.reset_active(session)
 
 
+@router.post("/deps")
+async def install_deps(session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """给浏览器补系统运行库（全新机器上常见：解压成功、一启动就缺 libnss3）。
+
+    能自己装就装；进程没有 root 就把**可以直接复制执行的命令**交回去 —— 页面照着显示。
+    """
+    import asyncio
+
+    res = await asyncio.to_thread(bd.install_system_deps)
+    active = await bd.get_active(session)  # 装完顺手重判一次（缓存已清）
+    return {**res, "active": active}
+
+
+class CheckIn(BaseModel):
+    """自检入参：都不给就查当前生效的那个。"""
+    kind: str = ""
+    path: str = ""
+
+
+@router.post("/check")
+async def check(payload: CheckIn | None = None, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """真拉起来跑一次：这台机器上它到底能不能用。
+
+    不给参数就查当前生效的那个。结果会进缓存，页面下次打开直接能看见。
+    """
+    if payload is not None and payload.path:
+        kind = payload.kind or "chromium"
+        if kind not in {e["kind"] for e in bd.ENGINES}:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"不支持的引擎: {kind}")
+        path = payload.path
+    else:
+        active = await bd.get_active(session)
+        path = str(active.get("path") or "")
+        kind = str(active.get("kind") or "chromium")
+    if not path:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "没有可自检的驱动（这台机器上还没装）")
+    return {"path": path, "kind": kind, "verify": bd.verify(path, kind, force=True)}
+
+
 @router.delete("/installed/{kind}/{version}")
 async def uninstall(kind: str, version: str, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     active = await bd.get_active(session)

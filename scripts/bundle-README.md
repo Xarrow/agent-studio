@@ -41,6 +41,36 @@ http://<新机器IP>:8848
 
 先自查一行：`ldd --version | head -1`（低于 2.34 请换系统或索取旧系统兼容包）
 
+## 想让 Agent 用浏览器（全新机器必看）
+
+包里的 Python、依赖都是自带的，但**浏览器内核不是**：Chromium 有 900 MB，且必须由
+平台自己管理（「环境配置 → 浏览器驱动」里装、切、删）。所以全新机器上用浏览器分两步：
+
+```bash
+# 步骤 1：装浏览器内核（页面里点「装一个新版本」，或直接调接口）
+#   选 Google Chrome（Chrome for Testing）任一版本，装完平台会自动做一次自检
+
+# 步骤 2：把 Chrome 需要的系统库补上（只有这一步需要 root，且只需做一次）
+apt-get install -y libnss3 libnspr4 libasound2t64 libatk1.0-0t64 libatk-bridge2.0-0t64 \
+  libatspi2.0-0t64 libcairo2 libcups2t64 libgbm1 libpango-1.0-0 libxcomposite1 \
+  libxdamage1 libxfixes3 libxkbcommon0 libxrandr2 libdrm2 fonts-liberation
+```
+
+页面上的「装系统依赖」按钮做的就是这一步：服务进程要是 root 就顺手装完；
+不是 root（systemd 的 `User=agentstudio` 就是这种）它会把上面这条命令原样显示出来，
+复制执行即可。装完点一次「自检」——**自检是真拉起一个 headless 实例跑一遍**，
+通过才代表 Agent 真能用浏览器。
+
+### 不想装系统包？
+
+`scripts/collect-browser-deps.sh <chrome可执行文件> <目标目录>` 可以把 Chrome 依赖的
+共享库整包收下来，放到 `<数据目录>/browser-deps/lib`（或用 `STUDIO_BROWSER_LIBS` 指定），
+平台启动浏览器时会自动带上 `LD_LIBRARY_PATH`，不需要 root。
+
+⚠ 这条路**必须在同一种发行版上收集**：NSS 是运行时 `dlopen` 一堆同伴库的，
+把 Ubuntu 的 libnss3 塞进 Debian 会因为模块不匹配直接 `SIGABRT`（实测）。
+跨发行版时用上面的 apt 那条路。
+
 ## 常用参数
 
 | 需求 | 命令 |

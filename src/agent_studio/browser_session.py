@@ -32,6 +32,7 @@ import asyncio
 import base64
 import json
 import logging
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -283,6 +284,47 @@ class BrowserSession:
         self._frame_task: asyncio.Task[None] | None = None
 
     # -- 生命周期 ----------------------------------------------------------- #
+    def _child_env(self) -> dict[str, str]:
+        """起浏览器时的环境：把「包内自带的系统库」（如果有）指进 LD_LIBRARY_PATH。
+
+        这样全新机器上即使没装 libnss3 这类系统包，只要包/数据目录里带了
+        ``browser-deps/lib``，浏览器也能直接起来 —— 不需要 root、不需要联网。
+        """
+        env = dict(os.environ)
+        try:
+            from .browser_drivers import chrome_env
+
+            env.update(chrome_env())
+        except Exception:  # pragma: no cover
+            logger.exception("读取浏览器运行库目录失败（按系统库启动）")
+        return env
+
+    def _startup_error(self, tail: list[str], bin_path: str, headline: str) -> str:
+        """把"启动失败"翻译成**用户能动手**的一句话。
+
+        现场踩到的坑：Chrome for Testing 装好了、也选中了，但它启动时缺
+        ``libnspr4.so`` 之类的系统库 —— 用户看到的只是"没有 DevTools 行"，
+        完全不知道要去装依赖，最后只能认为"驱动没装上"。
+        """
+        blob = "\n".join(tail)
+        if "error while loading shared libraries" in blob:
+            try:
+                from .browser_drivers import _missing_libs
+
+                missing = _missing_libs(bin_path)
+            except Exception:  # pragma: no cover
+                missing = []
+            names = "、".join(missing) if missing else "系统运行库"
+            return (
+                f"{headline}：这个浏览器缺系统运行库（{names}）。"
+                f"装上依赖即可 —— apt-get install -y libnss3 libnspr4 libasound2t64 "
+                f"libatk1.0-0t64 libatk-bridge2.0-0t64 libatspi2.0-0t64 libcairo2 "
+                f"libcups2t64 libgbm1 libpango-1.0-0 libxcomposite1 libxdamage1 "
+                f"libxfixes3 libxkbcommon0 libxrandr2 libdrm2 fonts-liberation"
+            )
+        detail = " / ".join(tail[-3:])[:400] if tail else "（没有任何输出）"
+        return f"{headline}：{bin_path} —— {detail}"
+
     async def _ensure(self) -> None:
         """惰性启动：第一次动作才拉起 Chromium（不操作就零成本）。"""
         if self._cdp is not None:
@@ -298,7 +340,12 @@ class BrowserSession:
         except Exception:  # pragma: no cover
             logger.exception("读取浏览器驱动设置失败，退回系统 Chromium")
         if not Path(bin_path).exists():
-            raise RuntimeError(f"浏览器驱动不存在：{bin_path}（到「环境配置 → 浏览器驱动」重新选一个）")
+            where = (
+                "这台机器上没有系统 Chromium（也没有选托管版本）"
+                if not bin_path
+                else f"驱动不在了：{bin_path}"
+            )
+            raise RuntimeError(f"{where} —— 到「环境配置 → 浏览器驱动」装一个并选中（或点一下自检看缺什么）")
         self._proto = proto
         if proto != "cdp":
             await self._ensure_bidi(bin_path)
@@ -325,6 +372,7 @@ class BrowserSession:
         # remote-debugging-port=0：Chromium 会把实际端口写进 stderr 的 DevTools 行
         ws_url = None
         assert self._proc.stdout is not None
+        tail: list[str] = []  # 启动期最后几行 stderr —— 起不来时它就是唯一的线索
         try:
             while True:
                 line = await asyncio.wait_for(self._proc.stdout.readline(), timeout=15)
@@ -332,14 +380,17 @@ class BrowserSession:
                 if "DevTools listening on ws://" in text:
                     ws_url = text.split("DevTools listening on ", 1)[1].strip()
                     break
+                if text.strip():
+                    tail.append(text.rstrip())
+                    del tail[:-12]
                 if not line:
                     break
         except TimeoutError:
             await self.close()
-            raise RuntimeError("Chromium 启动后 15s 内没报 DevTools 端口")
+            raise RuntimeError(self._startup_error(tail, bin_path, "启动后 15s 内没报 DevTools 端口"))
         if not ws_url:
             await self.close()
-            raise RuntimeError("Chromium 启动失败（没有 DevTools 行）")
+            raise RuntimeError(self._startup_error(tail, bin_path, "启动失败（没有 DevTools 行）"))
         self._ws_url = ws_url
         self._cdp = await _Cdp.connect(ws_url)
         await self._cdp.attach_page()
@@ -420,6 +471,7 @@ class BrowserSession:
             *args,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
+            env=self._child_env(),
         )
         ws_url = ""
         assert self._proc.stdout is not None
