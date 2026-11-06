@@ -601,8 +601,12 @@ async def watch_worker(
                 left = await _lease_left_ms()
                 if left < 0:
                     break  # run 没了，交给终态兜底
-                # 睡到 lease 到期（封顶 5 分钟，防 lease 值异常时永远睡死）
-                await asyncio.sleep(min(max(left, 1.0), 300.0))
+                # 睡到 lease 到期（封顶 5 分钟，防 lease 值异常时永远睡死）。
+                # ⚠️ 但**不能一觉睡满** lease：worker 干完（几秒）到发现它收尾，
+                # 中间隔着一整个 lease（120s）——实测派活 2s 完成，Router 却要等
+                # 两分钟才收到"活回来了"，用户看到的是"派完就没了"。
+                # 所以按 5 秒切片睡，每片醒来看一眼是不是已经收尾。
+                await asyncio.sleep(min(max(left, 1.0), 5.0))
                 async with SessionLocal() as s:
                     row = await s.get(Run, run_id)
                     if row is None or row.status not in ("pending", "running"):

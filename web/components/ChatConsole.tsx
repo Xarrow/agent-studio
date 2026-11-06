@@ -12,7 +12,7 @@
  */
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { HitlPrompt } from "@/components/HitlPrompt";
 import { DelegationBlock } from "@/components/DelegationBlock";
 import { agentColor } from "@/lib/turn";
@@ -21,7 +21,7 @@ import { agentColor } from "@/lib/turn";
 const WORKER_COLOR = "#d97706";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api, fmt, withToken } from "@/lib/api";
-import type { Agent, RunEvent, Session, SearchHit, Skill, Tool, Memory } from "@/lib/types";
+import type { Agent, Run, RunEvent, Session, SearchHit, Skill, Tool, Memory } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
 import { ProcessBar, eventsToSteps, recallProc, rememberProc } from "@/components/ui/run-timeline";
 import BgProcsStrip from "@/components/BgProcsStrip";
@@ -326,6 +326,15 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   /** 断流自动重挂的计数：同一 run 连断 3 次说明服务/网络真有问题，
       再挂只会无限打转 —— 停下来把话说明白。 */
   const esReattachRef = useRef<{ runId: string; count: number }>({ runId: "", count: 0 });
+  /** 已经收尾的 run —— 空闲轮询据此判断"这条是新一轮还是我刚看完的那条"，
+      否则会对着一轮已经结束的执行反复重挂 SSE。 */
+  const settledRunsRef = useRef<Set<string>>(new Set());
+  /** liveRunId 的镜像（供定时器里的闭包读当前值） */
+  const liveRunIdRef = useRef("");
+  liveRunIdRef.current = liveRunId;
+  /** attachStream 的稳定引用：轮询定时器要用它挂流，但不能因为它每次渲染都变
+      就把定时器重建一遍（4 秒一轮的定时器被反复清掉等于没跑）。 */
+  const attachRef = useRef<(runId: string, sentText: string) => void>(() => {});
 
   /* ------------------------------- 数据加载 ------------------------------- */
 
@@ -422,11 +431,37 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
 
   /* 平台自动轮的消息（巡检/收口）是在你上一轮 SSE 结束**之后**才落库的 ——
      页面开着不动就永远看不到，用户观感就是「派完就没了，worker 咋样不知道」。
-     空闲时轻轮询消息：会话有新消息（含平台自动轮）自动拉进来。 */
+     空闲时轻轮询：不仅拉消息，还要看**会话里有没有新起的 run**。
+
+     为什么必须盯着 run：Router 派完活这一轮就结束了，worker 回来后平台会在
+     同一会话里**另起一轮**（origin=router 的收口/巡检）。那一轮是新的 run，
+     页面没有它的 SSE —— 只轮询消息的话，整轮跑完才看得见，用户看到的就是
+     「页面已经结束了，worker 的结果呢？」，非得手动刷新才出来。
+     现在发现会话里有没跑完的 run 就直接挂上它的流，过程实时可见。 */
   useEffect(() => {
     if (busy || !sessionId) return;
-    const t = setInterval(() => void loadMessages(sessionId), 10000);
-    return () => clearInterval(t);
+    let alive = true;
+    const tick = async () => {
+      const inflight = await api.inFlightRuns(sessionId).catch(() => [] as Run[]);
+      if (!alive) return;
+      const live = (inflight || []).find(
+        (r) =>
+          (r.status === "running" || r.status === "pending") &&
+          !settledRunsRef.current.has(r.id) &&
+          r.id !== liveRunIdRef.current,
+      );
+      if (live) {
+        setBusy(true);
+        attachRef.current(live.id, "");
+        return;
+      }
+      void loadMessages(sessionId);
+    };
+    const t = setInterval(() => void tick(), 4000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
   }, [busy, sessionId, loadMessages]);
 
   // 切 Agent：重载会话列表，选中最近一个；没有就自动建一个
@@ -913,6 +948,10 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
           attachStream(runId, sentText, n + 1);
           return;
         }
+      } else if (r.status !== "waiting_hitl") {
+        // 真的收尾了：记下来，别让空闲轮询把这一轮又当成"新起的 run"重挂一遍。
+        // waiting_hitl 不算收尾 —— 用户点完确认后端会接着跑同一条 run。
+        settledRunsRef.current.add(runId);
       }
       if (r.status === "waiting_hitl") {
         // **不是结束，是暂停等你点头** —— 保留现场（不清 live），
@@ -951,6 +990,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     es.addEventListener("done", () => void settle("done"));
     es.onerror = () => void settle("error");
   };
+  // 定时器里用的是"最新那个 attachStream"（它捕获了当下的 sessionId / 各种 ref）
+  attachRef.current = attachStream;
 
   /**
    * 自动挑助手：定助手 → 定会话 → 起 run 全在服务端一次做完（前端分两步会出现
@@ -1265,6 +1306,17 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
    *  共用布尔值会让面板在窗口跨断点缩放后凭空冒出来（桌面开着的面板飘到手机上）。 */
   const [switcherOpen, setSwitcherOpen] = useState<null | "bar" | "sidebar" | "mini">(null);
   const router = useRouter();
+  const pathname = usePathname();
+  /** 抽屉里的菜单项点完就跳页 —— 抽屉的关闭**交给路由变化**来做。
+   *
+   *  之前是 onClick 里先 setMobileNav(false) 再 router.push(href)，而 Link 自己
+   *  也会导航：两次导航互相打断，实际表现是"抽屉关了、页面没动"（手机上点
+   *  「Agents / 工具 / LLM 配置」全都没反应，得刷新或手动改地址）。
+   *  现在只让 Link 导航，抽屉在路径变了以后收起来。 */
+  useEffect(() => {
+    setMobileNav(false);
+    setNavView("sessions");
+  }, [pathname]);
   /** 底部输入坞的高度：它是浮在消息之上的（毛玻璃要透出下面滚过的内容），
    *  所以消息区要留出这么一块内边距，否则最后一条会被压在底下。 */
   const [dockH, setDockH] = useState(150);
@@ -1652,15 +1704,15 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                           {grp.label}
                         </div>
                         {grp.items.map((item) => (
-                          <Link
+                          /* 这一处**故意用原生 a**，不用 next/link。
+                             手机上（从 /exec 的抽屉点出去）Link 的客户端导航会被
+                             随即回滚成 /exec —— 抽屉关了、页面没动，用户看到的
+                             就是「点了没反应」。原生 a 走整页加载，一定跳得过去；
+                             这几个是配置页，整页加载的代价可以接受。 */
+                          <a
                             key={item.href}
                             href={item.href}
-                            onClick={() => {
-                              setMobileNav(false);
-                              // 刚关抽屉 React 还没把那一批 Link 卸载，真实点击会落到旧元素上 → 路由不走。
-                              // 直接用 router 跳，别赌那一帧。
-                              router.push(item.href);
-                            }}
+                            onClick={() => setNavView("sessions")}
                             className="flex items-center gap-2.5 rounded-lg px-2 py-2 min-h-[48px] active:bg-[var(--color-surface-2)] transition-colors"
                           >
                             <span className="shrink-0" style={{ color: "var(--color-muted)" }}>
@@ -1674,7 +1726,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                                 {item.tip}
                               </span>
                             </span>
-                          </Link>
+                          </a>
                         ))}
                       </div>
                     ))}
