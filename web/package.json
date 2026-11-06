@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "NEXT_PUBLIC_API_BASE=http://192.168.2.11:8848 next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",

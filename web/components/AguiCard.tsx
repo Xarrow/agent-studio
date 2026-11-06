@@ -44,8 +44,11 @@ export function AguiCard() {
     };
   }, []);
 
+  // 示例里的地址必须跟着**当前页面**走：写死内网 IP 的话，从公网/别的机器打开时
+  // 复制到的是一句一定会失败的 curl（用户会以为接口坏了）。
+  const origin = typeof window === "undefined" ? "" : window.location.origin;
   const curl = info
-    ? `curl -N -X POST http://192.168.2.11:8848${info.endpoint} \\\n` +
+    ? `curl -N -X POST ${origin}${info.endpoint} \\\n` +
       `  -H 'Content-Type: application/json' \\\n` +
       `  -d '${JSON.stringify(info.example)}'`
     : "";

@@ -34,3 +34,10 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## 前端构建注意
+
+`next build` 会把 `NEXT_PUBLIC_*` 内联进产物。开发用的后端地址放在 `npm run dev`
+脚本里（`web/package.json` 的 dev），**不要**再写成 `web/.env.local` —— 那个文件
+`next build` 也会读，会把内网地址烤进静态产物，产物就只能在 192.168.2.11 上跑
+（搬到别的机器后界面能开、数据全拉不到，报 `Failed to fetch`）。
