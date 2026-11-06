@@ -245,9 +245,57 @@ jobs:
           [ -n "$TAR" ] || { echo "::error::没拿到开发包"; exit 1; }
           bash scripts/verify-dev-in-env.sh "$TAR" 8861 3100
 
+  build-macos:
+    name: 打包 macOS（Apple Silicon）
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: 构建前端（next build → out/）
+        working-directory: web
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+          npm run build
+          test -f out/index.html || { echo "::error::前端未产出 out/index.html"; exit 1; }
+
+      - name: 打包（aarch64-apple-darwin 运行时）
+        env:
+          PBS_TAG: ${{ env.PBS_TAG }}
+          PBS_VER: ${{ env.PYV }}
+          https_proxy: ""
+          http_proxy: ""
+          PBS_URL_BASE: ""
+        run: |
+          set -euo pipefail
+          echo "runner: $(uname -s) $(uname -m) / macOS $(sw_vers -productVersion)"
+          [ "$(uname -m)" = "arm64" ] || { echo "::error::macos-15 需要是 arm64 runner"; exit 1; }
+          export WORK="$RUNNER_TEMP/asb-macos-arm64"
+          export OUT="$PWD/dist"
+          bash scripts/build-offline-bundle.sh macos-arm64
+          TAR="$(ls -1 "$OUT"/agent-studio-*-macos-arm64.tar.gz | head -1)"
+          echo "TAR=$TAR" >> "$GITHUB_ENV"
+          ls -lh "$TAR"
+
+      - name: 验证（真解包、真启动、真落库）
+        if: ${{ !inputs.skip_verify }}
+        run: bash scripts/verify-bundle-macos.sh "$TAR" 8899
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent-studio-macos-arm64
+          path: dist/*.tar.gz
+          retention-days: 14
+
   release:
     name: 发布到 GitHub Release
-    needs: [build, verify-multi, build-dev, verify-dev]
+    needs: [build, verify-multi, build-dev, verify-dev, build-macos]
     # 发布门禁：所有构建 + 所有环境的验证都成功才发布（两个包都过）
     # ⚠ 必须按触发方式分流：tag push 时 inputs.* 全为空，`inputs.publish != false`
     #   里 null 与 false 都按 0 比较 → 条件恒假 → 九个验证全绿、发布那一步却 skipped
@@ -258,6 +306,7 @@ jobs:
           && needs.verify-multi.result == 'success'
           && needs.build-dev.result == 'success'
           && needs.verify-dev.result == 'success'
+          && needs.build-macos.result == 'success'
           && (github.event_name == 'push'
               || (inputs.skip_verify != true && inputs.publish != false)) }}
     runs-on: ubuntu-latest

@@ -21,7 +21,10 @@ dependencies = [
     "pytest-asyncio>=1.4.0",
     "python-docx>=1.2.0",
     "python-pptx>=1.0.2",
-    "sqlalchemy>=2.0.54",
+    # 只用 async 引擎：带上 [asyncio] extra 才会装上 greenlet。
+    # 不写 extra 时 SQLAlchemy 的 greenlet marker 不含 platform_machine=='arm64'，
+    # macOS（Apple Silicon）上会被判为"不需要"，一查库就报 greenlet is required。
+    "sqlalchemy[asyncio]>=2.0.54",
     "uvicorn[standard]>=0.53.0",
 ]
 
