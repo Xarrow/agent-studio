@@ -193,6 +193,9 @@ export function DelegationBlock({
   /** worker 那一行；tree=true 时左边有一条竖线 + 短横线，缩进一级 */
   const renderRow = (d: Delegation, nested: boolean) => {
     const hot = LIVE_STATUS.has(d.status);
+    /** 等人确认：它不是"在跑"，也不是"完成"，是第三种需要用户动手的状态 */
+    const waiting = d.status === "waiting_hitl";
+    const failed = d.status === "error" || d.status === "aborted";
     const open = openId === d.run_id;
     const shown = liveSteps[d.run_id] ?? steps[d.run_id] ?? [];
     const hint = hot ? liveHint(shown) : "";
@@ -205,9 +208,21 @@ export function DelegationBlock({
     return (
       <div
         key={d.run_id}
+        data-delegation
+        data-status={d.status}
         className="relative border-b last:border-b-0"
-        style={{ borderColor: "var(--color-border)" }}
+        style={{
+          borderColor: "var(--color-border)",
+          // 失败的行整条淡红：折叠态就要能看出来，不能点开才知道
+          background: failed ? "color-mix(in srgb, var(--color-err) 6%, transparent)" : undefined,
+        }}
       >
+        {/* 每个 worker 一条自己的色带：多人并跑时，颜色是唯一可靠的区分手段 */}
+        <span
+          className="absolute left-0 top-0 bottom-0 w-[3px]"
+          style={{ background: hot || waiting || failed ? tint : `color-mix(in srgb, ${tint} 45%, transparent)` }}
+          aria-hidden
+        />
         {nested && (
           <>
             <span
@@ -233,7 +248,7 @@ export function DelegationBlock({
         >
           <div className="flex items-center gap-1.5 min-w-0">
             <span
-              className="shrink-0 rounded-full"
+              className={`shrink-0 rounded-full ${hot ? "live-dot" : ""}`}
               style={{ width: 7, height: 7, background: tint, display: "inline-block" }}
               aria-hidden
             />
@@ -249,7 +264,16 @@ export function DelegationBlock({
             )}
             <span
               className="ml-auto shrink-0 tabular-nums"
-              style={{ color: hot ? "var(--color-accent)" : "var(--color-muted)" }}
+              style={{
+                color: failed
+                  ? "var(--color-err)"
+                  : waiting
+                    ? "var(--color-warn)"
+                    : hot
+                      ? "var(--color-accent)"
+                      : "var(--color-muted)",
+                fontWeight: failed || waiting ? 600 : 400,
+              }}
             >
               {statusText(d.status)} · {secs(d.started_at, d.ended_at)}
             </span>
@@ -261,6 +285,25 @@ export function DelegationBlock({
           >
             {line}
           </div>
+          {/* 干完就断了最难受：派出去三件，回来一句"都办好了"，谁带回了什么看不见 */}
+          {!hot && !failed && d.output_excerpt && (
+            <div
+              className={`mt-0.5 truncate text-[11px] ${nested ? "" : "pl-[14px]"}`}
+              style={{ color: "color-mix(in srgb, var(--color-ok) 72%, var(--color-muted))" }}
+              title={d.output_excerpt}
+            >
+              ↳ 回传：{d.output_excerpt.replace(/\s+/g, " ").slice(0, 72)}
+            </div>
+          )}
+          {failed && d.error && (
+            <div
+              className={`mt-0.5 line-clamp-2 text-[11px] ${nested ? "" : "pl-[14px]"}`}
+              style={{ color: "var(--color-err)" }}
+              title={d.error}
+            >
+              {String(d.error).replace(/\s+/g, " ").slice(0, 120)}
+            </div>
+          )}
         </button>
 
         {open && (
@@ -328,6 +371,14 @@ export function DelegationBlock({
           {st.phrase}
           <span aria-hidden> · </span>
           {st.closing}
+          {st.failed > 0 && (
+            <>
+              <span aria-hidden> · </span>
+              <b className="tabular-nums" style={{ color: "var(--color-err)" }}>
+                {st.failed} 件失败
+              </b>
+            </>
+          )}
         </span>
         {st.active && (
           <span
