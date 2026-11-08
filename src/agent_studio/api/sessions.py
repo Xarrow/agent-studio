@@ -20,7 +20,7 @@ import re
 
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
@@ -278,6 +278,8 @@ async def get_session_detail(
 
 
 #: 这些目录里的东西不进文件清单（不是产物，是工程残留；列出来只会淹没真产物）
+MAX_UPLOAD_BYTES = 200 * 1024 * 1024  # 单文件上限
+
 _NOISE_DIRS = {
     ".git", ".hg", ".svn", "node_modules", "__pycache__", ".mypy_cache",
     ".pytest_cache", ".ruff_cache", ".next", ".nuxt", ".cache", ".venv", "venv",
@@ -406,6 +408,61 @@ async def get_session_todos(
     tasks = todo_store.summarise(plan)
     done = sum(1 for t in tasks if t["state"] == "completed")
     return {"tasks": tasks, "total": len(tasks), "done": done}
+
+
+@router.post("/{session_id}/files")
+async def upload_session_files(
+    session_id: str,
+    files: list[UploadFile] = File(...),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """把用户选的文件放进**这个会话自己的工作目录**。
+
+    为什么不复用 ``/api/uploads``：那个是"发消息时的附件暂存区"，落点在别处，
+    传进来的东西不会出现在会话文件清单里 —— 用户在右栏点上传，结果看不见，
+    比没有这个按钮更糟。
+
+    安全：只认文件名（丢掉客户端给的任何目录部分），同名不覆盖（加后缀），
+    单个 200MB 上限 —— 会话目录是用户可见的东西，不能让它变成任意写入口。
+    """
+    row = await session.get(ChatSession, session_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"会话不存在: {session_id}")
+    root = session_work_dir(session_id)
+    root.mkdir(parents=True, exist_ok=True)
+
+    saved: list[dict] = []
+    for up in files:
+        raw = Path(up.filename or "file").name  # 只留文件名，别让 ../ 逃出去
+        name = re.sub(r"[\\/:*?\"<>|\x00-\x1f]", "_", raw).strip() or "file"
+        target = root / name
+        stem, suffix = target.stem, target.suffix
+        n = 1
+        while target.exists():
+            target = root / f"{stem}-{n}{suffix}"
+            n += 1
+        size = 0
+        try:
+            with target.open("wb") as out:
+                while chunk := await up.read(1 << 20):
+                    size += len(chunk)
+                    if size > MAX_UPLOAD_BYTES:
+                        raise HTTPException(
+                            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                            f"{name} 太大（上限 {MAX_UPLOAD_BYTES // (1 << 20)}MB）",
+                        )
+                    out.write(chunk)
+        except HTTPException:
+            target.unlink(missing_ok=True)
+            raise
+        saved.append(
+            {
+                "path": str(target.relative_to(root)),
+                "size": size,
+                "url": f"/api/work/file/{SESSION_DIR_NAME}/{session_id}/{target.relative_to(root)}",
+            }
+        )
+    return {"session_id": session_id, "saved": saved, "count": len(saved)}
 
 
 @router.get("/{session_id}/files")

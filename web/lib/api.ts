@@ -1095,6 +1095,15 @@ export const api = {
       `/api/procs/${id}/kill?session_id=${encodeURIComponent(sessionId)}`,
       {},
     ),
+  /** 把本地文件放进这个会话的工作目录（右栏「会话文件」的上传） */
+  uploadSessionFile: (id: string, files: File[]) => {
+    const fd = new FormData();
+    for (const f of files) fd.append("files", f, f.name);
+    return request<{ session_id: string; count: number; saved: { path: string; size: number; url: string }[] }>(
+      `/api/sessions/${id}/files`,
+      { method: "POST", body: fd },
+    );
+  },
   sessionFiles: (id: string, limit = 200) =>
     request<{
       session_id: string;

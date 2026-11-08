@@ -46,6 +46,7 @@ import { FileOpenerProvider, FileRowButton } from "@/components/FileDialog";
 import { copyText } from "@/lib/clipboard";
 import { middleEllipsis, fileTypeKey, shortFilePath } from "@/lib/files";
 import { BrowserStage, type BrowserAction } from "@/components/BrowserStage";
+import { SideDock, type DockPanel } from "@/components/SideDock";
 import type { BrowserStep } from "@/lib/types";
 import { humanizeAssistantText } from "@/lib/messages";
 import { FileTypeIcon } from "@/components/ui/icons";
@@ -280,6 +281,60 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     setBrowserActions((prev) => [...prev, ...batch].slice(-60));
   }, []);
   const [browserOpen, setBrowserOpen] = useState(false);
+  /* ── 右侧工具坞 ──
+     展开/收起、开哪个面板、宽度都记在 localStorage：这是用户的布局偏好，
+     每次进来都回到"收起"会让人以为功能没了。 */
+  const [dockOpen, setDockOpen] = useState(false);
+  const [dockPanel, setDockPanel] = useState<DockPanel>("browser");
+  const [dockW, setDockW] = useState(400);
+  /** 用户亲手操作过右栏之后，就不再自动展开（自动抢焦点只允许一次） */
+  const dockTouched = useRef(false);
+  /** 浏览器这一轮第一次出画面时自动展开一次 */
+  const dockAutoOpened = useRef(false);
+  /** 文件数上一轮的值：有新增就在图标上点一下 */
+  const [filesSeen, setFilesSeen] = useState(0);
+
+  useEffect(() => {
+    try {
+      const o = localStorage.getItem("dock.open");
+      if (o === "1") setDockOpen(true);
+      const w = Number(localStorage.getItem("dock.w") || "");
+      if (w >= 320 && w <= 560) setDockW(w);
+      const p = localStorage.getItem("dock.panel");
+      if (p === "browser" || p === "files") setDockPanel(p);
+    } catch {
+      /* 隐私模式拿不到 localStorage：用默认值 */
+    }
+  }, []);
+  const saveDock = useCallback((o: boolean, p: DockPanel, w: number) => {
+    try {
+      localStorage.setItem("dock.open", o ? "1" : "0");
+      localStorage.setItem("dock.panel", p);
+      localStorage.setItem("dock.w", String(w));
+    } catch {
+      /* 忽略 */
+    }
+  }, []);
+  const openDock = useCallback(
+    (p: DockPanel) => {
+      dockTouched.current = true;
+      setDockPanel(p);
+      setDockOpen(true);
+      saveDock(true, p, dockW);
+    },
+    [dockW, saveDock],
+  );
+
+  /* 浏览器这一轮第一次出画面：自动展开一次（用户一旦亲手动过右栏，就不再抢） */
+  useEffect(() => {
+    if (dockAutoOpened.current || dockTouched.current) return;
+    if (!browserFrame) return;
+    dockAutoOpened.current = true;
+    setDockPanel("browser");
+    setDockOpen(true);
+    saveDock(true, "browser", dockW);
+  }, [browserFrame, dockW, saveDock]);
+
   /* 左滑/返回键 = 关掉浏览器画面，而不是退出网页（手机上手势会被当成浏览器返回） */
   useHistoryLayer(browserOpen, () => setBrowserOpen(false));
   /* 执行过程留档：每步动作 + 当时那一屏（后端写在会话目录 browser/<run>/ 下） */
@@ -1418,6 +1473,10 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     }
   }, []);
   const fileCount = sessionFiles?.count ?? 0;
+  /* 打开文件面就等于"看见了"，把小红点清掉 */
+  useEffect(() => {
+    if (dockOpen && dockPanel === "files") setFilesSeen(fileCount);
+  }, [dockOpen, dockPanel, fileCount]);
   /* 默认收起：进对话先看消息，「N 个文件」chip 在输入区上方，点一下才出面板。
      之前 ≤3 个默认摊开 —— 文件面板带遮罩直接糊在对话上，用户一进会话就被挡（实测反馈）。
      用户手动点过就记住他的选择（localStorage），别每次刷新都跟他对着来。 */
@@ -2130,7 +2189,14 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     actions={browserActions}
                     busy={busy}
                     waiting={browserWaiting}
-                    onOpen={() => setBrowserOpen(true)}
+                    onOpen={() => {
+                      // 宽屏：右栏就是它的位置（对话不被遮）；窄屏没有右栏，仍用浮层
+                      if (typeof window !== "undefined" && window.innerWidth >= 1280) {
+                        openDock("browser");
+                      } else {
+                        setBrowserOpen(true);
+                      }
+                    }}
                     steps={browserSteps}
                   />
                 )}
@@ -2988,12 +3054,44 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             {/* 这个会话的文件已经常驻在输入坞上方，这里不再重复列一遍 */}
           </div>
         </section>
+
+        {/* 右侧工具坞（≥1280 才渲染；更窄的屏走原来的抽屉/浮层） */}
+        <SideDock
+          panel={dockPanel}
+          onPanel={(p) => setDockPanel(p)}
+          open={dockOpen}
+          onOpenChange={(v) => {
+            dockTouched.current = true;
+            setDockOpen(v);
+            saveDock(v, dockPanel, dockW);
+          }}
+          width={dockW}
+          onWidth={(w) => {
+            setDockW(w);
+            saveDock(dockOpen, dockPanel, w);
+          }}
+          frame={browserFrame}
+          actions={browserActions}
+          steps={browserSteps}
+          browserBusy={busy}
+          browserWaiting={browserWaiting}
+          onBrowserOpenFull={() => setBrowserOpen(true)}
+          onUserClick={async (x, y) => sendBrowser({ kind: "click", x, y })}
+          onUserText={async (text) => sendBrowser({ kind: "text", text })}
+          onUserScroll={async (dy) => sendBrowser({ kind: "scroll", dy })}
+          sessionId={sessionId || undefined}
+          files={sessionFiles?.files ?? []}
+          workDir={sessionFiles?.work_dir}
+          filesBusy={filesBusy}
+          onFilesRefresh={() => void loadSessionFiles()}
+          hasNewFiles={fileCount > filesSeen}
+        />
       </div>
 
       {/* 浏览器面板 —— 桌面居中窗口，手机贴底抽屉（和文件预览同一个手感）。
           点缩略条打开；画面可点、可滚、可打字，登录要用户自己来。 */}
       {browserOpen && (
-        <div className="fixed inset-0 z-[70] flex items-end justify-center md:items-center" role="dialog" aria-modal="true" aria-label="浏览器画面">
+        <div className="dialog-free fixed inset-0 z-[70] flex items-end justify-center md:items-center" role="dialog" aria-modal="true" aria-label="浏览器画面">
           <div className="absolute inset-0" style={{ background: "rgba(15,23,42,0.4)" }} onClick={() => setBrowserOpen(false)} />
           <div
             className="relative flex w-full flex-col overflow-hidden rounded-t-[16px] md:max-w-[760px] md:rounded-[14px]"

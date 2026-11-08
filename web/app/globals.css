@@ -1174,8 +1174,10 @@ body {
 @media (min-width: 1024px) {
   /* Sheet 专用：宽度由 --sheet-w 给。**排除详情面板** —— 它是右侧全高抽屉，
      宽度自己说了算（早先这条把它按成 360，720 的 md:w 完全没机会生效）。 */
-  [role="dialog"][aria-labelledby]:not(.panel-slide-in),
-  [role="dialog"][aria-label]:not(.panel-slide-in) { width: var(--sheet-w, 360px); }
+  /* .dialog-free = "宽度我自己说了算"的弹层（浏览器画面那种要 760 的）。
+     没有它就会被下面这条按成 360 —— 用户看到的是"全屏"结果只有一条窄缝。 */
+  [role="dialog"][aria-labelledby]:not(.panel-slide-in):not(.dialog-free),
+  [role="dialog"][aria-label]:not(.panel-slide-in):not(.dialog-free) { width: var(--sheet-w, 360px); }
 }
 
 /* ── 交互流畅度（2026-10-24）──────────────────────────────────────────
