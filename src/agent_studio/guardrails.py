@@ -513,10 +513,155 @@ def classify_code(code: str, workspace: str | None = None) -> Verdict:
 #: 工具名 → 判定方式（认不出的工具不表态，交给原有权限引擎）
 _COMMAND_TOOLS = {"bash", "shell", "sh", "zsh", "run_command", "terminal", "execute", "cmd", "proc_start", "procstart"}
 _CODE_TOOLS = {"python", "pythonrepl", "python_repl", "py", "ipython", "notebook", "execute_code"}
+#: 直接点名一个文件的工具 —— 它们不经过 shell，路径就在参数里
+_FILE_TOOLS = {
+    "read",
+    "write",
+    "edit",
+    "multiedit",
+    "notebookread",
+    "notebookedit",
+    "glob",
+    "grep",
+    "ls",
+    "listdir",
+    "delete",
+}
+
+#: 会改文件的工具（文件名级的敏感件写到工作目录里是允许的，读不行）
+_WRITE_TOOLS = {"write", "edit", "multiedit", "notebookedit", "delete"}
 
 #: 参数里可能是命令的键
 _COMMAND_KEYS = ("command", "cmd", "script", "shell")
 _CODE_KEYS = ("code", "source", "python", "script")
+#: 参数里可能是路径的键（按常见工具命名，认不出就不判）
+_PATH_KEYS = ("file_path", "path", "notebook_path", "target_file", "filePath", "dir", "directory", "cwd")
+
+#: 平台级"助手永远不该碰到"的目录前缀。命中即 DENY，**任何权限模式、
+#: 任何会话内放行、任何助手自己的 allow 规则都压不住**（和命令黑名单同级）。
+#: 为什么放在代码里而不是只靠每个助手配 deny 规则：规则是逐助手配的，
+#: 新建一个助手默认没有 —— 而这些位置泄露一次就够了（凭据、私钥、影子口令）。
+SENSITIVE_PREFIXES = (
+    "/root/.hermes",  # 平台自己的 .env、config.yaml（所有 key 就在这）
+    "/root/.ssh",  # 私钥
+    "/root/.aws",
+    "/root/.config/hermes",
+    "/etc/shadow",
+    "/etc/gshadow",
+    "/etc/sudoers",
+    "/etc/sudoers.d",
+    "/etc/ssh/ssh_host",  # 主机私钥
+)
+#: 只认文件名的敏感件：这些名字出现在哪儿都不该被助手读写
+#: （`.env.example` 这类模板不在此列，脚手架照常能写）
+SENSITIVE_NAMES = frozenset(
+    {
+        ".env",
+        ".env.local",
+        ".env.production",
+        ".env.prod",
+        ".env.development",
+        ".env.dev",
+        ".env.staging",
+        ".npmrc",
+        ".pypirc",
+        ".netrc",
+        ".git-credentials",
+        "credentials.json",
+        "id_rsa",
+        "id_ed25519",
+        "studio.db",
+        "studio.db-wal",
+        "studio.db-shm",
+    }
+)
+#: shell 里可能出现的"家目录写法"—— 命令文本只能做子串匹配，得把别名也列上
+_HOME_ALIASES = ("/root/", "~/", "$HOME/", "${HOME}/")
+
+
+def _norm_abs(path: str, workspace: str | None = None) -> str:
+    """把路径尽量变成绝对路径（`~` 展开、相对路径按工作目录算）。"""
+    raw = (path or "").strip().strip("'\"")
+    if not raw:
+        return ""
+    if raw.startswith("~"):
+        raw = os.path.expanduser(raw)
+    if not raw.startswith("/"):
+        if workspace:
+            raw = os.path.join(workspace, raw)
+        else:
+            return ""  # 不知道相对于谁，就不猜
+    return os.path.abspath(raw)
+
+
+def sensitive_hit(path: str, workspace: str | None = None) -> tuple[str, str]:
+    """这个路径算不算"碰不得"。返回 ``("name"|"prefix"|"", 命中项)``。"""
+    if not path:
+        return "", ""
+    # 文件名先判：`.env` 这类不论放哪都不行（含相对路径，工作目录里的也算）
+    base = os.path.basename(path.rstrip("/")) or ""
+    if base in SENSITIVE_NAMES:
+        return "name", base
+    target = _norm_abs(path, workspace)
+    if not target:
+        return "", ""
+    for prefix in SENSITIVE_PREFIXES:
+        if target == prefix or target.startswith(prefix.rstrip("/") + "/"):
+            return "prefix", prefix
+    return "", ""
+
+
+def _command_sensitive(text: str) -> str:
+    """命令/代码文本里出现敏感路径（含 ~ 与 $HOME 写法）。"""
+    if not text:
+        return ""
+    for prefix in SENSITIVE_PREFIXES:
+        if prefix in text:
+            return prefix
+    for alias in _HOME_ALIASES:
+        for tail in (".hermes", ".ssh", ".aws"):
+            if f"{alias}{tail}" in text:
+                return f"{alias}{tail}"
+    for name in SENSITIVE_NAMES:
+        # 只认带路径分隔的写法：`.env` 单出现在命令里（比如 `cp a .env.example`）不算
+        if f"/{name}" in text:
+            return f"/{name}"
+    return ""
+
+
+def classify_sensitive_access(short: str, data: dict, workspace: str | None = None) -> Verdict | None:
+    """凭据/私钥这类"碰不得"的位置，读写都拦（`RISK_DENY`，不走 ASK）。
+
+    两档力度，别一刀切：
+    · 目录级（``/root/.hermes``、``/root/.ssh``…）—— 读写全拦，那是平台自己在用的东西
+    · 文件名级（``.env``、``id_rsa``…）—— **读**一律拦（读走就等于泄露）；
+      **写**只拦工作目录之外的（会话里给新项目写个 ``.env`` 是正经干活，别挡）
+    """
+    hit_kind = hit = ""
+    if short in _FILE_TOOLS:
+        for key in _PATH_KEYS:
+            val = data.get(key)
+            if isinstance(val, str) and val.strip():
+                hit_kind, hit = sensitive_hit(val, workspace)
+                if hit:
+                    break
+    else:
+        text = next((data[k] for k in _COMMAND_KEYS + _CODE_KEYS if isinstance(data.get(k), str) and data[k].strip()), "")
+        hit = _command_sensitive(text)
+        hit_kind = "prefix" if hit else ""
+    if not hit:
+        return None
+    if hit_kind == "name" and short in _WRITE_TOOLS:
+        path = next((data[k] for k in _PATH_KEYS if isinstance(data.get(k), str)), "")
+        if _is_inside(path, workspace):
+            return None
+    return Verdict(
+        RISK_DENY,
+        f"这条碰的是平台的核心凭据（{hit}）——密钥、私钥、影子口令不进助手的视野。"
+        "真要查配置，让用户在对话里贴出来，或者把可公开的那部分放到会话目录再读",
+        "sensitive-path",
+        _short(str(hit)),
+    )
 
 
 def classify_tool_call(name: str, tool_input: dict | None, workspace: str | None = None) -> Verdict | None:
@@ -527,6 +672,12 @@ def classify_tool_call(name: str, tool_input: dict | None, workspace: str | None
     data = tool_input or {}
     if not isinstance(data, dict):
         return None
+
+    # 先判"碰不得的位置"：这一层不设条件，read 也算命中 ——
+    # 引擎那边只读是"无副作用就放行"，凭据被读走同样是事故（实测 /root/.hermes/.env 一路 allow）。
+    sensitive = classify_sensitive_access(short, data, workspace)
+    if sensitive is not None:
+        return sensitive
 
     keys = _COMMAND_KEYS if short in _COMMAND_TOOLS else (_CODE_KEYS if short in _CODE_TOOLS else ())
     if not keys:
