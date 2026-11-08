@@ -472,6 +472,12 @@ class AgentScopeRuntime(AgentRuntime):
                     )
             except Exception:  # noqa: BLE001 —— 读不到按空处理：宁可少给不可滥给
                 logger.warning("读技能绑定失败，本次按零技能处理", exc_info=True)
+        if _bound_names:
+            # 库里勾着的技能，盘上不一定在（换机器/清缓存就会这样）。
+            # 不补的话，助手只能看到"碰巧还在"的那几个 —— 用户那边就是"我勾了但找不到"。
+            from ...skills_lifecycle import ensure_skill_files
+
+            await ensure_skill_files(_bound_names)
         _view = build_skill_view(_bound_names, skills_dir, work_dir)
         skills_dir = _view
         logger.info("技能选择：%s 挂了 %d 个 → %s", _aid, len(_bound_names), _view)

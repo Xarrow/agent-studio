@@ -418,14 +418,9 @@ async def _materialize(row: Skill) -> Path:
 
     **只进 DB 不落盘 = 助手看不见这个 skill** —— 所以导入/编辑/安装三处都要调。
     """
-    target = settings.work_dir / "skills" / row.name
-    target.mkdir(parents=True, exist_ok=True)
-    (target / "SKILL.md").write_text(row.content or "", encoding="utf-8")
-    for rel, text in (row.files or {}).items():
-        f = target / rel
-        f.parent.mkdir(parents=True, exist_ok=True)
-        f.write_text(text, encoding="utf-8")
-    return target
+    from ..skills_lifecycle import write_skill_files
+
+    return write_skill_files(row, settings.work_dir / "skills")
 
 
 async def _upsert_skill(

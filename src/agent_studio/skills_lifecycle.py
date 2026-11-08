@@ -47,6 +47,50 @@ def archive_dir() -> Path:
     return Path(settings.work_dir) / "skills-archive"
 
 
+def write_skill_files(row: Skill, root: Path | None = None) -> Path:
+    """把一条 Skill 的真身写到磁盘（同步版，运行时也要用）。
+
+    **只在库里不算有**：LocalSkillLoader 读的是 ``work_dir/skills/<name>/``。
+    这套环境迁移/重建时库里带过来了、盘上没带过来，助手就"勾了但看不见" ——
+    实测东京实例挂了 8 个，目录里只有 3 个。
+    """
+    base = Path(root) if root is not None else skills_dir()
+    target = base / row.name
+    target.mkdir(parents=True, exist_ok=True)
+    (target / "SKILL.md").write_text(row.content or "", encoding="utf-8")
+    for rel, text in (row.files or {}).items():
+        f = target / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(text, encoding="utf-8")
+    return target
+
+
+async def ensure_skill_files(names: list[str]) -> list[str]:
+    """绑定了、库里也 active，但目录不在盘上 → 从库里补写回来。
+
+    返回真的补了哪些。扣在运行时入口做，是因为"缺文件"这件事可能在
+    任何时刻发生（换机器、清缓存、手工删目录），补一次就永久好了。
+    """
+    want = [str(n) for n in (names or []) if n]
+    if not want:
+        return []
+    root = skills_dir()
+    missing = [n for n in want if not (root / n / "SKILL.md").is_file()]
+    if not missing:
+        return []
+    from .db import SessionLocal
+
+    fixed: list[str] = []
+    async with SessionLocal() as session:
+        rows = (await session.execute(select(Skill).where(Skill.name.in_(missing)))).scalars().all()
+        for row in rows:
+            write_skill_files(row, root)
+            fixed.append(row.name)
+    if fixed:
+        logger.warning("技能目录缺失，已按库里的正文补写：%s", "、".join(sorted(fixed)))
+    return fixed
+
+
 def _is_agent_skill(row: Skill) -> bool:
     src = row.source if isinstance(row.source, dict) else {}
     return str(src.get("type", "")).lower() == "agent"
