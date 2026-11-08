@@ -31,6 +31,12 @@ logger = logging.getLogger(__name__)
 #: （AgentScope 的确认事件只带工具名和参数，没有我们的理由）。
 _REASONS: ContextVar[dict[str, str]] = ContextVar("guard_reasons", default={})
 
+#: ContextVar 的兜底：插话/审批事件由引擎在**另一个任务**里归一化，
+#: 那边读不到我们这里设的 ContextVar（实测授权条上只有工具名，没有理由）。
+#: 所以再存一份进程级映射，按 call_id 取；call_id 全局唯一，用完不清也不会串。
+_REASONS_FALLBACK: dict[str, str] = {}
+_FALLBACK_MAX = 500
+
 
 def note_reason(call_id: str, reason: str) -> None:
     if not call_id:
@@ -38,10 +44,14 @@ def note_reason(call_id: str, reason: str) -> None:
     data = dict(_REASONS.get())
     data[call_id] = reason
     _REASONS.set(data)
+    _REASONS_FALLBACK[call_id] = reason
+    if len(_REASONS_FALLBACK) > _FALLBACK_MAX:
+        for old in list(_REASONS_FALLBACK)[: _FALLBACK_MAX // 5]:
+            _REASONS_FALLBACK.pop(old, None)
 
 
 def guard_reasons() -> dict[str, str]:
-    return dict(_REASONS.get())
+    return {**_REASONS_FALLBACK, **_REASONS.get()}
 
 
 def clear_reasons() -> None:
@@ -58,6 +68,7 @@ class DangerousActionGuard(MiddlewareBase):
         allow: list[str] | tuple[str, ...] = (),
         workspace: str | None = None,
         roots: list[str] | tuple[str, ...] = (),
+        read_roots: list[str] | tuple[str, ...] = (),
         session_allow: list[str] | tuple[str, ...] = (),
         deny_patterns: list[str] | tuple[str, ...] = (),
     ) -> None:
@@ -71,6 +82,9 @@ class DangerousActionGuard(MiddlewareBase):
         #: 这个助手额外申请的地盘（会话目录之外）。``"/"`` = 全盘，
         #: 用来配出「和 Hermes 一样的权限」；破坏性命令的判定不受影响。
         self._roots = tuple(r for r in roots if r)
+        #: **可读范围**（比写范围窄）：默认只有会话目录；要看别处就在助手配置里
+        #: 加目录，或者运行时点一次同意。含 ``/`` 等于放弃这一层（全盘可读）。
+        self._read_roots = tuple(r for r in read_roots if r)
         #: 用户在这个会话里点过「不再问这个工具」的（AgentScope 工具名）。
         #: 只降级 ASK —— ``rm -rf /`` 这类 DENY 永不放行（点过也不放）。
         self._session_allow = {t for t in session_allow if t}
@@ -111,7 +125,8 @@ class DangerousActionGuard(MiddlewareBase):
         scope: str | list[str] = ([ws] if ws else []) + list(self._roots)
         if len(scope) == 1:
             scope = scope[0]
-        verdict = guardrails.classify_tool_call(name, tool_input, scope)
+        read_scope: list[str] = ([ws] if ws else []) + list(self._read_roots)
+        verdict = guardrails.classify_tool_call(name, tool_input, scope, read_scope)
         if verdict is None or verdict.risk == guardrails.RISK_ALLOW:
             return await next_handler()
 
@@ -151,8 +166,12 @@ class DangerousActionGuard(MiddlewareBase):
         # bypass 模式 = 用户声明"全信任，黑名单兜底"：引擎会跳过全部安全 ASK
         # （bypass_immune 无效），我们这层再发 ASK 就和模式矛盾 —— 用户选了
         # bypass 还是每次被问。这里对齐：只保留 DENY 拦截，ASK 放行。
+        #
+        # 唯一例外是"读到文件范围外"：bypass 免的是"在你自己的地盘上别问我"，
+        # 不免"翻到机器别处去"。真需要看别的目录，就在助手配置里加可读范围。
         if (
             verdict.risk == guardrails.RISK_ASK
+            and verdict.rule != "read-scope"
             and getattr(agent, "state", None) is not None
         ):
             _mode = getattr(

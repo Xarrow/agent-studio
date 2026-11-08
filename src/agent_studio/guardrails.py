@@ -148,7 +148,7 @@ def _is_inside(path: str, workspace: str | Sequence[str] | None) -> bool:
     return False
 
 
-def _out_of_workspace_paths(tokens: list[str], workspace: str | None) -> list[str]:
+def _out_of_workspace_paths(tokens: list[str], workspace: str | Sequence[str] | None) -> list[str]:
     """命令里明显指向系统目录的绝对路径（写/删/改的目标）。"""
     hits: list[str] = []
     for tok in tokens:
@@ -175,7 +175,7 @@ def _redirect_targets(segment: str) -> list[str]:
 # --------------------------------------------------------------------------- #
 # 单段判定
 # --------------------------------------------------------------------------- #
-def _verdict_rm(tokens: list[str], workspace: str | None, seg: str) -> Verdict | None:
+def _verdict_rm(tokens: list[str], workspace: str | Sequence[str] | None, seg: str) -> Verdict | None:
     # 先认命令名：不认的话 `echo hi > /etc/motd` 的目标会被当成"要删的东西"，
     # 授权条上就会写着"要递归删除 hi" —— 理由错了比没有理由更糟（用户无从判断）。
     name = os.path.basename(tokens[0])
@@ -338,7 +338,7 @@ def _verdict_secrets(tokens: list[str], seg: str) -> Verdict | None:
     return None
 
 
-def _verdict_redirect(seg: str, workspace: str | None) -> Verdict | None:
+def _verdict_redirect(seg: str, workspace: str | Sequence[str] | None) -> Verdict | None:
     targets = [t for t in _redirect_targets(seg) if t.startswith("/")]
     outside = [t for t in targets if not _is_inside(t, workspace)]
     if outside:
@@ -385,7 +385,7 @@ _SEGMENT_CHECKS = (
 # --------------------------------------------------------------------------- #
 # 对外入口
 # --------------------------------------------------------------------------- #
-def classify_command(command: str, workspace: str | None = None) -> Verdict:
+def classify_command(command: str, workspace: str | Sequence[str] | None = None) -> Verdict:
     """判一条 shell 命令。多段时取**最坏**的那一段（``ls && rm -rf /`` 必须拦）。"""
     if not (command or "").strip():
         return ALLOW
@@ -441,7 +441,7 @@ _DANGER_WORD_RE = re.compile(
 )
 
 
-def classify_code(code: str, workspace: str | None = None) -> Verdict:
+def classify_code(code: str, workspace: str | Sequence[str] | None = None) -> Verdict:
     """判一段 Python 代码。
 
     只能在**文本层**判：代码是图灵完备的，静态分析永远能绕。这里的目标不是
@@ -629,7 +629,140 @@ def _command_sensitive(text: str) -> str:
     return ""
 
 
-def classify_sensitive_access(short: str, data: dict, workspace: str | None = None) -> Verdict | None:
+#: 只读命令（只看第一个词）—— 只有它们才做"可读范围"判定，
+#: 别的命令（构建、安装、写文件的）交给破坏性规则那一条路。
+_READ_COMMANDS = {
+    "cat",
+    "head",
+    "tail",
+    "less",
+    "more",
+    "bat",
+    "grep",
+    "egrep",
+    "fgrep",
+    "rg",
+    "ag",
+    "ack",
+    "find",
+    "ls",
+    "tree",
+    "stat",
+    "file",
+    "wc",
+    "sort",
+    "uniq",
+    "cut",
+    "awk",
+    "strings",
+    "jq",
+    "xxd",
+    "od",
+    "diff",
+    "md5sum",
+    "sha256sum",
+    "du",
+    "realpath",
+    "readlink",
+    "sqlite3",  # 组合上 .db 路径时也算读
+}
+#: 绝对路径里这些是"系统自带、读了没风险"，问了只会烦人
+_READABLE_SYSTEM_PREFIXES = (
+    "/usr/",
+    "/bin/",
+    "/sbin/",
+    "/lib/",
+    "/lib64/",
+    "/opt/agent-studio/runtime/",  # 平台自带的 python 运行时
+    "/proc/",
+    "/sys/",
+    "/dev/null",
+    "/dev/stdin",
+    "/dev/stdout",
+    "/dev/urandom",
+)
+#: python 字符串里看着像绝对路径的字面量
+_PY_PATH_RE = re.compile(r"""['"](/[A-Za-z0-9._\-/]{2,})['"]""")
+
+
+def _read_targets_from_command(text: str) -> list[str]:
+    """从一条只读命令里挑出"它要读的路径"。"""
+    try:
+        tokens = _tokens(text)
+    except Exception:  # noqa: BLE001
+        return []
+    seg = text.split("&&")[0].split(";")[0].split("|")[0]
+    if "-i" in seg.split():  # sed -i = 写，不归这一层
+        return []
+    head = next((t for t in tokens if not t.startswith("-") and not t.isdigit()), "")
+    if head.split("/")[-1] not in _READ_COMMANDS:
+        return []
+    out: list[str] = []
+    for tok in tokens:
+        if not tok or tok.startswith("-") or "://" in tok:
+            continue
+        if tok.startswith("/") or tok.startswith("~"):
+            out.append(tok)
+    return out
+
+
+def _scope_roots(scope: str | Sequence[str] | None) -> list[str]:
+    if not scope:
+        return []
+    return [scope] if isinstance(scope, str) else list(scope)
+
+
+def classify_read_scope(short: str, data: dict, scope: str | Sequence[str] | None = None) -> Verdict | None:
+    """读的目标落在"可读范围"外 → ASK。
+
+    为什么读也要问：平台的助手本来就被许诺"文件范围"是它自己的工作目录，
+    可引擎那边只读是**无条件放行**的（实测 Read /etc/hostname、Read /root/.hermes
+    /config.yaml 全 allow），用户看到的却是"它居然翻到我机器别处去了"。
+    这一层把"范围"补回来 —— 不是拒绝，是问一句：越界读要人点头。
+
+    ``scope`` 里含 ``/`` 表示这个助手申请了全盘（等同 Hermes 的权限），不判。
+    """
+    roots = _scope_roots(scope)
+    if any(os.path.abspath(r) == os.sep for r in roots if r):
+        return None
+
+    targets: list[str] = []
+    if short in _WRITE_TOOLS:
+        return None  # 写归"越界写"那条线管，别在这儿重复问
+    if short in _FILE_TOOLS:
+        for key in _PATH_KEYS:
+            val = data.get(key)
+            if isinstance(val, str) and val.strip():
+                targets.append(val)
+    else:
+        text = next((data[k] for k in _COMMAND_KEYS if isinstance(data.get(k), str) and data[k].strip()), "")
+        if text:
+            targets = _read_targets_from_command(text)
+        else:
+            code = next((data[k] for k in _CODE_KEYS if isinstance(data.get(k), str) and data[k].strip()), "")
+            targets = _PY_PATH_RE.findall(code or "")
+
+    for raw in targets:
+        if not raw:
+            continue
+        if any(raw.startswith(p) for p in _READABLE_SYSTEM_PREFIXES):
+            continue
+        path = _norm_abs(raw, roots[0] if roots else None)
+        if not path:  # 相对路径 = 就在工作目录里
+            continue
+        if _is_inside(path, roots):
+            continue
+        return Verdict(
+            RISK_ASK,
+            f"要读会话目录外的文件：{raw}。这个助手的文件范围是它自己的会话目录，"
+            "读到别处需要你点一下同意（同意一次就够，本会话内不再问）",
+            "read-scope",
+            _short(raw),
+        )
+    return None
+
+
+def classify_sensitive_access(short: str, data: dict, workspace: str | Sequence[str] | None = None) -> Verdict | None:
     """凭据/私钥这类"碰不得"的位置，读写都拦（`RISK_DENY`，不走 ASK）。
 
     两档力度，别一刀切：
@@ -664,8 +797,17 @@ def classify_sensitive_access(short: str, data: dict, workspace: str | None = No
     )
 
 
-def classify_tool_call(name: str, tool_input: dict | None, workspace: str | None = None) -> Verdict | None:
-    """判一次工具调用。返回 ``None`` 表示"没意见"（由原有权限引擎按工作目录边界继续判）。"""
+def classify_tool_call(
+    name: str,
+    tool_input: dict | None,
+    workspace: str | Sequence[str] | None = None,
+    read_scope: str | Sequence[str] | None = None,
+) -> Verdict | None:
+    """判一次工具调用。返回 ``None`` 表示"没意见"（由原有权限引擎按工作目录边界继续判）。
+
+    ``workspace`` 管"能不能写/删"，``read_scope`` 管"能不能读"（默认同 workspace）。
+    两者分开是因为"借它看一眼别人的目录"和"让它往那儿写东西"不是一回事。
+    """
     short = (name or "").split("/")[-1].split(".")[-1].lower()
     if "__" in short:
         short = short.split("__")[-1]
@@ -675,17 +817,26 @@ def classify_tool_call(name: str, tool_input: dict | None, workspace: str | None
 
     # 先判"碰不得的位置"：这一层不设条件，read 也算命中 ——
     # 引擎那边只读是"无副作用就放行"，凭据被读走同样是事故（实测 /root/.hermes/.env 一路 allow）。
-    sensitive = classify_sensitive_access(short, data, workspace)
+    sensitive = classify_sensitive_access(short, data, _first_root(read_scope) or workspace)
     if sensitive is not None:
         return sensitive
 
+    worst = classify_read_scope(short, data, read_scope if read_scope is not None else workspace)
+
     keys = _COMMAND_KEYS if short in _COMMAND_TOOLS else (_CODE_KEYS if short in _CODE_TOOLS else ())
     if not keys:
-        return None
+        return worst
     raw = next((data[k] for k in keys if isinstance(data.get(k), str) and data[k].strip()), "")
     if not raw:
-        return None
-    return classify_code(raw, workspace) if short in _CODE_TOOLS else classify_command(raw, workspace)
+        return worst
+    verdict = classify_code(raw, workspace) if short in _CODE_TOOLS else classify_command(raw, workspace)
+    return verdict if worst is None else _worse(worst, verdict)
+
+
+def _first_root(scope: str | Sequence[str] | None) -> str | None:
+    """范围里的第一个目录 —— 用来把相对路径解释成绝对路径。"""
+    roots = _scope_roots(scope)
+    return next((r for r in roots if r), None)
 
 
 def _worse(a: Verdict, b: Verdict) -> Verdict:

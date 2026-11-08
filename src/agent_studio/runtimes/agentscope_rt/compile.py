@@ -1027,6 +1027,9 @@ def build_agent(
         # 额外地盘：默认只有会话目录；助手要"像 Hermes 一样能动手"就配 ["/"]。
         # 只放宽"越界写"这一类 ASK，递归删除/凭据/提权照样问、照样拦。
         roots=tuple(_gconf.get("roots") or ()),
+        # 可读范围：默认只有会话目录。越界读 = 问一次（不是拒绝）。
+        # 配了 "/" 等于这个助手可以读全盘，那一层就不判了。
+        read_roots=tuple(_gconf.get("read_roots") or ()),
         # 「这个会话里别再问这个工具」—— 存在 session_allow 表，由编译入口读好传进来
         session_allow=tuple(session_allow),
         deny_patterns=_deny_patterns,
