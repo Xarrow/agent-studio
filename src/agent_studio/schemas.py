@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # --------------------------------------------------------------------------- #
 # Agent 定义（通用层）
@@ -115,6 +115,22 @@ class AgentDefinition(BaseModel):
     #: 或 ``shared``（这个助手的所有会话共用一个目录，适合"围绕一个数据项目反复干"）。
     #: 目录同时是权限边界，所以这也是"会话之间能不能互相看见文件"的开关。
     workspace_isolation: Literal["session", "shared"] = "session"
+
+    @model_validator(mode="after")
+    def _file_scope_must_be_reachable(self):
+        """文件范围保存前校验：配了内核不认的目录，等于没配 —— 当场说清楚。
+
+        两类错：把凭据位置（/root/.hermes、.env…）放进范围（永远碰不到）；
+        把写窗口之外的目录配成可写（平台放行、内核 Read-only）。
+        """
+        from . import file_scope
+
+        for runtime, opts in (self.runtime_options or {}).items():
+            guard = (opts or {}).get("guard") if isinstance(opts, dict) else None
+            bad = file_scope.problems(guard)
+            if bad:
+                raise ValueError("；".join(bad))
+        return self
 
     @field_validator("system_prompt")
     @classmethod

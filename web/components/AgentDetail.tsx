@@ -23,7 +23,7 @@ import type {
 } from "@/lib/types";
 import { AgentMemoryPanel } from "@/components/AgentMemoryPanel";
 import { RevisionHistory } from "@/components/RevisionHistory";
-import { PermissionScope, type PermConf } from "@/components/PermissionScope";
+import { PermissionScope, type GuardConf, type PermConf } from "@/components/PermissionScope";
 import { Hint } from "@/components/ui/hint";
 import { ModelPicker } from "@/components/ModelPicker";
 import { AgentQuickRun } from "@/components/AgentQuickRun";
@@ -117,6 +117,8 @@ export function AgentDetail({
   /** 空状态里的「同步内置工具」用 —— 就地完成，不跳页 */
   const [syncing, setSyncing] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  /** 保存失败的原因（保存按钮旁边红字显示；成功/再次保存时清掉） */
+  const [saveErr, setSaveErr] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [nameErr, setNameErr] = useState<string | null>(null);
   const nameIme = useImeGuard();
@@ -362,6 +364,8 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
    * "权限"是 AgentScope 的概念，别的运行时未必有；这样通用层零改动。
    */
   const permConf = def.runtime_options?.[def.runtime]?.permission as PermConf | undefined;
+  // 文件范围（可写 / 可读目录）跟权限放同一块 —— 用户配"它能干什么"时是一件事
+  const guardConf = def.runtime_options?.[def.runtime]?.guard as GuardConf | undefined;
   const providerMeta = providers.find((p) => p.name === def.model.provider);
   /** 这个助手实际用的那条 LLM 配置 */
   const usedCred = creds.find((c) => c.id === def.model.credential_ref) ?? null;
@@ -397,6 +401,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
   const save = async () => {
     setSaving(true);
     setMsg(null);
+    setSaveErr(null);
     try {
       // **顶层 name 必须一起提交** —— 名字输入框改的是 def.name，
       // 而列表 / 画布节点 / 顶栏显示的都是**顶层** agent.name；
@@ -415,6 +420,11 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
       setMsg(`已保存（v${updated.version}）`);
       setTimeout(() => setMsg(null), 2500);
     } catch (e) {
+      // 保存被后端拒（比如文件范围里有内核不允许的目录）必须**当场看见** ——
+      // 原来只 setErr，而 err 只在"加载失败"那个分支渲染，页面上等于什么都没发生
+      // 后端是 pydantic 422："definition：Value error, <人话>"，只留人话
+      const raw = e instanceof Error ? e.message : String(e);
+      setSaveErr(raw.replace(/^definition：Value error,\s*/, "").replace(/^Value error,\s*/, ""));
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(false);
@@ -577,6 +587,15 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {msg && <span className="text-[12px] text-[var(--color-ok)]">{msg}</span>}
+          {saveErr && !saving && (
+            <span
+              className="max-w-[420px] text-[12px] leading-snug"
+              style={{ color: "var(--color-err)" }}
+              title={saveErr}
+            >
+              没保存：{saveErr}
+            </span>
+          )}
           {dirty && !saving && (
             <span
               className="text-[12px] flex items-center gap-1"
@@ -935,6 +954,18 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 <PermissionScope
                   conf={permConf}
                   toolNames={selectedToolNames}
+                  guardConf={guardConf}
+                  onGuardChange={(next) =>
+                    patch({
+                      runtime_options: {
+                        ...def.runtime_options,
+                        [def.runtime]: {
+                          ...(def.runtime_options?.[def.runtime] ?? {}),
+                          guard: next,
+                        },
+                      },
+                    })
+                  }
                   onChange={(next) =>
                     patch({
                       runtime_options: {

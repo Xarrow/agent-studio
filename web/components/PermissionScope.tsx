@@ -27,6 +27,7 @@ import { api } from "@/lib/api";
 
 export type PermRule = { tool: string; pattern?: string; behavior: "allow" | "deny" | "ask" };
 export type PermConf = { mode?: string; allow?: Omit<PermRule, "behavior">[]; deny?: Omit<PermRule, "behavior">[]; ask?: Omit<PermRule, "behavior">[] };
+export type GuardConf = { enabled?: boolean; roots?: string[]; read_roots?: string[] };
 
 /** 模式：值 / 名字 / 一句话说清后果 */
 const MODES: { value: string; label: string; result: string; desc: string; warn?: string }[] = [
@@ -94,15 +95,122 @@ function fromRows(mode: string, rows: PermRule[]): PermConf {
   return conf;
 }
 
+/** 服务级上限（systemd 沙箱）：这几个目录之外整个文件系统只读。
+ *  写在这儿不是"校验"，是让配置的人心里有数 —— 助手配了 /opt 也写不进去。 */
+const WRITABLE_HINT = "/srv/src/agent-studio、/srv/www、/tmp、/dev/shm";
+const COMMON_PATHS = ["/srv/src", "/srv/www", "/tmp"];
+
+/** 一条路径一行：回车加、× 删。空 = 只有会话目录。 */
+function PathList({
+  label,
+  hint,
+  value,
+  onChange,
+  tone = "accent",
+}: {
+  label: string;
+  hint: string;
+  value: string[] | undefined;
+  onChange: (next: string[]) => void;
+  tone?: "accent" | "warn";
+}) {
+  const [draft, setDraft] = useState("");
+  const paths = value ?? [];
+  const color = tone === "warn" ? "var(--color-warn)" : "var(--color-accent)";
+  const add = (raw: string) => {
+    const v = raw.trim().replace(/\/+$/, "");
+    if (!v || paths.includes(v)) return;
+    onChange([...paths, v]);
+    setDraft("");
+  };
+  return (
+    <div className="mt-2">
+      <div className="flex flex-wrap items-center gap-x-1.5">
+        <span className="text-[12px]">{label}</span>
+        <span className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+          {hint}
+        </span>
+      </div>
+      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+        <span
+          className="inline-flex items-center rounded-md px-2 py-0.5 text-[12px]"
+          style={{ background: "color-mix(in srgb, var(--color-muted) 12%, transparent)", color: "var(--color-muted)" }}
+          title="每个会话自己的工作目录：永远可读写，删不掉"
+        >
+          会话目录
+        </span>
+        {paths.map((p) => (
+          <span
+            key={p}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[12px] mono"
+            style={{ background: `color-mix(in srgb, ${color} 10%, transparent)`, color }}
+          >
+            {p}
+            <button
+              type="button"
+              data-tap
+              className="text-[var(--color-muted)] hover:text-[var(--color-err)]"
+              onClick={() => onChange(paths.filter((x) => x !== p))}
+              title="移出范围"
+            >
+              ✕
+            </button>
+          </span>
+        ))}
+      </div>
+      <div className="mt-1.5 flex items-center gap-1.5">
+        <input
+          className="input input-inline flex-1 min-w-[120px] text-[12px] mono"
+          value={draft}
+          placeholder="加一个绝对路径，如 /srv/src"
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key !== "Enter" || e.shiftKey) return;
+            if ((e as unknown as { nativeEvent?: { isComposing?: boolean } }).nativeEvent?.isComposing) return;
+            add(draft);
+          }}
+        />
+        <button type="button" data-tap className="btn btn-sm" disabled={!draft.trim()} onClick={() => add(draft)}>
+          加入
+        </button>
+      </div>
+      {paths.length === 0 && (
+        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+          <span className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+            常用：
+          </span>
+          {COMMON_PATHS.map((p) => (
+            <button
+              key={p}
+              type="button"
+              data-tap
+              className="text-[11.5px] mono rounded px-1.5 py-0.5"
+              style={{ border: "1px solid var(--color-border)", color: "var(--color-muted)" }}
+              onClick={() => add(p)}
+            >
+              + {p}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function PermissionScope({
   conf,
   onChange,
   toolNames,
+  guardConf,
+  onGuardChange,
 }: {
   conf: PermConf | undefined;
   onChange: (next: PermConf) => void;
   /** 这个助手挂了哪些工具（平台侧名字）—— 规则只能针对它有的工具，才有意义 */
   toolNames: string[];
+  /** 文件范围（可读 / 可写）；不传就不显示这一块 */
+  guardConf?: GuardConf;
+  onGuardChange?: (next: GuardConf) => void;
 }) {
   const cur = conf ?? {};
   const mode = cur.mode || "accept_edits";
@@ -318,6 +426,45 @@ export function PermissionScope({
               </button>
             </div>
           ))}
+        </div>
+      )}
+      {/* 文件范围：默认只有会话目录。可读比可写窄 —— 越界读会停下来问一次；
+          凭据位置（/root/.hermes、.env、私钥）不在任何范围里，加进来也碰不到。 */}
+      {guardConf && onGuardChange && (
+        <div className="mt-4 pt-3 border-t border-[var(--color-border)]">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-[12px] font-medium">文件范围</span>
+            <Hint text="默认只有这个会话自己的工作目录。加进来的目录算它的额外地盘；不在这里的，读之前会停下来问你一次。">
+              <span className="text-[12px] text-[var(--color-muted)]">它能碰哪些目录</span>
+            </Hint>
+          </div>
+          <PathList
+            label="可读"
+            hint="越界读要你点一次同意"
+            value={guardConf.read_roots}
+            onChange={(next) => onGuardChange({ ...guardConf, read_roots: next })}
+          />
+          <PathList
+            label="可写"
+            hint="不给就只能写自己的会话目录"
+            value={guardConf.roots}
+            onChange={(next) => onGuardChange({ ...guardConf, roots: next })}
+            tone="warn"
+          />
+          {(guardConf.read_roots ?? []).includes("/") || (guardConf.roots ?? []).includes("/") ? (
+            <p
+              className="text-[12px] mt-1.5 rounded-md px-2 py-1.5"
+              style={{ background: "color-mix(in srgb, var(--color-err) 10%, transparent)", color: "var(--color-err)" }}
+            >
+              ⚠ 配了 / —— 等于 Hermes 的权限：全盘可读，越界读不再问。凭据位置仍然碰不到。
+            </p>
+          ) : null}
+          <p className="text-[11.5px] mt-1.5" style={{ color: "var(--color-muted)" }}>
+            凭据（/root/.hermes、.env、私钥、数据库文件）不在任何范围里 —— 加进来也读不到、写不进。
+          </p>
+          <p className="text-[11.5px] mt-0.5" style={{ color: "var(--color-muted)" }}>
+            服务级只读：整台机器上只有 <span className="mono">{WRITABLE_HINT}</span> 可写，别的目录配了也写不进去。
+          </p>
         </div>
       )}
     </div>
