@@ -104,14 +104,25 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
       out.push(s);
     }
     for (const s of allSessions) {
-      if (s.kind !== "worker") continue;
-      if (!s.parent_session_id || !mine.has(s.parent_session_id)) continue;
       if (seen.has(s.id)) continue;
+      // worker 只挂自己这条血缘（别人派出去的活不混进来）
+      if (s.kind === "worker") {
+        if (!s.parent_session_id || !mine.has(s.parent_session_id)) continue;
+      }
+      // 普通对话：**别的助手的也列** —— 会话栏曾经只列当前助手，用户换个助手
+      // 就以为"昨天的下载会话没了"（管理页里明明在）。历史不该跟着助手隐身。
       seen.add(s.id);
       out.push(s);
     }
     return out;
   }, [allSessions, sessions]);
+
+  /** 侧栏要标"这条不是当前助手的" —— 用 id 查名字 */
+  const agentNames = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const a of agents) m[a.id] = a.name;
+    return m;
+  }, [agents]);
   /** 当前会话的角色 —— 派活会话要一眼看出"这不是你直接聊的那个"，并给回 Router 的门 */
   const [curKind, setCurKind] = useState<"router" | "worker" | "chat">("chat");
   const [curTicket, setCurTicket] = useState<string | null>(null);
@@ -1689,6 +1700,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               }
               sessions={navSessions}
               sessionId={sessionId}
+              agentNames={agentNames}
+              currentAgentId={agentId}
               onPick={pickSession}
               onNew={() => void newChat()}
               onRename={(s) => void renameSession(s)}
@@ -3135,6 +3148,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
 function SessionsPane({
   sessions,
   sessionId,
+  agentNames,
+  currentAgentId,
   onPick,
   onNew,
   onRename,
@@ -3144,6 +3159,9 @@ function SessionsPane({
 }: {
   sessions: Session[];
   sessionId: string;
+  /** id → 助手名：不是当前助手的会话要标出来，免得点开才发现换了人 */
+  agentNames?: Record<string, string>;
+  currentAgentId?: string;
   onPick: (id: string) => void;
   onNew: () => void;
   onRename: (s: Session) => void;
@@ -3327,6 +3345,10 @@ function SessionsPane({
                     const labelText = isWorker
                       ? s.ticket_title || s.title.replace(/^worker-/, "派活 ")
                       : s.title || "未命名对话";
+                    const foreign =
+                      s.agent_id && currentAgentId && s.agent_id !== currentAgentId
+                        ? agentNames?.[s.agent_id] ?? "别的助手"
+                        : null;
                     return (
                       <div
                         key={s.id}
@@ -3364,6 +3386,8 @@ function SessionsPane({
                           </div>
                           <div className="text-[11.5px] max-md:text-[12.5px] text-[var(--color-muted)] truncate mt-1 tabular-nums">
                             {s.turn_count} 轮 · {fmt.relative(s.last_active_at)}
+                            {/* 别的助手的会话：把助手名标在这儿，点开就自动切过去 */}
+                            {foreign && <span className="ml-1 opacity-80">· {foreign}</span>}
                           </div>
                         </div>
                         {(kids.get(s.id)?.length ?? 0) > 0 && (
