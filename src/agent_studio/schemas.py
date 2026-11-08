@@ -127,6 +127,10 @@ class AgentDefinition(BaseModel):
 
         for runtime, opts in (self.runtime_options or {}).items():
             guard = (opts or {}).get("guard") if isinstance(opts, dict) else None
+            # 先把历史写法（roots 里的 "/"）改写成能生效的样子，再校验
+            guard = file_scope.normalize(guard)
+            if isinstance(opts, dict) and isinstance(guard, dict):
+                opts["guard"] = guard
             bad = file_scope.problems(guard)
             if bad:
                 raise ValueError("；".join(bad))

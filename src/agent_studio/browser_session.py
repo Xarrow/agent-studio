@@ -359,6 +359,8 @@ class BrowserSession:
             "--no-sandbox",
             "--disable-gpu",
             "--no-first-run",
+            # 不画滚动条：帧里那条 15px 的灰边会让人以为画面被裁了
+            "--hide-scrollbars",
             "--remote-debugging-port=0",
             f"--window-size={VIEWPORT['width']},{VIEWPORT['height']}",
         ]
@@ -396,6 +398,22 @@ class BrowserSession:
         await self._cdp.attach_page()
         await self._cdp.send("Page.enable")
         await self._cdp.send("Runtime.enable")
+        # 视口要**显式钉死**，不能指望 --window-size：
+        # headless=new 的窗口含浏览器自己的界面，实测 800x600 的窗口里页面只有
+        # 785x400 —— 截图少掉下面三分之一，用户看到的就是"页面显示不完整"。
+        # 用 Emulation 覆盖成 800x600 之后，截图的宽高比才和真实浏览一致。
+        try:
+            await self._cdp.send(
+                "Emulation.setDeviceMetricsOverride",
+                {
+                    "width": VIEWPORT["width"],
+                    "height": VIEWPORT["height"],
+                    "deviceScaleFactor": VIEWPORT["deviceScaleFactor"],
+                    "mobile": False,
+                },
+            )
+        except Exception:  # pragma: no cover —— 老内核没有这个方法就退回窗口尺寸
+            logger.debug("设定视口失败，沿用窗口尺寸", exc_info=True)
         # 画面流：Chromium 主动推帧（每有变化才推，quality 60 的一帧 ~40-80KB）
         self._cdp.on("Page.screencastFrame", self._handle_frame)
         await self._cdp.send(

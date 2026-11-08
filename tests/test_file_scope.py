@@ -33,7 +33,6 @@ def _defn(guard: dict) -> AgentDefinition:
         ({"read_roots": ["/root/.ssh"]}, "凭据位置"),
         ({"roots": ["/root/.hermes"]}, "凭据位置"),
         ({"roots": ["/opt"]}, "写不进去"),
-        ({"roots": ["/"]}, "写不进去"),
         ({"read_roots": ["relative/path"]}, "绝对路径"),
     ],
 )
@@ -61,6 +60,16 @@ def test_上限本身可以读出来给界面用():
     info = file_scope.describe()
     assert "/srv/www" in info["writable"]
     assert "/root/.hermes" in info["hidden"]
+
+
+def test_老配置的全盘写会归一化成窗口而不是报错():
+    """历史配置 roots=["/"] 表示"随便写"。内核做不到，就直接换成那五个窗口，
+    并把读全盘的意图挪到 read_roots —— 否则这批助手连跑都跑不起来。"""
+    d = _defn({"roots": ["/"], "read_roots": ["/srv/src"]})
+    g = d.runtime_options["agentscope"]["guard"]
+    assert "/" not in (g["roots"] or [])
+    assert "/srv/www" in g["roots"]
+    assert "/" in g["read_roots"]
 
 
 def test_内核写的目录可配_别的目录不行():

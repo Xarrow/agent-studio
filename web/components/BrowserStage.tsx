@@ -8,7 +8,7 @@
  *   手机上一张图顶掉半屏正文。用户原话是「怎么优雅地展示 browser_use 交互」。
  *
  * 三条设计原则：
- *   1. **像窗口**——顶部一条 chrome（三个点 + 地址栏），一眼认得出这是浏览器，
+ *   1. **像窗口**——顶部一条 chrome（地址栏 + 状态），一眼认得出这是浏览器，
  *      地址栏点一下就复制网址，不用去正文里翻。
  *   2. **一直说人话**——底部一行动作字幕（"打开 example.com" → "点击 #kw" →
  *      "读页面内容"），动作来自后端的 browser_action 事件；不知道它在干嘛时，
@@ -47,7 +47,7 @@ function prettyUrl(url: string, max = 46): string {
   return s.length > max ? s.slice(0, max - 1) + "…" : s;
 }
 
-/** 顶部 chrome 条：三个点 + 地址栏（点一下复制）+ 右侧状态 */
+/** 顶部 chrome 条：地址栏（点一下复制）+ 右侧状态。不要 macOS 那三个圆点 —— 这里不是窗口，是画面。 */
 function ChromeBar({
   url,
   title,
@@ -68,11 +68,6 @@ function ChromeBar({
       className="flex items-center gap-2 px-2.5 py-1.5 border-b"
       style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
     >
-      <span className="flex shrink-0 items-center gap-1" aria-hidden>
-        {["#ff5f57", "#febc2e", "#28c840"].map((c) => (
-          <span key={c} className="h-[7px] w-[7px] rounded-full" style={{ background: c, opacity: 0.85 }} />
-        ))}
-      </span>
       <button
         type="button"
         onClick={onCopy}
@@ -355,7 +350,7 @@ export function BrowserStage({
           <img
             src={withToken(shown.url_file)}
             alt={shown.summary}
-            className="absolute inset-0 h-full w-full object-contain"
+            className="absolute inset-0 h-full w-full object-contain object-top"
             draggable={false}
           />
         ) : (
@@ -364,7 +359,7 @@ export function BrowserStage({
               ref={imgRef}
               alt={frame?.title || "浏览器画面"}
               onClick={handleClick}
-              className="absolute inset-0 block h-full w-full cursor-crosshair object-contain select-none"
+              className="absolute inset-0 block h-full w-full cursor-crosshair object-contain object-top select-none"
               style={{ opacity: hasFrame ? 1 : 0 }}
               draggable={false}
             />

@@ -49,6 +49,51 @@ def _inside(path: str, roots: Sequence[str]) -> bool:
     return False
 
 
+def normalize(guard: dict | None) -> dict | None:
+    """把历史遗留写法改写成现在能真生效的样子（原地返回清理后的字典）。
+
+    老配置里 `roots: ["/"]` 的意思是"跟 Hermes 一样全盘"——内核做不到写全盘，
+    但**读**全盘是可以的（除了被遮的凭据点）。所以把它挪到 read_roots：
+    意图保留，能力对齐。不这么做的话，那批助手连跑都跑不起来（校验会在开跑时抛）。
+    """
+    if not isinstance(guard, dict):
+        return guard
+    roots = guard.get("roots")
+    reads = guard.get("read_roots")
+
+    def _clean(items):
+        if not isinstance(items, list):
+            return items
+        out: list[str] = []
+        for it in items:
+            v = str(it or "").strip()
+            if not v:
+                continue
+            if v != "/":
+                v = v.rstrip("/")
+            if v not in out:
+                out.append(v)
+        return out
+
+    roots = _clean(roots)
+    reads = _clean(reads)
+
+    if isinstance(roots, list) and "/" in roots:
+        # "/" 想表达的是"随便写"。内核只放开那几个窗口，所以换成窗口本身：
+        # 平台层不再逐条问，实际能写的范围跟物理上限一致。
+        roots = [r for r in roots if r != "/"]
+        for w in SANDBOX_WRITABLE:
+            if w not in roots:
+                roots.append(w)
+        if isinstance(reads, list) and "/" not in reads:
+            reads = reads + ["/"]
+    if isinstance(roots, list):
+        guard["roots"] = roots
+    if isinstance(reads, list):
+        guard["read_roots"] = reads
+    return guard
+
+
 def problems(guard: dict | None) -> list[str]:
     """保存前校验一个助手的 guard 配置。返回人话描述的问题列表（空 = 没问题）。"""
     if not isinstance(guard, dict):
