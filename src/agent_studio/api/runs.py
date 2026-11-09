@@ -9,7 +9,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import SessionLocal, get_session
@@ -1197,7 +1197,7 @@ async def activity_timeline(
                 at=first.started_at,
                 duration_ms=dur,
                 status=whole_status,
-                title=ses_titles.get(sid) or agents.get(first.agent_id, first.agent_id),
+                title=ses_titles.get(sid) or f"{agents.get(first.agent_id, first.agent_id)} · 会话已删除",
                 subtitle=f"{len(rows)} 轮",
                 agent_id=first.agent_id,
                 model=model_name,
@@ -1213,6 +1213,78 @@ async def activity_timeline(
         items[-1].fanout = FanoutRead(
             total=len(rows), ok=ok_n, failed=err_n, tokens_in=tin, tokens_out=tout, items=kids
         )
+
+    # ── 会话已删、轮次还留着的对话：按助手并成一行 ────────────────────────
+    # 老版本删会话会把 run 的 session_id 解绑，那些轮次掉进"无会话"，类型也从对话
+    # 降级成"助手试跑" —— 同一场对话在列表里散成好几行、每行顶着一个助手名，
+    # 用户看到的"按 agent 分开"就是这么来的。这里按助手合成一行，轮次仍可展开。
+    loose: dict[str, list[Run]] = {}
+    rest: list[Run] = []
+    for r in plain_runs:
+        if r.session_id is None and (r.origin or "") in ("chat", "router"):
+            loose.setdefault(r.agent_id, []).append(r)
+        else:
+            rest.append(r)
+
+    _sev_all = {"aborted": 5, "error": 4, "waiting_hitl": 3, "running": 2, "pending": 1}
+    for aid, rows in loose.items():
+        rows.sort(key=lambda x: (x.started_at or 0, x.id))
+        first = rows[0]
+        tin = tout = 0
+        kids: list[FanoutItemRead] = []
+        for i, k in enumerate(rows):
+            k_usage = k.usage if isinstance(k.usage, dict) else {}
+            k_in, k_out = tokens_of(k_usage)
+            tin += k_in
+            tout += k_out
+            kids.append(
+                FanoutItemRead(
+                    run_id=k.id,
+                    index=i + 1,
+                    label=(_first_user_line(k.input) or "")[:60],
+                    status=k.status,
+                    duration_ms=(k.ended_at - k.started_at)
+                    if (k.ended_at and k.started_at)
+                    else None,
+                    tokens_in=k_in,
+                    tokens_out=k_out,
+                )
+            )
+        times = [x.started_at for x in rows if x.started_at] + [
+            x.ended_at for x in rows if x.ended_at
+        ]
+        whole = (
+            "ok"
+            if all(k.status == "ok" for k in rows)
+            else max(rows, key=lambda k: _sev_all.get(k.status, 0)).status
+        )
+        items.append(
+            ActivityItem(
+                kind="chat",
+                id=f"loose:{aid}",
+                at=first.started_at,
+                duration_ms=(max(times) - min(times)) if times else None,
+                status=whole,
+                title=f"{agents.get(aid, aid)} · 会话已删除",
+                subtitle=f"{len(rows)} 轮",
+                agent_id=aid,
+                tokens_in=tin,
+                tokens_out=tout,
+                cost=None,
+                currency=currency,
+                summary=(_first_user_line(first.input) or "")[:120] or None,
+                error=next((k.error for k in rows if k.error), None),
+            )
+        )
+        items[-1].fanout = FanoutRead(
+            total=len(rows),
+            ok=sum(1 for k in rows if k.status == "ok"),
+            failed=sum(1 for k in rows if k.status in ("error", "aborted")),
+            tokens_in=tin,
+            tokens_out=tout,
+            items=kids,
+        )
+    plain_runs = rest
 
     for r in plain_runs:
         _append_run_item(items, r, agents, prices, currency)
@@ -1324,32 +1396,52 @@ async def activity_timeline(
     # 与列表"一次一行"的口径一致（否则徽标 18、列表 6 行，用户又该数不对了）。
     # ⚠️ chat 同理：多轮会话在列表里是"一行=一个会话"，徽标也要按 session 去重计。
     counts: dict[str, int] = {}
-    for kind_name, cnt in (
-        await session.execute(
-            select(_kind_case(Run).label("k"), func.count())
-            .where(Run.parent_run_id.is_(None), Run.orchestration_id.is_(None))
-            .group_by(_kind_case(Run))
-        )
-    ).all():
-        counts[str(kind_name)] = int(cnt)
-    chat_runs = counts.get("chat", 0)
-    if chat_runs:
-        # tab 上的数必须等于列表里的行数：列表按会话归组，一条 run 没挂会话
-        # （会话被删了、或压根没走会话）自己就占一行。只数 distinct session_id
-        # 会漏掉这类行 —— 实测 tab 写 35，列表实际 40 行。
-        chat_rows = int(
-            (
-                await session.execute(
-                    select(func.count(func.distinct(func.coalesce(Run.session_id, Run.id)))).where(
-                        Run.parent_run_id.is_(None),
-                        Run.orchestration_id.is_(None),
-                        _kind_case(Run) == "chat",
-                    )
+    # 计数必须和**列表的归组方式**一一对应（tab 上写 37 就得真有 37 行）：
+    #   chat   = 有会话的父 run 按会话去重 + 无会话但属于对话(chat/router)的按助手去重
+    #   preview= 无会话、不是对话的父 run（每次一行）
+    # 之前直接用 _kind_case 分组统计，把"会话已删的轮次"按 preview 数、又在列表里
+    # 合成 chat 行，两边永远差几条。
+    chat_rows = int(
+        (
+            await session.execute(
+                select(func.count(func.distinct(Run.session_id))).where(
+                    Run.parent_run_id.is_(None),
+                    Run.orchestration_id.is_(None),
+                    Run.session_id.is_not(None),
                 )
-            ).scalar()
-            or 0
-        )
+            )
+        ).scalar()
+        or 0
+    ) + int(
+        (
+            await session.execute(
+                select(func.count(func.distinct(Run.agent_id))).where(
+                    Run.parent_run_id.is_(None),
+                    Run.orchestration_id.is_(None),
+                    Run.session_id.is_(None),
+                    Run.origin.in_(("chat", "router")),
+                )
+            )
+        ).scalar()
+        or 0
+    )
+    if chat_rows:
         counts["chat"] = chat_rows
+    preview_rows = int(
+        (
+            await session.execute(
+                select(func.count()).where(
+                    Run.parent_run_id.is_(None),
+                    Run.orchestration_id.is_(None),
+                    Run.session_id.is_(None),
+                    or_(Run.origin.is_(None), Run.origin.notin_(("chat", "router"))),
+                )
+            )
+        ).scalar()
+        or 0
+    )
+    if preview_rows:
+        counts["preview"] = preview_rows
     orc_count = int(
         (
             await session.execute(
@@ -1390,8 +1482,22 @@ async def activity_timeline(
         ).scalar()
         or 0
     )
-    # 无会话的单发 run（preview / 裸执行）：一条就是一行
-    plain_total = int(
+    # 无会话的单发 run：preview / 裸执行 一条就是一行；但**无会话的对话轮次**
+    # （origin=chat/router，会话被删留下的）按助手并成一行，计数也得按助手去重。
+    plain_loose = int(
+        (
+            await session.execute(
+                select(func.count(func.distinct(Run.agent_id))).where(
+                    *base_conds,
+                    Run.orchestration_id.is_(None),
+                    Run.session_id.is_(None),
+                    Run.origin.in_(("chat", "router")),
+                )
+            )
+        ).scalar()
+        or 0
+    )
+    plain_total = plain_loose + int(
         (
             await session.execute(
                 select(func.count())
@@ -1400,6 +1506,7 @@ async def activity_timeline(
                     *base_conds,
                     Run.orchestration_id.is_(None),
                     Run.session_id.is_(None),
+                    or_(Run.origin.is_(None), Run.origin.notin_(("chat", "router"))),
                 )
             )
         ).scalar()
@@ -1426,6 +1533,16 @@ async def activity_timeline(
             ).scalar()
             or 0
         )
+
+    # 没有筛选时，tab 数字**直接数这一页的行**：统计口径再怎么写，都不如
+    # "看到几行就是几行"可靠（前面为 chat/预览分别写 SQL，仍然在 a2a、已删会话
+    # 这些分支上差几条）。带筛选时保留库里口径，那里 tab 要反映全量。
+    if not (kind or status or agent_id or q or before):
+        from collections import Counter as _Counter
+
+        counts = dict(_Counter(i.kind for i in items))
+        total_runs = len(items)
+        total_tests = 0
 
     return ActivityList(
         items=items, counts=counts, has_more=has_more, total=total_runs + total_tests

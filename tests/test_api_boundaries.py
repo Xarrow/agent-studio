@@ -137,6 +137,77 @@ async def test_管理页tab数字等于列表行数(client):
     assert sum(d["counts"].values()) == d["total"] == len(d["items"])
 
 
+async def test_删会话后记录仍按会话归组(client):
+    """删会话不再解绑 run：记录页要的是"一次会话一项"，不是散成 N 行。"""
+    aid = await _mk_agent(client)
+    sid = (
+        await client.post("/api/sessions", json={"agent_id": aid, "title": "删了也要归组"})
+    ).json()["id"]
+    async with SessionLocal() as db:
+        for i in (1, 2):
+            await db.execute(
+                text(
+                    "insert into run (id, agent_id, agent_version, runtime, status, input,"
+                    " output, usage, definition_snapshot, started_at, ended_at,"
+                    " session_id, turn_index, origin)"
+                    ' values (:id, :aid, 1, "agentscope", "ok", :inp, null, "{}", "{}",'
+                    " :st, :en, :sid, :ti, 'chat')"
+                ),
+                {
+                    "id": f"run_keep{i}",
+                    "aid": aid,
+                    "inp": '{"text": "第%d轮"}' % i,
+                    "st": 10 + i,
+                    "en": 20 + i,
+                    "sid": sid,
+                    "ti": i,
+                },
+            )
+        await db.commit()
+
+    assert (await client.delete(f"/api/sessions/{sid}")).status_code == 200
+
+    async with SessionLocal() as db:
+        left = (await db.execute(text("select count(*) from run where session_id=:s"), {"s": sid})).scalar_one()
+    assert left == 2, "删会话把 run 的会话归属清掉了"
+
+    d = (await client.get("/api/runs/timeline?limit=200")).json()
+    row = next(i for i in d["items"] if i["id"] == sid)
+    assert row["kind"] == "chat"
+    assert "会话已删除" in (row["title"] or "")
+    assert row["subtitle"] == "2 轮"
+    assert row["fanout"]["total"] == 2
+
+
+async def test_无会话的对话轮次按助手并成一行(client):
+    """会话被删留下的轮次（session 为空、origin=chat）不该一轮一行。"""
+    aid = await _mk_agent(client)
+    async with SessionLocal() as db:
+        for i in (1, 2, 3):
+            await db.execute(
+                text(
+                    "insert into run (id, agent_id, agent_version, runtime, status, input,"
+                    " output, usage, definition_snapshot, started_at, ended_at, turn_index, origin)"
+                    ' values (:id, :aid, 1, "agentscope", "ok", :inp, null, "{}", "{}",'
+                    " :st, :en, :ti, 'router')"
+                ),
+                {
+                    "id": f"run_loose{i}",
+                    "aid": aid,
+                    "inp": '{"text": "散轮%d"}' % i,
+                    "st": 30 + i,
+                    "en": 40 + i,
+                    "ti": i,
+                },
+            )
+        await db.commit()
+
+    d = (await client.get("/api/runs/timeline?limit=200")).json()
+    rows = [i for i in d["items"] if i["id"] == f"loose:{aid}"]
+    assert len(rows) == 1, "同一助手的散轮没有并成一行"
+    assert rows[0]["subtitle"] == "3 轮"
+
+
 @pytest.mark.parametrize("bad", ["-1", "0", "201"])
 async def test_会话列表_limit_越界统一422(client, bad):
     r = await client.get(f"/api/sessions?limit={bad}")

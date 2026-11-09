@@ -574,16 +574,16 @@ async def update_session(
 async def delete_session(
     session_id: str, session: AsyncSession = Depends(get_session)
 ) -> dict:
-    """删除会话（消息级联清理；**不影响** Run 记录）。"""
+    """删除会话（消息级联清理；Run 记录保留）。
+
+    Run 的会话归属**不清空**：以前这里是 ``run.session_id = None``，后果是删完会话
+    那几轮记录掉进"无会话"，类型从对话降级成"助手试跑"，列表里一场对话散成好几行
+    （每行顶着一个助手名）。记录页要的是"一次会话一项"，所以归属留着，会话行没了
+    就在前端标「会话已删除」。
+    """
     row = await session.get(ChatSession, session_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"会话不存在: {session_id}")
-    # 解绑 Run 的会话归属，避免留下悬空引用（Run 本身保留）
-    runs = (
-        await session.execute(select(Run).where(Run.session_id == session_id))
-    ).scalars().all()
-    for run in runs:
-        run.session_id = None
     await session.delete(row)
     await session.commit()
     removed = _remove_session_dir(session_id)
@@ -591,7 +591,7 @@ async def delete_session(
     published = _remove_published(session_id)
     return {
         "deleted": 1,
-        "unbound_runs": len(runs),
+        "unbound_runs": 0,
         "removed_dir": removed,
         "removed_published": published,
     }
