@@ -174,7 +174,7 @@ async def test_删会话后记录仍按会话归组(client):
     d = (await client.get("/api/runs/timeline?limit=200")).json()
     row = next(i for i in d["items"] if i["id"] == sid)
     assert row["kind"] == "chat"
-    assert "会话已删除" in (row["title"] or "")
+    assert row.get("session_deleted") is True, "删了会话却没标出来"
     assert row["subtitle"] == "2 轮"
     assert row["fanout"]["total"] == 2
 
@@ -206,6 +206,7 @@ async def test_无会话的对话轮次按助手并成一行(client):
     rows = [i for i in d["items"] if i["id"] == f"loose:{aid}"]
     assert len(rows) == 1, "同一助手的散轮没有并成一行"
     assert rows[0]["subtitle"] == "3 轮"
+    assert rows[0].get("session_deleted") is True
 
 
 @pytest.mark.parametrize("bad", ["-1", "0", "201"])

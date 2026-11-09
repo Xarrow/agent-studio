@@ -1368,7 +1368,21 @@ export function RunsPanel() {
 
                     {/* 主体：标题 + 一格小灰字（模型 · 耗时 · 分派/轮次计数） */}
                     <span className="min-w-0 flex-1 basis-[calc(100%-260px)]">
-                      <span className="block truncate text-[13px]">{it.title}</span>
+                      <span className="block truncate text-[13px]">
+                        {it.title}
+                        {it.session_deleted && (
+                          <span
+                            className="ml-1.5 inline-block rounded px-1.5 py-0.5 align-[1px] text-[11px] font-medium"
+                            style={{
+                              background: "color-mix(in srgb, var(--color-warn) 15%, transparent)",
+                              color: "var(--color-warn)",
+                            }}
+                            title="这场对话已经删了 —— 会话列表里看不到它；这次执行的花费与结果按审计留着"
+                          >
+                            会话已删除
+                          </span>
+                        )}
+                      </span>
                       <span
                         className="mt-0.5 block truncate text-[12px]"
                         style={{ color: it.error ? "var(--color-err)" : "var(--color-muted)" }}

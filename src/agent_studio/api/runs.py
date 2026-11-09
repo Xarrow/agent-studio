@@ -1134,12 +1134,14 @@ async def activity_timeline(
     # ── 会话归组行：一行 = 一次对话；轮次装进 fanout（前端就地展开）─────────────
     ses_ids = list(session_runs)
     ses_titles: dict[str, str] = {}
+    ses_exists: set[str] = set()
     if ses_ids:
         from ..models import Session as DbSession
 
         for s_ in (
             await session.execute(select(DbSession).where(DbSession.id.in_(ses_ids)))
         ).scalars():
+            ses_exists.add(s_.id)
             if s_.title:
                 ses_titles[s_.id] = s_.title
 
@@ -1197,8 +1199,9 @@ async def activity_timeline(
                 at=first.started_at,
                 duration_ms=dur,
                 status=whole_status,
-                title=ses_titles.get(sid) or f"{agents.get(first.agent_id, first.agent_id)} · 会话已删除",
+                title=ses_titles.get(sid) or agents.get(first.agent_id, first.agent_id),
                 subtitle=f"{len(rows)} 轮",
+                session_deleted=sid not in ses_exists,
                 agent_id=first.agent_id,
                 model=model_name,
                 tokens_in=tin,
@@ -1265,8 +1268,9 @@ async def activity_timeline(
                 at=first.started_at,
                 duration_ms=(max(times) - min(times)) if times else None,
                 status=whole,
-                title=f"{agents.get(aid, aid)} · 会话已删除",
+                title=agents.get(aid, aid),
                 subtitle=f"{len(rows)} 轮",
+                session_deleted=True,
                 agent_id=aid,
                 tokens_in=tin,
                 tokens_out=tout,

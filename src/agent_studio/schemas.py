@@ -471,6 +471,9 @@ class ActivityItem(BaseModel):
     #: 一句话摘要（输入的前几十字），列表里就能看出"这条是什么"
     summary: str | None = None
     error: str | None = None
+    #: 这条记录所属的会话已经被删了（会话列表里看不到它，执行记录按审计保留）
+    #: —— 列表要给个显眼的标记，否则用户会以为"删了的东西又回来了"
+    session_deleted: bool = False
 
 
 class ActivityList(BaseModel):
