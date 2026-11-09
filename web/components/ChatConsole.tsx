@@ -3198,9 +3198,10 @@ function SessionsPane({
   }, [sessionId, sessions]);
 
   const kw = q.trim().toLowerCase();
-  const list = kw
-    ? sessions.filter((s) => (s.title || "未命名对话").toLowerCase().includes(kw))
-    : sessions;
+  // 搜的是**列表上看见的字**：worker 会话显示的是票标题（ticket_title），
+  // 只比 s.title 就等于搜 "worker-8a519538" 才找得到「下载抖音视频…」。
+  const shownTitle = (s: Session) => (s.ticket_title || s.title || "未命名对话").toLowerCase();
+  const list = kw ? sessions.filter((s) => shownTitle(s).includes(kw)) : sessions;
 
   // 按最近活跃分组（今天 / 昨天 / 7 天内 / 更早）
   const dayStart = new Date();

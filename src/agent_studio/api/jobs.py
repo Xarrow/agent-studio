@@ -108,6 +108,8 @@ def _check_mode(mode: str) -> str:
 async def list_jobs(
     session_id: str, db: AsyncSession = Depends(get_session)
 ) -> dict[str, Any]:
+    if await db.get(Session, session_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"会话不存在: {session_id}")
     rows = list(
         (
             await db.execute(

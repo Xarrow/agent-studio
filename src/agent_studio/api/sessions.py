@@ -181,10 +181,18 @@ async def create_session(
 async def list_sessions(
     agent_id: str | None = None,
     status_filter: str | None = Query(default=None, alias="status"),
-    limit: int = Query(default=50, le=200),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     session: AsyncSession = Depends(get_session),
 ) -> list[SessionRead]:
-    stmt = select(ChatSession).order_by(ChatSession.last_active_at.desc()).limit(limit)
+    # limit 负数是 SQLite 的"不限量"（-5 直接把整库端出去），offset 以前压根没接，
+    # 传了也被 FastAPI 静默丢掉 —— 分页看起来能用，其实一直返回第一页。
+    stmt = (
+        select(ChatSession)
+        .order_by(ChatSession.last_active_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
     if agent_id:
         stmt = stmt.where(ChatSession.agent_id == agent_id)
     if status_filter:

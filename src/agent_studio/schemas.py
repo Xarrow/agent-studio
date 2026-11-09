@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import json
+
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -498,6 +500,21 @@ class RunRead(BaseModel):
     origin: str | None = None
     session_id: str | None = None
     turn_index: int | None = None
+
+    @field_validator("input", "output", "usage", "pending_hitl", mode="before")
+    @classmethod
+    def _decode_json_text(cls, v: Any) -> Any:
+        """老数据把 JSON 又编码了一次（库里存的是字符串）。
+
+        这种行只要落进列表，整个 /api/runs 就 500 —— 实测 limit=200 直接 500，
+        前端一旦翻页就白屏。这里解一层，读旧数据不再炸。
+        """
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except ValueError:
+                return {}
+        return v
 
 
 class RunEventRead(BaseModel):
