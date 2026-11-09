@@ -110,6 +110,33 @@ async def test_RunRead_兼容字符串形态的字段():
     assert plain.input == {"text": "hi"}
 
 
+async def test_管理页tab数字等于列表行数(client):
+    """tab 上写"Agent 40"就必须真有 40 行。
+
+    真机实测过 tab 写 35、列表 40 行：没挂会话的 chat run 会自己占一行，
+    但计数只数 distinct session_id 把它们漏了。
+    """
+    from collections import Counter
+
+    aid = await _mk_agent(client)
+    async with SessionLocal() as db:
+        await db.execute(
+            text(
+                "insert into run (id, agent_id, agent_version, runtime, status, input,"
+                " output, usage, definition_snapshot, started_at, ended_at)"
+                ' values ("run_orphan0001", :aid, 1, "agentscope", "ok", "{}", null, "{}", "{}", 5, 6)'
+            ),
+            {"aid": aid},
+        )
+        await db.commit()
+
+    d = (await client.get("/api/runs/timeline?limit=200")).json()
+    rows = Counter(i["kind"] for i in d["items"])
+    for kind, n in d["counts"].items():
+        assert n == rows.get(kind, 0), (kind, n, rows)
+    assert sum(d["counts"].values()) == d["total"] == len(d["items"])
+
+
 @pytest.mark.parametrize("bad", ["-1", "0", "201"])
 async def test_会话列表_limit_越界统一422(client, bad):
     r = await client.get(f"/api/sessions?limit={bad}")

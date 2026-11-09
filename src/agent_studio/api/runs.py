@@ -1334,19 +1334,22 @@ async def activity_timeline(
         counts[str(kind_name)] = int(cnt)
     chat_runs = counts.get("chat", 0)
     if chat_runs:
-        chat_sessions = int(
+        # tab 上的数必须等于列表里的行数：列表按会话归组，一条 run 没挂会话
+        # （会话被删了、或压根没走会话）自己就占一行。只数 distinct session_id
+        # 会漏掉这类行 —— 实测 tab 写 35，列表实际 40 行。
+        chat_rows = int(
             (
                 await session.execute(
-                    select(func.count(func.distinct(Run.session_id))).where(
+                    select(func.count(func.distinct(func.coalesce(Run.session_id, Run.id)))).where(
                         Run.parent_run_id.is_(None),
                         Run.orchestration_id.is_(None),
-                        Run.session_id.is_not(None),
+                        _kind_case(Run) == "chat",
                     )
                 )
             ).scalar()
             or 0
         )
-        counts["chat"] = chat_sessions
+        counts["chat"] = chat_rows
     orc_count = int(
         (
             await session.execute(
