@@ -204,7 +204,10 @@ export function AgentSwitcher({
           {mark(current?.name || "")}
         </span>
         {!mini && (
-        <span className="min-w-0 truncate font-medium text-[13.5px]">
+        <span
+          className="min-w-0 font-medium text-[13.5px] leading-[1.25]"
+          style={{ overflowWrap: "anywhere" }}
+        >
           {current?.name ?? "选择助手"}
         </span>
         )}
@@ -212,9 +215,9 @@ export function AgentSwitcher({
         <>
         <span
           className="shrink-0 w-[6px] h-[6px] rounded-full"
-          title={busy ? "执行中" : "就绪"}
+          data-tip={busy ? "执行中" : "在线"}
+          aria-label={busy ? "执行中" : "在线"}
           style={{ background: busy ? "var(--color-accent)" : "var(--color-ok)" }}
-          aria-hidden="true"
         />
         <svg
           width="13"
@@ -238,7 +241,8 @@ export function AgentSwitcher({
       {side && onSettings && (
         <button
           data-tap
-          title="配置这个助手"
+          data-tip="Agent 设置"
+          aria-label="Agent 设置"
           onClick={onSettings}
           className="shrink-0 w-9 h-9 grid place-items-center rounded-lg transition-colors hover:bg-[var(--color-surface-2)]"
           style={{ color: "var(--color-muted)" }}

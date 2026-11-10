@@ -822,6 +822,30 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     }
   };
 
+  /** 行内改名：列表里直接改，不再弹框（阶段 2 的要求） */
+  const renameSessionInline = async (s: Session, title: string) => {
+    try {
+      await api.updateSession(s.id, { title });
+      await loadSessions(agentId);
+    } catch (e) {
+      fb.error("重命名失败", e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  /** 真删（不弹确认）：撤销窗口由会话列表自己管，8 秒后才走到这里 */
+  const deleteSessionNow = async (s: Session) => {
+    try {
+      const res = await api.deleteSession(s.id);
+      const list = await loadSessions(agentId);
+      if (s.id === sessionId) {
+        setSessionId(list.length > 0 ? list[0].id : "");
+      }
+      fb.success(res?.removed_dir ? "已删除（会话文件夹也清掉了）" : "已删除");
+    } catch (e) {
+      fb.error("删除失败", e instanceof Error ? e.message : String(e));
+    }
+  };
+
   const renameSession = async (s: Session) => {
     const name = await fb.prompt({
       title: "重命名对话",
@@ -1546,6 +1570,25 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   /** 兼容旧调用点：input 的 change 事件给的是 FileList */
   const pickFiles = (files: FileList | null) => void addFiles(files);
 
+  /** 首轮回复完成后自动起标题：只动默认名（新对话/未命名），用户改过的绝不覆盖。
+      纯前端：取首条用户消息截 20 字，走已有的 updateSession 接口，不新增后端。 */
+  useEffect(() => {
+    if (!sessionId || busy) return;
+    const cur = sessions.find((s) => s.id === sessionId);
+    if (!cur) return;
+    const t = (cur.title || "").trim();
+    if (t && !/^(新对话|未命名)/.test(t)) return;
+    const firstUser = history.find((m) => m.role === "user" && (m.content || "").trim());
+    if (!firstUser) return;
+    if (!history.some((m) => m.role === "assistant")) return;
+    const text = (firstUser.content || "").replace(/\s+/g, " ").trim().slice(0, 20);
+    if (!text) return;
+    void api
+      .updateSession(sessionId, { title: text })
+      .then(() => loadSessions(agentId))
+      .catch(() => {});
+  }, [sessionId, busy, sessions, history, agentId, loadSessions]);
+
   /* ------------------------------- 渲染 ------------------------------- */
 
   if (loading) {
@@ -1693,6 +1736,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               onNew={() => void newChat()}
               onRename={(s) => void renameSession(s)}
               onRemove={(s) => void removeSession(s)}
+              onDelete={(s) => void deleteSessionNow(s)}
+              onRenameCommit={(s, t) => void renameSessionInline(s, t)}
               onCollapse={toggleNav}
             />
           </aside>
@@ -1827,6 +1872,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     }}
                     onRename={(s) => void renameSession(s)}
                     onRemove={(s) => void removeSession(s)}
+                    onDelete={(s) => void deleteSessionNow(s)}
+                    onRenameCommit={(s, t) => void renameSessionInline(s, t)}
                     onCollapse={() => setMobileNav(false)}
                   />
                   <div className="shrink-0 border-t border-[var(--color-border)] pb-[env(safe-area-inset-bottom)]">
@@ -3141,6 +3188,8 @@ function SessionsPane({
   onRemove,
   onCollapse,
   agentSlot,
+  onDelete,
+  onRenameCommit,
 }: {
   sessions: Session[];
   sessionId: string;
@@ -3149,6 +3198,10 @@ function SessionsPane({
   onRename: (s: Session) => void;
   onRemove: (s: Session) => void;
   onCollapse: () => void;
+  /** 直接删（不弹确认）—— 撤销窗口由列表自己管，过了 8 秒才调用它 */
+  onDelete: (s: Session) => void | Promise<void>;
+  /** 行内改名提交 */
+  onRenameCommit: (s: Session, title: string) => void | Promise<void>;
   /** 助手身份块：会话都属于某个助手，它排在列表最上面 */
   agentSlot?: React.ReactNode;
 }) {
@@ -3160,6 +3213,98 @@ function SessionsPane({
   /** 对话**内容**命中的结果（标题命中在本地即时过滤，内容命中要问后端） */
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [hitBusy, setHitBusy] = useState(false);
+
+  /* ── 阶段 2 的列表交互 ───────────────────────────────────────── */
+  /** 行内改名：正在改哪一条 + 草稿 */
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  /** 置顶：只有"我"这台浏览器关心，存 localStorage（不碰后端） */
+  const [pinned, setPinned] = useState<Set<string>>(() => {
+    try {
+      const raw = JSON.parse(localStorage.getItem("studio.pinned") || "[]");
+      return new Set(Array.isArray(raw) ? raw : []);
+    } catch {
+      return new Set();
+    }
+  });
+  /** 批量管理 */
+  const [managing, setManaging] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  /** 分组折叠 */
+  const [foldedGroups, setFoldedGroups] = useState<Set<string>>(() => new Set());
+  /** 删除的撤销窗口：8 秒内点撤销就什么都不发生 */
+  const [undo, setUndo] = useState<{ n: number; restore: () => void } | null>(null);
+  const pending = useRef(new Map<string, { s: Session; timer: ReturnType<typeof setTimeout> }>());
+  const [hidden, setHidden] = useState<Set<string>>(() => new Set());
+
+  const togglePin = (id: string) => {
+    setPinned((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      try {
+        localStorage.setItem("studio.pinned", JSON.stringify([...next]));
+      } catch {}
+      return next;
+    });
+  };
+
+  const startRename = (s: Session) => {
+    setDraft(s.ticket_title || s.title || "");
+    setRenamingId(s.id);
+    setMenuFor(null);
+  };
+  const commitRename = (s: Session) => {
+    const t = draft.trim();
+    setRenamingId(null);
+    if (t && t !== (s.title || "")) void onRenameCommit(s, t);
+  };
+
+  /** 删 = 先从列表拿掉 + 给 8 秒撤销；到点才真的调接口 */
+  const dropSession = (s: Session, opts?: { silent?: boolean }) => {
+    setHidden((prev) => new Set(prev).add(s.id));
+    const entry = pending.current.get(s.id);
+    if (entry) clearTimeout(entry.timer);
+    const timer = setTimeout(() => {
+      pending.current.delete(s.id);
+      void onDelete(s);
+      setUndo((cur) => (cur && cur.n > 1 ? { ...cur, n: cur.n - 1 } : null));
+    }, 8000);
+    pending.current.set(s.id, { s, timer });
+    setUndo((cur) => ({
+      n: (cur?.n ?? 0) + 1,
+      restore: () => {
+        for (const [, v] of pending.current) {
+          clearTimeout(v.timer);
+        }
+        pending.current.clear();
+        setHidden(new Set());
+        setUndo(null);
+      },
+    }));
+    if (!opts?.silent) setMenuFor(null);
+  };
+
+  /** 导出一个会话为 Markdown（纯前端拼，走已有的会话详情接口） */
+  const exportSession = async (s: Session) => {
+    try {
+      const d = await api.session(s.id);
+      const lines: string[] = [`# ${s.title || "未命名对话"}`, ""];
+      for (const m of d.messages || []) {
+        if (m.role === "user") lines.push("## 我", "", m.content || "", "");
+        else if (m.role === "assistant") lines.push("## 助手", "", m.content || "", "");
+      }
+      const blob = new Blob([lines.join("\n")], { type: "text/markdown;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${(s.title || s.id).replace(/[\\/:*?"<>|]/g, "_")}.md`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "导出失败");
+    }
+  };
 
   // 输入停下来 300ms 再搜（打一个字发一次请求既慢又抖）
   useEffect(() => {
@@ -3201,7 +3346,15 @@ function SessionsPane({
   // 搜的是**列表上看见的字**：worker 会话显示的是票标题（ticket_title），
   // 只比 s.title 就等于搜 "worker-8a519538" 才找得到「下载抖音视频…」。
   const shownTitle = (s: Session) => (s.ticket_title || s.title || "未命名对话").toLowerCase();
-  const list = kw ? sessions.filter((s) => shownTitle(s).includes(kw)) : sessions;
+  // 待删的（还在 8 秒撤销窗口里）先从列表拿掉；置顶的排到各分组最前
+  const visible = sessions.filter((s) => !hidden.has(s.id));
+  const sorted = visible.slice().sort((a, b) => {
+    const pa = pinned.has(a.id) ? 1 : 0;
+    const pb = pinned.has(b.id) ? 1 : 0;
+    if (pa !== pb) return pb - pa;
+    return (b.last_active_at || 0) - (a.last_active_at || 0);
+  });
+  const list = kw ? sorted.filter((s) => shownTitle(s).includes(kw)) : sorted;
 
   // 按最近活跃分组（今天 / 昨天 / 7 天内 / 更早）
   const dayStart = new Date();
@@ -3244,9 +3397,10 @@ function SessionsPane({
   return (
     <>
       {agentSlot && (
-        <div className="px-1.5 pt-1.5 pb-1 border-b border-[var(--color-border)] mb-1">{agentSlot}</div>
+        <div className="px-1.5 pt-1.5 pb-1 mb-1">{agentSlot}</div>
       )}
-      <div className="p-2.5 pb-1.5 flex items-center gap-1.5">
+      {/* 头部：新对话 + 管理（批量） */}
+      <div className="px-2.5 pb-1.5 flex items-center gap-1.5">
         <button
           className="btn btn-primary flex-1 !min-h-[40px] max-md:!min-h-[44px] max-md:text-[14px]"
           onClick={onNew}
@@ -3254,10 +3408,26 @@ function SessionsPane({
           + 新对话
         </button>
         <button
+          type="button"
           data-tap
-          title="收起"
+          onClick={() => {
+            setManaging((v) => !v);
+            setSelected(new Set());
+          }}
+          className="h-9 shrink-0 rounded-[var(--radius-sm)] px-2 text-[var(--fs-sm)]"
+          style={{
+            color: managing ? "var(--color-text)" : "var(--color-text-2)",
+            background: managing ? "var(--bg-selected)" : "transparent",
+          }}
+          title={managing ? "退出管理" : "批量管理会话"}
+        >
+          {managing ? "完成" : "管理"}
+        </button>
+        <button
+          data-tap
+          title="收起会话栏"
           onClick={onCollapse}
-          className="w-9 h-9 shrink-0 hidden lg:flex items-center justify-center rounded-lg text-[var(--color-muted)] hover:bg-[var(--color-surface-2)]"
+          className="w-9 h-9 shrink-0 hidden lg:flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-2)] hover:bg-[var(--bg-selected)]"
         >
           «
         </button>
@@ -3284,7 +3454,7 @@ function SessionsPane({
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="搜索对话"
-            className="input h-9 text-[12.5px]"
+            className="input h-9 text-[var(--fs-sm)]"
             /* .input 的 padding 是未分层 CSS，Tailwind 的 pl-* 压不过它（全站已知坑），
                这里用内联把左内边距钉到 36px = 16(图标距) + 16(图标宽) + 4(间距) */
             style={{ paddingLeft: 36 }}
@@ -3295,238 +3465,382 @@ function SessionsPane({
 
       <div className="flex-1 overflow-auto px-1.5 pb-2">
         {sessions.length === 0 ? (
-          <p className="text-[12.5px] text-[var(--color-muted)] p-2.5 leading-relaxed">
+          <p className="text-[var(--fs-sm)] text-[var(--color-text-3)] p-2.5 leading-relaxed">
             还没有对话。点「新对话」开始。
           </p>
         ) : (
           <>
             {/* 标题和内容都没有命中时才说"没有" —— 只要有一边命中就照常列 */}
             {list.length === 0 && hits.length === 0 && !hitBusy && (
-              <p className="text-[12.5px] text-[var(--color-muted)] p-2.5 leading-relaxed">
+              <p className="text-[var(--fs-sm)] text-[var(--color-text-3)] p-2.5 leading-relaxed">
                 没有叫「{q.trim()}」的对话，内容里也没有。
               </p>
             )}
             {groups.map((g) =>
               g.items.length === 0 ? null : (
-              <div key={g.label} className="mb-1">
-                <div
-                  className="sticky top-0 z-10 flex items-center gap-1.5 px-3 pt-3 pb-1.5 text-[11px] font-semibold tracking-[0.06em] text-[var(--color-muted)] backdrop-blur-sm"
-                  style={{ background: "color-mix(in srgb, var(--color-surface) 88%, transparent)" }}
-                >
-                  <span
-                    className="w-1.5 h-1.5 rounded-full"
+                <div key={g.label} className="mb-1">
+                  {/* 分组标题：11px 三档灰、无圆点、可折叠、右侧数量 */}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setFoldedGroups((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(g.label)) next.delete(g.label);
+                        else next.add(g.label);
+                        return next;
+                      })
+                    }
+                    aria-expanded={!foldedGroups.has(g.label)}
+                    className="sticky top-0 z-10 flex w-full items-center gap-1 px-3 pt-3 pb-1.5 text-left text-[var(--fs-xs)] backdrop-blur-sm"
                     style={{
-                      background:
-                        g.kind === "router" ? "var(--color-accent)" : "var(--color-border-strong, var(--color-border))",
+                      color: "var(--color-text-3)",
+                      background: "color-mix(in srgb, var(--color-surface) 88%, transparent)",
                     }}
-                    aria-hidden="true"
-                  />
-                  {g.label}
-                </div>
-                <div className="space-y-0.5">
-                  {g.items.map((s) => {
-                    const active = s.id === sessionId;
-                    const isWorker = s.kind === "worker";
-                    const isRouter = s.kind === "router";
-                    const labelText = isWorker
-                      ? s.ticket_title || s.title.replace(/^worker-/, "派活 ")
-                      : s.title || "未命名对话";
-                    return (
-                      <div
-                        key={s.id}
-                        className={`rounded-xl transition-colors ${active ? "bg-[var(--color-surface-2)]" : ""}`}
-                      >
-                      <div
-                        className="group relative flex items-center gap-1 rounded-xl pl-3 pr-1 py-2 max-md:py-2.5 cursor-pointer hover:bg-[var(--color-surface-2)]"
-                        onClick={() => onPick(s.id)}
-                      >
-                        {/* 当前会话：左边一条竖色条 */}
-                        <span
-                          className="absolute left-0 top-2.5 bottom-2.5 w-[3px] rounded-full"
-                          style={{
-                            background: active
-                              ? "var(--color-accent)"
-                              : isWorker
-                                ? WORKER_COLOR
-                                : isRouter
-                                  ? "var(--color-accent)"
-                                  : "transparent",
-                            opacity: active ? 1 : isWorker ? 0.55 : 1,
-                          }}
-                          aria-hidden="true"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <div
-                            className="text-[13px] max-md:text-[14px] leading-[1.3] truncate tracking-[-0.01em]"
-                            style={
-                              active
-                                ? { color: "var(--color-accent)", fontWeight: 500 }
-                                : undefined
-                            }
-                          >
-                            {labelText}
-                          </div>
-                          <div className="text-[11.5px] max-md:text-[12.5px] text-[var(--color-muted)] truncate mt-1 tabular-nums">
-                            {s.turn_count} 轮 · {fmt.relative(s.last_active_at)}
-                          </div>
-                        </div>
-                        {(kids.get(s.id)?.length ?? 0) > 0 && (
-                          <button
-                            className="shrink-0 h-7 max-md:h-[44px] max-md:min-w-[44px] max-md:justify-center px-1.5 flex items-center gap-0.5 rounded-lg text-[10.5px] tabular-nums"
-                            style={{ color: WORKER_COLOR, background: "color-mix(in srgb, #d97706 10%, transparent)" }}
-                            data-tap
-                            title={`这个对话派出了 ${kids.get(s.id)!.length} 件活`}
-                            aria-label={`这个对话派出了 ${kids.get(s.id)!.length} 件活，点开看`}
-                            aria-expanded={openTree.has(s.id)}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setOpenTree((prev) => {
-                                const next = new Set(prev);
-                                if (next.has(s.id)) next.delete(s.id);
-                                else next.add(s.id);
-                                return next;
-                              });
-                            }}
-                          >
-                            <svg
-                              width="10"
-                              height="10"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2.4"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              aria-hidden="true"
-                              style={{ transform: openTree.has(s.id) ? "rotate(90deg)" : "none", transition: "transform .12s" }}
-                            >
-                              <path d="M9 6l6 6-6 6" />
-                            </svg>
-                            {kids.get(s.id)!.length}
-                          </button>
-                        )}
-                        <button
-                          className="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-[var(--color-muted)] hover:bg-[var(--color-surface)] hover:text-[var(--color-text)] opacity-60 lg:opacity-0 lg:group-hover:opacity-100"
-                          data-tap-lg
-                          title="更多"
-                          aria-haspopup="menu"
-                          aria-expanded={menuFor === s.id}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setMenuFor(menuFor === s.id ? null : s.id);
-                          }}
-                        >
-                          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                            <circle cx="5" cy="12" r="1.6" />
-                            <circle cx="12" cy="12" r="1.6" />
-                            <circle cx="19" cy="12" r="1.6" />
-                          </svg>
-                        </button>
-
-                        {menuFor === s.id && (
-                          <>
-                            {/* 点哪儿都关（比监听 document 更省事，也不怕漏解绑） */}
+                  >
+                    <svg
+                      width="10"
+                      height="10"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.4"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                      style={{
+                        transform: foldedGroups.has(g.label) ? "none" : "rotate(90deg)",
+                        transition: "transform var(--dur-1) var(--ease)",
+                      }}
+                    >
+                      <path d="M9 6l6 6-6 6" />
+                    </svg>
+                    <span className="flex-1">{g.label}</span>
+                    <span className="tabular-nums">{g.items.length}</span>
+                  </button>
+                  {!foldedGroups.has(g.label) && (
+                    <div className="space-y-[2px]">
+                      {g.items.map((s) => {
+                        const active = s.id === sessionId;
+                        const isWorker = s.kind === "worker";
+                        const labelText = isWorker
+                          ? s.ticket_title || s.title.replace(/^worker-/, "派活 ")
+                          : s.title || "未命名对话";
+                        const isPinned = pinned.has(s.id);
+                        const picked = selected.has(s.id);
+                        const editing = renamingId === s.id;
+                        return (
+                          <div key={s.id}>
                             <div
-                              className="fixed inset-0 z-40"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setMenuFor(null);
-                              }}
-                            />
-                            <div
-                              className="absolute right-1 top-8 z-50 w-[124px] rounded-lg py-1 shadow-lg"
+                              role="button"
+                              tabIndex={0}
+                              aria-current={active ? "true" : undefined}
+                              className="group relative flex h-[52px] cursor-pointer items-center gap-1.5 rounded-[var(--radius-sm)] pl-2.5 pr-1 transition-colors hover:bg-[var(--bg-selected)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px]"
                               style={{
-                                background: "var(--color-surface)",
-                                border: "1px solid var(--color-border)",
+                                background: active ? "var(--bg-selected)" : "transparent",
+                                outlineColor: "var(--color-accent)",
                               }}
-                              role="menu"
-                              onClick={(e) => e.stopPropagation()}
+                              onClick={() => {
+                                if (managing) {
+                                  setSelected((prev) => {
+                                    const next = new Set(prev);
+                                    if (next.has(s.id)) next.delete(s.id);
+                                    else next.add(s.id);
+                                    return next;
+                                  });
+                                  return;
+                                }
+                                onPick(s.id);
+                              }}
+                              onContextMenu={(e) => {
+                                e.preventDefault();
+                                setMenuFor(menuFor === s.id ? null : s.id);
+                              }}
+                              onKeyDown={(e) => {
+                                if (editing) return;
+                                if (e.key === "F2") {
+                                  e.preventDefault();
+                                  startRename(s);
+                                } else if (e.key === "Delete") {
+                                  e.preventDefault();
+                                  dropSession(s);
+                                } else if (e.key === "F10" && e.shiftKey) {
+                                  e.preventDefault();
+                                  setMenuFor(s.id);
+                                } else if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  onPick(s.id);
+                                }
+                              }}
                             >
-                              <button
-                                className="w-full text-left px-2.5 py-1.5 text-[12.5px] hover:bg-[var(--color-surface-2)]"
-                                onClick={() => {
-                                  setMenuFor(null);
-                                  onRename(s);
-                                }}
-                              >
-                                改名
-                              </button>
-                              <button
-                                className="w-full text-left px-2.5 py-1.5 text-[12.5px] hover:bg-[var(--color-surface-2)]"
-                                style={{ color: "var(--color-err)" }}
-                                onClick={() => {
-                                  setMenuFor(null);
-                                  onRemove(s);
-                                }}
-                              >
-                                删除
-                              </button>
-                            </div>
-                          </>
-                        )}
-                      </div>
-
-                      {/* 子树：这个对话派出去的 worker。竖线 + 短横线，是树，不是另一组列表 */}
-                      {openTree.has(s.id) && (kids.get(s.id)?.length ?? 0) > 0 && (
-                        <div className="relative">
-                          <span
-                            className="absolute left-[19px] top-0 bottom-3 w-px"
-                            style={{ background: "color-mix(in srgb, #d97706 35%, transparent)" }}
-                            aria-hidden
-                          />
-                          {kids.get(s.id)!.map((c) => {
-                            const cActive = c.id === sessionId;
-                            return (
-                              <div
-                                key={c.id}
-                                className={`relative pl-8 pr-1 py-1.5 max-md:py-3 cursor-pointer rounded-lg ${cActive ? "bg-[var(--color-surface-2)]" : "hover:bg-[var(--color-surface-2)]"}`}
-                                onClick={() => onPick(c.id)}
-                              >
-                                <span
-                                  className="absolute left-[19px] top-1/2 w-3.5 h-px"
-                                  style={{ background: "color-mix(in srgb, #d97706 35%, transparent)" }}
-                                  aria-hidden
+                              {managing && (
+                                <input
+                                  type="checkbox"
+                                  checked={picked}
+                                  onChange={() =>
+                                    setSelected((prev) => {
+                                      const next = new Set(prev);
+                                      if (next.has(s.id)) next.delete(s.id);
+                                      else next.add(s.id);
+                                      return next;
+                                    })
+                                  }
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="h-[16px] w-[16px] shrink-0 accent-[var(--color-accent)]"
+                                  title="选中这条会话"
                                 />
-                                <div className="flex items-center gap-1.5 min-w-0">
-                                  <span
-                                    className="shrink-0 rounded-full"
-                                    style={{ width: 6, height: 6, background: agentColor(c.agent_id), display: "inline-block" }}
-                                    aria-hidden
+                              )}
+                              {isPinned && (
+                                <svg
+                                  width="12"
+                                  height="12"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="var(--color-text-3)"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  aria-label="已置顶"
+                                  className="shrink-0"
+                                >
+                                  <path d="M12 17v5M6 4h12l-2 6 3 3v2H5v-2l3-3-2-6z" />
+                                </svg>
+                              )}
+
+                              <div className="min-w-0 flex-1">
+                                {editing ? (
+                                  <input
+                                    autoFocus
+                                    value={draft}
+                                    onChange={(e) => setDraft(e.target.value)}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") {
+                                        e.preventDefault();
+                                        commitRename(s);
+                                      } else if (e.key === "Escape") {
+                                        e.preventDefault();
+                                        setRenamingId(null);
+                                      }
+                                    }}
+                                    onBlur={() => setRenamingId(null)}
+                                    className="w-full rounded-[var(--radius-xs)] border px-1.5 py-0.5 text-[var(--fs-base)] outline-none"
+                                    style={{
+                                      borderColor: "var(--color-accent)",
+                                      background: "var(--color-surface)",
+                                      color: "var(--color-text)",
+                                    }}
                                   />
-                                  <span
-                                    className="min-w-0 flex-1 truncate text-[12px] max-md:text-[13px]"
-                                    style={{ color: cActive ? "var(--color-accent)" : "var(--color-text)" }}
-                                    title={c.ticket_title || c.title}
+                                ) : (
+                                  <div
+                                    className="truncate text-[var(--fs-base)] leading-[1.3]"
+                                    style={{
+                                      color: "var(--color-text)",
+                                      fontWeight: 500,
+                                      /* 长标题右侧 24px 渐隐，不用省略号 */
+                                      maskImage:
+                                        "linear-gradient(to right, #000 calc(100% - 24px), transparent)",
+                                      WebkitMaskImage:
+                                        "linear-gradient(to right, #000 calc(100% - 24px), transparent)",
+                                    }}
+                                    title={labelText}
+                                    onDoubleClick={(e) => {
+                                      e.stopPropagation();
+                                      startRename(s);
+                                    }}
                                   >
-                                    {c.ticket_title || c.title.replace(/^worker-/, "派活 ")}
-                                  </span>
-                                  <span className="shrink-0 text-[10.5px] tabular-nums" style={{ color: "var(--color-muted)" }}>
-                                    {c.turn_count} 轮
-                                  </span>
+                                    {labelText}
+                                  </div>
+                                )}
+                                <div className="mt-0.5 truncate text-[var(--fs-xs)] tabular-nums" style={{ color: "var(--color-text-3)" }}>
+                                  {s.turn_count} 轮 · {fmt.relative(s.last_active_at)}
                                 </div>
                               </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                      </div>
-                    );
-                  })}
+
+                              {(kids.get(s.id)?.length ?? 0) > 0 && (
+                                <button
+                                  className="shrink-0 h-7 px-1.5 flex items-center gap-0.5 rounded-[var(--radius-xs)] text-[10.5px] tabular-nums"
+                                  style={{
+                                    color: WORKER_COLOR,
+                                    background: "color-mix(in srgb, var(--color-warn) 10%, transparent)",
+                                  }}
+                                  data-tap
+                                  title={`这个对话派出了 ${kids.get(s.id)!.length} 件活`}
+                                  aria-expanded={openTree.has(s.id)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setOpenTree((prev) => {
+                                      const next = new Set(prev);
+                                      if (next.has(s.id)) next.delete(s.id);
+                                      else next.add(s.id);
+                                      return next;
+                                    });
+                                  }}
+                                >
+                                  <svg
+                                    width="10"
+                                    height="10"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2.4"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    aria-hidden="true"
+                                    style={{
+                                      transform: openTree.has(s.id) ? "rotate(90deg)" : "none",
+                                      transition: "transform var(--dur-1)",
+                                    }}
+                                  >
+                                    <path d="M9 6l6 6-6 6" />
+                                  </svg>
+                                  {kids.get(s.id)!.length}
+                                </button>
+                              )}
+
+                              {/* 常驻「⋯」：不 hover 也在，选中/聚焦时加深 */}
+                              <button
+                                className="shrink-0 grid h-6 w-6 place-items-center rounded-[var(--radius-xs)] hover:bg-[var(--color-surface)]"
+                                data-tap
+                                title="更多操作"
+                                aria-haspopup="menu"
+                                aria-expanded={menuFor === s.id}
+                                style={{
+                                  color: "var(--color-text-2)",
+                                  opacity: active || menuFor === s.id ? 1 : 0.55,
+                                }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setMenuFor(menuFor === s.id ? null : s.id);
+                                }}
+                                onFocus={(e) => {
+                                  e.currentTarget.style.opacity = "1";
+                                }}
+                                onBlur={(e) => {
+                                  e.currentTarget.style.opacity = active ? "1" : "0.55";
+                                }}
+                              >
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                  <circle cx="5" cy="12" r="1.6" />
+                                  <circle cx="12" cy="12" r="1.6" />
+                                  <circle cx="19" cy="12" r="1.6" />
+                                </svg>
+                              </button>
+
+                              {menuFor === s.id && (
+                                <>
+                                  <div
+                                    className="fixed inset-0 z-40"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setMenuFor(null);
+                                    }}
+                                  />
+                                  <div
+                                    className="absolute right-1 top-[46px] z-50 w-[136px] rounded-[var(--radius-md)] py-1"
+                                    style={{
+                                      background: "var(--color-surface)",
+                                      border: "1px solid var(--color-border)",
+                                      boxShadow: "var(--shadow-2)",
+                                    }}
+                                    role="menu"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <MenuItem
+                                      label="重命名"
+                                      onClick={() => {
+                                        setMenuFor(null);
+                                        startRename(s);
+                                      }}
+                                    />
+                                    <MenuItem
+                                      label={isPinned ? "取消置顶" : "置顶"}
+                                      onClick={() => {
+                                        setMenuFor(null);
+                                        togglePin(s.id);
+                                      }}
+                                    />
+                                    <MenuItem
+                                      label="导出"
+                                      onClick={() => {
+                                        setMenuFor(null);
+                                        void exportSession(s);
+                                      }}
+                                    />
+                                    <div className="my-1 h-px" style={{ background: "var(--color-border)" }} />
+                                    <MenuItem
+                                      label="删除"
+                                      danger
+                                      onClick={() => {
+                                        setMenuFor(null);
+                                        dropSession(s);
+                                      }}
+                                    />
+                                  </div>
+                                </>
+                              )}
+                            </div>
+
+                            {/* 子树：这个对话派出去的 worker */}
+                            {openTree.has(s.id) && (kids.get(s.id)?.length ?? 0) > 0 && (
+                              <div className="relative">
+                                <span
+                                  className="absolute left-[19px] top-0 bottom-3 w-px"
+                                  style={{ background: "color-mix(in srgb, var(--color-warn) 35%, transparent)" }}
+                                  aria-hidden
+                                />
+                                {kids.get(s.id)!.map((c) => {
+                                  const cActive = c.id === sessionId;
+                                  return (
+                                    <div
+                                      key={c.id}
+                                      className="relative ml-3 cursor-pointer rounded-[var(--radius-xs)] py-1.5 pl-6 pr-1 hover:bg-[var(--bg-selected)]"
+                                      style={{ background: cActive ? "var(--bg-selected)" : undefined }}
+                                      onClick={() => onPick(c.id)}
+                                    >
+                                      <span
+                                        className="absolute left-[7px] top-1/2 h-px w-3"
+                                        style={{ background: "color-mix(in srgb, var(--color-warn) 35%, transparent)" }}
+                                        aria-hidden
+                                      />
+                                      <div className="flex min-w-0 items-center gap-1.5">
+                                        <span
+                                          className="shrink-0 rounded-full"
+                                          style={{ width: 6, height: 6, background: agentColor(c.agent_id) }}
+                                          aria-hidden
+                                        />
+                                        <span
+                                          className="min-w-0 flex-1 truncate text-[var(--fs-sm)]"
+                                          style={{ color: "var(--color-text-2)" }}
+                                          title={c.ticket_title || c.title}
+                                        >
+                                          {c.ticket_title || c.title.replace(/^worker-/, "派活 ")}
+                                        </span>
+                                        <span className="shrink-0 text-[10.5px] tabular-nums" style={{ color: "var(--color-text-3)" }}>
+                                          {c.turn_count} 轮
+                                        </span>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-              </div>
-            ),
+              ),
             )}
 
-            {/* ── 对话内容命中（跨会话检索）──────────────────────────
-                标题只是第一段；真正的"以前聊过"在正文里。标题命中在本地过滤，
-                内容命中要问后端（300ms 防抖）。点一条 = 打开那个会话。 */}
+            {/* ── 对话内容命中（跨会话检索）*/}
             {q.trim().length >= 2 && (
               <div className="mt-1 border-t pt-1" style={{ borderColor: "var(--color-border)" }}>
-                <div className="px-2 pt-1 pb-1 text-[11px] font-medium tracking-wide text-[var(--color-muted)]">
+                <div className="px-2 pt-1 pb-1 text-[var(--fs-xs)] text-[var(--color-text-3)]">
                   对话内容{hitBusy ? " · 搜索中…" : hits.length ? ` · ${hits.length} 条` : ""}
                 </div>
                 {!hitBusy && hits.length === 0 && list.length > 0 && (
-                  <p className="px-2 pb-1 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                  <p className="px-2 pb-1 text-[11.5px]" style={{ color: "var(--color-text-3)" }}>
                     没有在对话内容里找到「{q.trim()}」。
                   </p>
                 )}
@@ -3536,17 +3850,15 @@ function SessionsPane({
                     type="button"
                     data-tap
                     onClick={() => onPick(h.session_id)}
-                    className="w-full text-left rounded-lg px-2 py-1.5 hover:bg-[var(--color-surface-2)] max-md:min-h-[36px]"
+                    className="w-full rounded-[var(--radius-sm)] px-2 py-1.5 text-left hover:bg-[var(--bg-selected)]"
                     title={h.snippet}
                   >
-                    <span className="flex items-center gap-1.5 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                    <span className="flex items-center gap-1.5 text-[11.5px]" style={{ color: "var(--color-text-3)" }}>
                       <span className="truncate">{h.session_title}</span>
                       <span className="shrink-0">· {fmt.relative(h.ts)}</span>
                       <span className="shrink-0">· {h.role === "assistant" ? "我" : "你"}</span>
                     </span>
-                    <span className="mt-0.5 block text-[12px] leading-snug line-clamp-2">
-                      {h.snippet}
-                    </span>
+                    <span className="mt-0.5 block text-[12px] leading-snug line-clamp-2">{h.snippet}</span>
                   </button>
                 ))}
               </div>
@@ -3554,7 +3866,89 @@ function SessionsPane({
           </>
         )}
       </div>
+
+      {/* 批量条：管理模式下固定在列表底部 */}
+      {managing && (
+        <div
+          className="shrink-0 border-t px-2 py-2"
+          style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+        >
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              data-tap
+              onClick={() =>
+                setSelected((prev) =>
+                  prev.size === sessions.length ? new Set() : new Set(sessions.map((s) => s.id)),
+                )
+              }
+              className="h-8 rounded-[var(--radius-xs)] px-2 text-[var(--fs-sm)]"
+              style={{ color: "var(--color-text-2)", background: "var(--color-surface-2)" }}
+            >
+              {selected.size === sessions.length ? "取消全选" : "全选"}
+            </button>
+            <button
+              type="button"
+              data-tap
+              disabled={selected.size === 0}
+              onClick={() => {
+                const victims = sessions.filter((s) => selected.has(s.id));
+                setSelected(new Set());
+                for (const v of victims) dropSession(v, { silent: true });
+              }}
+              className="ml-auto h-8 rounded-[var(--radius-xs)] px-2.5 text-[var(--fs-sm)] disabled:opacity-45"
+              style={{ color: "var(--color-err)", background: "color-mix(in srgb, var(--color-err) 10%, transparent)" }}
+            >
+              删除所选 ({selected.size})
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 删除后的撤销提示：8 秒内可撤回（这期间并没有真的调接口） */}
+      {undo && (
+        <div
+          className="absolute inset-x-2 bottom-2 z-50 flex items-center gap-2 rounded-[var(--radius-md)] px-3 py-2 text-[var(--fs-sm)]"
+          style={{ background: "var(--color-text)", color: "var(--color-bg)", boxShadow: "var(--shadow-2)" }}
+          role="status"
+        >
+          <span className="min-w-0 flex-1 truncate">{undo.n > 1 ? `已删除 ${undo.n} 个对话` : "已删除"}</span>
+          <button
+            type="button"
+            className="shrink-0 underline"
+            onClick={() => {
+              undo.restore();
+            }}
+          >
+            撤销
+          </button>
+        </div>
+      )}
     </>
+  );
+}
+
+/** 会话行菜单里的一项：40px 高、左对齐；danger 用危险色（不进红底） */
+function MenuItem({
+  label,
+  onClick,
+  danger,
+}: {
+  label: string;
+  onClick: () => void;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      className="flex w-full items-center px-2.5 py-1.5 text-left text-[var(--fs-sm)] hover:bg-[var(--bg-selected)]"
+      style={{ color: danger ? "var(--color-err)" : "var(--color-text)" }}
+      data-tap
+    >
+      {label}
+    </button>
   );
 }
 
