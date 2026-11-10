@@ -79,6 +79,11 @@ def run_allowed(run_id: str, tool_name: str) -> bool:
     return bool(run_id) and tool_name in _RUN_ALLOW.get(run_id, set())
 
 
+def run_allowed_tools(run_id: str) -> set[str]:
+    """这次运行里用户已经点过允许的工具（续跑重编译时并进白名单）。"""
+    return set(_RUN_ALLOW.get(run_id, set()))
+
+
 class DangerousActionGuard(MiddlewareBase):
     """拦住不可逆的命令，把"破坏性但可能需要"的交给用户点头。"""
 

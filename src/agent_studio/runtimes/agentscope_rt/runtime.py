@@ -503,6 +503,18 @@ class AgentScopeRuntime(AgentRuntime):
             except Exception:  # noqa: BLE001 —— 读不到就当没配，不影响执行
                 logger.debug("读会话允许清单失败", exc_info=True)
 
+        # 本次运行内点过「允许」的工具：严格模式的 ASK 规则是编译期注入的，
+        # 会话级白名单要等下次编译才生效 —— 续跑正好会重新编译，所以把本次运行
+        # 已允许的工具并进来，第二次调用同一个工具就不会再弹确认。
+        try:
+            from .guard import run_allowed_tools
+
+            _rid = str(_run_ctx.get("run_id") or "")
+            if _rid:
+                session_allow = list(dict.fromkeys([*session_allow, *run_allowed_tools(_rid)]))
+        except Exception:  # noqa: BLE001 —— 拿不到就算了，最坏是再问一次
+            logger.debug("合并本次运行的允许清单失败", exc_info=True)
+
         agent, model = build_agent(
             definition,
             api_key,
