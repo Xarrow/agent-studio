@@ -801,14 +801,23 @@ export function ProcessBar({
           </span>
         )}
 
-        <span className="proc-title">
+        {/* 收起态一句话说清「跑了多少步、花多久」；token 数移到 tooltip，
+            不再和耗时挤在一行里（审计时最常问的是"这轮多久、几步"）。 */}
+        <span
+          className="proc-title"
+          title={
+            usage && usage.tokens > 0
+              ? `${proc.length} 步 · ${new Intl.NumberFormat("en-US").format(usage.tokens)} tokens`
+              : undefined
+          }
+        >
           {running
-            ? phaseText(proc, true)
+            ? `${phaseText(proc, true)}`
             : proc.length === 0
               ? loading
-                ? "执行过程 · 加载中…"
-                : "执行过程 · 点开看每一步"
-              : `执行过程 · ${phaseText(proc, false)}`}
+                ? "正在整理执行过程…"
+                : `查看执行过程${typeof elapsedMs === "number" && elapsedMs > 0 ? ` · ${fmtDuration(elapsedMs)}` : ""}`
+              : `执行了 ${proc.length} 步${typeof elapsedMs === "number" && elapsedMs > 0 ? ` · ${fmtDuration(elapsedMs)}` : ""}`}
         </span>
 
         {failures > 0 && (
@@ -820,13 +829,13 @@ export function ProcessBar({
           </span>
         )}
 
-        {usage && usage.tokens > 0 && (
+        {usage && usage.tokens > 0 && open && (
           <span className="shrink-0 text-[11px]" style={{ color: "var(--color-muted)" }}>
             {new Intl.NumberFormat("en-US").format(usage.tokens)} tokens
           </span>
         )}
 
-        {typeof elapsedMs === "number" && elapsedMs > 0 && (
+        {open && typeof elapsedMs === "number" && elapsedMs > 0 && (
           <span className="proc-time">{fmtDuration(elapsedMs)}</span>
         )}
 

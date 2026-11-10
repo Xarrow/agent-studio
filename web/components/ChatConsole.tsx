@@ -1647,6 +1647,9 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   const currentAgent = agents.find((a) => a.id === agentId);
   /** 顶栏要显示/改名的当前会话 */
   const curSes = sessions.find((x) => x.id === sessionId);
+  /** 最新一条助手/用户消息：动作条要常驻（更早的靠 hover） */
+  const lastAssistantIdx = history.map((x) => x.role).lastIndexOf("assistant");
+  const lastUserIdx = history.map((x) => x.role).lastIndexOf("user");
 
   /* `/` 菜单的条目：必须定义在 currentAgent 之后 —— 里面 .map 会立即读
      currentAgent.definition 判断「已挂」，放前面就是 TDZ（Cannot access before initialization）。 */
@@ -2322,7 +2325,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 </div>
               </div>
             ) : (
-              <div className="msg-stream max-w-3xl mx-auto px-4 sm:px-5 py-6 space-y-5">
+              <div className="msg-stream max-w-[760px] mx-auto px-4 sm:px-5 py-6 space-y-5">
                 {history.map((m, i) => {
                   // 平台自己的提示（心跳/系统事件）：一行居中的灰字，不占气泡
                   if (m.role === "system") {
@@ -2350,6 +2353,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     <Bubble
                       role={m.role}
                       content={m.content}
+                      pinnedActions={i === lastAssistantIdx || i === lastUserIdx}
                       runId={m.run_id}
                       userInput={prevUser}
                       ts={m.ts}
@@ -2380,7 +2384,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     // 顺序即心智：先看它拆给谁、各自干到哪，最后才是结论。
                     // 反过来的话，用户先读到"都办好了"，过程只能往回找。
                     <div key={m.id ?? i} className="space-y-2">
-                      <div className="max-w-[88%] max-md:max-w-[90%]">
+                      <div className="max-w-[70%] max-md:max-w-[86%]">
                         <DelegationBlock runId={m.run_id} />
                       </div>
                       {bubble}
@@ -2502,7 +2506,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               }}
             />
             {hitl && (
-              <div className="max-w-3xl mx-auto mb-2">
+              <div className="max-w-[760px] mx-auto mb-2">
                 <HitlPrompt
                   key={hitlKey}
                   runId={hitl.runId}
@@ -2519,7 +2523,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
 
             {failed && (
               <div
-                className="max-w-3xl mx-auto mb-2 rounded-xl px-3 py-2 flex items-start gap-3 flex-wrap text-[12.5px]"
+                className="max-w-[760px] mx-auto mb-2 rounded-xl px-3 py-2 flex items-start gap-3 flex-wrap text-[12.5px]"
                 style={{
                   background: "color-mix(in srgb, var(--color-err) 10%, transparent)",
                   color: "var(--color-err)",
@@ -2543,7 +2547,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             )}
 
             {pendingFiles.length > 0 && (
-              <div className="max-w-3xl mx-auto mb-2 flex flex-wrap gap-2">
+              <div className="max-w-[760px] mx-auto mb-2 flex flex-wrap gap-2">
                 {pendingFiles.map((f, i) => (
                   <div
                     key={f.path + i}
@@ -2839,7 +2843,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               </Sheet>
             )}
 
-            <div className="max-w-3xl mx-auto relative">
+            <div className="max-w-[760px] mx-auto relative">
               {/* 产物条：助手把成品写进会话目录的 product/ 之后常驻在这里 ——
                   和在对话里读一段文字相比，用户要的是「能打开的东西」。 */}
               <DeliverableBar sessionId={sessionId || undefined} />
@@ -3232,14 +3236,14 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               )}
             </div>
 
-            <div className="max-w-3xl mx-auto mt-1.5 flex items-center gap-3 text-[11.5px] text-[var(--color-muted)]">
+            <div className="max-w-[760px] mx-auto mt-1.5 flex items-center gap-3 text-[11.5px] text-[var(--color-muted)]">
               <span className="hidden sm:inline">Enter 发送 · Shift + Enter 换行 · 可直接粘贴截图</span>
               {paused && <span className="ml-auto">运行暂停中</span>}
             </div>
 
             {showPaths && paths && (
               <div
-                className="max-w-3xl mx-auto mt-1.5 rounded-lg px-2.5 py-2 text-[11.5px] flex flex-wrap items-center gap-x-2 gap-y-1"
+                className="max-w-[760px] mx-auto mt-1.5 rounded-lg px-2.5 py-2 text-[11.5px] flex flex-wrap items-center gap-x-2 gap-y-1"
                 style={{ background: "var(--color-surface-2)", color: "var(--color-muted)" }}
               >
                 <span>对话保存在</span>
@@ -4146,6 +4150,7 @@ function MsgAction({
 function Bubble({
   role,
   content,
+  pinnedActions = false,
   runId,
   userInput,
   ts,
@@ -4160,6 +4165,8 @@ function Bubble({
 }: {
   role: "user" | "assistant";
   content: string;
+  /** 最新一条：动作条常驻（更早的桌面端 hover 才出现） */
+  pinnedActions?: boolean;
   runId?: string | null;
   /** 这一轮里用户说了什么（用于执行过程的第一段「输入」） */
   userInput?: string;
@@ -4339,7 +4346,7 @@ function Bubble({
 
   return (
     <div className={`flex group ${isUser ? "justify-end" : "justify-start"}`}>
-      <div className={isUser ? "max-w-[88%] max-md:max-w-[90%]" : "min-w-0 flex-1"}>
+      <div className={isUser ? "max-w-[70%] max-md:max-w-[86%]" : "min-w-0 flex-1"}>
         {/* 编辑态：textarea 就地展开（不用弹窗——上下文不丢） */}
         {editing ? (
           /* 编辑态：不是一个"小表单"，而是把这条问句**重新变成输入框**——
@@ -4469,7 +4476,7 @@ function Bubble({
         <div
           className={`break-words ${
             isUser
-              ? `text-white w-fit max-w-full whitespace-pre-wrap ml-auto text-[15px] ${
+              ? `text-white w-fit max-w-full whitespace-pre-wrap [word-break:break-all] ml-auto text-[15px] ${
                   /* 短消息（一行内、无附件）= 胶囊；长消息 = 18px 圆角块，右下角收成 6px
                      （气泡"尾巴"角），右边贴齐。用户要求：气泡样式与尺寸激进一点。 */
                   shortMsg
@@ -4557,7 +4564,11 @@ function Bubble({
             桌面 hover 显形，手机**常驻**（hover 不存在的东西必须常驻）。 */}
         {!streaming && (
           <div
-            className={`mt-1 flex items-center gap-1 ${isUser ? "justify-end" : ""} lg:opacity-0 lg:group-hover:opacity-100 focus-within:opacity-100 transition-opacity`}
+            className={`mt-1 flex items-center gap-1 ${isUser ? "justify-end" : ""} ${
+              pinnedActions
+                ? "opacity-100"
+                : "lg:opacity-0 lg:group-hover:opacity-100 focus-within:opacity-100 transition-opacity"
+            }`}
           >
             {ts ? (
               <span className="mr-1.5 text-[11px] tabular-nums" style={{ color: "var(--color-muted)" }}>
