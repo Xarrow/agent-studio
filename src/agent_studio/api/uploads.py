@@ -21,7 +21,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from ..config import PROJECT_ROOT
+from ..config import PROJECT_ROOT, settings
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
 
@@ -30,15 +30,33 @@ MAX_BYTES = 32 * 1024 * 1024
 
 _IMAGE_EXT = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".avif"}
 
-_DEFAULT_DIR = PROJECT_ROOT / "data" / "uploads"
-_CONFIG_PATH = PROJECT_ROOT / "data" / "uploads.config.json"
+# 默认落在**数据库所在的数据目录**下，而不是代码目录。
+# 代码目录在服务部署里常常是只读的（东京 agent-studio 用 ProtectSystem=strict，
+# 只放行 /var/lib/agent-studio），默认写 app/data 会直接报
+# "[Errno 30] Read-only file system"，而且连配置都存不下来 —— 用户改目录也改不动。
+_DATA_ROOT = settings.db_path.parent
+_DEFAULT_DIR = _DATA_ROOT / "uploads"
+_CONFIG_PATH = _DATA_ROOT / "uploads.config.json"
+#: 旧版本把配置写在代码目录里；读到就搬过来，已有新配置则不覆盖
+_LEGACY_CONFIG = PROJECT_ROOT / "data" / "uploads.config.json"
 
 
 def _load_config() -> dict:
     try:
         return json.loads(_CONFIG_PATH.read_text(encoding="utf-8"))
     except Exception:
+        pass
+    # 旧位置（代码目录）里的配置：搬一次过来。读不到就算了，别让上传因此挂掉。
+    try:
+        data = json.loads(_LEGACY_CONFIG.read_text(encoding="utf-8"))
+    except Exception:
         return {}
+    try:
+        _CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _CONFIG_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+    except Exception:
+        return data
+    return data
 
 
 def _save_config(data: dict) -> None:
