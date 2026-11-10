@@ -140,6 +140,17 @@ export function FileChip({
       className={`inline-flex max-w-full min-h-[32px] items-center gap-1 rounded border px-1.5 text-left align-middle mono text-[12px] hover:bg-[var(--color-surface-2)] ${className}`}
       style={{ color: "var(--color-accent)", borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
     >
+      {/* 图片路径直接给缩略图：一眼知道是图，点开看大图（其它类型仍是文件图标） */}
+      {url && fileKind(path) === "image" ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={url}
+          alt=""
+          draggable={false}
+          className="h-5 w-5 shrink-0 rounded-[3px] object-cover"
+          style={{ border: "1px solid var(--color-border)" }}
+        />
+      ) : (
       <svg
         width="12"
         height="12"
@@ -154,6 +165,7 @@ export function FileChip({
         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
         <path d="M14 2v6h6" />
       </svg>
+      )}
       <span className="min-w-0 truncate">{label || baseName(path)}</span>
     </button>
   );
