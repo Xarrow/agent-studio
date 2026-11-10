@@ -1757,6 +1757,11 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
       sessionId={sessionId}
       workDir={sessionFiles?.work_dir}
       onFileChanged={() => void loadSessionFiles()}
+      onReveal={(path) => {
+        setFilesOpenPref(true);
+        void loadSessionFiles();
+        fb.info("已打开会话文件", path);
+      }}
     >
       <div className="h-full min-h-0 flex max-md:-mt-[44px] max-md:h-[calc(100%+44px)]">
         {/* 手里这份页面过期了：一直开着的标签页不会自己换代码，提示一下，别让用户

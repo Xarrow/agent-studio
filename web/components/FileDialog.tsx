@@ -55,6 +55,8 @@ export type FileRef = { path: string; name?: string; url?: string | null; size?:
 type OpenerCtx = {
   /** 打开某个文件的操作框（没 Provider 时是 no-op） */
   open: (f: FileRef | string) => void;
+  /** 在会话文件面板里定位这个文件（没接就是 undefined） */
+  reveal?: (f: FileRef) => void;
 };
 
 const Ctx = createContext<OpenerCtx | null>(null);
@@ -66,16 +68,30 @@ export function FileOpenerProvider({
   workDir,
   children,
   onFileChanged,
+  onReveal,
 }: {
   sessionId?: string;
   workDir?: string;
   children: ReactNode;
   /** 文件被删掉后通知外面刷新（会话里那条文件清单要跟着变） */
   onFileChanged?: () => void;
+  /** 「在文件夹中显示」：交给外面打开会话文件面板 */
+  onReveal?: (path: string) => void;
 }) {
   const [file, setFile] = useState<FileRef | null>(null);
   const open = useCallback((f: FileRef | string) => setFile(typeof f === "string" ? { path: f } : f), []);
-  const api = useMemo<OpenerCtx>(() => ({ open }), [open]);
+  const api = useMemo<OpenerCtx>(
+    () => ({
+      open,
+      reveal: onReveal
+        ? (f: FileRef) => {
+            setFile(null);
+            onReveal(f.path);
+          }
+        : undefined,
+    }),
+    [open, onReveal],
+  );
   return (
     <Ctx.Provider value={api}>
       <SessionCtx.Provider value={{ sessionId, workDir }}>
@@ -305,6 +321,7 @@ export function FileDialog({
   onFileAdded?: () => void;
 }) {
   const { sessionId, workDir } = useContext(SessionCtx);
+  const reveal = useContext(Ctx)?.reveal;
   const url = file.url ?? fileUrlFor(file.path, sessionId, workDir);
   const kind = fileKind(file.path);
   const [text, setText] = useState<string | null>(null);
@@ -778,6 +795,11 @@ export function FileDialog({
             <a className="btn" href={url} target="_blank" rel="noreferrer">
               新窗口打开
             </a>
+          ) : null}
+          {reveal ? (
+            <button type="button" className="btn max-md:min-h-[36px]" onClick={() => reveal(file)}>
+              在文件夹中显示
+            </button>
           ) : null}
           <button type="button" className="btn ml-auto max-md:min-h-[36px]" onClick={onClose}>
             关闭
