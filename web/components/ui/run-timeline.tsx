@@ -62,57 +62,57 @@ export const STEP_STYLE: Record<
 > = {
   input: {
     icon: "▶",
-    color: "#1d4ed8",
-    bg: "#eff6ff",
-    border: "#bfdbfe",
+    color: "var(--color-accent-dim)",
+    bg: "var(--tint-info-bg)",
+    border: "var(--tint-info-line)",
   },
   think: {
     icon: "◆",
-    color: "#6d28d9",
-    bg: "#f5f3ff",
-    border: "#ddd6fe",
+    color: "var(--color-think)",
+    bg: "var(--tint-think-bg)",
+    border: "var(--tint-think-line)",
   },
   fallback: {
     icon: "⇄",
-    color: "#b45309",
-    bg: "#fffbeb",
-    border: "#fde68a",
+    color: "var(--color-warn)",
+    bg: "var(--tint-warn-bg)",
+    border: "var(--tint-warn-line)",
   },
   tool: {
     icon: "⚙",
-    color: "#2563eb",
-    bg: "#eff6ff",
-    border: "#bfdbfe",
+    color: "var(--color-accent)",
+    bg: "var(--tint-info-bg)",
+    border: "var(--tint-info-line)",
   },
   artifact: {
     icon: "▣",
-    color: "#047857",
-    bg: "#ecfdf5",
-    border: "#a7f3d0",
+    color: "var(--color-ok)",
+    bg: "var(--tint-ok-bg)",
+    border: "var(--tint-ok-line)",
   },
   tool_response: {
     icon: "◀",
-    color: "#0e7490",
-    bg: "#ecfeff",
-    border: "#a5f3fc",
+    color: "var(--color-info)",
+    bg: "var(--tint-cyan-bg)",
+    border: "var(--tint-cyan-line)",
   },
   output: {
     icon: "●",
-    color: "#15803d",
-    bg: "#f0fdf4",
-    border: "#bbf7d0",
+    color: "var(--color-ok)",
+    bg: "var(--tint-ok-bg)",
+    border: "var(--tint-ok-line)",
   },
   error: {
     icon: "✕",
-    color: "#b91c1c",
-    bg: "#fef2f2",
-    border: "#fecaca",
+    color: "var(--color-err-strong)",
+    bg: "var(--tint-err-bg)",
+    border: "var(--tint-err-line)",
   },
   hitl: {
     icon: "?",
-    color: "#a16207",
-    bg: "#fffbeb",
-    border: "#fde68a",
+    color: "var(--color-warn)",
+    bg: "var(--tint-warn-bg)",
+    border: "var(--tint-warn-line)",
   },
 };
 
@@ -382,9 +382,9 @@ function TimelineRow({
         <div
           className="relative w-6 h-6 rounded-md flex items-center justify-center text-[12px] shrink-0"
           style={{
-            background: isErr ? "#fef2f2" : st.bg,
-            color: isErr ? "#b91c1c" : st.color,
-            border: `1px solid ${isErr ? "#fecaca" : st.border}`,
+            background: isErr ? "var(--tint-err-bg)" : st.bg,
+            color: isErr ? "var(--color-err-strong)" : st.color,
+            border: `1px solid ${isErr ? "var(--tint-err-line)" : st.border}`,
           }}
         >
           {/* 工具在跑：虚线环转起来（"这步在动"）；思考：三个点呼吸；
@@ -445,14 +445,14 @@ function TimelineRow({
           type="button"
           data-tap
           className="text-[12px] font-medium mb-0.5 inline-flex min-h-[32px] min-w-[32px] items-center gap-1 text-left lg:min-h-0"
-          style={{ color: isErr ? "#b91c1c" : st.color }}
+          style={{ color: isErr ? "var(--color-err-strong)" : st.color }}
           onClick={() => long && setOpen(!open)}
         >
           {s.label}
           {isErr && (
             <span
               className="rounded px-1 text-[10.5px]"
-              style={{ background: "#fef2f2", color: "#b91c1c" }}
+              style={{ background: "var(--tint-err-bg)", color: "var(--color-err-strong)" }}
             >
               失败
             </span>
@@ -794,7 +794,7 @@ export function ProcessBar({
             )}
           </span>
         ) : (
-          <span className="proc-dots" style={{ color: "#8b93a1" }} aria-hidden="true">
+          <span className="proc-dots" style={{ color: "var(--color-text-3)" }} aria-hidden="true">
             <span className="proc-dot" />
             <span className="proc-dot" />
             <span className="proc-dot" />
@@ -823,7 +823,7 @@ export function ProcessBar({
         {failures > 0 && (
           <span
             className="shrink-0 rounded px-1 text-[10.5px] font-medium"
-            style={{ background: "#fef2f2", color: "#b91c1c", border: "1px solid #fecaca" }}
+            style={{ background: "var(--tint-err-bg)", color: "var(--color-err-strong)", border: "1px solid var(--tint-err-line)" }}
           >
             {failures} 步失败
           </span>
@@ -879,7 +879,7 @@ export function ProcessBar({
                 style={{
                   width: 26,
                   height: 15,
-                  background: anim ? "var(--color-accent)" : "#cbd2dc",
+                  background: anim ? "var(--color-accent)" : "var(--color-border-strong)",
                 }}
               >
                 <span

@@ -18,7 +18,7 @@ import { DelegationBlock } from "@/components/DelegationBlock";
 import { agentColor } from "@/lib/turn";
 
 /** worker 会话的识别色：Router 是蓝、派出去的活是琥珀、普通对话不上色 */
-const WORKER_COLOR = "#d97706";
+const WORKER_COLOR = "var(--color-worker)";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api, fmt, withToken } from "@/lib/api";
 import type { Agent, Run, RunEvent, Session, SearchHit, Skill, Tool, Memory } from "@/lib/types";
@@ -2611,7 +2611,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     <button
                       data-tap
                       className="absolute top-0.5 right-0.5 flex h-5 w-5 items-center justify-center rounded-full text-[11px] hover:brightness-110"
-                      style={{ background: "rgba(0,0,0,0.45)", color: "#fff" }}
+                      style={{ background: "rgba(0,0,0,0.45)", color: "var(--color-accent-fg)" }}
                       title="撤掉"
                       onClick={() => setPendingFiles((p) => p.filter((_, j) => j !== i))}
                     >
@@ -3237,7 +3237,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                         title="插话：塞进这一轮，不打断当前这一步"
                         onClick={() => void steer()}
                         className="w-9 h-9 sm:w-8 sm:h-8 shrink-0 flex items-center justify-center rounded-full"
-                        style={{ background: "var(--color-accent)", color: "#fff" }}
+                        style={{ background: "var(--color-accent)", color: "var(--color-accent-fg)" }}
                       >
                         {/* 气泡 + 箭头 = 把话塞进去，不打断当前这一步 */}
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

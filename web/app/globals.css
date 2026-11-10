@@ -80,6 +80,23 @@
   --color-text-2: var(--color-muted);
   --color-text-3: color-mix(in srgb, var(--color-muted) 72%, transparent);
   --bg-selected: #eef2f8;
+
+  /* 语义色板（执行过程各步骤类型用）：底色 / 描边 / 文字三件套 */
+  --color-worker: #d97706;
+  --color-think: #6d28d9;
+  --tint-info-bg: #eff6ff;
+  --tint-info-line: #bfdbfe;
+  --tint-think-bg: #f5f3ff;
+  --tint-think-line: #ddd6fe;
+  --tint-warn-bg: #fffbeb;
+  --tint-warn-line: #fde68a;
+  --tint-ok-bg: #f0fdf4;
+  --tint-ok-line: #bbf7d0;
+  --tint-cyan-bg: #ecfeff;
+  --tint-cyan-line: #a5f3fc;
+  --tint-err-bg: #fef2f2;
+  --tint-err-line: #fecaca;
+  --color-err-strong: #b91c1c;
 }
 
 [data-theme="dark"] {
@@ -87,6 +104,22 @@
   --shadow-2: 0 6px 20px -8px rgba(0, 0, 0, 0.55);
   --shadow-3: 0 14px 40px -16px rgba(0, 0, 0, 0.65);
   --bg-selected: #222b37;
+
+  --color-worker: #fbbf24;
+  --color-think: #a78bfa;
+  --tint-info-bg: #17233a;
+  --tint-info-line: #24395c;
+  --tint-think-bg: #201b33;
+  --tint-think-line: #342a52;
+  --tint-warn-bg: #2a2213;
+  --tint-warn-line: #4a3a18;
+  --tint-ok-bg: #12241a;
+  --tint-ok-line: #1e3b2a;
+  --tint-cyan-bg: #102226;
+  --tint-cyan-line: #164049;
+  --tint-err-bg: #2a1517;
+  --tint-err-line: #4a2226;
+  --color-err-strong: #f87171;
 }
 
 /* 常驻 tooltip：hover / focus-visible 都出（键盘同样看得到） */
