@@ -157,22 +157,16 @@ export function HitlPrompt({
 
   return (
     <div
-      className="rounded-xl overflow-hidden border"
+      className="max-h-[40vh] overflow-y-auto rounded-[var(--radius-lg)] border"
       style={{
-        borderColor: danger ? "var(--color-err)" : "var(--color-warn)",
-        background: "var(--color-surface)",
-        boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+        borderColor: danger
+          ? "color-mix(in srgb, var(--color-err) 45%, transparent)"
+          : "color-mix(in srgb, var(--color-warn) 40%, transparent)",
+        background: danger ? "var(--tint-err-bg)" : "var(--tint-warn-bg)",
       }}
     >
       {/* 顶部：谁在等、几个操作、有没有危险 */}
-      <div
-        className="flex items-center gap-2 px-3 py-2 flex-wrap"
-        style={{
-          background: danger
-            ? "color-mix(in srgb, var(--color-err) 12%, transparent)"
-            : "color-mix(in srgb, var(--color-warn) 14%, transparent)",
-        }}
-      >
+      <div className="flex flex-wrap items-center gap-2 px-3 py-2">
         <svg
           width="15"
           height="15"
@@ -314,10 +308,18 @@ export function HitlPrompt({
           <>
             <button
               data-tap
-              className="btn btn-primary btn-sm"
+              className="btn btn-sm"
               disabled={busy}
               onClick={() => (danger ? setConfirming(true) : void resume(true, remember))}
-              style={danger ? { background: "var(--color-err)", borderColor: "var(--color-err)" } : undefined}
+              style={
+                danger
+                  ? { background: "var(--color-err)", borderColor: "var(--color-err)", color: "var(--color-accent-fg)" }
+                  : {
+                      background: "color-mix(in srgb, var(--color-accent) 12%, transparent)",
+                      borderColor: "color-mix(in srgb, var(--color-accent) 40%, transparent)",
+                      color: "var(--color-accent)",
+                    }
+              }
             >
               {busy ? "处理中…" : danger ? "允许执行" : "允许"}
             </button>

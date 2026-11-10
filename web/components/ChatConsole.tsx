@@ -2542,7 +2542,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               }}
             />
             {hitl && (
-              <div className="max-w-[760px] mx-auto mb-2">
+              <div className="mx-auto mb-3 max-w-[760px]">
                 <HitlPrompt
                   key={hitlKey}
                   runId={hitl.runId}
@@ -2999,14 +2999,17 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                   三条投喂路径统一走 addFiles：点附件 / 粘贴截图 / 拖文件进来。 */}
               <div
                 data-composer
+                data-paused={paused ? "1" : "0"}
                 className="composer-focus rounded-[var(--radius-2xl)] border"
                 style={{
                   borderColor: paused
-                    ? "var(--color-warn)"
+                    ? "color-mix(in srgb, var(--color-warn) 55%, transparent)"
                     : dragging
                       ? "var(--color-accent)"
                       : "color-mix(in srgb, var(--color-text) 9%, transparent)",
-                  background: "color-mix(in srgb, var(--color-surface) 40%, transparent)",
+                  background: paused
+                    ? "color-mix(in srgb, var(--color-surface-2) 70%, transparent)"
+                    : "color-mix(in srgb, var(--color-surface) 40%, transparent)",
                   backdropFilter: "blur(22px) saturate(1.9)",
                   WebkitBackdropFilter: "blur(22px) saturate(1.9)",
                   boxShadow: dragging
