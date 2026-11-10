@@ -2425,8 +2425,9 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 })}
 
                 {/* 生成中：实时分色显示执行过程（思考 / 工具 / 结果 / 回答） */}
-                {/* 画面缩略条常驻消息流（右栏直播栏已移除——全端都用这一条，点开看大画面） */}
-                {(browserFrame || browserActions.length > 0 || browserSteps.length > 0) && (
+                {/* 浏览器卡只在**这一轮还在跑**的时候浮在流里；跑完它就收进那一轮的
+                    执行过程（点开过程能看到每一步和当时的画面），不再单独悬在回复后面。 */}
+                {busy && (browserFrame || browserActions.length > 0 || browserSteps.length > 0) && (
                   <BrowserStage
                     variant="inline"
                     frame={browserFrame}
