@@ -3172,11 +3172,9 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                   <span className="hidden sm:block text-[11.5px] truncate text-[var(--color-muted)]">
                     {dragging
                       ? "松手即添加为附件"
-                      : paused
-                        ? "运行暂停，等你授权"
-                        : busy
-                          ? "助手正在执行…"
-                          : ""}
+                      : busy && !paused
+                        ? "助手正在执行…"
+                        : ""}
                   </span>
                   <div className="ml-auto flex items-center gap-1">
                     {/* 自动挑：开着的时候每句话先过路由 —— 认不出来会问，不会闷头猜。
@@ -3315,7 +3313,6 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
 
             <div className="max-w-[760px] mx-auto mt-1.5 flex items-center gap-3 text-[11.5px] text-[var(--color-muted)]">
               <span className="hidden sm:inline">Enter 发送 · Shift + Enter 换行 · 可直接粘贴截图</span>
-              {paused && <span className="ml-auto">运行暂停中</span>}
             </div>
 
             {showPaths && paths && (

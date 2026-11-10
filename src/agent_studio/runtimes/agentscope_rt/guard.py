@@ -58,6 +58,27 @@ def clear_reasons() -> None:
     _REASONS.set({})
 
 
+#: 「这次运行里，用户已经点过允许这个工具」——进程内记录，run 结束就清。
+#: 为什么需要它：会话级白名单（SessionAllow）只在**编译期**读一次，用户在同一次
+#: 运行中途点「允许」写进库也不会影响正在跑的这轮 —— 结果就是模型每调一次工具
+#: 就再弹一次确认，用户点十次也停不下来（实测踩到）。这里按 (run_id, 工具名)
+#: 记一份，同一次运行内后续同名调用直接放行。
+_RUN_ALLOW: dict[str, set[str]] = {}
+
+
+def allow_for_run(run_id: str, tool_name: str) -> None:
+    if run_id and tool_name:
+        _RUN_ALLOW.setdefault(run_id, set()).add(tool_name)
+
+
+def clear_run_allow(run_id: str) -> None:
+    _RUN_ALLOW.pop(run_id, None)
+
+
+def run_allowed(run_id: str, tool_name: str) -> bool:
+    return bool(run_id) and tool_name in _RUN_ALLOW.get(run_id, set())
+
+
 class DangerousActionGuard(MiddlewareBase):
     """拦住不可逆的命令，把"破坏性但可能需要"的交给用户点头。"""
 
@@ -140,6 +161,18 @@ class DangerousActionGuard(MiddlewareBase):
                 behavior=PermissionBehavior.DENY,
                 message=f"已拦截：命令命中平台黑名单「{hit}」。这条由平台统一配置，助手无法绕过。",
                 decision_reason=f"platform-deny:{hit}",
+            )
+        if verdict.risk == guardrails.RISK_ASK and run_allowed(
+            str(current_run_ctx().get("run_id") or ""), name
+        ):
+            # 本次运行里用户已经点过「允许」这个工具 —— 不再重复弹。
+            # 循环调用同一个工具（实测：worker_status 被连问十几次）时这是唯一有
+            # 效的止损；DENY 在前面就拦住了，这里放掉的只是 ASK。
+            logger.info("安全闸门：本次运行已允许 %s，直接放行（%s）", name, verdict.rule)
+            return PermissionDecision(
+                behavior=PermissionBehavior.ALLOW,
+                message="本次运行内已允许这个工具。",
+                decision_reason=f"{verdict.rule}-run-allow",
             )
         if verdict.risk == guardrails.RISK_ASK and name in self._session_allow:
             # 「本会话内不再问这类操作」生效点。必须**直接 ALLOW 短路**，

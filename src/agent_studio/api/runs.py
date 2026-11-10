@@ -711,18 +711,27 @@ async def resume_run(
             status.HTTP_409_CONFLICT,
             "这条运行的待确认内容已经丢失（旧的记录格式），没法继续；请重新发起一次。",
         )
+    # HITL 的 payload 形状：{"reply_id", "tool_calls": [{name, input, ...}], "guard_reasons"}
+    # 工具名在 tool_calls[0].name 里（早先这里读 tool_call_name，永远是空 → 「不再问」点了没反应）
+    _hitl = run.pending_hitl or {}
+    _calls = _hitl.get("tool_calls") or []
+    _tool_name = str(
+        (_calls[0].get("name") if _calls and isinstance(_calls[0], dict) else "")
+        or _hitl.get("tool_call_name")
+        or ""
+    ).strip()
+
+    # 点「允许」= 这次运行里别再问同一个工具：会话级白名单只在编译期读一次，
+    # 中途写库救不了正在跑的这轮，模型循环调同一个工具就会一直弹（实测踩到）。
+    if payload.confirm and _tool_name:
+        from ..runtimes.agentscope_rt.guard import allow_for_run
+
+        allow_for_run(run_id, _tool_name)
+
     # 「本会话内不再问这个工具」：先把允许记下来，再续跑 ——
     # 顺序反了的话，续跑立刻又弹一次（用户会以为按钮没生效）。
     if payload.confirm and payload.remember and run.session_id:
-        # HITL 的 payload 形状：{"reply_id", "tool_calls": [{name, input, ...}], "guard_reasons"}
-        # 工具名在 tool_calls[0].name 里（早先这里读 tool_call_name，永远是空 → 「不再问」点了没反应）
-        _hitl = run.pending_hitl or {}
-        _calls = _hitl.get("tool_calls") or []
-        tool_name = str(
-            ( _calls[0].get("name") if _calls and isinstance(_calls[0], dict) else "")
-            or _hitl.get("tool_call_name")
-            or ""
-        ).strip()
+        tool_name = _tool_name
         if tool_name:
             from ..models import SessionAllow
 
