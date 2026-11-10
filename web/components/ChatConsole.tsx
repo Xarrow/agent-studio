@@ -192,6 +192,53 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   }, [sessionId]);
 
   /** 正在浮层里配置的助手（从对话页直接打开，不离开对话） */
+  /** 置顶：列表和顶栏共用一份（存 localStorage，不碰后端） */
+  const [pinned, setPinned] = useState<Set<string>>(() => {
+    try {
+      const raw = JSON.parse(localStorage.getItem("studio.pinned") || "[]");
+      return new Set(Array.isArray(raw) ? raw : []);
+    } catch {
+      return new Set();
+    }
+  });
+  const togglePin = (id: string) => {
+    setPinned((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      try {
+        localStorage.setItem("studio.pinned", JSON.stringify([...next]));
+      } catch {}
+      return next;
+    });
+  };
+  /** 顶栏：标题就地改名 / 更多菜单 / 滚动后出现分隔线 */
+  const [headerEditing, setHeaderEditing] = useState(false);
+  const [headerDraft, setHeaderDraft] = useState("");
+  const [headerMenu, setHeaderMenu] = useState(false);
+  const [topScrolled, setTopScrolled] = useState(false);
+
+  /** 导出会话为 Markdown（纯前端拼，走已有会话详情接口） */
+  const exportSession = async (s: Session) => {
+    try {
+      const d = await api.session(s.id);
+      const lines: string[] = [`# ${s.title || "未命名对话"}`, ""];
+      for (const m of d.messages || []) {
+        if (m.role === "user") lines.push("## 我", "", m.content || "", "");
+        else if (m.role === "assistant") lines.push("## 助手", "", m.content || "", "");
+      }
+      const blob = new Blob([lines.join("\n")], { type: "text/markdown;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${(s.title || s.id).replace(/[\\/:*?"<>|]/g, "_")}.md`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      fb.error("导出失败", e instanceof Error ? e.message : String(e));
+    }
+  };
+
   const [configAgent, setConfigAgent] = useState<string | null>(null);
   /**
    * 上一轮失败的记录（原始输入 + 错误原因）。
@@ -630,6 +677,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     pinBottom();
   }, [history, live, pinBottom]);
   const onScroll = () => {
+    const el0 = boxRef.current;
+    if (el0) setTopScrolled(el0.scrollTop > 2);
     // 自己刚贴过底（120ms 内）产生的那次 scroll 不算用户操作
     if (Date.now() - lastPinAt.current < 120) return;
     const el = boxRef.current;
@@ -1596,6 +1645,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   }
 
   const currentAgent = agents.find((a) => a.id === agentId);
+  /** 顶栏要显示/改名的当前会话 */
+  const curSes = sessions.find((x) => x.id === sessionId);
 
   /* `/` 菜单的条目：必须定义在 currentAgent 之后 —— 里面 .map 会立即读
      currentAgent.definition 判断「已挂」，放前面就是 TDZ（Cannot access before initialization）。 */
@@ -1738,6 +1789,9 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               onRemove={(s) => void removeSession(s)}
               onDelete={(s) => void deleteSessionNow(s)}
               onRenameCommit={(s, t) => void renameSessionInline(s, t)}
+              pinned={pinned}
+              onTogglePin={togglePin}
+              onExport={(s) => void exportSession(s)}
               onCollapse={toggleNav}
             />
           </aside>
@@ -1874,6 +1928,9 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     onRemove={(s) => void removeSession(s)}
                     onDelete={(s) => void deleteSessionNow(s)}
                     onRenameCommit={(s, t) => void renameSessionInline(s, t)}
+                    pinned={pinned}
+                    onTogglePin={togglePin}
+                    onExport={(s) => void exportSession(s)}
                     onCollapse={() => setMobileNav(false)}
                   />
                   <div className="shrink-0 border-t border-[var(--color-border)] pb-[env(safe-area-inset-bottom)]">
@@ -2030,6 +2087,114 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               )}
             </div>
           )}
+
+          {/* ── 会话顶栏（lg+）：标题就地改名 + 置顶/导出/更多 ─────────────
+              和画布同底色、平时刻意不画分隔线；只有滚动后才出现 1px 极淡边。 */}
+          <div
+            className="relative hidden h-11 shrink-0 items-center gap-1 px-3 lg:flex"
+            style={{
+              background: "var(--color-bg)",
+              borderBottom: `1px solid ${topScrolled ? "color-mix(in srgb, var(--color-border) 70%, transparent)" : "transparent"}`,
+              transition: "border-color var(--dur-1) var(--ease)",
+            }}
+          >
+            {headerEditing ? (
+              <input
+                autoFocus
+                value={headerDraft}
+                onChange={(e) => setHeaderDraft(e.target.value)}
+                onBlur={() => setHeaderEditing(false)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    setHeaderEditing(false);
+                    const t = headerDraft.trim();
+                    if (curSes && t && t !== curSes.title) void renameSessionInline(curSes, t);
+                  } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    setHeaderEditing(false);
+                  }
+                }}
+                className="min-w-0 flex-1 rounded-[var(--radius-xs)] border px-1.5 py-0.5 text-[var(--fs-base)] outline-none"
+                style={{
+                  borderColor: "var(--color-accent)",
+                  background: "var(--color-surface)",
+                  color: "var(--color-text)",
+                }}
+              />
+            ) : (
+              <button
+                type="button"
+                data-tap
+                title="点一下改名"
+                onClick={() => {
+                  setHeaderDraft(curSes?.title || "");
+                  setHeaderEditing(true);
+                }}
+                className="min-w-0 flex-1 truncate rounded-[var(--radius-xs)] px-1.5 py-1 text-left text-[var(--fs-base)] hover:bg-[var(--bg-selected)]"
+                style={{ color: "var(--color-text)", fontWeight: 500 }}
+              >
+                {curSes?.title || (sessionId ? "未命名对话" : "新对话")}
+              </button>
+            )}
+
+            <IconBtn
+              label={curSes && pinned.has(curSes.id) ? "取消置顶" : "置顶"}
+              onClick={() => curSes && togglePin(curSes.id)}
+              active={!!curSes && pinned.has(curSes.id)}
+              path="M12 17v5M6 4h12l-2 6 3 3v2H5v-2l3-3-2-6z"
+            />
+            <IconBtn
+              label="导出"
+              onClick={() => curSes && void exportSession(curSes)}
+              path="M12 3v12m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"
+            />
+            <IconBtn
+              label="更多"
+              onClick={() => setHeaderMenu((v) => !v)}
+              path="M5 12h.01M12 12h.01M19 12h.01"
+            />
+
+            {headerMenu && curSes && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setHeaderMenu(false)} />
+                <div
+                  className="absolute right-2 top-10 z-50 w-[132px] rounded-[var(--radius-md)] py-1"
+                  role="menu"
+                  style={{
+                    background: "var(--color-surface)",
+                    border: "1px solid var(--color-border)",
+                    boxShadow: "var(--shadow-2)",
+                  }}
+                >
+                  <MenuItem
+                    label="重命名"
+                    onClick={() => {
+                      setHeaderMenu(false);
+                      setHeaderDraft(curSes.title || "");
+                      setHeaderEditing(true);
+                    }}
+                  />
+                  <MenuItem
+                    label="导出"
+                    onClick={() => {
+                      setHeaderMenu(false);
+                      void exportSession(curSes);
+                    }}
+                  />
+                  <div className="my-1 h-px" style={{ background: "var(--color-border)" }} />
+                  <MenuItem
+                    label="删除"
+                    danger
+                    onClick={() => {
+                      setHeaderMenu(false);
+                      void deleteSessionNow(curSes);
+                    }}
+                  />
+                </div>
+              </>
+            )}
+          </div>
 
           {/* 消息流 —— 阅读宽度封顶 768px 居中：一行扫 1000px 是眼睛的负担 */}
           <div className="relative flex-1 min-h-0 flex flex-col">
@@ -3190,6 +3355,9 @@ function SessionsPane({
   agentSlot,
   onDelete,
   onRenameCommit,
+  pinned,
+  onTogglePin,
+  onExport,
 }: {
   sessions: Session[];
   sessionId: string;
@@ -3202,6 +3370,10 @@ function SessionsPane({
   onDelete: (s: Session) => void | Promise<void>;
   /** 行内改名提交 */
   onRenameCommit: (s: Session, title: string) => void | Promise<void>;
+  /** 置顶集合（与顶栏共用一份） */
+  pinned: Set<string>;
+  onTogglePin: (id: string) => void;
+  onExport: (s: Session) => void;
   /** 助手身份块：会话都属于某个助手，它排在列表最上面 */
   agentSlot?: React.ReactNode;
 }) {
@@ -3218,36 +3390,13 @@ function SessionsPane({
   /** 行内改名：正在改哪一条 + 草稿 */
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
-  /** 置顶：只有"我"这台浏览器关心，存 localStorage（不碰后端） */
-  const [pinned, setPinned] = useState<Set<string>>(() => {
-    try {
-      const raw = JSON.parse(localStorage.getItem("studio.pinned") || "[]");
-      return new Set(Array.isArray(raw) ? raw : []);
-    } catch {
-      return new Set();
-    }
-  });
-  /** 批量管理 */
+  /** 批量管理 / 分组折叠 / 撤销窗口 */
   const [managing, setManaging] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
-  /** 分组折叠 */
   const [foldedGroups, setFoldedGroups] = useState<Set<string>>(() => new Set());
-  /** 删除的撤销窗口：8 秒内点撤销就什么都不发生 */
   const [undo, setUndo] = useState<{ n: number; restore: () => void } | null>(null);
   const pending = useRef(new Map<string, { s: Session; timer: ReturnType<typeof setTimeout> }>());
   const [hidden, setHidden] = useState<Set<string>>(() => new Set());
-
-  const togglePin = (id: string) => {
-    setPinned((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      try {
-        localStorage.setItem("studio.pinned", JSON.stringify([...next]));
-      } catch {}
-      return next;
-    });
-  };
 
   const startRename = (s: Session) => {
     setDraft(s.ticket_title || s.title || "");
@@ -3283,27 +3432,6 @@ function SessionsPane({
       },
     }));
     if (!opts?.silent) setMenuFor(null);
-  };
-
-  /** 导出一个会话为 Markdown（纯前端拼，走已有的会话详情接口） */
-  const exportSession = async (s: Session) => {
-    try {
-      const d = await api.session(s.id);
-      const lines: string[] = [`# ${s.title || "未命名对话"}`, ""];
-      for (const m of d.messages || []) {
-        if (m.role === "user") lines.push("## 我", "", m.content || "", "");
-        else if (m.role === "assistant") lines.push("## 助手", "", m.content || "", "");
-      }
-      const blob = new Blob([lines.join("\n")], { type: "text/markdown;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${(s.title || s.id).replace(/[\\/:*?"<>|]/g, "_")}.md`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      window.alert(e instanceof Error ? e.message : "导出失败");
-    }
   };
 
   // 输入停下来 300ms 再搜（打一个字发一次请求既慢又抖）
@@ -3756,14 +3884,14 @@ function SessionsPane({
                                       label={isPinned ? "取消置顶" : "置顶"}
                                       onClick={() => {
                                         setMenuFor(null);
-                                        togglePin(s.id);
+                                        onTogglePin(s.id);
                                       }}
                                     />
                                     <MenuItem
                                       label="导出"
                                       onClick={() => {
                                         setMenuFor(null);
-                                        void exportSession(s);
+                                        onExport(s);
                                       }}
                                     />
                                     <div className="my-1 h-px" style={{ background: "var(--color-border)" }} />
@@ -3925,6 +4053,35 @@ function SessionsPane({
         </div>
       )}
     </>
+  );
+}
+
+/** 顶栏图标按钮：28px 命中区 + 常驻 tooltip（不靠 hover 才认识） */
+function IconBtn({
+  label,
+  onClick,
+  path,
+  active,
+}: {
+  label: string;
+  onClick: () => void;
+  path: string;
+  active?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      data-tap
+      data-tip={label}
+      aria-label={label}
+      onClick={onClick}
+      className="grid h-7 w-7 shrink-0 place-items-center rounded-[var(--radius-xs)] hover:bg-[var(--bg-selected)]"
+      style={{ color: active ? "var(--color-text)" : "var(--color-text-2)" }}
+    >
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d={path} />
+      </svg>
+    </button>
   );
 }
 
