@@ -1,12 +1,12 @@
 "use client";
 
 /**
- * 产物条：Agent 这一轮到底交付了什么。
+ * 产物入口：Agent 这一轮到底交付了什么。
  *
  * 只有一个来源：会话工作目录下的 `product/`（后端 deliverables.scan）。
- * 存在就常驻一行 —— 一行一对象，不点开也知道产出了什么；点开就地预览，
- * 不跳页、不弹窗、不留第二个入口。没有产物时**整块不渲染**（常驻一个空
- * 「暂无产物」会被当成功能坏了）。
+ * 形态（阶段 5 起）：输入卡片上方一枚 28px 胶囊「产物 · N」，点开是浮层面板
+ * （预览 / 下载 / 发布）。原来它是一条常驻 48px 的横条，和输入区抢空间；
+ * 没有产物时整块不渲染（常驻一个空「暂无产物」会被当成功能坏了）。
  */
 
 import { useEffect, useState } from "react";
@@ -85,104 +85,134 @@ export function DeliverableBar({ sessionId }: { sessionId?: string }) {
   };
 
   return (
-    <div
-      className="mb-2 rounded-[14px] border"
-      style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
-      data-deliverable
-    >
-      <div className="flex min-h-[48px] items-center gap-2 px-3 py-1.5 max-md:flex-wrap">
-        <span
-          className="shrink-0 rounded-[6px] px-1.5 py-0.5 text-[11px]"
+    <div className="relative" data-deliverable>
+      {/* 紧凑入口：一行小胶囊「产物 · N」，点开才展开面板 */}
+      <button
+        type="button"
+        data-tap
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        title={entry}
+        className="inline-flex h-7 items-center gap-1.5 rounded-[var(--radius-pill)] border px-2.5 text-[var(--fs-sm)] transition-colors hover:bg-[var(--bg-selected)]"
+        style={{
+          borderColor: open
+            ? "var(--color-accent)"
+            : "color-mix(in srgb, var(--color-accent) 40%, transparent)",
+          color: "var(--color-accent)",
+          background: open
+            ? "color-mix(in srgb, var(--color-accent) 8%, transparent)"
+            : "transparent",
+        }}
+      >
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
+        </svg>
+        产物 · {info.file_count}
+        <svg
+          width="10"
+          height="10"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+          style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform var(--dur-1)" }}
+        >
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+
+      {open && (
+        <div
+          className="absolute bottom-[calc(100%+8px)] left-0 z-40 w-[min(560px,calc(100vw-32px))] overflow-hidden rounded-[var(--radius-lg)]"
           style={{
-            color: "var(--color-accent)",
-            background: "color-mix(in srgb, var(--color-accent) 12%, transparent)",
+            background: "var(--color-surface)",
+            border: "1px solid var(--color-border)",
+            boxShadow: "var(--shadow-3)",
           }}
         >
-          产物
-        </span>
-        <button
-          type="button"
-          data-tap
-          onClick={() => setOpen((v) => !v)}
-          className="min-w-0 flex-1 text-left"
-          title={entry}
-        >
-          <span className="text-[13px]">{name}</span>
-          <span className="ml-2 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
-            {KIND_LABEL[info.kind] || "文件"} · {info.file_count} 个文件 · {fmtSize(info.size)}
-          </span>
-        </button>
-        {previewable && (
-          <button
-            type="button"
-            data-tap
-            className="btn h-[32px] px-3 text-[12.5px] max-md:h-[44px]"
-            onClick={() => setOpen((v) => !v)}
-          >
-            {open ? "收起" : "预览"}
-          </button>
-        )}
-        <a
-          href={api.deliverableZipUrl(sessionId)}
-          data-tap
-          className="flex h-[32px] items-center px-2 text-[12.5px] max-md:h-[44px] max-md:min-w-[44px] max-md:justify-center"
-          style={{ color: "var(--color-muted)" }}
-        >
-          下载
-        </a>
-        <button
-          type="button"
-          data-tap
-          onClick={() => void publish()}
-          disabled={busy}
-          className="h-[32px] px-2 text-[12.5px] max-md:h-[44px] max-md:min-w-[44px]"
-          style={{ color: "var(--color-accent)", opacity: busy ? 0.6 : 1 }}
-        >
-          {busy ? "发布中…" : "发布"}
-        </button>
-      </div>
+          <div className="flex min-h-[44px] items-center gap-2 px-3 py-1.5 max-md:flex-wrap">
+            <span
+              className="shrink-0 rounded-[var(--radius-xs)] px-1.5 py-0.5 text-[var(--fs-xs)]"
+              style={{
+                color: "var(--color-accent)",
+                background: "color-mix(in srgb, var(--color-accent) 12%, transparent)",
+              }}
+            >
+              产物
+            </span>
+            <span className="min-w-0 flex-1 truncate text-[var(--fs-base)]" title={entry}>
+              {name}
+              <span className="ml-2 text-[var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
+                {KIND_LABEL[info.kind] || "文件"} · {info.file_count} 个文件 · {fmtSize(info.size)}
+              </span>
+            </span>
+            <a
+              href={api.deliverableZipUrl(sessionId)}
+              data-tap
+              className="flex h-[32px] items-center rounded-[var(--radius-xs)] px-2 text-[var(--fs-sm)] hover:bg-[var(--bg-selected)]"
+              style={{ color: "var(--color-text-2)" }}
+            >
+              下载
+            </a>
+            <button
+              type="button"
+              data-tap
+              onClick={() => void publish()}
+              disabled={busy}
+              className="h-[32px] rounded-[var(--radius-xs)] px-2 text-[var(--fs-sm)] hover:bg-[var(--bg-selected)]"
+              style={{ color: "var(--color-accent)", opacity: busy ? 0.6 : 1 }}
+            >
+              {busy ? "发布中…" : "发布"}
+            </button>
+          </div>
 
-      {link && (
-        <div className="flex items-center gap-2 border-t px-3 py-1.5" style={{ borderColor: "var(--color-border)" }}>
-          <span className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
-            已发布
-          </span>
-          <a
-            href={link}
-            target="_blank"
-            rel="noreferrer"
-            className="min-w-0 flex-1 truncate text-[12px] underline"
-            style={{ color: "var(--color-accent)" }}
-          >
-            {link}
-          </a>
-          <button
-            type="button"
-            data-tap
-            className="h-[28px] px-2 text-[12px] max-md:h-[44px]"
-            style={{ color: "var(--color-muted)" }}
-            onClick={() => void copy()}
-          >
-            复制
-          </button>
-        </div>
-      )}
+          {previewable && (
+            <div className="border-t" style={{ borderColor: "var(--color-border)" }}>
+              <iframe
+                src={info.entry_url || ""}
+                title={name}
+                className="block w-full"
+                style={{ height: "min(52vh, 460px)", border: 0, background: "#fff" }}
+                sandbox="allow-scripts allow-forms allow-popups allow-modals allow-downloads"
+              />
+            </div>
+          )}
 
-      {err && (
-        <div className="border-t px-3 py-1.5 text-[11.5px]" style={{ borderColor: "var(--color-border)", color: "var(--color-danger, #dc2626)" }}>
-          {err}
-        </div>
-      )}
+          {link && (
+            <div className="flex items-center gap-2 border-t px-3 py-1.5" style={{ borderColor: "var(--color-border)" }}>
+              <span className="text-[var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>已发布</span>
+              <a
+                href={link}
+                target="_blank"
+                rel="noreferrer"
+                className="min-w-0 flex-1 truncate text-[var(--fs-sm)] underline"
+                style={{ color: "var(--color-accent)" }}
+              >
+                {link}
+              </a>
+              <button
+                type="button"
+                data-tap
+                className="h-[28px] px-2 text-[var(--fs-sm)]"
+                style={{ color: "var(--color-text-2)" }}
+                onClick={() => void copy()}
+              >
+                复制
+              </button>
+            </div>
+          )}
 
-      {open && previewable && (
-        <div className="border-t" style={{ borderColor: "var(--color-border)" }}>
-          <iframe
-            src={info.entry_url || ""}
-            title={name}
-            className="block w-full rounded-b-[13px]"
-            style={{ height: "min(62vh, 560px)", border: 0, background: "#fff" }}
-            sandbox="allow-scripts allow-forms allow-popups allow-modals allow-downloads"
-          />
+          {err && (
+            <div
+              className="border-t px-3 py-1.5 text-[var(--fs-xs)]"
+              style={{ borderColor: "var(--color-border)", color: "var(--color-err)" }}
+            >
+              {err}
+            </div>
+          )}
         </div>
       )}
     </div>

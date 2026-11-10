@@ -2436,6 +2436,13 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 {live?.role === "assistant" && (
                   <Bubble role="assistant" content={live.text} streaming />
                 )}
+                {/* 追问建议：放在最新回复下面（最多 3 个，来自设置里的常用句），
+                    点一下填进输入框 —— 输入区上方不再常驻一排胶囊。 */}
+                {!busy && !live && history.length > 0 && (
+                  <div className="pt-1">
+                    <QuickTags onPick={appendToInput} />
+                  </div>
+                )}
               </div>
             )}
             <div ref={endRef} />
@@ -2847,49 +2854,6 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               {/* 产物条：助手把成品写进会话目录的 product/ 之后常驻在这里 ——
                   和在对话里读一段文字相比，用户要的是「能打开的东西」。 */}
               <DeliverableBar sessionId={sessionId || undefined} />
-              {/* 快速标签：常说的几句点一下就填进输入框（标签本身在设置里增删）。
-                  空会话不出现 —— 一句话都没有的时候，「询问是否完成」没上下文，
-                  只是白占输入区上方一行。 */}
-              {(history.length > 0 || live) && (
-              <div className="composer-chips">
-              <QuickTags
-                prefix={
-                  <>
-                  {sessionId && fileCount > 0 ? (
-                    <button
-                      type="button"
-                      data-tap
-                      onClick={toggleFiles}
-                      aria-expanded={openFiles}
-                      title={`这个会话产出的 ${fileCount} 个文件（点开看清单）`}
-                      /* 只给它上 accent 色：它是「这次的产出」（对象），右边那排是
-                         「点了填进输入框」（动作）。同一款胶囊，靠颜色分性质 ——
-                         尺寸和形态一个字没动，宁可轻也不要做粗。 */
-                      className="chip-thin shrink-0 inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full border text-[12px] transition-colors hover:bg-[var(--color-surface-2)]"
-                      style={{
-                        borderColor: openFiles
-                          ? "var(--color-accent)"
-                          : "color-mix(in srgb, var(--color-accent) 42%, transparent)",
-                        background: openFiles
-                          ? "color-mix(in srgb, var(--color-accent) 10%, transparent)"
-                          : "transparent",
-                        color: "var(--color-accent)",
-                      }}
-                    >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
-                      </svg>
-                      {fileCount} 个文件
-                    </button>
-                  ) : null}
-
-                  </>
-                }
-                onPick={appendToInput}
-              />
-              </div>
-              )}
-
               {/* 认不出来时的候选条：这句话留在手里，点谁就用谁发（不再猜第二遍） */}
               {routeAsk && (
                 <div
@@ -2965,7 +2929,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                   三条投喂路径统一走 addFiles：点附件 / 粘贴截图 / 拖文件进来。 */}
               <div
                 data-composer
-                className="composer-focus rounded-[18px] border"
+                className="composer-focus rounded-[var(--radius-2xl)] border"
                 style={{
                   borderColor: paused
                     ? "var(--color-warn)"
@@ -2976,8 +2940,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                   backdropFilter: "blur(22px) saturate(1.9)",
                   WebkitBackdropFilter: "blur(22px) saturate(1.9)",
                   boxShadow: dragging
-                    ? "inset 0 1px 0 rgba(255,255,255,.7), 0 12px 32px -8px rgba(37,99,235,.28), 0 2px 8px -2px rgba(15,23,42,.12)"
-                    : "inset 0 1px 0 rgba(255,255,255,.7), 0 10px 30px -10px rgba(15,23,42,.22), 0 2px 8px -3px rgba(15,23,42,.10)",
+                    ? "inset 0 1px 0 rgba(255,255,255,.7), 0 12px 32px -8px rgba(37,99,235,.28)"
+                    : "var(--shadow-2)",
                 }}
                 onDragOver={(e) => {
                   if (e.dataTransfer.types.includes("Files")) {
@@ -3002,8 +2966,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 <textarea
                   ref={taRef}
                   rows={1}
-                  className="block w-full resize-none bg-transparent border-0 outline-none px-3.5 py-2 text-[14px] leading-[24px] min-h-[44px] sm:min-h-[88px]"
-                  style={{ maxHeight: "40vh" }}
+                  className="block w-full resize-none bg-transparent border-0 outline-none px-4 py-3 text-[14px] leading-[24px] min-h-[56px]"
+                  style={{ maxHeight: 208 }}
                   placeholder={
                     paused
                       ? "运行暂停，先处理上面的授权…"
@@ -3096,55 +3060,36 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     {/* 自动挑：开着的时候每句话先过路由 —— 认不出来会问，不会闷头猜。
                         选了 Router（编排者）就不出现：路由是它的本职，再让用户挑人等于把它架空。 */}
                     {!isRouterAgent && (
-                    <button
-                      data-tap
-                      type="button"
-                      aria-pressed={autoPick}
-                      title={
-                        autoPick
-                          ? "自动挑开着：每句话按内容交给合适的助手"
-                          : "打开后按内容自动挑助手（认不出来会问你一句）"
-                      }
-                      onClick={() => {
-                        const next = !autoPick;
-                        setAutoPick(next);
-                        if (!next) {
-                          setRouteAsk(null);
-                          setRouteNote(null);
-                        }
-                        try {
-                          window.localStorage.setItem("studio.autoPick", next ? "1" : "0");
-                        } catch {
-                          /* 存不了就算了，下次默认关 */
-                        }
-                      }}
-                      className="h-[44px] sm:h-8 px-2 shrink-0 flex items-center gap-1 rounded-xl text-[11.5px]"
-                      style={{
-                        color: autoPick ? "var(--color-accent)" : "var(--color-muted)",
-                        background: autoPick
-                          ? "color-mix(in srgb, var(--color-accent) 12%, transparent)"
-                          : "transparent",
-                      }}
+                    <label
+                      className="flex h-8 shrink-0 items-center gap-1 rounded-[var(--radius-sm)] px-1.5 text-[var(--fs-sm)]"
+                      style={{ color: "var(--color-text-2)" }}
+                      title="这句话交给谁：当前助手 / 按内容自动挑（认不出来会问你）"
                     >
-                      <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.9"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        aria-hidden="true"
+                      交给
+                      <select
+                        value={autoPick ? "auto" : "manual"}
+                        onChange={(e) => {
+                          const next = e.target.value === "auto";
+                          setAutoPick(next);
+                          if (!next) {
+                            setRouteAsk(null);
+                            setRouteNote(null);
+                          }
+                          try {
+                            window.localStorage.setItem("studio.autoPick", next ? "1" : "0");
+                          } catch {
+                            /* 存不了就算了，下次默认关 */
+                          }
+                        }}
+                        className="h-7 rounded-[var(--radius-xs)] border-0 bg-transparent pr-1 text-[var(--fs-sm)] outline-none"
+                        style={{ color: "var(--color-text)" }}
                       >
-                        <path d="M4 7h5l4 10h5" />
-                        <path d="M4 17h5l2-5" />
-                        <path d="M15 4l3 3-3 3" />
-                      </svg>
-                      自动
-                    </button>
+                        <option value="manual">当前助手</option>
+                        <option value="auto">自动挑</option>
+                      </select>
+                    </label>
                     )}
-                    {paths && (
+                    {false && (
                       <button
                         data-tap
                         type="button"
@@ -3199,17 +3144,27 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                       <button
                         data-tap
                         type="button"
-                        title={paused ? "运行暂停，先处理授权" : "发送（Enter）"}
+                        title={
+                          paused
+                            ? "运行暂停，先处理授权"
+                            : input.trim() || pendingFiles.length > 0
+                              ? "发送（Enter）"
+                              : "写点什么再发"
+                        }
                         disabled={paused || (!input.trim() && pendingFiles.length === 0)}
                         onClick={() => void send()}
-                        /* 同样不要底板：一根箭头。有内容时是强调色，空的时候是灰的，
-                           点不了就 40% 透明 —— 状态靠颜色，不靠画个圆。 */
-                        className="w-11 h-11 shrink-0 grid place-items-center rounded-full transition-colors hover:bg-[var(--color-surface-2)] disabled:opacity-40"
+                        /* 实心强调色只留给"发送"：有内容 = 蓝底白箭头；
+                           空内容 = 灰底，点了也没反应。 */
+                        className="w-9 h-9 shrink-0 grid place-items-center rounded-full transition-colors disabled:cursor-not-allowed"
                         style={{
-                          color:
+                          background:
                             input.trim() || pendingFiles.length > 0
                               ? "var(--color-accent)"
-                              : "var(--color-muted)",
+                              : "var(--color-surface-2)",
+                          color:
+                            input.trim() || pendingFiles.length > 0
+                              ? "var(--color-accent-fg)"
+                              : "var(--color-text-3)",
                         }}
                       >
                         <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
