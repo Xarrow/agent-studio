@@ -40,7 +40,6 @@ import { SkillEntry, ToolEntry, MemoryEntry } from "./ToolEntries";
 import { Sheet } from "./ui/Sheet";
 import { MemoryPicker } from "./MemoryPicker";
 import { QuickTags } from "./QuickTags";
-import { DeliverableBar } from "./DeliverableBar";
 import { SourceBadge } from "./SourceBadge";
 import { FileOpenerProvider, FileRowButton } from "@/components/FileDialog";
 import { copyText } from "@/lib/clipboard";
@@ -212,6 +211,27 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
       return next;
     });
   };
+  /** 会话产物（product/）：不再挂输入区上方，改成会话文件面板里的第一行 */
+  const [dl, setDl] = useState<Awaited<ReturnType<typeof api.sessionDeliverable>> | null>(null);
+  useEffect(() => {
+    setDl(null);
+    if (!sessionId) return;
+    let alive = true;
+    const tick = () =>
+      api
+        .sessionDeliverable(sessionId)
+        .then((d) => {
+          if (alive) setDl(d);
+        })
+        .catch(() => {});
+    tick();
+    const t = setInterval(tick, 8000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [sessionId]);
+
   /** 输入卡片左下角「+」菜单 */
   const [plusOpen, setPlusOpen] = useState(false);
 
@@ -2691,6 +2711,50 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                 }
               >
 
+                {/* 产物：以前挂在输入区上方占一整条，现在收进这个面板的第一行。
+                    移动端没有右栏，也照样从这里进 —— 面板在手机上是贴底抽屉。 */}
+                {dl?.exists && (
+                  <div
+                    className="mb-1 flex items-center gap-2 rounded-[var(--radius-sm)] px-2 py-1.5"
+                    style={{ background: "var(--color-surface-2)" }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
+                    </svg>
+                    <span className="min-w-0 flex-1 truncate text-[length:var(--fs-sm)]" style={{ color: "var(--color-text)" }}>
+                      产物 · {dl.file_count} 个文件
+                      <span className="ml-1.5" style={{ color: "var(--color-text-3)" }}>
+                        {fmt.bytes(dl.size || 0)}
+                      </span>
+                    </span>
+                    <a
+                      href={api.deliverableZipUrl(sessionId)}
+                      data-tap
+                      className="shrink-0 rounded px-1.5 py-0.5 text-[length:var(--fs-xs)] hover:bg-[var(--color-surface)]"
+                      style={{ color: "var(--color-text-2)" }}
+                    >
+                      下载
+                    </a>
+                    <button
+                      type="button"
+                      data-tap
+                      className="shrink-0 rounded px-1.5 py-0.5 text-[length:var(--fs-xs)] hover:bg-[var(--color-surface)]"
+                      style={{ color: "var(--color-accent)" }}
+                      onClick={async () => {
+                        try {
+                          const r = await api.publishSessionDeliverable(sessionId);
+                          if (r.url) fb.success("已发布", r.url);
+                          else fb.info("已发到服务器目录", `${r.dir}/${r.slug}/`);
+                        } catch (e) {
+                          fb.error("发布失败", e instanceof Error ? e.message : String(e));
+                        }
+                      }}
+                    >
+                      发布
+                    </button>
+                  </div>
+                )}
+
                 {/* 路径只在桌面上露一行，点一下复制；手机上它有 0 信息量 ——
                     要的是「有哪些文件」，路径属于排查时才看的东西。 */}
                 {sessionFiles?.work_dir && (
@@ -2854,9 +2918,6 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             )}
 
             <div className="max-w-[760px] mx-auto relative">
-              {/* 产物条：助手把成品写进会话目录的 product/ 之后常驻在这里 ——
-                  和在对话里读一段文字相比，用户要的是「能打开的东西」。 */}
-              <DeliverableBar sessionId={sessionId || undefined} />
               {/* 认不出来时的候选条：这句话留在手里，点谁就用谁发（不再猜第二遍） */}
               {routeAsk && (
                 <div
@@ -3064,7 +3125,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                             }}
                           />
                           <MenuItem
-                            label="会话文件"
+                            label="文件 · 产物"
                             onClick={() => {
                               setPlusOpen(false);
                               toggleFiles();
