@@ -212,6 +212,9 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
       return next;
     });
   };
+  /** 输入卡片左下角「+」菜单 */
+  const [plusOpen, setPlusOpen] = useState(false);
+
   /** 顶栏：标题就地改名 / 更多菜单 / 滚动后出现分隔线 */
   const [headerEditing, setHeaderEditing] = useState(false);
   const [headerDraft, setHeaderDraft] = useState("");
@@ -3017,23 +3020,75 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                   >
                   {!busy && (
                   <>
-                  <button
-                    data-tap
-                    type="button"
-                    className="w-9 h-9 sm:w-8 sm:h-8 shrink-0 flex items-center justify-center rounded-xl text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] disabled:opacity-40"
-                    title="添加附件（可粘贴截图、拖入文件）"
-                    disabled={paused || uploading}
-                    onClick={() => fileRef.current?.click()}
-                  >
-                    {uploading ? (
-                      <span className="text-[13px]">…</span>
-                    ) : (
-                      /* 内联 SVG 回形针（禁 emoji 图标） */
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-                      </svg>
+                  {/* 「+」菜单：附件、会话文件、整理成文档、整理成 Skills 全从这里进。
+                      原来只有一颗回形针，另外两个动作散在追问建议里，等于没有固定入口。 */}
+                  <div className="relative shrink-0">
+                    <button
+                      data-tap
+                      type="button"
+                      className="flex h-9 items-center gap-1 rounded-[var(--radius-sm)] px-1.5 text-[var(--fs-sm)] disabled:opacity-40 hover:bg-[var(--bg-selected)] sm:h-8"
+                      style={{ color: "var(--color-text-2)" }}
+                      title="添加：附件 / 会话文件 / 整理成文档 / 整理成 Skills"
+                      aria-haspopup="menu"
+                      aria-expanded={plusOpen}
+                      disabled={paused || uploading}
+                      onClick={() => setPlusOpen((v) => !v)}
+                    >
+                      {uploading ? (
+                        <span className="text-[13px]">…</span>
+                      ) : (
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                          <path d="M12 5v14M5 12h14" />
+                        </svg>
+                      )}
+                      <span className="hidden sm:inline">添加</span>
+                    </button>
+
+                    {plusOpen && (
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={() => setPlusOpen(false)} />
+                        <div
+                          className="absolute bottom-[calc(100%+6px)] left-0 z-50 w-[190px] rounded-[var(--radius-md)] py-1"
+                          role="menu"
+                          style={{
+                            background: "var(--color-surface)",
+                            border: "1px solid var(--color-border)",
+                            boxShadow: "var(--shadow-2)",
+                          }}
+                        >
+                          <MenuItem
+                            label="上传附件"
+                            onClick={() => {
+                              setPlusOpen(false);
+                              fileRef.current?.click();
+                            }}
+                          />
+                          <MenuItem
+                            label="会话文件"
+                            onClick={() => {
+                              setPlusOpen(false);
+                              toggleFiles();
+                            }}
+                          />
+                          <div className="my-1 h-px" style={{ background: "var(--color-border)" }} />
+                          <MenuItem
+                            label="整理成文档"
+                            onClick={() => {
+                              setPlusOpen(false);
+                              appendToInput("把上面这轮整理成一份 Markdown 文档，存到会话目录的 product/ 下");
+                            }}
+                          />
+                          <MenuItem
+                            label="整理成 Skills"
+                            onClick={() => {
+                              setPlusOpen(false);
+                              appendToInput("把上面这套做法整理成一个 Skill（写 SKILL.md 到 skills/ 目录）");
+                            }}
+                          />
+                        </div>
+                      </>
                     )}
-                  </button>
+                  </div>
                   {/* 一个定时任务都没有时才摆这个入口：有了上面就有 strip，含「＋ 再排一个」 */}
                   {sessionId && jobCount === 0 && <JobButton onClick={() => setJobOpen(true)} />}
 
