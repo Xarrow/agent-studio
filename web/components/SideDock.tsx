@@ -186,8 +186,8 @@ export function SideDock({
     <aside
       data-sidedock
       data-open={open ? "1" : "0"}
-      className="relative hidden shrink-0 flex-row border-l xl:flex"
-      style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+      className="relative hidden shrink-0 flex-row xl:flex"
+      style={{ background: "var(--color-surface)" }}
     >
       {/* 拖宽手柄：贴在面板左缘，宽 6px，命中区比线宽大 */}
       {open ? (
@@ -207,7 +207,7 @@ export function SideDock({
       {/* 图标轨：收起态就是它 */}
       <div
         className="flex w-[52px] shrink-0 flex-col items-center gap-1 py-2"
-        style={{ borderRight: open ? "1px solid var(--color-border)" : "none" }}
+        style={{ background: "var(--color-surface-2)" }}
       >
         {rail(
           "browser",

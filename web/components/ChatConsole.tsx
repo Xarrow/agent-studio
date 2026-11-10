@@ -1716,7 +1716,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             创建一个，然后就能像发消息一样让它干活了。
           </p>
           <div className="flex flex-col sm:flex-row gap-2 justify-center">
-            <Link href="/agents" className="btn btn-primary text-[13px]">
+            <Link href="/agents" className="rounded-[var(--radius-sm)] px-3 py-1.5 text-[13px]" style={{ background: "var(--color-surface-2)", color: "var(--color-text)" }}>
               创建一个助手
             </Link>
             <Link href="/credentials" className="btn text-[13px]">
@@ -1766,7 +1766,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
         {/* ── 会话栏（桌面在流内，可收起；窄屏走抽屉）────────────────────
             收起后不留空白 —— 只剩 44px 的把手，点一下回来。 */}
         {navOpen ? (
-          <aside className="hidden lg:flex w-[264px] shrink-0 border-r border-[var(--color-border)] bg-[var(--color-surface)] flex-col min-h-0">
+          <aside className="hidden lg:flex w-[264px] shrink-0 bg-[var(--color-surface)] flex-col min-h-0">
             <SessionsPane
               agentSlot={
                 controlledAgentId === undefined ? (
@@ -1799,7 +1799,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             />
           </aside>
         ) : (
-          <div className="hidden lg:flex w-11 shrink-0 flex-col items-center gap-2 py-3 border-r border-[var(--color-border)] bg-[var(--color-surface)]">
+          <div className="hidden lg:flex w-11 shrink-0 flex-col items-center gap-2 py-3 bg-[var(--color-surface)]">
             {(
               <AgentSwitcher
                 variant="mini"
@@ -1834,7 +1834,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
         {mobileNav && (
           <div className="lg:hidden fixed inset-0 z-40 flex">
             <div className="veil-in absolute inset-0" style={{ background: "rgba(15,23,42,.28)" }} onClick={() => setMobileNav(false)} />
-            <div className="drawer-in relative w-[312px] max-w-[86vw] bg-[var(--color-surface)] border-r border-[var(--color-border)] flex flex-col min-h-0">
+            <div className="drawer-in relative w-[312px] max-w-[86vw] bg-[var(--color-surface)] flex flex-col min-h-0">
               {navView === "menu" ? (
                 /* 功能视图 —— 和桌面侧栏同一份定义、同样的完整标签 */
                 <>
@@ -3489,7 +3489,8 @@ function SessionsPane({
       {/* 头部：新对话 + 管理（批量） */}
       <div className="px-2.5 pb-1.5 flex items-center gap-1.5">
         <button
-          className="btn btn-primary flex-1 !min-h-[40px] max-md:!min-h-[44px] max-md:text-[14px]"
+          className="flex-1 rounded-[var(--radius-sm)] min-h-[40px] max-md:min-h-[44px] text-[var(--fs-base)] max-md:text-[var(--fs-md)] transition-colors hover:brightness-[0.97]"
+          style={{ background: "var(--color-surface-2)", color: "var(--color-text)" }}
           onClick={onNew}
         >
           + 新对话
@@ -4431,7 +4432,7 @@ function Bubble({
         <div
           className={`break-words ${
             isUser
-              ? `text-white w-fit max-w-full whitespace-pre-wrap [word-break:break-all] ml-auto text-[15px] ${
+              ? `text-[var(--color-text)] w-fit max-w-full whitespace-pre-wrap [word-break:break-all] ml-auto text-[15px] ${
                   /* 短消息（一行内、无附件）= 胶囊；长消息 = 18px 圆角块，右下角收成 6px
                      （气泡"尾巴"角），右边贴齐。用户要求：气泡样式与尺寸激进一点。 */
                   shortMsg
@@ -4443,9 +4444,8 @@ function Bubble({
           style={
             isUser
               ? {
-                  background: "var(--color-accent)",
-                  boxShadow:
-                    "0 1px 2px color-mix(in srgb, var(--color-accent) 32%, transparent), inset 0 1px 0 rgba(255,255,255,0.14)",
+                  background: "var(--color-surface-2)",
+                  boxShadow: "var(--shadow-1)",
                 }
               : undefined
           }
@@ -4473,7 +4473,7 @@ function Bubble({
                           src={a.url}
                           alt={a.name}
                           className="max-h-40 rounded-lg object-cover border"
-                          style={{ borderColor: "rgba(255,255,255,0.35)" }}
+                          style={{ borderColor: "var(--color-border)" }}
                         />
                       </a>
                     ) : (
