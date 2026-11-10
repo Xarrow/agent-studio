@@ -3372,6 +3372,21 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
           filesBusy={filesBusy}
           onFilesRefresh={() => void loadSessionFiles()}
           hasNewFiles={fileCount > filesSeen}
+          deliverable={dl}
+          deliverableZipUrl={sessionId ? api.deliverableZipUrl(sessionId) : undefined}
+          onPublishDeliverable={
+            sessionId
+              ? () => {
+                  void api
+                    .publishSessionDeliverable(sessionId)
+                    .then((r) => {
+                      if (r.url) fb.success("已发布", r.url);
+                      else fb.info("已发到服务器目录", `${r.dir}/${r.slug}/`);
+                    })
+                    .catch((e) => fb.error("发布失败", e instanceof Error ? e.message : String(e)));
+                }
+              : undefined
+          }
         />
       </div>
 

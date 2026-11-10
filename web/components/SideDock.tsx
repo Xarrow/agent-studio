@@ -55,6 +55,9 @@ export function SideDock({
   filesBusy,
   onFilesRefresh,
   hasNewFiles,
+  deliverable,
+  onPublishDeliverable,
+  deliverableZipUrl,
 }: {
   panel: DockPanel | null;
   onPanel: (p: DockPanel) => void;
@@ -77,6 +80,10 @@ export function SideDock({
   filesBusy?: boolean;
   onFilesRefresh?: () => void;
   hasNewFiles?: boolean;
+  /** 会话产物（product/）：面板顶部一行，跟"文件 · 产物"菜单同源 */
+  deliverable?: { exists: boolean; file_count: number; size: number } | null;
+  onPublishDeliverable?: () => void;
+  deliverableZipUrl?: string;
 }) {
   const [dragging, setDragging] = useState(false);
   const dragRef = useRef<{ x: number; w: number } | null>(null);
@@ -281,6 +288,41 @@ export function SideDock({
             </div>
           ) : (
             <div className="flex min-h-0 flex-1 flex-col">
+              {deliverable?.exists ? (
+                <div
+                  className="mx-2 mt-2 flex items-center gap-2 rounded-[var(--radius-sm)] px-2 py-1.5"
+                  style={{ background: "var(--color-surface-2)" }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
+                  </svg>
+                  <span className="min-w-0 flex-1 truncate text-[length:var(--fs-sm)]" style={{ color: "var(--color-text)" }}>
+                    产物 · {deliverable.file_count}
+                  </span>
+                  {deliverableZipUrl ? (
+                    <a
+                      href={deliverableZipUrl}
+                      data-tap
+                      className="shrink-0 rounded px-1.5 py-0.5 text-[length:var(--fs-xs)] hover:bg-[var(--color-surface)]"
+                      style={{ color: "var(--color-text-2)" }}
+                    >
+                      下载
+                    </a>
+                  ) : null}
+                  {onPublishDeliverable ? (
+                    <button
+                      type="button"
+                      data-tap
+                      onClick={onPublishDeliverable}
+                      className="shrink-0 rounded px-1.5 py-0.5 text-[length:var(--fs-xs)] hover:bg-[var(--color-surface)]"
+                      style={{ color: "var(--color-accent)" }}
+                    >
+                      发布
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+
               <div className="flex items-center gap-1.5 px-2 py-2">
                 <input
                   className="input h-8 flex-1 text-[12px]"
