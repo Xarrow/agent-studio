@@ -147,15 +147,16 @@ export function SideDock({
     [onFilesRefresh],
   );
 
-  const rail = (p: DockPanel, label: string, dot: "live" | "new" | null, icon: React.ReactNode) => {
+  const rail = (p: DockPanel, label: string, badge: number, icon: React.ReactNode) => {
     const active = open && panel === p;
+    const tip = open && panel === p ? `收起${label}` : badge > 0 ? `${label} · ${badge}` : label;
     return (
       <button
         key={p}
         type="button"
         data-tap
-        title={open && panel === p ? `收起${label}` : label}
-        aria-label={label}
+        data-tip={tip}
+        aria-label={tip}
         aria-pressed={active}
         onClick={() => {
           if (open && panel === p) {
@@ -172,12 +173,10 @@ export function SideDock({
         }}
       >
         {icon}
-        {dot ? (
-          <span
-            aria-hidden
-            className={dot === "live" ? "live-dot absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full" : "absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full"}
-            style={{ background: dot === "live" ? "var(--color-accent)" : "var(--color-err)" }}
-          />
+        {badge > 0 ? (
+          <span aria-hidden className="count-badge">
+            {badge > 99 ? "99+" : badge}
+          </span>
         ) : null}
       </button>
     );
@@ -213,7 +212,7 @@ export function SideDock({
         {rail(
           "browser",
           "浏览器",
-          browserBusy ? "live" : browserWaiting ? "new" : null,
+          steps.length,
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <circle cx="12" cy="12" r="9" />
             <path d="M3 9h18M9 3c-2 3-2 15 0 18M15 3c2 3 2 15 0 18" />
@@ -222,7 +221,7 @@ export function SideDock({
         {rail(
           "files",
           "会话文件",
-          hasNewFiles ? "new" : null,
+          files.length,
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <path d="M4 7a2 2 0 0 1 2-2h3l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" />
           </svg>,

@@ -45,6 +45,8 @@ export function Nav() {
   const currentLabel =
     [...USE_ITEMS, ...SETUP_ITEMS].find((i) => i.href === pathname)?.label ?? "Agent Studio";
   const [drawerOpen, setDrawerOpen] = useState(false);
+  /** 「设置」二级面板：配置类入口收在这里，不占常驻宽度 */
+  const [setupOpen, setSetupOpen] = useState(false);
 
   // 路由变化就收起抽屉
   useEffect(() => setDrawerOpen(false), [pathname]);
@@ -68,20 +70,14 @@ export function Nav() {
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
 
-  // ── 侧栏折叠（lg 及以上：完整栏 ⇄ 图标条）───────────────────────────────
-  // 多栏布局里最左边这栏也让人能收起来，把宽度让给内容；选择写 localStorage。
-  const [navFolded, setNavFolded] = useState(false);
+  // 路由变化 / Esc 关掉设置面板
+  useEffect(() => setSetupOpen(false), [pathname]);
   useEffect(() => {
-    try {
-      setNavFolded(localStorage.getItem("nav.folded") === "1");
-    } catch {}
-  }, []);
-  const toggleNav = () => {
-    setNavFolded((v) => {
-      try { localStorage.setItem("nav.folded", v ? "0" : "1"); } catch {}
-      return !v;
-    });
-  };
+    if (!setupOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setSetupOpen(false);
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [setupOpen]);
 
   const rowCls = (active: boolean) =>
     `flex items-center gap-2.5 px-3 py-2 rounded-md text-[13px] transition-colors ${
@@ -175,93 +171,95 @@ export function Nav() {
         </>
       )}
 
-      {/* ── 平板图标条 / 桌面折叠后的图标条 ─────────────────── */}
-      <aside className={`hidden md:flex ${navFolded ? "" : "lg:hidden"} w-14 shrink-0 border-r border-[var(--color-border)] bg-[var(--color-surface)] flex-col items-center py-3 gap-1`}>
-        {/* 折叠态（lg+）的展开按钮：只在这一档出现，平板宽度靠汉堡菜单 */}
-        {navFolded && (
-          <button
-            data-tap
-            title="展开导航栏"
-            onClick={toggleNav}
-            className="hidden lg:flex w-11 h-9 items-center justify-center rounded-md text-[13px] text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] mb-1"
-          >
-            »
-          </button>
-        )}
-        {/* 概览页已移除（用户要求）—— 平板图标条上那一条也一起去掉 */}
+      {/* ── 一级导航：固定 56px 图标轨（md 以上）─────────────────────
+          只有一列图标，没有折叠按钮 —— 收起/展开这件事只留在会话栏那一个 « 。
+          配置类 6 项收进「设置」一个入口，点开是二级面板（不占常驻宽度）。
+          每个图标都带常驻 tooltip（hover / 键盘 focus 都出）。 */}
+      <nav
+        className="hidden md:flex w-14 shrink-0 flex-col items-center gap-1 py-2"
+        style={{ background: "var(--color-surface)" }}
+        aria-label="主导航"
+      >
         {USE_ITEMS.map((l) => (
           <Link
             key={l.href}
             href={l.href}
-            title={`${l.label} —— ${l.tip}`}
-            className={`w-9 h-9 flex items-center justify-center rounded-md ${
-              isActive(l.href)
-                ? "text-[var(--color-accent)] bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)]"
-                : "hover:bg-[var(--color-surface-2)]"
-            }`}
+            aria-label={l.label}
+            data-tip={l.label}
+            className="grid h-10 w-10 place-items-center rounded-[var(--radius-md)] transition-colors"
+            style={{
+              color: isActive(l.href) ? "var(--color-text)" : "var(--color-muted)",
+              background: isActive(l.href) ? "var(--bg-selected)" : "transparent",
+            }}
           >
-            <Icon d={ICON_PATHS[l.icon] ?? ""} size={16} />
+            <Icon d={ICON_PATHS[l.icon] ?? ""} size={17} />
           </Link>
         ))}
-        <div className="w-6 border-t border-[var(--color-border)] my-1" />
-        {SETUP_ITEMS.map((l) => (
-          <Link
-            key={l.href}
-            href={l.href}
-            title={`${l.label} —— ${l.tip}`}
-            className={`w-9 h-9 flex items-center justify-center rounded-md ${
-              isActive(l.href)
-                ? "text-[var(--color-accent)] bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)]"
-                : "hover:bg-[var(--color-surface-2)]"
-            }`}
-          >
-            <Icon d={ICON_PATHS[l.icon] ?? ""} size={16} />
-          </Link>
-        ))}
-      </aside>
 
-      {/* ── 桌面：完整侧边栏（可折叠成上面的图标条）─────────── */}
-      {!navFolded && (
-      <aside className="hidden lg:flex w-52 shrink-0 border-r border-[var(--color-border)] bg-[var(--color-surface)] flex-col">
-        <div className="px-4 py-4 border-b border-[var(--color-border)] flex items-start">
-          <div className="min-w-0">
-            <Link href="/" className="font-semibold text-[15px] tracking-tight block">
-              Agent Studio
-            </Link>
-            <div className="text-[10.5px] text-[var(--color-muted)] mt-0.5">
-              runtime-agnostic
-            </div>
-          </div>
+        <div className="relative mt-1">
           <button
+            type="button"
             data-tap
-            title="收起导航栏"
-            onClick={toggleNav}
-            className="ml-auto shrink-0 w-7 h-7 flex items-center justify-center rounded-md text-[12px] text-[var(--color-muted)] hover:bg-[var(--color-surface-2)]"
+            data-tip="设置"
+            aria-label="设置"
+            aria-expanded={setupOpen}
+            onClick={() => setSetupOpen((v) => !v)}
+            className="grid h-10 w-10 place-items-center rounded-[var(--radius-md)] transition-colors"
+            style={{
+              color: SETUP_ITEMS.some((l) => isActive(l.href))
+                ? "var(--color-text)"
+                : "var(--color-muted)",
+              background: SETUP_ITEMS.some((l) => isActive(l.href))
+                ? "var(--bg-selected)"
+                : "transparent",
+            }}
           >
-            «
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1" />
+            </svg>
           </button>
+
+          {setupOpen && (
+            <>
+              <button
+                type="button"
+                aria-hidden
+                tabIndex={-1}
+                className="fixed inset-0 z-40 cursor-default"
+                onClick={() => setSetupOpen(false)}
+              />
+              <div
+                className="absolute left-[calc(100%+8px)] top-0 z-50 w-[230px] rounded-[var(--radius-lg)] p-1"
+                style={{
+                  background: "var(--color-surface)",
+                  border: "1px solid var(--color-border)",
+                  boxShadow: "var(--shadow-2)",
+                }}
+                role="menu"
+              >
+                {SETUP_ITEMS.map((l) => (
+                  <Link
+                    key={l.href}
+                    href={l.href}
+                    role="menuitem"
+                    onClick={() => setSetupOpen(false)}
+                    className="flex min-h-[34px] items-center gap-2.5 rounded-[var(--radius-sm)] px-2.5 text-[var(--fs-base)]"
+                    style={{
+                      color: isActive(l.href) ? "var(--color-text)" : "var(--color-text-2)",
+                      background: isActive(l.href) ? "var(--bg-selected)" : "transparent",
+                    }}
+                    title={l.tip}
+                  >
+                    <Icon d={ICON_PATHS[l.icon] ?? ""} size={15} />
+                    <span className="truncate">{l.label}</span>
+                  </Link>
+                ))}
+              </div>
+            </>
+          )}
         </div>
-
-        <nav className="p-2 flex-1 overflow-auto">
-          {groupLabel("使用")}
-          {USE_ITEMS.map((l) => (
-            <Link key={l.href} href={l.href} className={rowCls(isActive(l.href))} title={l.tip}>
-              <Icon d={ICON_PATHS[l.icon] ?? ""} size={14} />
-              <span>{l.label}</span>
-            </Link>
-          ))}
-
-          {groupLabel("配置")}
-          {SETUP_ITEMS.map((l) => (
-            <Link key={l.href} href={l.href} className={rowCls(isActive(l.href))} title={l.tip}>
-              <Icon d={ICON_PATHS[l.icon] ?? ""} size={14} />
-              <span>{l.label}</span>
-            </Link>
-          ))}
-        </nav>
-
-      </aside>
-      )}
+      </nav>
     </>
   );
 }

@@ -1990,7 +1990,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             className="flex-1 overflow-auto max-lg:pt-[calc(44px+env(safe-area-inset-top))]"
             ref={boxRef}
             onScroll={onScroll}
-            style={{ paddingBottom: dockH + 8 }}
+            style={{ paddingBottom: dockH + 14 }}
             data-msg-scroll
           >
             {history.length === 0 && !live ? (
@@ -2270,7 +2270,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
           <div
             ref={dockRef}
             data-dock
-            className="absolute inset-x-0 bottom-0 z-20 px-3 sm:px-4 pt-0.5 pb-1"
+            className="absolute inset-x-0 bottom-0 z-20 px-3 sm:px-4 pt-0.5 pb-2.5 max-md:pb-[calc(10px+env(safe-area-inset-bottom))]"
             style={{
               background: "color-mix(in srgb, var(--color-bg) 34%, transparent)",
               backdropFilter: "blur(24px) saturate(2.1)",
@@ -3267,9 +3267,9 @@ function SessionsPane({
       <div className="px-2.5 pb-1.5">
         <div className="relative">
           <svg
-            className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
-            width="13"
-            height="13"
+            className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2"
+            width="16"
+            height="16"
             viewBox="0 0 24 24"
             fill="none"
             stroke="var(--color-muted)"
@@ -3284,7 +3284,10 @@ function SessionsPane({
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="搜索对话"
-            className="input pl-8 h-8 text-[12.5px]"
+            className="input h-9 text-[12.5px]"
+            /* .input 的 padding 是未分层 CSS，Tailwind 的 pl-* 压不过它（全站已知坑），
+               这里用内联把左内边距钉到 36px = 16(图标距) + 16(图标宽) + 4(间距) */
+            style={{ paddingLeft: 36 }}
             data-tap
           />
         </div>

@@ -52,6 +52,99 @@
   --color-scroll-hover: #445060;
 }
 
+/* ── 设计令牌（第二组）：圆角 / 字号 / 时长 / 阴影 / 点击区 ───────────── */
+:root {
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 22px;
+  --radius-pill: 999px;
+
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-base: 13px;
+  --fs-md: 14px;
+  --fs-lg: 15px;
+
+  --dur-1: 120ms;
+  --dur-2: 180ms;
+  --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+
+  --shadow-1: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-2: 0 6px 20px -8px rgba(15, 23, 42, 0.18);
+  --shadow-3: 0 14px 40px -16px rgba(15, 23, 42, 0.28);
+
+  --tap-min: 24px;
+  --color-text-2: var(--color-muted);
+  --color-text-3: color-mix(in srgb, var(--color-muted) 72%, transparent);
+  --bg-selected: #eef2f8;
+}
+
+[data-theme="dark"] {
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-2: 0 6px 20px -8px rgba(0, 0, 0, 0.55);
+  --shadow-3: 0 14px 40px -16px rgba(0, 0, 0, 0.65);
+  --bg-selected: #222b37;
+}
+
+/* 常驻 tooltip：hover / focus-visible 都出（键盘同样看得到） */
+[data-tip] {
+  position: relative;
+}
+[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%) translateX(-2px);
+  white-space: nowrap;
+  padding: 4px 8px;
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--color-text) 92%, transparent);
+  color: var(--color-bg);
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
+  z-index: 60;
+}
+[data-tip]:hover::after,
+[data-tip]:focus-visible::after {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
+}
+[data-tip-pos="up"]::after {
+  left: 50%;
+  top: auto;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%) translateY(2px);
+}
+[data-tip-pos="up"]:hover::after,
+[data-tip-pos="up"]:focus-visible::after {
+  transform: translateX(-50%) translateY(0);
+}
+
+/* 数字徽标（右栏图标上） */
+.count-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: var(--radius-pill);
+  font-size: 10px;
+  line-height: 15px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--color-accent-fg);
+  background: var(--color-err);
+  box-shadow: 0 0 0 2px var(--color-surface);
+}
+
 html {
   color-scheme: light;
 }
