@@ -250,7 +250,7 @@ export function BrowserStage({
       <button
         type="button"
         onClick={onOpen}
-        className="my-1.5 flex w-full max-w-[88%] items-center gap-2.5 rounded-[12px] border px-2 py-1.5 text-left max-md:max-w-[92%]"
+        className="my-1.5 flex w-full items-center gap-2.5 rounded-[var(--radius-lg)] border px-2 py-1.5 text-left"
         style={{ borderColor: "var(--color-border-strong)", background: "var(--color-surface-3)" }}
         title="看画面与步骤"
       >
@@ -286,6 +286,23 @@ export function BrowserStage({
             </svg>
             <span className="truncate text-[12px]" style={{ color: "var(--color-text)" }}>
               {waiting ? "需要你在画面里操作" : hostOf(frame?.url || lastStep?.url || "") || "浏览器"}
+            </span>
+            <span
+              className="shrink-0 rounded px-1.5 py-0.5 text-[10.5px]"
+              style={{
+                color: waiting
+                  ? "var(--color-warn)"
+                  : busy
+                    ? "var(--color-accent)"
+                    : "var(--color-text-2)",
+                background: waiting
+                  ? "color-mix(in srgb, var(--color-warn) 14%, transparent)"
+                  : busy
+                    ? "color-mix(in srgb, var(--color-accent) 12%, transparent)"
+                    : "var(--color-surface-2)",
+              }}
+            >
+              {waiting ? "待你操作" : busy ? "运行中" : "已完成"}
             </span>
             {count > 0 ? (
               <span className="shrink-0 text-[10.5px]" style={{ color: "var(--color-muted)" }}>
