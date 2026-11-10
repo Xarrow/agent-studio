@@ -2121,7 +2121,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     setHeaderEditing(false);
                   }
                 }}
-                className="min-w-0 flex-1 rounded-[var(--radius-xs)] border px-1.5 py-0.5 text-[var(--fs-base)] outline-none"
+                className="min-w-0 flex-1 rounded-[var(--radius-xs)] border px-1.5 py-0.5 text-[length:var(--fs-base)] outline-none"
                 style={{
                   borderColor: "var(--color-accent)",
                   background: "var(--color-surface)",
@@ -2137,7 +2137,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                   setHeaderDraft(curSes?.title || "");
                   setHeaderEditing(true);
                 }}
-                className="min-w-0 flex-1 truncate rounded-[var(--radius-xs)] px-1.5 py-1 text-left text-[var(--fs-base)] hover:bg-[var(--bg-selected)]"
+                className="min-w-0 flex-1 truncate rounded-[var(--radius-xs)] px-1.5 py-1 text-left text-[length:var(--fs-base)] hover:bg-[var(--bg-selected)]"
                 style={{ color: "var(--color-text)", fontWeight: 500 }}
               >
                 {curSes?.title || (sessionId ? "未命名对话" : "新对话")}
@@ -3026,7 +3026,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     <button
                       data-tap
                       type="button"
-                      className="flex h-9 items-center gap-1 rounded-[var(--radius-sm)] px-1.5 text-[var(--fs-sm)] disabled:opacity-40 hover:bg-[var(--bg-selected)] sm:h-8"
+                      className="flex h-9 items-center gap-1 rounded-[var(--radius-sm)] px-1.5 text-[length:var(--fs-sm)] disabled:opacity-40 hover:bg-[var(--bg-selected)] sm:h-8"
                       style={{ color: "var(--color-text-2)" }}
                       title="添加：附件 / 会话文件 / 整理成文档 / 整理成 Skills"
                       aria-haspopup="menu"
@@ -3116,7 +3116,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                         选了 Router（编排者）就不出现：路由是它的本职，再让用户挑人等于把它架空。 */}
                     {!isRouterAgent && (
                     <label
-                      className="flex h-8 shrink-0 items-center gap-1 rounded-[var(--radius-sm)] px-1.5 text-[var(--fs-sm)]"
+                      className="flex h-8 shrink-0 items-center gap-1 rounded-[var(--radius-sm)] px-1.5 text-[length:var(--fs-sm)]"
                       style={{ color: "var(--color-text-2)" }}
                       title="这句话交给谁：当前助手 / 按内容自动挑（认不出来会问你）"
                     >
@@ -3136,7 +3136,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                             /* 存不了就算了，下次默认关 */
                           }
                         }}
-                        className="h-7 rounded-[var(--radius-xs)] border-0 bg-transparent pr-1 text-[var(--fs-sm)] outline-none"
+                        className="h-7 rounded-[var(--radius-xs)] border-0 bg-transparent pr-1 text-[length:var(--fs-sm)] outline-none"
                         style={{ color: "var(--color-text)" }}
                       >
                         <option value="manual">当前助手</option>
@@ -3544,7 +3544,7 @@ function SessionsPane({
       {/* 头部：新对话 + 管理（批量） */}
       <div className="px-2.5 pb-1.5 flex items-center gap-1.5">
         <button
-          className="flex-1 rounded-[var(--radius-sm)] min-h-[40px] max-md:min-h-[44px] text-[var(--fs-base)] max-md:text-[var(--fs-md)] transition-colors hover:brightness-[0.97]"
+          className="flex-1 rounded-[var(--radius-sm)] min-h-[40px] max-md:min-h-[44px] text-[length:var(--fs-base)] max-md:text-[length:var(--fs-md)] transition-colors hover:brightness-[0.97]"
           style={{ background: "var(--color-surface-2)", color: "var(--color-text)" }}
           onClick={onNew}
         >
@@ -3557,7 +3557,7 @@ function SessionsPane({
             setManaging((v) => !v);
             setSelected(new Set());
           }}
-          className="h-9 shrink-0 rounded-[var(--radius-sm)] px-2 text-[var(--fs-sm)]"
+          className="h-9 shrink-0 rounded-[var(--radius-sm)] px-2 text-[length:var(--fs-sm)]"
           style={{
             color: managing ? "var(--color-text)" : "var(--color-text-2)",
             background: managing ? "var(--bg-selected)" : "transparent",
@@ -3597,7 +3597,7 @@ function SessionsPane({
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="搜索对话"
-            className="input h-9 text-[var(--fs-sm)]"
+            className="input h-9 text-[length:var(--fs-sm)]"
             /* .input 的 padding 是未分层 CSS，Tailwind 的 pl-* 压不过它（全站已知坑），
                这里用内联把左内边距钉到 36px = 16(图标距) + 16(图标宽) + 4(间距) */
             style={{ paddingLeft: 36 }}
@@ -3608,14 +3608,14 @@ function SessionsPane({
 
       <div className="flex-1 overflow-auto px-1.5 pb-2">
         {sessions.length === 0 ? (
-          <p className="text-[var(--fs-sm)] text-[var(--color-text-3)] p-2.5 leading-relaxed">
+          <p className="text-[length:var(--fs-sm)] text-[var(--color-text-3)] p-2.5 leading-relaxed">
             还没有对话。点「新对话」开始。
           </p>
         ) : (
           <>
             {/* 标题和内容都没有命中时才说"没有" —— 只要有一边命中就照常列 */}
             {list.length === 0 && hits.length === 0 && !hitBusy && (
-              <p className="text-[var(--fs-sm)] text-[var(--color-text-3)] p-2.5 leading-relaxed">
+              <p className="text-[length:var(--fs-sm)] text-[var(--color-text-3)] p-2.5 leading-relaxed">
                 没有叫「{q.trim()}」的对话，内容里也没有。
               </p>
             )}
@@ -3634,7 +3634,7 @@ function SessionsPane({
                       })
                     }
                     aria-expanded={!foldedGroups.has(g.label)}
-                    className="sticky top-0 z-10 flex w-full items-center gap-1 px-3 pt-3 pb-1.5 text-left text-[var(--fs-xs)] backdrop-blur-sm"
+                    className="sticky top-0 z-10 flex w-full items-center gap-1 px-3 pt-3 pb-1.5 text-left text-[length:var(--fs-xs)] backdrop-blur-sm"
                     style={{
                       color: "var(--color-text-3)",
                       background: "color-mix(in srgb, var(--color-surface) 88%, transparent)",
@@ -3766,7 +3766,7 @@ function SessionsPane({
                                       }
                                     }}
                                     onBlur={() => setRenamingId(null)}
-                                    className="w-full rounded-[var(--radius-xs)] border px-1.5 py-0.5 text-[var(--fs-base)] outline-none"
+                                    className="w-full rounded-[var(--radius-xs)] border px-1.5 py-0.5 text-[length:var(--fs-base)] outline-none"
                                     style={{
                                       borderColor: "var(--color-accent)",
                                       background: "var(--color-surface)",
@@ -3775,7 +3775,7 @@ function SessionsPane({
                                   />
                                 ) : (
                                   <div
-                                    className="truncate text-[var(--fs-base)] leading-[1.3]"
+                                    className="truncate text-[length:var(--fs-base)] max-md:text-[length:var(--fs-md)] leading-[1.3]"
                                     style={{
                                       color: "var(--color-text)",
                                       fontWeight: 500,
@@ -3794,7 +3794,7 @@ function SessionsPane({
                                     {labelText}
                                   </div>
                                 )}
-                                <div className="mt-0.5 truncate text-[var(--fs-xs)] tabular-nums" style={{ color: "var(--color-text-3)" }}>
+                                <div className="mt-0.5 truncate text-[length:var(--fs-xs)] max-md:text-[length:var(--fs-sm)] tabular-nums" style={{ color: "var(--color-text-3)" }}>
                                   {s.turn_count} 轮 · {fmt.relative(s.last_active_at)}
                                 </div>
                               </div>
@@ -3952,7 +3952,7 @@ function SessionsPane({
                                           aria-hidden
                                         />
                                         <span
-                                          className="min-w-0 flex-1 truncate text-[var(--fs-sm)]"
+                                          className="min-w-0 flex-1 truncate text-[length:var(--fs-sm)]"
                                           style={{ color: "var(--color-text-2)" }}
                                           title={c.ticket_title || c.title}
                                         >
@@ -3979,7 +3979,7 @@ function SessionsPane({
             {/* ── 对话内容命中（跨会话检索）*/}
             {q.trim().length >= 2 && (
               <div className="mt-1 border-t pt-1" style={{ borderColor: "var(--color-border)" }}>
-                <div className="px-2 pt-1 pb-1 text-[var(--fs-xs)] text-[var(--color-text-3)]">
+                <div className="px-2 pt-1 pb-1 text-[length:var(--fs-xs)] text-[var(--color-text-3)]">
                   对话内容{hitBusy ? " · 搜索中…" : hits.length ? ` · ${hits.length} 条` : ""}
                 </div>
                 {!hitBusy && hits.length === 0 && list.length > 0 && (
@@ -4025,7 +4025,7 @@ function SessionsPane({
                   prev.size === sessions.length ? new Set() : new Set(sessions.map((s) => s.id)),
                 )
               }
-              className="h-8 rounded-[var(--radius-xs)] px-2 text-[var(--fs-sm)]"
+              className="h-8 rounded-[var(--radius-xs)] px-2 text-[length:var(--fs-sm)]"
               style={{ color: "var(--color-text-2)", background: "var(--color-surface-2)" }}
             >
               {selected.size === sessions.length ? "取消全选" : "全选"}
@@ -4039,7 +4039,7 @@ function SessionsPane({
                 setSelected(new Set());
                 for (const v of victims) dropSession(v, { silent: true });
               }}
-              className="ml-auto h-8 rounded-[var(--radius-xs)] px-2.5 text-[var(--fs-sm)] disabled:opacity-45"
+              className="ml-auto h-8 rounded-[var(--radius-xs)] px-2.5 text-[length:var(--fs-sm)] disabled:opacity-45"
               style={{ color: "var(--color-err)", background: "color-mix(in srgb, var(--color-err) 10%, transparent)" }}
             >
               删除所选 ({selected.size})
@@ -4051,7 +4051,7 @@ function SessionsPane({
       {/* 删除后的撤销提示：8 秒内可撤回（这期间并没有真的调接口） */}
       {undo && (
         <div
-          className="absolute inset-x-2 bottom-2 z-50 flex items-center gap-2 rounded-[var(--radius-md)] px-3 py-2 text-[var(--fs-sm)]"
+          className="absolute inset-x-2 bottom-2 z-50 flex items-center gap-2 rounded-[var(--radius-md)] px-3 py-2 text-[length:var(--fs-sm)]"
           style={{ background: "var(--color-text)", color: "var(--color-bg)", boxShadow: "var(--shadow-2)" }}
           role="status"
         >
@@ -4115,7 +4115,7 @@ function MenuItem({
       type="button"
       role="menuitem"
       onClick={onClick}
-      className="flex w-full items-center px-2.5 py-1.5 text-left text-[var(--fs-sm)] hover:bg-[var(--bg-selected)]"
+      className="flex w-full items-center px-2.5 py-1.5 text-left text-[length:var(--fs-sm)] hover:bg-[var(--bg-selected)]"
       style={{ color: danger ? "var(--color-err)" : "var(--color-text)" }}
       data-tap
     >

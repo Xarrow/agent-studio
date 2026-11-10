@@ -93,7 +93,7 @@ export function DeliverableBar({ sessionId }: { sessionId?: string }) {
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         title={entry}
-        className="inline-flex h-7 items-center gap-1.5 rounded-[var(--radius-pill)] border px-2.5 text-[var(--fs-sm)] transition-colors hover:bg-[var(--bg-selected)]"
+        className="inline-flex h-7 items-center gap-1.5 rounded-[var(--radius-pill)] border px-2.5 text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--bg-selected)]"
         style={{
           borderColor: open
             ? "var(--color-accent)"
@@ -135,7 +135,7 @@ export function DeliverableBar({ sessionId }: { sessionId?: string }) {
         >
           <div className="flex min-h-[44px] items-center gap-2 px-3 py-1.5 max-md:flex-wrap">
             <span
-              className="shrink-0 rounded-[var(--radius-xs)] px-1.5 py-0.5 text-[var(--fs-xs)]"
+              className="shrink-0 rounded-[var(--radius-xs)] px-1.5 py-0.5 text-[length:var(--fs-xs)]"
               style={{
                 color: "var(--color-accent)",
                 background: "color-mix(in srgb, var(--color-accent) 12%, transparent)",
@@ -143,16 +143,16 @@ export function DeliverableBar({ sessionId }: { sessionId?: string }) {
             >
               产物
             </span>
-            <span className="min-w-0 flex-1 truncate text-[var(--fs-base)]" title={entry}>
+            <span className="min-w-0 flex-1 truncate text-[length:var(--fs-base)]" title={entry}>
               {name}
-              <span className="ml-2 text-[var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
+              <span className="ml-2 text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
                 {KIND_LABEL[info.kind] || "文件"} · {info.file_count} 个文件 · {fmtSize(info.size)}
               </span>
             </span>
             <a
               href={api.deliverableZipUrl(sessionId)}
               data-tap
-              className="flex h-[32px] items-center rounded-[var(--radius-xs)] px-2 text-[var(--fs-sm)] hover:bg-[var(--bg-selected)]"
+              className="flex h-[32px] items-center rounded-[var(--radius-xs)] px-2 text-[length:var(--fs-sm)] hover:bg-[var(--bg-selected)]"
               style={{ color: "var(--color-text-2)" }}
             >
               下载
@@ -162,7 +162,7 @@ export function DeliverableBar({ sessionId }: { sessionId?: string }) {
               data-tap
               onClick={() => void publish()}
               disabled={busy}
-              className="h-[32px] rounded-[var(--radius-xs)] px-2 text-[var(--fs-sm)] hover:bg-[var(--bg-selected)]"
+              className="h-[32px] rounded-[var(--radius-xs)] px-2 text-[length:var(--fs-sm)] hover:bg-[var(--bg-selected)]"
               style={{ color: "var(--color-accent)", opacity: busy ? 0.6 : 1 }}
             >
               {busy ? "发布中…" : "发布"}
@@ -183,12 +183,12 @@ export function DeliverableBar({ sessionId }: { sessionId?: string }) {
 
           {link && (
             <div className="flex items-center gap-2 border-t px-3 py-1.5" style={{ borderColor: "var(--color-border)" }}>
-              <span className="text-[var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>已发布</span>
+              <span className="text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>已发布</span>
               <a
                 href={link}
                 target="_blank"
                 rel="noreferrer"
-                className="min-w-0 flex-1 truncate text-[var(--fs-sm)] underline"
+                className="min-w-0 flex-1 truncate text-[length:var(--fs-sm)] underline"
                 style={{ color: "var(--color-accent)" }}
               >
                 {link}
@@ -196,7 +196,7 @@ export function DeliverableBar({ sessionId }: { sessionId?: string }) {
               <button
                 type="button"
                 data-tap
-                className="h-[28px] px-2 text-[var(--fs-sm)]"
+                className="h-[28px] px-2 text-[length:var(--fs-sm)]"
                 style={{ color: "var(--color-text-2)" }}
                 onClick={() => void copy()}
               >
@@ -207,7 +207,7 @@ export function DeliverableBar({ sessionId }: { sessionId?: string }) {
 
           {err && (
             <div
-              className="border-t px-3 py-1.5 text-[var(--fs-xs)]"
+              className="border-t px-3 py-1.5 text-[length:var(--fs-xs)]"
               style={{ borderColor: "var(--color-border)", color: "var(--color-err)" }}
             >
               {err}

@@ -45,8 +45,6 @@ export function Nav() {
   const currentLabel =
     [...USE_ITEMS, ...SETUP_ITEMS].find((i) => i.href === pathname)?.label ?? "Agent Studio";
   const [drawerOpen, setDrawerOpen] = useState(false);
-  /** 「设置」二级面板：配置类入口收在这里，不占常驻宽度 */
-  const [setupOpen, setSetupOpen] = useState(false);
 
   // 路由变化就收起抽屉
   useEffect(() => setDrawerOpen(false), [pathname]);
@@ -69,15 +67,6 @@ export function Nav() {
 
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
-
-  // 路由变化 / Esc 关掉设置面板
-  useEffect(() => setSetupOpen(false), [pathname]);
-  useEffect(() => {
-    if (!setupOpen) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setSetupOpen(false);
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [setupOpen]);
 
   const rowCls = (active: boolean) =>
     `flex items-center gap-2.5 px-3 py-2 rounded-md text-[13px] transition-colors ${
@@ -196,69 +185,24 @@ export function Nav() {
           </Link>
         ))}
 
-        <div className="relative mt-1">
-          <button
-            type="button"
-            data-tap
-            data-tip="设置"
-            aria-label="设置"
-            aria-expanded={setupOpen}
-            onClick={() => setSetupOpen((v) => !v)}
+        {/* 配置类入口：不再收进二级菜单 —— 图标轨上直接平铺，每个都带 tooltip，
+            一次点击就到（二级菜单要多点一次，还看不出里面有啥）。 */}
+        <div className="my-1 h-px w-6" style={{ background: "var(--color-border)" }} />
+        {SETUP_ITEMS.map((l) => (
+          <Link
+            key={l.href}
+            href={l.href}
+            aria-label={l.label}
+            data-tip={l.label}
             className="grid h-10 w-10 place-items-center rounded-[var(--radius-md)] transition-colors"
             style={{
-              color: SETUP_ITEMS.some((l) => isActive(l.href))
-                ? "var(--color-text)"
-                : "var(--color-muted)",
-              background: SETUP_ITEMS.some((l) => isActive(l.href))
-                ? "var(--bg-selected)"
-                : "transparent",
+              color: isActive(l.href) ? "var(--color-text)" : "var(--color-muted)",
+              background: isActive(l.href) ? "var(--bg-selected)" : "transparent",
             }}
           >
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="3" />
-              <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1" />
-            </svg>
-          </button>
-
-          {setupOpen && (
-            <>
-              <button
-                type="button"
-                aria-hidden
-                tabIndex={-1}
-                className="fixed inset-0 z-40 cursor-default"
-                onClick={() => setSetupOpen(false)}
-              />
-              <div
-                className="absolute left-[calc(100%+8px)] top-0 z-50 w-[230px] rounded-[var(--radius-lg)] p-1"
-                style={{
-                  background: "var(--color-surface)",
-                  border: "1px solid var(--color-border)",
-                  boxShadow: "var(--shadow-2)",
-                }}
-                role="menu"
-              >
-                {SETUP_ITEMS.map((l) => (
-                  <Link
-                    key={l.href}
-                    href={l.href}
-                    role="menuitem"
-                    onClick={() => setSetupOpen(false)}
-                    className="flex min-h-[34px] items-center gap-2.5 rounded-[var(--radius-sm)] px-2.5 text-[var(--fs-base)]"
-                    style={{
-                      color: isActive(l.href) ? "var(--color-text)" : "var(--color-text-2)",
-                      background: isActive(l.href) ? "var(--bg-selected)" : "transparent",
-                    }}
-                    title={l.tip}
-                  >
-                    <Icon d={ICON_PATHS[l.icon] ?? ""} size={15} />
-                    <span className="truncate">{l.label}</span>
-                  </Link>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
+            <Icon d={ICON_PATHS[l.icon] ?? ""} size={17} />
+          </Link>
+        ))}
       </nav>
     </>
   );
