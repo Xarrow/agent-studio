@@ -253,7 +253,7 @@ function SvgBlock({ code }: { code: string }) {
       <iframe
         title="svg-preview"
         sandbox=""
-        srcDoc={`<!doctype html><html><body style="margin:0;display:flex;align-items:center;justify-content:center;background:#fff">${code}</body></html>`}
+        srcDoc={`<!doctype html><html><body style="margin:0;display:flex;align-items:center;justify-content:center;background:var(--color-surface)">${code}</body></html>`}
         className="block h-[260px] w-full"
       />
     </div>

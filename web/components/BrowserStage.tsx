@@ -334,7 +334,7 @@ export function BrowserStage({
         onCopy={copyUrl}
         right={
           <span className="flex shrink-0 items-center gap-2">
-            {copied ? <span className="text-[10.5px]" style={{ color: "var(--color-ok, #047857)" }}>已复制</span> : null}
+            {copied ? <span className="text-[10.5px]" style={{ color: "var(--color-ok)" }}>已复制</span> : null}
             {onClose ? (
               <button
                 type="button"
@@ -352,7 +352,7 @@ export function BrowserStage({
       {waiting ? (
         <div
           className="flex items-center gap-1.5 px-2.5 py-1 text-[11px]"
-          style={{ background: "color-mix(in srgb, #b45309 10%, var(--color-surface))", color: "#b45309" }}
+          style={{ background: "color-mix(in srgb, var(--color-warn) 10%, var(--color-surface))", color: "var(--color-warn)" }}
         >
           <span className="live-dot">●</span> 需要你登录，完成后自动继续
         </div>
@@ -361,7 +361,7 @@ export function BrowserStage({
       <div
         className="relative min-h-0 flex-1 overflow-hidden"
         onWheel={shown ? undefined : handleWheel}
-        style={{ background: "#0b1220" }}
+        style={{ background: "var(--color-video-bg)" }}
       >
         {shown ? (
           <img
@@ -384,11 +384,11 @@ export function BrowserStage({
               <span
                 aria-hidden
                 className="pointer-events-none absolute inset-0 rounded-[2px]"
-                style={{ boxShadow: "inset 0 0 0 2px #f59e0b" }}
+                style={{ boxShadow: "inset 0 0 0 2px var(--color-warn)" }}
               />
             ) : null}
             {hasFrame ? null : (
-              <div className="flex h-full min-h-[160px] items-center justify-center text-[12px]" style={{ color: "#94a3b8" }}>
+              <div className="flex h-full min-h-[160px] items-center justify-center text-[12px]" style={{ color: "var(--color-text-3)" }}>
                 还未打开网页
               </div>
             )}
@@ -450,7 +450,7 @@ export function BrowserStage({
               )}
               <span
                 className="absolute bottom-0 left-0 right-0 text-center text-[9px] leading-[10px]"
-                style={{ background: "rgba(15,23,42,0.55)", color: "#fff" }}
+                style={{ background: "rgba(15,23,42,0.55)", color: "var(--color-accent-contrast)" }}
               >
                 {st.n}
               </span>

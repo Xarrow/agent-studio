@@ -686,7 +686,7 @@ export function RunsPanel() {
                 className="min-h-[36px] whitespace-nowrap rounded-[7px] px-2.5 text-[12px] transition-colors"
                 style={{
                   background: on ? "var(--color-accent)" : undefined,
-                  color: on ? "#fff" : "var(--color-muted)",
+                  color: on ? "var(--color-accent-contrast)" : "var(--color-muted)",
                   fontWeight: on ? 500 : undefined,
                 }}
               >

@@ -19,11 +19,11 @@ import React, { useMemo } from "react";
 import { layoutMermaid, parseMermaid } from "@/lib/mermaid";
 import { CodeBlock } from "@/components/CodeBlock";
 
-const ACCENT = "#2563eb";
-const BORDER = "#cbd5e1";
-const TEXT = "#0f172a";
-const MUTED = "#64748b";
-const SURFACE = "#f8fafc";
+const ACCENT = "var(--color-accent)";
+const BORDER = "var(--color-border-strong)";
+const TEXT = "var(--color-text)";
+const MUTED = "var(--color-muted)";
+const SURFACE = "var(--color-surface)";
 
 export function Mermaid({ code }: { code: string }) {
   const uid = React.useId().replace(/[^A-Za-z0-9]/g, "");
@@ -84,7 +84,7 @@ export function Mermaid({ code }: { code: string }) {
                 width={e.label.length * 6.8 + 10}
                 height={16}
                 rx={4}
-                fill="#ffffff"
+                fill="var(--color-surface)"
                 stroke={BORDER}
                 strokeWidth={0.8}
               />
@@ -103,8 +103,8 @@ export function Mermaid({ code }: { code: string }) {
               {n.shape === "diamond" ? (
                 <polygon
                   points={`${cx},${n.y} ${n.x + n.w},${cy} ${cx},${n.y + n.h} ${n.x},${cy}`}
-                  fill="#fff7ed"
-                  stroke="#f59e0b"
+                  fill="var(--tint-warn-bg)"
+                  stroke="var(--color-warn)"
                   strokeWidth={1.4}
                 />
               ) : n.shape === "circle" ? (

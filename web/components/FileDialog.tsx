@@ -628,15 +628,15 @@ export function FileDialog({
                     preload="metadata"
                     onError={() => setVideoFailed(true)}
                     className="max-h-[62dvh] w-full rounded-[10px] border"
-                    style={{ borderColor: "var(--color-border)", background: "#000" }}
+                    style={{ borderColor: "var(--color-border)", background: "var(--color-text)" }}
                   />
                   {(warn || converting || convErr) && (
                     <div
                       className="mt-2 rounded-[10px] border p-2.5 text-[12.5px]"
-                      style={{ borderColor: warn ? "var(--color-warn, #b45309)" : "var(--color-border)" }}
+                      style={{ borderColor: warn ? "var(--color-warn)" : "var(--color-border)" }}
                     >
                       {warn ? (
-                        <p className="leading-relaxed" style={{ color: "var(--color-warn, #b45309)" }}>
+                        <p className="leading-relaxed" style={{ color: "var(--color-warn)" }}>
                           {warn}
                           {probe?.video ? `（当前编码 ${probe.video.toUpperCase()}）` : ""}
                         </p>
@@ -702,7 +702,7 @@ export function FileDialog({
               sandbox=""
               title={file.name ?? baseName(file.path)}
               className="h-[52dvh] w-full rounded-[10px] border"
-              style={{ borderColor: "var(--color-border)", background: "#fff" }}
+              style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
             />
           ) : kind === "xml" ? (
             <XmlFetch url={url} path={file.path} />
@@ -821,7 +821,7 @@ export function FileDialog({
               type="button"
               className="btn max-md:min-h-[36px]"
               style={{
-                color: confirmDel ? "#fff" : "var(--color-err)",
+                color: confirmDel ? "var(--color-accent-contrast)" : "var(--color-err)",
                 background: confirmDel ? "var(--color-err)" : "transparent",
                 borderColor: "var(--color-err)",
               }}

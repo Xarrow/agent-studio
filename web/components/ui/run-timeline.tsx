@@ -812,7 +812,13 @@ export function ProcessBar({
           }
         >
           {running
-            ? `${phaseText(proc, true)}`
+            ? `${phaseText(proc, true)}${
+                proc.length > 0 ? ` · 第 ${proc.length} 步` : ""
+              }${
+                typeof elapsedMs === "number" && elapsedMs > 0
+                  ? ` · 已用 ${fmtDuration(elapsedMs)}`
+                  : ""
+              }`
             : proc.length === 0
               ? loading
                 ? "正在整理执行过程…"

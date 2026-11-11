@@ -21,11 +21,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { BrowserStage, type BrowserAction, type BrowserFrameData } from "@/components/BrowserStage";
 import { FileRowButton } from "@/components/FileDialog";
 import { FileTypeIcon } from "@/components/ui/icons";
+import { ExecutionTimeline } from "@/components/ExecutionTimeline";
 import { api, fmt } from "@/lib/api";
 import { fileTypeKey, shortFilePath } from "@/lib/files";
 import type { BrowserStep } from "@/lib/types";
 
-export type DockPanel = "browser" | "files";
+export type DockPanel = "browser" | "files" | "steps";
 
 const MIN_W = 320;
 const MAX_W = 560;
@@ -58,6 +59,8 @@ export function SideDock({
   deliverable,
   onPublishDeliverable,
   deliverableZipUrl,
+  /* 步骤 */
+  stepRunId,
 }: {
   panel: DockPanel | null;
   onPanel: (p: DockPanel) => void;
@@ -84,6 +87,8 @@ export function SideDock({
   deliverable?: { exists: boolean; file_count: number; size: number } | null;
   onPublishDeliverable?: () => void;
   deliverableZipUrl?: string;
+  /** 「步骤」面板看哪一次执行 */
+  stepRunId?: string | null;
 }) {
   const [dragging, setDragging] = useState(false);
   const dragRef = useRef<{ x: number; w: number } | null>(null);
@@ -154,9 +159,10 @@ export function SideDock({
     [onFilesRefresh],
   );
 
-  const rail = (p: DockPanel, label: string, badge: number, icon: React.ReactNode) => {
+  const rail = (p: DockPanel, label: string, badge: number | undefined, icon: React.ReactNode) => {
     const active = open && panel === p;
-    const tip = open && panel === p ? `收起${label}` : badge > 0 ? `${label} · ${badge}` : label;
+    const n = badge ?? 0;
+    const tip = open && panel === p ? `收起${label}` : n > 0 ? `${label} · ${n}` : label;
     return (
       <button
         key={p}
@@ -180,9 +186,9 @@ export function SideDock({
         }}
       >
         {icon}
-        {badge > 0 ? (
+        {n > 0 ? (
           <span aria-hidden className="count-badge">
-            {badge > 99 ? "99+" : badge}
+            {n > 99 ? "99+" : n}
           </span>
         ) : null}
       </button>
@@ -226,8 +232,18 @@ export function SideDock({
           </svg>,
         )}
         {rail(
+          "steps",
+          "步骤",
+          undefined,
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M4 6h10M4 12h16M4 18h7" />
+            <circle cx="19" cy="6" r="1.6" />
+            <circle cx="14" cy="18" r="1.6" />
+          </svg>,
+        )}
+        {rail(
           "files",
-          "会话文件",
+          "产物",
           files.length,
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <path d="M4 7a2 2 0 0 1 2-2h3l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" />
@@ -243,7 +259,11 @@ export function SideDock({
             style={{ borderBottom: "1px solid var(--color-border)" }}
           >
             <span className="min-w-0 flex-1 truncate text-[12px]" style={{ color: "var(--color-text)" }}>
-              {panel === "browser" ? "浏览器画面" : "会话文件"}
+              {panel === "browser"
+                ? "浏览器画面"
+                : panel === "steps"
+                  ? "步骤详情"
+                  : "产物"}
             </span>
             {panel === "browser" && onBrowserOpenFull ? (
               <button
@@ -285,6 +305,16 @@ export function SideDock({
                 onUserText={onUserText}
                 onUserScroll={onUserScroll}
               />
+            </div>
+          ) : panel === "steps" ? (
+            <div className="min-h-0 flex-1 overflow-auto p-2">
+              {stepRunId ? (
+                <ExecutionTimeline runId={stepRunId} title="步骤详情" compact />
+              ) : (
+                <p className="p-2 text-[12.5px] leading-relaxed" style={{ color: "var(--color-muted)" }}>
+                  点对话里那一轮的执行过程条 → 「在右栏看」，这里会展开每一步的细节。
+                </p>
+              )}
             </div>
           ) : (
             <div className="flex min-h-0 flex-1 flex-col">

@@ -30,14 +30,14 @@ import type { Skill } from "@/lib/types";
 export function glyphFor(source: unknown) {
   const type = String((source as Record<string, unknown> | undefined)?.type ?? "").toLowerCase();
   if (type === "agent")
-    return { Ico: IconSpark, bg: "color-mix(in srgb, #8b5cf6 14%, transparent)", fg: "#7c3aed" };
+    return { Ico: IconSpark, bg: "color-mix(in srgb, var(--chart-5) 14%, transparent)", fg: "var(--chart-5)" };
   if (type === "repo" || type === "git")
-    return { Ico: IconBox, bg: "color-mix(in srgb, #2563eb 12%, transparent)", fg: "#2563eb" };
+    return { Ico: IconBox, bg: "color-mix(in srgb, var(--color-accent) 12%, transparent)", fg: "var(--color-accent)" };
   if (type === "url")
-    return { Ico: IconLink, bg: "color-mix(in srgb, #0891b2 12%, transparent)", fg: "#0891b2" };
+    return { Ico: IconLink, bg: "color-mix(in srgb, var(--color-info) 12%, transparent)", fg: "var(--color-info)" };
   if (type === "import" || type === "zip")
-    return { Ico: IconArchive, bg: "color-mix(in srgb, #b45309 12%, transparent)", fg: "#b45309" };
-  return { Ico: IconSkill, bg: "color-mix(in srgb, #64748b 12%, transparent)", fg: "#64748b" };
+    return { Ico: IconArchive, bg: "color-mix(in srgb, var(--color-warn) 12%, transparent)", fg: "var(--color-warn)" };
+  return { Ico: IconSkill, bg: "color-mix(in srgb, var(--color-muted) 12%, transparent)", fg: "var(--color-muted)" };
 }
 
 /** 正文去掉 frontmatter（它已经渲染在头上了，正文里再来一遍很吵） */

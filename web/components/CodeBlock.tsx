@@ -195,7 +195,7 @@ export function CodeBlock({
           sandbox="allow-same-origin"
           srcDoc={code}
           className="w-full block"
-          style={{ height: 320, background: "#fff", border: "none" }}
+          style={{ height: 320, background: "var(--color-surface)", border: "none" }}
         />
       ) : (
         <>

@@ -59,7 +59,7 @@ function sourceLabel(source: unknown): string {
 /** 状态用人话说：stale = 很久没人读了（照样能用），archived = 已从助手那边撤下 */
 const STATE_LABEL: Record<string, { text: string; color: string }> = {
   active: { text: "在用", color: "var(--color-ok)" },
-  stale: { text: "闲置", color: "var(--color-warn, #b45309)" },
+  stale: { text: "闲置", color: "var(--color-warn)" },
   archived: { text: "已归档", color: "var(--color-muted)" },
 };
 
@@ -715,7 +715,7 @@ function ImportDialog({
                                 }}
                               >
                                 {on && (
-                                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent-contrast)" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                                     <path d="M20 6L9 17l-5-5" />
                                   </svg>
                                 )}

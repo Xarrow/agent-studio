@@ -287,7 +287,7 @@ export function OrchestrationSteps({
                         {st.error && (
                           <div
                             className="rounded p-2 text-[12px] break-all"
-                            style={{ background: "var(--color-err-bg, #fef2f2)", color: "var(--color-err)" }}
+                            style={{ background: "var(--tint-err-bg)", color: "var(--color-err)" }}
                           >
                             {st.error}
                           </div>

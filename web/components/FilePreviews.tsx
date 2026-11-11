@@ -352,9 +352,9 @@ const JSON_NODE_LIMIT = 4000;
 function JsonScalar({ v }: { v: unknown }) {
   if (v === null) return <span style={{ color: "var(--color-muted)" }}>null</span>;
   if (typeof v === "string")
-    return <span style={{ color: "var(--color-ok, #16a34a)" }}>&quot;{v.length > 200 ? v.slice(0, 200) + "…" : v}&quot;</span>;
+    return <span style={{ color: "var(--color-ok)" }}>&quot;{v.length > 200 ? v.slice(0, 200) + "…" : v}&quot;</span>;
   if (typeof v === "number") return <span style={{ color: "var(--color-accent)" }}>{String(v)}</span>;
-  if (typeof v === "boolean") return <span style={{ color: "var(--color-warn, #b45309)" }}>{String(v)}</span>;
+  if (typeof v === "boolean") return <span style={{ color: "var(--color-warn)" }}>{String(v)}</span>;
   return <span>{String(v)}</span>;
 }
 

@@ -225,7 +225,7 @@ export function QuickTags({ onPick, prefix }: { onPick: (text: string) => void; 
                 disabled={!newTag.trim() || draft.length >= MAX}
                 onClick={addTag}
                 className="shrink-0 w-10 h-10 grid place-items-center rounded-lg disabled:opacity-40"
-                style={{ background: "var(--color-accent)", color: "#fff" }}
+                style={{ background: "var(--color-accent)", color: "var(--color-accent-contrast)" }}
               >
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
                   <path d="M12 5v14M5 12h14" />
@@ -234,7 +234,7 @@ export function QuickTags({ onPick, prefix }: { onPick: (text: string) => void; 
             </div>
 
             {err && (
-              <p className="px-3.5 pb-2 text-[11.5px]" style={{ color: "var(--color-err, #b91c1c)" }}>
+              <p className="px-3.5 pb-2 text-[11.5px]" style={{ color: "var(--color-err)" }}>
                 {err}
               </p>
             )}
@@ -252,7 +252,7 @@ export function QuickTags({ onPick, prefix }: { onPick: (text: string) => void; 
               <button
                 data-tap
                 className="h-9 px-4 rounded-lg text-[13px] font-medium disabled:opacity-50"
-                style={{ background: "var(--color-accent)", color: "#fff" }}
+                style={{ background: "var(--color-accent)", color: "var(--color-accent-contrast)" }}
                 onClick={() => void save()}
                 disabled={saving}
               >

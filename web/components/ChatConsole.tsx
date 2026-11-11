@@ -241,20 +241,43 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   const [headerMenu, setHeaderMenu] = useState(false);
   const [topScrolled, setTopScrolled] = useState(false);
 
-  /** 导出会话为 Markdown（纯前端拼，走已有会话详情接口） */
-  const exportSession = async (s: Session) => {
+  /** 导出会话：Markdown（给人读）/ JSON（给程序读）。纯前端拼，走已有会话详情接口 */
+  const exportSession = async (s: Session, fmt: "md" | "json" = "md") => {
     try {
       const d = await api.session(s.id);
-      const lines: string[] = [`# ${s.title || "未命名对话"}`, ""];
-      for (const m of d.messages || []) {
-        if (m.role === "user") lines.push("## 我", "", m.content || "", "");
-        else if (m.role === "assistant") lines.push("## 助手", "", m.content || "", "");
+      let body = "";
+      let type = "text/markdown;charset=utf-8";
+      if (fmt === "json") {
+        body = JSON.stringify(
+          {
+            id: s.id,
+            title: s.title || "未命名对话",
+            agent_id: s.agent_id,
+            exported_at: new Date().toISOString(),
+            messages: (d.messages || []).map((m) => ({
+              role: m.role,
+              content: m.content || "",
+              run_id: m.run_id ?? null,
+              ts: m.ts ?? null,
+            })),
+          },
+          null,
+          2,
+        );
+        type = "application/json;charset=utf-8";
+      } else {
+        const lines: string[] = [`# ${s.title || "未命名对话"}`, ""];
+        for (const m of d.messages || []) {
+          if (m.role === "user") lines.push("## 我", "", m.content || "", "");
+          else if (m.role === "assistant") lines.push("## 助手", "", m.content || "", "");
+        }
+        body = lines.join("\n");
       }
-      const blob = new Blob([lines.join("\n")], { type: "text/markdown;charset=utf-8" });
+      const blob = new Blob([body], { type });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${(s.title || s.id).replace(/[\\/:*?"<>|]/g, "_")}.md`;
+      a.download = `${(s.title || s.id).replace(/[\\/:*?"<>|]/g, "_")}.${fmt}`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
@@ -357,6 +380,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   const [dockOpen, setDockOpen] = useState(false);
   const [dockPanel, setDockPanel] = useState<DockPanel>("browser");
   const [dockW, setDockW] = useState(400);
+  /** 「步骤」标签看哪一次执行：点过程条的「在右栏看」时写入 */
+  const [dockStepRun, setDockStepRun] = useState<string | null>(null);
   /** 用户亲手操作过右栏之后，就不再自动展开（自动抢焦点只允许一次） */
   const dockTouched = useRef(false);
   /** 浏览器这一轮第一次出画面时自动展开一次 */
@@ -371,7 +396,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
       const w = Number(localStorage.getItem("dock.w") || "");
       if (w >= 320 && w <= 560) setDockW(w);
       const p = localStorage.getItem("dock.panel");
-      if (p === "browser" || p === "files") setDockPanel(p);
+      if (p === "browser" || p === "files" || p === "steps") setDockPanel(p);
     } catch {
       /* 隐私模式拿不到 localStorage：用默认值 */
     }
@@ -442,6 +467,29 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
      同一次渲染里不会重复把几千条事件重算成步骤（原来每渲染一次都重算）。 */
   const liveSteps = useMemo(() => eventsToSteps(liveEvents, liveInput), [liveEvents, liveInput]);
   const [input, setInput] = useState("");
+  /* 草稿按会话存：切会话不丢没发出去的字。写入放在下面两个 effect 里 ——
+     直接在 onChange 里写会把「刚切过去还没恢复」的空串覆盖掉草稿。 */
+  const draftSid = useRef<string>("");
+
+  /* 草稿按会话保存 / 恢复（见 draftSid 的说明） */
+  useEffect(() => {
+    draftSid.current = sessionId;
+    try {
+      setInput(sessionId ? localStorage.getItem(`chat.draft.${sessionId}`) || "" : "");
+    } catch {
+      setInput("");
+    }
+  }, [sessionId]);
+  useEffect(() => {
+    if (!sessionId || draftSid.current !== sessionId) return;
+    try {
+      if (input.trim()) localStorage.setItem(`chat.draft.${sessionId}`, input);
+      else localStorage.removeItem(`chat.draft.${sessionId}`);
+    } catch {
+      /* 隐私模式：不存就是 */
+    }
+  }, [input, sessionId]);
+
   const [loading, setLoading] = useState(true);
 
   const esRef = useRef<EventSource | null>(null);
@@ -1822,7 +1870,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
               onRenameCommit={(s, t) => void renameSessionInline(s, t)}
               pinned={pinned}
               onTogglePin={togglePin}
-              onExport={(s) => void exportSession(s)}
+              onExport={(s) => void exportSession(s, "md")}
+              onExportJson={(s) => void exportSession(s, "json")}
               onCollapse={toggleNav}
             />
           </aside>
@@ -1961,7 +2010,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     onRenameCommit={(s, t) => void renameSessionInline(s, t)}
                     pinned={pinned}
                     onTogglePin={togglePin}
-                    onExport={(s) => void exportSession(s)}
+                    onExport={(s) => void exportSession(s, "md")}
+                    onExportJson={(s) => void exportSession(s, "json")}
                     onCollapse={() => setMobileNav(false)}
                   />
                   <div className="shrink-0 border-t border-[var(--color-border)] pb-[env(safe-area-inset-bottom)]">
@@ -2207,10 +2257,17 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                     }}
                   />
                   <MenuItem
-                    label="导出"
+                    label="导出 Markdown"
                     onClick={() => {
                       setHeaderMenu(false);
-                      void exportSession(curSes);
+                      void exportSession(curSes, "md");
+                    }}
+                  />
+                  <MenuItem
+                    label="导出 JSON"
+                    onClick={() => {
+                      setHeaderMenu(false);
+                      void exportSession(curSes, "json");
                     }}
                   />
                   <div className="my-1 h-px" style={{ background: "var(--color-border)" }} />
@@ -2406,6 +2463,23 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                           ? () => void branchFrom(m.turn_index!)
                           : undefined
                       }
+                      onRetryReply={
+                        m.role === "assistant" && !busy && prevUser
+                          ? () => void send(prevUser)
+                          : undefined
+                      }
+                      onOpenDock={(rid) => {
+                        setDockStepRun(rid);
+                        openDock("steps");
+                      }}
+                      onMakeDoc={
+                        m.role === "assistant"
+                          ? () =>
+                              appendToInput(
+                                "把上面这轮整理成一份 Markdown 文档，存到会话目录的 product/ 下",
+                              )
+                          : undefined
+                      }
                     />
                   );
                   return m.role === "assistant" && m.run_id ? (
@@ -2454,6 +2528,20 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                       steps={liveSteps}
                       running
                       elapsedMs={liveElapsed}
+                      detail={
+                        liveRunId ? (
+                          <button
+                            data-tap
+                            onClick={() => {
+                              setDockStepRun(liveRunId);
+                              openDock("steps");
+                            }}
+                            className="text-[12px] text-[var(--color-muted)] hover:text-[var(--color-text)]"
+                          >
+                            在右栏看 →
+                          </button>
+                        ) : null
+                      }
                     />
                     {/* Router 把活派出去之后，最要紧的是"派给谁、干到哪了" ——
                         以前这一屏什么都没有，用户只能等一条最终答复。 */}
@@ -2832,7 +2920,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                         className="btn px-2 py-0.5 text-[12px] max-md:min-h-[32px]"
                         disabled={bulkBusy}
                         style={{
-                          color: bulkConfirm ? "#fff" : "var(--color-err)",
+                          color: bulkConfirm ? "var(--color-accent-contrast)" : "var(--color-err)",
                           background: bulkConfirm ? "var(--color-err)" : "transparent",
                           borderColor: "var(--color-err)",
                         }}
@@ -2879,7 +2967,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                             }}
                           >
                             {picked.includes(f.path) ? (
-                              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent-contrast)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                                 <path d="M20 6 9 17l-5-5" />
                               </svg>
                             ) : null}
@@ -3351,6 +3439,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
         {/* 右侧工具坞（≥1280 才渲染；更窄的屏走原来的抽屉/浮层） */}
         <SideDock
           panel={dockPanel}
+          stepRunId={dockStepRun || liveRunId || null}
           onPanel={(p) => setDockPanel(p)}
           open={dockOpen}
           onOpenChange={(v) => {
@@ -3454,6 +3543,7 @@ function SessionsPane({
   pinned,
   onTogglePin,
   onExport,
+  onExportJson,
 }: {
   sessions: Session[];
   sessionId: string;
@@ -3470,6 +3560,7 @@ function SessionsPane({
   pinned: Set<string>;
   onTogglePin: (id: string) => void;
   onExport: (s: Session) => void;
+  onExportJson: (s: Session) => void;
   /** 助手身份块：会话都属于某个助手，它排在列表最上面 */
   agentSlot?: React.ReactNode;
 }) {
@@ -3863,9 +3954,9 @@ function SessionsPane({
                                       fontWeight: 500,
                                       /* 长标题右侧 24px 渐隐，不用省略号 */
                                       maskImage:
-                                        "linear-gradient(to right, #000 calc(100% - 24px), transparent)",
+                                        "linear-gradient(to right, var(--color-text) calc(100% - 24px), transparent)",
                                       WebkitMaskImage:
-                                        "linear-gradient(to right, #000 calc(100% - 24px), transparent)",
+                                        "linear-gradient(to right, var(--color-text) calc(100% - 24px), transparent)",
                                     }}
                                     title={labelText}
                                     onDoubleClick={(e) => {
@@ -3985,10 +4076,17 @@ function SessionsPane({
                                       }}
                                     />
                                     <MenuItem
-                                      label="导出"
+                                      label="导出 Markdown"
                                       onClick={() => {
                                         setMenuFor(null);
                                         onExport(s);
+                                      }}
+                                    />
+                                    <MenuItem
+                                      label="导出 JSON"
+                                      onClick={() => {
+                                        setMenuFor(null);
+                                        onExportJson(s);
                                       }}
                                     />
                                     <div className="my-1 h-px" style={{ background: "var(--color-border)" }} />
@@ -4254,6 +4352,9 @@ function Bubble({
   onRewind,
   onRerun,
   onBranch,
+  onRetryReply,
+  onMakeDoc,
+  onOpenDock,
   streaming = false,
 }: {
   role: "user" | "assistant";
@@ -4278,6 +4379,12 @@ function Bubble({
   onRerun?: (text: string) => void;
   /** 从这一轮之前另起会话（原会话不动） */
   onBranch?: () => void;
+  /** 助手消息的「重试」= 这一轮的提问再跑一次 */
+  onRetryReply?: () => void;
+  /** 助手消息的「整理成文档」= 把这轮整理成 Markdown 存到 product/ */
+  onMakeDoc?: () => void;
+  /** 在右栏「步骤」里打开这一轮的执行详情 */
+  onOpenDock?: (runId: string) => void;
   streaming?: boolean;
 }) {
   const isUser = role === "user";
@@ -4548,6 +4655,15 @@ function Bubble({
               usage={meta}
               detail={
                 <>
+                  {onOpenDock && runId && (
+                    <button
+                      data-tap
+                      onClick={() => onOpenDock(runId)}
+                      className="text-[12px] text-[var(--color-muted)] hover:text-[var(--color-text)]"
+                    >
+                      在右栏看 →
+                    </button>
+                  )}
                   <button
                     data-tap
                     onClick={() => setDetailOpen(true)}
@@ -4717,6 +4833,20 @@ function Bubble({
                 )}
                 {onRetry && (
                   <MsgAction label="重发" onClick={onRetry} path="M3 12a9 9 0 1 0 3-6.7M3 4v5h5" />
+                )}
+                {onRetryReply && (
+                  <MsgAction
+                    label="重试"
+                    onClick={onRetryReply}
+                    path="M3 12a9 9 0 1 0 3-6.7M3 4v5h5"
+                  />
+                )}
+                {onMakeDoc && (
+                  <MsgAction
+                    label="整理成文档"
+                    onClick={onMakeDoc}
+                    path="M7 3h7l4 4v14H7zM14 3v4h4M10 12h6M10 16h6"
+                  />
                 )}
                 {onRewind && (
                   <MsgAction

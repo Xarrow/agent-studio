@@ -193,7 +193,7 @@ export function HitlPrompt({
         {danger && (
           <span
             className="ml-auto rounded-full px-2 py-[2px] text-[11px] font-medium"
-            style={{ background: "var(--color-err)", color: "#fff" }}
+            style={{ background: "var(--color-err)", color: "var(--color-accent-contrast)" }}
           >
             危险操作
           </span>
@@ -293,7 +293,7 @@ export function HitlPrompt({
               <button
                 data-tap
                 className="btn btn-sm"
-                style={{ background: "var(--color-err)", borderColor: "var(--color-err)", color: "#fff" }}
+                style={{ background: "var(--color-err)", borderColor: "var(--color-err)", color: "var(--color-accent-contrast)" }}
                 disabled={busy}
                 onClick={() => void resume(true, remember)}
               >

@@ -565,7 +565,7 @@ export default function SessionJobs({
                             className="h-8 rounded-[8px] border text-[12.5px]"
                             style={{
                               background: on ? "var(--color-accent)" : "var(--color-surface)",
-                              color: on ? "#fff" : "var(--color-text)",
+                              color: on ? "var(--color-accent-contrast)" : "var(--color-text)",
                               borderColor: on ? "var(--color-accent)" : "var(--color-border)",
                             }}
                             aria-pressed={on}
@@ -723,7 +723,7 @@ export default function SessionJobs({
                   <button
                     type="button"
                     className="ml-auto shrink-0 rounded-[10px] px-3.5 text-[13px] font-medium transition-opacity disabled:opacity-40"
-                    style={{ minHeight: 34, background: "var(--color-accent)", color: "#fff" }}
+                    style={{ minHeight: 34, background: "var(--color-accent)", color: "var(--color-accent-contrast)" }}
                     disabled={busy || !prompt.trim()}
                     onClick={() => void save()}
                   >
@@ -753,7 +753,7 @@ export default function SessionJobs({
                           style={{
                             minHeight: 32,
                             background: on ? "var(--color-accent)" : "transparent",
-                            color: on ? "#fff" : "var(--color-muted)",
+                            color: on ? "var(--color-accent-contrast)" : "var(--color-muted)",
                             fontWeight: on ? 500 : 400,
                             border: on ? "1px solid var(--color-accent)" : "1px solid var(--color-border)",
                           }}
@@ -809,7 +809,7 @@ export default function SessionJobs({
                             style={{
                               height: 32,
                               background: on ? "var(--color-accent)" : "var(--color-surface)",
-                              color: on ? "#fff" : "var(--color-text)",
+                              color: on ? "var(--color-accent-contrast)" : "var(--color-text)",
                               border: on ? "1px solid var(--color-accent)" : "1px solid var(--color-border)",
                             }}
                             aria-pressed={on}

@@ -429,7 +429,7 @@ export function BrowserDriversCard() {
             className="rounded-[5px] px-2.5 py-1 text-[12.5px]"
             style={{
               background: "var(--color-accent)",
-              color: "#fff",
+              color: "var(--color-accent-contrast)",
               opacity: !kind || !version || busy ? 0.5 : 1,
             }}
             onClick={() => void install()}

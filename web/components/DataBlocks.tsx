@@ -211,7 +211,7 @@ export function CsvBlock({ code, delimiter }: { code: string; delimiter: string 
 /* ------------------------------------------------------------------ */
 /* 图表（自研 SVG：柱 / 折线 / 饼）                                    */
 /* ------------------------------------------------------------------ */
-const SERIES_COLORS = ["#2563eb", "#16a34a", "#f59e0b", "#dc2626", "#7c3aed", "#0891b2"];
+const SERIES_COLORS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)", "var(--chart-6)"];
 
 export function ChartBlock({ code }: { code: string }) {
   const spec = useMemo(() => parseChartSpec(code), [code]);
@@ -237,10 +237,10 @@ export function ChartBlock({ code }: { code: string }) {
                     x2={layout.plot.x + layout.plot.w}
                     y1={t.y}
                     y2={t.y}
-                    stroke={i === 0 ? "#cbd5e1" : "#eef2f7"}
+                    stroke={i === 0 ? "var(--color-border-strong)" : "var(--chart-grid)"}
                     strokeWidth={1}
                   />
-                  <text x={layout.plot.x - 6} y={t.y + 3.5} textAnchor="end" fontSize={9.5} fill="#94a3b8">
+                  <text x={layout.plot.x - 6} y={t.y + 3.5} textAnchor="end" fontSize={9.5} fill="var(--color-text-3)">
                     {fmt(t.value)}
                   </text>
                 </g>
@@ -270,7 +270,7 @@ export function ChartBlock({ code }: { code: string }) {
                 const n = spec.labels.length;
                 const cx = layout.plot.x + (layout.plot.w / Math.max(1, n)) * i + layout.plot.w / Math.max(1, n) / 2;
                 return (
-                  <text key={i} x={cx} y={layout.plot.y + layout.plot.h + 14} textAnchor="middle" fontSize={9.5} fill="#64748b">
+                  <text key={i} x={cx} y={layout.plot.y + layout.plot.h + 14} textAnchor="middle" fontSize={9.5} fill="var(--color-muted)">
                     {label.length > 8 ? `${label.slice(0, 8)}…` : label}
                   </text>
                 );
@@ -294,7 +294,7 @@ export function ChartBlock({ code }: { code: string }) {
                     ? `M ${cx - R} ${cy} a ${R} ${R} 0 1 0 ${R * 2} 0 a ${R} ${R} 0 1 0 ${-R * 2} 0`
                     : `M ${cx} ${cy} L ${x0} ${y0} A ${R} ${R} 0 ${large} 1 ${x1} ${y1} Z`;
                 return (
-                  <path key={s.index} d={d} fill={color(s.index)} stroke="#fff" strokeWidth={1}>
+                  <path key={s.index} d={d} fill={color(s.index)} stroke="var(--color-accent-contrast)" strokeWidth={1}>
                     <title>{`${spec.labels[s.index]}：${fmt(s.value)}`}</title>
                   </path>
                 );
@@ -302,7 +302,7 @@ export function ChartBlock({ code }: { code: string }) {
               {spec.labels.map((label, i) => (
                 <g key={i}>
                   <rect x={250} y={18 + i * 20} width={9} height={9} rx={2} fill={color(i)} />
-                  <text x={265} y={26 + i * 20} fontSize={11} fill="#475569">
+                  <text x={265} y={26 + i * 20} fontSize={11} fill="var(--color-muted)">
                     {label} · {fmt(spec.series[0]?.values[i] ?? 0)}
                   </text>
                 </g>

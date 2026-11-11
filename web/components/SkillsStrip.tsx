@@ -207,7 +207,7 @@ export function SkillsStrip({
                     aria-hidden="true"
                   >
                     {on && (
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent-contrast)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                         <path d="m5 12.5 4.5 4.5L19 7" />
                       </svg>
                     )}

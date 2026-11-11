@@ -563,7 +563,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
               用户也始终知道"最近一次失败了"，展开才给完整原因。 */}
           {lastRunOpen && ov.lastRun?.status === "error" && (
             <div className="mt-2 text-[12px] leading-relaxed rounded-[8px] px-3 py-2 max-w-[560px]"
-              style={{ background: "color-mix(in srgb, var(--color-err, #dc2626) 8%, transparent)" }}>
+              style={{ background: "color-mix(in srgb, var(--color-err) 8%, transparent)" }}>
               <div className="flex items-center gap-2 flex-wrap">
                 <span style={{ color: STATUS_STYLE.error }}>最近一次执行失败</span>
                 <span className="text-[var(--color-muted)]">{fmt.relative(ov.lastRun.at)}</span>
@@ -578,7 +578,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 )}
               </div>
               {ov.lastRun.error && (
-                <p className="mono mt-1 break-all" style={{ color: "var(--color-err, #dc2626)" }}>
+                <p className="mono mt-1 break-all" style={{ color: "var(--color-err)" }}>
                   {ov.lastRun.error}
                 </p>
               )}
@@ -1035,7 +1035,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                     必须告诉用户"没丢，只是这个 Provider 下看不见"，否则会被当成
                     凭据丢了去手填（v2 修复的根源误会）。 */}
                 {usedCred && usedCred.provider !== def.model.provider && (
-                  <p className="mt-1 text-[12px]" style={{ color: "var(--color-warn, #d97706)" }}>
+                  <p className="mt-1 text-[12px]" style={{ color: "var(--color-warn)" }}>
                     当前凭据「{usedCred.name}」属于 {usedCred.provider}，与所选 Provider
                     不适配 —— 切回原 Provider 即恢复显示；或改选上面列表中的配置。
                   </p>
