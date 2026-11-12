@@ -2072,6 +2072,20 @@ async def worker_events_of(run_id: str, session: AsyncSession = Depends(get_sess
     return {"root_run_id": root, "total": len(items), "items": items}
 
 
+@router.post("/{run_id}/browser/pause")
+async def browser_pause(run_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """暂停/继续这个执行的浏览器动作（协作式：等当前动作做完，下一步才停）。
+
+    接管 = 暂停 + 自己点画面。此时 browser-input 仍然可用 —— 用户点的是同一个
+    Chromium，助手只是在下一步之前等着，不会和他抢。
+    """
+    from ..browser_session import pause_state, set_paused
+
+    paused = bool((payload or {}).get("paused", True))
+    before = pause_state(run_id)
+    return {"paused": set_paused(run_id, paused), "was_paused": before}
+
+
 @router.post("/{run_id}/browser-input")
 async def browser_input(run_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     """把用户在浏览器画面上的操作打进该 run 的 Chromium。

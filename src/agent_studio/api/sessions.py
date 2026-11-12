@@ -486,6 +486,36 @@ async def list_session_files(
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"会话不存在: {session_id}")
     root = session_work_dir(session_id)
+    # 「本回合 / 全部」要能分组，就得知道每个文件是哪一轮写出来的。
+    # 判据不用额外记账：文件的 mtime 落在哪次执行的 [started_at, ended_at] 里，
+    # 就是哪一轮；落在窗口外就归给「之前结束的最近那一轮」。
+    windows: list[tuple[int, int, str, int | None]] = []
+    try:
+        rows = (
+            await session.execute(
+                select(Run.id, Run.started_at, Run.ended_at, Run.turn_index)
+                .where(Run.session_id == session_id)
+                .order_by(Run.started_at)
+            )
+        ).all()
+        for rid, st, en, ti in rows:
+            if st:
+                windows.append((int(st), int(en or st), str(rid), ti))
+    except Exception:  # noqa: BLE001 —— 分组拿不到就当没有，列表照常返回
+        windows = []
+
+    def _turn_of(mtime_s: int) -> tuple[str | None, int | None]:
+        """这个文件属于哪一轮 = 开始时间不晚于它的**最近**那一次执行。
+
+        为什么不用「落在窗口内」：产物常常在 run 结束后才被整理/移动一次，
+        mtime 会漂到窗口外，那时归给「最近一次已开始的执行」比归给「没有」有用。
+        """
+        ts = mtime_s * 1000
+        for st, _en, rid, ti in reversed(windows):
+            if ts >= st:
+                return rid, ti
+        return (None, None)
+
     out: list[dict] = []
     if root.is_dir():
         for p in sorted(root.rglob("*"), key=lambda x: x.stat().st_mtime, reverse=True):
@@ -503,6 +533,7 @@ async def list_session_files(
                 stat = p.stat()
             except OSError:
                 continue
+            run_id, turn_index = _turn_of(int(stat.st_mtime))
             out.append(
                 {
                     "path": str(rel),
@@ -510,6 +541,9 @@ async def list_session_files(
                     "mtime": int(stat.st_mtime),
                     # 取回走既有的产物端点（它本来就只放行沙箱内的路径）
                     "url": f"/api/work/file/{SESSION_DIR_NAME}/{session_id}/{rel}",
+                    # 属于哪一轮（前端按它分「本回合 / 全部」）
+                    "run_id": run_id,
+                    "turn_index": turn_index,
                 }
             )
             if len(out) >= limit:
@@ -787,6 +821,57 @@ async def get_session_deliverable(
         # 取文件走既有产物端点（它自带白名单/越界防护/HEAD）
         data["entry_url"] = f"/api/work/file/{SESSION_DIR_NAME}/{session_id}/{rel}"
     return data
+
+
+@router.post("/{session_id}/files/zip")
+async def zip_selected_files(
+    session_id: str, payload: dict, session: AsyncSession = Depends(get_session)
+):
+    """把用户勾选的文件打成一个 zip（多选批量下载）。
+
+    路径一律按「会话工作目录内的相对路径」处理并逐条校验：任何一条越界就整包拒绝 ——
+    宁可让用户重选，也不要把会话目录外的东西打进包里。
+    """
+    import io
+    import zipfile
+
+    from fastapi.responses import StreamingResponse
+
+    row = await session.get(ChatSession, session_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"会话不存在: {session_id}")
+    paths = [str(x) for x in (payload.get("paths") or []) if str(x).strip()]
+    if not paths:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "没有选择文件")
+    if len(paths) > 300:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "一次最多打包 300 个文件")
+
+    root = session_work_dir(session_id).resolve()
+    picked: list[tuple[Path, str]] = []
+    for rel in paths:
+        target = (root / rel).resolve()
+        if not str(target).startswith(str(root)):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"路径越界: {rel}")
+        if not target.is_file():
+            continue
+        picked.append((target, rel))
+    if not picked:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "选中的文件都不在了")
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+        for target, rel in picked:
+            try:
+                zf.write(target, arcname=rel)
+            except OSError:
+                continue
+    buf.seek(0)
+    name = f"{session_id}-files.zip"
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+    )
 
 
 @router.get("/{session_id}/deliverable/zip")

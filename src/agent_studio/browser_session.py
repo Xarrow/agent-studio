@@ -908,3 +908,48 @@ async def close_all(run_id: str) -> None:
             if not ud.exists():
                 break
             await asyncio.sleep(0.4)
+
+# --------------------------------------------------------------------------- #
+# 暂停闸（协作式）
+#
+# 用户要「暂停」「接管」：这两件事都不是杀掉浏览器，而是让**助手的下一步**先别落下。
+# 所以做成一个 per-run 的 asyncio.Event：set = 放行，clear = 暂停。
+# 工具在执行每个动作前 await 一次 —— 已经发出去的 CDP 命令不会被中断（那会打坏
+# 页面状态），但下一步一定停得住，用户此刻点画面里的东西不会被覆盖掉。
+# --------------------------------------------------------------------------- #
+_PAUSE: dict[str, "asyncio.Event"] = {}
+
+
+def pause_state(run_id: str) -> bool:
+    ev = _PAUSE.get(run_id)
+    return bool(ev and not ev.is_set())
+
+
+def set_paused(run_id: str, paused: bool) -> bool:
+    import asyncio as _a
+
+    ev = _PAUSE.get(run_id)
+    if ev is None:
+        ev = _a.Event()
+        ev.set()
+        _PAUSE[run_id] = ev
+    if paused:
+        ev.clear()
+    else:
+        ev.set()
+    return paused
+
+
+async def wait_if_paused(run_id: str, timeout_s: float = 900.0) -> str:
+    """暂停中就在这里等着；返回空串=可以继续，返回文字=别继续了（给模型看的理由）。"""
+    ev = _PAUSE.get(run_id)
+    if ev is None or ev.is_set():
+        return ""
+    import asyncio as _a
+
+    try:
+        await _a.wait_for(ev.wait(), timeout=timeout_s)
+        return ""
+    except _a.TimeoutError:
+        return "✗ 浏览器被用户暂停了超过 15 分钟，这一轮先停在这里（可以点继续再跑）"
+

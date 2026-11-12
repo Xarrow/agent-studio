@@ -1109,7 +1109,15 @@ export const api = {
       session_id: string;
       work_dir: string;
       count: number;
-      files: { path: string; size: number; mtime: number; url: string }[];
+      files: {
+        path: string;
+        size: number;
+        mtime: number;
+        url: string;
+        /** 属于哪一轮（后端按文件 mtime 与执行窗口对齐） */
+        run_id?: string | null;
+        turn_index?: number | null;
+      }[];
     }>(`/api/sessions/${id}/files?limit=${limit}`),
   /** 这一轮读过哪些网页（后端从工具调用解析，不落库） */
   runSources: (id: string) =>
@@ -1152,6 +1160,27 @@ export const api = {
   /** 这个会话跑过哪几次浏览器 */
   browserRuns: (sessionId: string) =>
     request<{ session_id: string; runs: BrowserRun[] }>(`/api/sessions/${sessionId}/browser`),
+  /** 多选批量下载：后端打成一个 zip，前端拿到 blob 直接触发下载 */
+  zipSessionFiles: async (id: string, paths: string[]) => {
+    const res = await fetch(`/api/sessions/${id}/files/zip`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paths }),
+    });
+    if (!res.ok) throw new Error((await res.text()).slice(0, 160) || `HTTP ${res.status}`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${id}-files.zip`;
+    a.click();
+    URL.revokeObjectURL(url);
+    return { count: paths.length };
+  },
+  /** 暂停 / 继续这个执行的浏览器动作（协作式：当前动作做完就停） */
+  pauseBrowser: (runId: string, paused: boolean) =>
+    post<{ paused: boolean; was_paused: boolean }>(`/api/runs/${runId}/browser/pause`, { paused }),
+
   /** 一次删多个（文件区「管理」用）：路径全部相对会话目录，有一个不合规矩就整体拒 */
   deleteSessionFiles: (id: string, paths: string[]) =>
     post<{ deleted: string[]; count: number; session_id: string }>(

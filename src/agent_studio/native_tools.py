@@ -768,6 +768,14 @@ async def _browser(
         v = (v or "").replace("\n", " ").strip()
         return v if len(v) <= n else v[: n - 1] + "…"
 
+    # 用户暂停/接管时，下一步动作先等着（已发出的动作不打断，避免打坏页面状态）
+    if action not in ("read", "wait"):
+        from .browser_session import wait_if_paused
+
+        _blocked = await wait_if_paused(run_id)
+        if _blocked:
+            return _blocked
+
     if action == "navigate":
         _emit(f"打开 {_host(url)}")
         _res = await sess.navigate(url or "about:blank", wait_s)

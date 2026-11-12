@@ -126,6 +126,8 @@ export function BrowserStage({
   onClose,
   steps,
   onLoadSteps,
+  paused,
+  onPauseChange,
 }: {
   /** inline = 消息流里的缩略条；panel = 完整窗口 */
   variant: "inline" | "panel";
@@ -143,6 +145,9 @@ export function BrowserStage({
   steps?: BrowserStep[];
   /** 打开面板时拉一次过程 */
   onLoadSteps?: () => void;
+  /** 用户暂停了助手（协作式：当前动作做完就停，下一步等着） */
+  paused?: boolean;
+  onPauseChange?: (paused: boolean) => void;
 }) {
   const imgRef = useRef<HTMLImageElement>(null);
   const [hasFrame, setHasFrame] = useState(false);
@@ -335,6 +340,23 @@ export function BrowserStage({
         right={
           <span className="flex shrink-0 items-center gap-2">
             {copied ? <span className="text-[10.5px]" style={{ color: "var(--color-ok)" }}>已复制</span> : null}
+            {onPauseChange && (busy || paused) ? (
+              <button
+                type="button"
+                data-tap
+                onClick={() => onPauseChange(!paused)}
+                className="rounded px-1.5 py-0.5 text-[11px]"
+                style={{
+                  color: paused ? "var(--color-accent)" : "var(--color-muted)",
+                  background: paused
+                    ? "color-mix(in srgb, var(--color-accent) 12%, transparent)"
+                    : "transparent",
+                }}
+                title={paused ? "让助手继续跑下一步" : "助手做完当前动作就停，你可以自己点画面"}
+              >
+                {paused ? "继续" : "暂停"}
+              </button>
+            ) : null}
             {onClose ? (
               <button
                 type="button"
@@ -348,6 +370,18 @@ export function BrowserStage({
           </span>
         }
       />
+
+      {paused ? (
+        <div
+          className="flex items-center gap-1.5 px-2.5 py-1 text-[11px]"
+          style={{
+            background: "color-mix(in srgb, var(--color-accent) 10%, var(--color-surface))",
+            color: "var(--color-accent)",
+          }}
+        >
+          <span className="live-dot">●</span> 已暂停 · 你可以直接点画面接管，点「继续」把控制权还给它
+        </div>
+      ) : null}
 
       {waiting ? (
         <div

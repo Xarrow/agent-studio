@@ -374,6 +374,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     setBrowserActions((prev) => [...prev, ...batch].slice(-60));
   }, []);
   const [browserOpen, setBrowserOpen] = useState(false);
+  /** 用户暂停了浏览器的助手动作（协作式；换一轮就复位） */
+  const [browserPaused, setBrowserPaused] = useState(false);
   /* ── 右侧工具坞 ──
      展开/收起、开哪个面板、宽度都记在 localStorage：这是用户的布局偏好，
      每次进来都回到"收起"会让人以为功能没了。 */
@@ -1291,6 +1293,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     setRunStart(Date.now());
     runStartRef.current = Date.now();
     resetLiveEvents();
+    setBrowserPaused(false);
     setLive({ role: "user", text: composed });
     // 直接进入助手流式态（user 消息由 live 显示，完成后由 history 接管）
     const userEcho = { role: "user" as const, content: composed, run_id: null, turn_index: 0 };
@@ -3440,6 +3443,10 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
         <SideDock
           panel={dockPanel}
           stepRunId={dockStepRun || liveRunId || null}
+          currentRunId={
+            liveRunId ||
+            (dockStepRun ?? ([...history].reverse().find((m) => m.run_id)?.run_id as string) ?? null)
+          }
           onPanel={(p) => setDockPanel(p)}
           open={dockOpen}
           onOpenChange={(v) => {
@@ -3457,6 +3464,11 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
           steps={browserSteps}
           browserBusy={busy}
           browserWaiting={browserWaiting}
+          browserPaused={browserPaused}
+          onBrowserPause={(p) => {
+            setBrowserPaused(p);
+            if (liveRunId) void api.pauseBrowser(liveRunId, p).catch(() => setBrowserPaused(!p));
+          }}
           onBrowserOpenFull={() => setBrowserOpen(true)}
           onUserClick={async (x, y) => sendBrowser({ kind: "click", x, y })}
           onUserText={async (text) => sendBrowser({ kind: "text", text })}

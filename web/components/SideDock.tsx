@@ -49,6 +49,8 @@ export function SideDock({
   onUserClick,
   onUserText,
   onUserScroll,
+  browserPaused,
+  onBrowserPause,
   /* 文件 */
   sessionId,
   files,
@@ -61,6 +63,7 @@ export function SideDock({
   deliverableZipUrl,
   /* 步骤 */
   stepRunId,
+  currentRunId,
 }: {
   panel: DockPanel | null;
   onPanel: (p: DockPanel) => void;
@@ -77,8 +80,17 @@ export function SideDock({
   onUserClick?: (x: number, y: number) => void | Promise<void>;
   onUserText?: (t: string) => void | Promise<void>;
   onUserScroll?: (dy: number) => void | Promise<void>;
+  browserPaused?: boolean;
+  onBrowserPause?: (paused: boolean) => void;
   sessionId?: string;
-  files: { path: string; size: number; mtime?: number; url?: string }[];
+  files: {
+    path: string;
+    size: number;
+    mtime?: number;
+    url?: string;
+    run_id?: string | null;
+    turn_index?: number | null;
+  }[];
   workDir?: string;
   filesBusy?: boolean;
   onFilesRefresh?: () => void;
@@ -89,6 +101,8 @@ export function SideDock({
   deliverableZipUrl?: string;
   /** 「步骤」面板看哪一次执行 */
   stepRunId?: string | null;
+  /** 产物分组用：当前这一轮的 run id */
+  currentRunId?: string | null;
 }) {
   const [dragging, setDragging] = useState(false);
   const dragRef = useRef<{ x: number; w: number } | null>(null);
@@ -97,6 +111,8 @@ export function SideDock({
   const [confirmDel, setConfirmDel] = useState(false);
   const [busyDel, setBusyDel] = useState(false);
   const [uploading, setUploading] = useState(false);
+  /** 批量下载失败的行内提示（不用 alert：原生弹窗会卡住 SSE） */
+  const [zipErr, setZipErr] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   /* 拖动改宽：只在拖动期间挂 document 监听，松手就摘 */
@@ -130,6 +146,23 @@ export function SideDock({
     const kw = q.trim().toLowerCase();
     return !kw || f.path.toLowerCase().includes(kw);
   });
+
+  /** 产物分组：本回合 / 更早（没有当前 run 时就只有一个「全部」） */
+  const rows: ({ kind: "head"; label: string; n: number } | { kind: "file"; f: (typeof shown)[number] })[] =
+    (() => {
+      const mine = currentRunId ? shown.filter((f) => f.run_id === currentRunId) : [];
+      const rest = shown.filter((f) => !mine.includes(f));
+      const out: typeof rows = [];
+      if (mine.length > 0) {
+        out.push({ kind: "head", label: "本回合", n: mine.length });
+        for (const f of mine) out.push({ kind: "file", f });
+        if (rest.length > 0) out.push({ kind: "head", label: "更早", n: rest.length });
+      } else if (rest.length > 0) {
+        out.push({ kind: "head", label: "全部", n: rest.length });
+      }
+      for (const f of rest) out.push({ kind: "file", f });
+      return out;
+    })();
 
   const doDelete = useCallback(async () => {
     if (!sessionId || pick.length === 0 || busyDel) return;
@@ -304,6 +337,8 @@ export function SideDock({
                 onUserClick={onUserClick}
                 onUserText={onUserText}
                 onUserScroll={onUserScroll}
+                paused={browserPaused}
+                onPauseChange={onBrowserPause}
               />
             </div>
           ) : panel === "steps" ? (
@@ -392,7 +427,19 @@ export function SideDock({
                       : "没有匹配的文件"}
                   </div>
                 ) : (
-                  shown.map((f) => {
+                  rows.map((r) => {
+                    if (r.kind === "head") {
+                      return (
+                        <p
+                          key={`h-${r.label}`}
+                          className="mt-1.5 px-2 pb-0.5 text-[10.5px] tracking-wide"
+                          style={{ color: "var(--color-text-3)" }}
+                        >
+                          {r.label} · {r.n}
+                        </p>
+                      );
+                    }
+                    const f = r.f;
                     const picked = pick.includes(f.path);
                     return (
                       <div key={f.path} className="flex items-center gap-1">
@@ -444,6 +491,11 @@ export function SideDock({
                   <span style={{ color: "var(--color-muted)" }}>
                     已选 {pick.length} / {files.length}
                   </span>
+                  {zipErr && (
+                    <span style={{ color: "var(--color-err)" }} title={zipErr}>
+                      打包失败
+                    </span>
+                  )}
                   <button
                     type="button"
                     data-tap
@@ -455,6 +507,22 @@ export function SideDock({
                     }}
                   >
                     取消
+                  </button>
+                  <button
+                    type="button"
+                    data-tap
+                    className="rounded px-1"
+                    style={{ color: "var(--color-accent)" }}
+                    title="把这些文件打成一个 zip 下载"
+                    onClick={() => {
+                      if (!sessionId) return;
+                      void api
+                        .zipSessionFiles(sessionId, pick)
+                        .then(() => setPick([]))
+                        .catch((e) => setZipErr(String(e).slice(0, 120)));
+                    }}
+                  >
+                    下载所选
                   </button>
                   <button
                     type="button"
