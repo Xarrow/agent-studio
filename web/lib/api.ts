@@ -1049,7 +1049,30 @@ export const api = {
   /* ----------------------------- 会话（多轮） ----------------------------- */
   sessions: (agentId?: string) =>
     request<Session[]>(`/api/sessions${agentId ? `?agent_id=${agentId}` : ""}`),
-  session: (id: string) => request<SessionDetail>(`/api/sessions/${id}`),
+  session: (id: string, turns?: number) =>
+    request<SessionDetail>(`/api/sessions/${id}${turns ? `?turns=${turns}` : ""}`),
+  /** 按轮次翻消息：before 往前 / around 跳到某轮附近 */
+  sessionTurns: (id: string, p: { before?: number; around?: number; after?: number; limit?: number }) => {
+    const q = new URLSearchParams();
+    if (p.before !== undefined) q.set("before", String(p.before));
+    if (p.around !== undefined) q.set("around", String(p.around));
+    if (p.after !== undefined) q.set("after", String(p.after));
+    if (p.limit !== undefined) q.set("limit", String(p.limit));
+    return request<{
+      session_id: string;
+      messages: {
+        id: number;
+        turn_index: number;
+        role: string;
+        content: string;
+        run_id: string | null;
+        ts: number;
+        sources_count?: number;
+      }[];
+      before_turn: number;
+      has_more: boolean;
+    }>(`/api/sessions/${id}/turns?${q.toString()}`);
+  },
   /** 这个会话的工作目录里有什么（会话隔离后，产物按会话分目录） */
   /** 会话定时任务：让这个对话按时自己跑（结果回到对话里 / 推 webhook） */
   sessionJobs: (sessionId: string) =>

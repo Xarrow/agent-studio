@@ -56,7 +56,14 @@ interface LiveMsg {
   text: string;
 }
 
-export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }) {
+export function ChatConsole({
+  agentId: controlledAgentId,
+  initialSession,
+}: {
+  agentId?: string;
+  /** 深链进来的会话（/exec?s=…）：首屏直接打开它 */
+  initialSession?: string;
+}) {
   const fb = useFeedback();
 
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -118,7 +125,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   const [curParent, setCurParent] = useState<string | null>(null);
   /** 当前 worker 会话是哪个助手 —— 身份带要用它的固定色，跟侧栏/编排区对上 */
   const [curAgentId, setCurAgentId] = useState<string | null>(null);
-  const [sessionId, setSessionId] = useState<string>("");
+  const [sessionId, setSessionId] = useState<string>(initialSession || "");
   /**
    * 「自动挑」——这一句交给谁由内容决定。默认**关**：多数时候人心里有数，
    * 平台别抢方向盘。开了之后每句话都先过路由，认不出来就问一句。
@@ -376,6 +383,10 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   const [browserOpen, setBrowserOpen] = useState(false);
   /** 用户暂停了浏览器的助手动作（协作式；换一轮就复位） */
   const [browserPaused, setBrowserPaused] = useState(false);
+  /** 还没加载的更早轮次的上界（0 = 已到顶）；配合 api.sessionTurns 往上翻 */
+  const [beforeTurn, setBeforeTurn] = useState(0);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+
   /** 会话目录（一轮一条）+ 当前所在轮（滚动同步） */
   const [outline, setOutline] = useState<
     {
@@ -526,14 +537,74 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     return () => io.disconnect();
   }, [outline, history.length, sessionId]);
 
+  /** 把后端拿到的消息转成界面用的形状（首屏与翻页共用一份规则） */
+  const toHistory = useCallback(
+    (msgs: { id: number; turn_index: number; role: string; content: string; run_id: string | null; ts: number; sources_count?: number }[]) =>
+      msgs
+        .filter((m) => m.role === "user" || m.role === "assistant" || m.role === "system")
+        .map((m) => ({
+          role: (m.content.startsWith("【自动汇报") ? "system" : m.role) as
+            | "user"
+            | "assistant"
+            | "system",
+          content: m.role === "assistant" ? humanizeAssistantText(m.content) : m.content,
+          run_id: m.run_id,
+          turn_index: m.turn_index,
+          id: m.id,
+          ts: m.ts,
+          sources_count: m.sources_count ?? 0,
+        })),
+    [],
+  );
+
+  /** 往上翻：取更早的 20 轮插到头部，并保持滚动锚点（不跳） */
+  const loadOlder = useCallback(async () => {
+    if (!sessionId || loadingOlder || !beforeTurn) return;
+    setLoadingOlder(true);
+    const box = document.querySelector("[data-msg-scroll]");
+    const prevH = box?.scrollHeight ?? 0;
+    try {
+      const r = await api.sessionTurns(sessionId, { before: beforeTurn, limit: 20 });
+      const older = toHistory(r.messages as never);
+      setHistory((h) => [...older, ...h]);
+      setBeforeTurn(Number(r.before_turn ?? 0));
+      requestAnimationFrame(() => {
+        if (box) box.scrollTop += box.scrollHeight - prevH;
+      });
+    } catch {
+      fb.error("加载更早的消息失败", "网络恢复后重试");
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [sessionId, loadingOlder, beforeTurn, toHistory, fb]);
+
   /** 跳到第 N 轮：滚到那一条的用户气泡，并给 600ms 高亮 */
   const jumpTurn = useCallback((seq: number) => {
     const box = document.querySelector("[data-msg-scroll]");
     const el = box?.querySelector<HTMLElement>(`[data-turn="${seq}"]`);
-    if (!el) {
-      fb.info("这一轮还在别处", "往上翻一下就能看到它（正文按需加载）");
+    if (!el && sessionId) {
+      // 这一轮还没加载：取它前后各若干轮插进来，再滚过去（不打断阅读位置）
+      void api
+        .sessionTurns(sessionId, { around: seq, limit: 20 })
+        .then((r) => {
+          const extra = toHistory(r.messages as never);
+          setHistory((h) => {
+            const seen = new Set(h.map((x) => x.id));
+            const add = extra.filter((x) => !seen.has(x.id));
+            return [...add, ...h].sort(
+              (a, b) => (a.turn_index || 0) - (b.turn_index || 0) || (a.id || 0) - (b.id || 0),
+            );
+          });
+          requestAnimationFrame(() => {
+            const target = document.querySelector<HTMLElement>(`[data-msg-scroll] [data-turn="${seq}"]`);
+            target?.scrollIntoView({ behavior: "smooth", block: "start" });
+          });
+        })
+        .catch(() => fb.error("定位失败", "这一轮取不回来，试试往上翻"));
+      setActiveTurn(seq);
       return;
     }
+    if (!el) return;
     const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     el.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
     const prev = el.style.outline;
@@ -656,13 +727,12 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
       return;
     }
     try {
-      const detail = await api.session(sid);
+      const detail = await api.session(sid, 30);
       setCurKind(detail.session.kind ?? "chat");
       setCurTicket(detail.session.ticket_title ?? null);
       setCurParent(detail.session.parent_session_id ?? null);
       setCurAgentId(detail.session.agent_id ?? null);
-      setHistory(
-        detail.messages
+      const fresh = detail.messages
           // system = 心跳这类"平台说的话"：不属于任何一轮，但要留在历史里
           // （关掉页面回来还能看到后台任务跑到哪了）
           .filter((m) => m.role === "user" || m.role === "assistant" || m.role === "system")
@@ -680,7 +750,17 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             id: m.id,
             ts: m.ts,
             sources_count: m.sources_count ?? 0,
-          })),
+          }));
+      // 保留已经往上翻出来的更早消息：轮询/刷新不该把用户翻上去的历史又吞掉
+      const earliestFresh = fresh.length ? Math.min(...fresh.map((x) => x.turn_index || 0)) : Infinity;
+      const older = Number.isFinite(earliestFresh)
+        ? historyRef.current.filter((x) => (x.turn_index || 0) < earliestFresh)
+        : [];
+      setHistory(older.length ? [...older, ...fresh] : fresh);
+      setBeforeTurn(
+        older.length
+          ? Math.min(...older.map((x) => x.turn_index || 1)) - 1
+          : Number(detail.before_turn ?? 0),
       );
     } catch {
       setHistory([]);
@@ -727,9 +807,10 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
     if (!agentId) return;
     void (async () => {
       const list = await loadSessions(agentId);
-      const want = pendingPick.current;
+      // 深链（/exec?s=…）优先：地址里点名的那一个会话，哪怕它不在这个助手名下也照开
+      const want = initialSession || pendingPick.current;
       pendingPick.current = null;
-      if (want && list.some((x) => x.id === want)) {
+      if (want && (list.some((x) => x.id === want) || initialSession === want)) {
         setSessionId(want);
       } else if (list.length > 0) {
         setSessionId(list[0].id);
@@ -2488,6 +2569,20 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             style={{ paddingBottom: dockH + 14 }}
             data-msg-scroll
           >
+            {beforeTurn > 0 && (
+              <div className="mx-auto mb-2 w-full max-w-[760px] px-2">
+                <button
+                  type="button"
+                  data-tap
+                  disabled={loadingOlder}
+                  onClick={() => void loadOlder()}
+                  className="mx-auto block rounded-full border px-3 py-1 text-[12px] hover:bg-[var(--bg-selected)] disabled:opacity-60"
+                  style={{ borderColor: "var(--color-border)", color: "var(--color-text-2)" }}
+                >
+                  {loadingOlder ? "正在加载…" : `加载更早的消息（还有 ${beforeTurn} 轮）`}
+                </button>
+              </div>
+            )}
             {history.length === 0 && !live ? (
               /* 空状态：不摆「开始对话」的废话 —— 直接给 3 个可点的开场问题，
                  点了就填进输入框（不自动发，让人改得动）。 */

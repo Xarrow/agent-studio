@@ -835,6 +835,8 @@ class SessionDetail(BaseModel):
 
     session: SessionRead
     messages: list[SessionMessageRead]
+    #: 只取最近 N 轮时，还没拿到的更早那一轮的上界（0 = 已经到顶）
+    before_turn: int | None = None
 
 
 class SessionClearContextRequest(BaseModel):

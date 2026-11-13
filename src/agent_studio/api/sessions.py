@@ -242,21 +242,36 @@ async def list_sessions(
 
 @router.get("/{session_id}", response_model=SessionDetail)
 async def get_session_detail(
-    session_id: str, session: AsyncSession = Depends(get_session)
+    session_id: str,
+    turns: int | None = Query(None, ge=1, le=200),
+    session: AsyncSession = Depends(get_session),
 ) -> SessionDetail:
+    """会话详情。``turns`` 给定时只返回最近 N 轮 —— 长会话首屏不必等五十条消息。
+
+    返回里的 ``before_turn`` 是「还没拿到的更早那一轮」的上界，前端据此请求
+    ``/turns?before=`` 往前翻。
+    """
     row = await session.get(ChatSession, session_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"会话不存在: {session_id}")
 
-    rows = (
+    all_rows = (
         await session.execute(
             select(SessionMessage)
             .where(SessionMessage.session_id == session_id)
             .order_by(SessionMessage.turn_index, SessionMessage.id)
         )
     ).scalars().all()
+
+    before_turn: int | None = None
+    rows = all_rows
+    if turns is not None and all_rows:
+        last_turn = max(int(r.turn_index or 0) for r in all_rows)
+        start = max(1, last_turn - turns + 1)
+        rows = [r for r in all_rows if int(r.turn_index or 0) >= start]
+        before_turn = start - 1 if start > 1 else 0
     names = await _agent_names(session, [row.agent_id])
-    turns = len({r.turn_index for r in rows})
+    turns = len({r.turn_index for r in all_rows})
     head = _to_read(row, turns, names.get(row.agent_id))
     if head.kind == "worker":
         # worker-<票号短名> → 票，身份条上要写清"这是哪一件活"
@@ -275,6 +290,7 @@ async def get_session_detail(
     counts = await _sources_counts(session, [r.run_id for r in rows if r.run_id])
     return SessionDetail(
         session=head,
+        before_turn=before_turn,
         messages=[
             SessionMessageRead(
                 id=r.id, turn_index=r.turn_index, role=r.role,
@@ -550,6 +566,66 @@ async def list_session_files(
             if len(out) >= limit:
                 break
     return {"session_id": session_id, "work_dir": str(root), "count": len(out), "files": out}
+
+
+@router.get("/{session_id}/turns")
+async def session_turns(
+    session_id: str,
+    before: int | None = Query(None, ge=0),
+    after: int | None = Query(None, ge=0),
+    around: int | None = Query(None, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """按轮次取消息：往前翻（before）/ 往后翻（after）/ 跳到某一轮附近（around）。
+
+    三种参数只能给一个，语义不同：
+    · before=N  取 turn_index < N 的最近 limit 轮（向上滚动加载历史）
+    · after=N   取 turn_index > N 的最近 limit 轮（补齐尾部）
+    · around=N  取 N 前后各一半（点目录跳到还没加载的那一轮）
+    """
+    row = await session.get(ChatSession, session_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"会话不存在: {session_id}")
+
+    q = select(SessionMessage).where(SessionMessage.session_id == session_id)
+    if before is not None:
+        q = q.where(SessionMessage.turn_index < before).order_by(SessionMessage.turn_index.desc())
+    elif after is not None:
+        q = q.where(SessionMessage.turn_index > after).order_by(SessionMessage.turn_index)
+    elif around is not None:
+        half = max(1, limit // 2)
+        q = q.where(SessionMessage.turn_index.between(around - half, around + half)).order_by(
+            SessionMessage.turn_index
+        )
+    else:
+        q = q.order_by(SessionMessage.turn_index.desc())
+
+    rows = (await session.execute(q.limit(limit * 4))).scalars().all()
+    if before is not None:
+        # 倒序取到的再翻回正序给人读
+        rows = list(reversed(rows))
+
+    turns = sorted({int(r.turn_index or 0) for r in rows})
+    lowest = turns[0] if turns else 0
+    counts = await _sources_counts(session, [r.run_id for r in rows if r.run_id])
+    return {
+        "session_id": session_id,
+        "messages": [
+            {
+                "id": r.id,
+                "turn_index": r.turn_index,
+                "role": r.role,
+                "content": r.content,
+                "run_id": r.run_id,
+                "ts": r.ts,
+                "sources_count": counts.get(r.run_id or "", 0),
+            }
+            for r in rows
+        ],
+        "before_turn": max(0, lowest - 1),
+        "has_more": lowest > 1,
+    }
 
 
 # --------------------------------------------------------------------------- #

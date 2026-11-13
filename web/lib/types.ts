@@ -674,6 +674,8 @@ export interface SessionMessage {
 export interface SessionDetail {
   session: Session;
   messages: SessionMessage[];
+  /** 只取最近 N 轮时，还没拿到的更早那一轮的上界（0/undefined = 已到顶） */
+  before_turn?: number | null;
 }
 
 /* -------------------------------------------------------------------------- */

@@ -24,9 +24,14 @@ export default function ExecPage() {
    *  改成动态渲染（还要额外套 Suspense 边界），为了一个查询参数不值得。
    *  放在 effect 里读也避免了服务端/客户端渲染不一致。 */
   const [agent, setAgent] = useState<string | undefined>(undefined);
+  /** 深链直达某个会话：/exec?agent=<id>&s=<sessionId>（目录项/分享链接用） */
+  const [session, setSession] = useState<string | undefined>(undefined);
   useEffect(() => {
-    const id = new URLSearchParams(window.location.search).get("agent");
+    const q = new URLSearchParams(window.location.search);
+    const id = q.get("agent");
     if (id) setAgent(id);
+    const sid = q.get("s");
+    if (sid) setSession(sid);
   }, []);
-  return <ChatConsole agentId={agent} />;
+  return <ChatConsole agentId={agent} initialSession={session} />;
 }
