@@ -1157,6 +1157,41 @@ export const api = {
     request<{ session_id: string; run_id: string; steps: BrowserStep[]; count: number }>(
       `/api/sessions/${sessionId}/browser/${runId}`,
     ),
+  /** 会话目录：一轮一条（摘要 / 状态 / 步数 / 文件数），毫秒级返回 */
+  sessionOutline: (id: string) =>
+    request<{
+      session_id: string;
+      count: number;
+      items: {
+        turn_id: string;
+        seq: number;
+        digest: string;
+        status: "done" | "running" | "waiting" | "error";
+        created_at: number;
+        step_count: number;
+        artifact_count: number;
+        run_id: string | null;
+      }[];
+    }>(`/api/sessions/${id}/outline`),
+  /** 首屏聚合：会话 + 目录 + 最近 N 轮消息，一次往返 */
+  openSession: (id: string, turns = 20) =>
+    request<{
+      session: { id: string; agent_id: string; title: string; status: string; message_count: number; last_active_at: number };
+      outline: {
+        turn_id: string;
+        seq: number;
+        digest: string;
+        status: "done" | "running" | "waiting" | "error";
+        created_at: number;
+        step_count: number;
+        artifact_count: number;
+        run_id: string | null;
+      }[];
+      turns_loaded: number;
+      before_turn: number;
+      messages: { id: number; turn_index: number; role: string; content: string; run_id: string | null; created_at: number }[];
+      run_state: "idle" | "running";
+    }>(`/api/sessions/${id}/open?turns=${turns}`),
   /** 这个会话跑过哪几次浏览器 */
   browserRuns: (sessionId: string) =>
     request<{ session_id: string; runs: BrowserRun[] }>(`/api/sessions/${sessionId}/browser`),

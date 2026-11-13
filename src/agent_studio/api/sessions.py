@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+from typing import Any, Optional
 
 from pathlib import Path
 
@@ -549,6 +550,191 @@ async def list_session_files(
             if len(out) >= limit:
                 break
     return {"session_id": session_id, "work_dir": str(root), "count": len(out), "files": out}
+
+
+# --------------------------------------------------------------------------- #
+# 会话目录（outline）—— 「这个会话里问过什么」
+#
+# 为什么单独一个轻接口：打开一个几十轮的会话时，前端最想先拿到的是**结构**
+# （问过哪些问题、哪些跑完了），而不是几十 KB 的消息正文。目录只带摘要与计数，
+# 一个 500 轮的会话压缩后也就十几 KB，所以能做到「打开即可见、点击即达」。
+# --------------------------------------------------------------------------- #
+_DIGEST_MAX = 40
+
+
+def _digest_of(text: str) -> str:
+    """把一条提问压成一句能被扫到的摘要。规则与服务端自动标题一致：
+    取首行、URL 压成域名、折叠空白、截断 40 字。"""
+    raw = (text or "").strip()
+    if not raw:
+        return ""
+    first = raw.splitlines()[0].strip()
+    # URL → 域名（长链接会把整行吃满，摘要就失去信息量）
+    def _short_url(m: Any) -> str:
+        u = str(m.group(0))
+        try:
+            from urllib.parse import urlparse
+
+            host = urlparse(u).netloc or u
+            return host[4:] if host.startswith("www.") else host
+        except Exception:  # noqa: BLE001
+            return u
+
+    first = re.sub(r"https?://\S+", _short_url, first)
+    first = re.sub(r"\s+", " ", first).strip()
+    return first if len(first) <= _DIGEST_MAX else first[: _DIGEST_MAX - 1] + "…"
+
+
+@router.get("/{session_id}/outline")
+async def session_outline(
+    session_id: str, session: AsyncSession = Depends(get_session)
+) -> dict:
+    """当前会话的问题目录：一轮一条，带摘要 / 状态 / 步数 / 文件数。
+
+    摘要规则与服务端一致（首行 + URL 域名化 + 40 字截断）；这里不调模型 ——
+    目录必须毫秒级返回，模型摘要作为增强另行推送。
+    """
+    row = await session.get(ChatSession, session_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"会话不存在: {session_id}")
+
+    msgs = (
+        await session.execute(
+            select(SessionMessage)
+            .where(SessionMessage.session_id == session_id, SessionMessage.role == "user")
+            .order_by(SessionMessage.turn_index, SessionMessage.id)
+        )
+    ).scalars().all()
+
+    runs = (
+        await session.execute(
+            select(Run.id, Run.turn_index, Run.status, Run.started_at, Run.ended_at)
+            .where(Run.session_id == session_id)
+            .order_by(Run.started_at)
+        )
+    ).all()
+    by_turn: dict[int, tuple[str, str, int, Optional[int]]] = {}
+    for rid, ti, st, _sa, _ea in runs:
+        if ti is None:
+            continue
+        by_turn[int(ti)] = (str(rid), str(st), int(_sa or 0), _ea)
+
+    # 步数与文件数：按 run 聚合（两条 group by，别在循环里查库）
+    step_counts: dict[str, int] = {}
+    if by_turn:
+        run_ids = [v[0] for v in by_turn.values()]
+        rows = (
+            await session.execute(
+                select(ToolCall.run_id, func.count()).where(ToolCall.run_id.in_(run_ids)).group_by(ToolCall.run_id)
+            )
+        ).all()
+        step_counts = {str(r[0]): int(r[1]) for r in rows}
+
+    file_counts: dict[str, int] = {}
+    try:
+        root = session_work_dir(session_id)
+        windows = sorted(
+            [(int(v[2]), v[0]) for v in by_turn.values() if v[2]], key=lambda x: x[0]
+        )
+        if root.is_dir() and windows:
+            for f in root.rglob("*"):
+                if not f.is_file():
+                    continue
+                ts = int(f.stat().st_mtime) * 1000
+                rid = None
+                for st, r in windows:
+                    if ts >= st:
+                        rid = r
+                if rid:
+                    file_counts[rid] = file_counts.get(rid, 0) + 1
+    except Exception:  # noqa: BLE001
+        file_counts = {}
+
+    items: list[dict] = []
+    for m in msgs:
+        ti = int(m.turn_index or 0)
+        rid, st, _started, _ended = by_turn.get(ti, ("", "", 0, None))
+        status = "done"
+        if st in ("running", "pending"):
+            status = "running"
+        elif st == "waiting_hitl":
+            status = "waiting"
+        elif st in ("error", "aborted"):
+            status = "error"
+        items.append(
+            {
+                "turn_id": f"t{ti}",
+                "seq": ti,
+                "digest": _digest_of(m.content or ""),
+                "status": status,
+                "created_at": int(m.ts or 0),
+                "step_count": step_counts.get(rid, 0),
+                "artifact_count": file_counts.get(rid, 0),
+                "run_id": rid or None,
+            }
+        )
+    return {"session_id": session_id, "count": len(items), "items": items}
+
+
+@router.get("/{session_id}/open")
+async def open_session(
+    session_id: str,
+    turns: int = Query(20, ge=1, le=100),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """首屏聚合：会话元信息 + 目录 + 最近 N 轮的消息，一次往返拿全。
+
+    为什么合一个接口：打开会话是最高频动作，两个往返叠加在弱网下很不划算。
+    目录和消息在同一个响应里返回，但前端仍可按字段分批渲染（目录先画）。
+    """
+    row = await session.get(ChatSession, session_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"会话不存在: {session_id}")
+
+    outline = (await session_outline(session_id, session))["items"]
+    total_turns = outline[-1]["seq"] if outline else 0
+    start_turn = max(1, total_turns - turns + 1) if total_turns else 1
+
+    msgs = (
+        await session.execute(
+            select(SessionMessage)
+            .where(SessionMessage.session_id == session_id, SessionMessage.turn_index >= start_turn)
+            .order_by(SessionMessage.turn_index, SessionMessage.id)
+        )
+    ).scalars().all()
+
+    runs = (
+        await session.execute(
+            select(Run.status).where(Run.session_id == session_id).order_by(Run.started_at.desc()).limit(1)
+        )
+    ).scalars().all()
+    run_state = "running" if runs and runs[0] in ("running", "pending", "waiting_hitl") else "idle"
+
+    return {
+        "session": {
+            "id": row.id,
+            "agent_id": row.agent_id,
+            "title": row.title,
+            "status": row.status,
+            "message_count": row.message_count,
+            "last_active_at": row.last_active_at,
+        },
+        "outline": outline,
+        "turns_loaded": turns,
+        "before_turn": start_turn - 1,
+        "messages": [
+            {
+                "id": m.id,
+                "turn_index": m.turn_index,
+                "role": m.role,
+                "content": m.content,
+                "run_id": m.run_id,
+                "created_at": m.ts,
+            }
+            for m in msgs
+        ],
+        "run_state": run_state,
+    }
 
 
 @router.get("/{session_id}/browser")

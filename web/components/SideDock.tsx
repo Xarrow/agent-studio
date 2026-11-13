@@ -26,7 +26,7 @@ import { api, fmt } from "@/lib/api";
 import { fileTypeKey, shortFilePath } from "@/lib/files";
 import type { BrowserStep } from "@/lib/types";
 
-export type DockPanel = "browser" | "files" | "steps";
+export type DockPanel = "outline" | "browser" | "files" | "steps";
 
 const MIN_W = 320;
 const MAX_W = 560;
@@ -61,6 +61,10 @@ export function SideDock({
   deliverable,
   onPublishDeliverable,
   deliverableZipUrl,
+  /* 目录 */
+  outline,
+  activeTurn,
+  onJumpTurn,
   /* 步骤 */
   stepRunId,
   currentRunId,
@@ -99,6 +103,19 @@ export function SideDock({
   deliverable?: { exists: boolean; file_count: number; size: number } | null;
   onPublishDeliverable?: () => void;
   deliverableZipUrl?: string;
+  /** 会话目录：一轮一条 */
+  outline?: {
+    turn_id: string;
+    seq: number;
+    digest: string;
+    status: "done" | "running" | "waiting" | "error";
+    created_at: number;
+    step_count: number;
+    artifact_count: number;
+  }[];
+  /** 当前所在那一轮（滚动同步） */
+  activeTurn?: number | null;
+  onJumpTurn?: (seq: number) => void;
   /** 「步骤」面板看哪一次执行 */
   stepRunId?: string | null;
   /** 产物分组用：当前这一轮的 run id */
@@ -256,6 +273,17 @@ export function SideDock({
         style={{ background: "var(--color-surface-2)" }}
       >
         {rail(
+          "outline",
+          "目录",
+          outline?.length,
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M4 6h12M4 12h12M4 18h12" />
+            <circle cx="20" cy="6" r="1.4" />
+            <circle cx="20" cy="12" r="1.4" />
+            <circle cx="20" cy="18" r="1.4" />
+          </svg>,
+        )}
+        {rail(
           "browser",
           "浏览器",
           steps.length,
@@ -296,7 +324,9 @@ export function SideDock({
                 ? "浏览器画面"
                 : panel === "steps"
                   ? "步骤详情"
-                  : "产物"}
+                  : panel === "outline"
+                    ? "目录"
+                    : "产物"}
             </span>
             {panel === "browser" && onBrowserOpenFull ? (
               <button
@@ -325,7 +355,55 @@ export function SideDock({
             </button>
           </div>
 
-          {panel === "browser" ? (
+          {panel === "outline" ? (
+            <div className="min-h-0 flex-1 overflow-y-auto p-1.5" role="navigation" aria-label="会话目录">
+              {!outline || outline.length === 0 ? (
+                <p className="px-2 py-3 text-[12px] leading-relaxed" style={{ color: "var(--color-muted)" }}>
+                  发送第一个问题后，这里会出现目录。
+                </p>
+              ) : (
+                outline.map((it) => {
+                  const active = activeTurn === it.seq;
+                  const time = new Date(it.created_at).toLocaleTimeString("zh-CN", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  });
+                  const bits = [time];
+                  if (it.step_count > 0) bits.push(`${it.step_count} 步`);
+                  if (it.artifact_count > 0) bits.push(`${it.artifact_count} 个文件`);
+                  return (
+                    <button
+                      key={it.turn_id}
+                      type="button"
+                      data-tap
+                      aria-current={active ? "location" : undefined}
+                      aria-label={`第 ${it.seq} 个问题：${it.digest}`}
+                      onClick={() => onJumpTurn?.(it.seq)}
+                      className="mb-[2px] flex min-h-[48px] w-full items-center gap-2 rounded-[var(--radius-sm)] px-2 py-1.5 text-left transition-colors hover:bg-[var(--bg-selected)]"
+                      style={{ background: active ? "var(--bg-selected)" : "transparent" }}
+                    >
+                      <span className="w-6 shrink-0 text-right text-[11px] tabular-nums" style={{ color: "var(--color-text-3)" }}>
+                        {it.seq}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[13px]" style={{ color: active ? "var(--color-text)" : "var(--color-text-2)" }}>
+                          {it.digest || "（无摘要）"}
+                        </span>
+                        <span className="mt-0.5 block text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                          {bits.join(" · ")}
+                        </span>
+                      </span>
+                      {it.status === "running" ? (
+                        <span className="live-dot shrink-0" aria-label="运行中">●</span>
+                      ) : it.status === "error" ? (
+                        <span className="shrink-0 text-[10px]" style={{ color: "var(--color-err)" }} aria-label="失败">●</span>
+                      ) : null}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          ) : panel === "browser" ? (
             <div className="flex min-h-0 flex-1 flex-col">
               <BrowserStage
                 variant="panel"

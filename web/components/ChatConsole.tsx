@@ -376,6 +376,19 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   const [browserOpen, setBrowserOpen] = useState(false);
   /** 用户暂停了浏览器的助手动作（协作式；换一轮就复位） */
   const [browserPaused, setBrowserPaused] = useState(false);
+  /** 会话目录（一轮一条）+ 当前所在轮（滚动同步） */
+  const [outline, setOutline] = useState<
+    {
+      turn_id: string;
+      seq: number;
+      digest: string;
+      status: "done" | "running" | "waiting" | "error";
+      created_at: number;
+      step_count: number;
+      artifact_count: number;
+    }[]
+  >([]);
+  const [activeTurn, setActiveTurn] = useState<number | null>(null);
   /* ── 右侧工具坞 ──
      展开/收起、开哪个面板、宽度都记在 localStorage：这是用户的布局偏好，
      每次进来都回到"收起"会让人以为功能没了。 */
@@ -472,6 +485,71 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   /* 草稿按会话存：切会话不丢没发出去的字。写入放在下面两个 effect 里 ——
      直接在 onChange 里写会把「刚切过去还没恢复」的空串覆盖掉草稿。 */
   const draftSid = useRef<string>("");
+
+  /* 目录：切会话就拉一次；一轮跑完再拉一次（新问题要出现在目录末尾）。
+     为什么不等消息：目录是结构，几百字节，先到先画，用户点得动。 */
+  useEffect(() => {
+    if (!sessionId) {
+      setOutline([]);
+      return;
+    }
+    let dead = false;
+    api
+      .sessionOutline(sessionId)
+      .then((r) => {
+        if (!dead) setOutline(r.items || []);
+      })
+      .catch(() => {
+        if (!dead) setOutline([]);
+      });
+    return () => {
+      dead = true;
+    };
+  }, [sessionId, busy]);
+
+  /* 滚动同步：视口上方 1/3 处那一轮 = 当前项 */
+  useEffect(() => {
+    const box = document.querySelector("[data-msg-scroll]");
+    if (!box || outline.length === 0) return;
+    const els = () => [...box.querySelectorAll<HTMLElement>("[data-turn]")];
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (!e.isIntersecting) continue;
+          const t = Number((e.target as HTMLElement).dataset.turn || 0);
+          if (t) setActiveTurn(t);
+        }
+      },
+      { root: box, rootMargin: "-20% 0px -70% 0px", threshold: 0 },
+    );
+    els().forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, [outline, history.length, sessionId]);
+
+  /** 跳到第 N 轮：滚到那一条的用户气泡，并给 600ms 高亮 */
+  const jumpTurn = useCallback((seq: number) => {
+    const box = document.querySelector("[data-msg-scroll]");
+    const el = box?.querySelector<HTMLElement>(`[data-turn="${seq}"]`);
+    if (!el) {
+      fb.info("这一轮还在别处", "往上翻一下就能看到它（正文按需加载）");
+      return;
+    }
+    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    el.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+    const prev = el.style.outline;
+    el.style.outline = "2px solid color-mix(in srgb, var(--color-accent) 80%, transparent)";
+    el.style.outlineOffset = "4px";
+    window.setTimeout(() => {
+      el.style.outline = prev;
+      el.style.outlineOffset = "";
+    }, 650);
+    setActiveTurn(seq);
+    try {
+      window.history.replaceState(null, "", `#turn-${seq}`);
+    } catch {
+      /* 忽略 */
+    }
+  }, []);
 
   /* 草稿按会话保存 / 恢复（见 draftSid 的说明） */
   useEffect(() => {
@@ -2223,6 +2301,11 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
             )}
 
             <IconBtn
+              label="目录"
+              onClick={() => openDock("outline")}
+              path="M4 6h12M4 12h12M4 18h12M20 6h.01M20 12h.01M20 18h.01"
+            />
+            <IconBtn
               label={curSes && pinned.has(curSes.id) ? "取消置顶" : "置顶"}
               onClick={() => curSes && togglePin(curSes.id)}
               active={!!curSes && pinned.has(curSes.id)}
@@ -2488,7 +2571,7 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                   return m.role === "assistant" && m.run_id ? (
                     // 顺序即心智：先看它拆给谁、各自干到哪，最后才是结论。
                     // 反过来的话，用户先读到"都办好了"，过程只能往回找。
-                    <div key={m.id ?? i} className="space-y-2">
+                    <div key={m.id ?? i} data-turn={m.turn_index || undefined} className="space-y-2">
                       <div className="max-w-[70%] max-md:max-w-[86%]">
                         <DelegationBlock runId={m.run_id} />
                       </div>
@@ -2497,7 +2580,9 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
                       <SourceBadge runId={m.run_id} count={m.sources_count ?? 0} />
                     </div>
                   ) : (
-                    <Fragment key={m.id ?? i}>{bubble}</Fragment>
+                    <div key={m.id ?? i} data-turn={m.turn_index || undefined}>
+                      {bubble}
+                    </div>
                   );
                 })}
 
@@ -3442,6 +3527,9 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
         {/* 右侧工具坞（≥1280 才渲染；更窄的屏走原来的抽屉/浮层） */}
         <SideDock
           panel={dockPanel}
+          outline={outline}
+          activeTurn={activeTurn}
+          onJumpTurn={jumpTurn}
           stepRunId={dockStepRun || liveRunId || null}
           currentRunId={
             liveRunId ||
