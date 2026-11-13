@@ -1561,7 +1561,20 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
   // ⚠️ 位置纪律：必须在**所有提前 return 之前**（本组件有 loading / 无助手两条
   // 提前返回）—— 放在它们之后会让两种情况 hook 数量不同，React 抛 #310
   // （Rendered more hooks than during the previous render），整页变错误页（踩过两次）。
-  const [navOpen, setNavOpen] = useState(true);
+  /** 会话栏宽度（220–360，记住用户调过的值） */
+  const [navW, setNavW] = useState(264);
+  const navWRef = useRef(264);
+  useEffect(() => {
+    navWRef.current = navW;
+  }, [navW]);
+  useEffect(() => {
+    try {
+      const w = Number(localStorage.getItem("chat.navW") || "");
+      if (w >= 220 && w <= 360) setNavW(w);
+    } catch {
+      /* 忽略 */
+    }
+  }, []);
   const [mobileNav, setMobileNav] = useState(false);
   /* 手机抽屉也是一层历史：左滑先关抽屉（不是退出网页） */
   useHistoryLayer(mobileNav, () => setMobileNav(false));
@@ -1752,6 +1765,8 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
       /* 同上 */
     }
   };
+  const [navOpen, setNavOpen] = useState(true);
+
   // 一轮跑完顺手刷一下（刚产出的文件当场就能看见）
   useEffect(() => {
     if (!busy) void loadSessionFiles();
@@ -1762,6 +1777,27 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
       if (savedNav !== null) setNavOpen(savedNav === "1");
     } catch {}
   }, []);
+  /* 键盘：⌘/Ctrl+B 收起/展开会话栏，⌘/Ctrl+K 聚焦搜索。
+     输入框里按 ⌘B 也要生效（这是全局布局动作，不是文本编辑）。 */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
+      if (e.key.toLowerCase() === "b") {
+        e.preventDefault();
+        toggleNav();
+      } else if (e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        const input = document.querySelector<HTMLInputElement>('input[placeholder="搜索对话"]');
+        input?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // toggleNav 是稳定闭包（内部只 setState + 写 localStorage）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const toggleNav = () => {
     setNavOpen((v) => {
       try { localStorage.setItem("chat.navOpen", v ? "0" : "1"); } catch {}
@@ -1923,7 +1959,45 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
         {/* ── 会话栏（桌面在流内，可收起；窄屏走抽屉）────────────────────
             收起后不留空白 —— 只剩 44px 的把手，点一下回来。 */}
         {navOpen ? (
-          <aside className="hidden lg:flex w-[264px] shrink-0 bg-[var(--color-surface)] flex-col min-h-0">
+          <aside
+            className="relative hidden lg:flex shrink-0 bg-[var(--color-surface)] flex-col min-h-0"
+            style={{ width: navW }}
+          >
+            {/* 拖拽柄：双击回到默认宽度（260）—— 调过的宽度常常是临时需求 */}
+            <span
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="调整会话栏宽度"
+              onMouseDown={(e) => {
+                const startX = e.clientX;
+                const startW = navW;
+                const move = (ev: MouseEvent) => {
+                  const w = Math.min(360, Math.max(220, startW + (ev.clientX - startX)));
+                  setNavW(w);
+                };
+                const up = () => {
+                  document.removeEventListener("mousemove", move);
+                  document.removeEventListener("mouseup", up);
+                  try {
+                    localStorage.setItem("chat.navW", String(navWRef.current));
+                  } catch {
+                    /* 忽略 */
+                  }
+                };
+                document.addEventListener("mousemove", move);
+                document.addEventListener("mouseup", up);
+              }}
+              onDoubleClick={() => {
+                setNavW(264);
+                try {
+                  localStorage.setItem("chat.navW", "264");
+                } catch {
+                  /* 忽略 */
+                }
+              }}
+              className="absolute -right-[3px] top-0 bottom-0 z-10 w-[6px] cursor-col-resize"
+              style={{ background: "transparent" }}
+            />
             <SessionsPane
               agentSlot={
                 controlledAgentId === undefined ? (
@@ -2372,6 +2446,41 @@ export function ChatConsole({ agentId: controlledAgentId }: { agentId?: string }
 
           {/* 消息流 —— 阅读宽度封顶 768px 居中：一行扫 1000px 是眼睛的负担 */}
           <div className="relative flex-1 min-h-0 flex flex-col">
+            {/* 刻度轨：大纲的缩略视图。只有 1 个提问时不出现（一条刻度没有信息量），
+                40 条以上等距抽样 —— 刻度是「在哪」，不是「全部」。 */}
+            {outline.length > 1 && (
+              <nav
+                aria-label="会话目录刻度"
+                className="pointer-events-none absolute inset-y-0 right-1 z-10 hidden w-4 flex-col items-end justify-center gap-[3px] py-6 xl:flex"
+              >
+                {(() => {
+                  const max = 40;
+                  const step = Math.max(1, Math.ceil(outline.length / max));
+                  const ticks = outline.filter((_, i) => i % step === 0);
+                  const activeSeq = activeTurn ?? ticks[0]?.seq;
+                  return ticks.map((it) => {
+                    const active = it.seq === activeSeq;
+                    return (
+                      <button
+                        key={it.turn_id}
+                        type="button"
+                        data-tap
+                        aria-label={`第 ${it.seq} 个问题：${it.digest}`}
+                        title={it.digest}
+                        onClick={() => jumpTurn(it.seq)}
+                        className="pointer-events-auto rounded-full transition-all"
+                        style={{
+                          width: active ? 12 : 7,
+                          height: 2,
+                          background: active ? "var(--color-accent)" : "color-mix(in srgb, var(--color-text) 22%, transparent)",
+                          transitionDuration: "var(--dur-1)",
+                        }}
+                      />
+                    );
+                  });
+                })()}
+              </nav>
+            )}
           <div
             className="flex-1 overflow-auto max-lg:pt-[calc(44px+env(safe-area-inset-top))]"
             ref={boxRef}
