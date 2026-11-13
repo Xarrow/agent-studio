@@ -231,6 +231,16 @@ def query_text(run_input: Any) -> str:
     return str(run_input)
 
 
+def _host_of(url: str) -> str:
+    """比端点只看主机：路径不同（/v1 vs /api/v1）不算换了家。"""
+    try:
+        from urllib.parse import urlparse
+
+        return (urlparse(url).netloc or "").lower()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def _default_base_url(definition: AgentDefinition) -> str | None:
     """端点兜底：定义 ＞ 服务商元数据里的默认。
 
@@ -446,17 +456,32 @@ async def resolve_credential(
     症状特别有迷惑性：配置页「测试连接」是通的（那条路径确实用了凭据的
     base_url），一执行就 401 —— 让人以为 key 坏了。
 
-    优先级：助手定义里显式写的 base_url ＞ 凭据上的 base_url。
+    优先级：**凭据上的 base_url 优先**，除非助手定义里写的是同一个端点。
+
+    为什么不是「定义优先」：这条规则在实践中制造了同一个 bug 的反面 ——
+    把助手的模型从 DeepSeek 换成 OpenRouter 的密钥后，助手里还留着
+    ``https://api.deepseek.com/v1``，于是拿着 OpenRouter 的 key 去打 DeepSeek，
+    报的却是「你的 api key ****00e3 无效」—— 看起来像 key 坏了，实际是端点错。
+    一把 key 只可能属于签发它的那家，所以**端点必须跟着凭据走**；
+    定义里的 base_url 只在两边同时指向同一台主机（或凭据没配端点）时才用。
     """
     if definition.model.api_key:
         return definition.model.api_key, definition.model.base_url
     if definition.model.credential_ref:
         secret = await session.get(Secret, definition.model.credential_ref)
         if secret is not None:
-            return (
-                decrypt(secret.ciphertext),
-                secret.base_url or definition.model.base_url,
-            )
+            key = decrypt(secret.ciphertext)
+            cred_url = secret.base_url
+            def_url = definition.model.base_url
+            if cred_url and def_url and _host_of(cred_url) != _host_of(def_url):
+                logger.warning(
+                    "模型端点与凭据不一致，按凭据走：定义=%s 凭据=%s（%s）",
+                    def_url,
+                    cred_url,
+                    definition.model.name,
+                )
+                return key, cred_url
+            return key, (cred_url or def_url)
     return os.environ.get("STUDIO_DEFAULT_API_KEY"), definition.model.base_url
 
 

@@ -1034,6 +1034,26 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 {/* 切了 Provider 后原凭据不显示（按 provider 过滤掉了），但值还在 ——
                     必须告诉用户"没丢，只是这个 Provider 下看不见"，否则会被当成
                     凭据丢了去手填（v2 修复的根源误会）。 */}
+                {/* 端点与凭据不是同一家：执行必然 401，且报的是「key 无效」—— 极易被当成 key 坏了。
+                    执行时代码已按凭据的端点走（见 resolve_credential），这里只是把隐患说出来。 */}
+                {(() => {
+                  const host = (u?: string | null) => {
+                    try {
+                      return u ? new URL(u).host.toLowerCase() : "";
+                    } catch {
+                      return "";
+                    }
+                  };
+                  const a = host(usedCred?.base_url);
+                  const b = host(def.model.base_url);
+                  if (!a || !b || a === b) return null;
+                  return (
+                    <p className="mt-1 text-[12px]" style={{ color: "var(--color-warn)" }}>
+                      这个助手的端点（{b}）和凭据「{usedCred?.name}」的端点（{a}）不是同一家 ——
+                      执行时会按凭据的端点走；想避免混淆，把「端点」清空让它跟随凭据。
+                    </p>
+                  );
+                })()}
                 {usedCred && usedCred.provider !== def.model.provider && (
                   <p className="mt-1 text-[12px]" style={{ color: "var(--color-warn)" }}>
                     当前凭据「{usedCred.name}」属于 {usedCred.provider}，与所选 Provider
