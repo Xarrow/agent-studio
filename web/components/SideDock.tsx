@@ -63,6 +63,7 @@ export function SideDock({
   deliverableZipUrl,
   /* 目录 */
   outline,
+  outlineLoading,
   activeTurn,
   onJumpTurn,
   /* 步骤 */
@@ -113,6 +114,8 @@ export function SideDock({
     step_count: number;
     artifact_count: number;
   }[];
+  /** 目录还在加载（出骨架，不阻塞对话） */
+  outlineLoading?: boolean;
   /** 当前所在那一轮（滚动同步） */
   activeTurn?: number | null;
   onJumpTurn?: (seq: number) => void;
@@ -130,6 +133,16 @@ export function SideDock({
   const [uploading, setUploading] = useState(false);
   /** 批量下载失败的行内提示（不用 alert：原生弹窗会卡住 SSE） */
   const [zipErr, setZipErr] = useState<string | null>(null);
+  /** 目录过滤词（本地过滤，150ms 防抖） */
+  const [outlineQ, setOutlineQ] = useState("");
+  const [outlineQDeb, setOutlineQDeb] = useState("");
+  useEffect(() => {
+    const t = window.setTimeout(() => setOutlineQDeb(outlineQ.trim().toLowerCase()), 150);
+    return () => window.clearTimeout(t);
+  }, [outlineQ]);
+  const shownOutline = (outline || []).filter(
+    (it) => !outlineQDeb || (it.digest || "").toLowerCase().includes(outlineQDeb),
+  );
   const fileRef = useRef<HTMLInputElement>(null);
 
   /* 拖动改宽：只在拖动期间挂 document 监听，松手就摘 */
@@ -356,13 +369,41 @@ export function SideDock({
           </div>
 
           {panel === "outline" ? (
-            <div className="min-h-0 flex-1 overflow-y-auto p-1.5" role="navigation" aria-label="会话目录">
-              {!outline || outline.length === 0 ? (
+            <div className="flex min-h-0 flex-1 flex-col" role="navigation" aria-label="会话目录">
+              {(outline?.length ?? 0) > 10 && (
+                <div className="shrink-0 px-2 pb-1 pt-2">
+                  <input
+                    className="input h-8 w-full text-[12px]"
+                    placeholder="过滤这一会话的问题"
+                    value={outlineQ}
+                    onChange={(e) => setOutlineQ(e.target.value)}
+                    aria-label="过滤目录"
+                  />
+                </div>
+              )}
+              <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
+              {outlineLoading ? (
+                <div className="space-y-1.5 px-1 py-2" aria-busy="true" aria-label="目录加载中">
+                  {[0, 1, 2, 3, 4].map((i) => (
+                    <div key={i} className="flex items-center gap-2 px-1">
+                      <span className="h-2.5 w-4 rounded" style={{ background: "var(--color-surface-3)" }} />
+                      <span
+                        className="h-2.5 flex-1 rounded"
+                        style={{ background: "var(--color-surface-3)", opacity: 0.75 - i * 0.12 }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : !outline || outline.length === 0 ? (
                 <p className="px-2 py-3 text-[12px] leading-relaxed" style={{ color: "var(--color-muted)" }}>
                   发送第一个问题后，这里会出现目录。
                 </p>
+              ) : shownOutline.length === 0 ? (
+                <p className="px-2 py-3 text-[12px]" style={{ color: "var(--color-muted)" }}>
+                  没有匹配的问题
+                </p>
               ) : (
-                outline.map((it) => {
+                shownOutline.map((it) => {
                   const active = activeTurn === it.seq;
                   const time = new Date(it.created_at).toLocaleTimeString("zh-CN", {
                     hour: "2-digit",
@@ -402,6 +443,7 @@ export function SideDock({
                   );
                 })
               )}
+              </div>
             </div>
           ) : panel === "browser" ? (
             <div className="flex min-h-0 flex-1 flex-col">

@@ -400,6 +400,7 @@ export function ChatConsole({
     }[]
   >([]);
   const [activeTurn, setActiveTurn] = useState<number | null>(null);
+  const [outlineLoading, setOutlineLoading] = useState(false);
   /* ── 右侧工具坞 ──
      展开/收起、开哪个面板、宽度都记在 localStorage：这是用户的布局偏好，
      每次进来都回到"收起"会让人以为功能没了。 */
@@ -505,13 +506,20 @@ export function ChatConsole({
       return;
     }
     let dead = false;
+    setOutlineLoading(true);
     api
       .sessionOutline(sessionId)
       .then((r) => {
-        if (!dead) setOutline(r.items || []);
+        if (!dead) {
+          setOutline(r.items || []);
+          setOutlineLoading(false);
+        }
       })
       .catch(() => {
-        if (!dead) setOutline([]);
+        if (!dead) {
+          setOutline([]);
+          setOutlineLoading(false);
+        }
       });
     return () => {
       dead = true;
@@ -3732,6 +3740,7 @@ export function ChatConsole({
         <SideDock
           panel={dockPanel}
           outline={outline}
+          outlineLoading={outlineLoading}
           activeTurn={activeTurn}
           onJumpTurn={jumpTurn}
           stepRunId={dockStepRun || liveRunId || null}
