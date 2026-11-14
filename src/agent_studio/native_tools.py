@@ -100,6 +100,21 @@ async def _fetch(url: str, max_bytes: int = FETCH_MAX_BYTES) -> str:
     if _is_private_host(parsed.hostname):
         return f"✗ 出于安全考虑不能访问内网地址: {parsed.hostname}"
 
+    # 有 DeepSeek 工具凭据就先用它：返回的是干净 Markdown，比本地剥 HTML 稳
+    try:
+        from . import deepseek_tools as dst
+
+        cred = await dst.resolve_credential()
+        if cred is not None:
+            data, usage = await dst.fetch(cred, url)
+            if data.get("content"):
+                await dst.record_usage(usage)
+                text = data["content"][:max_bytes]
+                title = data.get("title") or ""
+                return (f"# {title}\n\n{text}" if title else text)
+    except Exception:  # noqa: BLE001 —— 退回本地抓取
+        pass
+
     try:
         async with httpx.AsyncClient(
             timeout=FETCH_TIMEOUT_S,
@@ -156,6 +171,19 @@ async def _web_search(query: str, max_results: int = 8) -> str:
       · `format=rss` 是同一后端的结构化出口：10 条、标题/链接/摘要齐全，
         实测同一查询三次返回完全一致（Debian 官网 / Download / 维基）。
     """
+    # 第一优先：DeepSeek 自研搜索（rerank_score / authority 就是现成的质量信号）
+    try:
+        from . import deepseek_tools as dst
+
+        cred = await dst.resolve_credential()
+        if cred is not None:
+            results, usage = await dst.search(cred, query, count=max_results)
+            if results:
+                await dst.record_usage(usage)
+                return _format_deepseek(results[:max_results])
+    except Exception:  # noqa: BLE001 —— 上游任何问题都退回本地链，不让搜索整个不可用
+        pass
+
     # 引擎选择：先问腾讯，再按「结果和查询词的相关度」决定要不要换 Bing。
     #
     # 为什么不写死顺序：实测两个引擎都会"看查询词抽风"——
@@ -297,6 +325,37 @@ async def _search_bing(query: str, max_results: int = 8) -> str | None:
     if not results:
         return None
     return _format_results(results[:max_results])
+
+
+def _format_deepseek(results: list[dict]) -> str:
+    """DeepSeek 搜索结果的渲染：标题 / 摘要 / 链接 + 权威度。
+
+    为什么把 rerank_score 和 authority 打出来：这两列是上游给的质量信号
+    （rerank ≥1.5 为优质、authority ≥3 为极权威）。模型能据此决定"要不要再搜
+    一次"或"这条能不能直接引用"，比只给一串链接有用。
+    """
+    if not results:
+        return "（没有搜到结果）"
+    lines = []
+    for i, r in enumerate(results, 1):
+        title = _clean(str(r.get("title") or ""))
+        url = str(r.get("url") or "")
+        summary = _clean(str(r.get("summary") or r.get("snippet") or ""))
+        score = r.get("rerank_score")
+        auth = r.get("authority")
+        date = str(r.get("date") or "")[:10]
+        meta = []
+        if isinstance(score, (int, float)):
+            meta.append(f"相关 {score:.1f}")
+        if isinstance(auth, int) and auth >= 0:
+            meta.append(f"权威 {auth}")
+        if date:
+            meta.append(date)
+        lines.append(f"{i}. {title}" + (f"（{' · '.join(meta)}）" if meta else ""))
+        if summary:
+            lines.append(f"   {summary}")
+        lines.append(f"   {url}")
+    return "\n".join(lines)
 
 
 _ZERO_WIDTH = dict.fromkeys(map(ord, "\u200b\u200c\u200d\ufeff"))
@@ -443,6 +502,174 @@ def _parse_qq(data: dict) -> list[tuple[str, str, str]]:
     return out
 
 
+# --------------------------------------------------------------------------- #
+# 文档 / 语音（服务端处理用户上传的文件）
+# --------------------------------------------------------------------------- #
+#: 单次写回上下文的正文上限：OCR 1000 页全塞进去等于把上下文烧穿
+DOC_CONTEXT_CHARS = 6000
+
+
+def _run_workspace() -> Path:
+    """当前 run 的工作目录（工具文件参数的唯一根）。"""
+    try:
+        from .runner.ctx import current_run_ctx
+
+        ctx = current_run_ctx()
+        root = Path(ctx.get("workspace") or ".")
+    except Exception:  # noqa: BLE001
+        root = Path(".").resolve()
+    return root if root.exists() else Path(tempfile.gettempdir())
+
+
+def _safe_file(rel: str) -> Path:
+    """把「会话工作目录内的相对路径」解析成绝对路径；越界一律拒绝。
+
+    为什么必须挡：文件是用户传的，模型也会自己拼路径（"../" 很容易出现）。
+    这些工具的输入是**路径**，不是内容，所以校验点只有这里一个。
+    """
+    root = _run_workspace().resolve()
+    target = (root / rel).resolve() if not Path(rel).is_absolute() else Path(rel).resolve()
+    if root not in target.parents and target != root:
+        raise ValueError(f"路径越界：{rel}")
+    return target
+
+
+async def _read_document(path: str, purpose: str = "text", max_pages: int = 0) -> str:
+    """OCR：把上传的 PDF / 图片 / Office 文档读成文字（按页返回）。
+
+    工业场景最常走这条：扫描件投标书、PDF 规格书、合同截图。文件已经由用户
+    上传到会话工作目录，模型只需要给路径。
+    """
+    from . import deepseek_tools as dst
+
+    cred = await dst.resolve_credential()
+    if cred is None:
+        return (
+            "✗ 未配置 DeepSeek 工具密钥，OCR 不可用。\n"
+            "请让用户在「API 密钥」里添加 provider=deepseek-tools 的凭据。"
+        )
+    try:
+        target = _safe_file(path)
+    except ValueError as exc:
+        return f"✗ {exc}"
+    if not target.is_file():
+        return f"✗ 文件不存在：{path}（先用会话文件列表确认文件名）"
+    if target.stat().st_size > 100 * 1024 * 1024:
+        return "✗ 文件超过 100MiB，请先拆分或压缩。"
+
+    mode = "rich_layout_recognition" if purpose in ("rich", "layout", "rich_layout") else "text_recognition"
+    try:
+        data, usage = await dst.ocr(cred, target.name, target.read_bytes(), purpose=mode)
+    except dst.ToolsError as exc:
+        return exc.as_tool_text()
+    await dst.record_usage(usage)
+
+    pages = data.get("pages") or []
+    total_chars = sum(len(p.get("text") or "") for p in pages)
+    limit = _run_workspace() / ".studio" / "results"
+    limit.mkdir(parents=True, exist_ok=True)
+    full = limit / f"ocr-{usage.request_id or int(time.time())}.md"
+    try:
+        full.write_text(
+            "\n\n".join(f"## 第 {p.get('index', i) + 1} 页\n\n{p.get('text') or ''}" for i, p in enumerate(pages)),
+            encoding="utf-8",
+        )
+    except OSError:
+        full = Path("")
+
+    want = int(max_pages or 0)
+    shown = pages[:want] if want > 0 else pages
+    body_parts, used = [], 0
+    for i, page in enumerate(shown):
+        text = (page.get("text") or "").strip()
+        if not text:
+            continue
+        block = f"## 第 {page.get('index', i) + 1} 页\n{text}"
+        if used + len(block) > DOC_CONTEXT_CHARS:
+            block = block[: max(0, DOC_CONTEXT_CHARS - used)] + "\n…（本页截断）"
+        body_parts.append(block)
+        used += len(block)
+        if used >= DOC_CONTEXT_CHARS:
+            break
+
+    head = (
+        f"识别完成：{data.get('page_count') or len(pages)} 页，共 {total_chars} 字，"
+        f"耗时 {usage.latency_ms}ms，花费 ¥{usage.cost_cny:.4f}。"
+    )
+    tail = ""
+    if total_chars > used:
+        tail = (
+            f"\n\n（以上只放了前 {used} 字；完整文本在 {full} ，需要细节用 read 打开）"
+            if full
+            else f"\n\n（以上只放了前 {used} 字）"
+        )
+    return head + "\n\n" + "\n\n".join(body_parts) + tail
+
+
+async def _transcribe(path: str) -> str:
+    """ASR：把上传的音频转成文字（≤120 秒、≤8MiB）。"""
+    from . import deepseek_tools as dst
+
+    cred = await dst.resolve_credential()
+    if cred is None:
+        return (
+            "✗ 未配置 DeepSeek 工具密钥，语音识别不可用。\n"
+            "请让用户在「API 密钥」里添加 provider=deepseek-tools 的凭据。"
+        )
+    try:
+        target = _safe_file(path)
+    except ValueError as exc:
+        return f"✗ {exc}"
+    if not target.is_file():
+        return f"✗ 文件不存在：{path}"
+    size = target.stat().st_size
+    if size > 8 * 1024 * 1024:
+        return f"✗ 音频 {size / 1048576:.1f}MiB 超过 8MiB 上限，请先压缩或分段。"
+
+    try:
+        data, usage = await dst.asr(cred, target.name, target.read_bytes())
+    except dst.ToolsError as exc:
+        return exc.as_tool_text()
+    await dst.record_usage(usage)
+
+    text = (data.get("text") or "").strip()
+    seconds = float(data.get("duration_ms") or 0) / 1000
+    return (
+        f"转写完成：{seconds:.1f} 秒音频，{len(text)} 字，耗时 {usage.latency_ms}ms，"
+        f"花费 ¥{usage.cost_cny:.4f}。\n\n{text or '（没有识别到语音内容）'}"
+    )
+
+
+async def _speak(text: str, voice: str = "stella", fmt: str = "wav") -> str:
+    """TTS：把一段文字合成音频，落到 product/ 供下载（备选能力）。"""
+    from . import deepseek_tools as dst
+
+    cred = await dst.resolve_credential()
+    if cred is None:
+        return "✗ 未配置 DeepSeek 工具密钥，语音合成不可用。"
+    voice_id = "tide" if str(voice).lower() in ("tide", "male", "男") else "stella"
+    fmt = "pcm" if str(fmt).lower() == "pcm" else "wav"
+    try:
+        audio, usage = await dst.tts(cred, text, voice_id=voice_id, fmt=fmt)
+    except dst.ToolsError as exc:
+        return exc.as_tool_text()
+    await dst.record_usage(usage)
+
+    out_dir = _run_workspace() / "product"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    name = f"speech-{dst.cache_key(text, voice_id, fmt)}.{fmt}"
+    target = out_dir / name
+    try:
+        target.write_bytes(audio)
+    except OSError as exc:
+        return f"✗ 音频已合成但写入失败：{exc}"
+
+    return (
+        f"已合成 {usage.units:.0f} 计费字符（{len(audio) / 1024:.0f}KB，{usage.latency_ms}ms，"
+        f"¥{usage.cost_cny:.4f}），文件在 product/{name}，用户可在右栏「产物」里播放或下载。"
+    )
+
+
 async def _python(code: str, timeout_s: int = PYTHON_TIMEOUT_S_DEFAULT) -> str:
     """在**当前 run 的工作目录**里跑一段 Python（cwd 锁死 = 与文件工具同一隔离域）。"""
     from .runner.ctx import current_run_ctx
@@ -501,6 +728,38 @@ SEARCH_SCHEMA: dict[str, Any] = {
     },
     "required": ["query"],
 }
+READ_DOC_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "path": {"type": "string", "description": "会话工作目录里的文件路径（PDF/图片/Office 文档）"},
+        "purpose": {
+            "type": "string",
+            "enum": ["text", "rich"],
+            "description": "text=只要文字；rich=保留版面（带坐标标记，可用于定位/裁图）",
+        },
+        "max_pages": {"type": "integer", "description": "只回前 N 页正文（默认全回，但总字数有上限）"},
+    },
+    "required": ["path"],
+}
+
+TRANSCRIBE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "path": {"type": "string", "description": "会话工作目录里的音频文件（16bit PCM WAV / Ogg Opus，≤120 秒、≤8MiB）"},
+    },
+    "required": ["path"],
+}
+
+SPEAK_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "text": {"type": "string", "description": "要朗读的文本（≤10000 计费字符；汉字算 2 字符）"},
+        "voice": {"type": "string", "enum": ["stella", "tide"], "description": "音色：stella 女声（默认）/ tide 男声"},
+        "fmt": {"type": "string", "enum": ["wav", "pcm"], "description": "音频格式，默认 wav"},
+    },
+    "required": ["text"],
+}
+
 PYTHON_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -2000,9 +2259,34 @@ NATIVE_TOOLS: dict[str, dict[str, Any]] = {
     },
     "web_search": {
         "fn": _web_search,
-        "description": "搜索互联网，返回前几条结果的标题、摘要和链接（中文站点覆盖好）。",
+        "description": (
+            "搜索互联网，返回前几条结果的标题、摘要和链接。"
+            "支持 site:/lang:/after: 等语法（例如 \"DeepSeek site:github.com lang:zh after:2025\"）。"
+            "配了 DeepSeek 工具密钥时会带相关度与权威度，可据此判断可信程度。"
+        ),
         "schema": SEARCH_SCHEMA,
         "flags": {"read_only": True, "concurrency_safe": True, "dangerous": False, "native": True},
+    },
+    "read_document": {
+        "fn": _read_document,
+        "description": (
+            "读取上传的文档（PDF / 图片 / Word / PPT）里的文字，按页返回。"
+            "扫描件、截图、合同、规格书都用它；文件路径来自会话文件列表。"
+        ),
+        "schema": READ_DOC_SCHEMA,
+        "flags": {"read_only": True, "concurrency_safe": False, "dangerous": False, "native": True},
+    },
+    "transcribe": {
+        "fn": _transcribe,
+        "description": "把上传的音频转成文字（≤120 秒）。会议录音、语音留言先转写再总结。",
+        "schema": TRANSCRIBE_SCHEMA,
+        "flags": {"read_only": True, "concurrency_safe": False, "dangerous": False, "native": True},
+    },
+    "speak": {
+        "fn": _speak,
+        "description": "把一段文字合成语音，文件落在 product/，用户可下载或播放。备选能力，长文分段调用。",
+        "schema": SPEAK_SCHEMA,
+        "flags": {"read_only": False, "concurrency_safe": False, "dangerous": False, "native": True},
     },
     "memory_search": {
         "fn": _memory_search,

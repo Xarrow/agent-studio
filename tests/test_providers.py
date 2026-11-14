@@ -15,7 +15,8 @@ def test_all_major_providers_present():
 def test_providers_have_metadata():
     for p in list_providers():
         assert p.display_name, f"{p.name} 缺少显示名"
-        assert p.models, f"{p.name} 缺少模型列表"
+        if p.kind == "llm":
+            assert p.models, f"{p.name} 缺少模型列表"
 
 
 def test_aliases_resolve():

@@ -26,6 +26,10 @@ def test_builtin_registry_shape():
     assert set(NATIVE_TOOLS) == {
         "fetch",
         "web_search",
+        # 服务端文档/语音：OCR、语音识别、语音合成
+        "read_document",
+        "transcribe",
+        "speak",
         "python",
         "memory_search",
         "memory_save",

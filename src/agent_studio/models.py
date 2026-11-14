@@ -939,6 +939,30 @@ class AppSetting(Base):
     value: Mapped[Any] = mapped_column(JSON, default=None)
     updated_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
 
+class ToolUsage(Base):
+    """外部工具调用计量（搜索 / 抓取 / OCR / ASR / TTS）。
+
+    为什么要单独一张表而不是塞进 run.usage：run 的 usage 记的是模型 token，
+    这里的单位是「页 / 秒 / 字符 / 次」，计价口径完全不同；混在一起以后既
+    算不准成本，也做不出"哪个工具最烧钱"的视图。
+    """
+
+    __tablename__ = "tool_usage"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    session_id: Mapped[str | None] = mapped_column(String(32), default=None, index=True)
+    run_id: Mapped[str | None] = mapped_column(String(32), default=None, index=True)
+    agent_id: Mapped[str | None] = mapped_column(String(32), default=None, index=True)
+    tool: Mapped[str] = mapped_column(String(32), index=True)
+    #: page / audio_second / tts_char / call
+    unit_kind: Mapped[str] = mapped_column(String(16), default="")
+    units: Mapped[float] = mapped_column(Float, default=0.0)
+    cost_cny: Mapped[float] = mapped_column(Float, default=0.0)
+    latency_ms: Mapped[int] = mapped_column(Integer, default=0)
+    request_id: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, index=True)
+
+
 class EvalSuite(Base):
     """一套评测用例（挂在某个助手上）。
 

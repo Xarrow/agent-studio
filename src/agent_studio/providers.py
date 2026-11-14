@@ -22,6 +22,8 @@ class ProviderMeta:
     models: list[str] = field(default_factory=list)
     #: 是否需要 api_key
     requires_key: bool = True
+    #: llm = 对话模型；tools = 工具类凭据（搜索/OCR/语音），不参与模型选择
+    kind: str = "llm"
     #: 允许自定义 base_url（自建/中转场景）
     allows_base_url: bool = True
     docs_url: str | None = None
@@ -37,6 +39,18 @@ PROVIDERS: dict[str, ProviderMeta] = {
         models=["deepseek-v4-pro", "deepseek-v4-flash", "deepseek-chat", "deepseek-reasoner"],
         docs_url="https://api-docs.deepseek.com",
         note="性价比高，OpenAI 兼容协议",
+    ),
+    # 工具类凭据（不是对话模型）：搜索 / 抓取 / OCR / ASR / TTS。
+    # 单独列一个 provider，是为了让用户在「API 密钥」页能像配模型一样配它，
+    # 而不是被迫用环境变量 —— 工业场景里换账号很常见。
+    "deepseek-tools": ProviderMeta(
+        name="deepseek-tools",
+        display_name="DeepSeek 工具（搜索 / OCR / 语音）",
+        default_base_url="https://api.deepseek.com",
+        models=[],
+        kind="tools",
+        docs_url="https://api-docs.deepseek.com/zh-cn/guides/search",
+        note="给内置工具用：网页搜索、网页抓取、OCR、语音识别、语音合成。填同一个 DeepSeek key 即可。",
     ),
     "openai": ProviderMeta(
         name="openai",
