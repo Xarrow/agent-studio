@@ -1070,10 +1070,17 @@ export function ChatConsole({
       }
     };
     void check();
-    const t = setInterval(() => void check(), 60000);
+    /* 不挂定时器：只在"用户回到这个页面"时问一次（切标签页、切窗口、点回来）。
+       构建换版是运维动作，用户多半在别的页面，回来那一刻知道就够了。 */
+    const onBack = () => {
+      if (!document.hidden) void check();
+    };
+    document.addEventListener("visibilitychange", onBack);
+    window.addEventListener("focus", onBack);
     return () => {
       stop = true;
-      clearInterval(t);
+      document.removeEventListener("visibilitychange", onBack);
+      window.removeEventListener("focus", onBack);
     };
   }, []);
 
