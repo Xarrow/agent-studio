@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { api, fmt } from "@/lib/api";
+import { useFirstLoad } from "@/lib/useFirstLoad";
 import { isImeEvent } from "@/lib/ime";
 import type {
   ActivityItem,
@@ -81,6 +82,8 @@ const PRESETS = [
 
 export default function AgentsPage() {
   const fb = useFeedback();
+  /** 骨架只在首屏出现；之后的刷新原地更新，避免整页闪一下 */
+  const { loaded, markLoaded } = useFirstLoad();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [runtimes, setRuntimes] = useState<RuntimeCapabilities[]>([]);
   const [providers, setProviders] = useState<Provider[]>([]);
@@ -135,8 +138,9 @@ export default function AgentsPage() {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
+      markLoaded();
     }
-  }, []);
+  }, [markLoaded]);
 
   useEffect(() => {
     void load();
@@ -242,7 +246,7 @@ export default function AgentsPage() {
         />
       )}
 
-      {loading ? (
+      {!loaded ? (
         <div className="card p-6 text-[13px] text-[var(--color-muted)]">加载中…</div>
       ) : agents.length === 0 ? (
         <div className="card">

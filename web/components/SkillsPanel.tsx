@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, fmt } from "@/lib/api";
+import { useFirstLoad } from "@/lib/useFirstLoad";
 import { isImeEvent } from "@/lib/ime";
 import type { Skill, SkillGroup, SkillGroupList, SkillRepoScan } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
@@ -71,6 +72,8 @@ const STATE_LABEL: Record<string, { text: string; color: string }> = {
 
 export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
   const fb = useFeedback();
+  /** 骨架只在首屏出现；之后的刷新原地更新，避免整页闪一下 */
+  const { loaded, markLoaded } = useFirstLoad();
   const [skills, setSkills] = useState<Skill[]>([]);
   /** 视图：按仓库分组（默认）/ 全部平铺 */
   const [view, setView] = useState<"grouped" | "flat">(() => {
@@ -125,8 +128,9 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
       setOpenGroups((prev) => (prev.size ? prev : new Set(grouped.groups.map((g) => g.source_id || g.name))));
     } finally {
       setLoading(false);
+      markLoaded();
     }
-  }, []);
+  }, [markLoaded]);
 
   /** 自动检查：进页面就按仓库各探一次（并发 3），状态直接显示在卡头 —— 不让用户先点一下才知道 */
   useEffect(() => {
@@ -459,7 +463,7 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
         />
       )}
 
-      {loading ? (
+      {!loaded ? (
         <div className="card p-6 text-[13px] text-[var(--color-muted)]">加载中…</div>
       ) : view === "grouped" ? (
         <GroupedSkills

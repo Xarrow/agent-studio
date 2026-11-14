@@ -29,6 +29,7 @@
  */
 
 import Link from "next/link";
+import { useFirstLoad } from "@/lib/useFirstLoad";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, fmt } from "@/lib/api";
 import type {
@@ -143,6 +144,8 @@ const PAGE = 50;
 
 export function RunsPanel() {
   const fb = useFeedback();
+  /** 骨架只在首屏出现；刷新原地更新，避免整页闪一下 */
+  const { loaded, markLoaded } = useFirstLoad();
   const [items, setItems] = useState<ActivityItem[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -236,6 +239,7 @@ export function RunsPanel() {
       fb.error("加载运行记录失败", e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
+      markLoaded();
     }
   // 注意：fb 不进依赖 —— useFeedback() 每次渲染返回新对象，进依赖会变成无限重取。
   // 与仓库里其它页面的写法保持一致（fb 只在回调里用）。
@@ -1233,7 +1237,7 @@ export function RunsPanel() {
         className="overflow-hidden rounded-[12px] border"
         style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
       >
-        {loading ? (
+        {!loaded ? (
           <div className="px-4 py-6 text-[13px]" style={{ color: "var(--color-muted)" }}>加载中…</div>
         ) : items.length === 0 ? (
           <div className="px-4 py-10 text-center text-[13px]" style={{ color: "var(--color-muted)" }}>

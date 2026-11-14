@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { api, fmt } from "@/lib/api";
+import { useFirstLoad } from "@/lib/useFirstLoad";
 import type { Agent, Tool } from "@/lib/types";
 import {
   Chip,
@@ -31,6 +32,8 @@ const PROTECTED_KINDS = new Set(["builtin", "native", "fork"]);
 
 export default function ToolsPage() {
   const fb = useFeedback();
+  /** 骨架只在首屏出现；之后的刷新原地更新，避免整页闪一下 */
+  const { loaded, markLoaded } = useFirstLoad();
   const [tools, setTools] = useState<Tool[]>([]);
   const [loading, setLoading] = useState(true);
   const [showNew, setShowNew] = useState(false);
@@ -77,8 +80,9 @@ export default function ToolsPage() {
       setTools(await api.tools());
     } finally {
       setLoading(false);
+      markLoaded();
     }
-  }, []);
+  }, [markLoaded]);
 
   useEffect(() => {
     void load();
@@ -387,7 +391,7 @@ export default function ToolsPage() {
             </div>
           </Toolbar>
 
-          {loading ? (
+          {!loaded ? (
             <div className="card p-6 text-[13px] text-[var(--color-muted)]">加载中…</div>
           ) : filtered.length === 0 ? (
             <div className="card">

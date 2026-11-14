@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { useFirstLoad } from "@/lib/useFirstLoad";
 import { api, fmt } from "@/lib/api";
 import type { Credential, CredentialTestResult, Provider } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
@@ -26,6 +27,8 @@ import { CredentialChatDialog } from "@/components/CredentialChatDialog";
 
 export default function CredentialsPage() {
   const fb = useFeedback();
+  /** 骨架只在首屏出现；刷新原地更新，避免整页闪一下 */
+  const { loaded, markLoaded } = useFirstLoad();
   const [providers, setProviders] = useState<Provider[]>([]);
   const [creds, setCreds] = useState<Credential[]>([]);
   const [loading, setLoading] = useState(true);
@@ -55,6 +58,7 @@ export default function CredentialsPage() {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
+      markLoaded();
     }
   }, []);
 
@@ -204,7 +208,7 @@ export default function CredentialsPage() {
         />
       )}
 
-      {loading ? (
+      {!loaded ? (
         <div className="card p-6 text-[13px] text-[var(--color-muted)]">加载中…</div>
       ) : creds.length === 0 ? (
         <div className="card">

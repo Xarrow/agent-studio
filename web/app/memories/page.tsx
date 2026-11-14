@@ -26,6 +26,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, fmt } from "@/lib/api";
+import { useFirstLoad } from "@/lib/useFirstLoad";
 import type { Agent, Memory, MemoryStats } from "@/lib/types";
 import {
   Chip,
@@ -83,6 +84,8 @@ const KIND_COLOR: Record<string, string> = {
 
 export default function MemoriesPage() {
   const fb = useFeedback();
+  /** 骨架只在首屏出现；之后的刷新原地更新，避免整页闪一下 */
+  const { loaded, markLoaded } = useFirstLoad();
   const [items, setItems] = useState<Memory[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [stats, setStats] = useState<MemoryStats | null>(null);
@@ -137,8 +140,10 @@ export default function MemoriesPage() {
       fb.error("加载记忆失败", e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
+      markLoaded();
+      markLoaded();
     }
-  }, [agentId, status, kind, layer, query, fb]);
+  }, [agentId, status, kind, layer, query, fb, markLoaded]);
 
   useEffect(() => {
     void load();
@@ -496,7 +501,7 @@ export default function MemoriesPage() {
 
       {/* 一行一对象：一条记忆一行；点行就地展开全部明细 */}
       <RowList>
-        {loading ? (
+        {!loaded ? (
           <div className="px-4 py-6 text-[13px]" style={{ color: "var(--color-muted)" }}>
             加载中…
           </div>
