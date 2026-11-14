@@ -385,6 +385,8 @@ export function ChatConsole({
   const [browserPaused, setBrowserPaused] = useState(false);
   /** 还没加载的更早轮次的上界（0 = 已到顶）；配合 api.sessionTurns 往上翻 */
   const [beforeTurn, setBeforeTurn] = useState(0);
+  /** 消息还在路上：给 3 块骨架，而不是空白（切会话时最刺眼的就是这片空） */
+  const [messagesLoading, setMessagesLoading] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
 
   /** 会话目录（一轮一条）+ 当前所在轮（滚动同步） */
@@ -718,12 +720,18 @@ export function ChatConsole({
     async (aid: string): Promise<Session[]> => {
       if (!aid) return [];
       try {
-        const list = await api.sessions(aid);
-        setSessions(list);
+        const r = await api.sessions(aid, listEtagRef.current.get(aid) ?? null);
+        const list = r.notModified ? sessionsRef.current : r.list;
+        if (!r.notModified) {
+          listEtagRef.current.set(aid, r.etag);
+          setSessions(r.list);
+        }
         // 侧栏另外挂 Router / 派活两组 —— 它们跨助手，不能只按当前助手过滤
         void api
           .sessions()
-          .then((all) => setAllSessions(all))
+          .then((r) => {
+            if (!r.notModified) setAllSessions(r.list);
+          })
           .catch(() => undefined);
         return list;
       } catch (e) {
@@ -739,6 +747,7 @@ export function ChatConsole({
       setHistory([]);
       return;
     }
+    setMessagesLoading(true);
     try {
       const detail = await api.session(sid, 30);
       setCurKind(detail.session.kind ?? "chat");
@@ -777,6 +786,8 @@ export function ChatConsole({
       );
     } catch {
       setHistory([]);
+    } finally {
+      setMessagesLoading(false);
     }
   }, []);
 
@@ -1860,6 +1871,27 @@ export function ChatConsole({
     }
   };
   const [navOpen, setNavOpen] = useState(true);
+  /** 会话列表的条件请求：按助手记住上次 ETag，内容没变就不重画列表 */
+  const listEtagRef = useRef<Map<string, string | null>>(new Map());
+  const sessionsRef = useRef<Session[]>([]);
+  sessionsRef.current = sessions;
+  /* 空间不够时优先收会话栏：右栏一开，内容列就只剩不到 520px 了。
+     只恢复「这次是我们自己收的」，用户手动收的不动（手动优先，直到视口跨断点）。 */
+  const navAutoCollapsed = useRef(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    // 1280–1439 时 264 侧栏 + 400 右栏会把内容列压到 520 以下，所以这里也收
+    const narrow = window.innerWidth < 1440;
+    if (dockOpen && narrow && navOpen) {
+      navAutoCollapsed.current = true;
+      setNavOpen(false);
+    } else if (!dockOpen && navAutoCollapsed.current) {
+      navAutoCollapsed.current = false;
+      setNavOpen(true);
+    }
+  }, [dockOpen, navOpen]);
+
+
 
   // 一轮跑完顺手刷一下（刚产出的文件当场就能看见）
   useEffect(() => {
@@ -2596,7 +2628,17 @@ export function ChatConsole({
                 </button>
               </div>
             )}
-            {history.length === 0 && !live ? (
+            {messagesLoading && history.length === 0 ? (
+              <div className="mx-auto mt-6 w-full max-w-[760px] space-y-4 px-3" aria-busy="true" aria-label="消息加载中">
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="space-y-2">
+                    <div className="h-3 w-1/3 rounded" style={{ background: "var(--color-surface-3)" }} />
+                    <div className="h-3 w-11/12 rounded" style={{ background: "var(--color-surface-3)", opacity: 0.8 - i * 0.15 }} />
+                    <div className="h-3 w-4/5 rounded" style={{ background: "var(--color-surface-3)", opacity: 0.65 - i * 0.15 }} />
+                  </div>
+                ))}
+              </div>
+            ) : history.length === 0 && !live ? (
               /* 空状态：不摆「开始对话」的废话 —— 直接给 3 个可点的开场问题，
                  点了就填进输入框（不自动发，让人改得动）。 */
               <div className="max-w-md mx-auto mt-16 px-6">

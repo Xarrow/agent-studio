@@ -1047,8 +1047,22 @@ export const api = {
   streamUrl: (runId: string) => withToken(`${apiBase()}/api/runs/stream/${runId}`),
 
   /* ----------------------------- 会话（多轮） ----------------------------- */
-  sessions: (agentId?: string) =>
-    request<Session[]>(`/api/sessions${agentId ? `?agent_id=${agentId}` : ""}`),
+  sessions: async (agentId?: string, etag?: string | null) => {
+    const token = getAccessToken();
+    const res = await fetch(
+      `${apiBase()}/api/sessions${agentId ? `?agent_id=${agentId}` : ""}`,
+      {
+        headers: {
+          ...(etag ? { "If-None-Match": etag } : {}),
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        cache: "no-store",
+      },
+    );
+    if (res.status === 304) return { notModified: true as const, etag: etag ?? null, list: [] as Session[] };
+    const list = (await res.json()) as Session[];
+    return { notModified: false as const, etag: res.headers.get("ETag"), list };
+  },
   session: (id: string, turns?: number) =>
     request<SessionDetail>(`/api/sessions/${id}${turns ? `?turns=${turns}` : ""}`),
   /** 按轮次翻消息：before 往前 / around 跳到某轮附近 */

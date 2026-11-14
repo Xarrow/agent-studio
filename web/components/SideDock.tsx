@@ -140,6 +140,15 @@ export function SideDock({
     const t = window.setTimeout(() => setOutlineQDeb(outlineQ.trim().toLowerCase()), 150);
     return () => window.clearTimeout(t);
   }, [outlineQ]);
+  /* 当前项变化时把它滚进视野（用户手动滚动后的 1.5 秒内不做） */
+  useEffect(() => {
+    if (!activeTurn || panel !== "outline") return;
+    if (Date.now() - manualOutlineAt.current < 1500) return;
+    const box = outlineBoxRef.current;
+    const el = box?.querySelector<HTMLElement>(`[data-outline-seq="${activeTurn}"]`);
+    el?.scrollIntoView({ block: "nearest" });
+  }, [activeTurn, panel]);
+
   const shownOutline = (outline || []).filter(
     (it) => !outlineQDeb || (it.digest || "").toLowerCase().includes(outlineQDeb),
   );
@@ -148,6 +157,11 @@ export function SideDock({
   const [outlineScroll, setOutlineScroll] = useState(0);
   const [outlineViewport, setOutlineViewport] = useState(480);
   const OUTLINE_ROW = 50;
+  /* 用户在滑目录时（1.5 秒内）不要把它拽回去——自动跟随只在「他没在操作」时做 */
+  const manualOutlineAt = useRef(0);
+  const markManual = () => {
+    manualOutlineAt.current = Date.now();
+  };
   const win = (() => {
     const total = shownOutline.length;
     if (total <= 60) return { start: 0, end: total, padTop: 0, padBottom: 0 };
@@ -274,7 +288,7 @@ export function SideDock({
     <aside
       data-sidedock
       data-open={open ? "1" : "0"}
-      className="relative hidden shrink-0 flex-row xl:flex"
+      className="relative hidden shrink-0 flex-row lg:flex"
       style={{ background: "var(--color-surface)" }}
     >
       {/* 拖宽手柄：贴在面板左缘，宽 6px，命中区比线宽大 */}
@@ -339,7 +353,10 @@ export function SideDock({
 
       {/* 面板 */}
       {open && panel ? (
-        <div className="flex min-h-0 flex-col" style={{ width }}>
+        <div
+          className="flex min-h-0 flex-col"
+          style={{ width: Math.min(width, typeof window !== "undefined" && window.innerWidth < 1280 ? 480 : width) }}
+        >
           <div
             className="flex h-9 shrink-0 items-center gap-2 px-2.5"
             style={{ borderBottom: "1px solid var(--color-border)" }}
@@ -396,6 +413,9 @@ export function SideDock({
               <div
                 className="min-h-0 flex-1 overflow-y-auto p-1.5"
                 ref={outlineBoxRef}
+                onWheel={markManual}
+                onTouchStart={markManual}
+                onMouseDown={markManual}
                 onScroll={(e) => {
                   const el = e.currentTarget;
                   setOutlineScroll(el.scrollTop);
@@ -441,6 +461,7 @@ export function SideDock({
                       data-tap
                       aria-current={active ? "location" : undefined}
                       aria-label={`第 ${it.seq} 个问题：${it.digest}`}
+                      data-outline-seq={it.seq}
                       onClick={() => onJumpTurn?.(it.seq)}
                       className="mb-[2px] flex min-h-[48px] w-full items-center gap-2 rounded-[var(--radius-sm)] px-2 py-1.5 text-left transition-colors hover:bg-[var(--bg-selected)]"
                       style={{ background: active ? "var(--bg-selected)" : "transparent" }}

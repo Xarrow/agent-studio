@@ -192,8 +192,9 @@ export function RunPanel({
 
   const loadSessions = useCallback(async () => {
     try {
-      const list = await api.sessions(agentId);
-      setSessions(list);
+      const r = await api.sessions(agentId);
+      const list = r.notModified ? [] : r.list;
+      if (!r.notModified) setSessions(r.list);
       return list;
     } catch {
       return [];
