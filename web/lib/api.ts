@@ -1180,9 +1180,21 @@ export const api = {
     request<{ session_id: string; run_id: string; steps: BrowserStep[]; count: number }>(
       `/api/sessions/${sessionId}/browser/${runId}`,
     ),
-  /** 会话目录：一轮一条（摘要 / 状态 / 步数 / 文件数），毫秒级返回 */
-  sessionOutline: (id: string) =>
-    request<{
+  /** 会话目录：一轮一条（摘要 / 状态 / 步数 / 文件数），毫秒级返回。
+   *  带 ETag 条件请求：内容没变时服务端回 304（0 字节），返回 notModified=true。 */
+  sessionOutline: async (id: string, etag?: string | null) => {
+    const token = getAccessToken();
+    const res = await fetch(`${apiBase()}/api/sessions/${id}/outline`, {
+      headers: {
+        ...(etag ? { "If-None-Match": etag } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      cache: "no-store",
+    });
+    if (res.status === 304) {
+      return { notModified: true as const, etag: etag ?? null };
+    }
+    const data = (await res.json()) as {
       session_id: string;
       count: number;
       items: {
@@ -1195,7 +1207,9 @@ export const api = {
         artifact_count: number;
         run_id: string | null;
       }[];
-    }>(`/api/sessions/${id}/outline`),
+    };
+    return { ...data, notModified: false as const, etag: res.headers.get("ETag") };
+  },
   /** 首屏聚合：会话 + 目录 + 最近 N 轮消息，一次往返 */
   openSession: (id: string, turns = 20) =>
     request<{
@@ -1261,7 +1275,14 @@ export const api = {
       { session_ids: sessionIds },
     ),
   createSession: (agentId: string, title?: string) =>
-    post<Session>("/api/sessions", { agent_id: agentId, title: title ?? null }),
+    request<Session>("/api/sessions", {
+      method: "POST",
+      body: JSON.stringify({ agent_id: agentId, title: title ?? null }),
+      // 幂等键：网络重试 / 连点「新对话」不会多建出空会话
+      headers: {
+        "Idempotency-Key": `new-${agentId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      },
+    }),
   updateSession: (id: string, patch: { title?: string; status?: string }) =>
     request<Session>(`/api/sessions/${id}`, {
       method: "PATCH",

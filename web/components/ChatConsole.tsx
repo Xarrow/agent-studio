@@ -401,6 +401,8 @@ export function ChatConsole({
   >([]);
   const [activeTurn, setActiveTurn] = useState<number | null>(null);
   const [outlineLoading, setOutlineLoading] = useState(false);
+  /** 每个会话上次目录的 ETag（按会话记，不然切回来时拿着别家的 tag 必然 200） */
+  const outlineEtagRef = useRef<Map<string, string | null>>(new Map());
   /* ── 右侧工具坞 ──
      展开/收起、开哪个面板、宽度都记在 localStorage：这是用户的布局偏好，
      每次进来都回到"收起"会让人以为功能没了。 */
@@ -508,12 +510,15 @@ export function ChatConsole({
     let dead = false;
     setOutlineLoading(true);
     api
-      .sessionOutline(sessionId)
+      .sessionOutline(sessionId, outlineEtagRef.current.get(sessionId) ?? null)
       .then((r) => {
-        if (!dead) {
+        if (dead) return;
+        // 304 = 内容没变：沿用现有目录，不重画、不闪
+        if (!r.notModified) {
           setOutline(r.items || []);
-          setOutlineLoading(false);
+          outlineEtagRef.current.set(sessionId, r.etag);
         }
+        setOutlineLoading(false);
       })
       .catch(() => {
         if (!dead) {

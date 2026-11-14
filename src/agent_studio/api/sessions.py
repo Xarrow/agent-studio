@@ -16,13 +16,16 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import re
+import time
 from typing import Any, Optional
 
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -158,8 +161,16 @@ def _to_read(row: ChatSession, turn_count: int = 0, agent_name: str | None = Non
 
 @router.post("", response_model=SessionRead, status_code=status.HTTP_201_CREATED)
 async def create_session(
-    payload: SessionCreate, session: AsyncSession = Depends(get_session)
-) -> SessionRead:
+    payload: SessionCreate,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    # 同一个 Idempotency-Key 重复提交 = 同一次创建（网络重试、双击「新对话」）
+    key = (request.headers.get("idempotency-key") or "").strip()
+    cached = _idem_take(key)
+    if cached is not None:
+        return JSONResponse(cached, status_code=status.HTTP_201_CREATED, headers={"Idempotent-Replay": "1"})
+
     agent = await session.get(Agent, payload.agent_id)
     if agent is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Agent 不存在: {payload.agent_id}")
@@ -175,17 +186,21 @@ async def create_session(
     session.add(row)
     await session.commit()
     await session.refresh(row)
-    return _to_read(row, 0, agent.name)
+    read = _to_read(row, 0, agent.name)
+    body = read.model_dump()
+    _idem_put(key, body)
+    return JSONResponse(body, status_code=status.HTTP_201_CREATED)
 
 
-@router.get("", response_model=list[SessionRead])
+@router.get("")
 async def list_sessions(
+    request: Request,
     agent_id: str | None = None,
     status_filter: str | None = Query(default=None, alias="status"),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     session: AsyncSession = Depends(get_session),
-) -> list[SessionRead]:
+):
     # limit 负数是 SQLite 的"不限量"（-5 直接把整库端出去），offset 以前压根没接，
     # 传了也被 FastAPI 静默丢掉 —— 分页看起来能用，其实一直返回第一页。
     stmt = (
@@ -237,15 +252,16 @@ async def list_sessions(
             if hit:
                 read.ticket_id, read.ticket_title, read.parent_session_id = hit
         out.append(read)
-    return out
+    return _with_etag(request, [r.model_dump() for r in out])
 
 
-@router.get("/{session_id}", response_model=SessionDetail)
+@router.get("/{session_id}")
 async def get_session_detail(
     session_id: str,
+    request: Request,
     turns: int | None = Query(None, ge=1, le=200),
     session: AsyncSession = Depends(get_session),
-) -> SessionDetail:
+):
     """会话详情。``turns`` 给定时只返回最近 N 轮 —— 长会话首屏不必等五十条消息。
 
     返回里的 ``before_turn`` 是「还没拿到的更早那一轮」的上界，前端据此请求
@@ -288,7 +304,7 @@ async def get_session_detail(
     # 「引用」标识要能一进来就看见，所以计数在详情里一次算完（一条 SQL），
     # 而不是让前端对每条消息各拉一次来源清单 —— 五十条的会话就是五十个请求。
     counts = await _sources_counts(session, [r.run_id for r in rows if r.run_id])
-    return SessionDetail(
+    payload = SessionDetail(
         session=head,
         before_turn=before_turn,
         messages=[
@@ -300,6 +316,7 @@ async def get_session_detail(
             for r in rows
         ],
     )
+    return _with_etag(request, payload.model_dump())
 
 
 #: 这些目录里的东西不进文件清单（不是产物，是工程残留；列出来只会淹没真产物）
@@ -635,6 +652,56 @@ async def session_turns(
 # （问过哪些问题、哪些跑完了），而不是几十 KB 的消息正文。目录只带摘要与计数，
 # 一个 500 轮的会话压缩后也就十几 KB，所以能做到「打开即可见、点击即达」。
 # --------------------------------------------------------------------------- #
+#: 写操作的幂等缓存：同一个 Idempotency-Key 在 10 分钟内只真正执行一次。
+#: 为什么只做创建会话：重复点击「新对话」/ 客户端自动重试会多出几个空会话，
+#: 这是用户真会遇到的那种重复；改名/删除天然幂等，不值得再加一层缓存。
+_IDEM: dict[str, tuple[float, object]] = {}
+_IDEM_TTL = 600.0
+
+
+def _idem_take(key: str) -> object | None:
+    if not key:
+        return None
+    hit = _IDEM.get(key)
+    if not hit:
+        return None
+    ts, body = hit
+    if time.time() - ts > _IDEM_TTL:
+        _IDEM.pop(key, None)
+        return None
+    return body
+
+
+def _idem_put(key: str, body: object) -> None:
+    if not key:
+        return
+    _IDEM[key] = (time.time(), body)
+    if len(_IDEM) > 500:  # 简单上限，别让内存无限长
+        for k, (ts, _v) in sorted(_IDEM.items(), key=lambda kv: kv[1][0])[:100]:
+            _IDEM.pop(k, None)
+
+
+_ETAG_HEADERS = {"Cache-Control": "private, max-age=0, must-revalidate"}
+
+
+def _etag_of(payload: object) -> str:
+    """内容指纹（md5 够用：只做条件请求，不是安全用途）。"""
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+    return '"' + hashlib.md5(raw).hexdigest() + '"'
+
+
+def _with_etag(request: Request, payload: object):
+    """带上 ETag；If-None-Match 命中就 304。
+
+    目录与列表是「每次切会话都要拉」的接口：内容没变时 304 只有几十字节，
+    弱网/手机上差别明显，前端也不用再解析一遍 JSON。
+    """
+    tag = _etag_of(payload)
+    if request.headers.get("if-none-match") == tag:
+        return Response(status_code=304, headers={"ETag": tag, **_ETAG_HEADERS})
+    return JSONResponse(payload, headers={"ETag": tag, **_ETAG_HEADERS})
+
+
 _DIGEST_MAX = 40
 
 
@@ -674,17 +741,23 @@ def _digest_of(text: str) -> str:
 
 @router.get("/{session_id}/outline")
 async def session_outline(
-    session_id: str, session: AsyncSession = Depends(get_session)
-) -> dict:
+    session_id: str,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
     """当前会话的问题目录：一轮一条，带摘要 / 状态 / 步数 / 文件数。
 
-    摘要规则与服务端一致（首行 + URL 域名化 + 40 字截断）；这里不调模型 ——
-    目录必须毫秒级返回，模型摘要作为增强另行推送。
+    摘要不调模型（目录必须毫秒级）：首行 + URL 域名化 + 清洗 + 40 字截断。
     """
     row = await session.get(ChatSession, session_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"会话不存在: {session_id}")
+    items = await _outline_items(session_id, session)
+    return _with_etag(request, {"session_id": session_id, "count": len(items), "items": items})
 
+
+async def _outline_items(session_id: str, session: AsyncSession) -> list[dict]:
+    """目录项的计算（outline 与 open 共用一份，别让两个接口算出两种目录）。"""
     msgs = (
         await session.execute(
             select(SessionMessage)
@@ -712,7 +785,9 @@ async def session_outline(
         run_ids = [v[0] for v in by_turn.values()]
         rows = (
             await session.execute(
-                select(ToolCall.run_id, func.count()).where(ToolCall.run_id.in_(run_ids)).group_by(ToolCall.run_id)
+                select(ToolCall.run_id, func.count())
+                .where(ToolCall.run_id.in_(run_ids))
+                .group_by(ToolCall.run_id)
             )
         ).all()
         step_counts = {str(r[0]): int(r[1]) for r in rows}
@@ -720,9 +795,7 @@ async def session_outline(
     file_counts: dict[str, int] = {}
     try:
         root = session_work_dir(session_id)
-        windows = sorted(
-            [(int(v[2]), v[0]) for v in by_turn.values() if v[2]], key=lambda x: x[0]
-        )
+        windows = sorted([(int(v[2]), v[0]) for v in by_turn.values() if v[2]], key=lambda x: x[0])
         if root.is_dir() and windows:
             for f in root.rglob("*"):
                 if not f.is_file():
@@ -760,7 +833,7 @@ async def session_outline(
                 "run_id": rid or None,
             }
         )
-    return {"session_id": session_id, "count": len(items), "items": items}
+    return items
 
 
 @router.get("/{session_id}/open")
@@ -778,7 +851,7 @@ async def open_session(
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"会话不存在: {session_id}")
 
-    outline = (await session_outline(session_id, session))["items"]
+    outline = await _outline_items(session_id, session)
     total_turns = outline[-1]["seq"] if outline else 0
     start_turn = max(1, total_turns - turns + 1) if total_turns else 1
 
