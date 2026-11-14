@@ -446,7 +446,14 @@ export const api = {
   updateAgent: (
     id: string,
     body: { name?: string; description?: string; definition?: AgentDefinition },
-  ) => put<Agent>(`/api/agents/${id}`, body),
+    /** 我读到的那一版：并发编辑时服务端据此拒绝静默覆盖 */
+    version?: number,
+  ) =>
+    request<Agent>(`/api/agents/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+      headers: version ? { "If-Match": String(version) } : undefined,
+    }),
   deleteAgent: (id: string) => del(`/api/agents/${id}`),
   duplicateAgent: (id: string, body?: { name?: string }) =>
     post<Agent>(`/api/agents/${id}/duplicate`, body ?? {}),

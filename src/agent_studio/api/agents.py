@@ -6,7 +6,7 @@ import json
 
 import re
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import delete, select
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -140,9 +140,23 @@ async def update_agent(
     agent_id: str,
     payload: AgentUpdate,
     session: AsyncSession = Depends(get_session),
+    request: Request = None,  # type: ignore[assignment]
 ) -> AgentRead:
     """更新。默认 ``bump_version=True``：写回同一条记录但 version+1（可回滚）。"""
     row = await _get_or_404(session, agent_id)
+
+    # 乐观并发：客户端带上它读到的那一版（If-Match: <version>）。
+    # 不带就不校验（CLI/脚本兼容），带了就必须对得上 —— 两个标签页同时编辑时，
+    # 后保存的那份不能静默把前一份吃掉。
+    if_match = ((request.headers.get("if-match") if request is not None else "") or "").strip().strip('"')
+    if if_match and if_match.isdigit() and int(if_match) != int(row.version or 1):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"这个助手已被改动（当前版本 {row.version}，你编辑的是 {if_match}）。"
+                "刷新后再保存，或另存为副本。"
+            ),
+        )
 
     if payload.name is not None:
         new_name = payload.name.strip()

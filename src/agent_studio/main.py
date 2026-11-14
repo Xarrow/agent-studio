@@ -17,6 +17,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -165,7 +166,9 @@ app = FastAPI(
 ACCESS_TOKEN = os.getenv("STUDIO_ACCESS_TOKEN", "").strip()
 
 #: 无需口令的路径（健康检查 + 文档，便于监控与排障）
-AUTH_EXEMPT = {"/api/health", "/docs", "/openapi.json", "/redoc"}
+#: /api/version 也免口令：它只有"代码是哪一版、静态目录在哪、多少文件"，
+#: 不含任何业务数据。部署脚本要靠它做验收，隧道后面被 401 挡住的验收等于没有。
+AUTH_EXEMPT = {"/api/health", "/api/version", "/docs", "/openapi.json", "/redoc"}
 
 #: 免口令的**路径前缀**。
 #: 目前只有一个：外部触发 ``/api/hooks/{token}`` —— 凭证就在路径里，
@@ -336,6 +339,15 @@ async def require_access_token(request: "Request", call_next):
 #    口令校验失败要返回 401，而 401 **必须带上跨域头**，否则浏览器只会报
 #    "CORS policy" 而看不到 401 —— 前端就永远不知道该弹输口令的浮层，
 #    排查时也会被"CORS 错误"带偏（这个坑刚踩过一次）。
+# --------------------------------------------------------------------------- #
+# 压缩
+# --------------------------------------------------------------------------- #
+# 为什么必须有：前端产物 JS 合计 1.4MB、技能详情一次 5.4MB，全是**未压缩**明文。
+# 公网隧道实测一个技能详情要 17 秒 —— 这不是慢，是打不开。
+# Starlette 的 GZip 只压 compressible 的 content-type，`text/event-stream` 不在
+# 白名单里，所以 SSE 不会被缓冲/压坏（这点很关键，压了流就不流了）。
+app.add_middleware(GZipMiddleware, minimum_size=1024)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -481,7 +493,50 @@ def _build_stamp() -> int:
 
 @app.get("/api/version")
 async def version() -> dict:
-    return {"build": _build_stamp(), "version": __version__}
+    """部署身份 —— 前端"要不要刷新"和运维"装的是不是这份代码"都看它。
+
+    为什么需要 commit 和 web 目录指纹：
+      东京曾经连续几轮"改了没生效"——后端文件是新的，但静态目录指到了另一个
+      路径（app/web/out vs web/out），前端一直是旧包。只报 mtime 看不出差别，
+      所以这里把 **后端 commit**、**web 产物目录**、**index.html 的指纹** 一起回，
+      部署脚本和页面都能一眼比对。"""
+    return {
+        "build": _build_stamp(),
+        "version": __version__,
+        "commit": _commit_sha(),
+        "web_dist": str(_WEB_DIST),
+        "web_files": _web_file_count(),
+    }
+
+
+def _commit_sha() -> str:
+    """当前部署的代码版本。没有 .git（离线包）时回 "unknown"，不抛异常。"""
+    try:
+        head = Path(__file__).resolve().parents[2] / ".git" / "HEAD"
+        if head.is_file():
+            ref = head.read_text(encoding="utf-8").strip()
+            if ref.startswith("ref: "):
+                ref_path = head.parent / ref[5:]
+                if ref_path.is_file():
+                    return ref_path.read_text(encoding="utf-8").strip()[:12]
+            return ref[:12]
+        packed = Path(__file__).resolve().parents[2] / ".git" / "packed-refs"
+        if packed.is_file():
+            for line in packed.read_text(encoding="utf-8", errors="ignore").splitlines():
+                if line.endswith("refs/heads/master"):
+                    return line.split()[0][:12]
+    except OSError:
+        pass
+    env = os.getenv("STUDIO_BUILD_COMMIT", "")
+    return env[:12] if env else "unknown"
+
+
+def _web_file_count() -> int:
+    """产物文件数 —— 和"应该是多少"对不上就说明目录没换。"""
+    try:
+        return sum(1 for _ in _WEB_DIST.rglob("*") if _.is_file()) if _WEB_DIST.is_dir() else 0
+    except OSError:
+        return 0
 
 
 # --------------------------------------------------------------------------- #

@@ -840,12 +840,38 @@ export function ChatConsole({
       }
     };
     es.addEventListener("message", onMessage);
+    /* 断线由浏览器自动重连（重连后服务端立刻推一次 ready）。
+       但"一直连不上"时页面会静默变旧 —— 连续失败 3 次就降级成 8 秒 digest 轮询，
+       连回来再撤掉轮询。宁可退回到轮询，也不能让用户看着一份不再更新的会话。 */
+    let errs = 0;
+    let poll: ReturnType<typeof setInterval> | null = null;
+    const startPoll = () => {
+      if (poll) return;
+      poll = setInterval(() => {
+        if (document.hidden || busy) return;
+        void api
+          .sessionDigest(sessionId)
+          .then((d) => {
+            if (alive && !d.running) void loadMessages(sessionId);
+          })
+          .catch(() => {});
+      }, 8000);
+    };
+    es.onopen = () => {
+      errs = 0;
+      if (poll) {
+        clearInterval(poll);
+        poll = null;
+      }
+    };
     es.onerror = () => {
-      /* 断线由浏览器自动重连；重连后服务端会立刻推一次 ready */
+      errs += 1;
+      if (errs >= 3) startPoll();
     };
     return () => {
       alive = false;
       es.close();
+      if (poll) clearInterval(poll);
     };
   }, [busy, sessionId, loadMessages]);
 

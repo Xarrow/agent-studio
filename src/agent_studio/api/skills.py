@@ -12,13 +12,14 @@ from pathlib import Path
 
 import httpx
 import yaml
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
 from ..db import SessionLocal, get_session
-from ..models import AgentSkill, Skill, now_ms
+from ..models import Agent, AgentSkill, Skill, now_ms
 from ..schemas import (
     CliInstallRequest,
     SkillImportRequest,
@@ -372,11 +373,52 @@ async def get_skill_agents(skill_id: str, session: AsyncSession = Depends(get_se
 
 
 @router.get("/{skill_id}", response_model=SkillRead)
-async def get_skill(skill_id: str, session: AsyncSession = Depends(get_session)) -> SkillRead:
+async def get_skill(
+    skill_id: str,
+    with_files: bool = False,
+    request: "Request" = None,          # type: ignore[assignment]
+    session: AsyncSession = Depends(get_session),
+) -> "Response | SkillRead":
+    """技能详情。
+
+    **默认不回附件正文**（``with_files=0``）：archify 一个技能 183 个文件、
+    diagram-design 5.4MB —— 详情面板只需要"有哪些附件"，正文没人看。
+    公网实测这一条 5.4MB / 17 秒，改成只回文件名后是几 KB。
+
+    真要附件内容（导出、CLI）传 ``?with_files=1``。
+
+    另外带 ETag 与 304：同一个技能反复点开不该重复传正文（SKILL.md 正文
+    仍然回，用户是来看它的），命中就 304。
+    """
     row = await session.get(Skill, skill_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Skill 不存在: {skill_id}")
-    return to_read(row)
+
+    data = to_read(row)
+    if not with_files:
+        # 只留名字：前端只用 key 列表（附件计数/文件名），正文一律按需再取
+        data = data.model_copy(update={"files": {k: "" for k in (row.files or {})}})
+
+    etag = f'W/"{skill_id}-{row.updated_at}-{int(with_files)}"'
+    if request is not None and request.headers.get("if-none-match") == etag:
+        return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers={"ETag": etag})
+    return JSONResponse(content=data.model_dump(), headers={"ETag": etag})
+
+
+@router.get("/{skill_id}/file")
+async def get_skill_file(
+    skill_id: str,
+    path: str,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """单个附件正文 —— 详情面板点了某个附件才取，不再整包背下来。"""
+    row = await session.get(Skill, skill_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Skill 不存在: {skill_id}")
+    files = row.files or {}
+    if path not in files:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"附件不存在: {path}")
+    return {"path": path, "content": files[path]}
 
 
 @router.put("/{skill_id}")
@@ -444,6 +486,21 @@ async def delete_skill(skill_id: str, session: AsyncSession = Depends(get_sessio
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Skill 不存在: {skill_id}")
     name = getattr(row, "dir_name", "") or row.name
     await session.execute(delete(AgentSkill).where(AgentSkill.skill_id == skill_id))
+    # 助手定义里也存着 {"ref": skill_id} —— 只删关联表会留下悬空引用：
+    # 界面上还能看到这一项，运行时按 id 找不到技能，报错信息还指不到原因。
+    stripped = 0
+    agents = (await session.execute(select(Agent))).scalars().all()
+    for ag in agents:
+        defn = dict(ag.definition or {})
+        skills = defn.get("skills")
+        if not isinstance(skills, list):
+            continue
+        kept = [x for x in skills if not (isinstance(x, dict) and x.get("ref") == skill_id)]
+        if len(kept) != len(skills):
+            defn["skills"] = kept
+            ag.definition = defn
+            ag.updated_at = now_ms()
+            stripped += 1
     await session.delete(row)
     await session.commit()
     # DB 删了、磁盘还留着 = 工作目录里永远有这份「不存在的技能」，看着像删不掉。
@@ -455,6 +512,8 @@ async def delete_skill(skill_id: str, session: AsyncSession = Depends(get_sessio
             shutil.rmtree(target)
     except OSError:  # 删不掉不该让接口失败（DB 已经提交）
         logger.warning("技能已从库里删除，但磁盘目录清理失败: %s", name, exc_info=True)
+    if stripped:
+        logger.info("删除技能 %s 时顺带清掉 %d 个助手里的引用", skill_id, stripped)
 
 
 # --------------------------------------------------------------------------- #

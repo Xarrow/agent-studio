@@ -403,10 +403,14 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
    *  同时写顶层 name 与 def.name（历史数据里这两个可能已经不一致，保存一次就统一）。 */
   const saveNameOnly = async (next: string) => {
     try {
-      const updated = await api.updateAgent(agentId, {
-        name: next,
-        definition: { ...((defRef.current ?? def) as AgentDefinition), name: next },
-      });
+      const updated = await api.updateAgent(
+        agentId,
+        {
+          name: next,
+          definition: { ...((defRef.current ?? def) as AgentDefinition), name: next },
+        },
+        agent?.version,
+      );
       setAgent(updated);
       setDef(withDefaults(updated.definition));
       setSavedSnap(snap(updated.definition, updated.description ?? ""));
@@ -433,11 +437,15 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
       // 用户改完名字保存"没反应"（与 workflow 改名失效同一类问题：一个字段两个真相）。
       // 这里让两者始终一致：以 def.name 为准，空则保留原名。
       const nextName = (def.name ?? "").trim() || agent?.name;
-      const updated = await api.updateAgent(agentId, {
-        name: nextName,
-        definition: def,
-        description: desc.trim() || undefined,
-      });
+      const updated = await api.updateAgent(
+        agentId,
+        {
+          name: nextName,
+          definition: def,
+          description: desc.trim() || undefined,
+        },
+        agent?.version,
+      );
       setAgent(updated);
       setDef(withDefaults(updated.definition));
       setSavedSnap(snap(updated.definition, updated.description ?? ""));
