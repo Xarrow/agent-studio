@@ -33,7 +33,7 @@ import {
   IconTrash,
 } from "@/components/ui/icons";
 
-type Source = "git" | "url" | "local" | "inline";
+type Source = "git" | "url" | "local" | "inline" | "upload";
 
 /**
  * Skills 管理面板 —— 现在**嵌在「工具」页里**，不再单独占一个菜单。
@@ -737,6 +737,10 @@ function ImportDialog({
     "---\nname: my-skill\ndescription: 一句话说明这个 Skill 做什么\n---\n\n# 使用说明\n\n在这里写给 Agent 的指令…\n",
   );
   const [name, setName] = useState("");
+  /** 上传：一个文件（zip / .skills / tar.gz / md），可选解压目录 */
+  const [file, setFile] = useState<File | null>(null);
+  const [fileDir, setFileDir] = useState("");
+  const [dropHover, setDropHover] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -854,6 +858,22 @@ function ImportDialog({
     }
     setBusy(true);
     try {
+      // 上传分支：走 multipart，不走 JSON 导入
+      if (source === "upload") {
+        if (!file) {
+          setErr("先选一个文件（.zip / .skills / .tar.gz / .md）");
+          setBusy(false);
+          return;
+        }
+        const r = await api.uploadSkill(file, fileDir.trim() || undefined);
+        fb.success(
+          r.count > 0
+            ? `已安装 ${r.count} 个技能${r.extracted_to ? `，解压在 ${r.extracted_to}` : ""}`
+            : "包是空的（没找到 SKILL.md）",
+        );
+        onDone();
+        return;
+      }
       const r = await api.importSkill({
         source,
         url: url || undefined,
@@ -882,12 +902,13 @@ function ImportDialog({
         </p>
 
         {/* 四种来源：图标先给眼睛一个锚点，再读文字确认 —— 纯文字四个按钮要靠读完才知道选哪个 */}
-        <div className="mb-4 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+        <div className="mb-4 grid grid-cols-2 gap-1.5 sm:grid-cols-5">
           {(
             [
               ["git", "GitHub 仓库", IconBox],
               ["url", "单个 URL", IconLink],
               ["local", "服务器本地", IconFolder],
+              ["upload", "上传文件", IconFile],
               ["inline", "手写", IconPencil],
             ] as [Source, string, React.ComponentType<{ size?: number }>][]
           ).map(([k, label, Ico]) => {
@@ -1163,6 +1184,62 @@ function ImportDialog({
                   value={content}
                   onChange={(e) => setContent(e.target.value)}
                 />
+              </div>
+            </>
+          )}
+
+          {source === "upload" && (
+            <>
+              <div>
+                <label className="label">技能包</label>
+                <div
+                  className="rounded-[var(--radius-md)] border border-dashed px-3 py-4 text-center text-[12px] transition-colors"
+                  style={{
+                    borderColor: dropHover ? "var(--color-accent)" : "var(--color-border)",
+                    background: dropHover ? "var(--bg-selected)" : "transparent",
+                    color: "var(--color-text-3)",
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setDropHover(true);
+                  }}
+                  onDragLeave={() => setDropHover(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setDropHover(false);
+                    const f = e.dataTransfer.files?.[0];
+                    if (f) setFile(f);
+                  }}
+                  onClick={() => document.getElementById("skill-upload-input")?.click()}
+                >
+                  {file ? (
+                    <span className="mono" style={{ color: "var(--color-text-2)" }}>
+                      {file.name} · {(file.size / 1024).toFixed(0)}KB
+                    </span>
+                  ) : (
+                    <>拖文件到这里，或<span style={{ color: "var(--color-accent)" }}>点选</span>（.zip / .skills / .tar.gz / .md）</>
+                  )}
+                  <input
+                    id="skill-upload-input"
+                    type="file"
+                    accept=".zip,.skills,.tar,.gz,.tgz,.md,.json"
+                    className="hidden"
+                    onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="label">解压到（可空，默认 uploads/skills/时间戳-包名）</label>
+                <input
+                  className="input mono"
+                  placeholder="例如 my-skills/2026-11"
+                  value={fileDir}
+                  onChange={(e) => setFileDir(e.target.value)}
+                />
+                <p className="mt-1 text-[11px] text-[var(--color-muted)]">
+                  相对于服务器工作目录；包里的所有 SKILL.md 都会被找到并加进技能库，
+                  原始文件保留在这个目录里方便你继续改。
+                </p>
               </div>
             </>
           )}

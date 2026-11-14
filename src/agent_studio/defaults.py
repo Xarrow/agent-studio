@@ -43,22 +43,22 @@ BUILTIN_SKILLS: dict[str, str] = {
     # 为什么不合成一个大技能：模型是按"技能描述"决定要不要展开全文的。
     # 五件事塞进一份说明书，描述只能写得很泛，模型遇到"这个 PDF 里写了什么"
     # 时不会想到它；拆开后每条描述都能直指场景，命中率高得多，加载也更省上下文。
-    "deepseek-search": """---
-name: deepseek-search
-description: 网页搜索：查资料、核实时效、限定站点；结果带相关度与权威度
+    # 搜索与抓取合成一个：DeepSeek 官方也把两者写在同一份指南里
+    # （Search 找线索、Fetch 读全文，是一条链上的两步，不是两个产品）。
+    "deepseek-web": """---
+name: deepseek-web
+description: 网页搜索与抓取：先 search 找线索，再 fetch 读全文；结果带相关度与权威度
 ---
 
-# 网页搜索（DeepSeek Search）
+# 网页搜索与抓取（DeepSeek Search / Fetch）
 
-## 什么时候用
+一条链上的两步：**search 找线索，fetch 读全文**。先搜再抓，不要跳过搜索硬猜网址。
 
-- 需要**当前**信息（版本号、价格、最近发布、政策条款）。
-- 要交叉验证一个说法，或找官方来源。
-- 已知主题但不知道具体网址。
+## search
 
-## 用法
+用在：需要当前信息（版本号、价格、最近发布、条款）、要交叉验证、知道主题但不知道网址。
 
-`web_search(query="...")`，支持这些语法（直接写在 query 里）：
+`web_search(query="...")`，query 里可以带语法：
 
 | 写法 | 作用 |
 |---|---|
@@ -66,51 +66,32 @@ description: 网页搜索：查资料、核实时效、限定站点；结果带�
 | `-site:csdn.net` | 排除这个站 |
 | `"精确短语"` | 精确匹配 |
 | `lang:zh` / `lang:zh,en` | 限定语言 |
-| `after:2025` / `before:2026-06` | 限定发布时间 |
+| `after:2025` / `before:2026-06` | 限定时间 |
 
-## 怎么读结果
+每条结果后面带 `（相关 2.3 · 权威 4 · 2025-12-07）`：相关 ≥1.5 才算优质，权威 ≥3 才能直接引用；
+权威 0–1（论坛、聚合站）只能当线索。结论里要给出处。
 
-每条后面带 `（相关 2.3 · 权威 4 · 2025-12-07）`：
+结果为空或跑题：**换更具体的词**（加型号、年份、site:），别原样重试；连续两次不相关就停下来，
+改用已知域名 fetch，或如实说"没查到"。
 
-- **相关 ≥ 1.5** 才算优质；**权威 ≥ 3** 才适合直接引用。
-- 权威 0–1 的内容（论坛、聚合站）只能当线索，不能当事实。
-- 结论里要给出处：`…（来源：example.com）`。
+## fetch
 
-## 结果不对怎么办
+用在：搜索只给了摘要、需要全文（安装步骤、API 参数、条款原文），或已知官方文档地址。
 
-- 空结果 / 明显跑题：**换更具体的词**（加型号、加年份、加 site:），不要原样重试。
-- 连续两次都不相关：停止搜索，改用已知域名 `fetch`，或如实说明"没查到"。
+`fetch(url="https://...")` → `# 标题` + Markdown 正文。
 
-## 成本
+注意：只抓 http/https（**内网地址会被拒**，这是平台边界）；长页会截断（约 200KB），要细节就抓更具体的子页；
+同一个 URL 失败两次就放弃；抓的是静态正文，SPA 可能只有骨架。
 
-按次计费（平台记在用量里）。一次任务 3–5 次搜索是正常的，超过 8 次就是在瞎试。
-""",
-    "deepseek-fetch": """---
-name: deepseek-fetch
-description: 抓取网页正文并转成 Markdown；用来读搜索结果的全文或官方文档
----
+## 节奏
 
-# 网页抓取（DeepSeek Fetch）
-
-## 什么时候用
-
-- 搜索结果只有摘要，需要全文（安装步骤、API 参数、条款原文）。
-- 已经知道确切的官方文档地址。
-
-## 用法
-
-`fetch(url="https://...")`，返回 `# 标题` + Markdown 正文。
-
-## 注意
-
-- **只抓 http/https**，内网地址会被拒（这是平台的边界，不是网络问题）。
-- 页面很长会被截断（默认约 200KB）；要更细的段落就抓更具体的子页面。
-- 同一个 URL 失败两次就放弃，别循环重试。
-- 抓下来的是页面正文，不含动态渲染的内容；SPA 站点可能只有骨架 —— 这时改用其它来源。
+1. `web_search("关键词 site:官方域名")`，挑权威 ≥3 的；
+2. `fetch(那条 url)`，摘与问题直接相关的段落；
+3. 结论 + 出处；需要对照就换个措辞再搜一次。
 
 ## 成本
 
-按次计费。抓之前先想清楚"我需要这一页的哪一段"，别把整站都抓一遍。
+search / fetch 都按次计费。3–5 次搜索 + 1–3 次抓取是正常节奏，更多就是在瞎试。
 """,
     "deepseek-ocr": """---
 name: deepseek-ocr
@@ -498,13 +479,25 @@ async def ensure_default_skills(session: Any) -> list[str]:
 
     from .models import Skill as _Skill
 
-    retired = {"industrial-docs"}
+    retired = {"industrial-docs", "deepseek-search", "deepseek-fetch"}
     live = set(BUILTIN_SKILLS)
     rows = (await session.execute(_select(_Skill))).scalars().all()
     for row in rows:
-        if row.name in retired and row.name not in live and (row.state or "active") != "archived":
-            row.state = "archived"
-            row.archived_at = __import__("time").time_ns() // 1_000_000
+        if row.name in retired and row.name not in live:
+            if (row.state or "active") != "archived":
+                row.state = "archived"
+                row.archived_at = __import__("time").time_ns() // 1_000_000
+            # 磁盘也要收走：运行时 loader 只看目录，留着等于"归档了但还在用"
+            try:
+                from .config import settings as _s
+
+                d = _s.work_dir / "skills" / (getattr(row, "dir_name", "") or row.name)
+                if d.is_dir():
+                    dest = _s.work_dir / "skills" / ".retired"
+                    dest.mkdir(parents=True, exist_ok=True)
+                    d.rename(dest / f"{d.name}-{int(__import__('time').time())}")
+            except OSError:
+                pass
     await session.commit()
 
     # 落盘（含已有行 —— 正文的权威在库里，磁盘只是运行时视图）

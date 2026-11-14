@@ -5,15 +5,19 @@ from __future__ import annotations
 import logging
 import os
 import re
+import io
 import shutil
 import subprocess
+import tarfile
+import time
 import tempfile
+import zipfile
 from pathlib import Path
 
 import httpx
 import yaml
 from fastapi.responses import JSONResponse
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile, status
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -394,10 +398,17 @@ async def get_skill(
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Skill 不存在: {skill_id}")
 
+    files = row.files or {}
     data = to_read(row)
     if not with_files:
         # 只留名字：前端只用 key 列表（附件计数/文件名），正文一律按需再取
-        data = data.model_copy(update={"files": {k: "" for k in (row.files or {})}})
+        data = data.model_copy(
+            update={
+                "files": {k: "" for k in files},
+                # 体积单独给一份（前端要显示"12KB"这种），不影响瘦身
+                "file_sizes": {k: len(v.encode("utf-8")) if isinstance(v, str) else 0 for k, v in files.items()},
+            }
+        )
 
     etag = f'W/"{skill_id}-{row.updated_at}-{int(with_files)}"'
     if request is not None and request.headers.get("if-none-match") == etag:
@@ -576,6 +587,88 @@ async def _upsert_skill(
 # --------------------------------------------------------------------------- #
 # 导入
 # --------------------------------------------------------------------------- #
+#: 上传技能包的限制 —— 松紧都是拍过的：够装下一个带素材的技能仓，又不至于被人当网盘
+UPLOAD_MAX_BYTES = 50 * 1024 * 1024          # 压缩包本身 ≤50MB
+UPLOAD_MAX_UNPACKED = 200 * 1024 * 1024      # 解开后 ≤200MB
+UPLOAD_MAX_ENTRIES = 5000                    # 条目数上限
+UPLOAD_MAX_FILE_BYTES = 5 * 1024 * 1024      # 单个附件 ≤5MB（正文以外的素材）
+
+
+def _zip_bomb_guard(entries: list[tuple[str, int]]) -> None:
+    """压缩炸弹/目录穿越的守门员。
+
+    ``entries`` 是 (名字, 解压后大小)。名字里出现绝对路径或 ``..`` 一律拒绝 ——
+    解压路径拼错的代价是往服务器任意位置写文件，宁可整个包退回让用户重打。
+    """
+    if len(entries) > UPLOAD_MAX_ENTRIES:
+        raise ValueError(f"压缩包条目太多（{len(entries)} > {UPLOAD_MAX_ENTRIES}），请拆分后再传")
+    total = 0
+    for name, size in entries:
+        pure = name.replace("\\", "/")
+        if pure.startswith("/") or ".." in pure.split("/"):
+            raise ValueError(f"压缩包里有非法路径：{name}")
+        total += max(int(size or 0), 0)
+    if total > UPLOAD_MAX_UNPACKED:
+        raise ValueError(f"解压后体积过大（{total / 1048576:.0f}MB > 200MB）")
+
+
+def _extract_zip(data: bytes, target: Path) -> None:
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        infos = zf.infolist()
+        _zip_bomb_guard([(i.filename, i.file_size) for i in infos])
+        for info in infos:
+            if info.is_dir():
+                continue
+            # 符号链接：zip 里靠外部属性标记，遇到就跳过（技能包不需要软链）
+            if (info.external_attr >> 16) & 0o170000 == 0o120000:
+                continue
+            out = (target / info.filename).resolve()
+            if target.resolve() not in out.parents and out != target.resolve():
+                raise ValueError(f"压缩包里有越界路径：{info.filename}")
+            out.parent.mkdir(parents=True, exist_ok=True)
+            with zf.open(info) as src, out.open("wb") as dst:
+                shutil.copyfileobj(src, dst)
+
+
+def _extract_tar(data: bytes, target: Path) -> None:
+    with tarfile.open(fileobj=io.BytesIO(data), mode="r:*") as tf:
+        members = [m for m in tf.getmembers() if m.isfile()]
+        _zip_bomb_guard([(m.name, m.size) for m in members])
+        for m in members:
+            out = (target / m.name).resolve()
+            if target.resolve() not in out.parents and out != target.resolve():
+                raise ValueError(f"压缩包里有越界路径：{m.name}")
+            out.parent.mkdir(parents=True, exist_ok=True)
+            fp = tf.extractfile(m)
+            if fp is None:
+                continue
+            with fp, out.open("wb") as dst:
+                shutil.copyfileobj(fp, dst)
+
+
+def _dir_under_workdir(rel: str) -> Path:
+    """把用户给的"指定目录"钉在工作目录里（不能指向系统任意位置）。"""
+    root = settings.work_dir.resolve()
+    target = (root / rel).resolve() if rel else (root / "uploads" / "skills").resolve()
+    if root not in target.parents and target != root:
+        raise ValueError(f"目标目录必须在工作目录内：{rel}")
+    return target
+
+
+async def _read_upload(file: UploadFile) -> bytes:
+    chunks: list[bytes] = []
+    size = 0
+    while True:
+        chunk = await file.read(1 << 20)
+        if not chunk:
+            break
+        size += len(chunk)
+        if size > UPLOAD_MAX_BYTES:
+            raise ValueError("文件超过 50MB 上限")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 def _collect_from_dir(root: Path, subpath: str | None = None) -> list[dict]:
     """扫描目录下所有含 SKILL.md 的子目录。"""
     base = root / subpath if subpath else root
@@ -715,6 +808,111 @@ async def import_skill(
             await _materialize(row)
 
     return {"source": payload.source, "count": len(imported), "items": imported}
+
+
+@router.post("/upload", status_code=status.HTTP_201_CREATED)
+async def upload_skill_package(
+    file: UploadFile = File(...),
+    dir: str = Form(""),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """上传一个技能包并安装。
+
+    支持的形状（按文件内容判断，不只看后缀）：
+
+    ================  ==========================================================
+    ``.md``           单个 SKILL.md —— 直接入库
+    ``.json``         打包好的技能 ``{name, description, content, files}``
+    ``.zip`` / ``.skills`` / ``.tar.gz``  归档，解压后自动找所有含 SKILL.md 的目录
+    ================  ==========================================================
+
+    ``dir`` 指定解压到工作目录下的哪个子目录（空 = ``uploads/skills/<时间戳>-<包名>``）。
+    解压出来的原始文件**保留**，用户可以去看、去改；技能正文同时入库并 materialize
+    到 ``skills/<技能名>/``，Agent 立刻能读到。
+    """
+    if not file.filename:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "没有文件名")
+    try:
+        raw = await _read_upload(file)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, str(exc)) from exc
+
+    name = Path(file.filename).name
+    stem = Path(name).stem or "skill"
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    low = name.lower()
+
+    try:
+        base = _dir_under_workdir(dir.strip())
+        target = base if dir.strip() else base / f"{stamp}-{stem}"
+        target.mkdir(parents=True, exist_ok=True)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+    # ---- 单个文件：.md / .json ----
+    if low.endswith((".md", ".markdown")) or (not low.endswith((".zip", ".skills", ".tar", ".gz", ".tgz")) and raw[:1] == b"-"):
+        text = raw.decode("utf-8", "ignore")
+        if "SKILL.md" not in text and not text.lstrip().startswith("---"):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "这不像 SKILL.md（没有 frontmatter）")
+        row, updated = await _upsert_skill(
+            session,
+            content=text,
+            files={},
+            fallback_name=stem,
+            source_meta={"type": "upload", "file": name},
+        )
+        await session.commit()
+        await _materialize(row)
+        return {
+            "kind": "file",
+            "archive": name,
+            "extracted_to": "",
+            "count": 1,
+            "items": [{"id": row.id, "name": row.name, "updated": updated}],
+        }
+
+    # ---- 归档：zip（含 .skills）或 tar.gz ----
+    try:
+        if raw[:2] == b"PK":
+            _extract_zip(raw, target)
+            kind = "zip"
+        elif raw[:2] == b"\x1f\x8b" or low.endswith((".tar", ".tgz")):
+            _extract_tar(raw, target)
+            kind = "tar"
+        else:
+            raise ValueError("既不是 zip 也不是 tar.gz（.skills 需要是 zip 格式）")
+    except (ValueError, zipfile.BadZipFile, tarfile.TarError) as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+    try:
+        items_raw = _collect_from_dir(target)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"解压成功，但{exc}") from exc
+
+    imported: list[dict] = []
+    for item in items_raw:
+        row, updated = await _upsert_skill(
+            session,
+            content=item["content"],
+            files=item["files"],
+            fallback_name=item["dir"],
+            source_meta={"type": "upload", "archive": name, "path": str(target)},
+        )
+        imported.append({"id": row.id, "name": row.name, "updated": updated})
+
+    await session.commit()
+    for it in imported:
+        row = await session.get(Skill, it["id"])
+        if row is not None:
+            await _materialize(row)
+
+    return {
+        "kind": kind,
+        "archive": name,
+        "extracted_to": str(target),
+        "count": len(imported),
+        "items": imported,
+    }
 
 
 @router.post("/{skill_id}/materialize")

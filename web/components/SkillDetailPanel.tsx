@@ -8,6 +8,8 @@
  * 容器本身不该各写一遍 —— 这里原来有 200 行和 DetailPanel 几乎一样的结构。
  */
 
+import { useState } from "react";
+
 import {
   IconArchive,
   IconBox,
@@ -23,7 +25,8 @@ import {
   IconTrash,
 } from "@/components/ui/icons";
 import { DetailPanel } from "@/components/ui/DetailPanel";
-import { fmt } from "@/lib/api";
+import { api, fmt } from "@/lib/api";
+import { copyText } from "@/lib/clipboard";
 import type { Skill } from "@/lib/types";
 
 /** 来源 → 图标 + 两个色（底 / 线） */
@@ -189,6 +192,29 @@ export function SkillDetailPanel({
       }
       onClose={onClose}
     >
+      {/* 文件位置：以前只写在 title 里，触屏根本看不到；这里直接显示路径 + 一键复制 */}
+      {skill.location && (
+        <div className="mb-3 rounded-[var(--radius-md)] px-2.5 py-2" style={{ background: "var(--surface-2)" }}>
+          <div className="mb-1 text-[11px]" style={{ color: "var(--color-text-3)" }}>文件位置</div>
+          <div className="flex items-center gap-2">
+            <span className="mono min-w-0 flex-1 truncate text-[11.5px]" style={{ color: "var(--color-text-2)" }} title={skill.location}>
+              {skill.location}
+            </span>
+            <button
+              type="button"
+              className="btn btn-sm shrink-0"
+              onClick={() => void copyText(String(skill.location))}
+            >
+              复制
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 附件清单：光写"288 个附件"等于没说 —— 要能看到有哪些文件、多大，
+          点一下就地预览（正文按需拉，不整包背下来） */}
+      <SkillFiles skillId={skill.id} files={skill.files ?? {}} sizes={(skill as unknown as { file_sizes?: Record<string, number> }).file_sizes ?? {}} />
+
       {/* 谁在用：技能"装了但没人挂"和"正在被三个助手用"是两种状态，
           页面上必须一眼能分出来，不用去助手页一个个翻 */}
       <div className="mb-3">
@@ -221,5 +247,101 @@ export function SkillDetailPanel({
       </div>
       {children}
     </DetailPanel>
+  );
+}
+
+/** 附件清单 + 单文件预览；正文按需拉（详情接口只给名单和体积）。 */
+function SkillFiles({
+  skillId,
+  files,
+  sizes,
+}: {
+  skillId: string;
+  files: Record<string, string>;
+  sizes: Record<string, number>;
+}) {
+  const names = Object.keys(files).sort();
+  const [all, setAll] = useState(false);
+  const [open, setOpen] = useState<string | null>(null);
+  const [body, setBody] = useState<{ path: string; text: string } | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  if (names.length === 0) {
+    return (
+      <p className="mb-3 text-[11.5px]" style={{ color: "var(--color-text-3)" }}>
+        这个技能只有 SKILL.md，没有额外附件。
+      </p>
+    );
+  }
+  const total = Object.values(sizes).reduce((a, b) => a + b, 0);
+  const shown = all ? names : names.slice(0, 8);
+
+  const preview = async (path: string) => {
+    if (open === path) {
+      setOpen(null);
+      setBody(null);
+      return;
+    }
+    setOpen(path);
+    setBody(null);
+    setErr(null);
+    try {
+      const r = await api.skillFile(skillId, path);
+      setBody({ path, text: r.content });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  return (
+    <div className="mb-3">
+      <div className="mb-1 flex items-center gap-2 text-[11.5px]" style={{ color: "var(--color-text-3)" }}>
+        <span>
+          附件 {names.length} 个{total > 0 ? ` · ${(total / 1024).toFixed(0)}KB` : ""}
+        </span>
+        {names.length > 8 && (
+          <button className="underline underline-offset-2" onClick={() => setAll((v) => !v)}>
+            {all ? "收起" : `展开全部`}
+          </button>
+        )}
+      </div>
+      <div className="space-y-0.5">
+        {shown.map((n) => (
+          <div key={n}>
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 rounded-[var(--radius-xs)] px-1.5 py-1 text-left transition-colors hover:bg-[var(--bg-selected)]"
+              onClick={() => void preview(n)}
+              title={n}
+            >
+              <span className="mono min-w-0 flex-1 truncate text-[11.5px]" style={{ color: "var(--color-text-2)" }}>
+                {n}
+              </span>
+              {sizes[n] ? (
+                <span className="shrink-0 text-[10.5px] tabular-nums" style={{ color: "var(--color-text-3)" }}>
+                  {sizes[n] > 1024 ? `${(sizes[n] / 1024).toFixed(1)}KB` : `${sizes[n]}B`}
+                </span>
+              ) : null}
+              <span className="shrink-0 text-[10.5px]" style={{ color: "var(--color-text-3)" }}>
+                {open === n ? "收起" : "预览"}
+              </span>
+            </button>
+            {open === n && (
+              <pre
+                className="mono mt-1 max-h-64 overflow-auto rounded-[var(--radius-sm)] p-2 text-[11px] leading-relaxed"
+                style={{ background: "var(--surface-2)", color: "var(--color-text-2)" }}
+              >
+                {err ? `读取失败：${err}` : body?.path === n ? body.text || "（空文件）" : "读取中…"}
+              </pre>
+            )}
+          </div>
+        ))}
+      </div>
+      {!all && names.length > 8 && (
+        <button className="mt-1 text-[11px]" style={{ color: "var(--color-text-3)" }} onClick={() => setAll(true)}>
+          还有 {names.length - 8} 个…
+        </button>
+      )}
+    </div>
   );
 }

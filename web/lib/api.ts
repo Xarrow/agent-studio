@@ -560,6 +560,24 @@ export const api = {
       threshold: number;
       probes: { query: string; ok: boolean; latency_ms: number; relevance: number; first: string; error: string }[];
     }>("/api/search/health/check", { method: "POST", body: "{}" }),
+  /** 上传技能包（.zip / .skills / .tar.gz / .md / .json），可选解压目录 */
+  uploadSkill: (file: File, dir?: string) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    if (dir) fd.append("dir", dir);
+    return request<{
+      kind: string;
+      archive: string;
+      extracted_to: string;
+      count: number;
+      items: { id: string; name: string; updated: boolean }[];
+    }>("/api/skills/upload", { method: "POST", body: fd });
+  },
+  /** 单个附件正文（详情接口只给名单，点开才拉这一个） */
+  skillFile: (id: string, path: string) =>
+    request<{ path: string; content: string }>(
+      `/api/skills/${id}/file?path=${encodeURIComponent(path)}`,
+    ),
   /** 这个技能被哪些助手挂着 */
   skillAgents: (id: string) => request<{ id: string; name: string; enabled: boolean }[]>(`/api/skills/${id}/agents`),
   skill: (id: string) => request<Skill>(`/api/skills/${id}`),
