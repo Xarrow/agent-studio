@@ -484,7 +484,13 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
           onManage={manageGroup}
           onToggleState={toggleGroupState}
           onUninstall={uninstallGroup}
-          onOpen={(id) => openSkill(id)}
+          onOpen={(id) => {
+            // 分组里只有精简字段；拿同 id 的完整条目先出壳。
+            // 这一步很关键：某些技能详情有 5MB（全部附件内联），
+            // 等它回来再弹，用户看到的就是"点了没反应"。
+            const full = skills.find((x) => x.id === id);
+            openSkill(full ?? id);
+          }}
           onRemoveSkill={async (id, name) => {
             try {
               await api.deleteSkill(id);
