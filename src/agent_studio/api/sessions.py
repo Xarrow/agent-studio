@@ -656,8 +656,19 @@ def _digest_of(text: str) -> str:
         except Exception:  # noqa: BLE001
             return u
 
+    # 去掉 markdown 记号与附件/文件清单这类噪音：目录要的是「问了什么」，
+    # 不是「用户当时黏了多少东西进来」。
+    first = re.sub(r"^[#>*\-\s]+", "", first)
+    first = re.sub(r"[*`_]+", "", first)
+    first = re.sub(r"[（(]\s*附件[^）)]*[）)]", "", first)
     first = re.sub(r"https?://\S+", _short_url, first)
     first = re.sub(r"\s+", " ", first).strip()
+    if not first:
+        return ""
+    # 首句优先：一句话能说清就不用截断到 40 字（避免「帮我下载这个视频然后…」这种半句）
+    m = re.match(r"^(.{6,}?[。！？!?])", first)
+    if m and len(m.group(1)) <= _DIGEST_MAX:
+        return m.group(1)
     return first if len(first) <= _DIGEST_MAX else first[: _DIGEST_MAX - 1] + "…"
 
 

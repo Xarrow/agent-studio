@@ -143,6 +143,18 @@ export function SideDock({
   const shownOutline = (outline || []).filter(
     (it) => !outlineQDeb || (it.digest || "").toLowerCase().includes(outlineQDeb),
   );
+  /* 目录虚拟滚动：条目少时直出（简单可靠），超过 60 条才开窗 —— 1000 轮也不卡 */
+  const outlineBoxRef = useRef<HTMLDivElement>(null);
+  const [outlineScroll, setOutlineScroll] = useState(0);
+  const [outlineViewport, setOutlineViewport] = useState(480);
+  const OUTLINE_ROW = 50;
+  const win = (() => {
+    const total = shownOutline.length;
+    if (total <= 60) return { start: 0, end: total, padTop: 0, padBottom: 0 };
+    const start = Math.max(0, Math.floor(outlineScroll / OUTLINE_ROW) - 6);
+    const end = Math.min(total, Math.ceil((outlineScroll + (outlineViewport || 480)) / OUTLINE_ROW) + 6);
+    return { start, end, padTop: start * OUTLINE_ROW, padBottom: Math.max(0, (total - end) * OUTLINE_ROW) };
+  })();
   const fileRef = useRef<HTMLInputElement>(null);
 
   /* 拖动改宽：只在拖动期间挂 document 监听，松手就摘 */
@@ -381,7 +393,15 @@ export function SideDock({
                   />
                 </div>
               )}
-              <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
+              <div
+                className="min-h-0 flex-1 overflow-y-auto p-1.5"
+                ref={outlineBoxRef}
+                onScroll={(e) => {
+                  const el = e.currentTarget;
+                  setOutlineScroll(el.scrollTop);
+                  setOutlineViewport(el.clientHeight);
+                }}
+              >
               {outlineLoading ? (
                 <div className="space-y-1.5 px-1 py-2" aria-busy="true" aria-label="目录加载中">
                   {[0, 1, 2, 3, 4].map((i) => (
@@ -403,7 +423,9 @@ export function SideDock({
                   没有匹配的问题
                 </p>
               ) : (
-                shownOutline.map((it) => {
+                <>
+                {win.padTop > 0 && <div style={{ height: win.padTop }} aria-hidden />}
+                {shownOutline.slice(win.start, win.end).map((it) => {
                   const active = activeTurn === it.seq;
                   const time = new Date(it.created_at).toLocaleTimeString("zh-CN", {
                     hour: "2-digit",
@@ -441,7 +463,9 @@ export function SideDock({
                       ) : null}
                     </button>
                   );
-                })
+                })}
+                {win.padBottom > 0 && <div style={{ height: win.padBottom }} aria-hidden />}
+                </>
               )}
               </div>
             </div>
