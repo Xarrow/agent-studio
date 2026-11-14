@@ -58,7 +58,7 @@ export function AgentQuickRun({
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [hitl, setHitl] = useState<Record<string, unknown> | null>(null);
   const [recent, setRecent] = useState<
-    { id: string; status: string; started_at: number; usage: Record<string, number> }[]
+    { id: string; status: string; started_at: number; ended_at?: number | null; usage: Record<string, number> }[]
   >([]);
   const esRef = useRef<EventSource | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
@@ -245,6 +245,23 @@ export function AgentQuickRun({
         </div>
       )}
 
+      {/* 空状态：给两三句可以直接点的示例 —— 比"请输入"这种提示有用得多 */}
+      {!busy && events.length === 0 && !input.trim() && (
+        <div className="flex flex-wrap gap-1.5">
+          {["介绍一下你自己，以及你能做什么", "读一下当前目录，说说里面有什么", "用一句话解释这个助手适合干什么"].map((ex) => (
+            <button
+              key={ex}
+              type="button"
+              className="rounded-full border px-2.5 py-1 text-[11.5px] transition-colors hover:bg-[var(--bg-selected)]"
+              style={{ borderColor: "var(--color-border)", color: "var(--color-text-2)" }}
+              onClick={() => setInput(ex)}
+            >
+              {ex}
+            </button>
+          ))}
+        </div>
+      )}
+
       {recent.length > 0 && (
         <div>
           <div className="flex items-center justify-between mb-1.5">
@@ -266,10 +283,16 @@ export function AgentQuickRun({
                 className="inline-flex min-h-[36px] items-center gap-1.5 rounded-md border px-2 py-1 text-[11.5px] hover:bg-[var(--color-surface-2)] lg:min-h-0"
                 style={{ borderColor: "var(--color-border)" }}
               >
-                <span style={{ color: STATUS_COLOR[r.status] ?? "var(--color-muted)" }}>●</span>
+                <span style={{ color: STATUS_COLOR[r.status] ?? "var(--color-muted)" }}>
+                  {r.status === "ok" ? "✓" : r.status === "error" ? "✕" : "●"}
+                </span>
                 {fmt.relative(r.started_at)}
-                {r.usage?.total_tokens ? (
-                  <span className="text-[var(--color-muted)]">{r.usage.total_tokens} tok</span>
+                {r.ended_at ? (
+                  <span className="tabular-nums text-[var(--color-muted)]">
+                    {(r.ended_at - r.started_at) / 1000 < 1
+                      ? `${Math.round(r.ended_at - r.started_at)}ms`
+                      : `${((r.ended_at - r.started_at) / 1000).toFixed(1)}s`}
+                  </span>
                 ) : null}
               </Link>
             ))}

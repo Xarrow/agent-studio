@@ -114,6 +114,14 @@ export function AgentDetail({
   const [runtimes, setRuntimes] = useState<RuntimeCapabilities[]>([]);
   const [issues, setIssues] = useState<Issue[]>([]);
   const [saving, setSaving] = useState(false);
+  /** 保存成功后在按钮里闪 2 秒「✓ 已保存」——比右上角一行绿字更好找 */
+  const [savedFlash, setSavedFlash] = useState(false);
+  /** 顶部「⋯」：复制为副本这类低频动作收进来 */
+  const [moreOpen, setMoreOpen] = useState(false);
+  /** System Prompt 页内全屏 */
+  const [promptFull, setPromptFull] = useState(false);
+  /** 锚点导航当前高亮的那一节 */
+  const [activeSection, setActiveSection] = useState("sec-define");
   /** 空状态里的「同步内置工具」用 —— 就地完成，不跳页 */
   const [syncing, setSyncing] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -248,6 +256,22 @@ export function AgentDetail({
       alive = false;
     };
   }, [agentId]);
+
+  // 锚点联动：视口上 1/3 处落在哪一节就高亮哪一节
+  useEffect(() => {
+    const ids = ["sec-define", "sec-behavior", "sec-limits", "sec-model", "sec-capability"];
+    const els = ids.map((id) => document.getElementById(id)).filter((x): x is HTMLElement => !!x);
+    if (!els.length) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        const hit = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+        if (hit?.target?.id) setActiveSection(hit.target.id);
+      },
+      { rootMargin: "-80px 0px -60% 0px", threshold: [0, 1] },
+    );
+    els.forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, [agent?.id]);
 
   // 定义变化时做实时校验（防抖）
   useEffect(() => {
@@ -418,6 +442,8 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
       setDef(withDefaults(updated.definition));
       setSavedSnap(snap(updated.definition, updated.description ?? ""));
       setMsg(`已保存（v${updated.version}）`);
+      setSavedFlash(true);
+      window.setTimeout(() => setSavedFlash(false), 2000);
       setTimeout(() => setMsg(null), 2500);
     } catch (e) {
       // 保存被后端拒（比如文件范围里有内核不允许的目录）必须**当场看见** ——
@@ -457,7 +483,10 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
 
   return (
     <div className="p-4 md:p-6 lg:p-7 max-w-[1700px]">
-      <header className="flex items-start justify-between gap-4 mb-5 max-md:mb-3">
+      <header
+        className="sticky top-0 z-30 -mx-1 mb-5 flex items-start justify-between gap-4 px-1 py-2 max-md:mb-3"
+        style={{ background: "color-mix(in srgb, var(--color-bg) 92%, transparent)", backdropFilter: "blur(8px)" }}
+      >
         <div className="min-w-0 flex-1">
           {/* 手机：返回键与标题**同一行**（原来是独立一行 36px，加上标题/状态/动作
               页头吃到 148px）；桌面仍是"返回在上、标题在下"。 */}
@@ -605,21 +634,53 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
               <span className="live-dot">●</span> 有未保存的改动
             </span>
           )}
-          <button
-            data-tap
-            className="btn"
-            onClick={async () => {
-              const c = await api.duplicateAgent(agentId, {});
-              if (inDialog) {
-                // 浮层里不跳走：复制完就地告知，用户可以在浮层里继续，或自己切过去
-                setMsg(`已复制为「${c.name}」，可在助手列表找到`);
-                return;
-              }
-              router.push(`/agents/detail?id=${c.id}`);
-            }}
-          >
-            复制为副本
-          </button>
+          {/* 低频动作收进「⋯」：复制为副本之类，一次设置只做一回 */}
+          <div className="relative">
+            <button
+              data-tap
+              className="btn"
+              aria-haspopup="menu"
+              aria-expanded={moreOpen}
+              title="更多操作"
+              onClick={() => setMoreOpen((v) => !v)}
+            >
+              ⋯
+            </button>
+            {moreOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setMoreOpen(false)} />
+                <div
+                  role="menu"
+                  className="absolute right-0 top-10 z-50 w-[176px] rounded-[var(--radius-md)] py-1"
+                  style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)", boxShadow: "var(--shadow-2)" }}
+                >
+                  <button
+                    role="menuitem"
+                    className="block w-full px-3 py-1.5 text-left text-[12.5px] hover:bg-[var(--bg-selected)]"
+                    onClick={async () => {
+                      setMoreOpen(false);
+                      const c = await api.duplicateAgent(agentId, {});
+                      if (inDialog) {
+                        setMsg(`已复制为「${c.name}」，可在助手列表找到`);
+                        return;
+                      }
+                      router.push(`/agents/detail?id=${c.id}`);
+                    }}
+                  >
+                    复制为副本
+                  </button>
+                  <a
+                    role="menuitem"
+                    href={`/exec?agent=${agentId}`}
+                    className="block px-3 py-1.5 text-[12.5px] hover:bg-[var(--bg-selected)]"
+                    onClick={() => setMoreOpen(false)}
+                  >
+                    打开对话页
+                  </a>
+                </div>
+              </>
+            )}
+          </div>
           {/* 没改动就禁用：点了会白写一条版本记录（save() 无条件 PUT）——
                 配置页不该因为「手滑点一下保存」多出一版历史 */}
           <button
@@ -629,10 +690,42 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
             title={dirty ? "把这一版写回去（会记一条历史版本）" : "没有未保存的改动"}
             onClick={save}
           >
-            {saving ? "保存中…" : dirty ? "保存改动" : "保存"}
+            {saving ? "保存中…" : savedFlash ? "✓ 已保存" : dirty ? "● 保存修改" : "保存"}
           </button>
         </div>
       </header>
+
+      {/* 锚点导航：五节一屏内可跳；滚动联动高亮由 IntersectionObserver 给 */}
+      <nav
+        className="sticky top-[52px] z-20 -mx-1 mb-4 flex gap-1 overflow-x-auto px-1 py-1"
+        style={{ background: "color-mix(in srgb, var(--color-bg) 92%, transparent)", backdropFilter: "blur(8px)" }}
+        aria-label="配置分区"
+      >
+        {[
+          ["sec-define", "身份"],
+          ["sec-behavior", "行为"],
+          ["sec-limits", "运行限制"],
+          ["sec-model", "模型与运行时"],
+          ["sec-capability", "能力"],
+        ].map(([id, label]) => (
+          <a
+            key={id}
+            href={`#${id}`}
+            className="shrink-0 rounded-full px-2.5 py-1 text-[12px] transition-colors"
+            style={{
+              background: activeSection === id ? "var(--bg-selected)" : "transparent",
+              color: activeSection === id ? "var(--color-text)" : "var(--color-text-3)",
+            }}
+            onClick={(e) => {
+              e.preventDefault();
+              setActiveSection(id);
+              document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+          >
+            {label}
+          </a>
+        ))}
+      </nav>
 
       {(errors.length > 0 || warnings.length > 0) && (
         <div className="card p-3.5 mb-4 space-y-1">
@@ -780,40 +873,107 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 </div>
               )}
             </div>
-            <div>
-              <label className="label">System Prompt</label>
+            <div id="sec-behavior" className="scroll-mt-28">
+              <div className="mb-1 flex items-center justify-between">
+                <label className="label mb-0">System Prompt</label>
+                <div className="flex items-center gap-2">
+                  {/* token 估算：中文按 1 字≈1 token 粗算，给个量级就够（精确数要模型分词器） */}
+                  <span className="text-[11px] tabular-nums" style={{ color: "var(--color-text-3)" }}
+                    title="粗估：中文按 1 字 ≈ 1 token，英文按 4 字符 ≈ 1 token">
+                    {(def.system_prompt ?? "").length} 字 · ≈{Math.round(((def.system_prompt ?? "").match(/[\u4e00-\u9fa5]/g)?.length ?? 0) + ((def.system_prompt ?? "").length - ((def.system_prompt ?? "").match(/[\u4e00-\u9fa5]/g)?.length ?? 0)) / 4)} tokens
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => setPromptFull(true)}
+                    title="在页内放大编辑（不是弹窗）"
+                  >
+                    全屏
+                  </button>
+                </div>
+              </div>
               <textarea
-                className="input"
-                rows={6}
+                className="input mono"
+                rows={12}
+                style={{ fontSize: 12.5, lineHeight: 1.7 }}
                 value={def.system_prompt}
                 onChange={(e) => patch({ system_prompt: e.target.value })}
+                placeholder="写清楚：它是谁、要做什么、不要做什么、遇到不确定怎么处理"
               />
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="label">最大迭代轮数（-1 = 不限制）</label>
-                <input
-                  className="input mono"
-                  type="number"
-                  min={-1}
-                  value={def.limits.max_iters ?? ""}
-                  onChange={(e) =>
-                    patch({
-                      // 清空≠0：Number('')=0 会把「60 轮」静默变成「0 轮（立即停）」，
-                      // 清空态先落 null，保存时后端按默认值处理
-                      limits: {
-                        ...def.limits,
-                        max_iters: e.target.value === "" ? null : Number(e.target.value),
-                      },
-                    })
-                  }
+
+            {promptFull && (
+              <div className="fixed inset-0 z-50 flex flex-col p-4" style={{ background: "var(--color-bg)" }}>
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="text-[13px] font-medium">System Prompt</span>
+                  <span className="text-[11.5px]" style={{ color: "var(--color-text-3)" }}>
+                    {(def.system_prompt ?? "").length} 字
+                  </span>
+                  <button className="btn btn-sm ml-auto" onClick={() => setPromptFull(false)}>
+                    退出全屏
+                  </button>
+                </div>
+                <textarea
+                  className="input mono flex-1"
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") setPromptFull(false);
+                  }}
+                  style={{ fontSize: 13, lineHeight: 1.75, resize: "none" }}
+                  value={def.system_prompt}
+                  onChange={(e) => patch({ system_prompt: e.target.value })}
+                  autoFocus
                 />
+              </div>
+            )}
+            <div id="sec-limits" className="grid scroll-mt-28 grid-cols-1 gap-3 sm:grid-cols-3">
+              <div>
+                <label className="label">最大轮数</label>
+                <div className="flex items-center gap-1.5">
+                  <Segmented
+                    value={def.limits.max_iters === -1 ? "unlimited" : "limited"}
+                    onChange={(k) =>
+                      patch({
+                        limits: {
+                          ...def.limits,
+                          max_iters: k === "unlimited" ? -1 : def.limits.max_iters && def.limits.max_iters > 0 ? def.limits.max_iters : 50,
+                        },
+                      })
+                    }
+                    options={[
+                      { key: "limited", label: "限制" },
+                      { key: "unlimited", label: "不限制" },
+                    ]}
+                  />
+                  {def.limits.max_iters !== -1 && (
+                    <input
+                      className="input mono w-[76px]"
+                      type="number"
+                      min={1}
+                      value={def.limits.max_iters ?? ""}
+                      onChange={(e) =>
+                        patch({
+                          limits: {
+                            ...def.limits,
+                            max_iters: e.target.value === "" ? null : Number(e.target.value),
+                          },
+                        })
+                      }
+                    />
+                  )}
+                </div>
                 {def.limits.max_iters === -1 ? (
-                  <p className="text-[12px] text-[var(--color-warn)] mt-1">
-                    ⚠ 不限制轮数 —— 请靠超时兜底
+                  <p className="mt-1 flex flex-wrap items-center gap-1.5 text-[12px]" style={{ color: "var(--color-warn)" }}>
+                    ⚠ 不限制轮数，可能一直转下去
+                    <button
+                      type="button"
+                      className="underline underline-offset-2"
+                      onClick={() => patch({ limits: { ...def.limits, max_iters: 50 } })}
+                    >
+                      改为 50 轮
+                    </button>
                   </p>
                 ) : (
-                  <p className="text-[12px] text-[var(--color-muted)] mt-1">
+                  <p className="mt-1 text-[12px]" style={{ color: "var(--color-muted)" }}>
                     推理-行动循环上限
                   </p>
                 )}
@@ -865,7 +1025,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
             {/* 模型与运行时并进同一张「定义」卡：两者回答的是同一件事
                 「这个助手是谁、拿什么跑」。原先是两张卡、模型那节还默认收起 ——
                 改个模型要先展开一次，多一道门。 */}
-            <div className="pt-3.5 mt-1 border-t border-[var(--color-border)]">
+            <div id="sec-model" className="mt-1 scroll-mt-28 border-t pt-3.5 border-[var(--color-border)]">
               <h3 className="text-[13px] font-medium mb-2.5">模型与运行时</h3>
             <div className="flex items-center justify-between">
               {caps && <span className="tag">{caps.display_name}</span>}
@@ -1189,6 +1349,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 </div>
               </div>
             ) : (
+              <div id="sec-capability" className="scroll-mt-28">
               <CapabilityPicker
                 tools={tools}
                 skills={skills}
@@ -1200,6 +1361,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 onToggleSkill={toggleSkill}
                 onToggleMcp={toggleMcp}
               />
+              </div>
             )}
           </Fold>
         </div>
@@ -1232,7 +1394,10 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
               对象自己的配置页）。 */}
           <RouteRules agentId={agentId} />
 
-          <Fold title="更多（历史版本 · 评测 · 记忆）">
+          <Fold
+            title="更多"
+            summary={`历史版本 ${agent?.version ?? 1} · 评测 · 记忆${ov.memoryOwn != null ? ` ${ov.memoryOwn + (ov.memoryShared ?? 0)} 条` : ""}`}
+          >
             <div className="space-y-4">
               <div>
                 <div className="text-[12px] font-medium mb-2">历史版本</div>
