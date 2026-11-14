@@ -299,6 +299,7 @@ async def resolve_commit(
     policy: NetPolicy,
     platforms: list[dict[str, Any]] | None = None,
     token: str = "",
+    timeout: float = 45.0,
 ) -> str:
     """解析 ref 指向的提交 ID。优先原始主机；失败返回空串（由调用方标注）。"""
     if ref.kind == "local":
@@ -313,7 +314,7 @@ async def resolve_commit(
                 ref.ref or "HEAD",
                 env=env, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
             )
-            out, _ = await asyncio.wait_for(p.communicate(), timeout=45)
+            out, _ = await asyncio.wait_for(p.communicate(), timeout=timeout)
             _scrub_gitconfig(env)
             line = (out or b"").decode().split("\n")[0].strip()
             if line:

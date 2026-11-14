@@ -671,8 +671,13 @@ async def grouped_skills(session: AsyncSession) -> list[dict[str, Any]]:
 
 
 def skill_brief_for_group(sk: Any) -> dict[str, Any]:
+    from ..config import settings
+
     src = sk.source or {}
+    dir_name = getattr(sk, "dir_name", "") or sk.name
     return {
+        #: 技能文件在服务器上的实际位置（用户排障/备份时要看的就是它）
+        "location": str(settings.work_dir / "skills" / dir_name),
         "id": sk.id,
         "name": sk.name,
         "description": sk.description or "",
@@ -685,7 +690,7 @@ def skill_brief_for_group(sk: Any) -> dict[str, Any]:
     }
 
 
-async def check_source(session: AsyncSession, sid: str) -> dict[str, Any]:
+async def check_source(session: AsyncSession, sid: str, *, timeout: float = 10.0) -> dict[str, Any]:
     """单个仓库：只探一次远程 HEAD，再比已装技能的内容哈希。"""
     row = await session.get(SkillSource, sid)
     if row is None:
@@ -728,16 +733,34 @@ async def check_source(session: AsyncSession, sid: str) -> dict[str, Any]:
         }
 
     try:
-        latest = await fetchmod.resolve_commit(ref, policy=policy, platforms=platforms, token=token_of(row))
+        # 界面上是"进页面就显示状态"，不能为此挂 45 秒：给一个短超时，
+        # 超过就如实显示"检查超时"，用户想深查可以手动再点一次。
+        latest = await asyncio.wait_for(
+            fetchmod.resolve_commit(ref, policy=policy, platforms=platforms, token=token_of(row), timeout=timeout),
+            timeout=timeout + 5,
+        )
     except Exception as exc:  # noqa: BLE001
         return {"source_id": sid, "status": getattr(exc, "code", "error"), "message": str(exc)[:200]}
 
-    same = bool(latest and row.installed_commit and latest == row.installed_commit)
+    if not latest:
+        # 提交都解析不到 = 这台机器现在连不上那个仓库（离线/被墙/DNS）。
+        # 不去下载（那会再挂十几秒），如实报"暂时连不上"。
+        return {
+            "source_id": sid,
+            "status": "unreachable",
+            "message": "解析不到远程提交（网络/代理不通，或仓库已删）",
+            "has_update": False,
+        }
+
+    same = bool(row.installed_commit and latest == row.installed_commit)
     changed: list[str] = []
     fetched = None
     try:
         if not same:
-            fetched = await fetchmod.fetch(ref, policy=policy, platforms=platforms, token=token_of(row))
+            fetched = await asyncio.wait_for(
+                fetchmod.fetch(ref, policy=policy, platforms=platforms, token=token_of(row)),
+                timeout=timeout + 20,
+            )
             got = discover(fetched.root, subpath=ref.subpath)
             by_path = {g.path: g for g in got}
             for sk in skills:

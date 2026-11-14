@@ -1565,7 +1565,8 @@ function GroupedSkills({
                     style={{ outlineColor: "var(--color-accent)" }}
                     onClick={() => onOpen(k.id)}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
+                      if (isImeEvent(e)) return;         // 中文组字中的回车 = 选字，不是打开
+                      if (e.key === "Enter") {
                         e.preventDefault();
                         onOpen(k.id);
                       }

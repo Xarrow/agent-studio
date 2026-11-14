@@ -133,6 +133,10 @@ export interface Skill {
   state?: "active" | "stale" | "archived";
   pinned?: boolean;
   archived_at?: number | null;
+  /** 两级归属与磁盘位置 */
+  source_key?: string;
+  dir_name?: string;
+  location?: string;
 }
 
 /** 技能库体检（「整理」用）：谁在用、谁闲置、谁已撤下 */
@@ -1425,6 +1429,8 @@ export interface SkillGroupSkill {
   commit: string;
   content_hash: string;
   dir_name: string;
+  /** 技能文件在服务器上的实际路径（排障/备份要看的就是它） */
+  location?: string;
   pinned: boolean;
 }
 

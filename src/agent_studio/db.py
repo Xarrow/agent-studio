@@ -276,6 +276,61 @@ async def _ensure_columns(conn) -> None:  # pragma: no cover - 启动期执行
         if existing and column not in existing:
             await conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {ddl}")
 
+    await _backfill_skill_sources()
+
+
+async def _backfill_skill_sources() -> None:
+    """把"仓库装进来但还没登记来源"的旧技能补上来源（幂等，启动时顺手做）。
+
+    为什么要做：两级视图的父节点就是来源；老数据只有 ``source.repo`` 没有
+    ``source_id``，界面上会出现无法更新/无法整仓移除的"孤儿仓库"，
+    逼用户点「认领」——那是实现细节漏到了界面上，不该有。
+    """
+    from sqlalchemy import select
+
+    from .models import Skill
+    from .skill_sources.store import SkillSource
+
+    async with SessionLocal() as session:
+        rows = list((await session.execute(select(Skill))).scalars())
+        todo = [
+            sk for sk in rows
+            if not (sk.source or {}).get("source_id")
+            and str((sk.source or {}).get("repo") or "")
+            and str((sk.source or {}).get("type") or "") in ("repo", "git", "github", "gitlab")
+        ]
+        if not todo:
+            return
+        made = 0
+        for sk in todo:
+            src = dict(sk.source or {})
+            repo = str(src["repo"])
+            row = (
+                await session.execute(select(SkillSource).where(SkillSource.address == repo))
+            ).scalars().first()
+            if row is None:
+                host = str(src.get("host") or "github.com")
+                row = SkillSource(
+                    name=repo,
+                    kind="git" if host else "local",
+                    address=repo,
+                    host=host,
+                    owner=repo.split("/")[0] if "/" in repo else "",
+                    repo=repo.split("/")[-1] if "/" in repo else repo,
+                    ref=str(src.get("ref") or ""),
+                    installed_commit=str(src.get("commit") or ""),
+                )
+                session.add(row)
+                await session.flush()
+                made += 1
+            src["source_id"] = row.id
+            path = str(src.get("path") or "")
+            src["source_key"] = f"{row.kind}:{repo}:{path}" if path else f"{row.kind}:{repo}"
+            sk.source = src
+            sk.source_key = src["source_key"]
+        await session.commit()
+        logger.info("技能来源回填：%s 条技能，新建 %s 个来源", len(todo), made)
+
 
 def is_lan_peer(request) -> bool:
     """这次请求是不是**从内网直接**来的（不是经隧道/Cloudflare 转进来的）。

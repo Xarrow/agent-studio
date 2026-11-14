@@ -62,6 +62,7 @@ def to_read(row: Skill) -> SkillRead:
         archived_at=row.archived_at,
         source_key=getattr(row, "source_key", "") or "",
         dir_name=getattr(row, "dir_name", "") or "",
+        location=str(settings.work_dir / "skills" / ((getattr(row, "dir_name", "") or row.name))),
     )
 
 
@@ -89,6 +90,7 @@ def to_read_lite(row: Skill) -> SkillRead:
         archived_at=row.archived_at,
         source_key=getattr(row, "source_key", "") or "",
         dir_name=getattr(row, "dir_name", "") or "",
+        location=str(settings.work_dir / "skills" / ((getattr(row, "dir_name", "") or row.name))),
     )
 
 
