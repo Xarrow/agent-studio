@@ -169,3 +169,56 @@ async def test_doctor_reports_steps(client):
     d = (await client.get("/api/skills/doctor", params={"host": "127.0.0.1"})).json()
     assert d["steps"][0]["step"] == "dns"
     assert "policy" in d and "password" not in str(d["policy"]).lower()
+
+
+async def test_npx_delegation_refuses_without_sandbox(client, monkeypatch):
+    """没有沙箱命令时必须拒绝 —— 它会写进用户真实技能目录（含 Hermes 的 ~/.hermes/skills）。"""
+    from agent_studio.db import SessionLocal
+
+    monkeypatch.setattr(
+        service,
+        "probe_environment",
+        lambda refresh=False: {"npx": "/usr/bin/npx", "npm": "", "git": "", "node": "", "versions": {}},
+    )
+    await client.put("/api/skills/remote/settings", json={"mode": "npx", "npx_pin": "skills@1.8.1"})
+    async with SessionLocal() as session:
+        with pytest.raises(RuntimeError) as ei:
+            await service.run_via_npx(session, "acme/skills")
+    assert "npx_sandbox_required" in str(ei.value)
+
+
+async def test_sandbox_command_is_prefixed(client, monkeypatch):
+    """配了沙箱命令时，npx 调用必须被包在它后面（而不是直接跑）。"""
+    import asyncio
+    from agent_studio.db import SessionLocal
+
+    seen: dict[str, list[str]] = {}
+
+    class FakeProc:
+        returncode = 0
+
+        async def communicate(self):
+            return b"ok", b""
+
+    async def fake_exec(*argv, **kw):
+        seen["argv"] = list(argv)
+        return FakeProc()
+
+    monkeypatch.setattr(service.asyncio, "create_subprocess_exec", fake_exec)
+    monkeypatch.setattr(
+        service, "probe_environment",
+        lambda refresh=False: {"npx": "/usr/bin/npx", "npm": "", "git": "", "node": "", "versions": {}},
+    )
+    await client.put(
+        "/api/skills/remote/settings",
+        json={"mode": "npx", "npx_pin": "skills@1.8.1", "net_policy": {}},
+    )
+    async with SessionLocal() as session:
+        from agent_studio.settings_store import set_setting
+
+        await set_setting(session, "skills_npx_sandbox_cmd", "bwrap --dev-bind / /")
+        await session.commit()
+        await service.run_via_npx(session, "acme/skills", extra_argv=["--skill", "x"])
+    argv = seen["argv"]
+    assert argv[:3] == ["bwrap", "--dev-bind", "/"]
+    assert "/usr/bin/npx" in argv and "skills" in argv and "acme/skills" in argv

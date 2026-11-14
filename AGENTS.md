@@ -152,3 +152,15 @@ FastAPI + SQLite（后端 `src/agent_studio/`）+ Next.js（前端 `web/`）。
 | 技能接入 | `skills_dir` = 平台技能库（不是会话目录）；`LocalSkillLoader(scan_subdir=True)`；技能清单拼进 system prompt；`Skill` 工具由 Toolkit 自动挂 |
 | 助手的「地盘」可配 | 默认只有自己的会话目录，写 /tmp 之类要问一句。要配出「和 Hermes 一样能动手」的助手，在 `runtime_options.agentscope.guard.roots` 里加 `"/"`（或几个具体目录）。这只放宽「越界写」这一类 ASK —— 递归删除、凭据文件、提权照样问、照样拦，`rm -rf /` 仍然直接拒 |
 | 改前端必回老路径 | 动对话页/共用组件（ChatConsole、AgentSwitcher、RunsPanel）之前，先把这几条老路径在真机上点一遍并留读数：①顶栏「选助手」能否打开、换人后名字是否跟着变、换完发一句是否落在**新**助手（`/api/runs?limit=1` 看 `agent_id`）②`/exec?agent=<id>` 这种带参数进来的入口——**受控不等于锁死**，外层只给初始值，用户点过以点的为准（曾经受控时下拉直接变纯文本，从助手页「跑一次」进来的用户再也换不回人）③会话列表切换/新建/删除 ④手机档 390 下顶栏助手键与「自动」按钮的实测尺寸（都要 44 高、无横向溢出）。回归不过就不许构建。 |
+
+## 与 Hermes Agent 的边界（硬规矩）
+
+Agent Studio 的开发**不碰 Hermes Agent 的任何东西**：
+
+- 不写 `~/.hermes`（包括 `skills/`、`config.yaml`、`.env`、`memories/`、`cron/`）；
+- 不读也不改 Hermes 的插件/技能作为自身运行依赖；移植技能只以"文本快照"形式入库，
+  记录 `origin_path` 作为出处说明，运行时不再回访那个目录；
+- 技能一律装到本平台自己的 `data/work/skills/`（经导入管线原子落盘）；
+- 委托外部 `skills` CLI 之前必须有沙箱：实测该 CLI 按**进程 uid 的 home** 解析安装位置，
+  `HOME=` 覆盖无效，会把技能直接写进 `~/.hermes/skills`。没有沙箱命令（`skills_npx_sandbox_cmd`）
+  就拒绝执行 —— 见 `skill_sources/service.py::run_via_npx` 与 `docs/decisions/remote-skills-mode.md`。

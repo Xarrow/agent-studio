@@ -406,10 +406,25 @@ async def run_via_npx(
     if not env["npx"]:
         raise RuntimeError("npx_unavailable: 本机没有 npx")
 
+    # 硬门槛：委托前必须有沙箱。
+    # 实测（docs/reports/remote-skills-audit.md §2.3）：skills CLI 用**进程 uid 的 home**
+    # 解析安装目录，`HOME=` 覆盖无效 —— 它会把技能直接写进 ~/.hermes/skills 或 ~/.claude/skills。
+    # 本平台不许碰任何 Hermes/其他 agent 的目录，所以没有沙箱就不跑。
+    sandbox = str(await get_setting(session, "skills_npx_sandbox_cmd", "") or "").strip()
+    if not sandbox:
+        raise RuntimeError(
+            "npx_sandbox_required: 未配置沙箱命令，拒绝委托 skills CLI "
+            "（它会写进用户真实技能目录，包括 Hermes 的 ~/.hermes/skills）"
+        )
+
     policy = await net_policy_for(session)
     tmp_home = Path(tempfile.mkdtemp(prefix="studio-npx-home-"))
     tmp_cwd = Path(tempfile.mkdtemp(prefix="studio-npx-run-"))
-    argv = [env["npx"], "--yes", pkg, "skills", action]
+    import shlex
+
+    # 沙箱模板：管理员配置的命令前缀（例如 bwrap 绑定只读根 + 空的 home），
+    # 我们的 npx 调用被包在它后面；不配置就不执行（见上）。
+    argv = [*shlex.split(sandbox), env["npx"], "--yes", pkg, "skills", action]
     if action == "add":
         argv += [raw, "--yes"]
     argv += extra
