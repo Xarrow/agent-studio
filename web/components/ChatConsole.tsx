@@ -2467,6 +2467,8 @@ export function ChatConsole({
                 onChange={(e) => setHeaderDraft(e.target.value)}
                 onBlur={() => setHeaderEditing(false)}
                 onKeyDown={(e) => {
+                  // 组字中的 Enter 是选字：中文没上屏就回车会把半截拼音当标题提交
+                  if (isImeEvent(e)) return;
                   if (e.key === "Enter") {
                     e.preventDefault();
                     setHeaderEditing(false);
@@ -4233,6 +4235,7 @@ function SessionsPane({
                               }}
                               onKeyDown={(e) => {
                                 if (editing) return;
+                                if (isImeEvent(e)) return;
                                 if (e.key === "F2") {
                                   e.preventDefault();
                                   startRename(s);
@@ -4290,6 +4293,8 @@ function SessionsPane({
                                     onChange={(e) => setDraft(e.target.value)}
                                     onClick={(e) => e.stopPropagation()}
                                     onKeyDown={(e) => {
+                                      // 同上：改名输入里的组字 Enter 不能当提交
+                                      if (isImeEvent(e)) return;
                                       if (e.key === "Enter") {
                                         e.preventDefault();
                                         commitRename(s);

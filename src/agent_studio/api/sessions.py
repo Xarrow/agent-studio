@@ -733,7 +733,7 @@ def _digest_of(text: str) -> str:
     if not first:
         return ""
     # 首句优先：一句话能说清就不用截断到 40 字（避免「帮我下载这个视频然后…」这种半句）
-    m = re.match(r"^(.{6,}?[。！？!?])", first)
+    m = re.match(r"^(.{4,}?[。！？!?])", first)
     if m and len(m.group(1)) <= _DIGEST_MAX:
         return m.group(1)
     return first if len(first) <= _DIGEST_MAX else first[: _DIGEST_MAX - 1] + "…"

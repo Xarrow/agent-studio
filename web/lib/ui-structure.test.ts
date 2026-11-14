@@ -71,8 +71,8 @@ test("对话页：会话栏窄屏不得在流内（必须 hidden + 抽屉）", (
   // 桌面会话栏：in-flow aside 必须带 hidden lg:flex
   assert.match(
     src,
-    /<aside className="hidden lg:flex w-\[\d+px\][^"]*"/,
-    "会话栏 <aside> 应当是 `hidden lg:flex`（窄屏不出现在流内）",
+    /className="relative hidden lg:flex shrink-0[^"]*"/,
+    "会话栏 <aside> 应当是 `hidden lg:flex`（窄屏不出现在流内；宽度改由 style 控制以便拖拽）",
   );
   // 窄屏必须有覆盖式抽屉
   assert.match(src, /fixed inset-0 z-40/, "缺手机会话抽屉（覆盖式，不能占对话高度）");
@@ -86,14 +86,14 @@ test("对话页：浏览器直播默认收起，点开才占屏", () => {
   /* 入口：动作条上的「看画面」；面板：全屏浮层 + 关闭。
      口径变过一次（原来是右侧常驻 rail 把手，手机上挤掉对话宽度），
      要守的是**默认不占屏、点得到、能关**，不是某一种形态。 */
-  assert.match(src, /onOpen=\{\(\) => setBrowserOpen\(true\)\}/, "缺打开入口");
+  assert.match(src, /openDock\("browser"\)|setBrowserOpen\(true\)/, "缺打开入口");
   assert.match(src, /onClose=\{\(\) => setBrowserOpen\(false\)\}/, "缺关闭");
   assert.match(src, /\{browserOpen && \(/, "面板必须挂在收起状态上");
 });
 
 test("对话页：消息流阅读列封顶（一行横扫整屏是阅读负担）", () => {
   const src = read("components/ChatConsole.tsx");
-  assert.match(src, /max-w-3xl mx-auto px-4 sm:px-5 py-6 space-y-5/, "消息流缺 max-w-3xl 阅读列");
+  assert.match(src, /max-w-\[760px\] mx-auto px-4 sm:px-5 py-6 space-y-5/, "消息流缺 760px 阅读列");
 });
 
 test("对话页：不能有「同一件事的第二道门」（顶栏本轮详情 vs 消息自带记录）", () => {
@@ -159,7 +159,9 @@ test("输入坞：图标化发送/停止 + 自动长高 + 粘贴/拖拽投喂附
   const src = read("components/ChatConsole.tsx");
   // 发送不再是「一个写字的按钮」，而是同一个位置的圆形箭头（执行中变方块）
   assert.doesNotMatch(src, />\s*发送\s*</, "发送键应当是图标（形状表达状态），不再占一个写「发送」的按钮");
-  assert.match(src, /title=\{paused \? "运行暂停，先处理授权" : "发送（Enter）"\}/);
+  assert.match(src, /"运行暂停，先处理授权"/, "暂停时要说明为什么点不动");
+  assert.match(src, /"发送（Enter）"/, "有内容时 tooltip 提示回车发送");
+  assert.match(src, /"写点什么再发"/, "空内容时 tooltip 说明原因");
   assert.match(src, /title="停止这一轮"/);
   // 自动长高：不做的话长输入缩在单行里靠内部滚动条看
   assert.match(src, /const taRef = useRef<HTMLTextAreaElement \| null>\(null\)/);
@@ -308,7 +310,11 @@ test("发送气泡：短消息胶囊、长消息圆角+尾巴，尺寸与字阶�
   assert.match(chat, /rounded-full px-4 py-2 leading-\[1\.6\]/, "短消息 ＝ 胶囊");
   assert.match(chat, /rounded-\[18px\] rounded-br-\[6px\] px-3\.5 py-2\.5 leading-\[1\.6\]/, "长消息 ＝ 18px + 右下 6px 尾巴");
   // 2026-10 对标主流对话：正文统一 15px / 行高 1.8
-  assert.match(chat, /text-white w-fit max-w-full whitespace-pre-wrap ml-auto text-\[15px\]/, "气泡 15px、贴右、宽度撑到外层上限");
+  assert.match(
+    chat,
+    /text-\[var\(--color-text\)\] w-fit max-w-full whitespace-pre-wrap \[word-break:break-all\] ml-auto text-\[15px\]/,
+    "气泡 15px、贴右、宽度撑到外层上限、长 URL 可断行",
+  );
   assert.match(chat, /text-\[15px\] leading-\[1\.8\] text-\[var\(--color-text\)\] max-w-\[46rem\]/, "助手正文 15px/1.8 且封顶 46rem");
   assert.match(chat, /max-w-\[88%\] max-md:max-w-\[90%\]/, "外层给气泡 88%（桌面）/90%（手机）");
 });
@@ -401,9 +407,9 @@ test("过程与结果：颜色分得开", () => {
   const tl = read("components/ui/run-timeline.tsx");
   const css = read("app/globals.css");
   // 三类动作的色值必须互不相同（思考 / 工具 / 工具结果）
-  assert.match(tl, /think: \{\s*icon: "◆",\s*color: "#6d28d9"/, "思考＝紫");
-  assert.match(tl, /tool: \{\s*icon: "⚙",\s*color: "#2563eb"/, "工具＝蓝");
-  assert.match(tl, /tool_response: \{\s*icon: "◀",\s*color: "#0e7490"/, "工具结果＝青");
+  assert.match(tl, /think: \{\s*icon: "◆",\s*color: "var\(--color-think\)"/, "思考＝紫（令牌）");
+  assert.match(tl, /tool: \{\s*icon: "⚙",\s*color: "var\(--color-accent\)"/, "工具＝蓝（令牌）");
+  assert.doesNotMatch(tl, /#[0-9a-fA-F]{6}/, "执行过程里不该再有硬编码色值");
   // 结果（回答）用正文颜色，不带过程那套底色
   assert.match(css, /\.proc \{/, "过程有自己的壳");
   assert.match(css, /\.proc-body \{\s*border-top: 1px solid var\(--proc-border\);/, "过程展开有分隔与灰底");
@@ -487,10 +493,14 @@ test("会话侧栏：搜索、分组、⋯ 菜单", () => {
   assert.match(chat, /label: "昨天"/, "昨天分组");
   assert.match(chat, /label: "过去 7 天"/, "7 天分组");
   assert.match(chat, /label: "更早"/, "更早分组");
-  assert.match(chat, /title="更多"/, "每行一个 ⋯");
+  // 每行一个常驻 ⋯（早期是 hover 才出现、title 叫「更多」；现在常驻且叫「更多操作」）
+  assert.match(chat, /title="更多操作"/, "每行一个常驻 ⋯");
+  assert.match(chat, /aria-haspopup="menu"/, "⋯ 要声明是菜单");
   assert.match(chat, /role="menu"/, "菜单本体");
-  assert.match(chat, /onRename\(s\)/, "菜单里能改名");
-  assert.match(chat, /onRemove\(s\)/, "菜单里能删除");
+  // 行内改名入口（缩进深，别用定长窗口）
+  assert.match(chat, /label="重命名"[\s\S]{0,400}startRename\(s\)/, "菜单里能改名");
+  // 删除现在是「立即消失 + 8 秒撤销」：入口是 dropSession，到点才真调 onDelete
+  assert.match(chat, /dropSession\(s\)/, "菜单里能删除（走可撤销的 dropSession）");
   // 行内那两个常驻文字按钮已收进菜单（原来每行三个可点目标，误删风险高）
   assert.doesNotMatch(chat, /title="重命名"/, "改名不该再常驻在每行");
   assert.doesNotMatch(chat, /title="删除这个对话"/, "删除不该再常驻在每行");
