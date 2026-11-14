@@ -383,6 +383,8 @@ export function ChatConsole({
   const [browserOpen, setBrowserOpen] = useState(false);
   /** 用户暂停了浏览器的助手动作（协作式；换一轮就复位） */
   const [browserPaused, setBrowserPaused] = useState(false);
+  /** 会话加载的请求序号（防旧回包覆盖新会话） */
+  const loadSeqRef = useRef(0);
   /** 还没加载的更早轮次的上界（0 = 已到顶）；配合 api.sessionTurns 往上翻 */
   const [beforeTurn, setBeforeTurn] = useState(0);
   /** 消息还在路上：给 3 块骨架，而不是空白（切会话时最刺眼的就是这片空） */
@@ -747,9 +749,15 @@ export function ChatConsole({
       setHistory([]);
       return;
     }
+    // 请求序号：快速切换会话时，晚到的旧回包必须丢弃 —— 否则会把上一个会话的
+    // 消息画到新会话上（用户看到的是"切成功但内容还是旧的"）。
+    const seq = ++loadSeqRef.current;
     setMessagesLoading(true);
+    // 立刻清空旧内容：宁可先看骨架，也不要让上一会话的字留在屏幕上
+    setHistory((h) => (h.length ? [] : h));
     try {
       const detail = await api.session(sid, 30);
+      if (seq !== loadSeqRef.current) return;
       setCurKind(detail.session.kind ?? "chat");
       setCurTicket(detail.session.ticket_title ?? null);
       setCurParent(detail.session.parent_session_id ?? null);
@@ -785,9 +793,9 @@ export function ChatConsole({
           : Number(detail.before_turn ?? 0),
       );
     } catch {
-      setHistory([]);
+      if (seq === loadSeqRef.current) setHistory([]);
     } finally {
-      setMessagesLoading(false);
+      if (seq === loadSeqRef.current) setMessagesLoading(false);
     }
   }, []);
 
@@ -832,9 +840,12 @@ export function ChatConsole({
     void (async () => {
       const list = await loadSessions(agentId);
       // 深链（/exec?s=…）优先：地址里点名的那一个会话，哪怕它不在这个助手名下也照开
-      const want = initialSession || pendingPick.current;
+      const want = initialSession || deepSidRef.current || pendingPick.current;
       pendingPick.current = null;
-      if (want && (list.some((x) => x.id === want) || initialSession === want)) {
+      if (
+        want &&
+        (list.some((x) => x.id === want) || initialSession === want || deepSidRef.current === want)
+      ) {
         setSessionId(want);
       } else if (list.length > 0) {
         setSessionId(list[0].id);
@@ -849,6 +860,66 @@ export function ChatConsole({
       }
     })();
   }, [agentId, loadSessions, fb]);
+
+  /* 深链：组件自己读一次地址（?s= 或 /exec/<id>）。
+     不依赖上层传 prop —— prop 要走 effect 才到位，中间那几拍已经被
+     "选中最近一个会话" 的逻辑覆盖掉了，深链就丢了。 */
+  const deepDoneRef = useRef(false);
+  /** 深链点名的那条会话：切换助手时不能被"选中最近一个"覆盖 */
+  const deepSidRef = useRef("");
+  useEffect(() => {
+    if (deepDoneRef.current) return;
+    deepDoneRef.current = true;
+    if (typeof window === "undefined") return;
+    const q = new URLSearchParams(window.location.search);
+    const sid =
+      q.get("s") || (window.location.pathname.match(/^\/exec\/([^/?#]+)/)?.[1] ?? "");
+    if (!sid) return;
+    deepSidRef.current = sid;
+    setSessionId(sid);
+    void api
+      .session(sid, 1)
+      .then((d) => {
+        const aid = d.session.agent_id;
+        if (aid) setAgentId(aid);
+      })
+      .catch(() => null);
+  }, []);
+
+  /* 深链进来的会话：先问一句它属于哪个助手，把助手选择器也切过去。
+     不切的话页面顶部显示 A、内容是 B 的会话，一发送就被后端拒（会话与 Agent 不匹配）。 */
+  useEffect(() => {
+    if (!initialSession) return;
+    let dead = false;
+    api
+      .session(initialSession, 1)
+      .then((d) => {
+        if (dead) return;
+        const aid = d.session.agent_id;
+        if (aid && aid !== agentId) setAgentId(aid);
+        // 助手切换会触发"选中最近一个会话"，把深链点名的那个顶掉 —— 这里再按回来
+        setSessionId(initialSession);
+      })
+      .catch(() => {
+        /* 会话不存在就按默认助手走，交给 loadMessages 报错 */
+      });
+    return () => {
+      dead = true;
+    };
+    // 只在首次挂载时做：之后用户在页面里换助手/换会话不该被拉回深链那个
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialSession]);
+
+  /* 地址栏跟着当前会话走：复制地址 = 复制到这条对话 */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    const pathSid = url.pathname.match(/^\/exec\/([^/?#]+)/)?.[1] ?? "";
+    if (sessionId && sessionId !== pathSid) url.searchParams.set("s", sessionId);
+    else url.searchParams.delete("s");
+    if (agentId) url.searchParams.set("agent", agentId);
+    window.history.replaceState(null, "", url.toString());
+  }, [sessionId, agentId]);
 
   // 切会话：先把上一会话的实时现场收掉，再载入历史
   useEffect(() => {
@@ -906,7 +977,7 @@ export function ChatConsole({
         /* 恢复失败不阻塞会话加载 —— 历史照常显示 */
       }
     })();
-  }, [sessionId, loadMessages]);
+  }, [sessionId, agentId, loadMessages]);
 
   /* 自动跟随（对标主流对话）：只有「已经在底部附近」才跟着新内容走。
      用户往上翻看历史时，新的 token 不许把他拽回去 —— 这是聊天界面最容易
@@ -2757,7 +2828,10 @@ export function ChatConsole({
                 </div>
               </div>
             ) : (
-              <div className="msg-stream max-w-[760px] mx-auto px-4 sm:px-5 py-6 space-y-5">
+              <div
+              key={sessionId || "empty"}
+              className="msg-stream session-enter max-w-[760px] mx-auto px-4 sm:px-5 py-6 space-y-5"
+            >
                 {history.map((m, i) => {
                   // 平台自己的提示（心跳/系统事件）：一行居中的灰字，不占气泡
                   if (m.role === "system") {
@@ -3946,6 +4020,7 @@ function SessionsPane({
   const [undo, setUndo] = useState<{ n: number; restore: () => void } | null>(null);
   const pending = useRef(new Map<string, { s: Session; timer: ReturnType<typeof setTimeout> }>());
   const [hidden, setHidden] = useState<Set<string>>(() => new Set());
+  const fb = useFeedback();
 
   const startRename = (s: Session) => {
     setDraft(s.ticket_title || s.title || "");
@@ -4452,6 +4527,17 @@ function SessionsPane({
                                       onClick={() => {
                                         setMenuFor(null);
                                         onExportJson(s);
+                                      }}
+                                    />
+                                    <MenuItem
+                                      label="复制链接"
+                                      onClick={() => {
+                                        setMenuFor(null);
+                                        const url = `${window.location.origin}/exec?s=${s.id}&agent=${s.agent_id}`;
+                                        void copyText(url).then(
+                                          () => fb.success("已复制对话链接", url),
+                                          () => fb.error("复制失败", url),
+                                        );
                                       }}
                                     />
                                     <div className="my-1 h-px" style={{ background: "var(--color-border)" }} />

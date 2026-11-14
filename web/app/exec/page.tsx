@@ -30,7 +30,8 @@ export default function ExecPage() {
     const q = new URLSearchParams(window.location.search);
     const id = q.get("agent");
     if (id) setAgent(id);
-    const sid = q.get("s");
+    // 会话标识两种写法都认：?s=<id> 与 /exec/<id>（后者更好复制、更像"某个对话的地址"）
+    const sid = q.get("s") || window.location.pathname.replace(/^\/exec\/?/, "").split("/")[0] || "";
     if (sid) setSession(sid);
   }, []);
   return <ChatConsole agentId={agent} initialSession={session} />;

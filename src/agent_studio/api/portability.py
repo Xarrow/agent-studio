@@ -19,6 +19,8 @@
 
 from __future__ import annotations
 
+import json
+import time
 import logging
 from typing import Any
 
@@ -42,11 +44,28 @@ from ..models import (
 )
 from ..pricing import currency_of, price_key
 from ..schemas import ImportRequest, ImportResult  # noqa: F401  (定义见下)
-from ..settings_store import set_setting
+from ..settings_store import get_setting, set_setting
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["portability"])
+
+def _bundle_fingerprint(bundle: dict) -> str:
+    """整包内容指纹：判断"这个包已经导过了"，避免连点两次把库翻倍。"""
+    import hashlib
+
+    basis = {
+        "agents": [
+            {"name": a.get("name"), "def": a.get("definition")} for a in (bundle.get("agents") or [])
+        ],
+        "workflows": [w.get("name") for w in (bundle.get("workflows") or [])],
+        "tools": [t.get("name") for t in (bundle.get("tools") or [])],
+        "skills": [k.get("name") for k in (bundle.get("skills") or [])],
+        "sessions": [sec.get("id") for sec in (bundle.get("sessions") or [])],
+    }
+    raw = json.dumps(basis, ensure_ascii=False, sort_keys=True, default=str)
+    return hashlib.md5(raw.encode("utf-8")).hexdigest()
+
 
 BUNDLE_KIND = "agent-studio-export"
 BUNDLE_VERSION = 1
@@ -360,8 +379,17 @@ async def export_all(
             for r in sess_rows
         ]
 
+    # 开关只裁剪内容，不决定范围
+    if not include_secrets:
+        for c in out.get("credentials") or []:
+            c.pop("api_key", None)
+    if not include_sessions:
+        out.pop("sessions", None)
+
     if sections:
         wanted = {x.strip() for x in sections.split(",") if x.strip()}
+        # 分区是「要哪些」，开关只过滤这些分区里的内容（见下方按开关裁剪），
+        # 不替用户扩容 —— 否则「只导助手」会莫名其妙多带出凭据和会话。
         keep = {"kind", "version", "exported_at", "note", "credential_note"} | wanted
         dropped = sorted(set(out) - keep)
         out = {k: v for k, v in out.items() if k in keep}
@@ -369,6 +397,7 @@ async def export_all(
         out["dropped"] = dropped
     else:
         out["sections"] = [x["key"] for x in SECTIONS]
+    out["bundle_id"] = _bundle_fingerprint(out)
     return out
 
 
@@ -409,6 +438,18 @@ async def import_bundle(
     而不是安静地少几个 —— 用户拿到一个"看着像但其实缺东西"的流程，比拿到一句警告糟得多。
     """
     bundle = payload.bundle or {}
+    bid = str(bundle.get("bundle_id") or "")
+    if bid:
+        # 只挡「连点/网络重试」这种重复（60 秒内同包），不阻止以后重新导入 ——
+        # 用户删了再导一次是正常操作，永久去重会让人以为导入坏了。
+        seen_map = await get_setting(session, "imported_bundle_ids") or {}
+        if isinstance(seen_map, dict):
+            ts = float(seen_map.get(bid) or 0)
+            if now_ms() - int(ts * 1000) < 60_000:
+                return ImportResult(
+                    ok=True,
+                    detail="这个包刚刚导入过（60 秒内重复提交），这次没有重复创建。",
+                ).model_dump()
     if bundle.get("kind") != BUNDLE_KIND:
         # 也接受"直接把 agents/workflows 塞进来"的宽松写法，但要说清楚
         if not (bundle.get("agents") or bundle.get("workflows")):
@@ -421,6 +462,14 @@ async def import_bundle(
     #: slug 是**唯一键**（workspace + slug + version）—— 导入同一个包两次不该炸，
     #: 所以这里自己保证唯一（同名助手是允许的，slug 不行）
     used_slugs = {a.slug for a in (await session.execute(select(Agent))).scalars()}
+
+    def _def_fingerprint(definition: dict) -> str:
+        """定义的内容指纹：判断"这个包已经导过了"（同名同定义 = 重复导入）。"""
+        import hashlib
+        import json as _json
+
+        raw = _json.dumps(definition, ensure_ascii=False, sort_keys=True, default=str)
+        return hashlib.md5(raw.encode("utf-8")).hexdigest()
 
     def _free_slug(base: str) -> str:
         raw = (base or "imported-agent").strip()[:52] or "imported-agent"
@@ -521,9 +570,19 @@ async def import_bundle(
     #: 包里的助手在**本包内**的旧 id（如果带了 id）→ 新 id；没带 id 就用名字当键
     id_map: dict[str, str] = {}
 
+    # 已存在同名同定义的助手 = 这个包已经导过一次 → 跳过，别把库翻倍
+    existing_fp: dict[str, str] = {}
+    for a in (await session.execute(select(Agent))).scalars():
+        existing_fp[f"{a.name}|{_def_fingerprint(a.definition or {})}"] = a.id
+
+    skipped_agents: list[str] = []
     for item in bundle.get("agents") or []:
         name = str(item.get("name") or "").strip() or "导入的助手"
         definition = dict(item.get("definition") or {})
+        fp_key = f"{name}|{_def_fingerprint(definition)}"
+        if fp_key in existing_fp:
+            # 同名同定义已存在：仍然新建（导入只增不改），但如实提示"可能重复"
+            skipped_agents.append(f"{name}（同名同定义已存在，这次又建了一份）")
         # 凭据：包里有同名凭据（通常带着密钥）就接上；没有则清空并如实提示
         model = dict(definition.get("model") or {})
         cred_name = str(item.get("credential") or "")
@@ -765,13 +824,20 @@ async def import_bundle(
     # 会话记录：新 id 重建（原来的 id 只用于本机内部），按助手名字接回
     imported_sessions = 0
     imported_messages = 0
+    unattached_sessions = 0
     if bundle.get("sessions"):
         from ..models import Session as ChatSession, SessionMessage
 
         for item in bundle.get("sessions") or []:
             aid = id_map.get(f"name:{str(item.get('agent') or '')}") if item.get("agent") else None
+            # 助手名在本机找不到 → 不导入这条会话（session.agent_id 是 NOT NULL，
+            # 硬挂给别的助手会让对话"错认爹"，比不导入更糟）。数出来如实告诉用户。
+            # session.agent_id 是 NOT NULL：接不上助手就别导（硬挂等于让对话"错认爹"）
+            if aid is None:
+                unattached_sessions += 1
+                continue
             row = ChatSession(
-                agent_id=aid or (next(iter(id_map.values())) if id_map else None),
+                agent_id=aid,
                 title=str(item.get("title") or "导入的会话")[:200],
                 status=str(item.get("status") or "active"),
                 summary=item.get("summary"),
@@ -795,6 +861,14 @@ async def import_bundle(
                 )
                 imported_messages += 1
 
+    if bid:
+        seen_map = await get_setting(session, "imported_bundle_ids") or {}
+        if not isinstance(seen_map, dict):
+            seen_map = {}
+        seen_map[bid] = time.time()
+        seen_map = dict(sorted(seen_map.items(), key=lambda kv: kv[1])[-50:])
+        await set_setting(session, "imported_bundle_ids", seen_map)
+
     await session.commit()
     return ImportResult(
         ok=True,
@@ -812,10 +886,12 @@ async def import_bundle(
             [f"工具：{n}（已存在或内置）" for n in skipped_tools]
             + [f"技能：{n}（已存在）" for n in skipped_skills]
             + [f"记忆策略：{n}" for n in skipped_policies]
+            + [f"助手：{n}" for n in skipped_agents]
         ),
         credentials_to_fill=[
             str(c.get("name") or "") for c in (bundle.get("credentials") or []) if c.get("name")
         ],
+        unattached_sessions=unattached_sessions,
         detail=(
             "导入只新增、不覆盖；密钥不在包里，请在「LLM 配置」里重新选一次凭据"
             if created_agents

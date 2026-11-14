@@ -1365,6 +1365,8 @@ class ImportResult(BaseModel):
     skipped: list[str] = Field(default_factory=list)
     #: 包里列了、但**必须在本机重填密钥**的 LLM 配置（名字）
     credentials_to_fill: list[str] = Field(default_factory=list)
+    #: 包里会话点名的助手在本机不存在 → 这些会话没有被硬挂给别人（数出来给用户看）
+    unattached_sessions: int = 0
 
 
 class AutoRunIn(BaseModel):

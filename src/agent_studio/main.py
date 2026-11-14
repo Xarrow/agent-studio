@@ -526,6 +526,14 @@ if _WEB_DIST.is_dir():
             return _serve(target)
         if candidate.is_file():
             return _serve(candidate)
+        # /exec/<会话id>：指向某一条对话的直链。静态导出没有这个物理文件，
+        # 但也不能回 index.html —— 那样路径被吃掉，前端取不到 id，
+        # 只能退到"最近一个会话"，看起来就是"链接没用"。所以给它 exec.html，
+        # 路径原样保留，id 由前端自己从 URL 里读。
+        if full_path.startswith("exec/"):
+            page = _WEB_DIST / "exec.html"
+            if page.is_file():
+                return _serve(page)
         # 静态资源缺文件 = 断链，如实 404（回 index.html 会把 JS 报成 HTML，
         # 浏览器只会甩出「Unexpected token '<'」，谁也看不出 chunk 丢了）。
         if full_path and Path(full_path).suffix.lower() in _STATIC_SUFFIXES:

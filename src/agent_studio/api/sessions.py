@@ -618,7 +618,18 @@ async def session_turns(
     else:
         q = q.order_by(SessionMessage.turn_index.desc())
 
-    rows = (await session.execute(q.limit(limit * 4))).scalars().all()
+    # limit 是**轮数**，不是行数：先定出要哪几轮，再取这些轮的全部消息。
+    # 原来直接 limit*4 取行，返回的轮数会超（实测 limit=3 给了 6 轮）。
+    turn_rows = (await session.execute(q)).scalars().all()
+    seen_turns: list[int] = []
+    for r in turn_rows:
+        ti = int(r.turn_index or 0)
+        if ti not in seen_turns:
+            seen_turns.append(ti)
+        if len(seen_turns) >= limit:
+            break
+    keep = set(seen_turns)
+    rows = [r for r in turn_rows if int(r.turn_index or 0) in keep]
     if before is not None:
         # 倒序取到的再翻回正序给人读
         rows = list(reversed(rows))

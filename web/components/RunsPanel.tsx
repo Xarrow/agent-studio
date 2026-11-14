@@ -1369,7 +1369,17 @@ export function RunsPanel() {
                     {/* 主体：标题 + 一格小灰字（模型 · 耗时 · 分派/轮次计数） */}
                     <span className="min-w-0 flex-1 basis-[calc(100%-260px)]">
                       <span className="block truncate text-[13px]">
-                        {it.title}
+                        {it.session_id && !it.session_deleted ? (
+                          <Link
+                            href={`/exec?s=${it.session_id}${it.agent_id ? `&agent=${it.agent_id}` : ""}`}
+                            className="hover:underline"
+                            title="打开这条对话"
+                          >
+                            {it.title}
+                          </Link>
+                        ) : (
+                          it.title
+                        )}
                         {it.session_deleted && (
                           <span
                             className="ml-1.5 inline-block rounded px-1.5 py-0.5 align-[1px] text-[11px] font-medium"

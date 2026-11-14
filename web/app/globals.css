@@ -167,6 +167,18 @@
   --chart-grid-strong: #37455a;
 }
 
+/* 切会话的入场动画：内容整体淡入 + 轻微上移。
+   目的不是好看，是让"已经换成另一条会话"这件事可感知 —— 之前直接换字，
+   用户会怀疑到底切没切。 */
+@keyframes session-enter {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
+}
+.session-enter { animation: session-enter var(--dur-2) var(--ease) both; }
+@media (prefers-reduced-motion: reduce) {
+  .session-enter { animation: none; }
+}
+
 /* 常驻 tooltip：hover / focus-visible 都出（键盘同样看得到） */
 [data-tip] {
   position: relative;

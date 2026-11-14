@@ -469,6 +469,8 @@ export interface ActivityItem {
   trigger?: string | null;
   summary: string | null;
   error: string | null;
+  /** 所属会话（有它就能一条链接直达那条对话） */
+  session_id?: string | null;
   /** 这条记录所属的会话已经删了（会话列表看不到它，执行记录按审计保留） */
   session_deleted?: boolean;
   /** 有它就说明这一条是「分派容器」：分出去的多路收在这里 */
