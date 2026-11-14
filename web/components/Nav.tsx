@@ -46,6 +46,8 @@ export function Nav() {
   const currentLabel =
     [...USE_ITEMS, ...SETUP_ITEMS].find((i) => i.href === pathname)?.label ?? "Agent Studio";
   const [drawerOpen, setDrawerOpen] = useState(false);
+  /** 图标轨能否展开成带文字的完整菜单（用户明确要的：展开后每个入口都看得到名字） */
+  const [expanded, setExpanded] = useState(false);
   /** 徽标：技能库数量 + 运行环境是否就绪（一次拉取，路由变化时刷新） */
   const [skillCount, setSkillCount] = useState<number | null>(null);
   const [envReady, setEnvReady] = useState<boolean | null>(null);
@@ -65,6 +67,22 @@ export function Nav() {
       alive = false;
     };
   }, [pathname]);
+
+  // 展开状态：记住上次选择；第一次来按屏幕宽度给个合理默认（宽屏直接展开）
+  useEffect(() => {
+    const saved = window.localStorage.getItem("studio.nav.expanded");
+    if (saved === "1") setExpanded(true);
+    else if (saved === "0") setExpanded(false);
+    else setExpanded(window.innerWidth >= 1280);
+  }, []);
+
+  const toggleExpanded = () => {
+    setExpanded((v) => {
+      const next = !v;
+      window.localStorage.setItem("studio.nav.expanded", next ? "1" : "0");
+      return next;
+    });
+  };
 
   // 深浅色：跟 localStorage 走，切的时候直接改 <html data-theme>
   useEffect(() => {
@@ -95,6 +113,14 @@ export function Nav() {
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
+  }, []);
+
+  useEffect(() => {
+    const onResize = () => {
+      if (window.innerWidth < 1024) setExpanded(false);
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
   }, []);
 
   // 路由变化就收起抽屉
@@ -216,23 +242,63 @@ export function Nav() {
           分隔线以下 = 低频系统入口（API 密钥 / 系统设置 / 主题），固定沉底。
           每个图标常驻 tooltip（hover 与键盘 focus 都出），并写明 Alt+N。 */}
       <nav
-        className="hidden md:flex w-14 shrink-0 flex-col items-center gap-1 py-2"
-        style={{ background: "var(--color-surface)" }}
+        className={`hidden md:flex shrink-0 flex-col py-2 ${expanded ? "items-stretch px-2" : "items-center gap-1"}`}
+        style={{
+          background: "var(--color-surface)",
+          width: expanded ? 208 : 56,
+          transition: "width var(--dur-1)",
+        }}
         aria-label="主导航"
+        data-expanded={expanded ? "1" : "0"}
       >
-        {railItems()
-          .filter((l) => USE_ITEMS.some((x) => x.href === l.href) || SETUP_ITEMS.some((x) => x.href === l.href))
-          .map((l) => (
+        {/* 展开/收起：常驻在导轨最上方，不藏进菜单 */}
+        <button
+          type="button"
+          onClick={toggleExpanded}
+          aria-label={expanded ? "收起菜单" : "展开菜单"}
+          aria-expanded={expanded}
+          data-tip={expanded ? "收起" : "展开菜单"}
+          className={`mb-1 flex h-8 items-center rounded-[var(--radius-md)] transition-colors hover:bg-[var(--color-surface-2)] ${
+            expanded ? "w-full gap-2 px-2" : "w-10 justify-center"
+          }`}
+          style={{ color: "var(--color-muted)" }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            {expanded ? <path d="M15 6l-6 6 6 6" /> : <path d="M9 6l6 6-6 6" />}
+          </svg>
+          {expanded && <span className="text-[12px]">收起</span>}
+        </button>
+
+        {expanded && <NavGroupLabel>使用</NavGroupLabel>}
+        {USE_ITEMS.map((l) => {
+          const withShort = railItems().find((x) => x.href === l.href) ?? l;
+          return (
             <RailLink
               key={l.href}
-              item={l}
+              item={withShort}
+              expanded={expanded}
+              active={isActive(l.href)}
+            />
+          );
+        })}
+
+        {expanded && <NavGroupLabel>配置</NavGroupLabel>}
+        {SETUP_ITEMS.map((l) => {
+          const withShort = railItems().find((x) => x.href === l.href) ?? l;
+          return (
+            <RailLink
+              key={l.href}
+              item={withShort}
+              expanded={expanded}
               active={isActive(l.href)}
               badge={l.href === "/tools" && skillCount != null ? String(skillCount) : undefined}
               dot={l.href === "/tools" && envReady === false ? "var(--color-danger)" : undefined}
             />
-          ))}
+          );
+        })}
 
-        <div className="my-1 h-px w-6" style={{ background: "var(--color-border)" }} />
+        <div className={`my-1 h-px ${expanded ? "w-full" : "w-6"}`} style={{ background: "var(--color-border)" }} />
+        {expanded && <NavGroupLabel>系统</NavGroupLabel>}
 
         {SYSTEM_ITEMS.map((l) => {
           const withShort = railItems().find((x) => x.href === l.href) ?? l;
@@ -240,6 +306,7 @@ export function Nav() {
             <RailLink
               key={l.href}
               item={withShort}
+              expanded={expanded}
               active={isActive(l.href)}
               dot={l.href === "/environment" ? (envReady ? "var(--color-ok)" : "var(--color-warn)") : undefined}
             />
@@ -251,9 +318,12 @@ export function Nav() {
           onClick={toggleTheme}
           aria-label={dark ? "切到浅色" : "切到深色"}
           data-tip={`${dark ? "浅色" : "深色"}主题`}
-          className="grid h-10 w-10 place-items-center rounded-[var(--radius-md)] transition-colors"
+          className={`flex items-center rounded-[var(--radius-md)] transition-colors hover:bg-[var(--color-surface-2)] ${
+            expanded ? "h-9 w-full gap-2.5 px-2" : "h-10 w-10 justify-center"
+          }`}
           style={{ color: "var(--color-muted)" }}
         >
+          {expanded && <span className="text-[12.5px]">{dark ? "浅色主题" : "深色主题"}</span>}
           {dark ? (
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
               <circle cx="12" cy="12" r="4" />
@@ -276,25 +346,51 @@ function RailLink({
   active,
   badge,
   dot,
+  expanded = false,
 }: {
   item: NavItem;
   active: boolean;
   badge?: string;
   dot?: string;
+  expanded?: boolean;
 }) {
   return (
     <Link
       href={item.href}
       aria-label={`${item.label}${item.short ? `（${item.short}）` : ""}`}
-      data-tip={`${item.label}${item.short ? ` · ${item.short}` : ""}`}
-      className="relative grid h-10 w-10 place-items-center rounded-[var(--radius-md)] transition-colors"
+      data-tip={expanded ? undefined : `${item.label}${item.short ? ` · ${item.short}` : ""}`}
+      title={expanded ? item.tip : undefined}
+      className={
+        expanded
+          ? "relative flex h-9 w-full items-center gap-2.5 rounded-[var(--radius-md)] px-2 transition-colors hover:bg-[var(--color-surface-2)]"
+          : "relative grid h-10 w-10 place-items-center rounded-[var(--radius-md)] transition-colors"
+      }
       style={{
         color: active ? "var(--color-text)" : "var(--color-muted)",
         background: active ? "var(--bg-selected)" : "transparent",
+        fontWeight: active && expanded ? 500 : undefined,
       }}
     >
       <Icon d={ICON_PATHS[item.icon] ?? ""} size={17} />
-      {badge && (
+      {expanded && (
+        <>
+          <span className="min-w-0 flex-1 truncate text-[12.5px]" style={{ color: active ? "var(--color-text)" : "var(--color-text-2)" }}>
+            {item.label}
+          </span>
+          {badge && (
+            <span
+              className="shrink-0 rounded-full px-1.5 text-[10px] leading-[16px] tabular-nums"
+              style={{ background: "var(--bg-hover)", color: "var(--color-text-2)" }}
+            >
+              {badge}
+            </span>
+          )}
+          <span className="shrink-0 text-[10px] tabular-nums" style={{ color: "var(--color-text-3)" }}>
+            {item.short?.replace("Alt+", "⌥") ?? ""}
+          </span>
+        </>
+      )}
+      {badge && !expanded && (
         <span
           className="pointer-events-none absolute -right-0.5 -top-0.5 min-w-[15px] rounded-full px-1 text-center text-[9.5px] leading-[15px] tabular-nums"
           style={{ background: "var(--bg-hover)", color: "var(--color-text-2)" }}
@@ -310,5 +406,17 @@ function RailLink({
         />
       )}
     </Link>
+  );
+}
+
+/** 展开态的分组标题（收起态不显示 —— 图标轨靠分隔线与 tooltip 区分） */
+function NavGroupLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      className="px-2 pt-2 pb-1 text-[10.5px] font-semibold uppercase tracking-wider"
+      style={{ color: "var(--color-text-3)" }}
+    >
+      {children}
+    </div>
   );
 }
