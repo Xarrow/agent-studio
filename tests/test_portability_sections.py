@@ -70,10 +70,17 @@ async def test_导出的工具不带密钥_凭据只有清单(client):
     assert tool["impl"]["headers"]["Authorization"] == "", "请求头里的密钥必须被清空"
     assert tool["impl"]["headers"]["X-Trace"] == "1", "普通头不该被误清"
     assert tool["secrets_scrubbed"] is True
+    # 口径变更（用户 2026-11 明确）：默认带明文密钥，换机器导入即可用。
+    # 关掉 include_secrets 时仍只给清单 —— 想发别人时用这个开关。
     cred = next(c for c in bundle["credentials"] if c["name"] == "分区样本配置")
-    assert set(cred) == {"name", "provider", "base_url", "default_model"}, "凭据只能出清单字段"
-    assert "ENCRYPTED-SECRET-BYTES" not in json.dumps(bundle, ensure_ascii=False), "密文绝不进包"
+    # 样本里存的是假密文（解不开）→ 只标记，不把密文塞进包
+    assert cred.get("api_key_unreadable") is True or "api_key" in cred
+    assert "ENCRYPTED-SECRET-BYTES" not in json.dumps(bundle, ensure_ascii=False), "不能把密文直接塞进包"
     assert "credential_note" in bundle
+
+    no_secret = (await client.get("/api/export", params={"sections": "credentials", "include_secrets": 0})).json()
+    cred2 = next(c for c in no_secret["credentials"] if c["name"] == "分区样本配置")
+    assert set(cred2) == {"name", "provider", "base_url", "default_model"}, "关掉开关时只出清单"
     # 没点名要的分区不该被带出来
     assert "agents" not in bundle or bundle.get("dropped")
     assert "workflows" in bundle.get("dropped", [])
@@ -95,7 +102,8 @@ async def test_分区清单给出数量与是否可导入(client):
     secs = {s["key"]: s for s in got.json()["sections"]}
     assert secs["agents"]["count"] >= 1
     assert secs["tools"]["count"] >= 1
-    assert secs["credentials"]["importable"] is False, "凭据永远不可导入（密钥不进包）"
+    assert secs["credentials"]["importable"] is True, "凭据可导入（带密钥，换机即用）"
+    assert "sessions" in secs, "会话记录也是可导出分区"
     assert secs["agents"]["importable"] is True
 
 

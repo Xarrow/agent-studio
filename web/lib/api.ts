@@ -756,9 +756,15 @@ export const api = {
   // ── 各个功能配置导入导出 ────────────────────────────────────────────────
   /** 分区清单（有哪些功能可导、各有几条） */
   exportSections: () => request<{ sections: ExportSection[] }>("/api/export/sections"),
-  /** 导出全部（助手/流程/单价/记忆）—— **包里不含任何密钥** */
-  exportBundle: (sections?: string[]) =>
-    request<{
+  /** 导出全部（助手/工具/技能/凭据/会话/记忆…）。
+   *  默认带密钥明文（换机器导入即可用）；不想带就传 includeSecrets=false。 */
+  exportBundle: (sections?: string[], opts?: { includeSecrets?: boolean; includeSessions?: boolean }) => {
+    const q = new URLSearchParams();
+    if (sections && sections.length) q.set("sections", sections.join(","));
+    if (opts?.includeSecrets === false) q.set("include_secrets", "0");
+    if (opts?.includeSessions === false) q.set("include_sessions", "0");
+    const qs = q.toString();
+    return request<{
       kind: string;
       version: number;
       exported_at: number;
@@ -767,7 +773,10 @@ export const api = {
       workflows: { name: string; description: string; graph: WorkflowGraph; mode_override: string | null; auto: Record<string, unknown> }[];
       prices: { currency: string; items: { model: string; in_per_mtok: number; out_per_mtok: number }[] };
       memories?: unknown[];
-    }>(sections && sections.length ? `/api/export?sections=${sections.join(",")}` : "/api/export"),
+    }>(`/api/export${qs ? `?${qs}` : ""}`);
+  },
+  /** 修复历史包袱：摘掉助手定义里本机不存在的工具/技能引用（跨机导入留下的） */
+  repairRefs: () => post<{ fixed: { id: string; name: string; dropped_tools: number; dropped_skills: number }[]; count: number }>("/api/agents/repair-refs", {}),
   /** 导入一个导出包（**只新增、不覆盖**） */
   importBundle: (bundle: Record<string, unknown>) => post<Record<string, unknown>>("/api/import", { bundle }),
 

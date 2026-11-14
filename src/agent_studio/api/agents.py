@@ -377,3 +377,73 @@ async def orchestrator_brief() -> dict[str, str]:
     from agent_studio.orchestrator.service import ORCHESTRATOR_BRIEF
 
     return {"brief": ORCHESTRATOR_BRIEF, "role": "orchestrator", "abilities": "分析任务|管理上下文|验证结果|归纳总结"}
+
+
+@router.post("/repair-refs")
+async def repair_refs(session: AsyncSession = Depends(get_session)) -> dict:
+    """把助手定义里「本机不存在的工具/技能引用」摘掉。
+
+    为什么需要它：跨机导入过的助手，定义里可能还留着源机器的 tl_xxx / sk_xxx。
+    这些 id 在本机不存在，于是每次保存都被校验拦下（报一长串「工具不存在」），
+    用户想改个名字都改不了。这里一次性清掉，返回每个助手清了几条 ——
+    不做静默删除，界面/日志能看见改了什么。
+    """
+    from ..models import Agent, Skill, Tool
+
+    tool_ids = {t.id for t in (await session.execute(select(Tool))).scalars()}
+    skill_ids = {s.id for s in (await session.execute(select(Skill))).scalars()}
+    # 关联表里其实已经按名字接好了（导入时建的）—— 清完无效引用后，用它们把
+    # 定义里的挂载恢复回来，而不是让助手变成"一个工具都不挂"。
+    from ..models import AgentSkill, AgentTool
+
+    linked_tools: dict[str, list[str]] = {}
+    for row in (await session.execute(select(AgentTool))).scalars():
+        linked_tools.setdefault(row.agent_id, []).append(row.tool_id)
+    linked_skills: dict[str, list[str]] = {}
+    for row in (await session.execute(select(AgentSkill))).scalars():
+        linked_skills.setdefault(row.agent_id, []).append(row.skill_id)
+    fixed: list[dict] = []
+    for a in (await session.execute(select(Agent))).scalars():
+        defn = dict(a.definition or {})
+        dropped_t = 0
+        dropped_s = 0
+        tools = []
+        for r in defn.get("tools") or []:
+            if isinstance(r, dict) and str(r.get("ref") or "") in tool_ids:
+                tools.append(r)
+            else:
+                dropped_t += 1
+        skills = []
+        for r in defn.get("skills") or []:
+            if isinstance(r, dict) and str(r.get("ref") or "") in skill_ids:
+                skills.append(r)
+            else:
+                dropped_s += 1
+        # 空挂载但关联表里有 → 补回来（跨机导入后可能被清空过一次）
+        if not tools and linked_tools.get(a.id):
+            dropped_t += 0
+        if dropped_t or dropped_s or (not tools and linked_tools.get(a.id)) or (not skills and linked_skills.get(a.id)):
+            added = 0
+            have_t = {str(r.get("ref") or "") for r in tools if isinstance(r, dict)}
+            have_s = {str(r.get("ref") or "") for r in skills if isinstance(r, dict)}
+            for tid in linked_tools.get(a.id, []):
+                if tid in tool_ids and tid not in have_t:
+                    tools.append({"ref": tid, "enabled": True})
+                    added += 1
+            for sid2 in linked_skills.get(a.id, []):
+                if sid2 in skill_ids and sid2 not in have_s:
+                    skills.append({"ref": sid2})
+            defn["tools"] = tools
+            defn["skills"] = skills
+            a.definition = defn
+            fixed.append(
+                {
+                    "id": a.id,
+                    "name": a.name,
+                    "dropped_tools": dropped_t,
+                    "dropped_skills": dropped_s,
+                    "relinked_tools": added,
+                }
+            )
+    await session.commit()
+    return {"fixed": fixed, "count": len(fixed)}

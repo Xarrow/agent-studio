@@ -50,17 +50,23 @@ def test_remap_graph_repoints_nodes_only_when_known():
 
 
 # ── 导出：不含密钥 ─────────────────────────────────────────────────────────
-async def test_export_contains_no_secrets(client):
+async def test_export_secrets_policy(client):
+    """口径（2026-11 用户定）：默认带明文密钥，换机器导入即可用；但绝不带
+    平台自己的口令/主密钥/密文。想发给别人就传 include_secrets=0。"""
     name = uniq("导出助手")
     await _mk_agent(client, name)
+
     r = await client.get("/api/export")
     assert r.status_code == 200
     raw = json.dumps(r.json(), ensure_ascii=False)
     assert name in raw
-    for leak in ("sk-", "STUDIO_ACCESS_TOKEN", "STUDIO_MASTER_KEY", "password", "api_key"):
+    for leak in ("STUDIO_ACCESS_TOKEN", "STUDIO_MASTER_KEY", "ENCRYPTED-SECRET"):
         assert leak not in raw, f"导出包里不该出现 {leak}"
     assert r.json()["kind"] == "agent-studio-export"
-    assert r.json()["note"], "包里要有说明（不含密钥 / 只增不覆盖）"
+
+    off = (await client.get("/api/export", params={"include_secrets": 0})).json()
+    for c in off.get("credentials") or []:
+        assert "api_key" not in c, "关掉开关就不带密钥"
 
 
 # ── 导出 → 导入：只增不改 + 关系接回来 ─────────────────────────────────────

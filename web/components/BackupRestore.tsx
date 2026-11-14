@@ -44,6 +44,10 @@ export function BackupRestore() {
   const [busy, setBusy] = useState(false);
   const [sections, setSections] = useState<ExportSection[] | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
+  /** 导出选项：换机器接着用时两个都该开；发给别人时把密钥关掉 */
+  const [withSecrets, setWithSecrets] = useState(true);
+  const [withSessions, setWithSessions] = useState(true);
+  const [repairNote, setRepairNote] = useState<string | null>(null);
 
   const loadSections = useCallback(async () => {
     try {
@@ -74,7 +78,10 @@ export function BackupRestore() {
   const doExport = async (keys?: string[]) => {
     setBusy(true);
     try {
-      const bundle = (await api.exportBundle(keys)) as unknown as {
+      const bundle = (await api.exportBundle(keys, {
+        includeSecrets: withSecrets,
+        includeSessions: withSessions,
+      })) as unknown as {
         agents?: unknown[];
         workflows?: unknown[];
         tools?: unknown[];
@@ -89,7 +96,10 @@ export function BackupRestore() {
         bundle.tools ? `${bundle.tools.length} 个自定义工具` : "",
         bundle.skills ? `${bundle.skills.length} 个技能` : "",
       ].filter(Boolean);
-      fb.success(`已导出${keys?.length ? `（${label}）` : ""}：${bits.join("、") || "空包"}`, "文件里不含任何密钥");
+      fb.success(
+        `已导出${keys?.length ? `（${label}）` : ""}：${bits.join("、") || "空包"}`,
+        withSecrets ? "包里含密钥明文，导入到别的机器可直接用；发给别人请先关掉" : "这次没带密钥，导入后需要重填",
+      );
     } catch (e) {
       fb.error("导出失败", e instanceof Error ? e.message : String(e));
     } finally {
@@ -129,13 +139,39 @@ export function BackupRestore() {
           按功能挑着导，或者一键全量；导入只新增、不覆盖现有数据
         </span>
         <div className="ml-auto flex flex-wrap items-center gap-2">
+          <label
+            className="flex items-center gap-1.5 text-[12px]"
+            style={{ color: "var(--color-text-2)" }}
+            title="带上 LLM 密钥明文：导入到另一台机器即可直接跑；发给别人请关掉"
+          >
+            <input
+              type="checkbox"
+              checked={withSecrets}
+              onChange={(e) => setWithSecrets(e.target.checked)}
+              data-tap
+            />
+            含密钥
+          </label>
+          <label
+            className="flex items-center gap-1.5 text-[12px]"
+            style={{ color: "var(--color-text-2)" }}
+            title="把会话标题与全部消息一起带走（产物文件不打包）"
+          >
+            <input
+              type="checkbox"
+              checked={withSessions}
+              onChange={(e) => setWithSessions(e.target.checked)}
+              data-tap
+            />
+            含会话
+          </label>
           <button
             type="button"
             disabled={busy}
             onClick={() => void doExport()}
             className="btn btn-primary"
             style={{ color: "var(--color-accent-fg)" }}
-            title="导出一个 JSON 文件（不含密钥）"
+            title="导出一个 JSON 文件"
           >
             全量导出
           </button>
@@ -147,6 +183,31 @@ export function BackupRestore() {
             title="选择之前导出的 JSON 文件导入"
           >
             导入
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              setRepairNote(null);
+              try {
+                const r = await api.repairRefs();
+                setRepairNote(
+                  r.count
+                    ? `已清理 ${r.count} 个助手里的无效引用：` +
+                        r.fixed.map((x) => `${x.name}(工具${x.dropped_tools}/技能${x.dropped_skills})`).join("、")
+                    : "没有发现无效引用",
+                );
+              } catch (e) {
+                fb.error("清理失败", e instanceof Error ? e.message : String(e));
+              } finally {
+                setBusy(false);
+              }
+            }}
+            className="btn"
+            title="摘掉助手定义里本机不存在的工具/技能引用（跨机导入留下的 tl_xxx）"
+          >
+            修复引用
           </button>
           <input
             ref={fileRef}
@@ -160,6 +221,12 @@ export function BackupRestore() {
           />
         </div>
       </div>
+
+      {repairNote && (
+        <p className="text-[12px]" style={{ color: "var(--color-text-2)" }}>
+          {repairNote}
+        </p>
+      )}
 
       {/* 一行一个功能：数量 + 说明 + 单独导出（导入走上面那个"导入"按钮，包里的分区自动识别） */}
       {sections?.length ? (

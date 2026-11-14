@@ -67,8 +67,10 @@ SECTIONS: tuple[dict[str, Any], ...] = (
     {"key": "memories", "label": "长期记忆", "importable": True, "note": "按助手名字接回"},
     {"key": "prices", "label": "模型单价", "importable": False,
      "note": "按模型名对齐；导入不覆盖你已有的单价"},
-    {"key": "credentials", "label": "LLM 配置", "importable": False,
-     "note": "只导出清单（名字/端点/默认模型）；密钥绝不进包，换机器重新填"},
+    {"key": "credentials", "label": "LLM 配置", "importable": True,
+     "note": "含密钥（可关闭）：换机器导入后即可直接跑，不必重填"},
+    {"key": "sessions", "label": "会话记录", "importable": True,
+     "note": "会话标题与全部消息；产物文件不打包（在会话目录里）"},
 )
 
 #: 启动会自动重建的工具种类 —— 导出它们没意义，导入也不该重复建
@@ -127,6 +129,8 @@ def remap_graph(graph: dict[str, Any] | None, id_map: dict[str, str]) -> dict[st
 @router.get("/api/export", response_model=dict)
 async def export_all(
     memories: bool = Query(True, description="是否带上长期记忆（兼容旧参数）"),
+    include_secrets: bool = Query(True, description="带上 LLM 密钥明文（默认带，换机即用）"),
+    include_sessions: bool = Query(True, description="带上会话与全部消息"),
     sections: str | None = Query(
         None,
         description="要导哪些功能（逗号分隔，如 agents,workflows）。不传 = 全部",
@@ -147,6 +151,10 @@ async def export_all(
     tools_of: dict[str, list[str]] = {}
     for aid, name in tool_rows:
         tools_of.setdefault(aid, []).append(name)
+    #: 工具 id → 名字（助手定义里存的是 tl_xxx，导出时换成名字，导入端才能按名字接）
+    tool_name_by_id = {t.id: t.name for t in (await session.execute(select(Tool))).scalars()}
+    skill_name_by_id = {k.id: k.name for k in (await session.execute(select(Skill))).scalars()}
+    cred_name_by_id = {c.id: c.name for c in (await session.execute(select(Secret))).scalars()}
     skills_of: dict[str, list[str]] = {}
     for aid, name in skill_rows:
         skills_of.setdefault(aid, []).append(name)
@@ -168,6 +176,31 @@ async def export_all(
                 "definition": a.definition or {},
                 "tools": sorted(tools_of.get(a.id, [])),
                 "skills": sorted(skills_of.get(a.id, [])),
+                # 定义里的引用（tl_xxx / sk_xxx）在别的机器上一定对不上 ——
+                # 这里附上"这个 id 叫什么"，导入端据此重写成自己的 id。
+                "tool_refs": [
+                    {
+                        "ref": r.get("ref"),
+                        "name": tool_name_by_id.get(str(r.get("ref") or "")),
+                        "enabled": r.get("enabled", True),
+                    }
+                    for r in ((a.definition or {}).get("tools") or [])
+                    if isinstance(r, dict)
+                ],
+                "skill_refs": [
+                    {
+                        "ref": r.get("ref"),
+                        "name": skill_name_by_id.get(str(r.get("ref") or "")),
+                    }
+                    for r in ((a.definition or {}).get("skills") or [])
+                    if isinstance(r, dict)
+                ],
+                "credential": cred_name_by_id.get(
+                    str(((a.definition or {}).get("model") or {}).get("credential_ref") or "")
+                ),
+                "fallback_credential": cred_name_by_id.get(
+                    str(((a.definition or {}).get("fallback") or {}).get("credential_ref") or "")
+                ),
             }
             for a in agents
         ],
@@ -246,16 +279,30 @@ async def export_all(
         for p, agent_name in pol_rows
     ]
     # LLM 配置：**只导清单**（名字/端点/默认模型）—— 密钥是环境的一部分，不进包
-    out["credentials"] = [
-        {
+    cred_items: list[dict[str, Any]] = []
+    for sec in (await session.execute(select(Secret))).scalars():
+        item: dict[str, Any] = {
             "name": sec.name,
             "provider": sec.provider,
             "base_url": sec.base_url,
             "default_model": getattr(sec, "default_model", None),
         }
-        for sec in (await session.execute(select(Secret))).scalars()
-    ]
-    out["credential_note"] = "密钥不在包里：导入后请在本机重新填写 API Key（清单只用于告诉你缺哪些）"
+        if include_secrets:
+            try:
+                from ..security.crypto import decrypt
+
+                item["api_key"] = decrypt(sec.ciphertext)
+            except Exception:  # noqa: BLE001 —— 解不出来就只带清单，别让整包导出失败
+                logger.warning("导出时解不出凭据 %s 的密钥", sec.name, exc_info=True)
+                item["api_key_unreadable"] = True
+        cred_items.append(item)
+    out["credentials"] = cred_items
+    out["credential_note"] = (
+        "包里带了密钥（可在导出时关掉）。导入到你自己的另一台机器即可直接使用；"
+        "把包发给别人等于把 key 也发出去，注意渠道。"
+        if include_secrets
+        else "这次没带密钥：导入后请在本机重新填写 API Key。"
+    )
 
     if memories:
         rows = list(
@@ -272,6 +319,47 @@ async def export_all(
             }
             for m, agent_name in rows
         ]
+    if include_sessions:
+        from ..models import Session as ChatSession, SessionMessage
+
+        sess_rows = list(
+            (await session.execute(select(ChatSession).order_by(ChatSession.created_at))).scalars()
+        )
+        agent_name_by_id = {a.id: a.name for a in agents}
+        msgs_by_session: dict[str, list[dict[str, Any]]] = {}
+        if sess_rows:
+            ids = [r.id for r in sess_rows]
+            for m in (
+                await session.execute(
+                    select(SessionMessage)
+                    .where(SessionMessage.session_id.in_(ids))
+                    .order_by(SessionMessage.session_id, SessionMessage.turn_index, SessionMessage.id)
+                )
+            ).scalars():
+                msgs_by_session.setdefault(m.session_id, []).append(
+                    {
+                        "turn_index": m.turn_index,
+                        "role": m.role,
+                        "content": m.content,
+                        "run_id": m.run_id,
+                        "ts": m.ts,
+                    }
+                )
+        out["sessions"] = [
+            {
+                "id": r.id,
+                "title": r.title,
+                "agent": agent_name_by_id.get(r.agent_id),
+                "status": r.status,
+                "created_at": r.created_at,
+                "last_active_at": r.last_active_at,
+                "summary": r.summary,
+                "usage": r.usage or {},
+                "messages": msgs_by_session.get(r.id, []),
+            }
+            for r in sess_rows
+        ]
+
     if sections:
         wanted = {x.strip() for x in sections.split(",") if x.strip()}
         keep = {"kind", "version", "exported_at", "note", "credential_note"} | wanted
@@ -346,6 +434,87 @@ async def import_bundle(
                 return cand
         return f"{raw}-{now_ms()}"
 
+    # LLM 配置：包里带密钥时直接建好 —— 换机器导入后要能立刻跑
+    created_credentials: list[str] = []
+    skipped_credentials: list[str] = []
+    cred_by_name: dict[str, str] = {
+        c.name: c.id for c in (await session.execute(select(Secret))).scalars()
+    }
+    for item in bundle.get("credentials") or []:
+        cname = str(item.get("name") or "").strip()
+        if not cname:
+            continue
+        if cname in cred_by_name:
+            skipped_credentials.append(cname)
+            continue
+        api_key = str(item.get("api_key") or "")
+        if not api_key:
+            skipped_credentials.append(f"{cname}（包里没有密钥）")
+            continue
+        from ..security.crypto import encrypt
+
+        sec = Secret(
+            name=cname,
+            provider=str(item.get("provider") or "openai"),
+            base_url=item.get("base_url"),
+            default_model=item.get("default_model"),
+            ciphertext=encrypt(api_key),
+            created_at=now_ms(),
+        )
+        session.add(sec)
+        await session.flush()
+        cred_by_name[cname] = sec.id
+        created_credentials.append(cname)
+
+    # 自定义工具：同名已存在就不动（导入不改别人的东西）；内置那类不重复建
+    created_tools: list[str] = []
+    skipped_tools: list[str] = []
+    for item in bundle.get("tools") or []:
+        name = str(item.get("name") or "").strip()
+        kind = str(item.get("kind") or "").strip()
+        if not name:
+            continue
+        if kind in AUTO_SYNCED_TOOL_KINDS or name in tool_by_name:
+            skipped_tools.append(name)
+            continue
+        t = Tool(
+            kind=kind or "http",
+            name=name,
+            description=str(item.get("description") or ""),
+            input_schema=dict(item.get("input_schema") or {}),
+            impl=dict(item.get("impl") or {}),
+            created_at=now_ms(),
+            updated_at=now_ms(),
+        )
+        session.add(t)
+        await session.flush()
+        tool_by_name[name] = t.id
+        created_tools.append(name)
+
+    # 技能：同名已存在就不动
+    created_skills: list[str] = []
+    skipped_skills: list[str] = []
+    for item in bundle.get("skills") or []:
+        name = str(item.get("name") or "").strip()
+        if not name:
+            continue
+        if name in skill_by_name:
+            skipped_skills.append(name)
+            continue
+        sk = Skill(
+            name=name,
+            description=str(item.get("description") or ""),
+            source=dict(item.get("source") or {}),
+            content=str(item.get("content") or ""),
+            files=dict(item.get("files") or {}),
+            created_at=now_ms(),
+            updated_at=now_ms(),
+        )
+        session.add(sk)
+        await session.flush()
+        skill_by_name[name] = sk.id
+        created_skills.append(name)
+
     created_agents: list[dict[str, Any]] = []
     missing_tools: list[str] = []
     missing_skills: list[str] = []
@@ -355,11 +524,55 @@ async def import_bundle(
     for item in bundle.get("agents") or []:
         name = str(item.get("name") or "").strip() or "导入的助手"
         definition = dict(item.get("definition") or {})
-        # 凭据是**本机**的东西：包里的 credential_ref 在这台机器上没有意义，清掉让用户重选
+        # 凭据：包里有同名凭据（通常带着密钥）就接上；没有则清空并如实提示
         model = dict(definition.get("model") or {})
-        cred_dropped = bool(model.get("credential_ref"))
-        model.pop("credential_ref", None)
+        cred_name = str(item.get("credential") or "")
+        cred_dropped = False
+        if cred_name and cred_name in cred_by_name:
+            model["credential_ref"] = cred_by_name[cred_name]
+        elif model.get("credential_ref"):
+            model.pop("credential_ref", None)
+            cred_dropped = True
         definition["model"] = model
+        fb_spec = definition.get("fallback")
+        if isinstance(fb_spec, dict) and fb_spec.get("credential_ref"):
+            fb_name = str(item.get("fallback_credential") or "")
+            if fb_name and fb_name in cred_by_name:
+                fb_spec["credential_ref"] = cred_by_name[fb_name]
+            else:
+                fb_spec.pop("credential_ref", None)
+
+        # 工具 / 技能引用：定义里存的是源机器的 tl_/sk_ id，必须换成这台机器上的 id，
+        # 否则保存时报「工具不存在」—— 这正是「导入后助手用不了」的根因。
+        def _remap_refs(entries: Any, name_map: dict[str, str], refs_meta: Any, out_missing: list[str], label: str) -> list[dict[str, Any]]:
+            names_by_ref = {
+                str(r.get("ref") or ""): str(r.get("name") or "")
+                for r in (refs_meta or [])
+                if isinstance(r, dict)
+            }
+            out: list[dict[str, Any]] = []
+            for r in entries or []:
+                if not isinstance(r, dict):
+                    continue
+                ref = str(r.get("ref") or "")
+                local = ref if ref in name_map.values() else None
+                if local is None:
+                    wanted = names_by_ref.get(ref) or ""
+                    local = name_map.get(wanted)
+                if local is None:
+                    out_missing.append(f"{name} → {names_by_ref.get(ref) or ref}")
+                    continue
+                item2 = dict(r)
+                item2["ref"] = local
+                out.append(item2)
+            return out
+
+        definition["tools"] = _remap_refs(
+            definition.get("tools"), tool_by_name, item.get("tool_refs"), missing_tools, "tool"
+        )
+        definition["skills"] = _remap_refs(
+            definition.get("skills"), skill_by_name, item.get("skill_refs"), missing_skills, "skill"
+        )
 
         agent = Agent(
             name=name,
@@ -431,54 +644,7 @@ async def import_bundle(
             wf.next_run_at = compute_next(wf.schedule_mode, wf.schedule_at, wf.schedule_weekdays)
         created_workflows.append({"id": wf.id, "name": name})
 
-    # 自定义工具：同名已存在就不动（导入不改别人的东西）；内置那类不重复建
-    created_tools: list[str] = []
-    skipped_tools: list[str] = []
-    for item in bundle.get("tools") or []:
-        name = str(item.get("name") or "").strip()
-        kind = str(item.get("kind") or "").strip()
-        if not name:
-            continue
-        if kind in AUTO_SYNCED_TOOL_KINDS or name in tool_by_name:
-            skipped_tools.append(name)
-            continue
-        t = Tool(
-            kind=kind or "http",
-            name=name,
-            description=str(item.get("description") or ""),
-            input_schema=dict(item.get("input_schema") or {}),
-            impl=dict(item.get("impl") or {}),
-            created_at=now_ms(),
-            updated_at=now_ms(),
-        )
-        session.add(t)
-        await session.flush()
-        tool_by_name[name] = t.id
-        created_tools.append(name)
 
-    # 技能：同名已存在就不动
-    created_skills: list[str] = []
-    skipped_skills: list[str] = []
-    for item in bundle.get("skills") or []:
-        name = str(item.get("name") or "").strip()
-        if not name:
-            continue
-        if name in skill_by_name:
-            skipped_skills.append(name)
-            continue
-        sk = Skill(
-            name=name,
-            description=str(item.get("description") or ""),
-            source=dict(item.get("source") or {}),
-            content=str(item.get("content") or ""),
-            files=dict(item.get("files") or {}),
-            created_at=now_ms(),
-            updated_at=now_ms(),
-        )
-        session.add(sk)
-        await session.flush()
-        skill_by_name[name] = sk.id
-        created_skills.append(name)
 
     # 工具/Skill 是在助手**之前**导出的顺序问题：助手那一段先跑，所以这里要补接
     # （同一个包里既有助手又有工具时，助手当时接不上工具名 → 这里按新工具 id 补上）
@@ -595,6 +761,39 @@ async def import_bundle(
             )
         )
         priced += 1
+
+    # 会话记录：新 id 重建（原来的 id 只用于本机内部），按助手名字接回
+    imported_sessions = 0
+    imported_messages = 0
+    if bundle.get("sessions"):
+        from ..models import Session as ChatSession, SessionMessage
+
+        for item in bundle.get("sessions") or []:
+            aid = id_map.get(f"name:{str(item.get('agent') or '')}") if item.get("agent") else None
+            row = ChatSession(
+                agent_id=aid or (next(iter(id_map.values())) if id_map else None),
+                title=str(item.get("title") or "导入的会话")[:200],
+                status=str(item.get("status") or "active"),
+                summary=item.get("summary"),
+                usage=item.get("usage") or {},
+                created_at=int(item.get("created_at") or now_ms()),
+                last_active_at=int(item.get("last_active_at") or now_ms()),
+            )
+            session.add(row)
+            await session.flush()
+            imported_sessions += 1
+            for m in item.get("messages") or []:
+                session.add(
+                    SessionMessage(
+                        session_id=row.id,
+                        turn_index=int(m.get("turn_index") or 1),
+                        role=str(m.get("role") or "user"),
+                        content=str(m.get("content") or ""),
+                        run_id=None,  # 源机器的 run 在这台机器上不存在
+                        ts=int(m.get("ts") or now_ms()),
+                    )
+                )
+                imported_messages += 1
 
     await session.commit()
     return ImportResult(
