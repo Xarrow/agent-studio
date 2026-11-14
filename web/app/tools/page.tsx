@@ -39,6 +39,9 @@ export default function ToolsPage() {
   const [syncing, setSyncing] = useState(false);
   const [testOut, setTestOut] = useState<Record<string, string>>({});
   const [kindFilter, setKindFilter] = useState("");
+  /** 页签徽章：Skills 与 MCP 也要显示数量，跟"工具 44"一致 */
+  const [skillCount, setSkillCount] = useState<number | null>(null);
+  const [mcpCount, setMcpCount] = useState<number | null>(null);
   /** 这一页管三件事：工具 / Skills /（以后的）MCP —— 页签切换，不跳页 */
   const [tab, setTab] = useState<"tools" | "skills" | "mcp">("tools");
   /** 就地展开的那一个工具（展开里放参数详情 + 试运行表单 + 上次试跑结果） */
@@ -82,6 +85,21 @@ export default function ToolsPage() {
   }, [load]);
   useEffect(() => {
     void loadAgents();
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    void api
+      .skills()
+      .then((rows) => alive && setSkillCount(rows.length))
+      .catch(() => alive && setSkillCount(null));
+    void api
+      .mcpServers()
+      .then((rows) => alive && setMcpCount(rows.length))
+      .catch(() => alive && setMcpCount(null));
+    return () => {
+      alive = false;
+    };
   }, []);
 
   const sync = async () => {
@@ -259,8 +277,8 @@ export default function ToolsPage() {
             onChange={setTab}
             options={[
               { key: "tools", label: "工具", count: tools.length },
-              { key: "skills", label: "Skills" },
-              { key: "mcp", label: "MCP" },
+              { key: "skills", label: "Skills", count: skillCount ?? undefined },
+              { key: "mcp", label: "MCP", count: mcpCount ?? undefined },
             ]}
           />
         }

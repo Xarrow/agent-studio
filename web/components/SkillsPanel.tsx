@@ -73,7 +73,8 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
   /** 视图：按仓库分组（默认）/ 全部平铺 */
   const [view, setView] = useState<"grouped" | "flat">(() => {
     try {
-      return (window.localStorage.getItem("studio.skills.view") as "grouped" | "flat") || "grouped";
+      // key 带版本：早先存过 "flat" 的浏览器不该继续黏在平铺视图上
+      return (window.localStorage.getItem("studio.skills.view2") as "grouped" | "flat") || "grouped";
     } catch {
       return "grouped";
     }
@@ -107,7 +108,7 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
   const switchView = (v: "grouped" | "flat") => {
     setView(v);
     try {
-      window.localStorage.setItem("studio.skills.view", v);
+      window.localStorage.setItem("studio.skills.view2", v);
     } catch {
       /* 隐私模式忽略 */
     }
@@ -1364,27 +1365,30 @@ function GroupedSkills({
             {/* 卡片内：该仓库下的技能 */}
             {isOpen && (
               <div className="border-t" style={{ borderColor: "var(--color-border)" }}>
-                {g.skills.map((k, idx) => (
+                {/* 子项列表整体挂一条竖线（从仓库那一行延伸下来），
+                    每个子项再用一段横线接上去 —— 父子关系是画出来的，不是猜的 */}
+                <div className="relative ml-[26px] border-l py-1 pl-4" style={{ borderColor: "var(--color-border)" }}>
+                  {g.skills.map((k, idx) => (
                   <div
                     key={k.id}
-                    className="relative flex items-center gap-2 px-3 py-2 pl-9 hover:bg-[var(--bg-selected)]"
+                    className="relative flex items-center gap-2 rounded-[var(--radius-xs)] py-1.5 pr-2 hover:bg-[var(--bg-selected)]"
                   >
-                    {/* 树线：竖向连线 + 每个子项一个 ├/└ 拐角，让父子关系不靠缩进猜 */}
                     <span
                       aria-hidden="true"
-                      className="absolute left-[18px] top-0 w-px"
-                      style={{
-                        background: "var(--color-border)",
-                        height: idx === g.skills.length - 1 ? "50%" : "100%",
-                      }}
-                    />
-                    <span
-                      aria-hidden="true"
-                      className="absolute left-[18px] h-px w-[10px]"
+                      className="absolute -left-4 h-px w-3"
                       style={{ background: "var(--color-border)", top: "50%" }}
                     />
                     <button className="min-w-0 flex-1 text-left" onClick={() => onOpen(k.id)} title={k.path || k.name}>
-                      <div className="truncate text-[12.5px]">{k.name}</div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="truncate text-[12.5px]">{k.name}</span>
+                        <span
+                          className="shrink-0 rounded px-1 py-[1px] text-[10px]"
+                          style={{ background: "var(--bg-hover)", color: "var(--color-text-3)" }}
+                          title={`所属仓库：${g.name}`}
+                        >
+                          {g.name.split("/").pop()}
+                        </span>
+                      </div>
                       <div className="truncate text-[11px]" style={{ color: "var(--color-text-3)" }}>
                         {k.path || "—"}
                       </div>
@@ -1406,7 +1410,8 @@ function GroupedSkills({
                       {k.state === "active" ? "停用" : "启用"}
                     </button>
                   </div>
-                ))}
+                  ))}
+                </div>
               </div>
             )}
           </div>
