@@ -212,6 +212,14 @@ async def loop() -> None:
                 )
             # 远程 A2A agent 探活：到点的探一次（每个自己的 health_interval_s）。
             # 放这里而不是另起循环 —— 它和定时任务一样是「后台自己动」的事。
+            # 搜索通道自检：每天一次真搜，坏了让系统设置页能看出来
+            try:
+                from . import search_health as _sh
+
+                await _sh.maybe_check()
+            except Exception:  # noqa: BLE001
+                logger.exception("搜索自检这一轮出错（继续）")
+
             from . import remote_health
 
             # 停滞判死：在跑但没进展的执行（进程已不在的那些）

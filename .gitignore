@@ -82,3 +82,7 @@ HANDOFF.md
 
 # Java 编译产物
 *.class
+
+# 工具运行时产物（本地试跑会落在仓库根）
+.studio/
+product/

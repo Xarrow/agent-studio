@@ -423,19 +423,25 @@ export function ChatConsole({
 
   useEffect(() => {
     try {
-      const o = localStorage.getItem("dock.open");
+      /* 开/合只记在**本标签页**（sessionStorage）：用户打开 App / 新开标签页时
+         右栏必须是收起的 —— 之前记在 localStorage，于是"一进对话就弹出某个会话
+         的文件面板"，看起来像系统自作主张。面板选择与宽度是真正的布局偏好，
+         仍然跨会话记住。 */
+      const o = sessionStorage.getItem("dock.open");
       if (o === "1") setDockOpen(true);
       const w = Number(localStorage.getItem("dock.w") || "");
       if (w >= 320 && w <= 560) setDockW(w);
       const p = localStorage.getItem("dock.panel");
       if (p === "browser" || p === "files" || p === "steps") setDockPanel(p);
+      // 老版本把开合写进了 localStorage：清掉，别让历史偏好继续生效
+      localStorage.removeItem("dock.open");
     } catch {
-      /* 隐私模式拿不到 localStorage：用默认值 */
+      /* 隐私模式拿不到 storage：用默认值 */
     }
   }, []);
   const saveDock = useCallback((o: boolean, p: DockPanel, w: number) => {
     try {
-      localStorage.setItem("dock.open", o ? "1" : "0");
+      sessionStorage.setItem("dock.open", o ? "1" : "0");
       localStorage.setItem("dock.panel", p);
       localStorage.setItem("dock.w", String(w));
     } catch {

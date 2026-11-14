@@ -24,6 +24,7 @@ import { StoragePanel } from "@/components/StoragePanel";
 import { RuntimeCard } from "@/components/RuntimeCard";
 import { AguiCard } from "@/components/AguiCard";
 import { ToolSearchCard } from "@/components/ToolSearchCard";
+import { SearchHealthCard } from "@/components/SearchHealthCard";
 
 /** 表单字段（SQLite 只用 path，其余是网络库的连接参数） */
 type Form = {
@@ -655,6 +656,15 @@ export default function EnvironmentPage() {
         defaultOpen={false}
       >
         <ToolSearchCard />
+      </Section>
+
+      {/* 内置搜索：Agent 的 web_search 靠它 —— 坏了必须能看见 */}
+      <Section
+        title="内置搜索 · web_search"
+        desc="腾讯搜索为主、Bing RSS 兜底；每天自检一次，坏了这里会变红"
+        defaultOpen={false}
+      >
+        <SearchHealthCard />
       </Section>
 
       {/* 配置导入导出：数据能带走。放在"数据存哪"下面 —— 同一件事的两面：

@@ -541,6 +541,25 @@ export const api = {
 
   // Skill
   skills: () => request<Skill[]>("/api/skills"),
+  /** 内置搜索通道自检（设置页用；GET 只读，POST 才真搜） */
+  searchHealth: () =>
+    request<{
+      ok: boolean | null;
+      checked_at: number;
+      engine: string;
+      interval_s: number;
+      threshold: number;
+      probes: { query: string; ok: boolean; latency_ms: number; relevance: number; first: string; error: string }[];
+    }>("/api/search/health"),
+  checkSearchHealth: () =>
+    request<{
+      ok: boolean | null;
+      checked_at: number;
+      engine: string;
+      interval_s: number;
+      threshold: number;
+      probes: { query: string; ok: boolean; latency_ms: number; relevance: number; first: string; error: string }[];
+    }>("/api/search/health/check", { method: "POST", body: "{}" }),
   /** 这个技能被哪些助手挂着 */
   skillAgents: (id: string) => request<{ id: string; name: string; enabled: boolean }[]>(`/api/skills/${id}/agents`),
   skill: (id: string) => request<Skill>(`/api/skills/${id}`),

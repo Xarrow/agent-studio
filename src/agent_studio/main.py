@@ -449,8 +449,10 @@ app.include_router(jobs_api.router)
 app.include_router(a2a.router)
 # 平台级小配置（白名单键）—— 目前是对话页的快捷标签
 from .api import app_settings as app_settings_api  # noqa: E402
+from .api import search_health as search_health_api  # noqa: E402
 
 app.include_router(app_settings_api.router)
+app.include_router(search_health_api.router)
 # 事件账本（只读）：最近发生了什么、死信里躺着什么 —— 藏起来的队列等于没建
 from .api import events as events_api  # noqa: E402
 

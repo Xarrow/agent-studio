@@ -26,6 +26,17 @@ from ...runner.ctx import current_run_ctx
 
 logger = logging.getLogger(__name__)
 
+#: 只读原生工具白名单：不写盘、不执行命令，可以跳过"逐次确认"。
+#: 只从 NATIVE_TOOLS 里按 flags.read_only 自动取，不在代码里另写一份名字，
+#: 免得以后加了新工具忘记同步（漏一个就等于每次调用都弹窗）。
+_READ_ONLY_NATIVE = {
+    name
+    for name, entry in __import__(
+        "agent_studio.native_tools", fromlist=["NATIVE_TOOLS"]
+    ).NATIVE_TOOLS.items()
+    if (entry.get("flags") or {}).get("read_only")
+}
+
 #: 本次执行里"为什么拦/为什么问"的理由，按 tool_call id 存 ——
 #: 归一化层把它塞进 hitl_request 的 payload，授权条上才说得出人话
 #: （AgentScope 的确认事件只带工具名和参数，没有我们的理由）。
@@ -157,6 +168,23 @@ class DangerousActionGuard(MiddlewareBase):
                 return val
         return ""
 
+    @staticmethod
+    def _unwrap_tool_call(name, tool_input):
+        """把通用壳 ``tool_call`` 拆成（真工具名, 真参数）。
+
+        延迟加载（lazy tools）时模型调的是壳，真名在 input 里：
+        ``{"name": "read_document", "arguments": {...}}``。
+        不拆开就会"每读一份文档点一次允许"——无人值守的工业场景直接不可用。
+        只认这一种形状，其它原样返回：拆错比不拆更危险。
+        """
+        if name not in ("tool_call", "tool_use") or not isinstance(tool_input, dict):
+            return name, tool_input
+        inner = tool_input.get("name") or tool_input.get("tool")
+        args = tool_input.get("arguments")
+        if not isinstance(inner, str) or not inner.strip():
+            return name, tool_input
+        return inner.strip(), args if isinstance(args, dict) else {}
+
     async def on_check_permission(self, agent, input_kwargs: dict, next_handler):  # type: ignore[override]
         if not self.enabled:
             return await next_handler()
@@ -164,6 +192,20 @@ class DangerousActionGuard(MiddlewareBase):
         tool_call = input_kwargs.get("tool_call")
         tool_input = input_kwargs.get("tool_input") or {}
         name = getattr(tool_call, "name", "") or ""
+        # 延迟加载时真名在参数里（{"name": "...", "arguments": {...}}），
+        # 不拆开就会拿 "tool_call" 去判权限 → 每个只读调用都要人点一次允许。
+        name, tool_input = self._unwrap_tool_call(name, tool_input)
+
+        # 只读的原生工具（读文档 / 转写 / 搜索 / 抓取）不该每次都让人点允许：
+        # 它们不写盘、不执行命令，工业场景里一次任务要读十几份文件，
+        # 每份都弹一次等于把"无人值守"变成"全程盯着"。
+        # 只对**白名单里的原生工具**成立；shell/python/browser 一律照旧走引擎。
+        if name in _READ_ONLY_NATIVE:
+            return PermissionDecision(
+                behavior=PermissionBehavior.ALLOW,
+                message="只读原生工具，自动放行。",
+                decision_reason="native-read-only",
+            )
 
         # 用户已经点过「允许」的那一次调用，别再造一次确认 —— 中间件排在引擎前面，
         # 引擎本该在这里短路（state=allowed），但我们先跑了，不认这个状态就会

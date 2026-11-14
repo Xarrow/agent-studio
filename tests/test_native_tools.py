@@ -203,3 +203,32 @@ def test_relevance_打分():
     zh = "1. 黄仁勋（英伟达 CEO）\n   x\n   https://a"
     assert _relevance("黄仁勋 英伟达", zh) >= 0.4
     assert _relevance("", good) == 0.0
+
+
+def test_lazy_壳解开成真工具名():
+    """延迟加载时模型调的是 `tool_call` 壳，权限判定必须用里面的真名。
+
+    不拆的话：每个只读调用（读文档/转写/搜索）都会拿 "tool_call" 去判权限，
+    结果是"每读一份文件弹一次确认" —— 无人值守场景直接不可用。
+    """
+    from agent_studio.runtimes.agentscope_rt.guard import DangerousActionGuard as Guard
+
+    name, args = Guard._unwrap_tool_call(
+        "tool_call", {"name": "read_document", "arguments": {"path": "a.pdf"}}
+    )
+    assert name == "read_document" and args == {"path": "a.pdf"}
+
+    # 不是壳就原样返回
+    assert Guard._unwrap_tool_call("web_search", {"query": "x"}) == ("web_search", {"query": "x"})
+    # 壳里没有名字/名字不是字符串：不乱拆
+    assert Guard._unwrap_tool_call("tool_call", {"arguments": {}})[0] == "tool_call"
+    assert Guard._unwrap_tool_call("tool_call", "not-a-dict")[0] == "tool_call"
+
+
+def test_只读原生工具在白名单里():
+    """白名单从 NATIVE_TOOLS 的 flags 自动取，新增只读工具不会漏。"""
+    from agent_studio.runtimes.agentscope_rt.guard import _READ_ONLY_NATIVE
+
+    assert {"read_document", "transcribe", "web_search", "fetch"} <= _READ_ONLY_NATIVE
+    # 会执行/写入的不能被自动放行
+    assert "python" not in _READ_ONLY_NATIVE
