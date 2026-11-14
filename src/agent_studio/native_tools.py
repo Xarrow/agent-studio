@@ -178,7 +178,7 @@ async def _web_search(query: str, max_results: int = 8) -> str:
                 if html_score > best_score:
                     best, best_score = html, html_score
     if best is not None and _looks_useful(best):
-        if best_score < 0.2:
+        if best_score < 0.5:
             # 所有引擎都只给了和查询无关的结果（反爬池）：如实标注，
             # 别让模型把"冠状病毒百科"当成 nginx 文档用。
             return (
@@ -225,10 +225,12 @@ def _relevance(query: str, formatted: str | None) -> float:
     toks = _tokens(query)
     if not toks or not formatted:
         return 0.0
-    titles = " ".join(
-        line.split(". ", 1)[-1] for line in formatted.splitlines() if line[:1].isdigit()
-    ).lower()
-    hit = sum(1 for t in toks if t in titles)
+    # 标题 + 链接（域名里也常有查询词，例如 github.com/xxx/runtime）
+    picked = [line for line in formatted.splitlines() if line.strip() and not line.startswith("   ")]
+    titles = " ".join(line.split(". ", 1)[-1] for line in picked).lower()
+    urls = " ".join(line.strip() for line in formatted.splitlines() if line.startswith("   http"))
+    hay = f"{titles} {urls}"
+    hit = sum(1 for t in toks if t in hay)
     return hit / len(toks)
 
 
