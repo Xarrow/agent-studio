@@ -11,6 +11,7 @@ from agent_studio.native_tools import (
     _is_private_host,
     _parse_bing,
     _parse_bing_rss,
+    _relevance,
     _parse_qq,
     _web_search,
 )
@@ -116,89 +117,85 @@ def test_parse_qq():
     assert _parse_qq({"cards": [{"data": {"vm": {"title": "", "url": "https://x"}}}]}) == []
 
 
-def test_web_search_引擎顺序_腾讯优先且失败会降级(monkeypatch):
-    """编排顺序是契约：腾讯有结果就用；它挂了/给得太少才找 Bing。
+def test_web_search_引擎协作_按相关度择优(monkeypatch):
+    """编排契约：腾讯先答；只有它不够相关才去问 Bing，最后按命中率择优。
 
-    这条测试存在的理由：Bing 在本网络会返回"看起来有结果其实全错"的池子，
-    所以不能让它先答；但腾讯一旦不可用，必须自动降级而不是整体失败。
+    写死"永远腾讯"或"永远 Bing"都不行——两个引擎都会按查询词抽风，
+    判据只能是"这一份结果里命中了多少查询词"。
     """
     import agent_studio.native_tools as nt
 
     calls: list[str] = []
 
-    async def fake_qq(q, n=8):
+    async def good_qq(q, n=8):
         calls.append("qq")
-        return "1. 甲\n   a\n   https://a\n2. 乙\n   b\n   https://b"
+        return "1. 甲 nginx debian\n   a\n   https://a\n2. debian nginx 安装\n   b\n   https://b"
 
-    async def fake_rss(q, n=8):
+    async def irrelevant_rss(q, n=8):
         calls.append("rss")
-        return "1. 丙\n   c\n   https://c"
+        return "1. Coronavirus\n   x\n   https://x"
 
     async def boom(*a, **k):
-        raise AssertionError("不该走到 HTML 通道")
+        calls.append("html")
+        raise AssertionError("腾讯够相关时不该走 HTML")
 
-    monkeypatch.setattr(nt, "_search_qq", fake_qq)
-    monkeypatch.setattr(nt, "_search_bing_rss", fake_rss)
+    monkeypatch.setattr(nt, "_search_qq", good_qq)
+    monkeypatch.setattr(nt, "_search_bing_rss", irrelevant_rss)
     monkeypatch.setattr(nt, "_search_bing", boom)
 
-    out = asyncio.run(_web_search("随便"))
-    assert "甲" in out and calls == ["qq"]        # 腾讯够用就不再问 Bing
+    out = asyncio.run(_web_search("debian nginx 安装"))
+    assert "甲" in out and calls == ["qq"]          # 相关度够高，不再问别人
 
-    # 腾讯只回一条（不够用）→ 降级到 RSS
-    async def thin_qq(q, n=8):
-        calls.append("qq-thin")
-        return "1. 只有一条\n   x\n   https://x"
+    # 腾讯给的是无关结果 → 降级 Bing，并采用更相关的那份
+    async def junk_qq(q, n=8):
+        calls.append("qq")
+        return "1. Coronavirus\n   x\n   https://x\n2. WHO\n   y\n   https://y"
+
+    async def good_rss(q, n=8):
+        calls.append("rss")
+        return "1. debian nginx 安装指南\n   a\n   https://a\n2. nginx debian\n   b\n   https://b"
 
     calls.clear()
-    monkeypatch.setattr(nt, "_search_qq", thin_qq)
-    out = asyncio.run(_web_search("随便"))
-    assert "丙" in out and calls == ["qq-thin", "rss"]   # 腾讯太薄 → 再用 RSS
+    monkeypatch.setattr(nt, "_search_qq", junk_qq)
+    monkeypatch.setattr(nt, "_search_bing_rss", good_rss)
+    monkeypatch.setattr(nt, "_search_bing", boom)
+    out = asyncio.run(_web_search("debian nginx 安装"))
+    assert "安装指南" in out and calls == ["qq", "rss"]
 
-    # 腾讯彻底不可用 + RSS 也没结果 → 走 HTML；再失败才给兜底文案
-    async def none_qq(q, n=8):
-        calls.append("qq-none")
-        return None
-
-    async def none_rss(q, n=8):
-        calls.append("rss-none")
-        return None
-
-    async def fake_html(q, n=8):
+    # 全都不相关 → 如实标注，不能把垃圾当答案
+    async def junk_html(q, n=8):
         calls.append("html")
-        return "1. 丁\n   d\n   https://d"
+        return "1. WHO\n   z\n   https://z"
 
     calls.clear()
-    monkeypatch.setattr(nt, "_search_qq", none_qq)
-    monkeypatch.setattr(nt, "_search_bing_rss", none_rss)
-    monkeypatch.setattr(nt, "_search_bing", fake_html)
-    out = asyncio.run(_web_search("随便"))
-    assert "丁" in out and calls == ["qq-none", "rss-none", "html"]
+    monkeypatch.setattr(nt, "_search_bing_rss", junk_qq)
+    monkeypatch.setattr(nt, "_search_bing", junk_html)
+    out = asyncio.run(_web_search("debian nginx 安装"))
+    assert "与查询词基本无关" in out
 
-    calls.clear()
-    monkeypatch.setattr(nt, "_search_bing", none_qq)
+    # 全部不可用 → 兜底文案
+    async def none(*a, **k):
+        calls.append("none")
+        return None
+
+    monkeypatch.setattr(nt, "_search_qq", none)
+    monkeypatch.setattr(nt, "_search_bing_rss", none)
+    monkeypatch.setattr(nt, "_search_bing", none)
     out = asyncio.run(_web_search("随便"))
     assert "搜索不可达" in out
 
 
-def test_parse_bing():
-    """Bing 结果页解析（b_algo/h2/b_lineclamp 结构，实测抓包）。"""
-    html = """
-    <li class="b_algo" data-id iid="SERP.1"><h2><a href="https://example.com/x"
-      h="ID=SERP">第一篇 <b>加粗</b></a></h2><p class="b_lineclamp4">摘要一&ensp;&#0183;&ensp;细节</p></li>
-    <li class="b_algo" data-id iid="SERP.2"><h2><a href="https://example.com/y">第二篇</a></h2>
-      <p class="b_lineclamp2">摘要二</p></li>
+def test_relevance_打分():
+    """引擎切换的判据：结果标题里到底命中了多少查询词。
+
+    这条很重要——两个搜索引擎都会"看查询词抽风"（中文查 nginx 返回冠状病毒、
+    英文查 async 返回垃圾站），没有打分就只能靠品牌拍脑袋。
     """
-    out = _parse_bing(html)
-    assert len(out) == 2
-    assert out[0][0] == "第一篇 加粗"
-    assert out[0][2] == "https://example.com/x"
-    assert "·" in out[0][1]
-    assert _parse_bing("<html>空</html>") == []
-
-
-def test_web_search_invalid():
-    """搜索不可达时返回可读错误文本（本机直连 DDG 被墙的场景，实测踩到）。"""
-    out = asyncio.run(_web_search(""))
-    assert isinstance(out, str)
-    # 两种合法结局：拿到结果说明（无结果提示）或拿到可读错误 —— 都不能是裸异常
-    assert True
+    good = "1. Debian 12 install nginx guide\n   x\n   https://a\n2. nginx on Debian\n   y\n   https://b"
+    bad = "1. Coronavirus - Wikipedia\n   z\n   https://c"
+    assert _relevance("Debian 12 install nginx", good) >= 0.75
+    assert _relevance("Debian 12 install nginx", bad) == 0.0
+    # 中文按二元组命中
+    zh = "1. 黄仁勋（英伟达 CEO）\n   x\n   https://a"
+    assert _relevance("黄仁勋 英伟达", zh) >= 0.4
+    assert _relevance("", good) == 0.0

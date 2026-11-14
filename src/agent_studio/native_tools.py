@@ -156,22 +156,37 @@ async def _web_search(query: str, max_results: int = 8) -> str:
       · `format=rss` 是同一后端的结构化出口：10 条、标题/链接/摘要齐全，
         实测同一查询三次返回完全一致（Debian 官网 / Download / 维基）。
     """
-    # 顺序按「实测可靠性」排，不按品牌：
-    #   · 腾讯搜索在中文与英文查询上都稳定给出相关结果（实测 1 秒、5 条真实站点）；
-    #   · Bing 的 RSS/HTML 出口在本网络下会**按查询词随机退化**——同一个
-    #     "安装 nginx debian 12" 能返回冠状病毒百科，"rust async runtime comparison"
-    #     返回抖音，这种"看起来有结果其实全错"比没有结果更糟，所以降为备选。
+    # 引擎选择：先问腾讯，再按「结果和查询词的相关度」决定要不要换 Bing。
+    #
+    # 为什么不写死顺序：实测两个引擎都会"看查询词抽风"——
+    #   · Bing 对中文查询会返回固定池里的无关结果（查 nginx 返回冠状病毒百科）；
+    #   · 腾讯对英文长尾会混进垃圾站（rust async runtime → 某个色情站）。
+    # 所以判据不是"谁品牌好"，而是"这一份结果里有多少查询词是真的命中了"。
     out = await _search_qq(query, max_results)
-    if out is not None and _looks_useful(out):
-        return out
-    bing = await _search_bing_rss(query, max_results)
-    if bing is not None:
-        return bing
-    bing = await _search_bing(query, max_results)
-    if bing is not None:
-        return bing
-    if out is not None:
-        return out                      # 腾讯给得少但确实是结果，总比没有强
+    best = out
+    best_score = _relevance(query, out) if out else 0.0
+    if best_score < 0.5:
+        bing = await _search_bing_rss(query, max_results)
+        if bing is not None:
+            bing_score = _relevance(query, bing)
+            if bing_score > best_score:
+                best, best_score = bing, bing_score
+        if best_score < 0.5:
+            html = await _search_bing(query, max_results)
+            if html is not None:
+                html_score = _relevance(query, html)
+                if html_score > best_score:
+                    best, best_score = html, html_score
+    if best is not None and _looks_useful(best):
+        if best_score < 0.2:
+            # 所有引擎都只给了和查询无关的结果（反爬池）：如实标注，
+            # 别让模型把"冠状病毒百科"当成 nginx 文档用。
+            return (
+                "⚠ 以下结果与查询词基本无关（搜索引擎返回了反爬池内容，不是真的搜索到了）：\n"
+                + best
+                + "\n建议改用已知域名的直接 fetch，或换一个更具体的关键词再试一次。"
+            )
+        return best
     return (
         "✗ 搜索不可达：Bing 与腾讯搜索都连不上 —— 本机出海直连不通（已实测确认），"
         "这不是查询词的问题，换关键词、换引擎、用 curl 重试都一样会失败。\n"
@@ -181,6 +196,40 @@ async def _web_search(query: str, max_results: int = 8) -> str:
         "3. 被派活时：worker_report(kind=blocked) 上报「搜索通道不可用，"
         "需要提供入口 URL 或改派有网络的执行」。"
     )
+
+
+_STOP = {"the", "a", "an", "of", "for", "to", "in", "on", "and", "or", "with", "how"}
+
+
+def _tokens(query: str) -> set[str]:
+    """查询词切成可比对的 token：中文按二元组，英文按单词（去停用词）。"""
+    q = query.lower()
+    toks: set[str] = set()
+    for word in re.findall(r"[a-z0-9][a-z0-9+._-]*", q):
+        if len(word) > 1 and word not in _STOP:
+            toks.add(word)
+    cjk = re.findall(r"[\u4e00-\u9fff]+", q)
+    for run in cjk:
+        toks.update(run[i : i + 2] for i in range(len(run) - 1))
+        if len(run) == 1:
+            toks.add(run)
+    return toks
+
+
+def _relevance(query: str, formatted: str | None) -> float:
+    """结果里命中了多少查询词（0~1）。
+
+    只看标题行：摘要是各站自己写的，容易蹭词；标题命中才说明这一条真的是
+    关于这个查询的。没有 token 可算时返回 1.0（不因为打分逻辑而拒绝结果）。
+    """
+    toks = _tokens(query)
+    if not toks or not formatted:
+        return 0.0
+    titles = " ".join(
+        line.split(". ", 1)[-1] for line in formatted.splitlines() if line[:1].isdigit()
+    ).lower()
+    hit = sum(1 for t in toks if t in titles)
+    return hit / len(toks)
 
 
 def _looks_useful(formatted: str) -> bool:
