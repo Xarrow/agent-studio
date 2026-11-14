@@ -1368,3 +1368,48 @@ export interface Delegation {
   error?: string | null;
   session_id?: string | null;
 }
+
+
+/** 仓库来源（SourceDef）—— 只带"有没有令牌"，令牌永不出后端 */
+export interface SkillSource {
+  id: string;
+  name: string;
+  kind: "git" | "archive" | "local" | "index" | string;
+  address: string;
+  host: string;
+  owner: string;
+  repo: string;
+  ref: string;
+  subpath: string;
+  enabled: boolean;
+  priority: number;
+  has_token: boolean;
+  net_policy: Record<string, unknown>;
+  tags: string[];
+  note: string;
+  created_at: number;
+  updated_at: number;
+}
+
+/** 远程技能设置与生效状态（设置 → 技能） */
+export interface RemoteSettings {
+  mode: "auto" | "npx" | "native";
+  npx_pin: string;
+  allow_latest: boolean;
+  net_policy: Record<string, unknown>;
+  platforms: Record<string, unknown>[];
+  check_interval_h: number;
+  env: { npx: string; npm: string; git: string; node: string; versions: Record<string, string> };
+  effective_mode: [string, string];
+}
+
+/** 一个技能的更新状态 */
+export interface SkillUpdate {
+  id: string;
+  name: string;
+  status: string;
+  has_update: boolean;
+  latest_commit?: string;
+  checked_at?: number;
+  message?: string;
+}

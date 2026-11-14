@@ -9,6 +9,7 @@ import { Hint, HINTS } from "@/components/ui/hint";
 import { DLG_BACKDROP, DLG_CARD, KV, Row, RowList, Segmented } from "@/components/ui/kit";
 import Markdown from "@/components/Markdown";
 import { SkillDetailPanel, glyphFor, stripFrontmatter } from "@/components/SkillDetailPanel";
+import { SkillSourcesDialog } from "@/components/SkillSources";
 import {
   IconArchive,
   IconBox,
@@ -68,6 +69,8 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [loading, setLoading] = useState(true);
   const [showImport, setShowImport] = useState(false);
+  /** 仓库来源 / 检查更新（两者共用一个对话框） */
+  const [showSources, setShowSources] = useState<null | "sources" | "updates">(null);
   const [detail, setDetail] = useState<Skill | null>(null);
   /** 就地编辑的 skill（null = 只读视图） */
   const [editing, setEditing] = useState<Skill | null>(null);
@@ -220,12 +223,32 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
             <IconWand size={14} />
             {curating ? "整理中…" : "整理"}
           </button>
+          <button
+            className="btn"
+            title="登记一个技能仓库，之后能浏览、安装、批量检查更新"
+            onClick={() => setShowSources("sources")}
+          >
+            <IconLink size={14} />
+            仓库来源
+          </button>
+          <button className="btn" title="检查已装技能的来源有没有新版本" onClick={() => setShowSources("updates")}>
+            <IconRefresh size={14} />
+            检查更新
+          </button>
           <button className="btn btn-primary" onClick={() => setShowImport(true)}>
             <IconPlus size={14} />
             新建 / 导入
           </button>
         </div>
       </div>
+
+      {showSources && (
+        <SkillSourcesDialog
+          initialTab={showSources}
+          onClose={() => setShowSources(null)}
+          onInstalled={() => void load()}
+        />
+      )}
 
       {showImport && (
         <ImportDialog

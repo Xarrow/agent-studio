@@ -412,6 +412,14 @@ async def access_log(request: "Request", call_next):
     return response
 
 
+# 远程技能来源：解析 / 预览 / 安装 / 检查更新 / 来源登记 / 诊断
+# 必须在 api_router **之前**注册：/api/skills/{skill_id} 是通配，会把
+# /api/skills/doctor、/api/skills/updates、/api/skills/parse 一起吃掉。
+from .api import skill_sources as skill_sources_api  # noqa: E402
+from .skill_sources.store import SkillSource  # noqa: F401,E402  建表用
+
+app.include_router(skill_sources_api.router)
+
 app.include_router(api_router)
 # 后台进程（会话级：列表 / 日志 / 停止）—— 起进程只能由助手在会话里做
 from .api import procs as procs_api  # noqa: E402
@@ -443,6 +451,7 @@ app.include_router(routes_api.router)
 from .api import tickets as tickets_api  # noqa: E402
 
 app.include_router(tickets_api.router)
+
 
 
 @app.get("/api/health")

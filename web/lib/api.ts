@@ -24,6 +24,9 @@ import type {
   TranscodeResult,
   WorkProbe,
   SkillRepoScan,
+  SkillSource,
+  SkillUpdate,
+  RemoteSettings,
   UsageBucket,
   WorkflowAuto,
   ActivityList,
@@ -591,6 +594,40 @@ export const api = {
       notes: string[];
     }>("/api/skills/cli/install", { dir, force }),
   /** 按安装时记下的来源重装（= 更新到最新） */
+  // ── 远程技能来源 ──────────────────────────────────────────────
+  parseSkillSource: (q: string) =>
+    request<{ ok: boolean; ref?: Record<string, unknown>; mode?: string; mode_reason?: string; code?: string; message?: string; hint?: string }>(
+      `/api/skills/parse?q=${encodeURIComponent(q)}`,
+    ),
+  remoteScan: (body: { ref?: string; command?: string; ref_pin?: string }) =>
+    post<{ ref: Record<string, unknown>; meta: Record<string, unknown>; mode: string; mode_reason: string; skills: { name: string; description: string; path: string; internal: boolean; hash: string; warnings: string[] }[] }>(
+      "/api/skills/remote/scan",
+      body,
+    ),
+  remoteInstall: (body: { ref?: string; command?: string; ref_pin?: string; skills?: string[]; paths?: string[]; dry_run?: boolean }) =>
+    post<{ ref: Record<string, unknown>; meta: Record<string, unknown>; mode: string; plan?: { name: string; action: string }[]; installed?: { id: string; name: string; updated: boolean }[] }>(
+      "/api/skills/remote/install",
+      body,
+    ),
+  skillSources: () => request<SkillSource[]>("/api/skill-sources"),
+  createSkillSource: (body: Partial<SkillSource> & { address: string; token?: string }) =>
+    post<SkillSource>("/api/skill-sources", body),
+  updateSkillSource: (id: string, body: Partial<SkillSource> & { token?: string }) =>
+    put<SkillSource>(`/api/skill-sources/${id}`, body),
+  deleteSkillSource: (id: string) => del(`/api/skill-sources/${id}`),
+  testSkillSource: (id: string) => post<{ host: string; steps: { step: string; ok: boolean; ms?: number; detail?: string; message?: string; code?: string }[] }>(`/api/skill-sources/${id}/test`, {}),
+  browseSkillSource: (id: string) =>
+    post<{ skills: { name: string; description: string; path: string; internal: boolean; hash: string }[] }>(
+      `/api/skill-sources/${id}/browse`,
+      {},
+    ),
+  skillUpdates: (force = false) =>
+    request<{ items: SkillUpdate[]; has_updates: SkillUpdate[]; mode: string }>(`/api/skills/updates?force=${force ? "true" : "false"}`),
+  updateSkillNow: (id: string) => post<Record<string, unknown>>(`/api/skills/${id}/update`, {}),
+  remoteSettings: () => request<RemoteSettings>("/api/skills/remote/settings"),
+  saveRemoteSettings: (body: Record<string, unknown>) =>
+    put<RemoteSettings>("/api/skills/remote/settings", body),
+
   reinstallSkill: (id: string) =>
     post<{ ok: boolean; id: string; name: string; ref: string; sha: string | null }>(
       `/api/skills/${id}/reinstall`,
