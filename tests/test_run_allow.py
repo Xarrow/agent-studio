@@ -35,3 +35,23 @@ def test_空参数不记():
     allow_for_run("run_a", "")
     assert run_allowed("", "bash") is False
     assert run_allowed("run_a", "") is False
+
+
+def test_tool_name_normalization():
+    """同一个工具的不同写法（大小写/命名空间）必须认成同一个 —— 否则允许了还一直弹。"""
+    from agent_studio.runtimes.agentscope_rt.guard import allow_for_run, clear_run_allow, run_allowed
+
+    clear_run_allow("run_norm")
+    allow_for_run("run_norm", "Bash")
+    assert run_allowed("run_norm", "bash")
+    assert run_allowed("run_norm", "functions.bash")
+    assert run_allowed("run_norm", "tools.BASH")
+
+
+def test_rule_level_allow():
+    from agent_studio.runtimes.agentscope_rt.guard import allow_for_run, clear_run_allow, run_allowed
+
+    clear_run_allow("run_rule")
+    allow_for_run("run_rule", "", rule="sensitive-path")
+    assert run_allowed("run_rule", "bash", rule="sensitive-path")
+    assert not run_allowed("run_rule", "bash", rule="other-rule")

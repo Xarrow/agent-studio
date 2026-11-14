@@ -726,7 +726,8 @@ async def resume_run(
     if payload.confirm and _tool_name:
         from ..runtimes.agentscope_rt.guard import allow_for_run
 
-        allow_for_run(run_id, _tool_name)
+        _rule = str(_hitl.get("rule") or _hitl.get("guard_rule") or "")
+        allow_for_run(run_id, _tool_name, rule=_rule)
 
     # 「本会话内不再问这个工具」：先把允许记下来，再续跑 ——
     # 顺序反了的话，续跑立刻又弹一次（用户会以为按钮没生效）。

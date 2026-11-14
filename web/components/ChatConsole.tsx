@@ -308,6 +308,8 @@ export function ChatConsole({
    * 模型只能输出"我在等你的许可"—— 用户完全不知道该干什么。
    */
   const [hitl, setHitl] = useState<{ runId: string; payload: Record<string, unknown> } | null>(null);
+  /** 刚点过「允许」的 run：60 秒内不让空闲轮询把同一个 waiting_hitl 再贴回来（否则看起来像"又弹了"） */
+  const resumedAtRef = useRef<Record<string, number>>({});
 
   /** 已落库的历史消息 */
   const [history, setHistory] = useState<
@@ -952,7 +954,11 @@ export function ChatConsole({
       try {
         const inflight = await api.inFlightRuns(sessionId);
         const live1 = inflight.find((r) => r.status === "running" || r.status === "pending");
-        const hitl1 = inflight.find((r) => r.status === "waiting_hitl");
+        const hitl1 = inflight.find(
+          (r) =>
+            r.status === "waiting_hitl" &&
+            !(resumedAtRef.current[r.id] && Date.now() - resumedAtRef.current[r.id] < 60_000),
+        );
         if (live1) {
           // 用户输入从这条 run 关联的最后一条用户消息取（输入里可能带附件标记，
           // 原样传给 attachStream 才能把附件展示和过程时间线对上）
@@ -996,6 +1002,14 @@ export function ChatConsole({
     lastPinAt.current = Date.now();
     el.scrollTop = el.scrollHeight;
   }, []);
+  /* 授权卡的出现/消失会改变可视高度（它占在输入坞上方）：
+     贴底的人应该继续贴底，否则看起来就是"内容突然跳了一截"。 */
+  useEffect(() => {
+    if (!followRef.current) return;
+    const id = requestAnimationFrame(() => pinBottom());
+    return () => cancelAnimationFrame(id);
+  }, [hitl, pinBottom]);
+
   useEffect(() => {
     if (!followRef.current) return;
     const el = boxRef.current;
@@ -2685,7 +2699,7 @@ export function ChatConsole({
             className="flex-1 overflow-auto max-lg:pt-[calc(44px+env(safe-area-inset-top))]"
             ref={boxRef}
             onScroll={onScroll}
-            style={{ paddingBottom: dockH + 14 }}
+            style={{ paddingBottom: dockH + 14, scrollbarGutter: "stable" }}
             data-msg-scroll
           >
             {beforeTurn > 0 && (
@@ -2832,6 +2846,7 @@ export function ChatConsole({
               <div
               key={sessionId || "empty"}
               className="msg-stream session-enter max-w-[760px] mx-auto px-4 sm:px-5 py-6 space-y-5"
+              style={{ overflowAnchor: "none" }}
             >
                 {history.map((m, i) => {
                   // 平台自己的提示（心跳/系统事件）：一行居中的灰字，不占气泡
@@ -3059,7 +3074,11 @@ export function ChatConsole({
                   key={hitlKey}
                   runId={hitl.runId}
                   payload={hitl.payload}
-                  onBeforeResume={() => attachStream(hitl.runId, liveInput)}
+                  onBeforeResume={() => {
+                    resumedAtRef.current[hitl.runId] = Date.now();
+                    setHitl(null);          // 点了就收掉，不留"卡还在"的错觉
+                    attachStream(hitl.runId, liveInput);
+                  }}
                   onResumed={() => setBusy(true)}
                   onError={(m) => fb.error("恢复失败", m)}
                   permissionHref={

@@ -66,17 +66,44 @@ def clear_reasons() -> None:
 _RUN_ALLOW: dict[str, set[str]] = {}
 
 
-def allow_for_run(run_id: str, tool_name: str) -> None:
-    if run_id and tool_name:
-        _RUN_ALLOW.setdefault(run_id, set()).add(tool_name)
+def _norm(name: str) -> str:
+    """工具名归一：去掉命名空间前缀、统一小写。
+
+    实测踩到：同一个工具在不同路径下来的是 ``browser_navigate`` / ``Navigate`` /
+    ``functions.bash``，只按原样字符串记，用户点了允许下一次还是不认识 —— 表现就是
+    「允许了还一直弹」。
+    """
+    n = (name or "").strip().lower()
+    for pref in ("functions.", "tool:", "tools."):
+        if n.startswith(pref):
+            n = n[len(pref) :]
+    return n
+
+
+def allow_for_run(run_id: str, tool_name: str, *, rule: str = "") -> None:
+    """记下"这次运行里这个工具已允许"。``rule`` 给了就一并记规则名 —— 同一条规则
+    在本次运行内不再问（引擎对每次 bash 调用都会重新判一次，只记工具名不够）。"""
+    if not run_id:
+        return
+    keys = _RUN_ALLOW.setdefault(run_id, set())
+    if tool_name:
+        keys.add(_norm(tool_name))
+    if rule:
+        keys.add(f"rule:{rule}")
 
 
 def clear_run_allow(run_id: str) -> None:
     _RUN_ALLOW.pop(run_id, None)
 
 
-def run_allowed(run_id: str, tool_name: str) -> bool:
-    return bool(run_id) and tool_name in _RUN_ALLOW.get(run_id, set())
+def run_allowed(run_id: str, tool_name: str, *, rule: str = "") -> bool:
+    if not run_id:
+        return False
+    keys = _RUN_ALLOW.get(run_id, set())
+    n = _norm(tool_name)
+    if n and (n in keys or n.rsplit(".", 1)[-1] in keys):
+        return True
+    return bool(rule) and f"rule:{rule}" in keys
 
 
 def run_allowed_tools(run_id: str) -> set[str]:
@@ -168,7 +195,7 @@ class DangerousActionGuard(MiddlewareBase):
                 decision_reason=f"platform-deny:{hit}",
             )
         if verdict.risk == guardrails.RISK_ASK and run_allowed(
-            str(current_run_ctx().get("run_id") or ""), name
+            str(current_run_ctx().get("run_id") or ""), name, rule=str(verdict.rule)
         ):
             # 本次运行里用户已经点过「允许」这个工具 —— 不再重复弹。
             # 循环调用同一个工具（实测：worker_status 被连问十几次）时这是唯一有
