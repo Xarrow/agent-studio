@@ -59,6 +59,7 @@ export function SkillDetailPanel({
   onRestore,
   onEdit,
   onRemove,
+  agents,
 }: {
   skill: Skill;
   sourceText: string;
@@ -74,6 +75,8 @@ export function SkillDetailPanel({
   onRestore: () => void;
   onEdit: () => void;
   onRemove: () => void;
+  /** 挂了哪些助手 —— 空数组就是"还没有助手用" */
+  agents?: { id: string; name: string; enabled: boolean }[];
 }) {
   const g = glyphFor(skill.source);
   const archived = (skill.state ?? "active") === "archived";
@@ -186,6 +189,36 @@ export function SkillDetailPanel({
       }
       onClose={onClose}
     >
+      {/* 谁在用：技能"装了但没人挂"和"正在被三个助手用"是两种状态，
+          页面上必须一眼能分出来，不用去助手页一个个翻 */}
+      <div className="mb-3">
+        <div className="mb-1 text-[11.5px]" style={{ color: "var(--color-text-3)" }}>
+          {agents === undefined
+            ? "读取使用情况…"
+            : agents.length === 0
+              ? "还没有助手挂这个技能"
+              : `被 ${agents.length} 个助手使用`}
+        </div>
+        {agents && agents.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {agents.map((a) => (
+              <a
+                key={a.id}
+                href={`/agents/detail?id=${a.id}`}
+                className="inline-flex items-center gap-1 rounded-full px-2 py-[3px] text-[11.5px] transition-colors hover:bg-[var(--bg-selected)]"
+                style={{
+                  background: "var(--bg-hover)",
+                  color: a.enabled ? "var(--color-text-2)" : "var(--color-text-3)",
+                }}
+                title={a.enabled ? `打开「${a.name}」的配置` : "这个助手已停用"}
+              >
+                {a.name}
+                {!a.enabled && <span style={{ opacity: 0.75 }}>· 已停用</span>}
+              </a>
+            ))}
+          </div>
+        )}
+      </div>
       {children}
     </DetailPanel>
   );

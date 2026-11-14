@@ -347,6 +347,30 @@ async def restore_skill_api(skill_id: str) -> dict:
         return {"id": skill_id, "state": row.state}
 
 
+@router.get("/{skill_id}/agents")
+async def get_skill_agents(skill_id: str, session: AsyncSession = Depends(get_session)) -> list[dict[str, Any]]:
+    """哪些助手挂了这个技能 —— 技能列表里"这个技能到底谁在用"。
+
+    "挂上"和"真能用"是两件事：助手停用了、技能停用了都不算生效。
+    这里一并回 state，界面自己决定怎么标（灰显/加"已停用"）。
+    """
+    from ..models import Agent
+
+    rows = (
+        await session.execute(
+            select(Agent.id, Agent.name, Agent.definition)
+            .join(AgentSkill, AgentSkill.agent_id == Agent.id)
+            .where(AgentSkill.skill_id == skill_id)
+            .order_by(Agent.name)
+        )
+    ).all()
+    # 助手没有独立"启用"字段，停用标记在 definition.enabled 里
+    return [
+        {"id": r[0], "name": r[1], "enabled": bool((r[2] or {}).get("enabled", True))}
+        for r in rows
+    ]
+
+
 @router.get("/{skill_id}", response_model=SkillRead)
 async def get_skill(skill_id: str, session: AsyncSession = Depends(get_session)) -> SkillRead:
     row = await session.get(Skill, skill_id)

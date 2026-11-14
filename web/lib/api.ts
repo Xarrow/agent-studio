@@ -534,6 +534,8 @@ export const api = {
 
   // Skill
   skills: () => request<Skill[]>("/api/skills"),
+  /** 这个技能被哪些助手挂着 */
+  skillAgents: (id: string) => request<{ id: string; name: string; enabled: boolean }[]>(`/api/skills/${id}/agents`),
   skill: (id: string) => request<Skill>(`/api/skills/${id}`),
   deleteSkill: (id: string) => del(`/api/skills/${id}`),
   updateSkill: (id: string, body: { name?: string; description?: string; content?: string }) =>

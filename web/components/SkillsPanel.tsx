@@ -93,6 +93,25 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
   /** 详情正文：Markdown 预览 / 源码 */
   const [detailMode, setDetailMode] = useState<"md" | "src">("md");
   const [detail, setDetail] = useState<Skill | null>(null);
+  /** 这个技能被哪些助手挂着（详情里显示；undefined = 还在读） */
+  const [detailAgents, setDetailAgents] = useState<{ id: string; name: string; enabled: boolean }[] | undefined>(undefined);
+
+  /** 打开详情：先用列表里的瘦身数据出壳（点了就有反应），全文与使用情况随后补上。
+      分组视图和平铺视图共用这一个入口 —— 原来分组那边只写了成功分支，
+      详情接口一失败就什么都不会发生。 */
+  const openSkill = useCallback((s: Skill | string) => {
+    const id = typeof s === "string" ? s : s.id;
+    if (typeof s !== "string") setDetail(s);
+    setDetailAgents(undefined);
+    void api
+      .skill(id)
+      .then((full) => setDetail(full))
+      .catch(() => {});
+    void api
+      .skillAgents(id)
+      .then(setDetailAgents)
+      .catch(() => setDetailAgents([]));
+  }, []);
   /** 就地编辑的 skill（null = 只读视图） */
   const [editing, setEditing] = useState<Skill | null>(null);
 
@@ -465,7 +484,7 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
           onManage={manageGroup}
           onToggleState={toggleGroupState}
           onUninstall={uninstallGroup}
-          onOpen={(id) => void api.skill(id).then(setDetail)}
+          onOpen={(id) => openSkill(id)}
           onRemoveSkill={async (id, name) => {
             try {
               await api.deleteSkill(id);
@@ -508,12 +527,7 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
               <Row
                 key={s.id}
                 wrapActions={false}
-                onToggle={() => {
-                  // 列表里只有摘要，正文要单独拉 —— 先给个壳让弹层立刻出现，
-                  // 全文回来再替换（不用等一次往返才看到名字）
-                  setDetail(s);
-                  void api.skill(s.id).then(setDetail).catch(() => {});
-                }}
+                onToggle={() => openSkill(s)}
                 actions={<IconChevronRight size={16} className="text-[var(--color-muted)]" />}
               >
                 <span
@@ -580,6 +594,7 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
           不是右下角一张小抄 —— SKILL.md 是长文，塞浮卡就只剩一条缝。 */}
       {detail && (
         <SkillDetailPanel
+          agents={detailAgents}
           skill={detail}
           sourceText={sourceLabel(detail.source)}
           stateText={(STATE_LABEL[detail.state ?? "active"] ?? STATE_LABEL.active).text}
