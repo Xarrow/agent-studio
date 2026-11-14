@@ -70,6 +70,11 @@ if [ "$DO_WEB" = 1 ]; then
   tar -C web/out -cf - . | ssh "$HOST" "sudo rm -rf $REMOTE_WEB.prev && sudo cp -a $REMOTE_WEB $REMOTE_WEB.prev 2>/dev/null; sudo rm -rf $REMOTE_WEB && sudo mkdir -p $REMOTE_WEB && sudo tar -C $REMOTE_WEB -xf - && sudo chown -R agentstudio:agentstudio $REMOTE_WEB"
 fi
 
+# 部署形态可能没有 .git（离线包）：把 commit 落成文件，/api/version 直接读它
+if [ "$LOCAL_COMMIT" != "unknown" ]; then
+  echo "$LOCAL_COMMIT" | ssh "$HOST" "sudo tee $REMOTE_BASE/app/.build_commit >/dev/null && sudo chown agentstudio:agentstudio $REMOTE_BASE/app/.build_commit"
+fi
+
 echo "[5/5] 重启并按 /api/version 验收"
 ssh "$HOST" "sudo systemctl restart $UNIT && sleep 7 && curl -s http://127.0.0.1:8891/api/version" | tee /tmp/deploy-version.json
 echo

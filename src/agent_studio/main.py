@@ -527,6 +527,14 @@ def _commit_sha() -> str:
                     return line.split()[0][:12]
     except OSError:
         pass
+    # 离线包/裸目录部署没有 .git —— 部署脚本会写一个 .build_commit，
+    # 这样"线上到底是哪一版"在任何布形态下都答得出来。
+    try:
+        stamp = Path(__file__).resolve().parents[2] / ".build_commit"
+        if stamp.is_file():
+            return stamp.read_text(encoding="utf-8").strip()[:12] or "unknown"
+    except OSError:
+        pass
     env = os.getenv("STUDIO_BUILD_COMMIT", "")
     return env[:12] if env else "unknown"
 
