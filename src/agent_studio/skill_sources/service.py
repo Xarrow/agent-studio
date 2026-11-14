@@ -238,13 +238,40 @@ async def install(
         "address": ref.raw,
         "installed_at": now_ms(),
     }
+    # 两级归属：同一次安装里的技能共享一个 source_key（仓库级），
+    # 同名跨仓库时落盘目录加前缀隔离（<owner>--<repo>--<name>），互不覆盖。
+    src_row = await _ensure_source_row(session, ref, commit=meta.get("commit") or "")
+    base_key = _source_key_of(ref)
+
     out = []
     for s in chosen:
+        skill_key = f"{base_key}:{s.path}" if s.path else base_key
+        taken = (
+            await session.execute(
+                select(Skill).where(Skill.name == s.name, Skill.source_key != skill_key)
+            )
+        ).scalars().first()
+        dname = ""
+        if taken is not None:
+            slug_owner = (ref.owner or ref.host or "local").replace("/", "-")
+            dname = f"{slug_owner}--{ref.repo or 'skills'}--{s.name}"
         row, updated = await _upsert_skill(
-            session, content=s.content, files=s.files, fallback_name=s.path.rsplit("/", 1)[-1] or s.name,
-            source_meta={**source_meta, "content_hash": s.content_hash, "path": s.path},
+            session,
+            content=s.content,
+            files=s.files,
+            fallback_name=s.path.rsplit("/", 1)[-1] or s.name,
+            source_meta={
+                **source_meta,
+                "content_hash": s.content_hash,
+                "path": s.path,
+                "source_id": src_row.id if src_row else ref.source_id,
+                "source_key": skill_key,
+                "repo": ref.slug or ref.raw,
+            },
+            source_key=skill_key,
+            dir_name=dname,
         )
-        out.append({"id": row.id, "name": row.name, "updated": updated})
+        out.append({"id": row.id, "name": row.name, "updated": updated, "source_id": src_row.id if src_row else None})
     await session.commit()
     for item in out:
         row = await session.get(Skill, item["id"])
@@ -272,6 +299,12 @@ async def check_updates(session: AsyncSession, *, force: bool = False) -> list[d
     now = now_ms()
     rows = list((await session.execute(select(Skill))).scalars())
     out: list[dict[str, Any]] = []
+
+    # 按仓库去重：同一个 source_id 只探一次远程 HEAD（10 个技能同仓 ≠ 10 次请求）
+    src_rows = {r.id: r for r in (await session.execute(select(SkillSource))).scalars()}
+    head_cache: dict[str, str] = {}
+    policy_all = await net_policy_for(session)
+    platforms_all = await platforms_config(session)
     for sk in rows:
         src = _remote_of(sk)
         if not src:
@@ -300,7 +333,13 @@ async def check_updates(session: AsyncSession, *, force: bool = False) -> list[d
             )
             policy = await net_policy_for(session)
             platforms = await platforms_config(session)
-            latest = await fetchmod.resolve_commit(ref, policy=policy, platforms=platforms)
+            sid = str(src.get("source_id") or "")
+            if sid and sid in head_cache:
+                latest = head_cache[sid]
+            else:
+                latest = await fetchmod.resolve_commit(ref, policy=policy, platforms=platforms)
+                if sid:
+                    head_cache[sid] = latest
             status = "ok"
             has_update = False
             same_commit = bool(latest and src.get("commit") and latest == src.get("commit"))
@@ -548,3 +587,234 @@ async def browse_source(session: AsyncSession, row: SkillSource, *, show_interna
         "meta": meta,
         "skills": [e.brief(show_internal=show_internal) for e in entries],
     }
+
+
+# --------------------------------------------------------------------------- #
+# 两级归属：仓库级工具
+# --------------------------------------------------------------------------- #
+def _source_key_of(ref: SourceRef) -> str:
+    """仓库级稳定键：``github:owner/repo`` / ``local:/abs/path``（不含子路径）。"""
+    if ref.kind == "local":
+        return f"local:{ref.raw}"
+    return f"{ref.kind}:{ref.slug or ref.raw}"
+
+
+async def _ensure_source_row(session: AsyncSession, ref: SourceRef, *, commit: str = "") -> SkillSource | None:
+    """安装/更新时自动把来源登记到 skill_source（用户不需要先手动登记）。"""
+    if ref.kind == "local":
+        address, host, owner, repo = ref.raw, "", "", ""
+    else:
+        address, host, owner, repo = ref.raw, ref.host, ref.owner, ref.repo
+    # 本地来源的 owner/repo 都是空串 —— 只按 address 匹配，否则不同目录会认成同一个来源
+    cond = SkillSource.address == address
+    if owner or repo:
+        cond = cond | ((SkillSource.owner == owner) & (SkillSource.repo == repo))
+    existing = (await session.execute(select(SkillSource).where(cond))).scalars().first()
+    if existing is None:
+        existing = SkillSource(
+            name=f"{owner}/{repo}" if owner else (address.rsplit("/", 1)[-1] or "本地来源"),
+            kind="local" if ref.kind == "local" else "git",
+            address=address,
+            host=host,
+            owner=owner,
+            repo=repo,
+            ref=ref.ref or "",
+            subpath=ref.subpath or "",
+            priority=100,
+        )
+        session.add(existing)
+        await session.flush()
+    if commit:
+        existing.installed_commit = commit
+    return existing
+
+
+async def grouped_skills(session: AsyncSession) -> list[dict[str, Any]]:
+    """按仓库来源分组（父：来源，子：技能）。没有来源的技能归入「本地与手写技能」。"""
+    from ..models import Skill
+
+    rows = list((await session.execute(select(Skill))).scalars())
+    sources = {r.id: r for r in (await session.execute(select(SkillSource))).scalars()}
+    buckets: dict[str, dict[str, Any]] = {}
+    for sk in rows:
+        src = sk.source or {}
+        sid = src.get("source_id") or ""
+        # 老数据（升级前从仓库装的）没有 source_id，但有 repo：按 repo 归一张卡，
+        # 卡片上给「认领为来源」，认领后才参与整仓检查/同步。
+        legacy_repo = "" if sid else str(src.get("repo") or "")
+        if sid:
+            key = sid
+        elif legacy_repo:
+            key = f"legacy:{legacy_repo}"
+        else:
+            key = "local"
+        if key not in buckets:
+            row = sources.get(sid) if sid else None
+            buckets[key] = {
+                "source_id": sid or "",
+                "legacy_repo": legacy_repo,
+                "name": (row.name if row else (legacy_repo or "本地与手写技能")),
+                "address": (row.address if row else legacy_repo),
+                "branch": (row.ref if row else ""),
+                "installed_commit": (row.installed_commit if row else (src.get("commit") or "")),
+                "last_checked_at": (row.last_checked_at if row else None),
+                "kind": (row.kind if row else "local"),
+                "enabled": (bool(row.enabled) if row else True),
+                "skills": [],
+            }
+        buckets[key]["skills"].append(skill_brief_for_group(sk))
+    for b in buckets.values():
+        total = len(b["skills"])
+        active = sum(1 for x in b["skills"] if x["state"] == "active")
+        b["counts"] = {"installed": total, "active": active}
+    return sorted(buckets.values(), key=lambda b: (b["source_id"] == "", b["name"].lower()))
+
+
+def skill_brief_for_group(sk: Any) -> dict[str, Any]:
+    src = sk.source or {}
+    return {
+        "id": sk.id,
+        "name": sk.name,
+        "description": sk.description or "",
+        "state": sk.state or "active",
+        "path": src.get("path") or "",
+        "commit": src.get("commit") or "",
+        "content_hash": src.get("content_hash") or "",
+        "dir_name": getattr(sk, "dir_name", "") or sk.name,
+        "pinned": bool(getattr(sk, "pinned", False)),
+    }
+
+
+async def check_source(session: AsyncSession, sid: str) -> dict[str, Any]:
+    """单个仓库：只探一次远程 HEAD，再比已装技能的内容哈希。"""
+    row = await session.get(SkillSource, sid)
+    if row is None:
+        raise ValueError("来源不存在")
+    from ..models import Skill
+
+    skills = [
+        sk for sk in (await session.execute(select(Skill))).scalars()
+        if (sk.source or {}).get("source_id") == sid
+    ]
+    ref = SourceRef(
+        kind="local" if row.kind == "local" else ("github" if (row.host or "github.com") == "github.com" else "git"),
+        host=row.host or "github.com",
+        owner=row.owner,
+        repo=row.repo,
+        ref=(row.ref or None) if row.ref not in ("", "HEAD") else None,
+        subpath=row.subpath or None,
+        raw=row.address,
+    )
+    policy = await net_policy_for(session, row)
+    platforms = await platforms_config(session)
+
+    if row.kind == "local":
+        # 本地来源没有"远程 HEAD"：直接扫目录比哈希（改动立刻可见，不需要同步提交）
+        try:
+            got = discover(Path(row.address).expanduser(), subpath=row.subpath or None)
+        except Exception as exc:  # noqa: BLE001
+            return {"source_id": sid, "status": "local_unreadable", "message": str(exc)[:200]}
+        by_path = {g.path: g for g in got}
+        changed = [
+            sk.name for sk in skills
+            if (g := by_path.get((sk.source or {}).get("path") or "")) is None
+            or g.content_hash != ((sk.source or {}).get("content_hash") or "")
+        ]
+        row.last_checked_at = now_ms()
+        await session.commit()
+        return {
+            "source_id": sid, "status": "ok", "latest_commit": "", "installed_commit": "",
+            "has_update": bool(changed), "changed": changed, "count": len(changed),
+        }
+
+    try:
+        latest = await fetchmod.resolve_commit(ref, policy=policy, platforms=platforms, token=token_of(row))
+    except Exception as exc:  # noqa: BLE001
+        return {"source_id": sid, "status": getattr(exc, "code", "error"), "message": str(exc)[:200]}
+
+    same = bool(latest and row.installed_commit and latest == row.installed_commit)
+    changed: list[str] = []
+    fetched = None
+    try:
+        if not same:
+            fetched = await fetchmod.fetch(ref, policy=policy, platforms=platforms, token=token_of(row))
+            got = discover(fetched.root, subpath=ref.subpath)
+            by_path = {g.path: g for g in got}
+            for sk in skills:
+                src = sk.source or {}
+                g = by_path.get(src.get("path") or "")
+                if g is None or g.content_hash != (src.get("content_hash") or ""):
+                    changed.append(sk.name)
+    except Exception as exc:  # noqa: BLE001
+        return {"source_id": sid, "status": getattr(exc, "code", "fetch_failed"), "message": str(exc)[:200]}
+    finally:
+        if fetched is not None:
+            fetched.cleanup()
+
+    row.last_checked_at = now_ms()
+    await session.commit()
+    return {
+        "source_id": sid,
+        "status": "ok",
+        "latest_commit": latest,
+        "installed_commit": row.installed_commit,
+        "has_update": bool(changed),
+        "changed": changed,
+        "count": len(changed),
+    }
+
+
+async def sync_source(session: AsyncSession, sid: str) -> dict[str, Any]:
+    """整仓同步：重新取一次内容，覆盖更新该仓库下所有已装技能。"""
+    row = await session.get(SkillSource, sid)
+    if row is None:
+        raise ValueError("来源不存在")
+    raw = row.address or (f"{row.owner}/{row.repo}" if row.owner else "")
+    if not raw:
+        raise ValueError("这条来源没有可回访的地址")
+    res = await install(session, raw, ref_override=row.ref or None, subpath_override=row.subpath or None)
+    row.installed_commit = (res.get("meta") or {}).get("commit") or row.installed_commit
+    row.last_checked_at = now_ms()
+    await session.commit()
+    return {"source_id": sid, "installed_commit": row.installed_commit, "count": len(res.get("installed") or []), "meta": res.get("meta")}
+
+
+async def uninstall_source(session: AsyncSession, sid: str) -> dict[str, Any]:
+    """整库卸载：删掉该来源下的所有技能（磁盘目录一并清）。"""
+    from ..models import Skill
+    from ..api.skills import delete_skill
+
+    rows = [
+        sk for sk in (await session.execute(select(Skill))).scalars()
+        if (sk.source or {}).get("source_id") == sid
+    ]
+    removed = []
+    for sk in rows:
+        await delete_skill(sk.id, session)
+        removed.append(sk.name)
+    return {"source_id": sid, "removed": removed, "count": len(removed)}
+
+
+async def adopt_legacy_source(session: AsyncSession, repo: str) -> dict[str, Any]:
+    """把升级前装的技能"认领"到一个来源下：建来源行 + 回填 source_id / source_key。
+
+    只在用户点「认领为来源」时执行（写操作不放在列表接口里）。
+    """
+    from ..models import Skill
+
+    ref = parse_source(repo)
+    row = await _ensure_source_row(session, ref, commit="")
+    hit = 0
+    for sk in (await session.execute(select(Skill))).scalars():
+        src = sk.source or {}
+        if src.get("source_id") or str(src.get("repo") or "") != repo:
+            continue
+        path = str(src.get("path") or "")
+        src["source_id"] = row.id
+        src["source_key"] = f"{_source_key_of(ref)}:{path}" if path else _source_key_of(ref)
+        sk.source = dict(src)
+        sk.source_key = src["source_key"]
+        hit += 1
+    row.installed_commit = row.installed_commit or ""
+    await session.commit()
+    return {"source_id": row.id, "name": row.name, "adopted": hit}

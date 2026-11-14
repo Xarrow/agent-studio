@@ -37,6 +37,9 @@ class SkillSource(Base):
     subpath: Mapped[str] = mapped_column(String(400), default="")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     priority: Mapped[int] = mapped_column(Integer, default=100)
+    #: 上次同步/安装时拿到的提交（仓库级：一个来源只有一个光）
+    installed_commit: Mapped[str] = mapped_column(String(64), default="")
+    last_checked_at: Mapped[int | None] = mapped_column(Integer, default=None)
     #: 令牌密文（AES-GCM，见 security/crypto.py）—— 导出时不带
     token_enc: Mapped[bytes | None] = mapped_column(LargeBinary, default=None)
     #: 该来源自己的网络策略覆盖（空 = 用全局）

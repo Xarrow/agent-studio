@@ -1413,3 +1413,37 @@ export interface SkillUpdate {
   checked_at?: number;
   message?: string;
 }
+
+
+/** 两级列表：父=仓库来源，子=技能 */
+export interface SkillGroupSkill {
+  id: string;
+  name: string;
+  description: string;
+  state: "active" | "archived" | "stale" | string;
+  path: string;
+  commit: string;
+  content_hash: string;
+  dir_name: string;
+  pinned: boolean;
+}
+
+export interface SkillGroup {
+  source_id: string;
+  /** 升级前装的：只有 repo 没有来源行，可「认领为来源」后参与整仓检查 */
+  legacy_repo?: string;
+  name: string;
+  address: string;
+  branch: string;
+  installed_commit: string;
+  last_checked_at: number | null;
+  kind: string;
+  enabled: boolean;
+  skills: SkillGroupSkill[];
+  counts: { installed: number; active: number };
+}
+
+export interface SkillGroupList {
+  groups: SkillGroup[];
+  total: number;
+}

@@ -208,6 +208,11 @@ _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("skill", "state", "state VARCHAR(16) DEFAULT 'active'"),
     ("skill", "pinned", "pinned BOOLEAN NOT NULL DEFAULT 0"),
     ("skill", "archived_at", "archived_at BIGINT"),
+    # 两级归属：source_key 决定同不同源；dir_name 决定落哪个目录（同名跨仓库隔离）
+    ("skill", "source_key", "source_key VARCHAR(300) DEFAULT ''"),
+    ("skill", "dir_name", "dir_name VARCHAR(200) DEFAULT ''"),
+    ("skill_source", "installed_commit", "installed_commit VARCHAR(64) DEFAULT ''"),
+    ("skill_source", "last_checked_at", "last_checked_at BIGINT"),
     ("skill", "archive_path", "archive_path VARCHAR(400) DEFAULT ''"),
     ("mcp_server", "env_enc", "env_enc TEXT"),
     ("mcp_server", "headers_enc", "headers_enc TEXT"),

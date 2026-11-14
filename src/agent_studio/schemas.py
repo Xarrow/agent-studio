@@ -354,6 +354,9 @@ class SkillRead(BaseModel):
     state: str = "active"
     pinned: bool = False
     archived_at: int | None = None
+    #: 两级归属：来源键与落盘目录名（同名跨仓库时不同）
+    source_key: str = ""
+    dir_name: str = ""
 
 
 # --------------------------------------------------------------------------- #

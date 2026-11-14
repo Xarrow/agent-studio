@@ -55,7 +55,7 @@ def write_skill_files(row: Skill, root: Path | None = None) -> Path:
     实测东京实例挂了 8 个，目录里只有 3 个。
     """
     base = Path(root) if root is not None else skills_dir()
-    target = base / row.name
+    target = base / (getattr(row, "dir_name", "") or row.name)
     target.mkdir(parents=True, exist_ok=True)
     (target / "SKILL.md").write_text(row.content or "", encoding="utf-8")
     for rel, text in (row.files or {}).items():

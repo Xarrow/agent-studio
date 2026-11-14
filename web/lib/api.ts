@@ -25,6 +25,7 @@ import type {
   WorkProbe,
   SkillRepoScan,
   SkillSource,
+  SkillGroupList,
   SkillUpdate,
   RemoteSettings,
   UsageBucket,
@@ -609,6 +610,19 @@ export const api = {
       "/api/skills/remote/install",
       body,
     ),
+  setSkillState: (id: string, state: "active" | "archived") =>
+    put<{ id: string; state: string }>(`/api/skills/${id}/state`, { state }),
+  adoptSkillSource: (repo: string) => post<{ source_id: string; name: string; adopted: number }>("/api/skill-sources/adopt", { repo }),
+  skillGroups: () => request<SkillGroupList>("/api/skills/grouped"),
+  checkSkillSource: (id: string) =>
+    post<{ source_id: string; status: string; has_update?: boolean; changed?: string[]; count?: number; latest_commit?: string; message?: string }>(
+      `/api/skill-sources/${id}/check`,
+      {},
+    ),
+  syncSkillSource: (id: string) => post<{ source_id: string; count: number; installed_commit?: string }>(`/api/skill-sources/${id}/sync`, {}),
+  uninstallSkillSource: (id: string) => post<{ source_id: string; count: number; removed: string[] }>(`/api/skill-sources/${id}/uninstall`, {}),
+  setSkillSourceState: (id: string, state: "active" | "archived") =>
+    post<{ source_id: string; state: string; count: number }>(`/api/skill-sources/${id}/state`, { state }),
   skillSources: () => request<SkillSource[]>("/api/skill-sources"),
   createSkillSource: (body: Partial<SkillSource> & { address: string; token?: string }) =>
     post<SkillSource>("/api/skill-sources", body),

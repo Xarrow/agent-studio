@@ -60,6 +60,8 @@ def to_read(row: Skill) -> SkillRead:
         state=row.state or "active",
         pinned=bool(row.pinned),
         archived_at=row.archived_at,
+        source_key=getattr(row, "source_key", "") or "",
+        dir_name=getattr(row, "dir_name", "") or "",
     )
 
 
@@ -85,6 +87,8 @@ def to_read_lite(row: Skill) -> SkillRead:
         state=row.state or "active",
         pinned=bool(row.pinned),
         archived_at=row.archived_at,
+        source_key=getattr(row, "source_key", "") or "",
+        dir_name=getattr(row, "dir_name", "") or "",
     )
 
 
@@ -390,12 +394,29 @@ async def update_skill(
     return to_read(row)
 
 
+@router.put("/{skill_id}/state")
+async def set_skill_state(
+    skill_id: str, payload: dict, session: AsyncSession = Depends(get_session)
+) -> dict:
+    """单个技能启用/停用（等价于归档/恢复，但不挪目录指纹）。"""
+    row = await session.get(Skill, skill_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Skill 不存在")
+    want = str(payload.get("state") or "active")
+    if want not in ("active", "archived"):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "state 只能是 active / archived")
+    row.state = want
+    row.archived_at = now_ms() if want == "archived" else None
+    await session.commit()
+    return {"id": row.id, "state": row.state}
+
+
 @router.delete("/{skill_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_skill(skill_id: str, session: AsyncSession = Depends(get_session)) -> None:
     row = await session.get(Skill, skill_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Skill 不存在: {skill_id}")
-    name = row.name
+    name = getattr(row, "dir_name", "") or row.name
     await session.execute(delete(AgentSkill).where(AgentSkill.skill_id == skill_id))
     await session.delete(row)
     await session.commit()
@@ -430,19 +451,33 @@ async def _upsert_skill(
     files: dict[str, str],
     fallback_name: str,
     source_meta: dict,
+    source_key: str | None = None,
+    dir_name: str | None = None,
 ) -> tuple[Skill, bool]:
-    """按**名字**幂等：同名视为同一技能的新版本（重装/更新都走这里）。"""
+    """幂等键 = **来源键 + 名字**（没有来源键时退回按名字，兼容手写/本地技能）。
+
+    为什么不能只按名字：两个仓库都有 ``animate`` 时，后装的会把先装的覆盖掉 ——
+    用户看到的是"我装了两个仓库，结果只剩一个"。两级归属下它们是两条记录。
+    """
     name, description = parse_skill_md(content, fallback_name)
-    exists = (await session.execute(select(Skill).where(Skill.name == name))).scalar_one_or_none()
+    q = select(Skill).where(Skill.name == name)
+    q = q.where(Skill.source_key == (source_key or "")) if source_key else q.where(
+        (Skill.source_key == "") | (Skill.source_key.is_(None))
+    )
+    exists = (await session.execute(q)).scalar_one_or_none()
     if exists is not None:
         exists.content = content
         exists.description = description
         exists.files = files
         exists.source = source_meta
+        if dir_name:
+            exists.dir_name = dir_name
         exists.updated_at = now_ms()
         return exists, True
     row = Skill(
         name=name,
+        source_key=source_key or "",
+        dir_name=dir_name or "",
         description=description,
         source=source_meta,
         content=content,

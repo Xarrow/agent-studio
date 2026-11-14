@@ -13,9 +13,11 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_session
+from ..models import now_ms
 from ..skill_sources import service
 from ..skill_sources.netpolicy import NetPolicy
 from ..skill_sources.parser import SourceError, parse_source
@@ -231,6 +233,68 @@ async def sources_browse(sid: str, session: AsyncSession = Depends(get_session))
     except Exception as exc:  # noqa: BLE001
         code = getattr(exc, "code", "fetch_failed")
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"{code}: {exc}") from exc
+
+
+# --------------------------------------------------------------------------- #
+# 两级视图：来源 → 技能
+# --------------------------------------------------------------------------- #
+@router.get("/api/skills/grouped")
+async def grouped(session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """按仓库来源聚合的列表（父=来源，子=技能）。界面默认用它，平铺视图仍用 /api/skills。"""
+    groups = await service.grouped_skills(session)
+    return {"groups": groups, "total": sum(g["counts"]["installed"] for g in groups)}
+
+
+@router.post("/api/skill-sources/adopt")
+async def adopt(body: dict, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    repo = str(body.get("repo") or "").strip()
+    if not repo:
+        raise HTTPException(400, "需要 repo")
+    try:
+        return await service.adopt_legacy_source(session, repo)
+    except SourceError as exc:
+        raise HTTPException(400, f"{exc.code}: {exc}") from exc
+
+
+@router.post("/api/skill-sources/{sid}/check")
+async def source_check(sid: str, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    try:
+        return await service.check_source(session, sid)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@router.post("/api/skill-sources/{sid}/sync")
+async def source_sync(sid: str, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    try:
+        return await service.sync_source(session, sid)
+    except (ValueError, SourceError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        code = getattr(exc, "code", "fetch_failed")
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"{code}: {exc}") from exc
+
+
+@router.post("/api/skill-sources/{sid}/uninstall")
+async def source_uninstall(sid: str, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    return await service.uninstall_source(session, sid)
+
+
+@router.post("/api/skill-sources/{sid}/state")
+async def source_state(sid: str, body: dict, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """整组启用/停用：把该来源下所有技能的状态一起切（active / archived）。"""
+    from ..models import Skill
+
+    want = str(body.get("state") or "active")
+    if want not in ("active", "archived"):
+        raise HTTPException(400, "state 只能是 active / archived")
+    rows = list((await session.execute(select(Skill))).scalars())
+    hit = [sk for sk in rows if (sk.source or {}).get("source_id") == sid]
+    for sk in hit:
+        sk.state = want
+        sk.archived_at = now_ms() if want == "archived" else None
+    await session.commit()
+    return {"source_id": sid, "state": want, "count": len(hit)}
 
 
 # --------------------------------------------------------------------------- #

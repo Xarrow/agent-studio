@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, fmt } from "@/lib/api";
 import { isImeEvent } from "@/lib/ime";
-import type { Skill, SkillRepoScan } from "@/lib/types";
+import type { Skill, SkillGroup, SkillGroupList, SkillRepoScan } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
 import { Hint, HINTS } from "@/components/ui/hint";
 import { DLG_BACKDROP, DLG_CARD, KV, Row, RowList, Segmented } from "@/components/ui/kit";
@@ -67,6 +67,19 @@ const STATE_LABEL: Record<string, { text: string; color: string }> = {
 export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
   const fb = useFeedback();
   const [skills, setSkills] = useState<Skill[]>([]);
+  /** 视图：按仓库分组（默认）/ 全部平铺 */
+  const [view, setView] = useState<"grouped" | "flat">(() => {
+    try {
+      return (window.localStorage.getItem("studio.skills.view") as "grouped" | "flat") || "grouped";
+    } catch {
+      return "grouped";
+    }
+  });
+  const [groups, setGroups] = useState<SkillGroup[]>([]);
+  /** 每个仓库的检查结果（有更新时显示"3 个技能变动"） */
+  const [checks, setChecks] = useState<Record<string, { has_update?: boolean; changed?: string[]; status?: string; message?: string; count?: number }>>({});
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set());
+  const [groupBusy, setGroupBusy] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [showImport, setShowImport] = useState(false);
   /** 仓库来源 / 检查更新（两者共用一个对话框） */
@@ -78,11 +91,96 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setSkills(await api.skills());
+      const [rows, grouped] = await Promise.all([api.skills(), api.skillGroups()]);
+      setSkills(rows);
+      setGroups(grouped.groups);
+      // 默认展开所有分组：收起是我点过才收，不是一进来全藏起来
+      setOpenGroups((prev) => (prev.size ? prev : new Set(grouped.groups.map((g) => g.source_id || g.name))));
     } finally {
       setLoading(false);
     }
   }, []);
+
+  const switchView = (v: "grouped" | "flat") => {
+    setView(v);
+    try {
+      window.localStorage.setItem("studio.skills.view", v);
+    } catch {
+      /* 隐私模式忽略 */
+    }
+  };
+
+  /** 仓库级：检查一次（只探一次远程 HEAD） */
+  const checkGroup = async (g: SkillGroup) => {
+    setGroupBusy(g.source_id || g.name);
+    try {
+      const r = await api.checkSkillSource(g.source_id);
+      setChecks((prev) => ({ ...prev, [g.source_id]: r }));
+      if (r.status !== "ok") fb.error("检查失败", r.message || r.status);
+      else fb.success(r.has_update ? `${r.count} 个技能有变动` : "已是最新", g.name);
+    } catch (e) {
+      fb.error("检查失败", e instanceof Error ? e.message : String(e));
+    } finally {
+      setGroupBusy(null);
+    }
+  };
+
+  /** 仓库级：一键同步（拉一次，覆盖更新该组全部已装技能） */
+  const syncGroup = async (g: SkillGroup) => {
+    setGroupBusy(g.source_id || g.name);
+    try {
+      const r = await api.syncSkillSource(g.source_id);
+      await load();
+      setChecks((prev) => ({ ...prev, [g.source_id]: { has_update: false, changed: [] } }));
+      fb.success(`已同步 ${r.count} 个技能`, g.name);
+    } catch (e) {
+      fb.error("同步失败", e instanceof Error ? e.message : String(e));
+    } finally {
+      setGroupBusy(null);
+    }
+  };
+
+  /** 仓库级：整组启用/停用 */
+  const toggleGroupState = async (g: SkillGroup) => {
+    const goingOff = g.counts.active > 0;
+    setGroupBusy(g.source_id || g.name);
+    try {
+      await api.setSkillSourceState(g.source_id, goingOff ? "archived" : "active");
+      await load();
+      fb.success(goingOff ? "整组已停用" : "整组已启用", g.name);
+    } catch (e) {
+      fb.error("切换失败", e instanceof Error ? e.message : String(e));
+    } finally {
+      setGroupBusy(null);
+    }
+  };
+
+  /** 仓库级：整库卸载 */
+  const uninstallGroup = async (g: SkillGroup) => {
+    const ok = await fb.confirm({
+      title: `卸载「${g.name}」下的全部技能？`,
+      description: `${g.counts.installed} 个技能会从库和磁盘一起移除，已挂载它的助手会失去这些能力。`,
+      danger: true,
+      confirmText: "整库卸载",
+    });
+    if (!ok) return;
+    setGroupBusy(g.source_id || g.name);
+    try {
+      const r = await api.uninstallSkillSource(g.source_id);
+      await load();
+      fb.success(`已卸载 ${r.count} 个技能`);
+    } catch (e) {
+      fb.error("卸载失败", e instanceof Error ? e.message : String(e));
+    } finally {
+      setGroupBusy(null);
+    }
+  };
+
+  /** 管理：重开该仓库的预览勾选面板（回显已装路径） */
+  const manageGroup = (g: SkillGroup) => {
+    setManage({ group: g });
+  };
+  const [manage, setManage] = useState<{ group: SkillGroup } | null>(null);
 
   useEffect(() => {
     void load();
@@ -279,6 +377,14 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
           />
         </div>
         <Segmented
+          value={view}
+          onChange={(k) => switchView(k as "grouped" | "flat")}
+          options={[
+            { key: "grouped", label: "按仓库分组" },
+            { key: "flat", label: "全部平铺" },
+          ]}
+        />
+        <Segmented
           value={filter}
           onChange={(k) => setFilter(k as "all" | "active" | "stale" | "archived")}
           options={[
@@ -290,8 +396,62 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
         />
       </div>
 
+      {manage && (
+        <ImportDialog
+          initialRef={manage.group.address || manage.group.name}
+          preselect={manage.group.skills.map((x) => x.path).filter(Boolean)}
+          onClose={() => setManage(null)}
+          onDone={async () => {
+            setManage(null);
+            await load();
+          }}
+        />
+      )}
+
       {loading ? (
         <div className="card p-6 text-[13px] text-[var(--color-muted)]">加载中…</div>
+      ) : view === "grouped" ? (
+        <GroupedSkills
+          groups={groups.filter((g) => {
+            if (!q.trim()) return true;
+            const hay = `${g.name} ${g.address} ${g.skills.map((x) => x.name).join(" ")}`.toLowerCase();
+            return hay.includes(q.trim().toLowerCase());
+          })}
+          checks={checks}
+          open={openGroups}
+          busy={groupBusy}
+          onToggleOpen={(k) =>
+            setOpenGroups((prev) => {
+              const next = new Set(prev);
+              if (next.has(k)) next.delete(k);
+              else next.add(k);
+              return next;
+            })
+          }
+          onCheck={checkGroup}
+          onSync={syncGroup}
+          onManage={manageGroup}
+          onToggleState={toggleGroupState}
+          onUninstall={uninstallGroup}
+          onOpen={(id) => void api.skill(id).then(setDetail)}
+          onAdopt={async (repo) => {
+            try {
+              const r = await api.adoptSkillSource(repo);
+              await load();
+              fb.success("已认领为来源", `${r.name} · ${r.adopted} 个技能`);
+            } catch (e) {
+              fb.error("认领失败", e instanceof Error ? e.message : String(e));
+            }
+          }}
+          onToggleSkill={async (id, next) => {
+            try {
+              await api.setSkillState(id, next);
+              await load();
+            } catch (e) {
+              fb.error("切换失败", e instanceof Error ? e.message : String(e));
+            }
+          }}
+        />
       ) : shown.length === 0 ? (
         <div className="card p-8 text-center">
           <IconSkill size={22} className="mx-auto mb-2 text-[var(--color-muted)]" />
@@ -477,9 +637,15 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
 function ImportDialog({
   onClose,
   onDone,
+  initialRef = "",
+  preselect = [],
 }: {
   onClose: () => void;
   onDone: () => void;
+  /** 从「仓库分组 → 增减技能」进来时预填仓库地址 */
+  initialRef?: string;
+  /** 已装过的技能路径：扫描回来后回显勾选 */
+  preselect?: string[];
 }) {
   const [source, setSource] = useState<Source>("git");
   const [url, setUrl] = useState("");
@@ -496,7 +662,7 @@ function ImportDialog({
 
   // ── 仓库安装：一条引用 → 预览 → 勾选装（对应 npx skills add owner/repo）──
   /** 引用：owner/repo、owner/repo/skills/名字、owner/repo@v1.2、GitHub 链接都认 */
-  const [repoRef, setRepoRef] = useState("");
+  const [repoRef, setRepoRef] = useState(initialRef);
   const [repoPin, setRepoPin] = useState("");
   const [scan, setScan] = useState<SkillRepoScan | null>(null);
   const [picked, setPicked] = useState<string[]>([]);
@@ -505,6 +671,13 @@ function ImportDialog({
   /** 影子命令（本机没有 Node 时用） */
   const [cliBusy, setCliBusy] = useState(false);
   const [cliMsg, setCliMsg] = useState<string | null>(null);
+
+  // 从「增减技能」进来：地址已预填，直接扫一次，回显已勾选的技能
+  useEffect(() => {
+    if (initialRef) void doScan();
+    // doScan 只依赖 repoRef/repoPin（首轮已就绪），不需要跟着变
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const installCli = async () => {
     setCliBusy(true);
@@ -529,10 +702,30 @@ function ImportDialog({
     setErr(null);
     setScan(null);
     try {
-      const r = await api.scanSkillRepo(skillInput(repoRef, repoPin));
-      setScan(r);
-      // 只有一个技能就直接勾上（大多数技能仓库就是这个形状）
-      setPicked(r.skills.length === 1 ? [r.skills[0].path] : []);
+      // 走新的来源解析（本地目录 / GitLab / 企业实例都认）；老的 scanSkillRepo 只认 GitHub
+      const r = await api.remoteScan({ ref: repoRef, ref_pin: repoPin || undefined });
+      const ref = r.ref as { slug?: string; raw?: string };
+      setScan({
+        repo: String(ref.slug || ref.raw || repoRef),
+        ref: String((r.meta as { commit?: string }).commit || ""),
+        sha: String((r.meta as { commit?: string }).commit || "") || null,
+        description: null,
+        stars: null,
+        license: null,
+        web_url: String(ref.raw || repoRef),
+        download: String((r.meta as { url?: string }).url || ""),
+        skills: r.skills.map((k) => ({
+          path: k.path,
+          name: k.name,
+          description: k.description,
+          files: 0,
+          convention: true,
+        })),
+      } as unknown as SkillRepoScan);
+      // 回显已装：从仓库分组点「管理」进来时，勾上这条路已有的那些；
+      // 否则只有一个技能就直接勾上（大多数技能仓库就是这个形状）
+      const already = r.skills.filter((x) => preselect.includes(x.path)).map((x) => x.path);
+      setPicked(already.length ? already : r.skills.length === 1 ? [r.skills[0].path] : []);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -541,14 +734,16 @@ function ImportDialog({
   };
 
   const doInstall = async () => {
+    if (scan && scan.skills.length > 1 && picked.length === 0) {
+      setErr("先勾选要装的技能（或点「全选」）");
+      return;
+    }
     setBusy(true);
     setErr(null);
     try {
-      const r = await api.installSkillRepo({ ...skillInput(repoRef, repoPin), paths: picked });
-      fb.success(
-        r.count > 1 ? `装好 ${r.count} 个 Skill` : `装好 Skill：${r.items[0]?.name ?? ""}`,
-        `${r.repo} @ ${r.ref}`,
-      );
+      const r = await api.remoteInstall({ ref: repoRef, ref_pin: repoPin || undefined, paths: picked });
+      const n = (r.installed ?? []).length;
+      fb.success(n > 1 ? `装好 ${n} 个 Skill` : `装好 Skill：${r.installed?.[0]?.name ?? ""}`, repoRef);
       onDone();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -990,6 +1185,183 @@ function SkillEditor({
           取消
         </button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * 按仓库分组的手风琴视图。
+ *
+ * 一级 = 来源仓库（卡片头：名字、分支、commit、已装数、检查/同步/管理/整组开关/···），
+ * 二级 = 该仓库下已装的技能（缩进、单独开关与状态、点开看详情）。
+ * 没有来源的技能（手写/本地/助手沉淀）统一归到「本地与手写技能」一张卡里。
+ */
+function GroupedSkills({
+  groups,
+  checks,
+  open,
+  busy,
+  onToggleOpen,
+  onCheck,
+  onSync,
+  onManage,
+  onToggleState,
+  onUninstall,
+  onOpen,
+  onToggleSkill,
+  onAdopt,
+}: {
+  groups: SkillGroup[];
+  checks: Record<string, { has_update?: boolean; changed?: string[]; status?: string; message?: string; count?: number }>;
+  open: Set<string>;
+  busy: string | null;
+  onToggleOpen: (key: string) => void;
+  onCheck: (g: SkillGroup) => void;
+  onSync: (g: SkillGroup) => void;
+  onManage: (g: SkillGroup) => void;
+  onToggleState: (g: SkillGroup) => void;
+  onUninstall: (g: SkillGroup) => void;
+  onOpen: (id: string) => void;
+  onToggleSkill: (id: string, next: "active" | "archived") => void;
+  onAdopt: (repo: string) => void;
+}) {
+  const fb = useFeedback();
+  if (groups.length === 0) {
+    return (
+      <div className="card p-8 text-center">
+        <IconSkill size={22} className="mx-auto mb-2 text-[var(--color-muted)]" />
+        <div className="text-[13px]" style={{ color: "var(--color-muted)" }}>
+          还没有技能。用「新建 / 导入」从仓库装一个，它会以「仓库 → 技能」的形式出现在这里。
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-2.5">
+      {groups.map((g) => {
+        const key = g.source_id || g.name;
+        const isOpen = open.has(key);
+        const check = checks[g.source_id];
+        const remote = Boolean(g.source_id) && g.kind !== "local";
+        const allOff = g.counts.active === 0;
+        return (
+          <div key={key} className="card overflow-hidden">
+            {/* 卡片头：仓库级信息 + 仓库级动作 */}
+            <div className="flex flex-wrap items-center gap-2 px-3 py-2.5">
+              <button
+                type="button"
+                className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                onClick={() => onToggleOpen(key)}
+                aria-expanded={isOpen}
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ transform: isOpen ? "rotate(90deg)" : "none", transition: "transform var(--dur-1)", color: "var(--color-muted)" }}>
+                  <path d="M9 6l6 6-6 6" />
+                </svg>
+                <span className="truncate text-[13.5px] font-medium">{g.name}</span>
+                {g.branch && (
+                  <span className="mono shrink-0 rounded px-1.5 py-[1px] text-[10.5px]" style={{ background: "var(--bg-hover)", color: "var(--color-text-2)" }}>
+                    {g.branch}
+                  </span>
+                )}
+                {g.installed_commit && (
+                  <span className="mono shrink-0 text-[10.5px]" style={{ color: "var(--color-text-3)" }} title={g.installed_commit}>
+                    {g.installed_commit.slice(0, 7)}
+                  </span>
+                )}
+                <span className="shrink-0 rounded-full px-1.5 py-[1px] text-[10.5px] tabular-nums" style={{ background: "var(--bg-hover)", color: "var(--color-text-2)" }}>
+                  已装 {g.counts.installed}
+                  {g.counts.active !== g.counts.installed ? ` · 在用 ${g.counts.active}` : ""}
+                </span>
+                {check?.has_update && (
+                  <span className="shrink-0 rounded-full px-1.5 py-[1px] text-[10.5px]" style={{ background: "color-mix(in srgb, var(--color-warn) 16%, transparent)", color: "var(--color-warn)" }}>
+                    有新版本（{check.changed?.length ?? check.count ?? 0} 个技能变动）
+                  </span>
+                )}
+              </button>
+
+              <div className="flex shrink-0 items-center gap-1.5">
+                {g.source_id && (
+                  <>
+                    <button className="btn h-7 text-[11.5px]" disabled={busy === key} onClick={() => onCheck(g)} title="只探一次该仓库的远程 HEAD">
+                      检查更新
+                    </button>
+                    {check?.has_update && (
+                      <button className="btn btn-primary h-7 text-[11.5px]" disabled={busy === key} onClick={() => onSync(g)}>
+                        一键同步
+                      </button>
+                    )}
+                    <button className="btn h-7 text-[11.5px]" disabled={busy === key} onClick={() => onManage(g)}>
+                      增减技能
+                    </button>
+                    <button className="btn h-7 text-[11.5px]" disabled={busy === key} onClick={() => onToggleState(g)}>
+                      {allOff ? "整组启用" : "整组停用"}
+                    </button>
+                    <button
+                      className="btn h-7 px-1.5 text-[11.5px]"
+                      title="更多"
+                      onClick={async () => {
+                        const cmd = `npx skills add ${g.address || g.name}`;
+                        const ok = await fb.confirm({
+                          title: `「${g.name}」`,
+                          description: "复制安装命令会把这条仓库引用放到剪贴板；整库卸载会删掉该仓库下全部已装技能。",
+                          confirmText: "复制命令",
+                          cancelText: "整库卸载",
+                        });
+                        if (ok) void navigator.clipboard?.writeText(cmd).then(() => fb.success("已复制命令", cmd));
+                        else onUninstall(g);
+                      }}
+                    >
+                      ···
+                    </button>
+                  </>
+                )}
+                {!g.source_id && g.legacy_repo && (
+                  <button className="btn h-7 text-[11.5px]" disabled={busy === key} onClick={() => onAdopt(g.legacy_repo!)}>
+                    认领为来源
+                  </button>
+                )}
+                {!g.source_id && !g.legacy_repo && (
+                  <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                    手写 / 本地 / 助手沉淀
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* 卡片内：该仓库下的技能 */}
+            {isOpen && (
+              <div className="border-t" style={{ borderColor: "var(--color-border)" }}>
+                {g.skills.map((k) => (
+                  <div key={k.id} className="flex items-center gap-2 px-3 py-2 pl-7 hover:bg-[var(--bg-selected)]">
+                    <button className="min-w-0 flex-1 text-left" onClick={() => onOpen(k.id)} title={k.path || k.name}>
+                      <div className="truncate text-[12.5px]">{k.name}</div>
+                      <div className="truncate text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                        {k.path || "—"}
+                      </div>
+                    </button>
+                    <span
+                      className="shrink-0 rounded px-1.5 py-[1px] text-[10.5px]"
+                      style={{
+                        background: "var(--bg-hover)",
+                        color: k.state === "active" ? "var(--color-ok)" : "var(--color-text-3)",
+                      }}
+                    >
+                      {k.state === "active" ? "在用" : k.state === "stale" ? "闲置" : "未用"}
+                    </span>
+                    <button
+                      className="btn h-6 px-1.5 text-[11px]"
+                      onClick={() => onToggleSkill(k.id, k.state === "active" ? "archived" : "active")}
+                      title="只切换这一个技能"
+                    >
+                      {k.state === "active" ? "停用" : "启用"}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

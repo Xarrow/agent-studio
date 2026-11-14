@@ -93,6 +93,10 @@ class Skill(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("sk_"))
     workspace_id: Mapped[str] = mapped_column(String(32), default="ws_default", index=True)
     name: Mapped[str] = mapped_column(String(128))
+    #: 两级归属：同一仓库里的一条技能 = source_key + 仓库内路径；跨仓库同名不合并
+    source_key: Mapped[str] = mapped_column(String(300), default="", index=True)
+    #: 落盘目录名。同名跨仓库时用 ``<owner>--<repo>--<name>`` 隔离，避免互相覆盖
+    dir_name: Mapped[str] = mapped_column(String(200), default="")
     description: Mapped[str] = mapped_column(LongText, default="")
     source: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)   # {type,url,ref,sha}
     content: Mapped[str] = mapped_column(LongText, default="")               # SKILL.md 全文
