@@ -224,15 +224,17 @@ export function ChatConsole({
     setDl(null);
     if (!sessionId) return;
     let alive = true;
-    const tick = () =>
-      api
+    const tick = () => {
+      if (document.hidden) return;
+      return api
         .sessionDeliverable(sessionId)
         .then((d) => {
           if (alive) setDl(d);
         })
         .catch(() => {});
+    };
     tick();
-    const t = setInterval(tick, 8000);
+    const t = setInterval(tick, 20000);
     return () => {
       alive = false;
       clearInterval(t);
@@ -813,26 +815,33 @@ export function ChatConsole({
   useEffect(() => {
     if (busy || !sessionId) return;
     let alive = true;
+    /** 上一次见到的指纹：没变就不拉详情（原来每 4 秒整份会话拉一遍，太贵） */
+    let lastKey = "";
     const tick = async () => {
-      const inflight = await api.inFlightRuns(sessionId).catch(() => [] as Run[]);
-      if (!alive) return;
-      const live = (inflight || []).find(
-        (r) =>
-          (r.status === "running" || r.status === "pending") &&
-          !settledRunsRef.current.has(r.id) &&
-          r.id !== liveRunIdRef.current,
-      );
-      if (live) {
+      if (document.hidden) return;                   // 后台标签页不轮询
+      const d = await api.sessionDigest(sessionId).catch(() => null);
+      if (!alive || !d) return;
+      if (d.running && d.running_id && !settledRunsRef.current.has(d.running_id) && d.running_id !== liveRunIdRef.current) {
         setBusy(true);
-        attachRef.current(live.id, "");
+        attachRef.current(d.running_id, "");
         return;
       }
-      void loadMessages(sessionId);
+      const key = `${d.message_count}|${d.last_message_id}|${d.last_active_at}`;
+      if (key !== lastKey) {
+        lastKey = key;
+        void loadMessages(sessionId);
+      }
     };
-    const t = setInterval(() => void tick(), 4000);
+    void tick();
+    const t = setInterval(() => void tick(), 8000);
+    const onVis = () => {
+      if (!document.hidden) void tick();            // 切回来立刻补一次
+    };
+    document.addEventListener("visibilitychange", onVis);
     return () => {
       alive = false;
       clearInterval(t);
+      document.removeEventListener("visibilitychange", onVis);
     };
   }, [busy, sessionId, loadMessages]);
 

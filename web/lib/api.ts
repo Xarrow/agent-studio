@@ -1123,6 +1123,16 @@ export const api = {
     const list = (await res.json()) as Session[];
     return { notModified: false as const, etag: res.headers.get("ETag"), list };
   },
+  /** 会话指纹：轮询"变没变"用它，别拉整份详情 */
+  sessionDigest: (id: string) =>
+    request<{
+      session_id: string;
+      message_count: number;
+      last_message_id: string;
+      last_active_at: number;
+      running: boolean;
+      running_id: string;
+    }>(`/api/sessions/${id}/digest`),
   session: (id: string, turns?: number) =>
     request<SessionDetail>(`/api/sessions/${id}${turns ? `?turns=${turns}` : ""}`),
   /** 按轮次翻消息：before 往前 / around 跳到某轮附近 */

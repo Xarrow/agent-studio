@@ -255,6 +255,40 @@ async def list_sessions(
     return _with_etag(request, [r.model_dump() for r in out])
 
 
+@router.get("/{session_id}/digest")
+async def session_digest(session_id: str, session: AsyncSession = Depends(get_session)) -> dict:
+    """会话的"变了没有"指纹 —— 轮询用它代替整份会话详情。
+
+    为什么需要：对话页要盯着"平台在后台往这个会话里又写了什么"（派活的收口、
+    巡检、另一个标签页发的消息）。原来每 4 秒拉一次完整会话（30 轮消息 + 附件），
+    一个开着的页面一天能拉走几十 MB；这里只回三个数，变了才去拉详情。
+    """
+    row = await session.get(ChatSession, session_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "会话不存在")
+    last_id = (
+        await session.execute(
+            select(SessionMessage.id)
+            .where(SessionMessage.session_id == session_id)
+            .order_by(SessionMessage.id.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    active = (
+        await session.execute(
+            select(Run.id).where(Run.session_id == session_id, Run.status.in_(("running", "pending"))).limit(1)
+        )
+    ).scalar_one_or_none()
+    return {
+        "session_id": session_id,
+        "message_count": int(row.message_count or 0),
+        "last_message_id": last_id or "",
+        "last_active_at": int(row.last_active_at or 0),
+        "running": bool(active),
+        "running_id": active or "",
+    }
+
+
 @router.get("/{session_id}")
 async def get_session_detail(
     session_id: str,
