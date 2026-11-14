@@ -6,7 +6,20 @@
  * 入口放回会话抽屉底部；两处各写一份菜单迟早会漂移，所以只留一份定义。
  */
 
-export type NavItem = { href: string; label: string; icon: string; tip: string; short?: string };
+export type NavItem = {
+  href: string;
+  label: string;
+  icon: string;
+  tip: string;
+  /** 快捷键提示（Alt+1…9 按图标轨从上到下顺序） */
+  short?: string;
+};
+
+/** 图标轨的完整顺序 —— 快捷键编号与它一一对应，导航与快捷键不会各写一份 */
+export function railItems(): NavItem[] {
+  const all = [...USE_ITEMS, ...SETUP_ITEMS, ...SYSTEM_ITEMS];
+  return all.map((it, i) => ({ ...it, short: `Alt+${i + 1}` }));
+}
 
 /** 使用 —— 日常干活的入口（对话页自己就是这一项，抽屉里不必重复列） */
 export const USE_ITEMS: NavItem[] = [
@@ -19,15 +32,19 @@ export const USE_ITEMS: NavItem[] = [
   },
 ];
 
-/** 配置 / 管理 —— 一次性设置的地方 */
+/** 配置 / 管理 —— 业务相关，放在图标轨上半区 */
 export const SETUP_ITEMS: NavItem[] = [
   { href: "/runs", label: "管理", icon: "manage", tip: "每次执行一行，点开看过程与耗时" },
   { href: "/agents", label: "Agents", icon: "agents", tip: "一个会自己想办法做事的 AI" },
   { href: "/memories", label: "记忆", icon: "memory", tip: "跨对话的长期记性" },
   { href: "/tools", label: "工具", icon: "tools", tip: "能查网页、读文件、跑命令；不加只能聊天" },
   { href: "/remote-agents", label: "远程 Agent 管理", icon: "exchange", tip: "接入外部 A2A agent，挂到助手调用" },
-  { href: "/environment", label: "环境配置", icon: "database", tip: "数据存哪：默认 SQLite，也可换 MySQL / PostgreSQL" },
-  { href: "/credentials", label: "LLM 配置", icon: "key", tip: "模型服务商的密钥，本机加密保存" },
+];
+
+/** 系统级 —— 低频、跟"干活"无关，固定沉底（分隔线以下） */
+export const SYSTEM_ITEMS: NavItem[] = [
+  { href: "/credentials", label: "API 密钥", icon: "key", tip: "模型服务商的密钥，本机加密保存，不进代码库" },
+  { href: "/environment", label: "系统设置", icon: "database", tip: "数据存哪、隧道与端口：默认 SQLite，可换 MySQL / PostgreSQL" },
 ];
 
 /** 图标路径（24×24 描边）：与 NavItem.icon 对应 */

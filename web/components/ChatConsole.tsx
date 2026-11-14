@@ -2212,6 +2212,7 @@ export function ChatConsole({
                   </>
                   ) : null
               }
+              agentId={agentId}
               sessions={navSessions}
               sessionId={sessionId}
               onPick={pickSession}
@@ -3966,6 +3967,7 @@ export function ChatConsole({
  *   · 当前会话左侧一条竖色条 + 淡底，一眼知道在哪
  */
 function SessionsPane({
+  agentId,
   sessions,
   sessionId,
   onPick,
@@ -3999,6 +4001,8 @@ function SessionsPane({
   onExportJson: (s: Session) => void;
   /** 助手身份块：会话都属于某个助手，它排在列表最上面 */
   agentSlot?: React.ReactNode;
+  /** 当前助手 id：工作区记忆按助手分开存 */
+  agentId?: string;
 }) {
   /** 树：哪些父会话展开了它派出去的 worker（当前会话是 worker 时自动展开其父） */
   const [openTree, setOpenTree] = useState<Set<string>>(() => new Set());
@@ -4016,11 +4020,69 @@ function SessionsPane({
   /** 批量管理 / 分组折叠 / 撤销窗口 */
   const [managing, setManaging] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  /** 只看置顶：置顶已经单独成组，这个开关用来"只看这个组" */
+  const [onlyPinned, setOnlyPinned] = useState(false);
+  /** 当前项目工作区（按助手记，null = 无项目纯对话） */
+  const [workspace, setWorkspace] = useState<string | null>(null);
+  const [wsOpen, setWsOpen] = useState(false);
+  const [wsDraft, setWsDraft] = useState("");
+  /** 技能数（全局 / 该项目下的），给工作区卡片上的胶囊用 */
+  const [skillRows, setSkillRows] = useState<{ name: string; source?: Record<string, unknown> }[]>([]);
   const [foldedGroups, setFoldedGroups] = useState<Set<string>>(() => new Set());
   const [undo, setUndo] = useState<{ n: number; restore: () => void } | null>(null);
   const pending = useRef(new Map<string, { s: Session; timer: ReturnType<typeof setTimeout> }>());
   const [hidden, setHidden] = useState<Set<string>>(() => new Set());
   const fb = useFeedback();
+
+  useEffect(() => {
+    if (!agentId) return;
+    try {
+      const v = window.localStorage.getItem(`studio.workspace.${agentId}`);
+      setWorkspace(v || null);
+    } catch {
+      setWorkspace(null);
+    }
+  }, [agentId]);
+
+  useEffect(() => {
+    void api
+      .skills()
+      .then((rows) => setSkillRows(rows.map((r) => ({ name: r.name, source: r.source as Record<string, unknown> }))))
+      .catch(() => setSkillRows([]));
+  }, []);
+
+  const setWorkspaceFor = (path: string | null) => {
+    if (!agentId) return;
+    if (path) window.localStorage.setItem(`studio.workspace.${agentId}`, path);
+    else window.localStorage.removeItem(`studio.workspace.${agentId}`);
+    setWorkspace(path);
+    setWsOpen(false);
+  };
+
+  /** 项目内技能：来源地址落在工作区目录下的那些（口径写在卡片 tooltip 里） */
+  const projectSkills = workspace
+    ? skillRows.filter((r) => {
+        const src = r.source ?? {};
+        const addr = String(src.address ?? src.path ?? src.origin_path ?? "");
+        return addr.startsWith(workspace);
+      })
+    : [];
+  const globalSkills = workspace ? skillRows.length - projectSkills.length : skillRows.length;
+
+  /** 复制对话：拉一次详情，按「我/助手」铺成 Markdown（粘到文档/IM 里直接能读） */
+  const copyConversation = async (s: Session) => {
+    try {
+      const d = await api.session(s.id);
+      const body = d.messages
+        .filter((m) => m.content && m.content.trim())
+        .map((m) => `${m.role === "user" ? "**我**" : "**助手**"}\n\n${m.content.trim()}`)
+        .join("\n\n---\n\n");
+      await copyText(`# ${s.ticket_title || s.title || "对话"}\n\n${body}`);
+      fb.success("已复制整段对话", `${d.messages.length} 条消息`);
+    } catch (e) {
+      fb.error("复制失败", e instanceof Error ? e.message : String(e));
+    }
+  };
 
   const startRename = (s: Session) => {
     setDraft(s.ticket_title || s.title || "");
@@ -4126,6 +4188,7 @@ function SessionsPane({
   }
 
   const groups: { label: string; items: Session[]; kind?: "router" | "worker" }[] = [
+    { label: "已置顶", items: [] },
     { label: "Router", items: [], kind: "router" },
     { label: "今天", items: [] },
     { label: "昨天", items: [] },
@@ -4137,12 +4200,13 @@ function SessionsPane({
     // Router 单独归拢（它不是"聊出来的对话"）。
     // worker：能找到父会话的已经挂进树里（kids），只有孤儿才落到日期分组 ——
     // 不再单独开一个「派活 N 件」组（用户要求移除，树已经表达清楚了）。
-    if (s.kind === "router") groups[0].items.push(s);
+    if (pinned.has(s.id)) groups[0].items.push(s);
+    else if (s.kind === "router") groups[1].items.push(s);
     else if (s.kind === "worker" && kids.has(s.parent_session_id || "")) continue;
-    else if (t >= today) groups[1].items.push(s);
-    else if (t >= today - 86_400_000) groups[2].items.push(s);
-    else if (t >= today - 7 * 86_400_000) groups[3].items.push(s);
-    else groups[4].items.push(s);
+    else if (t >= today) groups[2].items.push(s);
+    else if (t >= today - 86_400_000) groups[3].items.push(s);
+    else if (t >= today - 7 * 86_400_000) groups[4].items.push(s);
+    else groups[5].items.push(s);
   }
 
 
@@ -4151,6 +4215,68 @@ function SessionsPane({
       {agentSlot && (
         <div className="px-1.5 pt-1.5 pb-1 mb-1">{agentSlot}</div>
       )}
+      {/* 当前项目工作区：一句话说清"这条对话在哪个目录下干活、带了多少技能"。
+          选一次记在浏览器里（按助手分开），不改变平台的数据模型。 */}
+      <div className="px-2.5 pb-1.5">
+        <div
+          className="rounded-[var(--radius-sm)] px-2 py-1.5"
+          style={{ background: "var(--color-surface-2)" }}
+        >
+          <button
+            type="button"
+            data-tap
+            onClick={() => {
+              setWsDraft(workspace ?? "");
+              setWsOpen((v) => !v);
+            }}
+            className="flex w-full items-center gap-1.5 text-left"
+            title={workspace ? `工作区：${workspace}` : "当前是纯对话模式（没有绑定项目目录）"}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ color: "var(--color-text-3)" }}>
+              <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+            </svg>
+            <span className="mono min-w-0 flex-1 truncate text-[11.5px]" style={{ color: workspace ? "var(--color-text)" : "var(--color-text-3)" }}>
+              {workspace || "无项目 · 纯对话"}
+            </span>
+            <span className="shrink-0 text-[10.5px]" style={{ color: "var(--color-text-3)" }}>切换</span>
+          </button>
+          <div className="mt-1 flex flex-wrap items-center gap-1">
+            <span className="rounded-full px-1.5 py-[1px] text-[10.5px] tabular-nums" style={{ background: "var(--bg-hover)", color: "var(--color-text-2)" }}>
+              全局技能 {globalSkills}
+            </span>
+            <span className="rounded-full px-1.5 py-[1px] text-[10.5px] tabular-nums" style={{ background: "var(--bg-hover)", color: "var(--color-text-2)" }} title="来源地址落在当前工作区目录下的技能">
+              项目技能 {projectSkills.length}
+            </span>
+          </div>
+          {wsOpen && (
+            <div className="mt-1.5 space-y-1">
+              <input
+                className="input w-full text-[12px]"
+                placeholder="项目目录，例如 ~/projects/my-app"
+                value={wsDraft}
+                onChange={(e) => setWsDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (isImeEvent(e)) return;
+                  if (e.key === "Enter") setWorkspaceFor(wsDraft.trim() || null);
+                  if (e.key === "Escape") setWsOpen(false);
+                }}
+              />
+              <div className="flex items-center gap-1.5">
+                <button className="btn btn-primary h-7 text-[11.5px]" onClick={() => setWorkspaceFor(wsDraft.trim() || null)}>
+                  绑定
+                </button>
+                <button className="btn h-7 text-[11.5px]" onClick={() => setWorkspaceFor(null)}>
+                  无项目
+                </button>
+                <button className="btn h-7 text-[11.5px] ml-auto" onClick={() => setWsOpen(false)}>
+                  取消
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* 头部：新对话 + 管理（批量） */}
       <div className="px-2.5 pb-1.5 flex items-center gap-1.5">
         <button
@@ -4214,6 +4340,25 @@ function SessionsPane({
             data-tap
           />
         </div>
+        <div className="mt-1.5 flex items-center gap-1.5">
+          <button
+            type="button"
+            data-tap
+            onClick={() => setOnlyPinned((v) => !v)}
+            aria-pressed={onlyPinned}
+            className="rounded-full px-2 py-[2px] text-[11px] transition-colors"
+            style={{
+              background: onlyPinned ? "var(--bg-selected)" : "transparent",
+              color: onlyPinned ? "var(--color-text)" : "var(--color-text-3)",
+              border: "1px solid var(--color-border)",
+            }}
+          >
+            仅看置顶
+          </button>
+          <span className="text-[10.5px]" style={{ color: "var(--color-text-3)" }}>
+            {pinned.size ? `${pinned.size} 条已置顶` : "还没置顶任何对话"}
+          </span>
+        </div>
       </div>
 
       <div className="flex-1 overflow-auto px-1.5 pb-2">
@@ -4229,7 +4374,9 @@ function SessionsPane({
                 没有叫「{q.trim()}」的对话，内容里也没有。
               </p>
             )}
-            {groups.map((g) =>
+            {groups
+              .filter((g) => (onlyPinned ? g.label === "已置顶" : true))
+              .map((g) =>
               g.items.length === 0 ? null : (
                 <div key={g.label} className="mb-1">
                   {/* 分组标题：11px 三档灰、无圆点、可折叠、右侧数量 */}
@@ -4453,6 +4600,23 @@ function SessionsPane({
                                 </button>
                               )}
 
+                              {/* 置顶：hover 浮现，键盘 focus 也在（触屏靠 ⋯ 菜单里的同一项） */}
+                              <button
+                                className="hidden shrink-0 grid h-6 w-6 place-items-center rounded-[var(--radius-xs)] hover:bg-[var(--color-surface)] group-hover:grid group-focus-within:grid"
+                                data-tap
+                                title={isPinned ? "取消置顶" : "置顶"}
+                                aria-pressed={isPinned}
+                                style={{ color: isPinned ? "var(--color-accent)" : "var(--color-text-3)" }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onTogglePin(s.id);
+                                }}
+                              >
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                  <path d="M12 17v5M6 4h12l-2 6 3 3v2H5v-2l3-3-2-6z" />
+                                </svg>
+                              </button>
+
                               {/* 常驻「⋯」：不 hover 也在，选中/聚焦时加深 */}
                               <button
                                 className="shrink-0 grid h-6 w-6 place-items-center rounded-[var(--radius-xs)] hover:bg-[var(--color-surface)]"
@@ -4527,6 +4691,13 @@ function SessionsPane({
                                       onClick={() => {
                                         setMenuFor(null);
                                         onExportJson(s);
+                                      }}
+                                    />
+                                    <MenuItem
+                                      label="复制对话"
+                                      onClick={() => {
+                                        setMenuFor(null);
+                                        void copyConversation(s);
                                       }}
                                     />
                                     <MenuItem

@@ -24,7 +24,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import { ICON_PATHS, SETUP_ITEMS, USE_ITEMS, type NavItem } from "@/lib/nav-items";
+import { ICON_PATHS, SETUP_ITEMS, SYSTEM_ITEMS, USE_ITEMS, railItems, type NavItem } from "@/lib/nav-items";
+import { api } from "@/lib/api";
 
 type Item = NavItem;
 
@@ -45,6 +46,56 @@ export function Nav() {
   const currentLabel =
     [...USE_ITEMS, ...SETUP_ITEMS].find((i) => i.href === pathname)?.label ?? "Agent Studio";
   const [drawerOpen, setDrawerOpen] = useState(false);
+  /** 徽标：技能库数量 + 运行环境是否就绪（一次拉取，路由变化时刷新） */
+  const [skillCount, setSkillCount] = useState<number | null>(null);
+  const [envReady, setEnvReady] = useState<boolean | null>(null);
+  const [dark, setDark] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    void api
+      .skills()
+      .then((rows) => alive && setSkillCount(rows.length))
+      .catch(() => alive && setSkillCount(null));
+    void api
+      .health()
+      .then((h) => alive && setEnvReady(String(h?.status ?? "") === "ok"))
+      .catch(() => alive && setEnvReady(false));
+    return () => {
+      alive = false;
+    };
+  }, [pathname]);
+
+  // 深浅色：跟 localStorage 走，切的时候直接改 <html data-theme>
+  useEffect(() => {
+    const saved = window.localStorage.getItem("studio.theme");
+    const isDark = saved === "dark";
+    setDark(isDark);
+    document.documentElement.dataset.theme = isDark ? "dark" : "light";
+  }, []);
+
+  const toggleTheme = () => {
+    const next = !dark;
+    setDark(next);
+    document.documentElement.dataset.theme = next ? "dark" : "light";
+    window.localStorage.setItem("studio.theme", next ? "dark" : "light");
+  };
+
+  // Alt+1…9 跳到图标轨上对应位置（提示里的快捷键必须真的能用）
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.altKey || e.metaKey || e.ctrlKey) return;
+      const n = Number(e.key);
+      if (!n || n < 1) return;
+      const target = railItems()[n - 1];
+      if (target) {
+        e.preventDefault();
+        window.location.assign(target.href);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
 
   // 路由变化就收起抽屉
   useEffect(() => setDrawerOpen(false), [pathname]);
@@ -161,49 +212,103 @@ export function Nav() {
       )}
 
       {/* ── 一级导航：固定 56px 图标轨（md 以上）─────────────────────
-          只有一列图标，没有折叠按钮 —— 收起/展开这件事只留在会话栏那一个 « 。
-          配置类 6 项收进「设置」一个入口，点开是二级面板（不占常驻宽度）。
-          每个图标都带常驻 tooltip（hover / 键盘 focus 都出）。 */}
+          上区 = 干活用的（对话 / 管理 / Agents / 记忆 / 工具）；
+          分隔线以下 = 低频系统入口（API 密钥 / 系统设置 / 主题），固定沉底。
+          每个图标常驻 tooltip（hover 与键盘 focus 都出），并写明 Alt+N。 */}
       <nav
         className="hidden md:flex w-14 shrink-0 flex-col items-center gap-1 py-2"
         style={{ background: "var(--color-surface)" }}
         aria-label="主导航"
       >
-        {USE_ITEMS.map((l) => (
-          <Link
-            key={l.href}
-            href={l.href}
-            aria-label={l.label}
-            data-tip={l.label}
-            className="grid h-10 w-10 place-items-center rounded-[var(--radius-md)] transition-colors"
-            style={{
-              color: isActive(l.href) ? "var(--color-text)" : "var(--color-muted)",
-              background: isActive(l.href) ? "var(--bg-selected)" : "transparent",
-            }}
-          >
-            <Icon d={ICON_PATHS[l.icon] ?? ""} size={17} />
-          </Link>
-        ))}
+        {railItems()
+          .filter((l) => USE_ITEMS.some((x) => x.href === l.href) || SETUP_ITEMS.some((x) => x.href === l.href))
+          .map((l) => (
+            <RailLink
+              key={l.href}
+              item={l}
+              active={isActive(l.href)}
+              badge={l.href === "/tools" && skillCount != null ? String(skillCount) : undefined}
+              dot={l.href === "/tools" && envReady === false ? "var(--color-danger)" : undefined}
+            />
+          ))}
 
-        {/* 配置类入口：不再收进二级菜单 —— 图标轨上直接平铺，每个都带 tooltip，
-            一次点击就到（二级菜单要多点一次，还看不出里面有啥）。 */}
         <div className="my-1 h-px w-6" style={{ background: "var(--color-border)" }} />
-        {SETUP_ITEMS.map((l) => (
-          <Link
-            key={l.href}
-            href={l.href}
-            aria-label={l.label}
-            data-tip={l.label}
-            className="grid h-10 w-10 place-items-center rounded-[var(--radius-md)] transition-colors"
-            style={{
-              color: isActive(l.href) ? "var(--color-text)" : "var(--color-muted)",
-              background: isActive(l.href) ? "var(--bg-selected)" : "transparent",
-            }}
-          >
-            <Icon d={ICON_PATHS[l.icon] ?? ""} size={17} />
-          </Link>
-        ))}
+
+        {SYSTEM_ITEMS.map((l) => {
+          const withShort = railItems().find((x) => x.href === l.href) ?? l;
+          return (
+            <RailLink
+              key={l.href}
+              item={withShort}
+              active={isActive(l.href)}
+              dot={l.href === "/environment" ? (envReady ? "var(--color-ok)" : "var(--color-warn)") : undefined}
+            />
+          );
+        })}
+
+        {/* 主题切换：不是页面，是开关 —— 固定在下区最后一个 */}
+        <button
+          onClick={toggleTheme}
+          aria-label={dark ? "切到浅色" : "切到深色"}
+          data-tip={`${dark ? "浅色" : "深色"}主题`}
+          className="grid h-10 w-10 place-items-center rounded-[var(--radius-md)] transition-colors"
+          style={{ color: "var(--color-muted)" }}
+        >
+          {dark ? (
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+              <circle cx="12" cy="12" r="4" />
+              <path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19" />
+            </svg>
+          ) : (
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+              <path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z" />
+            </svg>
+          )}
+        </button>
       </nav>
     </>
+  );
+}
+
+/** 图标轨上的一个入口：常驻 tooltip（标签 · 快捷键）、可选数量徽标、可选状态点。 */
+function RailLink({
+  item,
+  active,
+  badge,
+  dot,
+}: {
+  item: NavItem;
+  active: boolean;
+  badge?: string;
+  dot?: string;
+}) {
+  return (
+    <Link
+      href={item.href}
+      aria-label={`${item.label}${item.short ? `（${item.short}）` : ""}`}
+      data-tip={`${item.label}${item.short ? ` · ${item.short}` : ""}`}
+      className="relative grid h-10 w-10 place-items-center rounded-[var(--radius-md)] transition-colors"
+      style={{
+        color: active ? "var(--color-text)" : "var(--color-muted)",
+        background: active ? "var(--bg-selected)" : "transparent",
+      }}
+    >
+      <Icon d={ICON_PATHS[item.icon] ?? ""} size={17} />
+      {badge && (
+        <span
+          className="pointer-events-none absolute -right-0.5 -top-0.5 min-w-[15px] rounded-full px-1 text-center text-[9.5px] leading-[15px] tabular-nums"
+          style={{ background: "var(--bg-hover)", color: "var(--color-text-2)" }}
+        >
+          {badge}
+        </span>
+      )}
+      {dot && (
+        <span
+          className="pointer-events-none absolute right-1 bottom-1 h-[6px] w-[6px] rounded-full"
+          style={{ background: dot }}
+          aria-hidden="true"
+        />
+      )}
+    </Link>
   );
 }
