@@ -445,7 +445,14 @@ export const api = {
   }) => post<Agent>("/api/agents", body),
   updateAgent: (
     id: string,
-    body: { name?: string; description?: string; definition?: AgentDefinition },
+    body: {
+      name?: string;
+      description?: string;
+      definition?: AgentDefinition;
+      /** 只改开关时不必带 definition（服务端不会因此产生新版本） */
+      expose_remote?: boolean;
+      expose_note?: string;
+    },
     /** 我读到的那一版：并发编辑时服务端据此拒绝静默覆盖 */
     version?: number,
   ) =>

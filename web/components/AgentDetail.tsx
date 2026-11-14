@@ -27,7 +27,8 @@ import { PermissionScope, type GuardConf, type PermConf } from "@/components/Per
 import { Hint } from "@/components/ui/hint";
 import { ModelPicker } from "@/components/ModelPicker";
 import { AgentQuickRun } from "@/components/AgentQuickRun";
-import { Segmented } from "@/components/ui/kit";
+import { Segmented, Switch } from "@/components/ui/kit";
+import { copyText } from "@/lib/clipboard";
 import { useFeedback } from "@/components/ui/feedback";
 
 /**
@@ -104,6 +105,13 @@ export function AgentDetail({
   const router = useRouter();
 
   const [agent, setAgent] = useState<Agent | null>(null);
+  /** 「远程调用」区块：对外说明的草稿（失焦才落库，避免每敲一个字一次请求） */
+  const [noteDraft, setNoteDraft] = useState("");
+  const [exposeBusy, setExposeBusy] = useState(false);
+  // 对外说明的草稿跟随已保存值（别在刷新/切助手后残留上一个的值）
+  useEffect(() => {
+    setNoteDraft(agent?.expose_note ?? "");
+  }, [agent?.id, agent?.expose_note]);
   const [def, setDef] = useState<AgentDefinition | null>(null);
   const [providers, setProviders] = useState<Provider[]>([]);
   const [creds, setCreds] = useState<Credential[]>([]);
@@ -259,7 +267,7 @@ export function AgentDetail({
 
   // 锚点联动：视口上 1/3 处落在哪一节就高亮哪一节
   useEffect(() => {
-    const ids = ["sec-define", "sec-behavior", "sec-limits", "sec-model", "sec-capability"];
+    const ids = ["sec-define", "sec-behavior", "sec-remote", "sec-limits", "sec-model", "sec-capability"];
     const els = ids.map((id) => document.getElementById(id)).filter((x): x is HTMLElement => !!x);
     if (!els.length) return;
     const io = new IntersectionObserver(
@@ -398,6 +406,42 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
   const warnings = issues.filter((i) => i.level === "warning");
 
   const patch = (p: Partial<AgentDefinition>) => setDef({ ...def, ...p });
+
+  /** 这个助手的 A2A 发现地址（对端粘贴它就能加进来） */
+  const a2aUrl = typeof window === "undefined"
+    ? ""
+    : `${window.location.origin}/.well-known/agents/${agentId}/agent-card.json`;
+
+  /** 开关：只提交 expose_remote，不带 definition —— 服务端因此不会产生新版本 */
+  const toggleExpose = async (next: boolean) => {
+    if (!agent) return;
+    setExposeBusy(true);
+    try {
+      const updated = await api.updateAgent(agentId, { expose_remote: next }, agent.version);
+      setAgent(updated);
+      setMsg(next ? "已开放远程调用" : "已停止远程调用");
+      setTimeout(() => setMsg(null), 2000);
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : String(e));
+      setTimeout(() => setMsg(null), 3000);
+    } finally {
+      setExposeBusy(false);
+    }
+  };
+
+  /** 对外说明：失焦落库（和名称同一套心智），失败就地提示但不清空输入 */
+  const saveExposeNote = async () => {
+    if (!agent) return;
+    const next = noteDraft.trim();
+    if (next === (agent.expose_note ?? "")) return;
+    try {
+      const updated = await api.updateAgent(agentId, { expose_note: next }, agent.version);
+      setAgent(updated);
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : String(e));
+      setTimeout(() => setMsg(null), 3000);
+    }
+  };
 
   /** 只改名字的轻量保存：失焦时调用。
    *  同时写顶层 name 与 def.name（历史数据里这两个可能已经不一致，保存一次就统一）。 */
@@ -712,6 +756,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
         {[
           ["sec-define", "身份"],
           ["sec-behavior", "行为"],
+          ["sec-remote", "远程调用"],
           ["sec-limits", "运行限制"],
           ["sec-model", "模型与运行时"],
           ["sec-capability", "能力"],
@@ -933,6 +978,50 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 />
               </div>
             )}
+            {/* 远程调用：提供方决定"开不开放"。
+                口径：开关即权限 —— 关闭时 A2A 入口直接 403，不靠"地址没人知道"来保护；
+                对端同步卡片时也只看得见打开了的助手。 */}
+            <div id="sec-remote" className="scroll-mt-28 rounded-lg border p-3"
+                 style={{ borderColor: "var(--color-line)" }}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[13px] font-medium">远程调用</div>
+                  <div className="mt-0.5 text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                    {agent?.expose_remote
+                      ? "已开放：别的 Agent Studio 可以把这个助手加进它的列表并按 A2A 调用"
+                      : "关闭中：对端拿不到卡片，调用直接 403"}
+                  </div>
+                </div>
+                <Switch
+                  checked={!!agent?.expose_remote}
+                  disabled={exposeBusy}
+                  ariaLabel="允许远程调用"
+                  onChange={(next) => toggleExpose(next)}
+                />
+              </div>
+              {agent?.expose_remote && (
+                <div className="mt-2.5 space-y-2">
+                  <div className="flex items-center gap-1.5">
+                    <code className="mono min-w-0 flex-1 truncate text-[11px]"
+                          style={{ color: "var(--color-text-2)" }} title={a2aUrl}>
+                      {a2aUrl}
+                    </code>
+                    <button type="button" className="btn btn-sm shrink-0"
+                            onClick={() => { void copyText(a2aUrl); setMsg("A2A 地址已复制"); setTimeout(() => setMsg(null), 1600); }}>
+                      复制
+                    </button>
+                  </div>
+                  <input
+                    className="input"
+                    placeholder="给对端看的说明（如：仅限文档解析，勿用于闲聊）"
+                    value={noteDraft}
+                    maxLength={200}
+                    onChange={(e) => setNoteDraft(e.target.value)}
+                    onBlur={() => { void saveExposeNote(); }}
+                  />
+                </div>
+              )}
+            </div>
             <div id="sec-limits" className="grid scroll-mt-28 grid-cols-1 gap-3 sm:grid-cols-3">
               <div>
                 <label className="label">最大轮数</label>

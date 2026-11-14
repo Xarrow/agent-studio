@@ -97,6 +97,10 @@ export interface Agent {
   version: number;
   parent_id: string | null;
   definition: AgentDefinition;
+  /** 是否允许别的 Agent Studio 节点远程调用（关闭时 A2A 入口 403） */
+  expose_remote?: boolean;
+  /** 给对端看的说明，出现在节点卡里 */
+  expose_note?: string;
   created_at: number;
   updated_at: number;
 }

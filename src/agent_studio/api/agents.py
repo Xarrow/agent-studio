@@ -34,6 +34,8 @@ def to_read(row: Agent) -> AgentRead:
         version=row.version,
         parent_id=row.parent_id,
         definition=row.definition or {},
+        expose_remote=bool(getattr(row, "expose_remote", False)),
+        expose_note=getattr(row, "expose_note", "") or "",
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -171,6 +173,11 @@ async def update_agent(
         row.name = new_name
     if payload.description is not None:
         row.description = payload.description
+    # 远程开放开关：只改开关不算行为变更，不动 version（否则每点一次就是新版本）
+    if payload.expose_remote is not None:
+        row.expose_remote = bool(payload.expose_remote)
+    if payload.expose_note is not None:
+        row.expose_note = payload.expose_note.strip()
 
     if payload.definition is not None:
         row.definition = payload.definition.model_dump(mode="json", exclude={"model": {"api_key"}})

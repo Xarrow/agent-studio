@@ -62,6 +62,11 @@ class Agent(Base):
     version: Mapped[int] = mapped_column(Integer, default=1)
     parent_id: Mapped[str | None] = mapped_column(String(32), default=None)  # 复制来源，血缘
     definition: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    #: 是否允许**别的 Agent Studio 节点**远程调用这个助手。
+    #: 关闭时 A2A 入口直接 403 —— 开关就是权限，不靠隐藏地址。
+    expose_remote: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    #: 给对端看的说明（"仅限文档解析"这类），出现在节点卡里
+    expose_note: Mapped[str] = mapped_column(String(200), default="")
     created_at: Mapped[int] = mapped_column(Integer, default=now_ms)
     updated_at: Mapped[int] = mapped_column(Integer, default=now_ms)
 

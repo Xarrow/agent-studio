@@ -69,6 +69,8 @@ E_METHOD_NOT_FOUND = -32601
 E_INVALID_PARAMS = -32602
 E_TASK_NOT_FOUND = -32001
 E_TASK_TERMINAL = -32002
+#: 助手没开「允许远程调用」—— 不是参数错，是权限没给
+E_NOT_EXPOSED = -32003
 
 
 class RpcError(Exception):
@@ -242,6 +244,10 @@ async def platform_agent_card(
     row = await _agent_for_card(session, agent)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "平台里还没有任何助手")
+    if not getattr(row, "expose_remote", False):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "这个助手没有开放远程调用（在助手的「远程调用」里开启）"
+        )
     return JSONResponse(await _card(session, row, _base_url(request)))
 
 
@@ -253,6 +259,12 @@ async def named_agent_card(
     row = await session.get(Agent, agent_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"助手不存在: {agent_id}")
+    # 没开「允许远程调用」就是 403：开关即权限，不靠"地址没人知道"来保护
+    if not getattr(row, "expose_remote", False):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "这个助手没有开放远程调用（在助手的「远程调用」里开启）",
+        )
     return JSONResponse(await _card(session, row, _base_url(request)))
 
 
@@ -265,6 +277,8 @@ async def _pick_agent(session: AsyncSession, params: dict[str, Any], meta: dict[
         row = await session.get(Agent, agent_id)
         if row is None:
             raise RpcError(E_INVALID_PARAMS, f"助手不存在: {agent_id}")
+        if not getattr(row, "expose_remote", False):
+            raise RpcError(E_NOT_EXPOSED, f"助手 {row.name} 没有开放远程调用")
         return row
     row = await _agent_for_card(session, None)
     if row is None:

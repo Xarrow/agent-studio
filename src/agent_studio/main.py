@@ -178,7 +178,7 @@ AUTH_EXEMPT = {"/api/health", "/api/version", "/docs", "/openapi.json", "/redoc"
 #:   · ``/api/hooks/{token}``     —— 外部触发，凭证在路径里
 #:   · ``/api/remote-agents/self`` —— 远端 agent 自注册：它在别人的机器上，
 #:     拿不到全站口令；这条端点**自己验**注册口令（见 api/remote_agents.py）
-AUTH_EXEMPT_PREFIXES = ("/api/hooks/", "/api/remote-agents/self")
+AUTH_EXEMPT_PREFIXES = ("/api/hooks/", "/api/remote-agents/self", "/api/studio/")
 
 #: 隧道对端（= cloudflared 所在机器）。换机/多台可用环境变量覆盖。
 TUNNEL_PEERS = {
@@ -450,9 +450,11 @@ app.include_router(a2a.router)
 # 平台级小配置（白名单键）—— 目前是对话页的快捷标签
 from .api import app_settings as app_settings_api  # noqa: E402
 from .api import search_health as search_health_api  # noqa: E402
+from .api import studio as studio_api  # noqa: E402
 
 app.include_router(app_settings_api.router)
 app.include_router(search_health_api.router)
+app.include_router(studio_api.router)
 # 事件账本（只读）：最近发生了什么、死信里躺着什么 —— 藏起来的队列等于没建
 from .api import events as events_api  # noqa: E402
 

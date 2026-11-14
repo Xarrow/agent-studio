@@ -171,6 +171,9 @@ class AgentUpdate(BaseModel):
     name: str | None = Field(default=None, max_length=80)
     description: str | None = None
     definition: AgentDefinition | None = None
+    #: 「允许远程调用」—— 只改这一项时不产生新版本（它不是行为变更）
+    expose_remote: bool | None = None
+    expose_note: str | None = Field(default=None, max_length=200)
     bump_version: bool = True       # 默认生成新版本（可回滚）
 
     @field_validator("name")
@@ -194,6 +197,8 @@ class AgentRead(BaseModel):
     version: int
     parent_id: str | None
     definition: dict[str, Any]
+    expose_remote: bool = False
+    expose_note: str = ""
     created_at: int
     updated_at: int
 

@@ -174,6 +174,12 @@ async def init_db() -> None:
 # --------------------------------------------------------------------------- #
 #: (表名, 列名, 列 DDL)
 _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
+    # 节点联邦：助手是否对外开放远程调用 + 对外说明
+    ("agent", "expose_remote", "expose_remote BOOLEAN DEFAULT 0"),
+    ("agent", "expose_note", "expose_note VARCHAR(200) DEFAULT ''"),
+    # 远端助手来自哪个节点（节点级管理用）
+    ("remote_agent", "peer_id", "peer_id VARCHAR(32)"),
+    ("remote_agent", "peer_studio_id", "peer_studio_id VARCHAR(32)"),
     ("run", "session_id", "session_id VARCHAR(32)"),
     ("run", "turn_index", "turn_index INTEGER"),
     # 编排（Playground）：三列都可空，NULL = 独立执行，既有数据不受影响

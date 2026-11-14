@@ -158,6 +158,9 @@ async def test_agent_card_shape(client_, monkeypatch):
         id = "ag_1"
         name = "通用助手"
         version = 3
+        # 平台卡片也走「允许远程调用」闸门：默认关闭就是这个助手对外不可见
+        expose_remote = True
+        exempt_note = ""
         definition = {"runtime": "agentscope", "model": {"name": "deepseek-v4-flash"}, "description": "干活的"}
 
     async def _pick(session, agent_id):
