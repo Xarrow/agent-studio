@@ -224,20 +224,15 @@ export function ChatConsole({
     setDl(null);
     if (!sessionId) return;
     let alive = true;
-    const tick = () => {
-      if (document.hidden) return;
-      return api
-        .sessionDeliverable(sessionId)
-        .then((d) => {
-          if (alive) setDl(d);
-        })
-        .catch(() => {});
-    };
-    tick();
-    const t = setInterval(tick, 20000);
+    // 只拉一次；后续变化由会话 SSE 的 artifacts 指纹触发刷新
+    void api
+      .sessionDeliverable(sessionId)
+      .then((d) => {
+        if (alive) setDl(d);
+      })
+      .catch(() => {});
     return () => {
       alive = false;
-      clearInterval(t);
     };
   }, [sessionId]);
 
@@ -813,35 +808,44 @@ export function ChatConsole({
      「页面已经结束了，worker 的结果呢？」，非得手动刷新才出来。
      现在发现会话里有没跑完的 run 就直接挂上它的流，过程实时可见。 */
   useEffect(() => {
-    if (busy || !sessionId) return;
+    if (!sessionId) return;
     let alive = true;
-    /** 上一次见到的指纹：没变就不拉详情（原来每 4 秒整份会话拉一遍，太贵） */
-    let lastKey = "";
-    const tick = async () => {
-      if (document.hidden) return;                   // 后台标签页不轮询
-      const d = await api.sessionDigest(sessionId).catch(() => null);
-      if (!alive || !d) return;
-      if (d.running && d.running_id && !settledRunsRef.current.has(d.running_id) && d.running_id !== liveRunIdRef.current) {
-        setBusy(true);
-        attachRef.current(d.running_id, "");
+    /** 会话级 SSE：服务端盯着库和产物目录，变了才推 —— 页面不再轮询 */
+    const es = new EventSource(withToken(`/api/sessions/${sessionId}/stream`));
+    let lastArtifacts = "";
+    const onMessage = (ev: MessageEvent) => {
+      if (!alive) return;
+      let data: { type?: string; digest?: Record<string, unknown> } = {};
+      try {
+        data = JSON.parse(ev.data);
+      } catch {
         return;
       }
-      const key = `${d.message_count}|${d.last_message_id}|${d.last_active_at}`;
-      if (key !== lastKey) {
-        lastKey = key;
-        void loadMessages(sessionId);
+      const d = data.digest ?? {};
+      if (d.gone) return;
+      // 新起的 run（编排/巡检另起的那一轮）：直接挂它的流，过程实时可见
+      if (d.running && d.running_id && String(d.running_id) !== liveRunIdRef.current) {
+        const rid = String(d.running_id);
+        if (!settledRunsRef.current.has(rid)) {
+          setBusy(true);
+          attachRef.current(rid, "");
+        }
+        return;
+      }
+      if (!busy) void loadMessages(sessionId);
+      const art = String(d.artifacts ?? "");
+      if (art !== lastArtifacts) {
+        lastArtifacts = art;
+        void api.sessionDeliverable(sessionId).then((x) => alive && setDl(x)).catch(() => {});
       }
     };
-    void tick();
-    const t = setInterval(() => void tick(), 8000);
-    const onVis = () => {
-      if (!document.hidden) void tick();            // 切回来立刻补一次
+    es.addEventListener("message", onMessage);
+    es.onerror = () => {
+      /* 断线由浏览器自动重连；重连后服务端会立刻推一次 ready */
     };
-    document.addEventListener("visibilitychange", onVis);
     return () => {
       alive = false;
-      clearInterval(t);
-      document.removeEventListener("visibilitychange", onVis);
+      es.close();
     };
   }, [busy, sessionId, loadMessages]);
 

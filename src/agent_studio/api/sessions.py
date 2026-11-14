@@ -24,6 +24,7 @@ from typing import Any, Optional
 
 from pathlib import Path
 
+from fastapi.responses import StreamingResponse
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
@@ -253,6 +254,42 @@ async def list_sessions(
                 read.ticket_id, read.ticket_title, read.parent_session_id = hit
         out.append(read)
     return _with_etag(request, [r.model_dump() for r in out])
+
+
+@router.get("/{session_id}/stream")
+async def session_stream(session_id: str, session: AsyncSession = Depends(get_session)) -> StreamingResponse:
+    """会话级事件流（SSE）：变了才推，浏览器不用轮询。
+
+    推的东西只有一种：``{"type":"changed","digest":{…}}``（消息数/最后一条/是否有 run/产物指纹）。
+    前端拿到就把会话详情、产物清单各拉一次 —— 拉的是"确实变了"的那一次。
+    """
+    row = await session.get(ChatSession, session_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "会话不存在")
+
+    from ..session_watch import sse, watcher
+
+    async def gen():
+        q = await watcher.subscribe(session_id)
+        try:
+            first = await watcher.digest(session_id)
+            watcher.prime(session_id, first)
+            yield sse({"type": "ready", "digest": first})
+            while True:
+                try:
+                    ev = await asyncio.wait_for(q.get(), timeout=25)
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"          # 心跳：让中间层别掐连接
+                    continue
+                yield sse(ev)
+        finally:
+            watcher.unsubscribe(session_id, q)
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
+    )
 
 
 @router.get("/{session_id}/digest")
