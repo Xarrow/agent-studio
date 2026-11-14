@@ -50,7 +50,10 @@ function sourceLabel(source: unknown): string {
     const who = String(src.agent_name ?? "").trim();
     return who ? `助手沉淀 · ${who}` : "助手沉淀";
   }
-  if (type === "repo" || type === "git") return "仓库安装";
+  if (type === "repo" || type === "git") {
+    const repo = String(src.repo ?? "").trim();
+    return repo ? `仓库 · ${repo}` : "仓库安装";
+  }
   if (type === "url") return "网址导入";
   if (type === "import" || type === "zip") return "压缩包导入";
   if (type === "manual" || type === "local" || type === "inline") return "手写";
@@ -1247,30 +1250,60 @@ function GroupedSkills({
         return (
           <div key={key} className="card overflow-hidden">
             {/* 卡片头：仓库级信息 + 仓库级动作 */}
-            <div className="flex flex-wrap items-center gap-2 px-3 py-2.5">
+            <div
+              className="flex flex-wrap items-start gap-2 px-3 py-2.5"
+              style={{ background: "var(--color-surface-2)" }}
+            >
               <button
                 type="button"
-                className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                className="flex min-w-0 flex-1 items-start gap-2 text-left"
                 onClick={() => onToggleOpen(key)}
                 aria-expanded={isOpen}
               >
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ transform: isOpen ? "rotate(90deg)" : "none", transition: "transform var(--dur-1)", color: "var(--color-muted)" }}>
+                <svg
+                  width="11"
+                  height="11"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.4"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                  className="mt-[5px] shrink-0"
+                  style={{ transform: isOpen ? "rotate(90deg)" : "none", transition: "transform var(--dur-1)", color: "var(--color-muted)" }}
+                >
                   <path d="M9 6l6 6-6 6" />
                 </svg>
-                <span className="truncate text-[13.5px] font-medium">{g.name}</span>
-                {g.branch && (
-                  <span className="mono shrink-0 rounded px-1.5 py-[1px] text-[10.5px]" style={{ background: "var(--bg-hover)", color: "var(--color-text-2)" }}>
-                    {g.branch}
+                <span className="min-w-0">
+                  {/* 第一行 = 仓库（这一组的"爹"）：名字最大、带分支与 commit */}
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    <span className="truncate text-[13.5px] font-semibold">{g.name}</span>
+                    {g.branch && (
+                      <span className="mono shrink-0 rounded px-1.5 py-[1px] text-[10.5px]" style={{ background: "var(--bg-hover)", color: "var(--color-text-2)" }}>
+                        {g.branch}
+                      </span>
+                    )}
+                    {g.installed_commit && (
+                      <span className="mono shrink-0 text-[10.5px]" style={{ color: "var(--color-text-3)" }} title={g.installed_commit}>
+                        {g.installed_commit.slice(0, 7)}
+                      </span>
+                    )}
                   </span>
-                )}
-                {g.installed_commit && (
-                  <span className="mono shrink-0 text-[10.5px]" style={{ color: "var(--color-text-3)" }} title={g.installed_commit}>
-                    {g.installed_commit.slice(0, 7)}
+                  {/* 第二行 = 出处与规模：地址 + "N 个技能"（父级一眼可数） */}
+                  <span className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                    {g.address && g.address.replace(/^https?:\/\//, "").replace(/\.git$/, "") !== g.name && (
+                      <span className="mono truncate text-[10.5px]" style={{ color: "var(--color-text-3)", maxWidth: 320 }} title={g.address}>
+                        {g.address}
+                      </span>
+                    )}
+                    <span
+                      className="shrink-0 rounded-full px-1.5 py-[1px] text-[10.5px] tabular-nums"
+                      style={{ background: "var(--bg-hover)", color: "var(--color-text-2)" }}
+                    >
+                      {g.counts.installed} 个技能{g.counts.active !== g.counts.installed ? ` · 在用 ${g.counts.active}` : ""}
+                    </span>
                   </span>
-                )}
-                <span className="shrink-0 rounded-full px-1.5 py-[1px] text-[10.5px] tabular-nums" style={{ background: "var(--bg-hover)", color: "var(--color-text-2)" }}>
-                  已装 {g.counts.installed}
-                  {g.counts.active !== g.counts.installed ? ` · 在用 ${g.counts.active}` : ""}
                 </span>
                 {check?.has_update && (
                   <span className="shrink-0 rounded-full px-1.5 py-[1px] text-[10.5px]" style={{ background: "color-mix(in srgb, var(--color-warn) 16%, transparent)", color: "var(--color-warn)" }}>
@@ -1331,8 +1364,25 @@ function GroupedSkills({
             {/* 卡片内：该仓库下的技能 */}
             {isOpen && (
               <div className="border-t" style={{ borderColor: "var(--color-border)" }}>
-                {g.skills.map((k) => (
-                  <div key={k.id} className="flex items-center gap-2 px-3 py-2 pl-7 hover:bg-[var(--bg-selected)]">
+                {g.skills.map((k, idx) => (
+                  <div
+                    key={k.id}
+                    className="relative flex items-center gap-2 px-3 py-2 pl-9 hover:bg-[var(--bg-selected)]"
+                  >
+                    {/* 树线：竖向连线 + 每个子项一个 ├/└ 拐角，让父子关系不靠缩进猜 */}
+                    <span
+                      aria-hidden="true"
+                      className="absolute left-[18px] top-0 w-px"
+                      style={{
+                        background: "var(--color-border)",
+                        height: idx === g.skills.length - 1 ? "50%" : "100%",
+                      }}
+                    />
+                    <span
+                      aria-hidden="true"
+                      className="absolute left-[18px] h-px w-[10px]"
+                      style={{ background: "var(--color-border)", top: "50%" }}
+                    />
                     <button className="min-w-0 flex-1 text-left" onClick={() => onOpen(k.id)} title={k.path || k.name}>
                       <div className="truncate text-[12.5px]">{k.name}</div>
                       <div className="truncate text-[11px]" style={{ color: "var(--color-text-3)" }}>
