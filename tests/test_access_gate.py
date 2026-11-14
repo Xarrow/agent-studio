@@ -38,7 +38,7 @@ def test_navigation_gets_a_token_page_not_json(client: TestClient) -> None:
 
 
 def test_fetch_still_gets_json(client: TestClient) -> None:
-    r = client.get("/api/version", headers=FETCH)
+    r = client.get("/api/agents", headers=FETCH)
     assert r.status_code == 401
     assert r.json()["detail"].startswith("需要访问口令")
 
@@ -53,7 +53,7 @@ def test_fetch_still_gets_json(client: TestClient) -> None:
     ids=["bearer", "cookie", "query"],
 )
 def test_three_ways_in(client: TestClient, kwargs: dict) -> None:
-    r = client.get("/api/version", **kwargs)
+    r = client.get("/api/agents", **kwargs)
     assert r.status_code == 200, f"{kwargs} 应该放行"
 
 
@@ -64,7 +64,7 @@ def test_navigation_with_cookie_passes(client: TestClient) -> None:
 
 
 def test_wrong_token_still_rejected(client: TestClient) -> None:
-    r = client.get("/api/version", headers={**FETCH, "Cookie": "studio_token=nope"})
+    r = client.get("/api/agents", headers={**FETCH, "Cookie": "studio_token=nope"})
     assert r.status_code == 401
 
 
@@ -75,7 +75,7 @@ def test_query_token_plants_a_cookie(client: TestClient) -> None:
     带不上查询参数、也还没有 cookie → 全部 401 → 白屏。
     东京首次部署就这么白了一次，用户看到的只是"打不开"。
     """
-    r = client.get("/api/version", params={"token": TOKEN}, headers=FETCH)
+    r = client.get("/api/agents", params={"token": TOKEN}, headers=FETCH)
     assert r.status_code == 200
     set_cookie = r.headers.get("set-cookie", "")
     assert set_cookie.startswith("studio_token="), set_cookie
@@ -85,6 +85,16 @@ def test_query_token_plants_a_cookie(client: TestClient) -> None:
 
 def test_bearer_does_not_plant_cookie(client: TestClient) -> None:
     """只有地址栏那条路要种 —— 接口调用不该被塞 cookie。"""
-    r = client.get("/api/version", headers={**FETCH, "Authorization": f"Bearer {TOKEN}"})
+    r = client.get("/api/agents", headers={**FETCH, "Authorization": f"Bearer {TOKEN}"})
     assert r.status_code == 200
     assert "set-cookie" not in {k.lower() for k in r.headers}
+
+
+def test_version_and_health_are_exempt(client: TestClient) -> None:
+    """版本/健康两点必须免口令 —— 部署脚本靠它验收，隧道后面被 401 挡住等于没有。
+
+    它们只回「代码是哪一版、静态目录在哪、进程活着吗」，不含任何业务数据。
+    """
+    for path in ("/api/version", "/api/health"):
+        r = client.get(path, headers=FETCH)
+        assert r.status_code == 200, f"{path} 应免口令"

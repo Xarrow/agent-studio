@@ -1,0 +1,39 @@
+{
+ "ok": true,
+ "cards": [
+  {
+   "data": {
+    "cardName": "card-wap/card_normal_result",
+    "vm": {
+     "title": "黄仁勋 - MBA智库百科",
+     "url": "https://wiki.mbalib.com/wiki/黄仁勋",
+     "content": "黄仁勋(Jen-Hsun Huang)——NVIDIA联合创始人兼CEO 人物简介 黄仁勋(译:黄健生、黄健森),美籍华人,1993 年创办NVIDIA (全球最大显卡芯片厂商之一)。",
+     "sourcename": "MBA智库百科"
+    }
+   }
+  },
+  {
+   "data": {
+    "cardName": "card-wap/card_normal_result",
+    "vm": {
+     "title": "科学网—63岁黄仁勋,拿下第6个博士学位! - 任旭升的博文",
+     "url": "https://wap.sciencenet.cn/blog-1352130-1535354.html",
+     "content": "63岁黄仁勋,拿下第6个博士学位! 当地时间5月10日,卡内基梅隆大学(CMU)2026届毕业典礼现场,63岁的英伟达(NVIDIA)创始人兼CEO黄仁勋,接过了科学与技术荣誉博士学位证书。竟是昔日芯片行业的竞争对手 — 黄仁勋(Jensen Huang),1963年2月17日出生,祖籍浙江青田山口大安村,美籍华人,英伟达(NVIDIA)半导体科技(上海)有限公司联合创始人、总裁兼CEO。",
+     "sourcename": "科学网"
+    }
+   }
+  },
+  {
+   "data": {
+    "cardName": "card-wap/card_normal_result",
+    "vm": {
+     "title": "“皮衣哥”黄仁勋的新赛道-环球人物网",
+     "url": "https://www.globalpeople.com.cn/n4/2026/0612/c306683-21649731.html",
+     "content": "黄仁勋在中学阶段跳了两级,16岁进入俄勒冈州立大学,主修电气工程专业。大学毕业后,黄仁勋在硅谷的半导体公司、芯片公司当工程师,再转销售,逐渐做到管理层。因为看好芯片产...",
+     "sourcename": "环球人物网"
+    }
+   }
+  }
+ ],
+ "hasMore": true
+}

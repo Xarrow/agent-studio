@@ -10,7 +10,8 @@ from agent_studio.native_tools import (
     _html_to_text,
     _is_private_host,
     _parse_bing,
-    _parse_ddg,
+    _parse_bing_rss,
+    _parse_qq,
     _web_search,
 )
 
@@ -79,19 +80,104 @@ def test_html_to_text():
     assert "bad()" not in text and ".x{}" not in text
 
 
-def test_parse_ddg():
-    """DDG 结果页解析（典型结构，含 uddg 跳转包装）。"""
-    html = """
-    <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fa">第一篇</a>
-    <a class="result__snippet">摘要一</a>
-    <a class="result__a" href="https://example.com/b">第二篇</a>
-    <a class="result__snippet">摘要二</a>
+def test_parse_bing_rss():
+    """Bing 的 RSS 出口（首选通道）：XML 解析，标题/摘要/链接都要取到。
+
+    为什么换 RSS：HTML 版是给浏览器渲染的，实测同一查询会拿到"固定池里的
+    随机结果"（查 nginx 返回冠状病毒百科），而且结构一改解析就静默变空。
     """
-    out = _parse_ddg(html)
-    assert len(out) == 2
-    assert out[0][0] == "第一篇"
-    assert out[0][2] == "https://example.com/a"
-    assert _parse_ddg("<html>空页面</html>") == []
+    from pathlib import Path
+
+    xml = (Path(__file__).parent / "fixtures" / "bing_rss.xml").read_text(encoding="utf-8")
+    out = _parse_bing_rss(xml)
+    assert len(out) >= 5
+    title, snippet, url = out[0]
+    assert title and url.startswith("http")
+    assert "<" not in title                       # 高亮标签已剥掉
+    assert _parse_bing_rss("<rss><channel></channel></rss>") == []
+    assert _parse_bing_rss("不是 XML") == []       # 解析失败返回空表，不抛异常
+
+
+def test_parse_qq():
+    """腾讯搜索卡片树 → 结果三元组（JSON 夹具来自真实响应）。"""
+    import json
+    from pathlib import Path
+
+    data = json.loads(
+        (Path(__file__).parent / "fixtures" / "qq_search.json").read_text(encoding="utf-8")
+    )
+    out = _parse_qq(data)
+    assert len(out) == 3
+    title, snippet, url = out[0]
+    assert title and url.startswith("http")
+    assert snippet.startswith("[")                 # 带来源名
+    assert _parse_qq({"cards": []}) == []
+    # 缺 title 或 url 的卡片直接跳过，不能抛
+    assert _parse_qq({"cards": [{"data": {"vm": {"title": "", "url": "https://x"}}}]}) == []
+
+
+def test_web_search_引擎顺序_腾讯优先且失败会降级(monkeypatch):
+    """编排顺序是契约：腾讯有结果就用；它挂了/给得太少才找 Bing。
+
+    这条测试存在的理由：Bing 在本网络会返回"看起来有结果其实全错"的池子，
+    所以不能让它先答；但腾讯一旦不可用，必须自动降级而不是整体失败。
+    """
+    import agent_studio.native_tools as nt
+
+    calls: list[str] = []
+
+    async def fake_qq(q, n=8):
+        calls.append("qq")
+        return "1. 甲\n   a\n   https://a\n2. 乙\n   b\n   https://b"
+
+    async def fake_rss(q, n=8):
+        calls.append("rss")
+        return "1. 丙\n   c\n   https://c"
+
+    async def boom(*a, **k):
+        raise AssertionError("不该走到 HTML 通道")
+
+    monkeypatch.setattr(nt, "_search_qq", fake_qq)
+    monkeypatch.setattr(nt, "_search_bing_rss", fake_rss)
+    monkeypatch.setattr(nt, "_search_bing", boom)
+
+    out = asyncio.run(_web_search("随便"))
+    assert "甲" in out and calls == ["qq"]        # 腾讯够用就不再问 Bing
+
+    # 腾讯只回一条（不够用）→ 降级到 RSS
+    async def thin_qq(q, n=8):
+        calls.append("qq-thin")
+        return "1. 只有一条\n   x\n   https://x"
+
+    calls.clear()
+    monkeypatch.setattr(nt, "_search_qq", thin_qq)
+    out = asyncio.run(_web_search("随便"))
+    assert "丙" in out and calls == ["qq-thin", "rss"]   # 腾讯太薄 → 再用 RSS
+
+    # 腾讯彻底不可用 + RSS 也没结果 → 走 HTML；再失败才给兜底文案
+    async def none_qq(q, n=8):
+        calls.append("qq-none")
+        return None
+
+    async def none_rss(q, n=8):
+        calls.append("rss-none")
+        return None
+
+    async def fake_html(q, n=8):
+        calls.append("html")
+        return "1. 丁\n   d\n   https://d"
+
+    calls.clear()
+    monkeypatch.setattr(nt, "_search_qq", none_qq)
+    monkeypatch.setattr(nt, "_search_bing_rss", none_rss)
+    monkeypatch.setattr(nt, "_search_bing", fake_html)
+    out = asyncio.run(_web_search("随便"))
+    assert "丁" in out and calls == ["qq-none", "rss-none", "html"]
+
+    calls.clear()
+    monkeypatch.setattr(nt, "_search_bing", none_qq)
+    out = asyncio.run(_web_search("随便"))
+    assert "搜索不可达" in out
 
 
 def test_parse_bing():

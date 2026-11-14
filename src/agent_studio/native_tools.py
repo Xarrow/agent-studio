@@ -11,7 +11,7 @@
 安全模型（与既有 workspace 体系对齐）
 ------------------------------------
 fetch        只读。禁止内网地址（SSRF）、限 20s / 256KB、二进制拒收。
-web_search   只读。走 DuckDuckGo HTML 端点（零 key、零依赖），解析前 8 条
+web_search   只读。腾讯搜索为主、Bing RSS/HTML 兜底（零 key、零依赖），解析前 8 条
              标题+摘要+链接，返回纯文本 —— 模型拿到的就是"能用"的搜索结果。
 python       写类。代码写进 run 自己的工作目录下执行（cwd 锁死），
              stdout/stderr 有限截断，超时硬闸（默认 30s，上限 120s）。
@@ -49,7 +49,7 @@ logger = logging.getLogger(__name__)
 #   · Accept-Language 带中文优先（站点会据此返回中文页，顺带更省 token）；
 #   · Sec-Fetch-* 是现代 Chrome 的必备头，缺失会被指纹识别；
 #   · Upgrade-Insecure-Requests: 1 同理。
-# 三处（fetch / DuckDuckGo / Bing）**共用同一份**，避免"某一条路径忘了改"。
+# 三处（fetch / 腾讯搜索 / Bing）**共用同一份**，避免"某一条路径忘了改"。
 CHROME_VERSION = "131"
 BROWSER_HEADERS: dict[str, str] = {
     "User-Agent": (
@@ -145,15 +145,35 @@ def _html_to_text(html: str) -> str:
 
 
 async def _web_search(query: str, max_results: int = 8) -> str:
-    """搜索：DuckDuckGo 优先，失败自动降级 Bing（国内服务器直连 DDG 常被墙，实测踩到）。"""
-    out = await _search_ddg(query)
-    if out is not None:
+    """搜索：Bing RSS → Bing HTML → 腾讯搜索（中文兜底）。
+
+    为什么不再用 DuckDuckGo：html.duckduckgo.com 在多数网络下已经不可用
+    （返回 403/风控页或直接超时）。留着它只是让每次搜索先白等 15 秒。
+
+    为什么优先 RSS 而不是 HTML：
+      · HTML 版是给浏览器渲染的，同一查询在不同出口下会拿到"固定池里的随机结果"
+        （和查询词无关），而且结构一改解析就静默变成空；
+      · `format=rss` 是同一后端的结构化出口：10 条、标题/链接/摘要齐全，
+        实测同一查询三次返回完全一致（Debian 官网 / Download / 维基）。
+    """
+    # 顺序按「实测可靠性」排，不按品牌：
+    #   · 腾讯搜索在中文与英文查询上都稳定给出相关结果（实测 1 秒、5 条真实站点）；
+    #   · Bing 的 RSS/HTML 出口在本网络下会**按查询词随机退化**——同一个
+    #     "安装 nginx debian 12" 能返回冠状病毒百科，"rust async runtime comparison"
+    #     返回抖音，这种"看起来有结果其实全错"比没有结果更糟，所以降为备选。
+    out = await _search_qq(query, max_results)
+    if out is not None and _looks_useful(out):
         return out
-    out = await _search_bing(query)
+    bing = await _search_bing_rss(query, max_results)
+    if bing is not None:
+        return bing
+    bing = await _search_bing(query, max_results)
+    if bing is not None:
+        return bing
     if out is not None:
-        return out
+        return out                      # 腾讯给得少但确实是结果，总比没有强
     return (
-        "✗ 搜索不可达：DuckDuckGo 与 Bing 都连不上 —— 本机出海直连不通（已实测确认），"
+        "✗ 搜索不可达：Bing 与腾讯搜索都连不上 —— 本机出海直连不通（已实测确认），"
         "这不是查询词的问题，换关键词、换引擎、用 curl 重试都一样会失败。\n"
         "正确的做法（选一个，别在搜索上烧超过 2 次调用）：\n"
         "1. 改用已知域名直接 fetch（官方文档/GitHub 链接，不经过搜索引擎）；\n"
@@ -163,8 +183,19 @@ async def _web_search(query: str, max_results: int = 8) -> str:
     )
 
 
-async def _search_ddg(query: str, max_results: int = 8) -> str | None:
-    """DDG HTML 版。None = 不可用（让上层降级），str = 成功或已定性的失败。"""
+def _looks_useful(formatted: str) -> bool:
+    """结果够不够用：格式化后至少两条编号行。
+
+    单条结果通常意味着引擎只回了"相关推荐"或者半页错误，这时值得换下一个引擎。
+    """
+    return sum(1 for line in formatted.splitlines() if line[:1].isdigit()) >= 2
+
+
+async def _search_bing_rss(query: str, max_results: int = 8) -> str | None:
+    """Bing 的 RSS 出口 —— 结构化、稳定，是首选。
+
+    None = 不可用（让上层降级），str = 结果（或"确实没有结果"）。
+    """
     import httpx
 
     try:
@@ -174,16 +205,21 @@ async def _search_ddg(query: str, max_results: int = 8) -> str | None:
             headers=BROWSER_HEADERS,
         ) as client:
             r = await client.get(
-                "https://html.duckduckgo.com/html/",
-                params={"q": query},
+                "https://www.bing.com/search",
+                params={
+                    "q": query,
+                    "format": "rss",
+                    "setlang": "zh-cn",
+                    "mkt": "zh-CN",
+                    "count": str(max_results),
+                },
             )
     except httpx.HTTPError:
-        return None  # 网络不可达 → 降级
+        return None
     if r.status_code != 200:
         return None
-    results = _parse_ddg(r.text)
+    results = _parse_bing_rss(r.text)
     if not results:
-        # 空结果可能是真没有，也可能是页面结构变了 —— 交给 Bing 复核
         return None
     return _format_results(results[:max_results])
 
@@ -212,39 +248,23 @@ async def _search_bing(query: str, max_results: int = 8) -> str | None:
     return _format_results(results[:max_results])
 
 
+_ZERO_WIDTH = dict.fromkeys(map(ord, "\u200b\u200c\u200d\ufeff"))
+
+
+def _clean(s: str) -> str:
+    """去掉零宽字符与多余空白 —— 腾讯搜索的标题/摘要里夹着 \u200b，
+    看不见但会切断关键词，模型复制出来就是错的。"""
+    return re.sub(r"[ \t\u00a0]+", " ", s.translate(_ZERO_WIDTH)).strip()
+
+
 def _format_results(results: list[tuple[str, str, str]]) -> str:
     if not results:
         return "（没有搜到结果，换个关键词试试）"
     lines = []
     for i, (title, snippet, url) in enumerate(results, 1):
         snippet = re.sub(r"\s+", " ", snippet).strip()
-        lines.append(f"{i}. {title}\n   {snippet}\n   {url}")
+        lines.append(f"{i}. {_clean(title)}\n   {_clean(snippet)}\n   {url}")
     return "\n".join(lines)
-
-
-_RESULT_RE = re.compile(
-    r'<a[^>]+class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>.*?'
-    r'class="result__snippet"[^>]*>(.*?)</a>',
-    re.DOTALL,
-)
-
-
-def _parse_ddg(html: str) -> list[tuple[str, str, str]]:
-    """从 DDG HTML 版结果页解析（标题, 摘要, 链接）。解析失败返回空表。"""
-    out = []
-    for m in _RESULT_RE.finditer(html):
-        url, title, snippet = m.group(1), m.group(2), m.group(3)
-        title = _TAG_STRIP_RE.sub("", title).strip()
-        snippet = _TAG_STRIP_RE.sub("", snippet).strip()
-        # DDG 的链接是跳转包装，剥出真实 uddg 参数
-        rm = re.search(r"uddg=([^&]+)", url)
-        if rm:
-            from urllib.parse import unquote
-
-            url = unquote(rm.group(1))
-        if title:
-            out.append((title, snippet, url))
-    return out
 
 
 _BING_RE = re.compile(
@@ -266,6 +286,109 @@ def _parse_bing(html: str) -> list[tuple[str, str, str]]:
         snippet = _TAG_STRIP_RE.sub("", snippet).strip()
         if title:
             out.append((title, snippet, url))
+    return out
+
+
+def _parse_bing_rss(xml_text: str) -> list[tuple[str, str, str]]:
+    """解析 Bing RSS（标题, 摘要, 链接）。
+
+    为什么用 ElementTree 而不是正则：RSS 是 XML，正则在 CDATA/转义上很容易翻车；
+    ET 是标准库，零依赖。字段缺失就跳过，不抛异常 —— 搜索工具不能因为一条
+    畸形 item 就把整个结果丢掉。
+    """
+    import xml.etree.ElementTree as ET
+
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        return []
+    out: list[tuple[str, str, str]] = []
+    for item in root.findall(".//item"):
+        title = (item.findtext("title") or "").strip()
+        link = (item.findtext("link") or "").strip()
+        desc = item.findtext("description") or ""
+        if not title or not link:
+            continue
+        # description 里是 HTML 片段（<b>高亮</b>、&amp; 之类），转成纯文本
+        snippet = _html_to_text(desc)
+        out.append((_html_to_text(title), snippet, link))
+    return out
+
+
+async def _search_qq(query: str, max_results: int = 8) -> str | None:
+    """腾讯搜索（so.qq.com）的 WAP 接口 —— 中文查询的兜底。
+
+    为什么放兜底而不是主力：
+      · 没有公开契约：请求体要带 sp 会话字段，返回是一棵 800KB 的卡片树，
+        卡片名（card-wap/*）随时可能改；
+      · 响应体大（一次 ~800KB），比 Bing 重两个数量级；
+      · 它服务的是自家浏览器外壳（UA 伪装成 iOS Safari 才给 WAP 版）。
+    好处是中文站点覆盖好，Bing 抽风时能顶上，所以只在"Bing 全空 + 查询含中文"时用。
+    """
+    import httpx
+    import json as _json
+
+    now = int(__import__("time").time() * 1000)
+    payload = {
+        "query": query,
+        "page": 1,
+        "variant": "wap",
+        "sp": {
+            "sourceid": "18_01_03",
+            "last_sourceid": "16_01_07",
+            "sessiontime": str(now),
+            "bddn": "",
+            "brnd": "",
+            "query": query,
+            "entryTime": str(now),
+        },
+    }
+    headers = {
+        **BROWSER_HEADERS,
+        "User-Agent": (
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) "
+            "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1"
+        ),
+        "Content-Type": "application/json",
+        "Accept": "*/*",
+        "Origin": "https://so.qq.com",
+        "Referer": "https://so.qq.com/",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=SEARCH_TIMEOUT_S, follow_redirects=True) as client:
+            r = await client.post(
+                "https://so.qq.com/searchweb/api/search/next-page",
+                headers=headers,
+                content=_json.dumps(payload, ensure_ascii=False).encode(),
+            )
+    except httpx.HTTPError:
+        return None
+    if r.status_code != 200:
+        return None
+    try:
+        data = r.json()
+    except ValueError:
+        return None
+    results = _parse_qq(data)
+    if not results:
+        return None
+    return _format_results(results[:max_results])
+
+
+def _parse_qq(data: dict) -> list[tuple[str, str, str]]:
+    """腾讯卡片树 → (标题, 摘要, 链接)。只取带 vm.title/url 的卡片（正文结果）。"""
+    out: list[tuple[str, str, str]] = []
+    for card in data.get("cards") or []:
+        vm = ((card or {}).get("data") or {}).get("vm") or {}
+        title = str(vm.get("title") or "").strip()
+        url = str(vm.get("url") or "").strip()
+        if not title or not url:
+            continue
+        snippet = str(vm.get("content") or "").strip()
+        source = str(vm.get("sourcename") or "").strip()
+        if source:
+            snippet = f"[{source}] {snippet}" if snippet else f"[{source}]"
+        out.append((title, snippet, url))
     return out
 
 
@@ -1826,7 +1949,7 @@ NATIVE_TOOLS: dict[str, dict[str, Any]] = {
     },
     "web_search": {
         "fn": _web_search,
-        "description": "搜索互联网（DuckDuckGo），返回前几条结果的标题、摘要和链接。",
+        "description": "搜索互联网，返回前几条结果的标题、摘要和链接（中文站点覆盖好）。",
         "schema": SEARCH_SCHEMA,
         "flags": {"read_only": True, "concurrency_safe": True, "dangerous": False, "native": True},
     },

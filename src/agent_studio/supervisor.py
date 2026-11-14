@@ -228,8 +228,10 @@ async def start_worker(
     task = (
         f"{task.rstrip()}\n\n"
         "【环境事实（平台附加，先读完再动手）】\n"
-        "- 本机出海直连不通：web_search/fetch 对境外站点（duckduckgo/bing/google）都会失败，"
+        "- 本机出海直连常不通：fetch 对境外站点（google/github 等）经常失败，"
         "curl 手搓搜索引擎只会拿到反爬验证码 —— 别在检索通道上反复重试。\n"
+        "- web_search 自带通道（腾讯搜索为主，Bing RSS 兜底），中文检索正常；"
+        "它返回空或报不可达时不要再换关键词重试。\n"
         "- 国内可达：GitHub API（api.github.com）、gitee、各官方文档站的直连要看站点。"
         "检索类任务优先「已知域名直接 fetch」，搜索不可用时基于已有知识作答并标注未核实。\n"
         "- 止损红线：同一 URL 失败 2 次就放弃；连续 5 次调用没有新信息就停下来 —— "
