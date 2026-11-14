@@ -1,10 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { api, fmt } from "@/lib/api";
 import { isImeEvent } from "@/lib/ime";
 import type { Skill, SkillGroup, SkillGroupList, SkillRepoScan } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
+import { copyText } from "@/lib/clipboard";
 import { Hint, HINTS } from "@/components/ui/hint";
 import { DLG_BACKDROP, DLG_CARD, KV, Row, RowList, Segmented } from "@/components/ui/kit";
 import Markdown from "@/components/Markdown";
@@ -88,6 +90,8 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
   const [showImport, setShowImport] = useState(false);
   /** 仓库来源 / 检查更新（两者共用一个对话框） */
   const [showSources, setShowSources] = useState<null | "sources" | "updates">(null);
+  /** 详情正文：Markdown 预览 / 源码 */
+  const [detailMode, setDetailMode] = useState<"md" | "src">("md");
   const [detail, setDetail] = useState<Skill | null>(null);
   /** 就地编辑的 skill（null = 只读视图） */
   const [editing, setEditing] = useState<Skill | null>(null);
@@ -104,6 +108,36 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
       setLoading(false);
     }
   }, []);
+
+  /** 自动检查：进页面就按仓库各探一次（并发 3），状态直接显示在卡头 —— 不让用户先点一下才知道 */
+  useEffect(() => {
+    if (view !== "grouped") return;
+    // 只对本地来源自动检查（毫秒级）。远程仓库一次检查要下载归档，
+    // 进页面就并发拉三个仓库 = 首屏被网络拖住 —— 状态照常直说"未检查"，由用户点一下。
+    const targets = groups.filter((g) => g.source_id && g.kind === "local");
+    if (!targets.length) return;
+    let cancelled = false;
+    void (async () => {
+      const queue = [...targets];
+      const worker = async () => {
+        while (queue.length && !cancelled) {
+          const g = queue.shift()!;
+          try {
+            const r = await api.checkSkillSource(g.source_id);
+            if (!cancelled) setChecks((prev) => ({ ...prev, [g.source_id]: r }));
+          } catch {
+            /* 单个仓库失败不影响其它 */
+          }
+        }
+      };
+      await Promise.all([worker(), worker(), worker()]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // 分组列表换了（安装/卸载）才重查；checks 本身不触发
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, groups.length]);
 
   const switchView = (v: "grouped" | "flat") => {
     setView(v);
@@ -161,13 +195,7 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
 
   /** 仓库级：整库卸载 */
   const uninstallGroup = async (g: SkillGroup) => {
-    const ok = await fb.confirm({
-      title: `卸载「${g.name}」下的全部技能？`,
-      description: `${g.counts.installed} 个技能会从库和磁盘一起移除，已挂载它的助手会失去这些能力。`,
-      danger: true,
-      confirmText: "整库卸载",
-    });
-    if (!ok) return;
+    // 二次确认在按钮上（点一下变红、再点才执行），不再弹对话框
     setGroupBusy(g.source_id || g.name);
     try {
       const r = await api.uninstallSkillSource(g.source_id);
@@ -438,13 +466,13 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
           onToggleState={toggleGroupState}
           onUninstall={uninstallGroup}
           onOpen={(id) => void api.skill(id).then(setDetail)}
-          onAdopt={async (repo) => {
+          onRemoveSkill={async (id, name) => {
             try {
-              const r = await api.adoptSkillSource(repo);
+              await api.deleteSkill(id);
               await load();
-              fb.success("已认领为来源", `${r.name} · ${r.adopted} 个技能`);
+              fb.success(`已移除「${name}」`);
             } catch (e) {
-              fb.error("认领失败", e instanceof Error ? e.message : String(e));
+              fb.error("移除失败", e instanceof Error ? e.message : String(e));
             }
           }}
           onToggleSkill={async (id, next) => {
@@ -592,26 +620,53 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
                   <span>·</span>
                   <span>{stripFrontmatter(detail.content ?? "").split("\n").length} 行</span>
                 </span>
-                <button
-                  className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11.5px] hover:bg-[var(--color-surface-2)]"
-                  style={{ color: "var(--color-accent)" }}
-                  onClick={() => {
-                    void navigator.clipboard?.writeText(detail.content ?? "");
-                    fb.success("已复制正文");
-                  }}
-                >
-                  <IconCopy size={12} />
-                  复制
-                </button>
+                <div className="flex items-center gap-1">
+                  <Segmented
+                    value={detailMode}
+                    onChange={(k) => setDetailMode(k as "md" | "src")}
+                    options={[
+                      { key: "md", label: "预览" },
+                      { key: "src", label: "源码" },
+                    ]}
+                  />
+                  <button
+                    className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11.5px] hover:bg-[var(--color-surface-2)]"
+                    style={{ color: "var(--color-accent)" }}
+                    onClick={() => {
+                      void copyText(detail.content ?? "").then((ok) =>
+                        ok ? fb.success("已复制正文") : fb.error("复制失败"),
+                      );
+                    }}
+                  >
+                    <IconCopy size={12} />
+                    复制
+                  </button>
+                </div>
               </div>
 
               {/* 真正的 Markdown 渲染 —— 之前是 <pre> 裸文本，最丑的一点 */}
-              <div
-                className="rounded-[10px] border p-4"
-                style={{ borderColor: "var(--color-border)", background: "var(--color-bg)" }}
-              >
-                <Markdown text={stripFrontmatter(detail.content ?? "")} />
-              </div>
+              {!String(detail.content ?? "").trim() ? (
+                <div
+                  className="rounded-[10px] border p-6 text-center text-[12.5px]"
+                  style={{ borderColor: "var(--color-border)", color: "var(--color-text-3)" }}
+                >
+                  暂无详情文档（这个技能的 SKILL.md 读不到或为空）
+                </div>
+              ) : detailMode === "src" ? (
+                <pre
+                  className="mono max-h-[60vh] overflow-auto rounded-[10px] border p-4 text-[11.5px] leading-relaxed"
+                  style={{ borderColor: "var(--color-border)", background: "var(--color-bg)", whiteSpace: "pre-wrap" }}
+                >
+                  {detail.content}
+                </pre>
+              ) : (
+                <div
+                  className="max-h-[60vh] overflow-auto rounded-[10px] border p-4"
+                  style={{ borderColor: "var(--color-border)", background: "var(--color-bg)" }}
+                >
+                  <Markdown text={stripFrontmatter(detail.content ?? "")} />
+                </div>
+              )}
 
               {/* 附件单独一段（正文看得见之后，附件不该插在中间打断阅读） */}
               {Object.keys(detail.files ?? {}).length > 0 && (
@@ -1213,7 +1268,7 @@ function GroupedSkills({
   onUninstall,
   onOpen,
   onToggleSkill,
-  onAdopt,
+  onRemoveSkill,
 }: {
   groups: SkillGroup[];
   checks: Record<string, { has_update?: boolean; changed?: string[]; status?: string; message?: string; count?: number }>;
@@ -1227,9 +1282,36 @@ function GroupedSkills({
   onUninstall: (g: SkillGroup) => void;
   onOpen: (id: string) => void;
   onToggleSkill: (id: string, next: "active" | "archived") => void;
-  onAdopt: (repo: string) => void;
+  onRemoveSkill: (id: string, name: string) => void;
 }) {
   const fb = useFeedback();
+  /** 菜单锚点：记的是按钮位置，不是"哪一行的菜单" —— portal 到 body 后必须自己算坐标 */
+  const [menu, setMenu] = useState<{ key: string; x: number; y: number; up: boolean } | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  // Esc 关菜单（焦点在哪儿都关）
+  useEffect(() => {
+    if (!menu) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenu(null);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [menu]);
+  /* 破坏性动作就地二段确认：第一次点只是把按钮变成「确认移除」，4 秒内再点才真做。
+     不用弹窗 —— 弹窗打断注意力，而这个动作本身可撤销成本很低（重装即可）。 */
+  const [confirmSkill, setConfirmSkill] = useState<string | null>(null);
+  const [confirmRepo, setConfirmRepo] = useState<string | null>(null);
+  useEffect(() => {
+    if (!confirmSkill) return;
+    const t = setTimeout(() => setConfirmSkill(null), 4000);
+    return () => clearTimeout(t);
+  }, [confirmSkill]);
+  useEffect(() => {
+    if (!confirmRepo) return;
+    const t = setTimeout(() => setConfirmRepo(null), 4000);
+    return () => clearTimeout(t);
+  }, [confirmRepo]);
   if (groups.length === 0) {
     return (
       <div className="card p-8 text-center">
@@ -1306,9 +1388,30 @@ function GroupedSkills({
                     </span>
                   </span>
                 </span>
-                {check?.has_update && (
-                  <span className="shrink-0 rounded-full px-1.5 py-[1px] text-[10.5px]" style={{ background: "color-mix(in srgb, var(--color-warn) 16%, transparent)", color: "var(--color-warn)" }}>
-                    有新版本（{check.changed?.length ?? check.count ?? 0} 个技能变动）
+                {/* 更新状态常驻：没检查过也明说，不让用户先点一下才知道 */}
+                {remote && (
+                  <span
+                    className="shrink-0 rounded-full px-1.5 py-[1px] text-[10.5px]"
+                    style={{
+                      background: check?.has_update
+                        ? "color-mix(in srgb, var(--color-warn) 16%, transparent)"
+                        : "var(--bg-hover)",
+                      color: check?.has_update ? "var(--color-warn)" : "var(--color-text-3)",
+                    }}
+                  >
+                    {busy === key && check == null
+                      ? "检查中…"
+                      : check == null
+                        ? "未检查"
+                        : check.status && check.status !== "ok"
+                          ? check.status === "timeout"
+                            ? "检查超时（可重试）"
+                            : check.status === "unreachable"
+                              ? "暂时连不上"
+                              : `检查失败：${check.status}`
+                          : check.has_update
+                            ? `有新版本 · ${check.changed?.length ?? check.count ?? 0} 个技能变动`
+                            : "已是最新"}
                   </span>
                 )}
               </button>
@@ -1319,40 +1422,125 @@ function GroupedSkills({
                     <button className="btn h-7 text-[11.5px]" disabled={busy === key} onClick={() => onCheck(g)} title="只探一次该仓库的远程 HEAD">
                       检查更新
                     </button>
-                    {check?.has_update && (
-                      <button className="btn btn-primary h-7 text-[11.5px]" disabled={busy === key} onClick={() => onSync(g)}>
-                        一键同步
-                      </button>
-                    )}
+                    <button
+                      className={check?.has_update ? "btn btn-primary h-7 text-[11.5px]" : "btn h-7 text-[11.5px]"}
+                      disabled={busy === key}
+                      onClick={() => onSync(g)}
+                      title={check?.has_update ? "拉取该仓库最新内容并更新这一组技能" : "重新拉一次该仓库（内容没变就是空跑）"}
+                    >
+                      同步
+                    </button>
                     <button className="btn h-7 text-[11.5px]" disabled={busy === key} onClick={() => onManage(g)}>
                       增减技能
                     </button>
                     <button className="btn h-7 text-[11.5px]" disabled={busy === key} onClick={() => onToggleState(g)}>
-                      {allOff ? "整组启用" : "整组停用"}
+                      {allOff ? "启用整组" : "停用整组"}
                     </button>
                     <button
                       className="btn h-7 px-1.5 text-[11.5px]"
-                      title="更多"
-                      onClick={async () => {
-                        const cmd = `npx skills add ${g.address || g.name}`;
-                        const ok = await fb.confirm({
-                          title: `「${g.name}」`,
-                          description: "复制安装命令会把这条仓库引用放到剪贴板；整库卸载会删掉该仓库下全部已装技能。",
-                          confirmText: "复制命令",
-                          cancelText: "整库卸载",
-                        });
-                        if (ok) void navigator.clipboard?.writeText(cmd).then(() => fb.success("已复制命令", cmd));
-                        else onUninstall(g);
+                      style={{
+                        color: confirmRepo === key ? "var(--color-bg)" : "var(--color-danger)",
+                        background: confirmRepo === key ? "var(--color-danger)" : undefined,
+                      }}
+                      title={
+                        confirmRepo === key
+                          ? `再点一次：删掉这个仓库下全部 ${g.counts.installed} 个技能`
+                          : `整库移除（${g.counts.installed} 个技能）`
+                      }
+                      disabled={busy === key}
+                      onClick={() => {
+                        if (confirmRepo === key) {
+                          setConfirmRepo(null);
+                          onUninstall(g);
+                        } else {
+                          setConfirmRepo(key);
+                        }
                       }}
                     >
-                      ···
+                      {confirmRepo === key ? `确认移除 ${g.counts.installed} 个` : <IconTrash size={13} />}
                     </button>
+                    <div className="relative">
+                      <button
+                        className="btn h-7 px-1.5 text-[11.5px]"
+                        title="更多操作"
+                        aria-haspopup="menu"
+                        aria-expanded={menu?.key === key}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (menu?.key === key) {
+                            setMenu(null);
+                            return;
+                          }
+                          const r = e.currentTarget.getBoundingClientRect();
+                          const W = 180;
+                          const H = 132;
+                          const up = r.bottom + H > window.innerHeight - 8;
+                          const x = Math.min(Math.max(8, r.right - W), window.innerWidth - W - 8);
+                          setMenu({ key, x, y: up ? r.top - 6 : r.bottom + 6, up });
+                        }}
+                      >
+                        ···
+                      </button>
+                      {menu?.key === key &&
+                        createPortal(
+                          <>
+                            <div className="fixed inset-0 z-40" onClick={() => setMenu(null)} />
+                            <div
+                              ref={menuRef}
+                              role="menu"
+                              className="fixed z-50 w-[180px] rounded-[var(--radius-md)] py-1"
+                              style={{
+                                left: menu.x,
+                                top: menu.up ? undefined : menu.y,
+                                bottom: menu.up ? window.innerHeight - menu.y : undefined,
+                                background: "var(--color-surface)",
+                                border: "1px solid var(--color-border)",
+                                boxShadow: "var(--shadow-2)",
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <button
+                                role="menuitem"
+                                className="block w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-selected)]"
+                                onClick={() => {
+                                  setMenu(null);
+                                  void copyText(`npx skills add ${g.address || g.name}`).then((ok) =>
+                                    ok ? fb.success("已复制安装命令", g.address || g.name) : fb.error("复制失败"),
+                                  );
+                                }}
+                              >
+                                复制安装命令
+                              </button>
+                              {/^https?:\/\//.test(g.address) && (
+                                <a
+                                  role="menuitem"
+                                  href={g.address.replace(/\.git$/, "")}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="block px-3 py-1.5 text-[12px] hover:bg-[var(--bg-selected)]"
+                                  onClick={() => setMenu(null)}
+                                >
+                                  打开原仓库
+                                </a>
+                              )}
+                              <div className="my-1 h-px" style={{ background: "var(--color-border)" }} />
+                              <button
+                                role="menuitem"
+                                className="block w-full px-3 py-1.5 text-left text-[12px]"
+                                style={{ color: "var(--color-danger)" }}
+                                onClick={() => {
+                                  setMenu(null);
+                                  onUninstall(g);
+                                }}
+                              >
+                                整库移除（{g.counts.installed} 个）
+                              </button>
+                            </div>
+                          </>,
+                          document.body,
+                        )}
+                    </div>
                   </>
-                )}
-                {!g.source_id && g.legacy_repo && (
-                  <button className="btn h-7 text-[11.5px]" disabled={busy === key} onClick={() => onAdopt(g.legacy_repo!)}>
-                    认领为来源
-                  </button>
                 )}
                 {!g.source_id && !g.legacy_repo && (
                   <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
@@ -1371,7 +1559,18 @@ function GroupedSkills({
                   {g.skills.map((k, idx) => (
                   <div
                     key={k.id}
-                    className="relative flex items-center gap-2 rounded-[var(--radius-xs)] py-1.5 pr-2 hover:bg-[var(--bg-selected)]"
+                    role="button"
+                    tabIndex={0}
+                    className="relative flex cursor-pointer items-center gap-2 rounded-[var(--radius-xs)] py-1.5 pr-2 transition-colors hover:bg-[var(--bg-selected)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px]"
+                    style={{ outlineColor: "var(--color-accent)" }}
+                    onClick={() => onOpen(k.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        onOpen(k.id);
+                      }
+                    }}
+                    title="点开看详情（SKILL.md 全文）"
                   >
                     <span
                       aria-hidden="true"
@@ -1390,7 +1589,34 @@ function GroupedSkills({
                         </span>
                       </div>
                       <div className="truncate text-[11px]" style={{ color: "var(--color-text-3)" }}>
-                        {k.path || "—"}
+                        {k.description || "（没有说明）"}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span
+                          className="mono min-w-0 truncate text-[10.5px]"
+                          style={{ color: "var(--color-text-3)", opacity: 0.9 }}
+                          title={k.location || ""}
+                        >
+                          {k.location || "（没有落盘路径）"}
+                        </span>
+                        {k.location && (
+                          <button
+                            type="button"
+                            className="shrink-0 rounded p-0.5 hover:bg-[var(--bg-hover)]"
+                            title="复制路径"
+                            aria-label="复制路径"
+                            style={{ color: "var(--color-text-3)" }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void copyText(k.location!).then((ok) =>
+                                ok ? fb.success("路径已复制", k.location) : fb.error("复制失败", k.location),
+                              );
+                            }}
+                            onMouseDown={(e) => e.stopPropagation()}
+                          >
+                            <IconCopy size={11} />
+                          </button>
+                        )}
                       </div>
                     </button>
                     <span
@@ -1404,10 +1630,32 @@ function GroupedSkills({
                     </span>
                     <button
                       className="btn h-6 px-1.5 text-[11px]"
-                      onClick={() => onToggleSkill(k.id, k.state === "active" ? "archived" : "active")}
-                      title="只切换这一个技能"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleSkill(k.id, k.state === "active" ? "archived" : "active");
+                      }}
+                      title={k.state === "active" ? "停用（助手立刻不再看到它）" : "启用"}
                     >
                       {k.state === "active" ? "停用" : "启用"}
+                    </button>
+                    <button
+                      className="btn h-6 px-1.5 text-[11px]"
+                      style={{
+                        color: confirmSkill === k.id ? "var(--color-bg)" : "var(--color-danger)",
+                        background: confirmSkill === k.id ? "var(--color-danger)" : undefined,
+                      }}
+                      title={confirmSkill === k.id ? "再点一次就删掉这一个技能" : "移除这一个技能（只影响它自己）"}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (confirmSkill === k.id) {
+                          setConfirmSkill(null);
+                          onRemoveSkill(k.id, k.name);
+                        } else {
+                          setConfirmSkill(k.id);
+                        }
+                      }}
+                    >
+                      {confirmSkill === k.id ? "确认移除" : "移除"}
                     </button>
                   </div>
                   ))}

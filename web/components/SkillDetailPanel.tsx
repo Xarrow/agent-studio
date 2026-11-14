@@ -115,6 +115,27 @@ export function SkillDetailPanel({
         ...(files.length > 0
           ? [{ icon: <IconFile size={13} />, text: `${files.length} 个附件`, title: "附件" }]
           : []),
+        ...(typeof skill.source?.repo === "string" && skill.source.repo
+          ? [
+              {
+                icon: <IconBox size={13} />,
+                text: String(skill.source.repo),
+                title: "所属仓库",
+              },
+            ]
+          : []),
+        ...(typeof skill.source?.ref === "string" && String(skill.source.ref) !== "HEAD"
+          ? [{ icon: <IconChevronRight size={13} />, text: String(skill.source.ref), title: "分支 / 版本" }]
+          : []),
+        ...(skill.location
+          ? [
+              {
+                icon: <IconFile size={13} />,
+                text: "文件位置",
+                title: String(skill.location),
+              },
+            ]
+          : []),
         ...(typeof skill.source?.url === "string"
           ? [
               {
