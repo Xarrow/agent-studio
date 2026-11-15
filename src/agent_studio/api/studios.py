@@ -104,7 +104,11 @@ async def connect_peer(payload: dict[str, Any], session: AsyncSession = Depends(
 
 
 @router.get("/{peer_id}/agents")
-async def peer_agents(peer_id: str, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+async def peer_agents(
+    peer_id: str,
+    live: bool = False,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
     """点开一个节点时看它下面有哪些助手（已同步到本地的这些）。
 
     数据来自本地 remote_agent（带 peer_id），不打对端 —— 点开不该等网络。
@@ -119,58 +123,58 @@ async def peer_agents(peer_id: str, session: AsyncSession = Depends(get_session)
         )
     ).scalars().all()
 
-    # 点开节点要给"远程的详情"：顺手再读一次对端名片（带 __t 穿透缓存）。
-    # 读不到不算失败 —— 详情页降级显示本地已知信息 + 一行原因，助手列表照常给。
+    # 点开节点要给"远程的详情"，但**不能等网络**：默认用上次读到的名片快照（毫秒级返回），
+    # 只有显式 live=1（页面上的「刷新」）或还没快照时才去对端拉。
+    # 实测：走 Cloudflare 隧道读一次名片要 1~18 秒，等它会把"点开"变成"转圈"。
     remote: dict[str, Any] | None = None
     remote_error = ""
     stale = False
     if not peer.base_url:
-        # 对方连我但没给回连地址（内网节点就是这样：公网连不回去）——
-        # 这不是错误，是网络模型决定的，页面上要说人话而不是报"连不上"
+        # 对方连我但没给回连地址（内网节点就是这样）：不是错误，是网络模型决定的
         remote_error = "对方没有提供可回连的地址（内网节点不会自报公网地址）"
-    if peer.base_url:
+
+    def _shape(c: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "studio_id": c.get("studio_id"),
+            "name": c.get("name"),
+            "version": c.get("version"),
+            "protocol": c.get("protocol"),
+            "base_url": c.get("base_url") or peer.base_url,
+            "agents_total": c.get("agents_total"),
+            "agents_open": c.get("agents_open"),
+            "fingerprint": c.get("fingerprint"),
+            "created_at": c.get("created_at"),
+            "card_url": f"{peer.base_url.rstrip('/')}/api/studio/card" if peer.base_url else "",
+            "agents_url": f"{peer.base_url.rstrip('/')}/api/studio/agents" if peer.base_url else "",
+        }
+
+    cached = peer.card or {}
+    if cached.get("studio_id"):
+        remote = _shape(cached)
+        # 只有"对端离线"才算"显示上次读到"；快照新旧只作为一条信息展示，
+        # 不能因为快照旧就报成连不上（心跳正常却显示连不上会自相矛盾）
+        stale = peer.status == "offline"
+
+    if peer.base_url and (live or remote is None):
         try:
             card = await peers.fetch_card(peer.base_url, timeout=8.0)
-            peer.card = card          # 存快照：下次连不上也能看
+            peer.card = {**card, "_at": now_ms()}
             peer.updated_at = now_ms()
             await session.commit()
-            remote = {
-                "studio_id": card.get("studio_id"),
-                "name": card.get("name"),
-                "version": card.get("version"),
-                "protocol": card.get("protocol"),
-                "base_url": card.get("base_url"),
-                "agents_total": card.get("agents_total"),
-                "agents_open": card.get("agents_open"),
-                "fingerprint": card.get("fingerprint"),
-                "created_at": card.get("created_at"),
-                "card_url": f"{peer.base_url.rstrip('/')}/api/studio/card",
-                "agents_url": f"{peer.base_url.rstrip('/')}/api/studio/agents",
-            }
+            remote = _shape(card)
+            stale = False
+            remote_error = ""
         except ValueError as exc:
             remote_error = str(exc)
-            cached = peer.card or {}
-            if cached.get("studio_id"):
-                stale = True
-                remote = {
-                    "studio_id": cached.get("studio_id"),
-                    "name": cached.get("name"),
-                    "version": cached.get("version"),
-                    "protocol": cached.get("protocol"),
-                    "base_url": cached.get("base_url") or peer.base_url,
-                    "agents_total": cached.get("agents_total"),
-                    "agents_open": cached.get("agents_open"),
-                    "fingerprint": cached.get("fingerprint"),
-                    "created_at": cached.get("created_at"),
-                    "card_url": f"{peer.base_url.rstrip('/')}/api/studio/card",
-                    "agents_url": f"{peer.base_url.rstrip('/')}/api/studio/agents",
-                }
 
     return {
         "peer": _view(peer, len(rows)),
         "remote": remote,
         "remote_error": remote_error,
         "remote_stale": stale,
+        "remote_age_ms": (
+            now_ms() - int(cached.get("_at") or 0) if (cached.get("_at") and remote) else None
+        ),
         "agents": [
             {
                 "id": r.id,

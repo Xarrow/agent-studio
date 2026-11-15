@@ -176,7 +176,7 @@ async def connect(
             agents_count=int(card.get("agents_open") or 0),
             heartbeat=heartbeat,
             last_seen_at=now_ms(),
-            card=card,
+            card={**card, "_at": now_ms()},
         )
         session.add(peer)
         await session.flush()
@@ -185,7 +185,7 @@ async def connect(
         peer.base_url = base
         peer.status = "active"
         peer.heartbeat = heartbeat
-        peer.card = card
+        peer.card = {**card, "_at": now_ms()}
         peer.updated_at = now_ms()
     await session.commit()
 
@@ -251,7 +251,7 @@ async def sync_peer(session: AsyncSession, peer: StudioPeer) -> list[str]:
     """
     agents = await fetch_agents(peer.base_url)
     try:
-        peer.card = await fetch_card(peer.base_url, timeout=8.0)
+        peer.card = {**(await fetch_card(peer.base_url, timeout=8.0)), "_at": now_ms()}
     except ValueError:
         pass  # 名片读不到不影响助手清单（详情页会用旧快照）
     existing = {

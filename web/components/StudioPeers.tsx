@@ -65,6 +65,7 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
   const [nodeRemote, setNodeRemote] = useState<Record<string, StudioPeerRemote | null>>({});
   const [nodeErr, setNodeErr] = useState<Record<string, string>>({});
   const [nodeStale, setNodeStale] = useState<Record<string, boolean>>({});
+  const [nodeAge, setNodeAge] = useState<Record<string, number>>({});
 
   const load = useCallback(async () => {
     try {
@@ -79,13 +80,16 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
     void load();
   }, [load]);
 
-  const loadAgents = useCallback(async (peerId: string) => {
+  const loadAgents = useCallback(async (peerId: string, live = false) => {
     try {
-      const got = await api.studioPeerAgents(peerId);
+      const got = await api.studioPeerAgents(peerId, live);
       setNodeAgents((prev) => ({ ...prev, [peerId]: got.agents }));
       setNodeRemote((prev) => ({ ...prev, [peerId]: got.remote }));
       setNodeErr((prev) => ({ ...prev, [peerId]: got.remote_error || "" }));
       setNodeStale((prev) => ({ ...prev, [peerId]: Boolean(got.remote_stale) }));
+      if (typeof got.remote_age_ms === "number") {
+        setNodeAge((prev) => ({ ...prev, [peerId]: got.remote_age_ms as number }));
+      }
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     }
@@ -314,8 +318,18 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
                             ) : (
                               <Chip tone="muted">读不到名片</Chip>
                             )}
-                            <span className="ml-auto text-[11px]" style={{ color: "var(--color-text-3)" }}>
-                              对端自报信息，以它为准
+                            <span className="ml-auto flex items-center gap-2">
+                              <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                                对端自报信息，以它为准
+                              </span>
+                              {/* 默认用上次读到的名片（点开要瞬时），要看最新才去对端拉一次 */}
+                              <button
+                                className="btn btn-sm"
+                                disabled={busy === `${p.id}:live`}
+                                onClick={() => run(`${p.id}:live`, () => loadAgents(p.id, true))}
+                              >
+                                刷新详情
+                              </button>
                             </span>
                           </div>
                           <div className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
@@ -341,6 +355,10 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
                             <KV k="加入时间">{new Date(p.created_at).toLocaleString()}</KV>
                             <KV k="指纹">
                               <code className="mono text-[11px]">{p.fingerprint || "—"}</code>
+                            </KV>
+                            <KV k="详情取自">
+                              {rm ? ago(Date.now() - (nodeAge[p.id] ?? 0)) : "—"}
+                              {rm && (nodeAge[p.id] ?? 0) > 60_000 ? "（点「刷新详情」可拉最新）" : ""}
                             </KV>
                           </div>
                           {rm && (

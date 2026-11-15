@@ -474,7 +474,7 @@ export const api = {
     ),
   studioPeerConnect: (url: string, mutual = true) =>
     post<{ peer: StudioPeer; notes: string[] }>("/api/studios", { url, mutual }),
-  studioPeerAgents: (id: string) =>
+  studioPeerAgents: (id: string, live = false) =>
     request<{
       peer: StudioPeer;
       agents: StudioPeerAgent[];
@@ -483,7 +483,8 @@ export const api = {
       remote_error: string;
       /** true = 对端此刻连不上，remote 是上次读到的快照 */
       remote_stale: boolean;
-    }>(`/api/studios/${id}/agents`),
+      remote_age_ms?: number | null;
+    }>(`/api/studios/${id}/agents${live ? "?live=1" : ""}`),
   studioPeerSync: (id: string) =>
     post<{ synced: string[]; count: number }>(`/api/studios/${id}/sync`, {}),
   studioPeerAccept: (id: string, url?: string) =>
