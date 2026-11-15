@@ -171,3 +171,66 @@ async def test_waiting_hitl_is_taken_over(monkeypatch) -> None:
         assert run.status == "ok"
         assert (run.output or {}).get("content") == "确认后的回答"
     assert a2a_watch._ACTIVE == set()
+
+
+async def test_remote_task_endpoint_backfills(monkeypatch) -> None:
+    """断流后能查远端任务：远端已终态时把本地这条 waiting_hitl 补齐。"""
+    from agent_studio import a2a_client
+    from agent_studio.api import runs as runs_api
+
+    definition = {
+        "runtime": "a2a",
+        "name": "影子助手",
+        "role": "worker",
+        "system_prompt": "（远端代理）",
+        "model": {"provider": "deepseek", "name": "deepseek-flash"},
+        "remote_url": "https://peer.example.com",
+        "remote_agent_id": "ag_remote_1",
+    }
+    _, run_id = await _seed_run(definition)
+
+    async def fake_get_task(base, task_id, *, timeout=30.0, headers=None):
+        return {
+            "id": task_id,
+            "status": {"state": "completed"},
+            "artifacts": [{"parts": [{"kind": "text", "text": "远端早已跑完的答案"}]}],
+        }
+
+    monkeypatch.setattr(a2a_client, "get_task", fake_get_task)
+
+    async with SessionLocal() as s:
+        run = await s.get(Run, run_id)
+        run.status = "waiting_hitl"
+        run.usage = {"a2a": 1, "remote_base": "https://peer.example.com", "remote_task_id": "task_x"}
+        await s.commit()
+
+        got = await runs_api.remote_task_state(run_id, session=s)
+    assert got["state"] == "completed"
+    assert got["backfilled"] is True
+    assert got["status"] == "ok"
+
+    async with SessionLocal() as s:
+        run = await s.get(Run, run_id)
+        assert run.status == "ok"
+        assert (run.output or {}).get("content") == "远端早已跑完的答案"
+
+
+async def test_remote_task_endpoint_rejects_non_a2a() -> None:
+    from agent_studio.api import runs as runs_api
+    from fastapi import HTTPException
+
+    definition = {
+        "runtime": "a2a",
+        "name": "影子助手",
+        "role": "worker",
+        "system_prompt": "（远端代理）",
+        "model": {"provider": "deepseek", "name": "deepseek-flash"},
+    }
+    _, run_id = await _seed_run(definition)
+    async with SessionLocal() as s:
+        try:
+            await runs_api.remote_task_state(run_id, session=s)
+        except HTTPException as exc:
+            assert exc.status_code == 404
+        else:  # pragma: no cover
+            raise AssertionError("没有远端任务号时应该 404")

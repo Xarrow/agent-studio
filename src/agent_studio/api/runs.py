@@ -653,6 +653,54 @@ async def refill_fanout_run(run_id: str) -> dict[str, Any]:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
 
 
+@router.get("/{run_id}/remote-task")
+async def remote_task_state(
+    run_id: str, session: AsyncSession = Depends(get_session)
+) -> dict[str, Any]:
+    """查一条 a2a 执行**远端任务**的实时状态（只读，不动本地记录）。
+
+    为什么要有：断流/超时之后，本地只剩一个远端任务号，没有任何口子能看到
+    "对面到底跑完了没"。这里直接问一次远端，把它此刻的状态与文本拿回来 ——
+    顺便，如果远端已经出终态而本地还停在 waiting_hitl，就地把本地补齐。
+    """
+    from .. import a2a_client
+
+    run = await _get_or_404(session, run_id)
+    usage = run.usage or {}
+    base = str(usage.get("remote_base") or "")
+    task_id = str(usage.get("remote_task_id") or "")
+    if not base or not task_id:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, "这条执行没有远端任务号（不是 A2A 执行，或当时没拿到 task id）"
+        )
+
+    try:
+        task = await a2a_client.get_task(base, task_id, timeout=15.0)
+    except a2a_client.A2AError as exc:
+        return {"state": "unreachable", "error": str(exc)[:300], "remote_task_id": task_id}
+
+    state = a2a_client.state_of(task)
+    text = a2a_client.task_text(task)
+    backfilled = False
+    if state in ("completed", "canceled", "failed", "rejected") and run.status == "waiting_hitl":
+        # 注意别用 status 当局部变量名：这个模块里的 status 是 fastapi 的常量集合
+        new_status = a2a_client.status_of(task)
+        run.status = new_status
+        run.output = {"content": text} if (text and new_status == "ok") else None
+        run.error = None if new_status == "ok" else (text or "远端执行失败")
+        run.ended_at = now_ms()
+        run.pending_hitl = None
+        await session.commit()
+        backfilled = True
+    return {
+        "state": state,
+        "remote_task_id": task_id,
+        "text": text[:2000],
+        "backfilled": backfilled,
+        "status": run.status,
+    }
+
+
 @router.post("/{run_id}/rerun", response_model=RunRead)
 async def rerun_run(run_id: str, session: AsyncSession = Depends(get_session)) -> RunRead:
     """**重跑这一条执行**（就地重来一次，不新建记录）。
