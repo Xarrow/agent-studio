@@ -813,8 +813,17 @@ class RunService:
             usage["a2a"] = 1
             if task_id:
                 usage["remote_task_id"] = task_id
+                # 记下远端地址：重启后 sweep 要靠它把等待确认的执行重新接上
+                usage["remote_base"] = remote_url
             run.usage = usage
             await session.commit()
+
+        if status == "waiting_hitl" and task_id:
+            # 远端在等人确认：本地不能就此停手，起后台轮询 --
+            # 人点了确认、远端跑出终态后，把答案回填到这条 run。
+            from . import a2a_watch
+
+            a2a_watch.arm(run_id, remote_url, task_id)
         logger.info("A2A 执行 %s → %s（远端任务 %s）", run_id, status, task_id or "—")
 
     async def execute(

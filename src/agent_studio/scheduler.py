@@ -260,6 +260,14 @@ async def loop() -> None:
             except Exception:  # noqa: BLE001 —— 探活坏了不能连累定时任务
                 logger.exception("远程 agent 探活这一轮出错（继续下一轮）")
 
+            # A2A 等待确认的执行：重启后把还没回填的重新接上
+            try:
+                from .runner import a2a_watch as _a2aw
+
+                await _a2aw.sweep()
+            except Exception:  # noqa: BLE001
+                logger.exception("A2A 等待确认的接手这一轮出错（继续）")
+
             # 节点心跳：到点的对端发一次（内网对端不发，等它来感知我）
             try:
                 from . import peers as _peers
