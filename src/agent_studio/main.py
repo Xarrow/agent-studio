@@ -178,7 +178,15 @@ AUTH_EXEMPT = {"/api/health", "/api/version", "/docs", "/openapi.json", "/redoc"
 #:   · ``/api/hooks/{token}``     —— 外部触发，凭证在路径里
 #:   · ``/api/remote-agents/self`` —— 远端 agent 自注册：它在别人的机器上，
 #:     拿不到全站口令；这条端点**自己验**注册口令（见 api/remote_agents.py）
-AUTH_EXEMPT_PREFIXES = ("/api/hooks/", "/api/remote-agents/self", "/api/studio/")
+AUTH_EXEMPT_PREFIXES = (
+    "/api/hooks/",
+    "/api/remote-agents/self",
+    "/api/studio/",
+    # A2A 的发现与执行入口：本来就是给**别的节点**调的，口令闸只会把对端挡在外面；
+    # 允许调谁由助手上的「允许远程调用」决定（关闭即 403）
+    "/.well-known/",
+    "/a2a",
+)
 
 #: 隧道对端（= cloudflared 所在机器）。换机/多台可用环境变量覆盖。
 TUNNEL_PEERS = {

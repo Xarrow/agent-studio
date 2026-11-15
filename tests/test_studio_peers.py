@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import uuid
+
 import pytest
 from sqlalchemy import select
 
@@ -87,10 +89,13 @@ async def test_inbound_heartbeat_keeps_active() -> None:
 async def test_connect_and_sync(monkeypatch: pytest.MonkeyPatch) -> None:
     """连节点 → 同步助手：开放两个，其中一个解析失败也不该整次失败。"""
     await init_db()
+    # 同一进程里的库里可能已有上一轮留下的同名节点（测试共享一个临时库）：
+    # 用随机 id 保证这次一定是"新节点"，否则会走到"已经连过"的分支
+    sid = f"stu_sync_{uuid.uuid4().hex[:8]}"
 
     async def fake_card(base: str, timeout: float = 6.0) -> dict:
         return {
-            "studio_id": "stu_sync_demo",
+            "studio_id": sid,
             "name": "同步演示节点",
             "version": "0.1.0",
             "agents_open": 2,
@@ -106,8 +111,10 @@ async def test_connect_and_sync(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[str] = []
 
     async def fake_resolve(url: str, **kw) -> dict:
+        # 同步时传的是 base（两个助手同一个 base），所以只能按调用次序区分：
+        # 第一个成功、第二个模拟远端 500 —— 一个失败不该拖垮整次同步
         calls.append(url)
-        if "ag_b" in url:
+        if len(calls) == 2:
             raise RuntimeError("远端卡片 500")
         return {"base": "https://p.example.com", "parsed": {"name": "合同审查"}, "card": {"name": "合同审查"}}
 
@@ -124,7 +131,7 @@ async def test_connect_and_sync(monkeypatch: pytest.MonkeyPatch) -> None:
 
     async with SessionLocal() as s:
         peer, notes = await peers.connect(s, "https://p.example.com", mutual=False)
-        assert peer.studio_id == "stu_sync_demo"
+        assert peer.studio_id == sid
         assert peer.status == "active"
         assert peer.direction == "out"
         # 公网地址 → 由我方发心跳
@@ -135,7 +142,7 @@ async def test_connect_and_sync(monkeypatch: pytest.MonkeyPatch) -> None:
     async with SessionLocal() as s:
         rows = (await s.execute(select(RemoteAgent).where(RemoteAgent.peer_id == peer.id))).scalars().all()
         assert [r.name for r in rows] == ["合同审查"]
-        assert rows[0].peer_studio_id == "stu_sync_demo"
+        assert rows[0].peer_studio_id == sid
         assert rows[0].enabled is True
 
     # 重连同一个节点不重复建 peer

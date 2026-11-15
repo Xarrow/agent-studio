@@ -236,8 +236,12 @@ async def sync_peer(session: AsyncSession, peer: StudioPeer) -> list[str]:
     }
     touched: list[str] = []
     for item in agents:
-        card_url = item.get("a2a_card_url")
-        if not card_url:
+        card_url = item.get("a2a_card_url") or ""
+        endpoint = item.get("a2a_endpoint") or ""
+        # resolve() 期望的是**base**（它自己拼 /.well-known/agent-card.json）；
+        # 直接把卡片地址塞进去会拼成 .../agent-card.json/.well-known/agent-card.json
+        base = endpoint[:-4] if endpoint.endswith("/a2a") else card_url.split("/.well-known/")[0]
+        if not base:
             continue
         row = existing.pop(item["id"], None)
         if row is not None:
@@ -253,7 +257,7 @@ async def sync_peer(session: AsyncSession, peer: StudioPeer) -> list[str]:
             touched.append(row.name)
             continue
         try:
-            got = await remote_agents.resolve(card_url)
+            got = await remote_agents.resolve(base)
         except Exception as exc:  # noqa: BLE001 —— 一个助手失败不该毁掉整次同步
             logger.warning("同步远端助手失败：%s（%s）", item.get("name"), exc)
             continue
