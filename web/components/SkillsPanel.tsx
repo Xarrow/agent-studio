@@ -332,9 +332,23 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
 
   /** 列表里的筛选（在用/闲置/已归档）—— 归档的不该和常用技能混在一屏抢注意力 */
   const [filter, setFilter] = useState<"all" | "active" | "stale" | "archived">("all");
+  //: 来源分段：全部 / 系统（只读）/ 三方（只读）/ Agent 沉淀（可写）
+  const [nsFilter, setNsFilter] = useState<"all" | "system" | "vendor" | "workspace">("all");
   const [q, setQ] = useState("");
 
+  const nsOf = (s: Skill): "system" | "vendor" | "workspace" => {
+    const ns = (s.ns || "").toLowerCase();
+    if (ns === "system" || ns === "vendor" || ns === "workspace") return ns;
+    const t = String((s.source as Record<string, unknown>)?.type ?? "").toLowerCase();
+    if (t === "builtin") return "system";
+    if (t === "repo" || t === "git") return "vendor";
+    return "workspace";
+  };
+  const nsCount = { system: 0, vendor: 0, workspace: 0 } as Record<string, number>;
+  for (const s of skills) nsCount[nsOf(s)] = (nsCount[nsOf(s)] || 0) + 1;
+
   const shown = skills.filter((s) => {
+    if (nsFilter !== "all" && nsOf(s) !== nsFilter) return false;
     const st = s.state ?? "active";
     if (filter === "active" && st !== "active") return false;
     if (filter === "stale" && st !== "stale") return false;
@@ -437,6 +451,16 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
           options={[
             { key: "grouped", label: "按仓库分组" },
             { key: "flat", label: "全部平铺" },
+          ]}
+        />
+        <Segmented
+          value={nsFilter}
+          onChange={(k) => setNsFilter(k as "all" | "system" | "vendor" | "workspace")}
+          options={[
+            { key: "all", label: "全部来源", count: skills.length },
+            { key: "system", label: "系统", count: nsCount.system },
+            { key: "vendor", label: "三方", count: nsCount.vendor },
+            { key: "workspace", label: "Agent 沉淀", count: nsCount.workspace },
           ]}
         />
         <Segmented
@@ -552,6 +576,24 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
                        左边是"它是什么"，右边留给人看描述） */}
                   <span className="flex min-w-0 items-center gap-1.5">
                     <span className="truncate text-[13.5px] font-medium">{s.name}</span>
+                    {(() => {
+                      const ns = nsOf(s);
+                      const label = ns === "system" ? "系统" : ns === "vendor" ? "三方" : "沉淀";
+                      const ro = ns !== "workspace";
+                      return (
+                        <span
+                          className="shrink-0 rounded px-1 py-[1px] text-[10.5px]"
+                          title={ro ? `${label}来源：只读（随同步/版本更新）` : "Agent 沉淀：可编辑"}
+                          style={{
+                            background: "var(--color-surface-2)",
+                            color: ns === "workspace" ? "var(--color-accent)" : "var(--color-text-3)",
+                          }}
+                        >
+                          {label}
+                          {ro ? " · 只读" : ""}
+                        </span>
+                      );
+                    })()}
                     {s.pinned && (
                       <span title="已固定：自动整理不会动它" className="shrink-0" style={{ color: "var(--color-accent)" }}>
                         <IconPin size={12} />

@@ -64,6 +64,15 @@ async def lifespan(_app: FastAPI):
     if _priced:
         logger.info("模型单价：补了 %d 条参考价（可在「模型单价」里改）", _priced)
 
+    # 技能来源隔离：把老扁平目录搬进 system/ vendor/ workspace/ 并回填 ns/slug（幂等）
+    try:
+        from . import skills_layout as _sl
+
+        async with SessionLocal() as _sk_s:
+            await _sl.migrate_legacy_async(_sk_s)
+    except Exception:  # noqa: BLE001 —— 搬迁失败不该让服务起不来
+        logger.exception("技能目录迁移失败（继续启动，运行时仍可按老目录读取）")
+
     # 节点连接口令：入站校验是同步函数（不能 await），启动时读进内存
     from . import peers as _peers
 

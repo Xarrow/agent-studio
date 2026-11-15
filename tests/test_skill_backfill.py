@@ -51,12 +51,14 @@ async def test_库里勾着但盘上没有的会被补回来(tmp_path: Path, mon
         )
         await s.commit()
 
-    assert not (tmp_path / "backfill-demo" / "SKILL.md").exists()
+    assert not (tmp_path / "workspace" / "backfill-demo" / "SKILL.md").exists()
 
     fixed = await ensure_skill_files(["backfill-demo", "根本不存在的技能"])
 
     assert fixed == ["backfill-demo"]
-    assert (tmp_path / "backfill-demo" / "SKILL.md").read_text(encoding="utf-8").startswith("# 补写")
+    assert (tmp_path / "workspace" / "backfill-demo" / "SKILL.md").read_text(
+        encoding="utf-8"
+    ).startswith("# 补写")
 
     # 第二次什么也不做（不重复写、不误报）
     assert await ensure_skill_files(["backfill-demo"]) == []

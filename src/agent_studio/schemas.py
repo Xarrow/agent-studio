@@ -341,6 +341,9 @@ class SkillUpdateRequest(BaseModel):
 
 
 class SkillRead(BaseModel):
+    #: 来源命名空间 system / vendor / workspace（磁盘一级目录）
+    ns: str = ""
+    slug: str = ""
     id: str
     name: str
     description: str

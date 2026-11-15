@@ -491,7 +491,7 @@ async def ensure_default_skills(session: Any) -> list[str]:
             try:
                 from .config import settings as _s
 
-                d = _s.work_dir / "skills" / (getattr(row, "dir_name", "") or row.name)
+                d = _s.work_dir / "skills" / "system" / (getattr(row, "dir_name", "") or row.name)
                 if d.is_dir():
                     dest = _s.work_dir / "skills" / ".retired"
                     dest.mkdir(parents=True, exist_ok=True)
@@ -504,7 +504,8 @@ async def ensure_default_skills(session: Any) -> list[str]:
     from .config import settings as _settings
 
     for name, content in BUILTIN_SKILLS.items():
-        target = _settings.work_dir / "skills" / name
+        # 内置技能属于 system 命名空间（三来源隔离）
+        target = _settings.work_dir / "skills" / "system" / name
         target.mkdir(parents=True, exist_ok=True)
         (target / "SKILL.md").write_text(content, encoding="utf-8")
     return created

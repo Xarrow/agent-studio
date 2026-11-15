@@ -611,7 +611,14 @@ def skill_catalog(skills_dir: Path | None) -> str:
     if skills_dir is None or not skills_dir.is_dir():
         return ""
     rows: list[tuple[str, str]] = []
-    for child in sorted(skills_dir.iterdir()):
+    from ... import skills_layout
+
+    # 三来源布局（system / vendor/<owner>/<repo> / workspace）以及遗留的扁平目录
+    scanned = skills_layout.scan(skills_dir) or [
+        type("_S", (), {"path": d})() for d in sorted(skills_dir.iterdir()) if d.is_dir() and not d.name.startswith(".")
+    ]
+    for item in scanned:
+        child = item.path
         skill_md = child / "SKILL.md"
         if child.is_dir() and skill_md.is_file():
             name, desc = _skill_meta(skill_md)

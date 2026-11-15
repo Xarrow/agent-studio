@@ -60,7 +60,8 @@ async def test_上传_zip_装进技能库并解压到指定目录(client):
     target = settings.work_dir / "qa-uploads" / "case1"
     assert (target / "qa-uploaded" / "assets" / "a.txt").is_file()
     # 技能在库里，且落盘成运行时目录
-    assert (settings.work_dir / "skills" / "qa-uploaded" / "SKILL.md").is_file()
+    # 上传导入落在 workspace（Agent 与用户可写的那一档）
+    assert (settings.work_dir / "skills" / "workspace" / "qa-uploaded" / "SKILL.md").is_file()
 
 
 async def test_上传_skills后缀按zip处理(client):

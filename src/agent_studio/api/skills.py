@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..config import settings
 from ..db import SessionLocal, get_session
 from ..models import Agent, AgentSkill, Skill, now_ms
+from .. import skills_layout
 from ..schemas import (
     CliInstallRequest,
     SkillImportRequest,
@@ -67,7 +68,9 @@ def to_read(row: Skill) -> SkillRead:
         archived_at=row.archived_at,
         source_key=getattr(row, "source_key", "") or "",
         dir_name=getattr(row, "dir_name", "") or "",
-        location=str(settings.work_dir / "skills" / ((getattr(row, "dir_name", "") or row.name))),
+        ns=getattr(row, "ns", "") or skills_layout.ns_of(getattr(row, "source", None) or {}),
+        slug=getattr(row, "slug", "") or getattr(row, "dir_name", "") or row.name,
+        location=str(skills_layout.path_for(row)),
     )
 
 
@@ -95,7 +98,9 @@ def to_read_lite(row: Skill) -> SkillRead:
         archived_at=row.archived_at,
         source_key=getattr(row, "source_key", "") or "",
         dir_name=getattr(row, "dir_name", "") or "",
-        location=str(settings.work_dir / "skills" / ((getattr(row, "dir_name", "") or row.name))),
+        ns=getattr(row, "ns", "") or skills_layout.ns_of(getattr(row, "source", None) or {}),
+        slug=getattr(row, "slug", "") or getattr(row, "dir_name", "") or row.name,
+        location=str(skills_layout.path_for(row)),
     )
 
 
@@ -496,6 +501,8 @@ async def delete_skill(skill_id: str, session: AsyncSession = Depends(get_sessio
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Skill 不存在: {skill_id}")
     name = getattr(row, "dir_name", "") or row.name
+    # 先算出目录（删除后再读 ORM 对象的属性会失效）
+    target_dir = skills_layout.path_for(row)
     await session.execute(delete(AgentSkill).where(AgentSkill.skill_id == skill_id))
     # 助手定义里也存着 {"ref": skill_id} —— 只删关联表会留下悬空引用：
     # 界面上还能看到这一项，运行时按 id 找不到技能，报错信息还指不到原因。
@@ -517,9 +524,10 @@ async def delete_skill(skill_id: str, session: AsyncSession = Depends(get_sessio
     # DB 删了、磁盘还留着 = 工作目录里永远有这份「不存在的技能」，看着像删不掉。
     # 只动技能库里那一个目录（名字由 DB 决定，不接受外部路径）。
     try:
-        target = (settings.work_dir / "skills" / name).resolve()
-        root = (settings.work_dir / "skills").resolve()
-        if target.parent == root and target.is_dir():
+        target = target_dir.resolve()
+        root = skills_layout.skills_root().resolve()
+        # 只删技能库内的目录（防越权删到别处）
+        if target.is_dir() and root in target.parents:
             shutil.rmtree(target)
     except OSError:  # 删不掉不该让接口失败（DB 已经提交）
         logger.warning("技能已从库里删除，但磁盘目录清理失败: %s", name, exc_info=True)
@@ -537,7 +545,8 @@ async def _materialize(row: Skill) -> Path:
     """
     from ..skills_lifecycle import write_skill_files
 
-    return write_skill_files(row, settings.work_dir / "skills")
+    # 不给 root：按 ns 落到 system/ vendor/ workspace/（三来源隔离）
+    return write_skill_files(row)
 
 
 async def _upsert_skill(

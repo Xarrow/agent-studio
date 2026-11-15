@@ -42,7 +42,8 @@ async def test_删技能同时清掉磁盘目录(client, _sandbox_work: Path):
     assert r.status_code in (200, 201), r.text
     skill_id = r.json()["items"][0]["id"]
 
-    on_disk = _sandbox_work / "skills" / NAME
+    # inline 来源 → workspace 命名空间
+    on_disk = _sandbox_work / "skills" / "workspace" / NAME
     assert (on_disk / "SKILL.md").is_file(), "导入后应当落盘（否则助手看不见）"
 
     d = await client.delete(f"/api/skills/{skill_id}")

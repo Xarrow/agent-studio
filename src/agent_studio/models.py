@@ -111,6 +111,10 @@ class Skill(Base):
     last_used_at: Mapped[int | None] = mapped_column(Integer, default=None, index=True)
     last_used_run_id: Mapped[str | None] = mapped_column(String(32), default=None)
     #: active | stale（久了没人用）| archived（已从运行时撤下，内容还在库里）
+    #: 来源命名空间：system / vendor / workspace（磁盘目录的第一级）
+    ns: Mapped[str] = mapped_column(String(16), default="", index=True)
+    #: 目录名（= ns 下的叶子目录名，通常是名字的 slug）
+    slug: Mapped[str] = mapped_column(String(120), default="")
     state: Mapped[str] = mapped_column(String(16), default="active", index=True)
     #: 固定 = 任何自动整理都不碰它（"这个我常用，别动"）
     pinned: Mapped[bool] = mapped_column(Boolean, default=False)

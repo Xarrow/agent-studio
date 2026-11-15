@@ -128,6 +128,10 @@ def build_skill_view(
         if legacy.is_dir():
             _sh.rmtree(legacy, ignore_errors=True)
 
+    from ... import skills_layout
+
+    idx = skills_layout.name_index(skills_dir)
+
     view = root / _skill_signature(bound_names, skills_dir)
     if _view_complete(view, bound_names, skills_dir):
         return view
@@ -137,7 +141,7 @@ def build_skill_view(
         tmp = root / f".tmp-{os.getpid()}-{time.time_ns()}"
         tmp.mkdir(parents=True, exist_ok=False)
         for name in bound_names:
-            src = skills_dir / name
+            src = idx.get(name) or (skills_dir / name)
             if (src / "SKILL.md").is_file():
                 _sh.copytree(src, tmp / name, dirs_exist_ok=True, symlinks=False)
         if view.exists():

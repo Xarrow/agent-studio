@@ -193,6 +193,9 @@ export interface Skill {
   state?: "active" | "stale" | "archived";
   pinned?: boolean;
   archived_at?: number | null;
+  /** 来源命名空间：system / vendor / workspace（与磁盘一级目录一致） */
+  ns?: "system" | "vendor" | "workspace" | string;
+  slug?: string;
   /** 两级归属与磁盘位置 */
   source_key?: string;
   dir_name?: string;

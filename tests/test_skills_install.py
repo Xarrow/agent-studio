@@ -107,7 +107,8 @@ async def test_一条引用装进来_含来源与落盘(client, offline, tmp_wor
 
     from agent_studio.config import settings
 
-    p = Path(settings.work_dir) / "skills" / "archify" / "SKILL.md"
+    # 三来源布局：仓库来源 → vendor/<owner>/<repo>/<slug>
+    p = Path(settings.work_dir) / "skills" / "vendor" / "tt-a1i" / "archify" / "archify" / "SKILL.md"
     assert p.is_file(), f"应当落盘到 {p}"
     assert "Archify" in p.read_text(encoding="utf-8")
 

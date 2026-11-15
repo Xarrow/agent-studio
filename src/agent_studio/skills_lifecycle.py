@@ -50,12 +50,21 @@ def archive_dir() -> Path:
 def write_skill_files(row: Skill, root: Path | None = None) -> Path:
     """把一条 Skill 的真身写到磁盘（同步版，运行时也要用）。
 
-    **只在库里不算有**：LocalSkillLoader 读的是 ``work_dir/skills/<name>/``。
-    这套环境迁移/重建时库里带过来了、盘上没带过来，助手就"勾了但看不见" ——
-    实测东京实例挂了 8 个，目录里只有 3 个。
+    落点是**三来源布局**：``{root}/system/<slug>`` / ``{root}/vendor/<owner>/<repo>/<slug>`` /
+    ``{root}/workspace/<slug>``。``root`` 默认 ``settings.work_dir/skills``；
+    测试里传临时目录时同样按这个布局落盘（保持隔离）。
+
+    **只在库里不算有**：LocalSkillLoader 读的是磁盘上的 ``<name>/SKILL.md``。
     """
-    base = Path(root) if root is not None else skills_dir()
-    target = base / (getattr(row, "dir_name", "") or row.name)
+    from .config import settings as _st
+
+    from . import skills_layout
+
+    base = Path(root) if root is not None else Path(_st.work_dir) / "skills"
+    ns = getattr(row, "ns", "") or skills_layout.ns_of(getattr(row, "source", None) or {})
+    owner, repo = skills_layout.owner_repo_of(getattr(row, "source", None) or {})
+    slug = getattr(row, "slug", "") or getattr(row, "dir_name", "") or row.name
+    target = base / skills_layout.rel_dir(ns, slug, owner, repo)
     target.mkdir(parents=True, exist_ok=True)
     (target / "SKILL.md").write_text(row.content or "", encoding="utf-8")
     for rel, text in (row.files or {}).items():
@@ -74,8 +83,12 @@ async def ensure_skill_files(names: list[str]) -> list[str]:
     want = [str(n) for n in (names or []) if n]
     if not want:
         return []
+    from . import skills_layout
+
+    # 三来源布局：按名字索引（vendor/system/workspace + 遗留扁平）判断"在不在"
     root = skills_dir()
-    missing = [n for n in want if not (root / n / "SKILL.md").is_file()]
+    idx = skills_layout.name_index(root)
+    missing = [n for n in want if n not in idx]
     if not missing:
         return []
     from .db import SessionLocal
@@ -84,6 +97,7 @@ async def ensure_skill_files(names: list[str]) -> list[str]:
     async with SessionLocal() as session:
         rows = (await session.execute(select(Skill).where(Skill.name.in_(missing)))).scalars().all()
         for row in rows:
+            # 传 root=技能库根目录：内部按 ns 落子目录（测试里也用临时根）
             write_skill_files(row, root)
             fixed.append(row.name)
     if fixed:

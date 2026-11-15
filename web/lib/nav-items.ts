@@ -37,7 +37,7 @@ export const SETUP_ITEMS: NavItem[] = [
   { href: "/runs", label: "管理", icon: "manage", tip: "每次执行一行，点开看过程与耗时" },
   { href: "/agents", label: "Agents", icon: "agents", tip: "一个会自己想办法做事的 AI" },
   { href: "/memories", label: "记忆", icon: "memory", tip: "跨对话的长期记性" },
-  { href: "/tools", label: "工具", icon: "tools", tip: "能查网页、读文件、跑命令；不加只能聊天" },
+  { href: "/tools", label: "能力", icon: "tools", tip: "工具 / Skills / MCP —— 助手能用的东西都在这" },
   { href: "/remote-agents", label: "远程 Agent 管理", icon: "exchange", tip: "接入外部 A2A agent，挂到助手调用" },
 ];
 

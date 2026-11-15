@@ -291,7 +291,6 @@ export function Nav() {
               item={withShort}
               expanded={expanded}
               active={isActive(l.href)}
-              badge={l.href === "/tools" && skillCount != null ? String(skillCount) : undefined}
               dot={l.href === "/tools" && envReady === false ? "var(--color-danger)" : undefined}
             />
           );
