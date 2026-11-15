@@ -148,7 +148,17 @@ async def connect(
     peers = (await session.execute(select(StudioPeer))).scalars().all()
     same = next((p for p in peers if p.studio_id == card["studio_id"]), None)
     if same is not None and same.status in ("active", "pending"):
-        return same, [f"已经连过了：{same.name}"]
+        notes = [f"已经连过了：{same.name}"]
+        # 之前只建立了单向（对端当时没有握手端点）：这次要双向就补推一次
+        if mutual and same.direction == "out":
+            try:
+                await push_self(same)
+                same.direction = "both"
+                await session.commit()
+                notes.append("已补推名片，等对方接受")
+            except ValueError as exc:
+                notes.append(f"仍然推不过去：{exc}")
+        return same, notes
 
     notes: list[str] = []
     heartbeat = not is_private(base)

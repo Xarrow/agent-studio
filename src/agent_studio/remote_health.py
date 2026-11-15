@@ -49,8 +49,11 @@ async def _probe_one(row: RemoteAgent, sem: asyncio.Semaphore) -> dict:
         before = row.status
         stamp = now_ms()
         try:
+            # 节点同步来的行带**按助手**的卡片地址：走平台级卡片会 403
+            # （默认助手没开放就探测失败，界面上看着像"远端坏了"）
+            target = (row.parsed or {}).get("card_url") or row.url
             await a2a_client.discover(
-                row.url, timeout=PROBE_TIMEOUT_S, headers=_ra.auth_headers(row)
+                target, timeout=PROBE_TIMEOUT_S, headers=_ra.auth_headers(row)
             )
             row.status = "ok"
             row.last_ok_at = stamp
