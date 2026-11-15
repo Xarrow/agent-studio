@@ -128,6 +128,21 @@ export interface StudioPeer {
   created_at: number;
 }
 
+/** 点开节点时读到的对端名片（"远程的详情"） */
+export interface StudioPeerRemote {
+  studio_id: string;
+  name: string;
+  version?: string;
+  protocol?: string;
+  base_url?: string;
+  agents_total?: number;
+  agents_open?: number;
+  fingerprint?: string;
+  created_at?: number;
+  card_url: string;
+  agents_url: string;
+}
+
 /** 节点下已同步到本地的远端助手（点开节点看到的那些） */
 export interface StudioPeerAgent {
   id: string;
