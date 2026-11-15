@@ -23,6 +23,7 @@ import asyncio
 import ipaddress
 import logging
 import socket
+import time
 from typing import Any
 from urllib.parse import urlparse
 
@@ -95,10 +96,11 @@ def is_private(base_url: str) -> bool:
 # --------------------------------------------------------------------------- #
 async def fetch_card(base: str, timeout: float = 6.0) -> dict[str, Any]:
     """读对端名片。失败一律给**人话**（页面上要能直接显示）。"""
-    url = f"{base}/api/studio/card"
+    # 带 __t 穿透 CDN 缓存：隧道后面可能坐着 Cloudflare，GET 会被边缘缓存
+    url = f"{base}/api/studio/card?__t={int(time.time() * 1000)}"
     try:
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-            resp = await client.get(url)
+            resp = await client.get(url, headers={"Cache-Control": "no-cache"})
     except httpx.TimeoutException as exc:
         raise ValueError(f"连不上（{timeout:.0f} 秒超时）：{base}") from exc
     except httpx.HTTPError as exc:
@@ -119,9 +121,9 @@ async def fetch_card(base: str, timeout: float = 6.0) -> dict[str, Any]:
 
 
 async def fetch_agents(base: str, timeout: float = 8.0) -> list[dict[str, Any]]:
-    url = f"{base}/api/studio/agents"
+    url = f"{base}/api/studio/agents?__t={int(time.time() * 1000)}"
     async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-        resp = await client.get(url)
+        resp = await client.get(url, headers={"Cache-Control": "no-cache"})
     if resp.status_code >= 400:
         raise ValueError(f"读对方助手清单失败：HTTP {resp.status_code}")
     return list((resp.json() or {}).get("agents") or [])

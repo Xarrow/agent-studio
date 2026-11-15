@@ -22,6 +22,7 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -76,8 +77,14 @@ async def _open_agents(session: AsyncSession) -> list[Agent]:
     return list(rows)
 
 
+#: 这两个端点**必须禁止被缓存**。
+#: 实测踩过：经 Cloudflare 隧道时边缘把 /api/studio/agents 缓存了 15 分钟，
+#: 对端同步拿到的是旧快照（刚开放的助手在对端一直不出现），排查半天。
+_NO_CACHE = {"Cache-Control": "no-store, no-cache, must-revalidate", "Pragma": "no-cache"}
+
+
 @router.get("/api/studio/card")
-async def studio_card(request: Request, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+async def studio_card(request: Request, session: AsyncSession = Depends(get_session)) -> JSONResponse:
     """节点名片：对端握手时先读这个。"""
     ident = await studio_identity.get_identity()
     opened = await _open_agents(session)
@@ -85,7 +92,7 @@ async def studio_card(request: Request, session: AsyncSession = Depends(get_sess
     total = (await session.execute(select(Agent))).scalars().all()
     from .. import __version__
 
-    return {
+    return JSONResponse({
         "studio_id": ident["id"],
         "name": ident["name"],
         "version": __version__,
@@ -95,7 +102,7 @@ async def studio_card(request: Request, session: AsyncSession = Depends(get_sess
         "agents_open": len(views),
         "fingerprint": _fingerprint(views),
         "created_at": ident.get("created_at"),
-    }
+    }, headers=_NO_CACHE)
 
 
 @router.get("/api/studio/agents")
@@ -103,7 +110,7 @@ async def studio_agents(
     request: Request,
     open_only: bool = Query(default=True, description="只回开放的（对端默认口径）"),
     session: AsyncSession = Depends(get_session),
-) -> dict[str, Any]:
+) -> JSONResponse:
     """我这边可被远程调用的助手清单。
 
     ``open_only=0`` 只在**本机管理页**用（看自己全量），对端拿不到。
@@ -113,12 +120,12 @@ async def studio_agents(
         await session.execute(select(Agent).order_by(Agent.name))
     ).scalars().all()
     views = [_agent_view(a, base) for a in rows]
-    return {
+    return JSONResponse({
         "studio_id": (await studio_identity.get_identity())["id"],
         "count": len(views),
         "fingerprint": _fingerprint(views),
         "agents": views,
-    }
+    }, headers=_NO_CACHE)
 
 
 @router.post("/api/studio/name")
