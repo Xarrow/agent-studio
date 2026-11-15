@@ -271,6 +271,8 @@ async def sync_peer(session: AsyncSession, peer: StudioPeer) -> list[str]:
                 "name": item.get("name"),
                 "description": item.get("description"),
                 "version": item.get("version"),
+                # 老行补上"按助手的卡片地址"：探活与刷新都靠它（否则走平台卡片 403）
+                "card_url": card_url,
             }
             row.enabled = True
             row.updated_at = now_ms()

@@ -68,7 +68,12 @@ def _rpc_url(base: str) -> str:
     # 平台级卡片是 /.well-known/agent-card.json；**按助手的**卡片是
     # /.well-known/agents/<id>/agent-card.json —— 两种都要认，否则会被再拼一层
     if u.endswith("agent-card.json"):
-        u = u[: -len(".well-known/agent-card.json")].rstrip("/")
+        # 卡片地址 → 回到它的地址根（平台级 / 按助手 两种形态都适用）
+        from urllib.parse import urlparse
+
+        parsed = urlparse(u)
+        root_path = parsed.path.split("/.well-known/")[0].rstrip("/")
+        u = f"{parsed.scheme}://{parsed.netloc}{root_path}"
     if u.endswith("/a2a"):
         return u
     return urljoin(u + "/", "a2a")
@@ -117,7 +122,9 @@ async def discover(
     u = (base or "").strip().rstrip("/")
     if not u:
         raise A2AError("远端地址为空")
-    if u.endswith(".well-known/agent-card.json"):
+    # 认两种卡片地址：平台级（/.well-known/agent-card.json）与按助手
+    # （/.well-known/agents/<id>/agent-card.json）。只认前者时，后者会被再拼一层 → 404
+    if u.endswith("agent-card.json"):
         card_url = u
     else:
         card_url = urljoin(u + "/", ".well-known/agent-card.json")
