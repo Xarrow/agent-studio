@@ -124,6 +124,10 @@ async def peer_agents(peer_id: str, session: AsyncSession = Depends(get_session)
     remote: dict[str, Any] | None = None
     remote_error = ""
     stale = False
+    if not peer.base_url:
+        # 对方连我但没给回连地址（内网节点就是这样：公网连不回去）——
+        # 这不是错误，是网络模型决定的，页面上要说人话而不是报"连不上"
+        remote_error = "对方没有提供可回连的地址（内网节点不会自报公网地址）"
     if peer.base_url:
         try:
             card = await peers.fetch_card(peer.base_url, timeout=8.0)

@@ -310,7 +310,7 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
                             ) : rm ? (
                               <Chip tone="ok">已连通</Chip>
                             ) : rErr ? (
-                              <Chip tone="err">连不上</Chip>
+                              <Chip tone="warn">读不到详情</Chip>
                             ) : (
                               <Chip tone="muted">读不到名片</Chip>
                             )}
