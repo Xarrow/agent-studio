@@ -103,6 +103,49 @@ async def connect_peer(payload: dict[str, Any], session: AsyncSession = Depends(
     return {"peer": _view(peer, peer.agents_count), "notes": notes}
 
 
+@router.get("/{peer_id}/agents")
+async def peer_agents(peer_id: str, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """点开一个节点时看它下面有哪些助手（已同步到本地的这些）。
+
+    数据来自本地 remote_agent（带 peer_id），不打对端 —— 点开不该等网络。
+    要最新的就点「同步」。
+    """
+    peer = await session.get(StudioPeer, peer_id)
+    if peer is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "节点不存在")
+    rows = (
+        await session.execute(
+            select(RemoteAgent).where(RemoteAgent.peer_id == peer.id).order_by(RemoteAgent.name)
+        )
+    ).scalars().all()
+    return {
+        "peer": _view(peer, len(rows)),
+        "agents": [
+            {
+                "id": r.id,
+                "name": r.name,
+                "description": (r.parsed or {}).get("description") or "",
+                "version": (r.parsed or {}).get("version"),
+                "status": r.status,
+                "enabled": bool(r.enabled),
+                "url": r.url,
+                "card_url": (r.parsed or {}).get("card_url") or "",
+                "remote_agent_id": r.remote_agent_id,
+                "skills": [
+                    (k.get("name") if isinstance(k, dict) else str(k))
+                    for k in ((r.parsed or {}).get("skills") or [])
+                    if (k.get("name") if isinstance(k, dict) else k)
+                ][:20],
+                "note": r.note or "",
+                "last_ok_at": r.last_ok_at,
+                "last_checked_at": r.last_checked_at,
+                "last_error": r.last_error or "",
+            }
+            for r in rows
+        ],
+    }
+
+
 @router.post("/{peer_id}/sync")
 async def sync_peer(peer_id: str, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     peer = await session.get(StudioPeer, peer_id)

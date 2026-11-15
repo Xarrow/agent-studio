@@ -16,7 +16,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { api } from "@/lib/api";
-import type { StudioPeer } from "@/lib/types";
+import type { StudioPeer, StudioPeerAgent } from "@/lib/types";
 import { Chip, Section, Switch } from "@/components/ui/kit";
 import { useFeedback } from "@/components/ui/feedback";
 
@@ -37,6 +37,12 @@ const STATUS: Record<string, { label: string; tone: "ok" | "warn" | "err" | "mut
   revoked: { label: "已撤销", tone: "muted" },
 };
 
+const ARUN: Record<string, { label: string; tone: "ok" | "warn" | "err" | "muted" }> = {
+  ok: { label: "可用", tone: "ok" },
+  unknown: { label: "未检测", tone: "muted" },
+  error: { label: "异常", tone: "err" },
+};
+
 export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
   const fb = useFeedback();
   const [peers, setPeers] = useState<StudioPeer[] | null>(null);
@@ -51,6 +57,11 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
     private: boolean;
   } | null>(null);
 
+  // 逐级展开：节点（点开看它下面的助手）→ 助手（点开看详情）
+  const [openPeer, setOpenPeer] = useState<string | null>(null);
+  const [openAgent, setOpenAgent] = useState<string | null>(null);
+  const [nodeAgents, setNodeAgents] = useState<Record<string, StudioPeerAgent[]>>({});
+
   const load = useCallback(async () => {
     try {
       const got = await api.studioPeers();
@@ -63,6 +74,33 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const loadAgents = useCallback(async (peerId: string) => {
+    try {
+      const got = await api.studioPeerAgents(peerId);
+      setNodeAgents((prev) => ({ ...prev, [peerId]: got.agents }));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  }, []);
+
+  const togglePeer = async (peerId: string) => {
+    const next = openPeer === peerId ? null : peerId;
+    setOpenPeer(next);
+    setOpenAgent(null);
+    if (next) await loadAgents(next);
+  };
+
+  const toggleAgent = async (peerId: string, agent: StudioPeerAgent, enabled: boolean) => {
+    try {
+      // 调用方自己的开关：停用后这个远端助手不再出现在助手的可挂载清单里
+      await api.patchRemoteAgent(agent.id, { enabled });
+      fb.success(enabled ? "已启用" : "已停用");
+      await loadAgents(peerId);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  };
 
   const run = async (key: string, fn: () => Promise<unknown>, ok?: string) => {
     setBusy(key);
@@ -193,35 +231,156 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
         ) : (
           active.map((p) => {
             const st = STATUS[p.status] ?? STATUS.active;
+            const isOpen = openPeer === p.id;
+            const agents = nodeAgents[p.id];
             return (
-              <div key={p.id} className="flex flex-wrap items-center gap-2 border-t py-2 first:border-t-0"
-                   style={{ borderColor: "var(--color-line)" }}>
-                <span className="text-[13px] font-medium">{p.name}</span>
-                <Chip tone={st.tone}>{st.label}</Chip>
-                {p.direction === "both" && <Chip>互相连接</Chip>}
-                {!p.heartbeat && <Chip title="对方是内网地址：由它发心跳给我">仅对方心跳</Chip>}
-                <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
-                  {p.base_url || "地址未知"} · {p.agents_synced}/{p.agents_count} 个助手 · 上次同步 {ago(p.last_sync_at)}
-                </span>
-                <span className="ml-auto flex gap-1.5">
-                  <button className="btn btn-sm" disabled={busy === p.id || !p.base_url}
-                          onClick={() => run(p.id, () => api.studioPeerSync(p.id), "已同步")}>
-                    同步
-                  </button>
-                  <button
-                    className="btn btn-sm"
-                    style={{ color: "var(--color-err)" }}
-                    disabled={busy === p.id}
-                    onClick={() => {
-                      if (!window.confirm(`移除节点「${p.name}」？它同步过来的助手会一起删掉。`)) return;
-                      void run(p.id, () => api.studioPeerRemove(p.id), "已移除");
-                    }}
-                  >
-                    移除
-                  </button>
-                </span>
+              <div key={p.id} className="border-t first:border-t-0" style={{ borderColor: "var(--color-line)" }}>
+                {/* 节点行：整行可点开（≥44px 触屏区），动作在最右常驻 */}
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => void togglePeer(p.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      void togglePeer(p.id);
+                    }
+                  }}
+                  className="flex min-h-[44px] cursor-pointer flex-wrap items-center gap-2 py-2"
+                >
+                  <span className="w-3 shrink-0 text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                    {isOpen ? "▾" : "▸"}
+                  </span>
+                  <span className="text-[13px] font-medium">{p.name}</span>
+                  <Chip tone={st.tone}>{st.label}</Chip>
+                  {p.direction === "both" && <Chip>互相连接</Chip>}
+                  {!p.heartbeat && <Chip title="对方是内网地址：由它发心跳给我">仅对方心跳</Chip>}
+                  <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                    {p.base_url || "地址未知"} · {p.agents_synced}/{p.agents_count} 个助手 · 上次同步 {ago(p.last_sync_at)}
+                  </span>
+                  <span className="ml-auto flex gap-1.5" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      className="btn btn-sm"
+                      disabled={busy === p.id || !p.base_url}
+                      onClick={() => {
+                        void run(p.id, () => api.studioPeerSync(p.id), "已同步").then(() => loadAgents(p.id));
+                      }}
+                    >
+                      同步
+                    </button>
+                    <button
+                      className="btn btn-sm"
+                      style={{ color: "var(--color-err)" }}
+                      disabled={busy === p.id}
+                      onClick={() => {
+                        if (!window.confirm(`移除节点「${p.name}」？它同步过来的助手会一起删掉。`)) return;
+                        void run(p.id, () => api.studioPeerRemove(p.id), "已移除");
+                      }}
+                    >
+                      移除
+                    </button>
+                  </span>
+                </div>
                 {p.last_error && (
-                  <div className="w-full text-[11px]" style={{ color: "var(--color-err)" }}>{p.last_error}</div>
+                  <div className="w-full pb-1 text-[11px]" style={{ color: "var(--color-err)" }}>{p.last_error}</div>
+                )}
+
+                {/* 展开：这个节点下可用的助手（点助手再展开详情） */}
+                {isOpen && (
+                  <div className="mb-2 ml-5 border-l pl-3" style={{ borderColor: "var(--color-line)" }}>
+                    {agents === undefined ? (
+                      <div className="py-1 text-[12px]" style={{ color: "var(--color-text-3)" }}>加载中…</div>
+                    ) : agents.length === 0 ? (
+                      <div className="py-1 text-[12px]" style={{ color: "var(--color-text-3)" }}>
+                        这个节点还没有同步到本地助手（点上面的「同步」）
+                      </div>
+                    ) : (
+                      agents.map((a) => {
+                        const as = ARUN[a.status] ?? ARUN.unknown;
+                        const aOpen = openAgent === a.id;
+                        return (
+                          <div key={a.id} className="border-t first:border-t-0" style={{ borderColor: "var(--color-line)" }}>
+                            <div
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => setOpenAgent(aOpen ? null : a.id)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  setOpenAgent(aOpen ? null : a.id);
+                                }
+                              }}
+                              className="flex min-h-[40px] cursor-pointer flex-wrap items-center gap-2 py-1.5"
+                            >
+                              <span className="w-3 shrink-0 text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                                {aOpen ? "▾" : "▸"}
+                              </span>
+                              <span className="text-[12.5px]">{a.name}</span>
+                              <Chip tone={as.tone}>{as.label}</Chip>
+                              {!a.enabled && <Chip tone="muted">已停用</Chip>}
+                              {a.skills.length > 0 && (
+                                <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                                  {a.skills.length} 个技能
+                                </span>
+                              )}
+                              <span className="ml-auto text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                                上次可用 {ago(a.last_ok_at)}
+                              </span>
+                            </div>
+
+                            {aOpen && (
+                              <div className="mb-2 rounded-md p-2.5" style={{ background: "var(--color-surface-2)" }}>
+                                <div className="text-[12px]" style={{ color: "var(--color-text-2)" }}>
+                                  {a.description || "远端没有提供说明"}
+                                </div>
+                                {a.skills.length > 0 && (
+                                  <div className="mt-1.5 flex flex-wrap gap-1">
+                                    {a.skills.slice(0, 12).map((s) => (
+                                      <Chip key={s} tone="muted">{s}</Chip>
+                                    ))}
+                                  </div>
+                                )}
+                                <div className="mt-2 flex items-center gap-1.5">
+                                  <code
+                                    className="mono min-w-0 flex-1 truncate text-[11px]"
+                                    style={{ color: "var(--color-text-2)" }}
+                                    title={a.card_url || a.url}
+                                  >
+                                    {a.card_url || a.url}
+                                  </code>
+                                  <button
+                                    className="btn btn-sm shrink-0"
+                                    onClick={() => {
+                                      void navigator.clipboard?.writeText(a.card_url || a.url);
+                                      fb.success("A2A 地址已复制");
+                                    }}
+                                  >
+                                    复制
+                                  </button>
+                                </div>
+                                <div className="mt-2 flex flex-wrap items-center gap-3">
+                                  <label className="flex items-center gap-1.5 text-[12px]">
+                                    <Switch
+                                      checked={a.enabled}
+                                      ariaLabel={`启用 ${a.name}`}
+                                      onChange={(next) => void toggleAgent(p.id, a, next)}
+                                    />
+                                    在本机使用
+                                  </label>
+                                  <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                                    远端助手 ID {a.remote_agent_id || "—"} · 状态检查 {ago(a.last_checked_at)}
+                                  </span>
+                                </div>
+                                {a.last_error && (
+                                  <div className="mt-1.5 text-[11px]" style={{ color: "var(--color-err)" }}>{a.last_error}</div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
                 )}
               </div>
             );

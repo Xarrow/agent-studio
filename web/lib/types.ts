@@ -128,6 +128,24 @@ export interface StudioPeer {
   created_at: number;
 }
 
+/** 节点下已同步到本地的远端助手（点开节点看到的那些） */
+export interface StudioPeerAgent {
+  id: string;
+  name: string;
+  description: string;
+  version?: number | string | null;
+  status: "ok" | "unknown" | "error" | string;
+  enabled: boolean;
+  url: string;
+  card_url: string;
+  remote_agent_id: string | null;
+  skills: string[];
+  note: string;
+  last_ok_at: number | null;
+  last_checked_at: number | null;
+  last_error: string;
+}
+
 export interface Tool {
   id: string;
   /** builtin=运行时内置；http=自定义 HTTP；code=代码；fork=**平台原生**（助手的"分身"能力） */

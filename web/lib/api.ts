@@ -48,6 +48,7 @@ import type {
   RemoteAgentParsed,
   RemoteAgentRecord,
   StudioPeer,
+  StudioPeerAgent,
   DbStatus,
   DbTestResult,
   Issue,
@@ -472,6 +473,8 @@ export const api = {
     ),
   studioPeerConnect: (url: string, mutual = true) =>
     post<{ peer: StudioPeer; notes: string[] }>("/api/studios", { url, mutual }),
+  studioPeerAgents: (id: string) =>
+    request<{ peer: StudioPeer; agents: StudioPeerAgent[] }>(`/api/studios/${id}/agents`),
   studioPeerSync: (id: string) =>
     post<{ synced: string[]; count: number }>(`/api/studios/${id}/sync`, {}),
   studioPeerAccept: (id: string, url?: string) =>
