@@ -794,6 +794,9 @@ class RemoteAgent(Base):
     parsed: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     #: 远端要哪个助手（放进 message.metadata.agentId；远端不认就忽略）
     remote_agent_id: Mapped[str | None] = mapped_column(String(64), default=None)
+    #: 来自哪个节点（studio_peer.id）。空 = 当初是单个注册进来的，不属于任何节点
+    peer_id: Mapped[str | None] = mapped_column(String(32), default=None, index=True)
+    peer_studio_id: Mapped[str | None] = mapped_column(String(40), default=None)
     #: 鉴权：密钥加密存（引用式，不落明文）；header/scheme 可配
     auth_header: Mapped[str] = mapped_column(String(64), default="Authorization")
     auth_scheme: Mapped[str] = mapped_column(String(32), default="Bearer")
@@ -814,6 +817,40 @@ class RemoteAgent(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     #: 自动创建的工具行（绑定入口）
     tool_id: Mapped[str | None] = mapped_column(String(32), default=None)
+    note: Mapped[str] = mapped_column(LongText, default="")
+    created_at: Mapped[int] = mapped_column(Integer, default=now_ms)
+    updated_at: Mapped[int] = mapped_column(Integer, default=now_ms)
+
+
+class StudioPeer(Base):
+    """另一个 Agent Studio 节点（节点联邦里的"对端"）。
+
+    为什么要有这一层：远端助手是**节点拥有的**，一个节点下挂多个助手。
+    只记"某个 agent 的 URL"就回答不了"它属于谁、它整体还在不在、它的清单变了没"。
+    """
+
+    __tablename__ = "studio_peer"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("peer_"))
+    workspace_id: Mapped[str] = mapped_column(String(32), default="ws_default", index=True)
+    #: 对端自报的 studio_id —— 认人的唯一依据（地址会变，id 不变）
+    studio_id: Mapped[str] = mapped_column(String(40), index=True)
+    name: Mapped[str] = mapped_column(String(120), default="")
+    #: 我这边访问它的 base 地址（去掉了 /a2a 等尾巴）
+    base_url: Mapped[str] = mapped_column(String(500), default="")
+    #: out=我连它 / in=它连我 / both=互相
+    direction: Mapped[str] = mapped_column(String(8), default="out")
+    #: pending=等我接受 | active=正常 | rejected=我拒绝了 | offline=连续心跳失败 | revoked=已撤销
+    status: Mapped[str] = mapped_column(String(12), default="active", index=True)
+    #: 对端开放助手的指纹（变了就要重新同步）
+    fingerprint: Mapped[str] = mapped_column(String(64), default="")
+    agents_count: Mapped[int] = mapped_column(Integer, default=0)
+    #: 是否由我主动发心跳 —— **对端是内网地址时为 False**（发了也白发，等它来找我）
+    heartbeat: Mapped[bool] = mapped_column(Boolean, default=True)
+    fail_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_seen_at: Mapped[int | None] = mapped_column(Integer, default=None)
+    last_sync_at: Mapped[int | None] = mapped_column(Integer, default=None)
+    last_error: Mapped[str] = mapped_column(LongText, default="")
     note: Mapped[str] = mapped_column(LongText, default="")
     created_at: Mapped[int] = mapped_column(Integer, default=now_ms)
     updated_at: Mapped[int] = mapped_column(Integer, default=now_ms)

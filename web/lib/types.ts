@@ -105,6 +105,29 @@ export interface Agent {
   updated_at: number;
 }
 
+/** 节点联邦里的"对端 Agent Studio" */
+export interface StudioPeer {
+  id: string;
+  studio_id: string;
+  name: string;
+  base_url: string;
+  /** out=我连它 / in=它连我 / both=互相 */
+  direction: "out" | "in" | "both";
+  /** pending=待我接受 | active | offline | rejected | revoked */
+  status: "pending" | "active" | "offline" | "rejected" | "revoked";
+  fingerprint: string;
+  agents_count: number;
+  agents_synced: number;
+  /** 是否由本机发心跳（对方是内网时为 false） */
+  heartbeat: boolean;
+  fail_count: number;
+  last_seen_at: number | null;
+  last_sync_at: number | null;
+  last_error: string;
+  note: string;
+  created_at: number;
+}
+
 export interface Tool {
   id: string;
   /** builtin=运行时内置；http=自定义 HTTP；code=代码；fork=**平台原生**（助手的"分身"能力） */

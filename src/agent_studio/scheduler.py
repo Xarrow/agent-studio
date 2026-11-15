@@ -260,6 +260,19 @@ async def loop() -> None:
             except Exception:  # noqa: BLE001 —— 探活坏了不能连累定时任务
                 logger.exception("远程 agent 探活这一轮出错（继续下一轮）")
 
+            # 节点心跳：到点的对端发一次（内网对端不发，等它来感知我）
+            try:
+                from . import peers as _peers
+
+                beat = await _peers.heartbeat_tick()
+                for item in beat.get("flipped") or []:
+                    logger.warning(
+                        "节点状态翻转：%s %s → %s",
+                        item["name"], item["before"], item["after"],
+                    )
+            except Exception:  # noqa: BLE001
+                logger.exception("节点心跳这一轮出错（继续下一轮）")
+
             sent = await _jobs.deliver_pending()
             if sent:
                 logger.info("定时结果已投递 %s 条", sent)

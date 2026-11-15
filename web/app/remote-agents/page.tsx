@@ -25,6 +25,7 @@ import type {
   RemoteAgentRecord,
 } from "@/lib/types";
 import { DetailPanel } from "@/components/ui/DetailPanel";
+import { StudioPeers } from "@/components/StudioPeers";
 import {
   IconClock,
   IconLink,
@@ -302,6 +303,9 @@ export default function RemoteAgentsPage() {
           </>
         }
       />
+
+      {/* 节点：把一个别的 Studio 接进来，它开放的助手会同步成下面的行 */}
+      <StudioPeers onSynced={() => { void load(); }} />
 
       <Toolbar>
         <Segmented<Filter>

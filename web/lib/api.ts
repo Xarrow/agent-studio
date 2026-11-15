@@ -47,6 +47,7 @@ import type {
   RemoteAgentEventRecord,
   RemoteAgentParsed,
   RemoteAgentRecord,
+  StudioPeer,
   DbStatus,
   DbTestResult,
   Issue,
@@ -462,6 +463,22 @@ export const api = {
       headers: version ? { "If-Match": String(version) } : undefined,
     }),
   deleteAgent: (id: string) => del(`/api/agents/${id}`),
+  // ---- 节点联邦（Studio ↔ Studio） ----
+  studioPeers: () => request<{ peers: StudioPeer[] }>("/api/studios"),
+  studioPeersPreview: (url: string) =>
+    post<{ name?: string; agents: { id: string; name?: string; description?: string }[]; private: boolean }>(
+      "/api/studios/preview",
+      { url },
+    ),
+  studioPeerConnect: (url: string, mutual = true) =>
+    post<{ peer: StudioPeer; notes: string[] }>("/api/studios", { url, mutual }),
+  studioPeerSync: (id: string) =>
+    post<{ synced: string[]; count: number }>(`/api/studios/${id}/sync`, {}),
+  studioPeerAccept: (id: string, url?: string) =>
+    post<{ peer: StudioPeer }>(`/api/studios/${id}/accept`, url ? { url } : {}),
+  studioPeerReject: (id: string) => post<{ ok: boolean }>(`/api/studios/${id}/reject`, {}),
+  studioPeerRemove: (id: string) =>
+    request<{ ok: boolean; removed: number }>(`/api/studios/${id}`, { method: "DELETE" }),
   duplicateAgent: (id: string, body?: { name?: string }) =>
     post<Agent>(`/api/agents/${id}/duplicate`, body ?? {}),
   agentLineage: (id: string) => request<Agent[]>(`/api/agents/${id}/lineage`),
