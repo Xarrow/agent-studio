@@ -1,16 +1,18 @@
 "use client";
 
 /**
- * 「节点」区块：把一个**别的 Agent Studio** 接进来。
+ * 「节点」区块：把一个**别的 Agent Studio** 接进来，并逐级看它的详情。
  *
- * 为什么做成"一行一个节点 + 就地展开"，而不是弹窗向导：
- * 用户要的是"填个地址、看一眼、确认"这三件事连着做完；弹窗会遮住列表，
- * 还得出一次错回去改地址。这里错误就显示在输入框下面。
+ * 布局口径（用户定的）：
+ *   · **同一个页面里展开**，不弹抽屉、不跳页；
+ *   · 点节点行 → 这一行下面展开它的详情与助手清单；再点一次收起；
+ *   · 点助手行 → 在该行下面展开助手详情；
+ *   · 不用图标（emoji / 图形图标都不放），层级只靠字号、灰度、间距和状态点。
  *
  * 三类行：
  *   待接受（direction=in & pending）—— 对方连我，我点头才成立
- *   对端节点（我连的 / 互相连的）—— 展开看它开放了哪些助手
- *   内网对端 —— 会明确写"由对方发心跳"，因为它不会显示成"在线/离线"的常规心跳
+ *   对端节点（我连的 / 互相连的）—— 展开看详情与它开放的助手
+ *   内网对端 —— 明确写"由对方发心跳"，因为它不会走常规的在线/离线
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -18,7 +20,6 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type { StudioPeer, StudioPeerAgent, StudioPeerRemote } from "@/lib/types";
 import { Chip, KV, Section, Switch } from "@/components/ui/kit";
-import { DetailPanel } from "@/components/ui/DetailPanel";
 import { useFeedback } from "@/components/ui/feedback";
 
 function ago(ts?: number | null): string {
@@ -30,7 +31,9 @@ function ago(ts?: number | null): string {
   return `${Math.round(d / 86_400_000)} 天前`;
 }
 
-const STATUS: Record<string, { label: string; tone: "ok" | "warn" | "err" | "muted" }> = {
+type Tone = "ok" | "warn" | "err" | "muted";
+
+const STATUS: Record<string, { label: string; tone: Tone }> = {
   active: { label: "正常", tone: "ok" },
   pending: { label: "待接受", tone: "warn" },
   offline: { label: "离线", tone: "err" },
@@ -38,19 +41,24 @@ const STATUS: Record<string, { label: string; tone: "ok" | "warn" | "err" | "mut
   revoked: { label: "已撤销", tone: "muted" },
 };
 
-/** 状态点：比一排彩色胶囊安静，扫一眼就知道状态 */
-function Dot({ tone }: { tone: "ok" | "warn" | "err" | "muted" }) {
+const ARUN: Record<string, { label: string; tone: Tone }> = {
+  ok: { label: "可用", tone: "ok" },
+  unknown: { label: "未检测", tone: "muted" },
+  error: { label: "异常", tone: "err" },
+};
+
+/** 状态点：比一排彩色胶囊安静，扫一眼就知道状态（不是图标，只是一个色点） */
+function Dot({ tone }: { tone: Tone }) {
   const color =
-    tone === "ok" ? "var(--color-ok, #16a34a)"
-    : tone === "warn" ? "var(--color-warn, #d97706)"
-    : tone === "err" ? "var(--color-err)"
-    : "var(--color-text-3)";
+    tone === "ok"
+      ? "var(--color-ok, #16a34a)"
+      : tone === "warn"
+        ? "var(--color-warn, #d97706)"
+        : tone === "err"
+          ? "var(--color-err)"
+          : "var(--color-text-3)";
   return (
-    <span
-      aria-hidden
-      className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
-      style={{ background: color }}
-    />
+    <span aria-hidden className="inline-block h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: color }} />
   );
 }
 
@@ -59,24 +67,6 @@ function maskToken(t: string): string {
   if (!t) return "";
   if (t.length <= 10) return t;
   return `${t.slice(0, 5)}••••••${t.slice(-4)}`;
-}
-
-const ARUN: Record<string, { label: string; tone: "ok" | "warn" | "err" | "muted" }> = {
-  ok: { label: "可用", tone: "ok" },
-  unknown: { label: "未检测", tone: "muted" },
-  error: { label: "异常", tone: "err" },
-};
-
-/** 节点图标（内联描边，不用 emoji 也不引第三方） */
-function IconNode() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"
-         strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <rect x="3" y="4" width="18" height="7" rx="1.5" />
-      <rect x="3" y="14" width="18" height="6" rx="1.5" />
-      <path d="M7 7.5h.01M7 17h.01" />
-    </svg>
-  );
 }
 
 export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
@@ -93,21 +83,18 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
     private: boolean;
   } | null>(null);
 
-  // 逐级展开：节点（点开看它下面的助手）→ 助手（点开看详情）
+  // 就地展开：哪个节点打开着、哪个助手展开着（同一页内，不弹层）
+  const [openPeer, setOpenPeer] = useState<string | null>(null);
+  const [openAgent, setOpenAgent] = useState<string | null>(null);
 
   const [nodeAgents, setNodeAgents] = useState<Record<string, StudioPeerAgent[]>>({});
-  //: 点开节点时读到的对端名片（"远程的详情"就是这个）
   const [nodeRemote, setNodeRemote] = useState<Record<string, StudioPeerRemote | null>>({});
   const [nodeErr, setNodeErr] = useState<Record<string, string>>({});
-  const [nodeStale, setNodeStale] = useState<Record<string, boolean>>({});
   const [nodeAge, setNodeAge] = useState<Record<string, number>>({});
-  //: 右侧抽屉：选中的节点 / 助手（一次只开一个，与全站详情一致）
-  const [selNode, setSelNode] = useState<string | null>(null);
-  const [selAgentId, setSelAgentId] = useState<string | null>(null);
-  //: 本节点的连接口令（对端要填它才能读我的清单）
+
+  // 本节点的连接口令（对端要填它才能读我的助手清单）
   const [myToken, setMyToken] = useState<string>("");
   const [tokenInput, setTokenInput] = useState("");
-  //: 某个节点正在编辑对端口令
   const [editPeer, setEditPeer] = useState<string | null>(null);
   const [peerTokenDraft, setPeerTokenDraft] = useState("");
 
@@ -131,7 +118,6 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
       setNodeAgents((prev) => ({ ...prev, [peerId]: got.agents }));
       setNodeRemote((prev) => ({ ...prev, [peerId]: got.remote }));
       setNodeErr((prev) => ({ ...prev, [peerId]: got.remote_error || "" }));
-      setNodeStale((prev) => ({ ...prev, [peerId]: Boolean(got.remote_stale) }));
       if (typeof got.remote_age_ms === "number") {
         setNodeAge((prev) => ({ ...prev, [peerId]: got.remote_age_ms as number }));
       }
@@ -140,18 +126,18 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
     }
   }, []);
 
-  const openNode = async (peerId: string) => {
-    setSelNode(peerId);
-    setSelAgentId(null);
-    if (nodeAgents[peerId] === undefined) await loadAgents(peerId);
+  const togglePeer = async (peerId: string) => {
+    const next = openPeer === peerId ? null : peerId;
+    setOpenPeer(next);
+    setOpenAgent(null);
+    if (next && nodeAgents[peerId] === undefined) await loadAgents(peerId);
   };
 
-  const toggleAgent = async (agentId: string, enabled: boolean, peerId?: string) => {
+  const toggleAgentEnabled = async (peerId: string, agentId: string, enabled: boolean) => {
     try {
-      // 调用方自己的开关：停用后这个远端助手不再出现在助手的可挂载清单里
       await api.patchRemoteAgent(agentId, { enabled });
       fb.success(enabled ? "已启用" : "已停用");
-      if (peerId) await loadAgents(peerId);
+      await loadAgents(peerId);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     }
@@ -192,12 +178,6 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
       "已连接",
     );
 
-  const selPeer = (peers ?? []).find((p) => p.id === selNode) ?? null;
-  const selAgents = selNode ? nodeAgents[selNode] : undefined;
-  const selAgent = (selAgents ?? []).find((a) => a.id === selAgentId) ?? null;
-  const remote = selNode ? nodeRemote[selNode] : null;
-  const agents = selAgents;
-
   const pending = (peers ?? []).filter((p) => p.status === "pending");
   const active = (peers ?? []).filter((p) => p.status !== "pending");
 
@@ -205,35 +185,59 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
     <div className="mt-5">
       <Section
         title="节点"
-        desc="连接另一个 Agent Studio，把它开放的助手同步到这里"
+        desc="连接另一个 Agent Studio；点节点就地展开详情与它开放的助手"
         right={
-          <button className="btn btn-sm" onClick={() => { setOpen((v) => !v); setErr(null); setPreview(null); }}>
+          <button
+            className="btn btn-sm"
+            onClick={() => {
+              setOpen((v) => !v);
+              setErr(null);
+              setPreview(null);
+            }}
+          >
             {open ? "取消" : "＋ 连接节点"}
           </button>
         }
       >
-        {/* 本节点的连接口令：对端连我时要填它（公开接口只暴露名片，清单要口令） */}
-        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md px-2.5 py-2"
-             style={{ background: "var(--color-surface-2)" }}>
-          <span className="shrink-0 text-[12px]" style={{ color: "var(--color-text-2)" }}>本节点连接口令</span>
+        {/* 本节点连接口令 */}
+        <div
+          className="mb-3 flex flex-wrap items-center gap-2 rounded-md px-2.5 py-2"
+          style={{ background: "var(--color-surface-2)" }}
+        >
+          <span className="shrink-0 text-[12px]" style={{ color: "var(--color-text-2)" }}>
+            本节点连接口令
+          </span>
           <code className="mono min-w-0 flex-1 truncate text-[11px]" title="对端连我时要填它">
             {myToken ? maskToken(myToken) : "（读取中…）"}
           </code>
           <span className="hidden text-[11px] sm:inline" style={{ color: "var(--color-text-3)" }}>
             对端读我的助手清单 / 握手 / 心跳时要用
           </span>
-          <button className="btn btn-sm" disabled={!myToken}
-                  onClick={() => { void navigator.clipboard?.writeText(myToken); fb.success("连接口令已复制"); }}>
+          <button
+            className="btn btn-sm"
+            disabled={!myToken}
+            onClick={() => {
+              void navigator.clipboard?.writeText(myToken);
+              fb.success("连接口令已复制");
+            }}
+          >
             复制
           </button>
-          <button className="btn btn-sm" disabled={!myToken || busy === "rotate"}
-                  onClick={() => {
-                    if (!window.confirm("轮换口令后，已连上的对端需要重新填新口令，确定轮换？")) return;
-                    void run("rotate", async () => {
-                      const r = await api.studioTokenRotate();
-                      setMyToken(r.token);
-                    }, "口令已轮换");
-                  }}>
+          <button
+            className="btn btn-sm"
+            disabled={!myToken || busy === "rotate"}
+            onClick={() => {
+              if (!window.confirm("轮换口令后，已连上的对端需要重新填新口令，确定轮换？")) return;
+              void run(
+                "rotate",
+                async () => {
+                  const r = await api.studioTokenRotate();
+                  setMyToken(r.token);
+                },
+                "口令已轮换",
+              );
+            }}
+          >
             轮换
           </button>
         </div>
@@ -245,7 +249,11 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
                 className="input flex-1"
                 placeholder="另一台 Agent Studio 的地址，如 https://as.example.com"
                 value={url}
-                onChange={(e) => { setUrl(e.target.value); setPreview(null); setErr(null); }}
+                onChange={(e) => {
+                  setUrl(e.target.value);
+                  setPreview(null);
+                  setErr(null);
+                }}
               />
               <button className="btn btn-sm shrink-0" disabled={!url.trim() || busy === "preview"} onClick={doPreview}>
                 {busy === "preview" ? "连接中…" : "先看一下"}
@@ -255,7 +263,10 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
               className="input mt-2"
               placeholder="对方的连接口令（在对方「节点」区块复制，nd_ 开头）"
               value={tokenInput}
-              onChange={(e) => { setTokenInput(e.target.value); setErr(null); }}
+              onChange={(e) => {
+                setTokenInput(e.target.value);
+                setErr(null);
+              }}
             />
             <label className="mt-2 flex items-center gap-2 text-[12px]" style={{ color: "var(--color-text-2)" }}>
               <Switch checked={mutual} onChange={setMutual} ariaLabel="双向连接" />
@@ -265,8 +276,8 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
             {preview && (
               <div className="mt-2 rounded-md p-2.5" style={{ background: "var(--color-surface-2)" }}>
                 <div className="text-[12px]">
-                  能连上：<span className="font-medium">{preview.name || "未命名节点"}</span>
-                  ，开放 {preview.agents.length} 个助手
+                  能连上：<span className="font-medium">{preview.name || "未命名节点"}</span>，开放{" "}
+                  {preview.agents.length} 个助手
                   {preview.private ? "（内网地址：不会由本机发心跳）" : ""}
                 </div>
                 {preview.agents.length > 0 && (
@@ -276,18 +287,12 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
                     ))}
                   </div>
                 )}
-                <button
-                  className="btn btn-primary btn-sm mt-2"
-                  disabled={busy === "connect"}
-                  onClick={doConnect}
-                >
+                <button className="btn btn-primary btn-sm mt-2" disabled={busy === "connect"} onClick={doConnect}>
                   {busy === "connect" ? "连接中…" : "确认连接"}
                 </button>
               </div>
             )}
-            {err && (
-              <div className="mt-2 text-[12px]" style={{ color: "var(--color-err)" }}>{err}</div>
-            )}
+            {err && <div className="mt-2 text-[12px]" style={{ color: "var(--color-err)" }}>{err}</div>}
           </div>
         )}
 
@@ -302,18 +307,24 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
                   borderLeft: "3px solid var(--color-warn, #d97706)",
                 }}
               >
-                <Chip tone="warn">待接受</Chip>
+                <span className="text-[12px] font-medium">待接受</span>
                 <span className="text-[13px] font-medium">{p.name}</span>
                 <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
                   {p.agents_count} 个助手 · {ago(p.last_seen_at)}请求连接你
                 </span>
                 <span className="ml-auto flex gap-1.5">
-                  <button className="btn btn-sm btn-primary" disabled={busy === p.id}
-                          onClick={() => run(p.id, () => api.studioPeerAccept(p.id), "已接受")}>
+                  <button
+                    className="btn btn-sm btn-primary"
+                    disabled={busy === p.id}
+                    onClick={() => run(p.id, () => api.studioPeerAccept(p.id), "已接受")}
+                  >
                     接受
                   </button>
-                  <button className="btn btn-sm" disabled={busy === p.id}
-                          onClick={() => run(p.id, () => api.studioPeerReject(p.id), "已拒绝")}>
+                  <button
+                    className="btn btn-sm"
+                    disabled={busy === p.id}
+                    onClick={() => run(p.id, () => api.studioPeerReject(p.id), "已拒绝")}
+                  >
                     拒绝
                   </button>
                 </span>
@@ -333,338 +344,326 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
             className="rounded-md border border-dashed px-3 py-4 text-[12px]"
             style={{ borderColor: "var(--color-line)", color: "var(--color-text-3)" }}
           >
-            还没有节点。点右上「＋ 连接节点」，填上对方地址和它的连接口令；
-            连上之后，点节点就能看到它开放了哪些助手。
+            还没有节点。点右上「＋ 连接节点」，填上对方地址和它的连接口令；连上之后点节点，就地展开它开放了哪些助手。
           </div>
-        ) : (          active.map((p) => {
+        ) : (
+          active.map((p) => {
             const st = STATUS[p.status] ?? STATUS.active;
-            const isSel = selNode === p.id;
+            const isOpen = openPeer === p.id;
+            const agents = nodeAgents[p.id];
+            const remote = nodeRemote[p.id];
+            const rErr = nodeErr[p.id] || "";
             return (
               <div
                 key={p.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => void openNode(p.id)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    void openNode(p.id);
-                  }
-                }}
-                className="flex min-h-[52px] cursor-pointer items-center gap-3 rounded-md px-2 py-2 transition-colors hover:bg-[var(--bg-hover,rgba(0,0,0,0.03))] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent,#2563eb)]"
-                style={isSel ? { background: "var(--bg-selected)" } : undefined}
+                className="border-t first:border-t-0"
+                style={{ borderColor: "var(--color-line)" }}
               >
-                <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg"
-                      style={{ background: "color-mix(in srgb, var(--color-accent) 10%, transparent)", color: "var(--color-accent)" }}>
-                  <IconNode />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-2">
-                    <span className="truncate text-[13px] font-medium">{p.name}</span>
-                    <span className="flex items-center gap-1 text-[11px]" style={{ color: "var(--color-text-2)" }}>
-                      <Dot tone={st.tone} />
-                      {st.label}
-                    </span>
-                    {p.direction === "both" && (
-                      <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>互相连接</span>
-                    )}
-                    {!p.heartbeat && (
-                      <span className="text-[11px]" style={{ color: "var(--color-text-3)" }} title="对方是内网地址：由它发心跳给我">
-                        仅对方心跳
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => void togglePeer(p.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      void togglePeer(p.id);
+                    }
+                  }}
+                  className="flex min-h-[52px] cursor-pointer items-center gap-3 rounded-md px-1 py-2 transition-colors hover:bg-[var(--bg-hover,rgba(0,0,0,0.03))] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent,#2563eb)]"
+                  style={isOpen ? { background: "var(--bg-selected)" } : undefined}
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-2">
+                      <span className="truncate text-[13px] font-medium">{p.name}</span>
+                      <span className="flex items-center gap-1 text-[11px]" style={{ color: "var(--color-text-2)" }}>
+                        <Dot tone={st.tone} />
+                        {st.label}
                       </span>
+                      {p.direction === "both" && (
+                        <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>互相连接</span>
+                      )}
+                      {!p.heartbeat && (
+                        <span
+                          className="text-[11px]"
+                          style={{ color: "var(--color-text-3)" }}
+                          title="对方是内网地址：由它发心跳给我"
+                        >
+                          仅对方心跳
+                        </span>
+                      )}
+                    </span>
+                    <span className="mt-0.5 block truncate text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                      {p.base_url || "地址未知"} · 已同步 {p.agents_synced}/{p.agents_count} 个助手 · 上次同步{" "}
+                      {ago(p.last_sync_at)}
+                    </span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      className="btn btn-sm"
+                      disabled={busy === p.id || !p.base_url}
+                      onClick={() => {
+                        void run(p.id, () => api.studioPeerSync(p.id), "已同步").then(() => loadAgents(p.id));
+                      }}
+                    >
+                      同步
+                    </button>
+                    <button
+                      className="btn btn-sm"
+                      style={{ color: "var(--color-err)" }}
+                      disabled={busy === p.id}
+                      onClick={() => {
+                        if (!window.confirm(`移除节点「${p.name}」？它同步过来的助手会一起删掉。`)) return;
+                        void run(p.id, () => api.studioPeerRemove(p.id), "已移除").then(() => setOpenPeer(null));
+                      }}
+                    >
+                      移除
+                    </button>
+                  </span>
+                </div>
+
+                {isOpen && (
+                  <div className="mb-2 ml-1 space-y-3 rounded-md border p-3" style={{ borderColor: "var(--color-line)" }}>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[12px] font-medium">远程详情</span>
+                      <span className="flex items-center gap-1 text-[11px]" style={{ color: "var(--color-text-2)" }}>
+                        <Dot tone={st.tone} />
+                        {st.label}
+                      </span>
+                      <button
+                        className="btn btn-sm ml-auto"
+                        disabled={busy === `${p.id}:live`}
+                        onClick={() => run(`${p.id}:live`, () => loadAgents(p.id, true))}
+                      >
+                        刷新详情
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-x-6 gap-y-1.5 sm:grid-cols-2">
+                      <KV k="名称">{remote?.name || p.name}</KV>
+                      <KV k="版本">{remote?.version ? `${remote.version}（${remote.protocol || "studio/1"}）` : "—"}</KV>
+                      <KV k="节点 ID">
+                        <code className="mono text-[11px]">{remote?.studio_id || p.studio_id}</code>
+                      </KV>
+                      <KV k="地址">
+                        <code className="mono text-[11px]">{remote?.base_url || p.base_url || "未知"}</code>
+                      </KV>
+                      <KV k="助手">
+                        {remote
+                          ? `对端开放 ${remote.agents_open ?? 0} / 共 ${remote.agents_total ?? "?"}，已同步 ${p.agents_synced}`
+                          : `已同步 ${p.agents_synced} / 记录 ${p.agents_count}`}
+                      </KV>
+                      <KV k="指纹">
+                        <code className="mono text-[11px]">{p.fingerprint || "—"}</code>
+                      </KV>
+                      <KV k="心跳">
+                        {p.heartbeat ? "本机每 60 秒发一次" : "对方是内网：由它发心跳给我"} · 上次 {ago(p.last_seen_at)}
+                      </KV>
+                      <KV k="上次同步">{ago(p.last_sync_at)}</KV>
+                      <KV k="连接方式">
+                        {p.direction === "both" ? "互相连接" : p.direction === "in" ? "对方连我" : "本机连它"}
+                      </KV>
+                      <KV k="加入时间">{new Date(p.created_at).toLocaleString()}</KV>
+                      <KV k="详情取自">
+                        {remote ? ago(Date.now() - (nodeAge[p.id] ?? 0)) : "—"}
+                      </KV>
+                      <KV k="对端口令">
+                        {editPeer === p.id ? (
+                          <span className="flex flex-wrap items-center gap-1.5">
+                            <input
+                              className="input h-7 flex-1 py-0 text-[11px]"
+                              placeholder="nd_ 开头"
+                              value={peerTokenDraft}
+                              onChange={(e) => setPeerTokenDraft(e.target.value)}
+                            />
+                            <button
+                              className="btn btn-sm"
+                              onClick={() => {
+                                void run(
+                                  `${p.id}:token`,
+                                  () => api.studioPeerSetToken(p.id, peerTokenDraft.trim()),
+                                  "口令已保存",
+                                ).then(() => {
+                                  setEditPeer(null);
+                                  setPeerTokenDraft("");
+                                });
+                              }}
+                            >
+                              保存
+                            </button>
+                            <button
+                              className="btn btn-sm"
+                              onClick={() => {
+                                setEditPeer(null);
+                                setPeerTokenDraft("");
+                              }}
+                            >
+                              取消
+                            </button>
+                          </span>
+                        ) : (
+                          <span className="flex flex-wrap items-center gap-1.5">
+                            <span style={{ color: "var(--color-text-3)" }}>已配置（密文存储）</span>
+                            <button
+                              className="btn btn-sm"
+                              onClick={() => {
+                                setEditPeer(p.id);
+                                setPeerTokenDraft("");
+                              }}
+                            >
+                              更换
+                            </button>
+                          </span>
+                        )}
+                      </KV>
+                    </div>
+
+                    {remote && (
+                      <div className="flex items-center gap-2 rounded-md px-2.5 py-2" style={{ background: "var(--color-surface-2)" }}>
+                        <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>名片地址</span>
+                        <code className="mono min-w-0 flex-1 truncate text-[11px]">{remote.card_url}</code>
+                        <button
+                          className="btn btn-sm shrink-0"
+                          onClick={() => {
+                            void navigator.clipboard?.writeText(remote.card_url);
+                            fb.success("名片地址已复制");
+                          }}
+                        >
+                          复制
+                        </button>
+                      </div>
                     )}
-                  </span>
-                  <span className="mt-0.5 block truncate text-[11px]" style={{ color: "var(--color-text-3)" }}>
-                    {p.base_url || "地址未知"} · 已同步 {p.agents_synced}/{p.agents_count} 个助手 · 上次同步 {ago(p.last_sync_at)}
-                  </span>
-                </span>
-                <span className="flex shrink-0 items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                  <button
-                    className="btn btn-sm"
-                    disabled={busy === p.id || !p.base_url}
-                    onClick={() => { void run(p.id, () => api.studioPeerSync(p.id), "已同步"); }}
-                  >
-                    同步
-                  </button>
-                  <button
-                    className="btn btn-sm"
-                    style={{ color: "var(--color-err)" }}
-                    disabled={busy === p.id}
-                    onClick={() => {
-                      if (!window.confirm(`移除节点「${p.name}」？它同步过来的助手会一起删掉。`)) return;
-                      void run(p.id, () => api.studioPeerRemove(p.id), "已移除").then(() => setSelNode(null));
-                    }}
-                  >
-                    移除
-                  </button>
-                </span>
+                    {rErr && (
+                      <div className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                        刚没读到对端名片：{rErr}（下面用本地记录）
+                      </div>
+                    )}
+
+                    <div>
+                      <div className="mb-1.5 flex items-center justify-between">
+                        <span className="text-[12px] font-medium">它开放的助手</span>
+                        <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                          {agents === undefined ? "读取中…" : `${agents.length} 个已同步`}
+                        </span>
+                      </div>
+                      {agents === undefined ? (
+                        <div className="space-y-2">
+                          {[0, 1].map((i) => (
+                            <div key={i} className="h-9 animate-pulse rounded-md" style={{ background: "var(--color-line)" }} />
+                          ))}
+                        </div>
+                      ) : agents.length === 0 ? (
+                        <div
+                          className="rounded-md border border-dashed px-3 py-3 text-[12px]"
+                          style={{ borderColor: "var(--color-line)", color: "var(--color-text-3)" }}
+                        >
+                          还没有同步到本地助手。点上面的「同步」。
+                        </div>
+                      ) : (
+                        <div className="overflow-hidden rounded-md border" style={{ borderColor: "var(--color-line)" }}>
+                          {agents.map((a) => {
+                            const as = ARUN[a.status] ?? ARUN.unknown;
+                            const aOpen = openAgent === a.id;
+                            return (
+                              <div
+                                key={a.id}
+                                className="border-t first:border-t-0"
+                                style={{ borderColor: "var(--color-line)" }}
+                              >
+                                <div
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={() => setOpenAgent(aOpen ? null : a.id)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter" || e.key === " ") {
+                                      e.preventDefault();
+                                      setOpenAgent(aOpen ? null : a.id);
+                                    }
+                                  }}
+                                  className="flex min-h-[44px] cursor-pointer items-center gap-3 px-3 py-2 transition-colors hover:bg-[var(--bg-hover,rgba(0,0,0,0.03))] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent,#2563eb)]"
+                                  style={aOpen ? { background: "var(--bg-selected)" } : undefined}
+                                >
+                                  <span className="min-w-0 flex-1">
+                                    <span className="flex items-center gap-2">
+                                      <span className="truncate text-[12.5px]">{a.name}</span>
+                                      <span
+                                        className="flex items-center gap-1 text-[11px]"
+                                        style={{ color: "var(--color-text-2)" }}
+                                      >
+                                        <Dot tone={as.tone} />
+                                        {as.label}
+                                      </span>
+                                      {!a.enabled && (
+                                        <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                                          已停用
+                                        </span>
+                                      )}
+                                    </span>
+                                    <span className="mt-0.5 block truncate text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                                      {a.skills.length} 个技能 · 上次可用 {ago(a.last_ok_at)}
+                                    </span>
+                                  </span>
+                                  <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                                    {aOpen ? "收起" : "详情"}
+                                  </span>
+                                </div>
+
+                                {aOpen && (
+                                  <div className="space-y-3 border-t px-3 py-3" style={{ borderColor: "var(--color-line)" }}>
+                                    <p className="text-[12.5px] leading-relaxed" style={{ color: "var(--color-text-2)" }}>
+                                      {a.description || "远端没有提供说明"}
+                                    </p>
+                                    {a.skills.length > 0 && (
+                                      <div className="flex flex-wrap gap-1">
+                                        {a.skills.map((sk) => (
+                                          <Chip key={sk} tone="muted">{sk}</Chip>
+                                        ))}
+                                      </div>
+                                    )}
+                                    <div className="flex items-center gap-2">
+                                      <code className="mono min-w-0 flex-1 truncate text-[11px]" title={a.card_url || a.url}>
+                                        {a.card_url || a.url}
+                                      </code>
+                                      <button
+                                        className="btn btn-sm shrink-0"
+                                        onClick={() => {
+                                          void navigator.clipboard?.writeText(a.card_url || a.url);
+                                          fb.success("A2A 地址已复制");
+                                        }}
+                                      >
+                                        复制地址
+                                      </button>
+                                    </div>
+                                    <div className="flex flex-wrap items-center gap-3">
+                                      <label className="flex items-center gap-1.5 text-[12px]">
+                                        <Switch
+                                          checked={a.enabled}
+                                          ariaLabel={`启用 ${a.name}`}
+                                          onChange={(next) => void toggleAgentEnabled(p.id, a.id, next)}
+                                        />
+                                        在本机使用
+                                      </label>
+                                      <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                                        远端助手 ID {a.remote_agent_id || "—"} · 状态检查 {ago(a.last_checked_at)}
+                                      </span>
+                                    </div>
+                                    {a.last_error && (
+                                      <div className="text-[11px]" style={{ color: "var(--color-err)" }}>{a.last_error}</div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })
         )}
       </Section>
-
-      {/* 节点 / 助手详情：统一走右侧抽屉（与技能、记忆、凭据、远程 Agent 列表同一套壳） */}
-      {/* 一次只开一个抽屉：看助手详情时，节点抽屉让位（关掉助手就回到节点） */}
-      {selPeer && !selAgent && (
-        <DetailPanel
-          title={selPeer.name}
-          subtitle={
-            <>
-              <span className="flex items-center gap-1">
-                <Dot tone={(STATUS[selPeer.status] ?? STATUS.active).tone} />
-                {(STATUS[selPeer.status] ?? STATUS.active).label}
-              </span>
-              <span>·</span>
-              <span>{selPeer.base_url || "地址未知"}</span>
-              <span>·</span>
-              <span>已同步 {selPeer.agents_synced}/{selPeer.agents_count} 个助手</span>
-            </>
-          }
-          icon={<IconNode />}
-          facts={[
-            { icon: <span aria-hidden>💓</span>, text: selPeer.heartbeat ? "本机每 60 秒心跳" : "由对方发心跳" },
-            { icon: <span aria-hidden>⏱</span>, text: `上次同步 ${ago(selPeer.last_sync_at)}` },
-            { icon: <span aria-hidden>🔗</span>, text: selPeer.direction === "both" ? "互相连接" : selPeer.direction === "in" ? "对方连我" : "本机连它" },
-          ]}
-          actions={
-            <>
-              <button
-                className="btn btn-primary btn-sm"
-                disabled={busy === `${selPeer.id}:sync` || !selPeer.base_url}
-                onClick={() => {
-                  void run(`${selPeer.id}:sync`, () => api.studioPeerSync(selPeer.id), "已同步")
-                    .then(() => loadAgents(selPeer.id));
-                }}
-              >
-                同步助手
-              </button>
-              <button
-                className="btn btn-sm"
-                disabled={busy === `${selPeer.id}:live`}
-                onClick={() => run(`${selPeer.id}:live`, () => loadAgents(selPeer.id, true))}
-              >
-                刷新对端详情
-              </button>
-              <button
-                className="btn btn-sm"
-                style={{ color: "var(--color-err)" }}
-                onClick={() => {
-                  if (!window.confirm(`移除节点「${selPeer.name}」？它同步过来的助手会一起删掉。`)) return;
-                  void run(selPeer.id, () => api.studioPeerRemove(selPeer.id), "已移除")
-                    .then(() => { setSelNode(null); setSelAgentId(null); });
-                }}
-              >
-                移除节点
-              </button>
-            </>
-          }
-          onClose={() => { setSelNode(null); setSelAgentId(null); }}
-        >
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 gap-x-6 gap-y-1.5 sm:grid-cols-2">
-              <KV k="节点 ID"><code className="mono text-[11px]">{remote?.studio_id || selPeer.studio_id}</code></KV>
-              <KV k="版本">{remote?.version ? `${remote.version}（${remote.protocol || "studio/1"}）` : "—"}</KV>
-              <KV k="助手">{remote ? `对端开放 ${remote.agents_open ?? 0} / 共 ${remote.agents_total ?? "?"}` : "—"}</KV>
-              <KV k="指纹"><code className="mono text-[11px]">{selPeer.fingerprint || "—"}</code></KV>
-              <KV k="详情取自">
-                {remote ? ago(Date.now() - (nodeAge[selPeer.id] ?? 0)) : "—"}
-              </KV>
-              <KV k="加入时间">{new Date(selPeer.created_at).toLocaleString()}</KV>
-              <KV k="对端口令">
-                {editPeer === selPeer.id ? (
-                  <span className="flex flex-wrap items-center gap-1.5">
-                    <input
-                      className="input h-7 flex-1 py-0 text-[11px]"
-                      placeholder="nd_ 开头"
-                      value={peerTokenDraft}
-                      onChange={(e) => setPeerTokenDraft(e.target.value)}
-                    />
-                    <button
-                      className="btn btn-sm"
-                      onClick={() => {
-                        void run(`${selPeer.id}:token`, () => api.studioPeerSetToken(selPeer.id, peerTokenDraft.trim()), "口令已保存")
-                          .then(() => { setEditPeer(null); setPeerTokenDraft(""); });
-                      }}
-                    >
-                      保存
-                    </button>
-                    <button className="btn btn-sm" onClick={() => { setEditPeer(null); setPeerTokenDraft(""); }}>
-                      取消
-                    </button>
-                  </span>
-                ) : (
-                  <span className="flex flex-wrap items-center gap-1.5">
-                    <span style={{ color: "var(--color-text-3)" }}>已配置（密文存储）</span>
-                    <button className="btn btn-sm" onClick={() => { setEditPeer(selPeer.id); setPeerTokenDraft(""); }}>
-                      更换
-                    </button>
-                  </span>
-                )}
-              </KV>
-            </div>
-
-            {remote && (
-              <div className="flex items-center gap-2 rounded-md px-2.5 py-2" style={{ background: "var(--color-surface-2)" }}>
-                <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>名片地址</span>
-                <code className="mono min-w-0 flex-1 truncate text-[11px]">{remote.card_url}</code>
-                <button
-                  className="btn btn-sm shrink-0"
-                  onClick={() => { void navigator.clipboard?.writeText(remote.card_url); fb.success("名片地址已复制"); }}
-                >
-                  复制
-                </button>
-              </div>
-            )}
-            {nodeErr[selPeer.id] && (
-              <div className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
-                刚才没读到对端名片：{nodeErr[selPeer.id]}（下面用本地记录）
-              </div>
-            )}
-
-            <div>
-              <div className="mb-1.5 flex items-center justify-between">
-                <span className="text-[12px] font-medium">它开放的助手</span>
-                <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
-                  {agents === undefined ? "读取中…" : `${agents.length} 个已同步`}
-                </span>
-              </div>
-              {agents === undefined ? (
-                <div className="space-y-2">
-                  {[0, 1].map((i) => (
-                    <div key={i} className="h-10 animate-pulse rounded-md" style={{ background: "var(--color-line)" }} />
-                  ))}
-                </div>
-              ) : agents.length === 0 ? (
-                <div className="rounded-md border border-dashed px-3 py-3 text-[12px]"
-                     style={{ borderColor: "var(--color-line)", color: "var(--color-text-3)" }}>
-                  还没有同步到本地助手。点上面的「同步助手」。
-                </div>
-              ) : (
-                <div className="overflow-hidden rounded-md border" style={{ borderColor: "var(--color-line)" }}>
-                  {agents.map((a) => {
-                    const as = ARUN[a.status] ?? ARUN.unknown;
-                    return (
-                      <button
-                        key={a.id}
-                        className="flex w-full items-center gap-3 border-t px-3 py-2 text-left first:border-t-0 hover:bg-[var(--bg-hover,rgba(0,0,0,0.03))]"
-                        style={{ borderColor: "var(--color-line)" }}
-                        onClick={() => setSelAgentId(a.id)}
-                      >
-                        <span className="min-w-0 flex-1">
-                          <span className="flex items-center gap-2">
-                            <span className="truncate text-[12.5px]">{a.name}</span>
-                            <span className="flex items-center gap-1 text-[11px]" style={{ color: "var(--color-text-2)" }}>
-                              <Dot tone={as.tone} />
-                              {as.label}
-                            </span>
-                            {!a.enabled && (
-                              <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>已停用</span>
-                            )}
-                          </span>
-                          <span className="mt-0.5 block truncate text-[11px]" style={{ color: "var(--color-text-3)" }}>
-                            {a.skills.length} 个技能 · 上次可用 {ago(a.last_ok_at)}
-                          </span>
-                        </span>
-                        <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>详情 ›</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-        </DetailPanel>
-      )}
-
-      {selAgent && (
-        <DetailPanel
-          title={selAgent.name}
-          subtitle={
-            <>
-              <span className="flex items-center gap-1">
-                <Dot tone={(ARUN[selAgent.status] ?? ARUN.unknown).tone} />
-                {(ARUN[selAgent.status] ?? ARUN.unknown).label}
-              </span>
-              <span>·</span>
-              <span>来自 {selPeer?.name || "远端节点"}</span>
-              {!selAgent.enabled && (<><span>·</span><span>已停用</span></>)}
-            </>
-          }
-          icon={<span className="text-[16px]" aria-hidden>🤖</span>}
-          facts={[
-            { icon: <span aria-hidden>🧩</span>, text: `${selAgent.skills.length} 个技能` },
-            { icon: <span aria-hidden>⏱</span>, text: `上次可用 ${ago(selAgent.last_ok_at)}` },
-          ]}
-          actions={
-            <>
-              <label className="flex items-center gap-2 text-[12px]">
-                <Switch
-                  checked={selAgent.enabled}
-                  ariaLabel={`启用 ${selAgent.name}`}
-                  onChange={(next) => { void toggleAgent(selAgent.id, next); }}
-                />
-                在本机使用
-              </label>
-              <button
-                className="btn btn-sm"
-                onClick={() => {
-                  void navigator.clipboard?.writeText(selAgent.card_url || selAgent.url);
-                  fb.success("A2A 地址已复制");
-                }}
-              >
-                复制 A2A 地址
-              </button>
-            </>
-          }
-          onClose={() => setSelAgentId(null)}
-        >
-          <div className="space-y-4">
-            <p className="text-[13px] leading-relaxed" style={{ color: "var(--color-text-2)" }}>
-              {selAgent.description || "远端没有提供说明"}
-            </p>
-            {selAgent.skills.length > 0 && (
-              <div>
-                <div className="mb-1.5 text-[12px] font-medium">技能</div>
-                <div className="flex flex-wrap gap-1">
-                  {selAgent.skills.map((sk) => (
-                    <Chip key={sk} tone="muted">{sk}</Chip>
-                  ))}
-                </div>
-              </div>
-            )}
-            <div>
-              <div className="mb-1.5 text-[12px] font-medium">A2A 接入</div>
-              <div className="rounded-md border p-2.5" style={{ borderColor: "var(--color-line)" }}>
-                <div className="flex items-center gap-2">
-                  <code className="mono min-w-0 flex-1 truncate text-[11px]">{selAgent.card_url || selAgent.url}</code>
-                  <button
-                    className="btn btn-sm shrink-0"
-                    onClick={() => {
-                      void navigator.clipboard?.writeText(selAgent.card_url || selAgent.url);
-                      fb.success("A2A 地址已复制");
-                    }}
-                  >
-                    复制
-                  </button>
-                </div>
-                <div className="mt-2 grid grid-cols-1 gap-1 sm:grid-cols-2">
-                  <KV k="远端助手 ID"><code className="mono text-[11px]">{selAgent.remote_agent_id || "—"}</code></KV>
-                  <KV k="状态检查">{ago(selAgent.last_checked_at)}</KV>
-                </div>
-              </div>
-            </div>
-            {selAgent.last_error && (
-              <div className="text-[12px]" style={{ color: "var(--color-err)" }}>{selAgent.last_error}</div>
-            )}
-            <div className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
-              「在本机使用」是这个远端助手在你这里的开关：关掉后它不再出现在助手的可挂载清单里；
-              对方关闭开放时，这里会显示异常并给出原因。
-            </div>
-          </div>
-        </DetailPanel>
-      )}
-
     </div>
   );
 }
