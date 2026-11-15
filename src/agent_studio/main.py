@@ -64,6 +64,11 @@ async def lifespan(_app: FastAPI):
     if _priced:
         logger.info("模型单价：补了 %d 条参考价（可在「模型单价」里改）", _priced)
 
+    # 节点连接口令：入站校验是同步函数（不能 await），启动时读进内存
+    from . import peers as _peers
+
+    await _peers.warm_token()
+
     # MCP 的 env/headers 历史上是明文存的（里面有别人的 token）→ 启动时就地加密
     from .api.mcp import migrate_plaintext_secrets
 

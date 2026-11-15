@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -47,6 +47,25 @@ def _view(peer: StudioPeer, agent_count: int) -> dict[str, Any]:
         "note": peer.note or "",
         "created_at": peer.created_at,
     }
+
+
+@router.get("/token")
+async def my_node_token() -> dict[str, Any]:
+    """本节点的连接口令（给对端填）。管理面接口，走全站口令。"""
+    from .. import studio_identity
+
+    return {"token": await studio_identity.get_token()}
+
+
+@router.post("/token/rotate")
+async def rotate_node_token() -> dict[str, Any]:
+    """轮换连接口令：已连上的对端需要重新填新口令。"""
+    from .. import peers as _peers
+    from .. import studio_identity
+
+    token = await studio_identity.rotate_token()
+    await _peers.warm_token()
+    return {"token": token}
 
 
 @router.get("")
@@ -97,6 +116,7 @@ async def connect_peer(payload: dict[str, Any], session: AsyncSession = Depends(
             str(payload.get("url") or ""),
             mutual=bool(payload.get("mutual", True)),
             name=payload.get("name"),
+            token=str(payload.get("token") or ""),
         )
     except ValueError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
@@ -201,6 +221,24 @@ async def peer_agents(
     }
 
 
+@router.post("/{peer_id}/token")
+async def set_peer_token(
+    peer_id: str, payload: dict[str, Any], session: AsyncSession = Depends(get_session)
+) -> dict[str, Any]:
+    """给某个对端补/改连接口令（对端轮换了口令、或老连接没配口令时用）。"""
+    from ..security.crypto import encrypt
+
+    peer = await session.get(StudioPeer, peer_id)
+    if peer is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "节点不存在")
+    token = str(payload.get("token") or "").strip()
+    peer.token_enc = encrypt(token) if token else None
+    peer.updated_at = now_ms()
+    await session.commit()
+    peer.token_enc = peer.token_enc  # 回读不暴露密文
+    return {"ok": True, "has_token": bool(token)}
+
+
 @router.post("/{peer_id}/sync")
 async def sync_peer(peer_id: str, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     peer = await session.get(StudioPeer, peer_id)
@@ -276,16 +314,26 @@ async def remove_peer(peer_id: str, session: AsyncSession = Depends(get_session)
 # 对端来敲门（免口令；只写"待接受"与"我还在"）
 # --------------------------------------------------------------------------- #
 @inbound.post("/api/studio/handshake")
-async def handshake(payload: dict[str, Any]) -> dict[str, Any]:
+async def handshake(
+    payload: dict[str, Any],
+    x_studio_token: str = Header(default="", alias="X-Studio-Token"),
+) -> dict[str, Any]:
     try:
-        return await peers.inbound_handshake(payload)
+        return await peers.inbound_handshake(payload, token=x_studio_token)
+    except PermissionError as exc:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
 
 
 @inbound.post("/api/studio/heartbeat")
-async def heartbeat(payload: dict[str, Any]) -> dict[str, Any]:
+async def heartbeat(
+    payload: dict[str, Any],
+    x_studio_token: str = Header(default="", alias="X-Studio-Token"),
+) -> dict[str, Any]:
     try:
-        return await peers.inbound_heartbeat(payload)
+        return await peers.inbound_heartbeat(payload, token=x_studio_token)
+    except PermissionError as exc:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc

@@ -63,13 +63,16 @@ async def test_identity_is_stable() -> None:
 
 async def test_card_and_open_agents(client) -> None:
     await _seed()
+    tok = await studio_identity.get_token()
     card = (await client.get("/api/studio/card")).json()
     assert card["studio_id"].startswith("stu_")
     assert card["protocol"] == "studio/1"
     assert card["agents_open"] >= 1
     assert card["fingerprint"].startswith("sha256:")
 
-    listed = (await client.get("/api/studio/agents")).json()
+    # 清单要口令：公开名片只有"我是谁"，谁开放了什么属于信息资产
+    assert (await client.get("/api/studio/agents")).status_code == 401
+    listed = (await client.get("/api/studio/agents", headers={"X-Studio-Token": tok})).json()
     names = [a["name"] for a in listed["agents"]]
     assert "开放助手甲" in names
     assert "封闭助手乙" not in names
@@ -79,7 +82,9 @@ async def test_card_and_open_agents(client) -> None:
     assert item["note"] == "仅限文档解析"
 
     # 本机管理口径可以看全量
-    everything = (await client.get("/api/studio/agents?open_only=false")).json()
+    everything = (
+        await client.get("/api/studio/agents?open_only=false", headers={"X-Studio-Token": tok})
+    ).json()
     assert "封闭助手乙" in [a["name"] for a in everything["agents"]]
 
 
@@ -127,3 +132,33 @@ async def test_a2a_dispatch_rejects_unexposed(client) -> None:
     body = resp.json()
     assert body["error"]["code"] == E_NOT_EXPOSED
     assert "开放" in body["error"]["message"]
+
+
+async def test_node_token_gate(client) -> None:
+    """名片公开、清单要口令、握手/心跳也要口令 —— 三道口子分开。"""
+    tok = await studio_identity.get_token()
+    assert tok.startswith("nd_")
+
+    # 名片：不带口令也能读（只含 id/名字/数量）
+    card = await client.get("/api/studio/card")
+    assert card.status_code == 200
+    assert "agents" not in card.json()
+
+    # 清单：错口令 / 没口令 → 401
+    assert (await client.get("/api/studio/agents")).status_code == 401
+    bad = await client.get("/api/studio/agents", headers={"X-Studio-Token": "nd_wrong"})
+    assert bad.status_code == 401
+    ok = await client.get("/api/studio/agents", headers={"X-Studio-Token": tok})
+    assert ok.status_code == 200
+
+    # 心跳：没口令 → 401；带口令但未知节点 → ok=false
+    assert (await client.post("/api/studio/heartbeat", json={"studio_id": "stu_x"})).status_code == 401
+    good = await client.post(
+        "/api/studio/heartbeat", json={"studio_id": "stu_unknown"}, headers={"X-Studio-Token": tok}
+    )
+    assert good.status_code == 200
+    assert good.json()["ok"] is False
+
+    # 握手：没口令 → 401
+    bad_hs = await client.post("/api/studio/handshake", json={"studio": {"studio_id": "stu_y"}})
+    assert bad_hs.status_code == 401

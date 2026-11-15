@@ -21,7 +21,7 @@ import json
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -105,10 +105,29 @@ async def studio_card(request: Request, session: AsyncSession = Depends(get_sess
     }, headers=_NO_CACHE)
 
 
+async def require_node_token(x_studio_token: str = Header(default="", alias="X-Studio-Token")) -> None:
+    """节点口令：读开放助手清单、握手、心跳都要出示。
+
+    为什么不把它做成"对全世界公开"：清单里的助手名本身就是信息资产
+    （"投标解析""客户名单清洗"这种名字泄露出去比地址更糟）。
+    名片 /api/studio/card 仍然公开 —— 它只有 id/名字/数量，用来做"连之前先看一眼"。
+    """
+    import hmac
+
+    expected = await studio_identity.get_token()
+    if not x_studio_token or not hmac.compare_digest(x_studio_token, expected):
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            "需要节点连接口令（在对方「节点」区块复制）",
+            headers={"WWW-Authenticate": "X-Studio-Token"},
+        )
+
+
 @router.get("/api/studio/agents")
 async def studio_agents(
     request: Request,
     open_only: bool = Query(default=True, description="只回开放的（对端默认口径）"),
+    _: None = Depends(require_node_token),
     session: AsyncSession = Depends(get_session),
 ) -> JSONResponse:
     """我这边可被远程调用的助手清单。

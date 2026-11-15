@@ -31,6 +31,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .security.crypto import decrypt, encrypt
 from . import a2a_client, remote_agents, studio_identity
 from .remote_agents import parse_card
 from .db import SessionLocal
@@ -121,10 +122,16 @@ async def fetch_card(base: str, timeout: float = 6.0) -> dict[str, Any]:
     return card
 
 
-async def fetch_agents(base: str, timeout: float = 8.0) -> list[dict[str, Any]]:
+async def fetch_agents(base: str, timeout: float = 8.0, token: str = "") -> list[dict[str, Any]]:
+    """读对端的开放助手清单 —— **要口令**（清单属于信息资产，不是公开发现面）。"""
     url = f"{base}/api/studio/agents?__t={int(time.time() * 1000)}"
+    headers = {"Cache-Control": "no-cache"}
+    if token:
+        headers["X-Studio-Token"] = token
     async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-        resp = await client.get(url, headers={"Cache-Control": "no-cache"})
+        resp = await client.get(url, headers=headers)
+    if resp.status_code in (401, 403):
+        raise ValueError("对方要求连接口令：在「连接节点」里填上它的连接口令")
     if resp.status_code >= 400:
         raise ValueError(f"读对方助手清单失败：HTTP {resp.status_code}")
     return list((resp.json() or {}).get("agents") or [])
@@ -134,7 +141,12 @@ async def fetch_agents(base: str, timeout: float = 8.0) -> list[dict[str, Any]]:
 # 连接 / 同步
 # --------------------------------------------------------------------------- #
 async def connect(
-    session: AsyncSession, url: str, *, mutual: bool = True, name: str | None = None
+    session: AsyncSession,
+    url: str,
+    *,
+    mutual: bool = True,
+    name: str | None = None,
+    token: str = "",
 ) -> tuple[StudioPeer, list[str]]:
     """连上一个节点：读名片 → 落 peer → 同步开放助手。
 
@@ -177,6 +189,7 @@ async def connect(
             heartbeat=heartbeat,
             last_seen_at=now_ms(),
             card={**card, "_at": now_ms()},
+            token_enc=encrypt(token) if token else None,
         )
         session.add(peer)
         await session.flush()
@@ -186,6 +199,8 @@ async def connect(
         peer.status = "active"
         peer.heartbeat = heartbeat
         peer.card = {**card, "_at": now_ms()}
+        if token:
+            peer.token_enc = encrypt(token)
         peer.updated_at = now_ms()
     await session.commit()
 
@@ -201,6 +216,16 @@ async def connect(
             await session.commit()
             notes.append(f"没能推给对端（改为一向）：{exc}")
     return peer, notes
+
+
+def peer_token(peer: StudioPeer) -> str:
+    """对端要求的连接口令（存的是密文，用时解一次）。"""
+    if not peer.token_enc:
+        return ""
+    try:
+        return decrypt(peer.token_enc)
+    except Exception:  # noqa: BLE001 —— 解不开就当没配，让对端回 401 由用户重填
+        return ""
 
 
 async def push_self(peer: StudioPeer) -> dict[str, Any]:
@@ -224,7 +249,11 @@ async def push_self(peer: StudioPeer) -> dict[str, Any]:
     }
     try:
         async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
-            resp = await client.post(f"{peer.base_url}/api/studio/handshake", json=payload)
+            resp = await client.post(
+                f"{peer.base_url}/api/studio/handshake",
+                json=payload,
+                headers={"X-Studio-Token": peer_token(peer)} if peer.token_enc else {},
+            )
     except httpx.HTTPError as exc:
         raise ValueError(f"推不过去：{exc}") from exc
     if resp.status_code >= 400:
@@ -249,7 +278,7 @@ async def sync_peer(session: AsyncSession, peer: StudioPeer) -> list[str]:
     * 已在 → 更新名字/版本/说明（不覆盖用户改过的本地名字）
     * 对端不再开放 → 置 enabled=False（不删：历史调用记录还挂着它）
     """
-    agents = await fetch_agents(peer.base_url)
+    agents = await fetch_agents(peer.base_url, token=peer_token(peer))
     try:
         peer.card = {**(await fetch_card(peer.base_url, timeout=8.0)), "_at": now_ms()}
     except ValueError:
@@ -355,7 +384,11 @@ async def heartbeat_tick() -> dict[str, Any]:
                 return
             try:
                 async with httpx.AsyncClient(timeout=6.0, follow_redirects=True) as client:
-                    resp = await client.post(f"{peer.base_url}/api/studio/heartbeat", json=payload)
+                    resp = await client.post(
+                        f"{peer.base_url}/api/studio/heartbeat",
+                        json=payload,
+                        headers={"X-Studio-Token": peer_token(peer)} if peer.token_enc else {},
+                    )
                 if resp.status_code >= 400:
                     raise ValueError(f"HTTP {resp.status_code}")
                 sent += 1
@@ -377,8 +410,9 @@ async def heartbeat_tick() -> dict[str, Any]:
     return {"sent": sent, "flipped": flipped}
 
 
-async def inbound_handshake(payload: dict[str, Any]) -> dict[str, Any]:
+async def inbound_handshake(payload: dict[str, Any], token: str = "") -> dict[str, Any]:
     """收到别的 Studio 的握手：落一条 **pending**，等本机的人点接受。"""
+    await _check_token(token)
     studio = payload.get("studio") or {}
     sid = (studio.get("studio_id") or "").strip()
     if not sid:
@@ -411,8 +445,28 @@ async def inbound_handshake(payload: dict[str, Any]) -> dict[str, Any]:
     return {"ok": True, "studio_id": (await studio_identity.get_identity())["id"], "status": "pending"}
 
 
-async def inbound_heartbeat(payload: dict[str, Any]) -> dict[str, Any]:
+async def _check_token(given: str) -> None:
+    """入站口令校验。缓存空（比如进程刚起/测试里没跑 lifespan）时回退查库。"""
+    import hmac
+
+    expected = _CACHED_TOKEN["value"] or await studio_identity.get_token()
+    _CACHED_TOKEN["value"] = expected
+    if not given or not hmac.compare_digest(given, expected):
+        raise PermissionError("连接口令不正确")
+
+
+_CACHED_TOKEN: dict[str, str] = {"value": ""}
+
+
+async def warm_token() -> str:
+    """启动时把口令读进内存 —— 入站校验是同步函数，不能在里面 await。"""
+    _CACHED_TOKEN["value"] = await studio_identity.get_token()
+    return _CACHED_TOKEN["value"]
+
+
+async def inbound_heartbeat(payload: dict[str, Any], token: str = "") -> dict[str, Any]:
     """收到对端心跳 = 它已经感知到我、可以调我的助手。据此维持在线。"""
+    await _check_token(token)
     sid = (payload.get("studio_id") or "").strip()
     if not sid:
         raise ValueError("心跳缺少 studio_id")

@@ -181,6 +181,7 @@ _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("remote_agent", "peer_id", "peer_id VARCHAR(32)"),
     ("remote_agent", "peer_studio_id", "peer_studio_id VARCHAR(32)"),
     ("studio_peer", "card", "card JSON"),
+    ("studio_peer", "token_enc", "token_enc BLOB"),
     ("run", "session_id", "session_id VARCHAR(32)"),
     ("run", "turn_index", "turn_index INTEGER"),
     # 编排（Playground）：三列都可空，NULL = 独立执行，既有数据不受影响

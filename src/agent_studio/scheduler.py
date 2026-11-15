@@ -264,6 +264,7 @@ async def loop() -> None:
             try:
                 from . import peers as _peers
 
+                await _peers.warm_token()  # 入站校验用内存里的口令，进程启动后补一次
                 beat = await _peers.heartbeat_tick()
                 for item in beat.get("flipped") or []:
                     logger.warning(

@@ -472,8 +472,8 @@ export const api = {
       "/api/studios/preview",
       { url },
     ),
-  studioPeerConnect: (url: string, mutual = true) =>
-    post<{ peer: StudioPeer; notes: string[] }>("/api/studios", { url, mutual }),
+  studioPeerConnect: (url: string, mutual = true, token = "") =>
+    post<{ peer: StudioPeer; notes: string[] }>("/api/studios", { url, mutual, token }),
   studioPeerAgents: (id: string, live = false) =>
     request<{
       peer: StudioPeer;
@@ -485,6 +485,10 @@ export const api = {
       remote_stale: boolean;
       remote_age_ms?: number | null;
     }>(`/api/studios/${id}/agents${live ? "?live=1" : ""}`),
+  studioToken: () => request<{ token: string }>("/api/studios/token"),
+  studioTokenRotate: () => post<{ token: string }>("/api/studios/token/rotate", {}),
+  studioPeerSetToken: (id: string, token: string) =>
+    post<{ ok: boolean; has_token: boolean }>(`/api/studios/${id}/token`, { token }),
   studioPeerSync: (id: string) =>
     post<{ synced: string[]; count: number }>(`/api/studios/${id}/sync`, {}),
   studioPeerAccept: (id: string, url?: string) =>

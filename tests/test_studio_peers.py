@@ -42,11 +42,14 @@ def test_is_private() -> None:
 async def test_inbound_handshake_creates_pending() -> None:
     await init_db()
     me = (await studio_identity.get_identity())["id"]
+    tok = await peers.warm_token()
     out = await peers.inbound_handshake(
+        token=tok,
+        payload=
         {
             "studio": {"studio_id": "stu_remote_demo", "name": "客户 A 的 Studio", "version": "0.1.0"},
             "agents": [{"id": "ag_1", "name": "合同审查"}],
-        }
+        },
     )
     assert out["status"] == "pending"
 
@@ -59,9 +62,13 @@ async def test_inbound_handshake_creates_pending() -> None:
         assert row.direction == "in"
         assert row.agents_count == 1
 
+    # 口令不对直接拒
+    with pytest.raises(PermissionError):
+        await peers.inbound_handshake({"studio": {"studio_id": "stu_z"}}, token="bad")
+
     # 自己发回来的握手要拒绝
     with pytest.raises(ValueError):
-        await peers.inbound_handshake({"studio": {"studio_id": me}})
+        await peers.inbound_handshake({"studio": {"studio_id": me}}, token=tok)
 
 
 async def test_inbound_heartbeat_keeps_active() -> None:
@@ -74,7 +81,8 @@ async def test_inbound_heartbeat_keeps_active() -> None:
         s.add(row)
         await s.commit()
 
-    got = await peers.inbound_heartbeat({"studio_id": "stu_beat"})
+    tok = await peers.warm_token()
+    got = await peers.inbound_heartbeat({"studio_id": "stu_beat"}, token=tok)
     assert got["ok"] is True and got["flipped"] is True
     async with SessionLocal() as s:
         row = (await s.execute(select(StudioPeer).where(StudioPeer.studio_id == "stu_beat"))).scalars().first()
@@ -83,7 +91,7 @@ async def test_inbound_heartbeat_keeps_active() -> None:
         assert row.last_seen_at
 
     # 未知节点的心跳不改任何东西
-    assert (await peers.inbound_heartbeat({"studio_id": "stu_nobody"}))["ok"] is False
+    assert (await peers.inbound_heartbeat({"studio_id": "stu_nobody"}, token=tok))["ok"] is False
 
 
 async def test_connect_and_sync(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -102,7 +110,7 @@ async def test_connect_and_sync(monkeypatch: pytest.MonkeyPatch) -> None:
             "fingerprint": "sha256:abc",
         }
 
-    async def fake_agents(base: str, timeout: float = 8.0) -> list[dict]:
+    async def fake_agents(base: str, timeout: float = 8.0, token: str = "") -> list[dict]:
         return [
             {"id": "ag_a", "name": "合同审查", "a2a_card_url": "https://p.example.com/.well-known/agents/ag_a/agent-card.json"},
             {"id": "ag_b", "name": "报价比对", "a2a_card_url": "https://p.example.com/.well-known/agents/ag_b/agent-card.json"},
@@ -159,7 +167,7 @@ async def test_private_peer_gets_no_heartbeat(monkeypatch: pytest.MonkeyPatch) -
     async def fake_card(base: str, timeout: float = 6.0) -> dict:
         return {"studio_id": "stu_lan_demo", "name": "内网节点", "version": "0.1.0", "agents_open": 0}
 
-    async def fake_agents(base: str, timeout: float = 8.0) -> list[dict]:
+    async def fake_agents(base: str, timeout: float = 8.0, token: str = "") -> list[dict]:
         return []
 
     monkeypatch.setattr(peers, "fetch_card", fake_card)
@@ -172,7 +180,7 @@ async def test_private_peer_gets_no_heartbeat(monkeypatch: pytest.MonkeyPatch) -
 
 
 async def test_peer_agents_returns_remote_card_and_caches(monkeypatch: pytest.MonkeyPatch) -> None:
-    """点开节点要能拿到"远程的详情"：名片读到就存快照，读不到就用快照并标 stale。"""
+    """点开节点要能拿到"远程的详情"：默认读快照（不阻塞），live=1 才去对端拉。"""
     await init_db()
     sid = f"stu_detail_{uuid.uuid4().hex[:8]}"
 
@@ -187,7 +195,7 @@ async def test_peer_agents_returns_remote_card_and_caches(monkeypatch: pytest.Mo
             "fingerprint": "sha256:abc",
         }
 
-    async def fake_agents(base: str, timeout: float = 8.0) -> list[dict]:
+    async def fake_agents(base: str, timeout: float = 8.0, token: str = "") -> list[dict]:
         return []
 
     monkeypatch.setattr(peers, "fetch_card", fake_card)
@@ -197,22 +205,25 @@ async def test_peer_agents_returns_remote_card_and_caches(monkeypatch: pytest.Mo
         peer, _ = await peers.connect(s, "https://detail.example.com", mutual=False)
         peer_id = peer.id
         assert (peer.card or {}).get("studio_id") == sid
+        assert (peer.card or {}).get("_at")  # 快照带时间，页面据此显示"详情取自"
 
-    # 读得到：remote 有内容、不 stale
     from agent_studio.api import studios as studios_api
 
+    # 默认：走快照，不打对端
     async with SessionLocal() as s:
         got = await studios_api.peer_agents(peer_id, session=s)
     assert got["remote"]["name"] == "详情节点"
     assert got["remote_stale"] is False
+    assert isinstance(got["remote_age_ms"], int)
 
-    # 读不到：降级用快照，标 stale，不抛错
+    # live=1 但对端连不上：不抛错，保留快照，只给一句原因
     async def boom(base: str, timeout: float = 8.0) -> dict:
         raise ValueError("连不上（8 秒超时）")
 
     monkeypatch.setattr(peers, "fetch_card", boom)
     async with SessionLocal() as s:
-        got2 = await studios_api.peer_agents(peer_id, session=s)
+        got2 = await studios_api.peer_agents(peer_id, live=True, session=s)
     assert got2["remote"]["name"] == "详情节点"
-    assert got2["remote_stale"] is True
     assert "超时" in got2["remote_error"]
+    # stale 表示"对端离线"这个事实，不是因为快照旧
+    assert got2["remote_stale"] is False

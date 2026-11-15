@@ -29,6 +29,8 @@ from .models import AppSetting, now_ms
 logger = logging.getLogger(__name__)
 
 KEY = "studio.identity"
+#: 节点连接口令（对端要读我的开放助手清单 / 握手 / 心跳，必须出示）
+TOKEN_KEY = "studio.token"
 
 
 def _machine_seed() -> str:
@@ -72,6 +74,40 @@ async def get_identity() -> dict[str, Any]:
         await db.commit()
         logger.info("节点身份已生成：%s（%s）", ident["id"], ident["name"])
         return ident
+
+
+async def get_token() -> str:
+    """本节点的连接口令：首次使用时生成，之后固定（可在页面上轮换）。"""
+    import secrets
+
+    async with SessionLocal() as db:
+        row = await db.get(AppSetting, TOKEN_KEY)
+        if row is not None and isinstance(row.value, dict) and row.value.get("token"):
+            return str(row.value["token"])
+        token = "nd_" + secrets.token_urlsafe(24)
+        if row is None:
+            db.add(AppSetting(key=TOKEN_KEY, value={"token": token}, updated_at=now_ms()))
+        else:
+            row.value = {"token": token}
+            row.updated_at = now_ms()
+        await db.commit()
+        return token
+
+
+async def rotate_token() -> str:
+    """轮换：旧口令立刻失效（对端要重新填）。"""
+    import secrets
+
+    token = "nd_" + secrets.token_urlsafe(24)
+    async with SessionLocal() as db:
+        row = await db.get(AppSetting, TOKEN_KEY)
+        if row is None:
+            db.add(AppSetting(key=TOKEN_KEY, value={"token": token}, updated_at=now_ms()))
+        else:
+            row.value = {"token": token}
+            row.updated_at = now_ms()
+        await db.commit()
+    return token
 
 
 async def set_name(name: str) -> dict[str, Any]:

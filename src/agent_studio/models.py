@@ -854,6 +854,8 @@ class StudioPeer(Base):
     note: Mapped[str] = mapped_column(LongText, default="")
     #: 最近一次读到的对端名片快照 —— 对端暂时连不上时，详情页仍有可看的信息
     card: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    #: 对端要求的连接口令（密文）。读它的助手清单/握手/心跳都要带上
+    token_enc: Mapped[bytes | None] = mapped_column(LargeBinary, default=None)
     created_at: Mapped[int] = mapped_column(Integer, default=now_ms)
     updated_at: Mapped[int] = mapped_column(Integer, default=now_ms)
 

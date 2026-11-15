@@ -66,6 +66,12 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
   const [nodeErr, setNodeErr] = useState<Record<string, string>>({});
   const [nodeStale, setNodeStale] = useState<Record<string, boolean>>({});
   const [nodeAge, setNodeAge] = useState<Record<string, number>>({});
+  //: 本节点的连接口令（对端要填它才能读我的清单）
+  const [myToken, setMyToken] = useState<string>("");
+  const [tokenInput, setTokenInput] = useState("");
+  //: 某个节点正在编辑对端口令
+  const [editPeer, setEditPeer] = useState<string | null>(null);
+  const [peerTokenDraft, setPeerTokenDraft] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -78,6 +84,7 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
 
   useEffect(() => {
     void load();
+    void api.studioToken().then((r) => setMyToken(r.token)).catch(() => undefined);
   }, [load]);
 
   const loadAgents = useCallback(async (peerId: string, live = false) => {
@@ -138,10 +145,11 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
     run(
       "connect",
       async () => {
-        const got = await api.studioPeerConnect(url.trim(), mutual);
+        const got = await api.studioPeerConnect(url.trim(), mutual, tokenInput.trim());
         setOpen(false);
         setPreview(null);
         setUrl("");
+        setTokenInput("");
         if (got.notes?.length) fb.success(got.notes.join("；"));
       },
       "已连接",
@@ -161,6 +169,29 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
           </button>
         }
       >
+        {/* 本节点的连接口令：对端连我时要填它（公开接口只暴露名片，清单要口令） */}
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md px-2.5 py-2"
+             style={{ background: "var(--color-surface-2)" }}>
+          <span className="text-[12px]" style={{ color: "var(--color-text-2)" }}>本节点连接口令</span>
+          <code className="mono min-w-0 flex-1 truncate text-[11px]" title={myToken}>
+            {myToken || "（读取中…）"}
+          </code>
+          <button className="btn btn-sm" disabled={!myToken}
+                  onClick={() => { void navigator.clipboard?.writeText(myToken); fb.success("连接口令已复制"); }}>
+            复制
+          </button>
+          <button className="btn btn-sm" disabled={!myToken || busy === "rotate"}
+                  onClick={() => {
+                    if (!window.confirm("轮换口令后，已连上的对端需要重新填新口令，确定轮换？")) return;
+                    void run("rotate", async () => {
+                      const r = await api.studioTokenRotate();
+                      setMyToken(r.token);
+                    }, "口令已轮换");
+                  }}>
+            轮换
+          </button>
+        </div>
+
         {open && (
           <div className="mb-3 rounded-lg border p-3" style={{ borderColor: "var(--color-line)" }}>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -174,6 +205,12 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
                 {busy === "preview" ? "连接中…" : "先看一下"}
               </button>
             </div>
+            <input
+              className="input mt-2"
+              placeholder="对方的连接口令（在对方「节点」区块复制，nd_ 开头）"
+              value={tokenInput}
+              onChange={(e) => { setTokenInput(e.target.value); setErr(null); }}
+            />
             <label className="mt-2 flex items-center gap-2 text-[12px]" style={{ color: "var(--color-text-2)" }}>
               <Switch checked={mutual} onChange={setMutual} ariaLabel="双向连接" />
               双向连接（对方那边也会出现一条待接受的请求）
@@ -355,6 +392,36 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
                             <KV k="加入时间">{new Date(p.created_at).toLocaleString()}</KV>
                             <KV k="指纹">
                               <code className="mono text-[11px]">{p.fingerprint || "—"}</code>
+                            </KV>
+                            <KV k="对端口令">
+                              {editPeer === p.id ? (
+                                <span className="flex flex-wrap items-center gap-1.5">
+                                  <input
+                                    className="input h-7 flex-1 py-0 text-[11px]"
+                                    placeholder="nd_ 开头"
+                                    value={peerTokenDraft}
+                                    onChange={(e) => setPeerTokenDraft(e.target.value)}
+                                  />
+                                  <button className="btn btn-sm"
+                                          onClick={() => {
+                                            void run(`${p.id}:token`, () => api.studioPeerSetToken(p.id, peerTokenDraft.trim()), "口令已保存")
+                                              .then(() => { setEditPeer(null); setPeerTokenDraft(""); });
+                                          }}>
+                                    保存
+                                  </button>
+                                  <button className="btn btn-sm" onClick={() => { setEditPeer(null); setPeerTokenDraft(""); }}>
+                                    取消
+                                  </button>
+                                </span>
+                              ) : (
+                                <span className="flex flex-wrap items-center gap-1.5">
+                                  <span style={{ color: "var(--color-text-3)" }}>已配置（密文存储）</span>
+                                  <button className="btn btn-sm"
+                                          onClick={() => { setEditPeer(p.id); setPeerTokenDraft(""); }}>
+                                    更换
+                                  </button>
+                                </span>
+                              )}
                             </KV>
                             <KV k="详情取自">
                               {rm ? ago(Date.now() - (nodeAge[p.id] ?? 0)) : "—"}
