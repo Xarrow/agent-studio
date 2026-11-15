@@ -200,20 +200,29 @@ class Dispatcher:
                 await session.execute(
                     select(
                         Run.id,
+                        Run.runtime,
                         cast(Run.definition_snapshot, Text).label("snapshot_text"),
                         cast(Run.input, Text).label("input_text"),
                     )
-                    .where(Run.status == "pending", Run.runtime != "a2a")
+                    # 以前这里排除 a2a（影子助手），结果它们在预览/对话里永远 pending。
+                    # 现在 a2a 执行由 service._execute_a2a 转发给远端，正常参与分发。
+                    .where(Run.status == "pending")
                     .order_by(Run.started_at.asc())
                     .limit(free)
                 )
             ).all()
-        for run_id, snapshot_text, input_text in rows:
+        for run_id, run_runtime, snapshot_text, input_text in rows:
             if self.is_running(run_id):
                 continue
             try:
                 snapshot = json.loads(snapshot_text) if snapshot_text else {}
                 run_input = json.loads(input_text) if input_text else {}
+                # a2a 有两种：
+                #   · 影子助手的执行（快照里有 remote_url）→ 由本机转发，正常分发；
+                #   · dispatch_remote 建的**子 run**（快照为空）→ 由远端轮询推进，
+                #     本地接手只会把空快照误判成"无法解析"并打死。跳过。
+                if str(run_runtime or snapshot.get("runtime") or "") == "a2a" and not snapshot.get("remote_url"):
+                    continue
                 definition = AgentDefinition.model_validate(snapshot)
             except Exception:  # noqa: BLE001 —— 快照坏了不该让分发器停摆
                 # 坏快照之前是"跳过、留在 pending" —— 实测这条路是死结：

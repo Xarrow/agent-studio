@@ -753,6 +753,70 @@ class RunService:
         logger.warning("执行 %s 被每日额度拦下：%s", run_id, quota["message"])
         return True
 
+    async def _execute_a2a(self, run_id: str, run_input: Any) -> None:
+        """把一个影子助手的执行转给远端 A2A，并把结果落回这条 run。
+
+        失败要落成**终态 + 原因**，不能留在 pending（留在 pending 会被分发器
+        每秒重扫，而且界面上永远显示"正在运行"）。
+        """
+        import time as _time
+
+        from .. import a2a_client
+
+        stamp = int(_time.time() * 1000)
+        remote_url = ""
+        remote_agent_id: str | None = None
+        async with SessionLocal() as session:
+            run = await session.get(Run, run_id)
+            if run is None:  # pragma: no cover
+                return
+            run.status = "running"
+            run.started_at = run.started_at or stamp
+            run.updated_at = stamp
+            agent = await session.get(Agent, run.agent_id) if run.agent_id else None
+            raw = (agent.definition or {}) if agent is not None else {}
+            remote_url = str(raw.get("remote_url") or "")
+            remote_agent_id = raw.get("remote_agent_id") or None
+            await session.commit()
+
+        text = query_text(run_input)
+        status, out, error, task_id = "error", None, "", ""
+        if not remote_url:
+            error = "这个影子助手没有远端地址：去「远程 Agent 管理」重新同步一次即可修复"
+        elif not text.strip():
+            error = "输入为空，没有可发给远端的内容"
+        else:
+            try:
+                st, txt, task_id = await a2a_client.run_until_done(
+                    remote_url, text, agent_id=remote_agent_id, timeout_s=900.0
+                )
+                status = st if st in ("ok", "error", "aborted", "waiting_hitl") else "ok"
+                if status == "ok":
+                    # run.output 是 JSON 列、且全站按 {"content": ...} 读（对话页/运行记录）
+                    out = {"content": txt}
+                else:
+                    error = txt or f"远端返回 {status}"
+            except Exception as exc:  # noqa: BLE001 —— 远端各种失败一律落终态
+                error = f"远端调用失败：{str(exc)[:300]}"
+
+        end = int(_time.time() * 1000)
+        async with SessionLocal() as session:
+            run = await session.get(Run, run_id)
+            if run is None:  # pragma: no cover
+                return
+            run.status = status
+            run.output = out
+            run.error = error or None
+            run.ended_at = end if status != "waiting_hitl" else None
+            run.updated_at = end
+            usage = dict(run.usage or {})
+            usage["a2a"] = 1
+            if task_id:
+                usage["remote_task_id"] = task_id
+            run.usage = usage
+            await session.commit()
+        logger.info("A2A 执行 %s → %s（远端任务 %s）", run_id, status, task_id or "—")
+
     async def execute(
         self, run_id: str, definition: AgentDefinition, run_input: Any, *, resumed: bool = False
     ) -> None:
@@ -772,6 +836,14 @@ class RunService:
         # 全都经过它 —— 单点收口，不会漏掉某条新加的执行路径。
         # 到顶只拦"新起的"，正在跑的不打断（砍掉跑了一半的活更浪费）。
         if await self._blocked_by_quota(run_id):
+            return
+
+        # runtime=a2a：这条不是本地助手，是**远端助手的影子**（A2A 代理）。
+        # 本地没有它的提示词/工具/模型，执行 = 把消息转发给远端并等终态。
+        # 以前把它排除在分发器之外（Run.runtime != "a2a"），于是预览/对话里
+        # 这类助手永远停在 pending —— 用户看到的就是"调用 A2A 远程 agent 失败"。
+        if str(getattr(definition, "runtime", "") or "") == "a2a":
+            await self._execute_a2a(run_id, run_input)
             return
 
         runtime = get_runtime(definition.runtime)

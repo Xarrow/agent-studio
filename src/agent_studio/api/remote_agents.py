@@ -57,7 +57,9 @@ async def sync_shadow_agent(session: AsyncSession, row: RemoteAgent) -> Agent:
         "runtime": "a2a",
         "name": row.name or parsed.get("name") or row.url,
         "role": "worker",
-        "system_prompt": "",
+        # 影子助手的提示词由**远端**决定，本地不放业务提示词；
+        # 但字段不能为空 —— 空值会在建 run 时被 AgentDefinition 判为非法（实测 500）
+        "system_prompt": f"这是远端助手「{row.name or parsed.get('name') or row.url}」的本地代理，行为由远端定义。",
         "tools": [],
         "skills": [],
         # 远端执行要用的三样

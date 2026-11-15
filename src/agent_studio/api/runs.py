@@ -148,7 +148,13 @@ async def _start_session_turn(
     agent = await db.get(Agent, agent_id)
     if agent is None:
         return None
-    definition = AgentDefinition.model_validate(agent.definition)
+    try:
+        definition = AgentDefinition.model_validate(agent.definition)
+    except Exception as exc:  # noqa: BLE001 —— 老数据/影子助手可能不合规
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"这个助手的定义不完整，无法执行：{str(exc).splitlines()[-1][:200]}",
+        ) from exc
     from ..context import next_turn_index
 
     turn_index = await next_turn_index(db, session_id)
