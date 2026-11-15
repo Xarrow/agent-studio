@@ -161,6 +161,42 @@ export interface StudioPeerAgent {
   last_error: string;
 }
 
+/** 知识中心：一份原始文档 */
+export interface KnowledgeDoc {
+  id: string;
+  name: string;
+  kind: string;
+  mime: string;
+  size: number;
+  sha256: string;
+  source: "upload" | "url" | string;
+  source_url: string;
+  storage_id: string;
+  storage_path: string;
+  category_id: string;
+  sub_category: string;
+  tags: string[];
+  status: "uploading" | "parsing" | "ready" | "failed" | string;
+  error: { code?: string; message?: string; retryable?: boolean };
+  parsed: { textLength?: number; pages?: number | null; sheets?: string[]; parserVersion?: string; ms?: number };
+  version: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface KnowledgeStorage {
+  id: string;
+  name: string;
+  type: "local" | "s3" | string;
+  params: Record<string, string>;
+  path_template: string;
+  is_default: boolean;
+  has_secret: boolean;
+  last_test_ok: boolean | null;
+  last_test_at: number | null;
+  last_test_error: string;
+}
+
 export interface Tool {
   id: string;
   /** builtin=运行时内置；http=自定义 HTTP；code=代码；fork=**平台原生**（助手的"分身"能力） */

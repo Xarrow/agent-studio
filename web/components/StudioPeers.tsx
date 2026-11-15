@@ -254,7 +254,7 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
         </div>
 
         {open && (
-          <div className="mb-3 rounded-lg border p-3" style={{ borderColor: "var(--color-line)" }}>
+          <div className="mb-3 rounded-lg p-3" style={{ background: "var(--color-surface-2)" }}>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <input
                 className="input flex-1"
@@ -347,13 +347,13 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
         {peers === null ? (
           <div className="space-y-2" aria-label="加载中">
             {[0, 1, 2].map((i) => (
-              <div key={i} className="h-9 animate-pulse rounded-md" style={{ background: "var(--color-line)" }} />
+              <div key={i} className="h-9 animate-pulse rounded-md" style={{ background: "var(--color-surface-3)" }} />
             ))}
           </div>
         ) : active.length === 0 && pending.length === 0 ? (
           <div
-            className="rounded-md border border-dashed px-3 py-4 text-[12px]"
-            style={{ borderColor: "var(--color-line)", color: "var(--color-text-3)" }}
+            className="rounded-md px-3 py-4 text-[12px]"
+            style={{ background: "var(--color-surface-2)", color: "var(--color-text-3)" }}
           >
             还没有节点。点右上「＋ 连接节点」，填上对方地址和它的连接口令；连上之后点节点，右侧会显示它的详情与助手。
           </div>
@@ -597,23 +597,23 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
               {curAgents === undefined ? (
                 <div className="space-y-2">
                   {[0, 1].map((i) => (
-                    <div key={i} className="h-9 animate-pulse rounded-md" style={{ background: "var(--color-line)" }} />
+                    <div key={i} className="h-9 animate-pulse rounded-md" style={{ background: "var(--color-surface-3)" }} />
                   ))}
                 </div>
               ) : curAgents.length === 0 ? (
                 <div
-                  className="rounded-md border border-dashed px-3 py-3 text-[12px]"
-                  style={{ borderColor: "var(--color-line)", color: "var(--color-text-3)" }}
+                  className="rounded-md px-3 py-3 text-[12px]"
+                  style={{ background: "var(--color-surface-2)", color: "var(--color-text-3)" }}
                 >
                   还没有同步到本地助手。点上面的「同步助手」。
                 </div>
               ) : (
-                <div className="overflow-hidden rounded-md border" style={{ borderColor: "var(--color-line)" }}>
+                <div className="overflow-hidden rounded-md" style={{ background: "var(--color-surface-2)" }}>
                   {curAgents.map((a) => {
                     const as = ARUN[a.status] ?? ARUN.unknown;
                     const aOpen = openAgent === a.id;
                     return (
-                      <div key={a.id} className="border-t first:border-t-0" style={{ borderColor: "var(--color-line)" }}>
+                      <div key={a.id}>
                         <div
                           role="button"
                           tabIndex={0}
@@ -648,7 +648,7 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
                         </div>
 
                         {aOpen && (
-                          <div className="space-y-3 border-t px-3 py-3" style={{ borderColor: "var(--color-line)" }}>
+                          <div className="space-y-3 px-3 pb-3" style={{ background: "var(--color-surface)" }}>
                             <p className="text-[12.5px] leading-relaxed" style={{ color: "var(--color-text-2)" }}>
                               {a.description || "远端没有提供说明"}
                             </p>

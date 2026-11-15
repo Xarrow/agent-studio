@@ -124,6 +124,7 @@ async def init_db() -> None:
     global engine, SessionLocal, _active
 
     from . import models  # noqa: F401  确保模型已注册到 Base.metadata
+    from .knowledge import models as _knowledge_models  # noqa: F401  知识中心的表
 
     _active.sqlite_file().parent.mkdir(parents=True, exist_ok=True)
 

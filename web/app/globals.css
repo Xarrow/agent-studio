@@ -14,6 +14,8 @@
   /* 工具面板（后台任务 / 定时 / 文件）比对话底再深一档 —— 白对白会糊成一片 */
   --color-surface-3: #e3ebf7;
   --color-border: #dce4ee;
+  /* 兼容别名：早期组件里写过 --color-line；未定义时 borderColor 会退回 currentColor（黑线） */
+  --color-line: var(--color-border);
   --color-border-strong: #c8d6e8;
   --color-text: #14181f;
   --color-muted: #5f6b7a;
@@ -36,6 +38,7 @@
   --color-surface-2: #1c232c;
   --color-surface-3: #222b37;
   --color-border: #28313d;
+  --color-line: var(--color-border);
   --color-border-strong: #37455a;
   --color-text: #e6ebf2;
   --color-muted: #8894a4;

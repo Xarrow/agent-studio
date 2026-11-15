@@ -37,6 +37,7 @@ export const SETUP_ITEMS: NavItem[] = [
   { href: "/runs", label: "管理", icon: "manage", tip: "每次执行一行，点开看过程与耗时" },
   { href: "/agents", label: "Agents", icon: "agents", tip: "一个会自己想办法做事的 AI" },
   { href: "/memories", label: "记忆", icon: "memory", tip: "跨对话的长期记性" },
+  { href: "/knowledge", label: "知识中心", icon: "library", tip: "上传文档、解析成可检索的知识，并沉淀为 Skill" },
   { href: "/tools", label: "能力", icon: "tools", tip: "工具 / Skills / MCP —— 助手能用的东西都在这" },
   { href: "/remote-agents", label: "远程 Agent 管理", icon: "exchange", tip: "接入外部 A2A agent，挂到助手调用" },
 ];
@@ -52,6 +53,8 @@ export const ICON_PATHS: Record<string, string> = {
   exec: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10z", // 对话气泡
   manage: "M4 6h16M4 12h16M4 18h10", // 列表
   agents: "M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3zM12 12l8-4.5M12 12v9M12 12L4 7.5", // 立方体
+  library:
+    "M4 5h4v14H4zM10 5h4v14h-4zM16 6l4 12-4 1z", // 书架/文档库（线性）
   memory: "M12 5a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4", // 芯片/记忆
   tools: "M14.7 6.3a4.5 4.5 0 0 0-6 5.9L3 18l3 3 5.8-5.7a4.5 4.5 0 0 0 5.9-6L14 13l-3-3 3.7-3.7z", // 扳手
   exchange: "M7 16l-4-4 4-4M3 12h18M17 8l4 4-4 4M21 12", // 双向箭头

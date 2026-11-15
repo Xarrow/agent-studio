@@ -981,8 +981,8 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
             {/* 远程调用：提供方决定"开不开放"。
                 口径：开关即权限 —— 关闭时 A2A 入口直接 403，不靠"地址没人知道"来保护；
                 对端同步卡片时也只看得见打开了的助手。 */}
-            <div id="sec-remote" className="scroll-mt-28 rounded-lg border p-3"
-                 style={{ borderColor: "var(--color-line)" }}>
+            <div id="sec-remote" className="scroll-mt-28 rounded-lg p-3"
+                 style={{ background: "var(--color-surface-2)" }}>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="text-[13px] font-medium">远程调用</div>

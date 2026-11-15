@@ -46,6 +46,8 @@ import type {
   RemoteAgentCallRecord,
   RemoteAgentEventRecord,
   RemoteAgentParsed,
+  KnowledgeDoc,
+  KnowledgeStorage,
   RemoteAgentRecord,
   StudioPeer,
   StudioPeerAgent,
@@ -465,6 +467,39 @@ export const api = {
       headers: version ? { "If-Match": String(version) } : undefined,
     }),
   deleteAgent: (id: string) => del(`/api/agents/${id}`),
+  // ---- 知识中心 ----
+  knowledgeDocs: (p: { q?: string; status?: string; kind?: string; limit?: number; offset?: number } = {}) => {
+    const sp = new URLSearchParams();
+    if (p.q) sp.set("q", p.q);
+    if (p.status) sp.set("status", p.status);
+    if (p.kind) sp.set("kind", p.kind);
+    sp.set("limit", String(p.limit ?? 100));
+    sp.set("offset", String(p.offset ?? 0));
+    return request<{ total: number; items: KnowledgeDoc[] }>(`/api/knowledge/documents?${sp.toString()}`);
+  },
+  knowledgeUpload: (files: File[], category = "未分类") => {
+    const fd = new FormData();
+    for (const f of files) fd.append("files", f);
+    fd.append("category", category);
+    return request<{ documents: KnowledgeDoc[]; duplicates: { id: string; name: string }[] }>(
+      "/api/knowledge/documents",
+      { method: "POST", body: fd },
+    );
+  },
+  knowledgeDoc: (id: string) => request<KnowledgeDoc & { chunks: number }>(`/api/knowledge/documents/${id}`),
+  knowledgeText: (id: string) =>
+    request<{ chunks: { ord: number; text: string; page?: number | null; sheet?: string }[] }>(
+      `/api/knowledge/documents/${id}/text`,
+    ),
+  knowledgeReparse: (id: string) => post<{ ok: boolean }>(`/api/knowledge/documents/${id}/reparse`, {}),
+  knowledgeDelete: (id: string) => request<void>(`/api/knowledge/documents/${id}`, { method: "DELETE" }),
+  knowledgeSearch: (q: string) => request<{ items: unknown[] }>(`/api/knowledge/search?q=${encodeURIComponent(q)}`),
+  knowledgeStorages: () => request<{ items: KnowledgeStorage[] }>("/api/knowledge/storage"),
+  knowledgeTestStorage: (id: string) =>
+    post<{ ok: boolean; latency_ms?: number; error?: string }>(`/api/knowledge/storage/${id}/test`, {}),
+  knowledgeSetDefaultStorage: (id: string) =>
+    post<{ ok: boolean }>(`/api/knowledge/storage/${id}/default`, {}),
+
   // ---- 节点联邦（Studio ↔ Studio） ----
   studioPeers: () => request<{ peers: StudioPeer[] }>("/api/studios"),
   studioPeersPreview: (url: string) =>
