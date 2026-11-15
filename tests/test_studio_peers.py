@@ -110,10 +110,10 @@ async def test_connect_and_sync(monkeypatch: pytest.MonkeyPatch) -> None:
 
     calls: list[str] = []
 
-    async def fake_resolve(url: str, **kw) -> dict:
+    async def fake_card_of(card_url: str, base: str) -> dict:
         # 同步时传的是 base（两个助手同一个 base），所以只能按调用次序区分：
         # 第一个成功、第二个模拟远端 500 —— 一个失败不该拖垮整次同步
-        calls.append(url)
+        calls.append(card_url)
         if len(calls) == 2:
             raise RuntimeError("远端卡片 500")
         return {"base": "https://p.example.com", "parsed": {"name": "合同审查"}, "card": {"name": "合同审查"}}
@@ -126,7 +126,7 @@ async def test_connect_and_sync(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(peers, "fetch_card", fake_card)
     monkeypatch.setattr(peers, "fetch_agents", fake_agents)
-    monkeypatch.setattr(peers.remote_agents, "resolve", fake_resolve)
+    monkeypatch.setattr(peers, "_card_of", fake_card_of)
     monkeypatch.setattr(peers.remote_agents, "upsert_tool", fake_upsert)
 
     async with SessionLocal() as s:

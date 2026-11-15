@@ -65,7 +65,9 @@ def _rpc_url(base: str) -> str:
     u = (base or "").strip().rstrip("/")
     if not u:
         raise A2AError("远端地址为空")
-    if u.endswith(".well-known/agent-card.json"):
+    # 平台级卡片是 /.well-known/agent-card.json；**按助手的**卡片是
+    # /.well-known/agents/<id>/agent-card.json —— 两种都要认，否则会被再拼一层
+    if u.endswith("agent-card.json"):
         u = u[: -len(".well-known/agent-card.json")].rstrip("/")
     if u.endswith("/a2a"):
         return u

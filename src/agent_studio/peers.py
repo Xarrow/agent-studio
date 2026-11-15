@@ -31,7 +31,8 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from . import remote_agents, studio_identity
+from . import a2a_client, remote_agents, studio_identity
+from .remote_agents import parse_card
 from .db import SessionLocal
 from .models import Agent, RemoteAgent, StudioPeer, now_ms
 
@@ -219,6 +220,15 @@ async def push_self(peer: StudioPeer) -> dict[str, Any]:
     return resp.json() if resp.content else {}
 
 
+async def _card_of(card_url: str, base: str) -> dict[str, Any]:
+    """读**某个助手**的卡片（不走平台级卡片，避免"默认助手没开放就 403"）。"""
+    card = await a2a_client.discover(card_url, timeout=10.0)
+    parsed = parse_card(card)
+    if not parsed.get("name"):
+        raise ValueError("卡片里没有 name")
+    return {"base": base, "card": card, "parsed": parsed}
+
+
 async def sync_peer(session: AsyncSession, peer: StudioPeer) -> list[str]:
     """把对端**开放**的助手同步到本地 remote_agent（按 peer_id 归属）。
 
@@ -238,10 +248,10 @@ async def sync_peer(session: AsyncSession, peer: StudioPeer) -> list[str]:
     for item in agents:
         card_url = item.get("a2a_card_url") or ""
         endpoint = item.get("a2a_endpoint") or ""
-        # resolve() 期望的是**base**（它自己拼 /.well-known/agent-card.json）；
-        # 直接把卡片地址塞进去会拼成 .../agent-card.json/.well-known/agent-card.json
+        # **必须按"某个助手"的卡片地址去解析**：走 base 会读到平台级卡片（默认助手），
+        # 那个助手没开放就 403，同步就一个也拿不到（实测踩过）。
         base = endpoint[:-4] if endpoint.endswith("/a2a") else card_url.split("/.well-known/")[0]
-        if not base:
+        if not card_url or not base:
             continue
         row = existing.pop(item["id"], None)
         if row is not None:
@@ -257,7 +267,7 @@ async def sync_peer(session: AsyncSession, peer: StudioPeer) -> list[str]:
             touched.append(row.name)
             continue
         try:
-            got = await remote_agents.resolve(base)
+            got = await _card_of(card_url, base)
         except Exception as exc:  # noqa: BLE001 —— 一个助手失败不该毁掉整次同步
             logger.warning("同步远端助手失败：%s（%s）", item.get("name"), exc)
             continue
