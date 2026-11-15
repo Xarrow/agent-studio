@@ -49,6 +49,7 @@ import type {
   RemoteAgentRecord,
   StudioPeer,
   StudioPeerAgent,
+  StudioPeerRemote,
   DbStatus,
   DbTestResult,
   Issue,
@@ -474,7 +475,15 @@ export const api = {
   studioPeerConnect: (url: string, mutual = true) =>
     post<{ peer: StudioPeer; notes: string[] }>("/api/studios", { url, mutual }),
   studioPeerAgents: (id: string) =>
-    request<{ peer: StudioPeer; agents: StudioPeerAgent[] }>(`/api/studios/${id}/agents`),
+    request<{
+      peer: StudioPeer;
+      agents: StudioPeerAgent[];
+      /** 点开节点时顺手读到的对端名片（读不到时为 null + remote_error） */
+      remote: StudioPeerRemote | null;
+      remote_error: string;
+      /** true = 对端此刻连不上，remote 是上次读到的快照 */
+      remote_stale: boolean;
+    }>(`/api/studios/${id}/agents`),
   studioPeerSync: (id: string) =>
     post<{ synced: string[]; count: number }>(`/api/studios/${id}/sync`, {}),
   studioPeerAccept: (id: string, url?: string) =>

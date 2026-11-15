@@ -118,8 +118,55 @@ async def peer_agents(peer_id: str, session: AsyncSession = Depends(get_session)
             select(RemoteAgent).where(RemoteAgent.peer_id == peer.id).order_by(RemoteAgent.name)
         )
     ).scalars().all()
+
+    # 点开节点要给"远程的详情"：顺手再读一次对端名片（带 __t 穿透缓存）。
+    # 读不到不算失败 —— 详情页降级显示本地已知信息 + 一行原因，助手列表照常给。
+    remote: dict[str, Any] | None = None
+    remote_error = ""
+    stale = False
+    if peer.base_url:
+        try:
+            card = await peers.fetch_card(peer.base_url, timeout=8.0)
+            peer.card = card          # 存快照：下次连不上也能看
+            peer.updated_at = now_ms()
+            await session.commit()
+            remote = {
+                "studio_id": card.get("studio_id"),
+                "name": card.get("name"),
+                "version": card.get("version"),
+                "protocol": card.get("protocol"),
+                "base_url": card.get("base_url"),
+                "agents_total": card.get("agents_total"),
+                "agents_open": card.get("agents_open"),
+                "fingerprint": card.get("fingerprint"),
+                "created_at": card.get("created_at"),
+                "card_url": f"{peer.base_url.rstrip('/')}/api/studio/card",
+                "agents_url": f"{peer.base_url.rstrip('/')}/api/studio/agents",
+            }
+        except ValueError as exc:
+            remote_error = str(exc)
+            cached = peer.card or {}
+            if cached.get("studio_id"):
+                stale = True
+                remote = {
+                    "studio_id": cached.get("studio_id"),
+                    "name": cached.get("name"),
+                    "version": cached.get("version"),
+                    "protocol": cached.get("protocol"),
+                    "base_url": cached.get("base_url") or peer.base_url,
+                    "agents_total": cached.get("agents_total"),
+                    "agents_open": cached.get("agents_open"),
+                    "fingerprint": cached.get("fingerprint"),
+                    "created_at": cached.get("created_at"),
+                    "card_url": f"{peer.base_url.rstrip('/')}/api/studio/card",
+                    "agents_url": f"{peer.base_url.rstrip('/')}/api/studio/agents",
+                }
+
     return {
         "peer": _view(peer, len(rows)),
+        "remote": remote,
+        "remote_error": remote_error,
+        "remote_stale": stale,
         "agents": [
             {
                 "id": r.id,

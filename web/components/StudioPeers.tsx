@@ -16,8 +16,8 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { api } from "@/lib/api";
-import type { StudioPeer, StudioPeerAgent } from "@/lib/types";
-import { Chip, Section, Switch } from "@/components/ui/kit";
+import type { StudioPeer, StudioPeerAgent, StudioPeerRemote } from "@/lib/types";
+import { Chip, KV, Section, Switch } from "@/components/ui/kit";
 import { useFeedback } from "@/components/ui/feedback";
 
 function ago(ts?: number | null): string {
@@ -61,6 +61,10 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
   const [openPeer, setOpenPeer] = useState<string | null>(null);
   const [openAgent, setOpenAgent] = useState<string | null>(null);
   const [nodeAgents, setNodeAgents] = useState<Record<string, StudioPeerAgent[]>>({});
+  //: 点开节点时读到的对端名片（"远程的详情"就是这个）
+  const [nodeRemote, setNodeRemote] = useState<Record<string, StudioPeerRemote | null>>({});
+  const [nodeErr, setNodeErr] = useState<Record<string, string>>({});
+  const [nodeStale, setNodeStale] = useState<Record<string, boolean>>({});
 
   const load = useCallback(async () => {
     try {
@@ -79,6 +83,9 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
     try {
       const got = await api.studioPeerAgents(peerId);
       setNodeAgents((prev) => ({ ...prev, [peerId]: got.agents }));
+      setNodeRemote((prev) => ({ ...prev, [peerId]: got.remote }));
+      setNodeErr((prev) => ({ ...prev, [peerId]: got.remote_error || "" }));
+      setNodeStale((prev) => ({ ...prev, [peerId]: Boolean(got.remote_stale) }));
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     }
@@ -285,9 +292,77 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
                   <div className="w-full pb-1 text-[11px]" style={{ color: "var(--color-err)" }}>{p.last_error}</div>
                 )}
 
-                {/* 展开：这个节点下可用的助手（点助手再展开详情） */}
+                {/* 展开：先是"远程的详情"（这个节点是什么、从哪来、多久没联系），再是它的助手 */}
                 {isOpen && (
                   <div className="mb-2 ml-5 border-l pl-3" style={{ borderColor: "var(--color-line)" }}>
+                    {(() => {
+                      const rm = nodeRemote[p.id];
+                      const rErr = nodeErr[p.id] || "";
+                      const rStale = Boolean(nodeStale[p.id]);
+                      return (
+                        <div className="mb-2 rounded-md p-2.5" style={{ background: "var(--color-surface-2)" }}>
+                          <div className="mb-1 flex flex-wrap items-center gap-2">
+                            <span className="text-[12px] font-medium">远程详情</span>
+                            {rm === undefined && !rErr && !rStale ? (
+                              <Chip tone="muted">读取中…</Chip>
+                            ) : rStale ? (
+                              <Chip tone="warn">对端暂时连不上 · 显示上次读到</Chip>
+                            ) : rm ? (
+                              <Chip tone="ok">已连通</Chip>
+                            ) : rErr ? (
+                              <Chip tone="err">连不上</Chip>
+                            ) : (
+                              <Chip tone="muted">读不到名片</Chip>
+                            )}
+                            <span className="ml-auto text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                              对端自报信息，以它为准
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
+                            <KV k="名称">{rm?.name || p.name}</KV>
+                            <KV k="节点 ID">
+                              <code className="mono text-[11px]">{rm?.studio_id || p.studio_id}</code>
+                            </KV>
+                            <KV k="地址">
+                              <code className="mono text-[11px]">{rm?.base_url || p.base_url || "未知"}</code>
+                            </KV>
+                            <KV k="版本">{rm?.version ? `${rm.version}（${rm.protocol || "studio/1"}）` : "—"}</KV>
+                            <KV k="助手">
+                              {rm
+                                ? `开放 ${rm.agents_open ?? 0} / 共 ${rm.agents_total ?? "?"}，已同步 ${p.agents_synced}`
+                                : `已同步 ${p.agents_synced} / 记录 ${p.agents_count}`}
+                            </KV>
+                            <KV k="心跳">
+                              {p.heartbeat ? "本机每 60 秒发一次" : "对方是内网：由它发心跳给我"}
+                              {` · 上次 ${ago(p.last_seen_at)}`}
+                            </KV>
+                            <KV k="上次同步">{ago(p.last_sync_at)}</KV>
+                            <KV k="连接方式">{p.direction === "both" ? "互相连接" : p.direction === "in" ? "对方连我" : "本机连它"}</KV>
+                            <KV k="加入时间">{new Date(p.created_at).toLocaleString()}</KV>
+                            <KV k="指纹">
+                              <code className="mono text-[11px]">{p.fingerprint || "—"}</code>
+                            </KV>
+                          </div>
+                          {rm && (
+                            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                              <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>名片</span>
+                              <code className="mono min-w-0 flex-1 truncate text-[11px]" title={rm.card_url}>{rm.card_url}</code>
+                              <button
+                                className="btn btn-sm shrink-0"
+                                onClick={() => { void navigator.clipboard?.writeText(rm.card_url); fb.success("名片地址已复制"); }}
+                              >
+                                复制
+                              </button>
+                            </div>
+                          )}
+                          {rErr && (
+                            <div className="mt-1.5 text-[11px]" style={{ color: rStale ? "var(--color-text-3)" : "var(--color-err)" }}>
+                              {rStale ? `刚才没连上：${rErr}` : `读不到对端名片：${rErr}`}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                     {agents === undefined ? (
                       <div className="py-1 text-[12px]" style={{ color: "var(--color-text-3)" }}>加载中…</div>
                     ) : agents.length === 0 ? (

@@ -169,3 +169,50 @@ async def test_private_peer_gets_no_heartbeat(monkeypatch: pytest.MonkeyPatch) -
         peer, notes = await peers.connect(s, "http://192.168.2.11:8848", mutual=False)
         assert peer.heartbeat is False
         assert any("内网" in n for n in notes)
+
+
+async def test_peer_agents_returns_remote_card_and_caches(monkeypatch: pytest.MonkeyPatch) -> None:
+    """点开节点要能拿到"远程的详情"：名片读到就存快照，读不到就用快照并标 stale。"""
+    await init_db()
+    sid = f"stu_detail_{uuid.uuid4().hex[:8]}"
+
+    async def fake_card(base: str, timeout: float = 6.0) -> dict:
+        return {
+            "studio_id": sid,
+            "name": "详情节点",
+            "version": "0.1.0",
+            "protocol": "studio/1",
+            "agents_total": 9,
+            "agents_open": 1,
+            "fingerprint": "sha256:abc",
+        }
+
+    async def fake_agents(base: str, timeout: float = 8.0) -> list[dict]:
+        return []
+
+    monkeypatch.setattr(peers, "fetch_card", fake_card)
+    monkeypatch.setattr(peers, "fetch_agents", fake_agents)
+
+    async with SessionLocal() as s:
+        peer, _ = await peers.connect(s, "https://detail.example.com", mutual=False)
+        peer_id = peer.id
+        assert (peer.card or {}).get("studio_id") == sid
+
+    # 读得到：remote 有内容、不 stale
+    from agent_studio.api import studios as studios_api
+
+    async with SessionLocal() as s:
+        got = await studios_api.peer_agents(peer_id, session=s)
+    assert got["remote"]["name"] == "详情节点"
+    assert got["remote_stale"] is False
+
+    # 读不到：降级用快照，标 stale，不抛错
+    async def boom(base: str, timeout: float = 8.0) -> dict:
+        raise ValueError("连不上（8 秒超时）")
+
+    monkeypatch.setattr(peers, "fetch_card", boom)
+    async with SessionLocal() as s:
+        got2 = await studios_api.peer_agents(peer_id, session=s)
+    assert got2["remote"]["name"] == "详情节点"
+    assert got2["remote_stale"] is True
+    assert "超时" in got2["remote_error"]

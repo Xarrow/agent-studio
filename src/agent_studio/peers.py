@@ -176,6 +176,7 @@ async def connect(
             agents_count=int(card.get("agents_open") or 0),
             heartbeat=heartbeat,
             last_seen_at=now_ms(),
+            card=card,
         )
         session.add(peer)
         await session.flush()
@@ -184,6 +185,7 @@ async def connect(
         peer.base_url = base
         peer.status = "active"
         peer.heartbeat = heartbeat
+        peer.card = card
         peer.updated_at = now_ms()
     await session.commit()
 
@@ -248,6 +250,10 @@ async def sync_peer(session: AsyncSession, peer: StudioPeer) -> list[str]:
     * 对端不再开放 → 置 enabled=False（不删：历史调用记录还挂着它）
     """
     agents = await fetch_agents(peer.base_url)
+    try:
+        peer.card = await fetch_card(peer.base_url, timeout=8.0)
+    except ValueError:
+        pass  # 名片读不到不影响助手清单（详情页会用旧快照）
     existing = {
         (r.remote_agent_id or r.url): r
         for r in (
