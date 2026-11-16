@@ -117,6 +117,21 @@ async def ingest_bytes(
     session.add(row)
     await session.commit()
     await session.refresh(row)
+    # 首个版本也记进版本表：否则"回滚到 v1"会找不到原件（新版本上传后就回不去了）
+    from .models import DocumentVersion
+
+    session.add(
+        DocumentVersion(
+            doc_id=row.id,
+            version=1,
+            sha256=digest,
+            storage_key=put.key,
+            storage_id=cfg.id,
+            size=len(data),
+            note="首次上传",
+        )
+    )
+    await session.commit()
     return row
 
 
@@ -210,7 +225,7 @@ async def search(
     stmt = (
         select(DocChunk, Doc)
         .join(Doc, Doc.id == DocChunk.doc_id)
-        .where(*conditions)
+        .where(Doc.deleted_at.is_(None), *conditions)
         .order_by(Doc.updated_at.desc())
         .limit(limit * 6)
     )

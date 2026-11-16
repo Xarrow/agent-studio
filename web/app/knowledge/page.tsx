@@ -19,8 +19,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { KnowledgeGraph } from "@/components/KnowledgeGraph";
 import type {
+  DocTagLink,
+  DocVersion,
   KnowledgeCategory,
   KnowledgeDoc,
+  RecallStats,
+  SkillDraft,
   KnowledgeMigration,
   KnowledgeStorage,
   KnowledgeTag,
@@ -612,7 +616,7 @@ export default function KnowledgePage() {
                         {ago(r.updated_at)}
                       </span>
                     </Row>
-                    {open ? <DocDetail doc={r} cats={cats} tags={tags} onPatch={patchDoc} onDeleted={() => {
+                    {open ? <DocDetail doc={r} cats={cats} onPatch={patchDoc} onChanged={() => { void loadDocs(); void loadMeta(); }} onDeleted={() => {
                       setOpenId(null);
                       void loadDocs();
                       void loadMeta();
@@ -656,6 +660,7 @@ export default function KnowledgePage() {
               await Promise.all([loadMeta(), loadDocs()]);
             }}
           />
+          <RecallSection />
           <Section title="知识关系" desc="文档 → 分类、技能 → 来源文档、助手 → 技能；只画真实引用">
             <KnowledgeGraph />
           </Section>
@@ -668,6 +673,7 @@ export default function KnowledgePage() {
             onChanged={loadMeta}
           />
           <MigrateSection storages={storages} />
+          <TrashSection onChanged={loadMeta} />
         </div>
       )}
     </div>
@@ -679,20 +685,39 @@ export default function KnowledgePage() {
 function DocDetail({
   doc,
   cats,
-  tags,
   onPatch,
   onDeleted,
+  onChanged,
 }: {
   doc: KnowledgeDoc;
   cats: KnowledgeCategory[];
-  tags: KnowledgeTag[];
   onPatch: (id: string, body: Record<string, unknown>) => Promise<void>;
   onDeleted: () => void;
+  onChanged: () => void;
 }) {
   const fb = useFeedback();
   const [text, setText] = useState<{ ord: number; text: string; page?: number | null; sheet?: string }[] | null>(null);
   const [allText, setAllText] = useState(false);
   const [tagDraft, setTagDraft] = useState("");
+  const [tagLinks, setTagLinks] = useState<DocTagLink[] | null>(null);
+  const [versions, setVersions] = useState<DocVersion[]>([]);
+
+  const loadTags = useCallback(async () => {
+    try {
+      const got = await api.knowledgeDocTags(doc.id);
+      setTagLinks(got.items ?? []);
+    } catch {
+      setTagLinks([]);
+    }
+  }, [doc.id]);
+
+  useEffect(() => {
+    void loadTags();
+    api
+      .knowledgeVersions(doc.id)
+      .then((got) => setVersions(got.items ?? []))
+      .catch(() => setVersions([]));
+  }, [doc.id, loadTags, doc.version]);
 
   useEffect(() => {
     let alive = true;
@@ -733,47 +758,135 @@ function DocDetail({
           </KV>
           <KV k="标签">
             <span className="flex flex-wrap items-center gap-1">
-              {doc.tags.length === 0 ? (
+              {tagLinks === null ? (
                 <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
-                  还没有标签
+                  读取中…
                 </span>
               ) : (
-                doc.tags.map((t) => (
-                  <span
-                    key={t}
-                    className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px]"
-                    style={{ background: "var(--color-surface-3)" }}
-                  >
-                    {t}
-                    <button
-                      type="button"
-                      aria-label={`去掉标签 ${t}`}
-                      style={{ color: "var(--color-muted)" }}
-                      onClick={() => void onPatch(doc.id, { tags: doc.tags.filter((x) => x !== t) })}
+                <>
+                  {tagLinks.filter((t) => t.status === "accepted").map((t) => (
+                    <span
+                      key={t.tag_id}
+                      className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px]"
+                      style={{ background: "var(--color-surface-3)" }}
+                      title={t.source === "model" ? "模型提炼" : "自己加的"}
                     >
-                      ×
-                    </button>
-                  </span>
-                ))
+                      {t.name}
+                      <button
+                        type="button"
+                        aria-label={`去掉标签 ${t.name}`}
+                        style={{ color: "var(--color-muted)" }}
+                        onClick={async () => {
+                          await api.knowledgeRemoveDocTag(doc.id, t.tag_id);
+                          await loadTags();
+                          onChanged();
+                        }}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                  {tagLinks.filter((t) => t.status === "candidate").length > 0 ? (
+                    <span className="flex flex-wrap items-center gap-1">
+                      <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                        模型建议：
+                      </span>
+                      {tagLinks
+                        .filter((t) => t.status === "candidate")
+                        .map((t) => (
+                          <span
+                            key={t.tag_id}
+                            className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px]"
+                            style={{ background: "color-mix(in srgb, var(--color-accent) 10%, transparent)" }}
+                          >
+                            {t.name}
+                            <span style={{ color: "var(--color-text-3)" }}>
+                              {Math.round((t.confidence ?? 0) * 100)}%
+                            </span>
+                            <button
+                              type="button"
+                              className="underline"
+                              onClick={async () => {
+                                await api.knowledgeAcceptDocTag(doc.id, t.tag_id);
+                                await loadTags();
+                                onChanged();
+                              }}
+                            >
+                              采纳
+                            </button>
+                            <button
+                              type="button"
+                              aria-label={`忽略 ${t.name}`}
+                              style={{ color: "var(--color-muted)" }}
+                              onClick={async () => {
+                                await api.knowledgeRemoveDocTag(doc.id, t.tag_id);
+                                await loadTags();
+                              }}
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                    </span>
+                  ) : null}
+                </>
               )}
               <input
                 className="input h-7 w-24 text-[11px]"
                 placeholder="加标签"
                 value={tagDraft}
                 onChange={(e) => setTagDraft(e.target.value)}
-                onKeyDown={(e) => {
+                onKeyDown={async (e) => {
                   if (e.key === "Enter" && tagDraft.trim()) {
-                    void onPatch(doc.id, { tags: [...doc.tags, tagDraft.trim()] });
+                    await api.knowledgeAddDocTag(doc.id, { name: tagDraft.trim(), source: "user" });
                     setTagDraft("");
+                    await loadTags();
+                    onChanged();
                   }
                 }}
-                list={`tag-options-${doc.id}`}
               />
-              <datalist id={`tag-options-${doc.id}`}>
-                {tags.map((t) => (
-                  <option key={t.id} value={t.name} />
-                ))}
-              </datalist>
+            </span>
+          </KV>
+          <KV k="版本">
+            <span className="flex flex-wrap items-center gap-1">
+              <span className="text-[12px]">v{doc.version}</span>
+              {versions.slice(0, 4).map((v) => (
+                <button
+                  key={`${v.version}-${v.id}`}
+                  type="button"
+                  className="text-[11px] underline"
+                  style={{ color: v.current ? "var(--color-text-3)" : "var(--color-accent)" }}
+                  disabled={v.current}
+                  onClick={async () => {
+                    if (!window.confirm(`回滚到 v${v.version}？当前内容会被替换（旧版本仍可再回滚回来）。`)) return;
+                    await api.knowledgeRollback(doc.id, v.version);
+                    fb.success(`已回滚到 v${v.version}`);
+                    onChanged();
+                  }}
+                  title={v.note || ""}
+                >
+                  v{v.version}
+                </button>
+              ))}
+              <label className="btn btn-sm cursor-pointer">
+                上传新版本
+                <input
+                  type="file"
+                  hidden
+                  onChange={async (e) => {
+                    const f = e.target.files?.[0];
+                    e.target.value = "";
+                    if (!f) return;
+                    try {
+                      const got = await api.knowledgeAddVersion(doc.id, f);
+                      fb.success(`已提交 v${got.version}，正在解析`);
+                      onChanged();
+                    } catch (err) {
+                      fb.error("上传新版本失败", err instanceof Error ? err.message : String(err));
+                    }
+                  }}
+                />
+              </label>
             </span>
           </KV>
           <KV k="存储路径">
@@ -875,17 +988,17 @@ function DocDetail({
             type="button"
             style={{ color: "var(--color-err,#dc2626)" }}
             onClick={async () => {
-              if (!window.confirm(`删除「${doc.name}」？原件与解析文本都会删掉。`)) return;
+              if (!window.confirm(`把「${doc.name}」移到回收站？30 天内可以恢复。`)) return;
               try {
                 await api.knowledgeDelete(doc.id);
-                fb.success("已删除");
+                fb.success("已移到回收站");
                 onDeleted();
               } catch (e) {
                 fb.error("删除失败", e instanceof Error ? e.message : String(e));
               }
             }}
           >
-            删除
+            移到回收站
           </button>
         </div>
       </div>
@@ -1062,10 +1175,28 @@ function TagsSection({
 }) {
   const fb = useFeedback();
   const [draft, setDraft] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [usage, setUsage] = useState<{ id: string; name: string; origin: string; doc_count: number }[]>([]);
+
+  const loadUsage = useCallback(async () => {
+    try {
+      const got = await api.knowledgeTagUsage();
+      setUsage(got.items ?? []);
+    } catch {
+      setUsage([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadUsage();
+  }, [loadUsage, tags.length]);
 
   return (
-    <Section title="标签" count={tags.length} desc="扁平；一份文档可以挂多个">
+    <Section
+      title="标签"
+      count={usage.length || tags.length}
+      desc="模型从文档里提炼、或你自己加；一个标签下可以有多个文档，能直接生成 Skill"
+    >
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-2">
           <input
@@ -1078,61 +1209,98 @@ function TagsSection({
           <button
             className="btn btn-sm"
             type="button"
-            disabled={busy || !draft.trim()}
+            disabled={!!busy || !draft.trim()}
             onClick={async () => {
-              setBusy(true);
+              setBusy("new");
               try {
                 await api.knowledgeCreateTag(draft.trim());
                 setDraft("");
                 await onChanged();
+                await loadUsage();
               } catch (e) {
                 fb.error("新建标签失败", e instanceof Error ? e.message : String(e));
               } finally {
-                setBusy(false);
+                setBusy(null);
               }
             }}
           >
             新增标签
           </button>
         </div>
-        {firstLoad && tags.length === 0 ? (
-          <div className="h-8 w-40 animate-pulse rounded-full" style={{ background: "var(--color-surface-2)" }} />
-        ) : tags.length === 0 ? (
-          <div className="text-[12px]" style={{ color: "var(--color-text-3)" }}>
-            还没有标签
-          </div>
+
+        {firstLoad && usage.length === 0 ? (
+          <div className="h-14 animate-pulse rounded-[10px]" style={{ background: "var(--color-surface-2)" }} />
+        ) : usage.length === 0 ? (
+          <Empty
+            title="还没有标签"
+            hint="打开一份文档，在详情里给它打标签；也可以让助手整理时自动提出候选标签"
+          />
         ) : (
-          <div className="flex flex-wrap gap-1.5">
-            {tags.map((t) => (
-              <span
-                key={t.id}
-                className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px]"
-                style={{ background: "var(--color-surface-3)" }}
-              >
-                {t.name}
-                <button
-                  type="button"
-                  aria-label={`删除标签 ${t.name}`}
-                  style={{ color: "var(--color-muted)" }}
-                  onClick={async () => {
-                    try {
-                      await api.knowledgeDeleteTag(t.id);
-                      await onChanged();
-                    } catch (e) {
-                      fb.error("删除失败", e instanceof Error ? e.message : String(e));
-                    }
-                  }}
+          <div className="-mx-3">
+            <RowList>
+              {usage.map((t) => (
+                <Row
+                  key={t.id}
+                  actions={
+                    <>
+                      <button
+                        className="btn btn-sm"
+                        type="button"
+                        disabled={!!busy || t.doc_count === 0}
+                        title={
+                          t.doc_count === 0
+                            ? "这个标签下还没有文档"
+                            : "把该标签下全部文档提炼成一份 SKILL.md 草稿"
+                        }
+                        onClick={async () => {
+                          setBusy(t.id);
+                          try {
+                            await api.knowledgeCreateSkillDraft({ tag_id: t.id });
+                            fb.success(`已开始为「${t.name}」生成 Skill 草稿`);
+                          } catch (e) {
+                            fb.error("生成失败", e instanceof Error ? e.message : String(e));
+                          } finally {
+                            setBusy(null);
+                          }
+                        }}
+                      >
+                        生成 Skill
+                      </button>
+                      <button
+                        className="btn btn-sm"
+                        type="button"
+                        style={{ color: "var(--color-err,#dc2626)" }}
+                        onClick={async () => {
+                          if (!window.confirm(`删除标签「${t.name}」？文档不会被删。`)) return;
+                          try {
+                            await api.knowledgeDeleteTag(t.id);
+                            await onChanged();
+                            await loadUsage();
+                          } catch (e) {
+                            fb.error("删除失败", e instanceof Error ? e.message : String(e));
+                          }
+                        }}
+                      >
+                        删除
+                      </button>
+                    </>
+                  }
                 >
-                  ×
-                </button>
-              </span>
-            ))}
+                  <span className="min-w-0 flex-1 truncate text-[13px]">{t.name}</span>
+                  <Chip tone="muted">{t.origin === "agent" ? "模型提炼" : "自己加的"}</Chip>
+                  <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                    {t.doc_count} 份
+                  </span>
+                </Row>
+              ))}
+            </RowList>
           </div>
         )}
       </div>
     </Section>
   );
 }
+
 
 /* ────────────────────────── 存储 ────────────────────────── */
 
@@ -1500,6 +1668,184 @@ function MigrateSection({ storages }: { storages: KnowledgeStorage[] }) {
           </div>
         ) : null}
       </div>
+    </Section>
+  );
+}
+
+
+/* ────────────────────────── 召回率面板 ────────────────────────── */
+
+function RecallSection() {
+  const { loaded, markLoaded } = useFirstLoad();
+  const [stats, setStats] = useState<RecallStats | null>(null);
+  const [open, setOpen] = useState<"" | "docs" | "tags">("");
+
+  useEffect(() => {
+    api
+      .knowledgeRecall()
+      .then((got) => setStats(got))
+      .catch(() => setStats(null))
+      .finally(markLoaded);
+  }, [markLoaded]);
+
+  const card = (label: string, rate: number, detail: string, onClick?: () => void) => (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex-1 rounded-[10px] px-3 py-2 text-left"
+      style={{ background: "var(--color-surface-2)", minWidth: 132 }}
+    >
+      <div className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+        {label}
+      </div>
+      <div className="text-[18px] font-medium">{Math.round(rate * 100)}%</div>
+      <div className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+        {detail}
+      </div>
+    </button>
+  );
+
+  return (
+    <Section
+      title="召回情况"
+      desc="「查得到吗」的四个数：文档自召回、标签召回、助手真实检索命中、页面搜索命中"
+    >
+      {!loaded && !stats ? (
+        <div className="h-16 animate-pulse rounded-[10px]" style={{ background: "var(--color-surface-2)" }} />
+      ) : !stats ? (
+        <div className="text-[12px]" style={{ color: "var(--color-text-3)" }}>
+          暂时读不到统计数据
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-2">
+            {card(
+              "文档自召回",
+              stats.docs.rate,
+              `${stats.docs.hit}/${stats.docs.total} 份查得到自己`,
+              stats.docs.misses.length ? () => setOpen(open === "docs" ? "" : "docs") : undefined,
+            )}
+            {card(
+              "标签召回",
+              stats.tags.rate,
+              `${stats.tags.hit}/${stats.tags.total} 个标签查得全`,
+              stats.tags.misses.length ? () => setOpen(open === "tags" ? "" : "tags") : undefined,
+            )}
+            {card(
+              "助手检索命中",
+              stats.agent.rate,
+              stats.agent.queries ? `${stats.agent.hit}/${stats.agent.queries} 次 · 均值 ${stats.agent.avg_latency_ms}ms` : "还没被助手查过",
+            )}
+            {card("页面搜索命中", stats.search.rate, stats.search.queries ? `${stats.search.hit}/${stats.search.queries} 次` : "还没有搜索记录")}
+          </div>
+
+          {open === "docs" ? (
+            <div className="space-y-1">
+              <div className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                这些文档用自己标题+首段也查不到（多半是正文太短或标题太泛）
+              </div>
+              {stats.docs.misses.map((m) => (
+                <div key={m.id} className="truncate text-[12px]" style={{ color: "var(--color-text-2)" }}>
+                  {m.name}
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {open === "tags" ? (
+            <div className="space-y-1">
+              <div className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                这些标签名查不全它下面的文档（术语和正文不一致时最常见）
+              </div>
+              {stats.tags.misses.map((m) => (
+                <div key={m.id} className="truncate text-[12px]" style={{ color: "var(--color-text-2)" }}>
+                  {m.name} · 命中 {m.hit}/{m.expected}
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      )}
+    </Section>
+  );
+}
+
+/* ────────────────────────── 回收站 ────────────────────────── */
+
+function TrashSection({ onChanged }: { onChanged: () => Promise<void> | void }) {
+  const fb = useFeedback();
+  const [items, setItems] = useState<KnowledgeDoc[] | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const got = await api.knowledgeTrash();
+      setItems(got.items ?? []);
+    } catch {
+      setItems([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  return (
+    <Section
+      title="回收站"
+      count={items?.length ?? undefined}
+      desc="删掉的文档先放这里，可以恢复；彻底删除会连原件一起清掉"
+      defaultOpen={false}
+    >
+      {items === null ? (
+        <div className="h-14 animate-pulse rounded-[10px]" style={{ background: "var(--color-surface-2)" }} />
+      ) : items.length === 0 ? (
+        <div className="text-[12px]" style={{ color: "var(--color-text-3)" }}>
+          回收站是空的
+        </div>
+      ) : (
+        <div className="-mx-3">
+          <RowList>
+            {items.map((d) => (
+              <Row
+                key={d.id}
+                actions={
+                  <>
+                    <button
+                      className="btn btn-sm"
+                      type="button"
+                      onClick={async () => {
+                        await api.knowledgeRestore(d.id);
+                        fb.success("已恢复");
+                        await load();
+                        await onChanged();
+                      }}
+                    >
+                      恢复
+                    </button>
+                    <button
+                      className="btn btn-sm"
+                      type="button"
+                      style={{ color: "var(--color-err,#dc2626)" }}
+                      onClick={async () => {
+                        if (!window.confirm(`彻底删除「${d.name}」？原件与解析文本都会没了，不能恢复。`)) return;
+                        await api.knowledgePurge(d.id);
+                        fb.success("已彻底删除");
+                        await load();
+                      }}
+                    >
+                      彻底删除
+                    </button>
+                  </>
+                }
+              >
+                <span className="min-w-0 flex-1 truncate text-[13px]">{d.name}</span>
+                <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                  {ago(d.updated_at)}
+                </span>
+              </Row>
+            ))}
+          </RowList>
+        </div>
+      )}
     </Section>
   );
 }

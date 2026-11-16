@@ -53,6 +53,10 @@ import type {
   OrganizeJob,
   KnowledgeMigration,
   KnowledgeStorage,
+  DocTagLink,
+  DocVersion,
+  SkillDraft,
+  RecallStats,
   RemoteAgentRecord,
   StudioPeer,
   StudioPeerAgent,
@@ -544,6 +548,50 @@ export const api = {
     path_template?: string;
     is_default?: boolean;
   }) => post<KnowledgeStorage>("/api/knowledge/storage", p),
+
+  // ── 知识库流程（版本 / 标签 / Skill 草稿 / 召回）────────────────────────
+  knowledgeDocTags: (id: string) =>
+    request<{ items: DocTagLink[]; accepted: DocTagLink[]; candidates: DocTagLink[] }>(
+      `/api/knowledge/documents/${id}/tags`,
+    ),
+  knowledgeAddDocTag: (id: string, body: { name?: string; tag_id?: string; source?: "model" | "user" }) =>
+    request<{ tag_id: string; name: string; status: string }>(`/api/knowledge/documents/${id}/tags`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  knowledgeAcceptDocTag: (id: string, tagId: string) =>
+    post<{ ok: boolean; name: string }>(`/api/knowledge/documents/${id}/tags/${tagId}/accept`, {}),
+  knowledgeRemoveDocTag: (id: string, tagId: string) =>
+    request<void>(`/api/knowledge/documents/${id}/tags/${tagId}`, { method: "DELETE" }),
+  knowledgeTagUsage: () =>
+    request<{ items: { id: string; name: string; origin: string; doc_count: number }[] }>(
+      "/api/knowledge/tags/usage",
+    ),
+  knowledgeVersions: (id: string) =>
+    request<{ items: DocVersion[]; current: number }>(`/api/knowledge/documents/${id}/versions`),
+  knowledgeAddVersion: (id: string, file: File, note = "") => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return request<{ version: number }>(
+      `/api/knowledge/documents/${id}/versions?note=${encodeURIComponent(note)}`,
+      { method: "POST", body: fd },
+    );
+  },
+  knowledgeRollback: (id: string, version: number) =>
+    post<{ version: number }>(`/api/knowledge/documents/${id}/versions/${version}/rollback`, {}),
+  knowledgeTrash: () => request<{ items: KnowledgeDoc[] }>("/api/knowledge/trash"),
+  knowledgeRestore: (id: string) => post<{ ok: boolean }>(`/api/knowledge/documents/${id}/restore`, {}),
+  knowledgePurge: (id: string) =>
+    request<void>(`/api/knowledge/documents/${id}?hard=true`, { method: "DELETE" }),
+  knowledgeCreateSkillDraft: (p: { tag_id?: string; doc_ids?: string[]; agent_id?: string }) =>
+    post<{ draft: SkillDraft }>("/api/knowledge/skill-drafts", p),
+  knowledgeSkillDrafts: (status = "draft") =>
+    request<{ items: SkillDraft[] }>(`/api/knowledge/skill-drafts?status=${status}`),
+  knowledgePublishDraft: (id: string) =>
+    post<{ skill_id: string; name: string }>(`/api/knowledge/skill-drafts/${id}/publish`, {}),
+  knowledgeDiscardDraft: (id: string) =>
+    post<{ ok: boolean }>(`/api/knowledge/skill-drafts/${id}/discard`, {}),
+  knowledgeRecall: () => request<RecallStats>("/api/knowledge/recall"),
   knowledgeMigrate: (p: { from_id?: string; to_id: string; keep_source?: boolean }) =>
     post<{ job: KnowledgeMigration }>("/api/knowledge/storage/migrate", p),
   knowledgeMigrations: () =>

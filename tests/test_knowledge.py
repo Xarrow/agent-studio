@@ -61,24 +61,32 @@ async def test_同内容去重(client, tmp_path, monkeypatch):
     assert len(r2.json()["duplicates"]) == 1
 
 
-async def test_删除文档连带删原件与分块(client, tmp_path, monkeypatch):
-    from pathlib import Path
-
+async def test_删除先软删_彻底删才清原件与分块(client, tmp_path, monkeypatch):
+    """删除分两步：默认进回收站（记录还在），``?hard=true`` 才真删原件与分块。"""
     from agent_studio.config import settings
 
     monkeypatch.setattr(settings, "work_dir", tmp_path)
     r = await client.post(
-        "/api/knowledge/documents", files={"files": ("del.md", _md("待删除文档"), "text/markdown")}
+        "/api/knowledge/documents",
+        files={"files": ("要删的.md", _md("# 要删的\n\n正文留个记号。"), "text/markdown")},
     )
     doc = r.json()["documents"][0]
-    p = Path(doc["storage_path"])
-    assert p.is_file()
+    detail = (await client.get(f"/api/knowledge/documents/{doc['id']}")).json()
+    path = detail["storage_path"]
 
-    d = await client.delete(f"/api/knowledge/documents/{doc['id']}")
-    assert d.status_code == 204
-    assert not p.exists()
+    # 第一步：软删
+    assert (await client.delete(f"/api/knowledge/documents/{doc['id']}")).status_code == 204
+    assert (await client.get(f"/api/knowledge/documents/{doc['id']}")).status_code == 200
+    import os
+
+    assert os.path.exists(path), "软删不该动原件"
+
+    # 第二步：彻底删除
+    assert (
+        await client.delete(f"/api/knowledge/documents/{doc['id']}", params={"hard": "true"})
+    ).status_code == 204
     assert (await client.get(f"/api/knowledge/documents/{doc['id']}")).status_code == 404
-
+    assert not os.path.exists(path), "彻底删除要清原件"
 
 async def test_存储配置与测试连接(client, tmp_path, monkeypatch):
     from agent_studio.config import settings

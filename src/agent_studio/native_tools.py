@@ -836,11 +836,33 @@ async def _knowledge_search(query: str, top_k: int = 5) -> str:
     # 拆成词逐个查再合并——这是"整句检索"最省事又不引入向量库的做法
     terms = [t for t in text.replace("，", " ").replace("、", " ").split() if len(t) >= 2][:6] or [text]
     merged: dict[str, dict] = {}
+    import time as _t
+
+    from .knowledge.models import RecallLog
+
+    stamp = _t.time()
     async with SessionLocal() as session:
         for term in terms:
             for hit in await kb.search(session, term, limit=k, status="ready"):
                 merged.setdefault(hit["id"], hit)
-    hits = list(merged.values())[:k]
+        hits = list(merged.values())[:k]
+        # 埋点：召回率面板的"助手检索命中"只认这条
+        try:
+            ctx = current_run_ctx()
+            session.add(
+                RecallLog(
+                    surface="agent",
+                    query=text[:300],
+                    hit_count=len(hits),
+                    top_doc_id=hits[0]["id"] if hits else "",
+                    matched_path="body" if hits else "none",
+                    latency_ms=int((_t.time() - stamp) * 1000),
+                    agent_id=str(ctx.get("agent_id") or "")[:32],
+                )
+            )
+            await session.commit()
+        except Exception:  # noqa: BLE001 —— 埋点失败不该影响检索
+            pass
     if not hits:
         return f"知识库里没有和「{text}」相关的文档。可以换个说法，或先在知识中心上传。"
     lines = [f"在知识库中找到 {len(hits)} 份相关文档："]

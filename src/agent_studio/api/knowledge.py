@@ -126,7 +126,8 @@ async def list_documents(
     offset: int = Query(default=0, ge=0),
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
-    conds = []
+    # 软删（回收站）里的文档默认不出现在列表
+    conds = [Doc.deleted_at.is_(None)]
     if q:
         like = f"%{q}%"
         conds.append(Doc.name.ilike(like))
@@ -147,11 +148,29 @@ async def list_documents(
 
 @router.get("/search")
 async def search_docs(
-    q: str = Query(default=""),
-    limit: int = Query(default=30, ge=1, le=100),
-    session: AsyncSession = Depends(get_session),
+    q: str = Query(default=""), limit: int = Query(default=20, ge=1, le=100),
+    session: AsyncSession = Depends(get_session)
 ) -> dict[str, Any]:
-    return {"items": await service.search(session, q, limit=limit)}
+    """页面搜索。每次落一条 ``recall_log``（召回率面板只认这份埋点）。"""
+    import time as _t
+
+    from ..knowledge.models import RecallLog
+
+    stamp = _t.time()
+    hits = await service.search(session, q, limit=limit)
+    matched = "name" if any(str(q).lower() in h["name"].lower() for h in hits) else ("body" if hits else "none")
+    session.add(
+        RecallLog(
+            surface="search",
+            query=(q or "")[:300],
+            hit_count=len(hits),
+            top_doc_id=hits[0]["id"] if hits else "",
+            matched_path=matched,
+            latency_ms=int((_t.time() - stamp) * 1000),
+        )
+    )
+    await session.commit()
+    return {"items": hits}
 
 
 @router.get("/documents/{doc_id}")
@@ -252,17 +271,36 @@ async def reparse(doc_id: str, session: AsyncSession = Depends(get_session)) -> 
 
 
 @router.delete("/documents/{doc_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_document(doc_id: str, session: AsyncSession = Depends(get_session)) -> None:
+async def delete_document(
+    doc_id: str, hard: bool = Query(default=False), session: AsyncSession = Depends(get_session)
+) -> None:
+    """删除文档。默认**软删**（进回收站，可恢复）；``?hard=true`` 才真删原件与记录。
+
+    为什么默认软删：删一份文档等于删掉它的解析文本、标签关系、版本历史，
+    手滑一次就找不回来。回收站留 30 天是这类动作的最低成本保险。
+    """
+    from ..knowledge.models import DocumentTag, DocumentVersion
+
     row = await session.get(Doc, doc_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "文档不存在")
+    if not hard:
+        import time as _t
+
+        row.deleted_at = int(_t.time() * 1000)
+        row.updated_at = row.deleted_at
+        await session.commit()
+        return
     cfg = await session.get(StorageConfig, row.storage_id) if row.storage_id else None
     if cfg is not None:
-        try:
-            service.provider_of(cfg).delete(row.storage_key)
-        except storage.StorageError:
-            logger.warning("删除原件失败（记录照删）：%s", row.storage_key)
+        for key in {row.storage_key, getattr(row, "snapshot_key", "")} - {""}:
+            try:
+                service.provider_of(cfg).delete(key)
+            except storage.StorageError:
+                logger.warning("删除原件失败（记录照删）：%s", key)
     await session.execute(delete(DocChunk).where(DocChunk.doc_id == doc_id))
+    await session.execute(delete(DocumentVersion).where(DocumentVersion.doc_id == doc_id))
+    await session.execute(delete(DocumentTag).where(DocumentTag.doc_id == doc_id))
     await session.delete(row)
     await session.commit()
 

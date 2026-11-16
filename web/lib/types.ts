@@ -243,6 +243,45 @@ export interface KnowledgeMigration {
   finished_at: number;
 }
 
+export interface DocTagLink {
+  tag_id: string;
+  name: string;
+  source: "model" | "user";
+  confidence: number;
+  status: "candidate" | "accepted";
+}
+
+export interface DocVersion {
+  id: string;
+  version: number;
+  sha256: string;
+  size: number;
+  note: string;
+  created_at: number;
+  current?: boolean;
+}
+
+export interface SkillDraft {
+  id: string;
+  name: string;
+  description: string;
+  body: string;
+  tag_ids: string[];
+  doc_ids: string[];
+  model: string;
+  status: "draft" | "published" | "discarded";
+  error?: { code?: string; message?: string };
+  created_at: number;
+}
+
+export interface RecallStats {
+  days: number;
+  docs: { total: number; hit: number; rate: number; misses: { id: string; name: string; probe: string }[] };
+  tags: { total: number; hit: number; rate: number; misses: { id: string; name: string; expected: number; hit: number }[] };
+  agent: { queries: number; hit: number; rate: number; avg_latency_ms: number };
+  search: { queries: number; hit: number; rate: number };
+}
+
 export interface KnowledgeStorage {
   id: string;
   name: string;
