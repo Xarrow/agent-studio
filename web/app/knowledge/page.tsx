@@ -16,6 +16,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import type {
   KnowledgeCategory,
+  OrganizeDraft,
+  OrganizeJob,
   KnowledgeDoc,
   KnowledgeStorage,
   KnowledgeTag,
@@ -48,7 +50,7 @@ const STATUS: Record<string, { label: string; tone: "ok" | "warn" | "err" | "mut
 
 export default function KnowledgePage() {
   const fb = useFeedback();
-  const [tab, setTab] = useState<"docs" | "categories" | "storage">("docs");
+  const [tab, setTab] = useState<"docs" | "categories" | "organize" | "storage">("docs");
   const [urlOpen, setUrlOpen] = useState(false);
   const [urlDraft, setUrlDraft] = useState({ url: "", name: "" });
   const [rows, setRows] = useState<KnowledgeDoc[] | null>(null);
@@ -154,11 +156,14 @@ export default function KnowledgePage() {
         <Chip tone={tab === "categories" ? "accent" : "muted"} title="分类树与标签">
           <button type="button" onClick={() => setTab("categories")}>分类与标签</button>
         </Chip>
+        <Chip tone={tab === "organize" ? "accent" : "muted"} title="让助手读文档、提分类标签摘要建议">
+          <button type="button" onClick={() => setTab("organize")}>整理</button>
+        </Chip>
         <Chip tone={tab === "storage" ? "accent" : "muted"} title="存储位置与容量">
           <button type="button" onClick={() => setTab("storage")}>存储设置</button>
         </Chip>
         <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
-          整理 Agent 与关联图谱在后续阶段接入
+          关联图谱与来源溯源在后续阶段接入
         </span>
       </div>
 
@@ -313,8 +318,8 @@ export default function KnowledgePage() {
             </div>
           )}
         </>
-      ) : tab === "categories" ? (
-        <CategoriesPanel onChanged={() => void load()} />
+      ) : tab === "organize" ? (
+        <OrganizePanel docs={rows ?? []} onApplied={() => void load()} />
       ) : (
         <StoragePanel storages={storages} onRefresh={() => void loadStorages()} />
       )}
@@ -741,6 +746,200 @@ function CategoriesPanel({ onChanged }: { onChanged: () => void }) {
             ))
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+
+function OrganizePanel({ docs, onApplied }: { docs: KnowledgeDoc[]; onApplied: () => void }) {
+  const fb = useFeedback();
+  const [agents, setAgents] = useState<{ id: string; name: string }[] | null>(null);
+  const [agentId, setAgentId] = useState("");
+  const [picked, setPicked] = useState<Record<string, boolean>>({});
+  const [drafts, setDrafts] = useState<OrganizeDraft[] | null>(null);
+  const [jobs, setJobs] = useState<OrganizeJob[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  const loadDrafts = useCallback(async () => {
+    try {
+      const [d, j] = await Promise.all([api.knowledgeDrafts({ status: "pending" }), api.knowledgeJobs()]);
+      setDrafts(d.items);
+      setJobs(j.items);
+    } catch {
+      setDrafts([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadDrafts();
+    api
+      .agents()
+      .then((got) => {
+        const raw = (Array.isArray(got) ? got : (got as { items?: unknown[] }).items) ?? [];
+        const rows = (raw as {
+          id: string;
+          name: string;
+          runtime?: string;
+          definition?: { model?: { name?: string } };
+        }[])
+          // 影子助手（runtime=a2a）与没配模型的助手跑不了整理：它们没有自己的模型
+          .filter((a) => a.runtime !== "a2a" && (a.definition?.model?.name ?? "").trim() !== "")
+          .map((a) => ({ id: a.id, name: `${a.name} · ${a.definition?.model?.name ?? ""}` }));
+        setAgents(rows);
+        if (rows[0]) setAgentId(rows[0].id);
+      })
+      .catch(() => setAgents([]));
+  }, [loadDrafts]);
+
+  const readyDocs = docs.filter((d) => d.status === "ready");
+  const chosen = Object.keys(picked).filter((k) => picked[k]);
+
+  return (
+    <div className="space-y-5">
+      <div className="rounded-lg p-3" style={{ background: "var(--color-surface-2)" }}>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[12px]" style={{ color: "var(--color-text-2)" }}>用</span>
+          <select className="input h-8 w-52 text-[12px]" value={agentId} onChange={(e) => setAgentId(e.target.value)}>
+            {(agents ?? []).length === 0 && <option value="">（还没有助手）</option>}
+            {(agents ?? []).map((a) => (
+              <option key={a.id} value={a.id}>{a.name}</option>
+            ))}
+          </select>
+          <span className="text-[12px]" style={{ color: "var(--color-text-2)" }}>读这些文档</span>
+          <button
+            className="btn btn-sm"
+            type="button"
+            onClick={() => {
+              const all: Record<string, boolean> = {};
+              for (const d of readyDocs) all[d.id] = true;
+              setPicked(all);
+            }}
+          >
+            全选（{readyDocs.length} 份已就绪）
+          </button>
+          <button className="btn btn-sm" type="button" onClick={() => setPicked({})}>清空</button>
+          <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>已选 {chosen.length} 份</span>
+          <button
+            className="btn btn-primary btn-sm ml-auto"
+            type="button"
+            disabled={busy || !agentId || chosen.length === 0}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await api.knowledgeOrganize({ agent_id: agentId, doc_ids: chosen });
+                fb.success("已开始整理，结果会以草稿形式出现在下面");
+                setPicked({});
+                // 整理是后台跑的：先等一会儿再拉草稿
+                for (let i = 0; i < 20; i += 1) {
+                  await new Promise((r) => setTimeout(r, 1500));
+                  await loadDrafts();
+                  break;
+                }
+              } catch (e) {
+                fb.error("整理没能开始", e instanceof Error ? e.message : String(e));
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            开始整理
+          </button>
+        </div>
+        <div className="mt-2 grid gap-1 sm:grid-cols-2">
+          {readyDocs.length === 0 ? (
+            <span className="text-[12px]" style={{ color: "var(--color-text-3)" }}>还没有「已就绪」的文档可整理</span>
+          ) : (
+            readyDocs.slice(0, 30).map((d) => (
+              <label key={d.id} className="flex items-center gap-2 text-[12px]" style={{ minHeight: 30 }}>
+                <input
+                  type="checkbox"
+                  checked={!!picked[d.id]}
+                  onChange={(e) => setPicked((p) => ({ ...p, [d.id]: e.target.checked }))}
+                />
+                <span className="truncate">{d.name}</span>
+              </label>
+            ))
+          )}
+        </div>
+        <div className="mt-2 flex items-center gap-2">
+          <button className="btn btn-sm" type="button" onClick={() => void loadDrafts()}>刷新草稿</button>
+          {jobs[0] && (
+            <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+              最近一次：{jobs[0].status === "done" ? "完成" : jobs[0].status === "failed" ? "失败" : "进行中"} · 草稿 {jobs[0].made} 条
+              {jobs[0].error?.message ? ` · ${jobs[0].error.message}` : ""}
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div>
+        <div className="mb-2 text-[12px] font-medium">
+          待确认的草稿 {drafts ? `(${drafts.length})` : ""}
+          <span className="ml-2 font-normal text-[11px]" style={{ color: "var(--color-text-3)" }}>
+            采纳才会写进文档；忽略就丢掉
+          </span>
+        </div>
+        {drafts === null ? (
+          <div className="h-16 animate-pulse rounded-md" style={{ background: "var(--color-surface-3)" }} />
+        ) : drafts.length === 0 ? (
+          <div className="rounded-lg px-3 py-6 text-center text-[12px]"
+               style={{ background: "var(--color-surface-2)", color: "var(--color-text-3)" }}>
+            没有待确认的草稿
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            {drafts.map((d) => (
+              <div key={d.id} className="flex flex-wrap items-center gap-2 rounded-lg px-3 py-2"
+                   style={{ background: "var(--color-surface-2)" }}>
+                <span className="rounded-full px-2 py-0.5 text-[11px]" style={{ background: "var(--color-surface-3)" }}>
+                  {d.kind === "category" ? "分类" : d.kind === "tags" ? "标签" : d.kind === "summary" ? "摘要" : d.kind}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-[12px]">
+                  <span style={{ color: "var(--color-text-3)" }}>{d.doc_name || d.doc_id} → </span>
+                  {d.kind === "category" ? d.payload.name : d.kind === "tags" ? (d.payload.add ?? []).join("、") : d.payload.text}
+                </span>
+                {typeof d.payload.confidence === "number" && (
+                  <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                    把握 {Math.round(d.payload.confidence * 100)}%
+                  </span>
+                )}
+                <span className="flex gap-1.5">
+                  <button
+                    className="btn btn-sm"
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await api.knowledgeAcceptDraft(d.id);
+                        await loadDrafts();
+                        onApplied();
+                      } catch (e) {
+                        fb.error("采纳失败", e instanceof Error ? e.message : String(e));
+                      }
+                    }}
+                  >
+                    采纳
+                  </button>
+                  <button
+                    className="btn btn-sm"
+                    type="button"
+                    style={{ color: "var(--color-text-3)" }}
+                    onClick={async () => {
+                      try {
+                        await api.knowledgeRejectDraft(d.id);
+                        await loadDrafts();
+                      } catch (e) {
+                        fb.error("忽略失败", e instanceof Error ? e.message : String(e));
+                      }
+                    }}
+                  >
+                    忽略
+                  </button>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

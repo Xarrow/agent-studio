@@ -128,3 +128,40 @@ class DocTag(Base):
     origin: Mapped[str] = mapped_column(String(8), default="user")
     locked: Mapped[bool] = mapped_column(Integer, default=0)
     created_at: Mapped[int] = mapped_column(Integer, default=now_ms)
+
+class OrganizeJob(Base):
+    """一次整理：谁、整理了哪些文档、结果如何。"""
+
+    __tablename__ = "organize_job"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("job_"))
+    workspace_id: Mapped[str] = mapped_column(String(32), default="ws_default", index=True)
+    agent_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    doc_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
+    #: 本次要产出的草稿种类：category / tags / summary
+    kinds: Mapped[list[str]] = mapped_column(JSON, default=list)
+    #: queued | running | done | failed
+    status: Mapped[str] = mapped_column(String(16), default="queued", index=True)
+    made: Mapped[int] = mapped_column(Integer, default=0)
+    failed: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    prompt_version: Mapped[str] = mapped_column(String(16), default="org-1")
+    created_at: Mapped[int] = mapped_column(Integer, default=now_ms)
+    finished_at: Mapped[int | None] = mapped_column(Integer, default=None)
+
+
+class OrganizeDraft(Base):
+    """一条待确认的建议。**不采纳就永远不影响 doc 表**。"""
+
+    __tablename__ = "organize_draft"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("drf_"))
+    job_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    doc_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    #: category | tags | summary | skill
+    kind: Mapped[str] = mapped_column(String(16), default="category", index=True)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    #: pending | accepted | rejected
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    created_at: Mapped[int] = mapped_column(Integer, default=now_ms)
+    decided_at: Mapped[int | None] = mapped_column(Integer, default=None)

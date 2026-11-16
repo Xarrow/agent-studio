@@ -49,6 +49,8 @@ import type {
   KnowledgeCategory,
   KnowledgeDoc,
   KnowledgeTag,
+  OrganizeDraft,
+  OrganizeJob,
   KnowledgeStorage,
   RemoteAgentRecord,
   StudioPeer,
@@ -501,6 +503,19 @@ export const api = {
       "/api/knowledge/documents/from-url",
       p,
     ),
+  knowledgeOrganize: (p: { agent_id: string; doc_ids: string[]; kinds?: string[] }) =>
+    post<{ job: { id: string; status: string; doc_count: number } }>("/api/knowledge/organize", p),
+  knowledgeJobs: () => request<{ items: OrganizeJob[] }>("/api/knowledge/organize/jobs"),
+  knowledgeDrafts: (p: { status?: string; job_id?: string } = {}) => {
+    const sp = new URLSearchParams();
+    sp.set("status", p.status ?? "pending");
+    if (p.job_id) sp.set("job_id", p.job_id);
+    return request<{ items: OrganizeDraft[] }>(`/api/knowledge/organize/drafts?${sp.toString()}`);
+  },
+  knowledgeAcceptDraft: (id: string) =>
+    post<{ ok: boolean; applied?: Record<string, unknown> }>(`/api/knowledge/organize/drafts/${id}/accept`, {}),
+  knowledgeRejectDraft: (id: string) =>
+    post<{ ok: boolean }>(`/api/knowledge/organize/drafts/${id}/reject`, {}),
   knowledgeCategories: () => request<{ items: KnowledgeCategory[] }>("/api/knowledge/categories"),
   knowledgeCreateCategory: (p: { name: string; parent_id?: string }) =>
     post<{ id: string }>("/api/knowledge/categories", p),

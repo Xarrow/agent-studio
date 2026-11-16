@@ -201,6 +201,30 @@ export interface KnowledgeTag {
   locked: boolean;
 }
 
+export interface OrganizeJob {
+  id: string;
+  agent_id: string;
+  doc_count: number;
+  status: string;
+  made: number;
+  failed: number;
+  pending: number;
+  error: { code?: string; message?: string };
+  created_at: number;
+  finished_at: number | null;
+}
+
+export interface OrganizeDraft {
+  id: string;
+  job_id: string;
+  doc_id: string;
+  doc_name: string;
+  kind: "category" | "tags" | "summary" | string;
+  payload: { name?: string; add?: string[]; text?: string; confidence?: number };
+  status: string;
+  created_at: number;
+}
+
 export interface KnowledgeStorage {
   id: string;
   name: string;

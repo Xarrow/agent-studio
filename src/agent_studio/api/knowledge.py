@@ -20,7 +20,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..db import get_session
 from ..security.crypto import encrypt
 from ..knowledge import fetch_url, service, storage
-from ..knowledge.models import Category, Doc, DocChunk, DocTag, StorageConfig
+from ..knowledge import organize as org
+from ..knowledge.models import (
+    Category,
+    Doc,
+    DocChunk,
+    DocTag,
+    OrganizeDraft,
+    OrganizeJob,
+    StorageConfig,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -498,3 +507,148 @@ async def ingest_url(payload: dict[str, Any], session: AsyncSession = Depends(ge
         logger.warning("网页快照保存失败：%s", url)
     asyncio.create_task(_parse_later(doc.id))
     return {"document": _doc_view(doc), "final_url": got["final_url"], "text_length": got["text_length"]}
+
+
+# --------------------------------------------------------------------------- #
+# 整理 Agent（只产出草稿，采纳才动 doc）
+# --------------------------------------------------------------------------- #
+@router.post("/organize", status_code=status.HTTP_202_ACCEPTED)
+async def start_organize(payload: dict[str, Any], session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    agent_id = str(payload.get("agent_id") or "")
+    doc_ids = [str(d) for d in (payload.get("doc_ids") or [])][:50]
+    if not agent_id:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "要选一个执行整理的助手")
+    if not doc_ids:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "至少要选一份文档")
+    from ..models import Agent
+
+    if await session.get(Agent, agent_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "助手不存在")
+
+    job = OrganizeJob(
+        agent_id=agent_id,
+        doc_ids=doc_ids,
+        kinds=[str(k) for k in (payload.get("kinds") or ["category", "tags", "summary"])],
+    )
+    session.add(job)
+    await session.commit()
+    await session.refresh(job)
+    asyncio.create_task(org.run_job(job.id))
+    return {"job": {"id": job.id, "status": job.status, "doc_count": len(doc_ids)}}
+
+
+@router.get("/organize/jobs")
+async def list_jobs(limit: int = Query(default=20, ge=1, le=100), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    rows = (
+        await session.execute(select(OrganizeJob).order_by(OrganizeJob.created_at.desc()).limit(limit))
+    ).scalars().all()
+    pending = {
+        jid: n
+        for jid, n in (
+            await session.execute(
+                select(OrganizeDraft.job_id, func.count())
+                .where(OrganizeDraft.status == "pending")
+                .group_by(OrganizeDraft.job_id)
+            )
+        ).all()
+    }
+    return {
+        "items": [
+            {
+                "id": r.id,
+                "agent_id": r.agent_id,
+                "doc_count": len(r.doc_ids or []),
+                "status": r.status,
+                "made": r.made,
+                "failed": r.failed,
+                "pending": pending.get(r.id, 0),
+                "error": r.error or {},
+                "created_at": r.created_at,
+                "finished_at": r.finished_at,
+            }
+            for r in rows
+        ]
+    }
+
+
+@router.get("/organize/drafts")
+async def list_drafts(
+    status_filter: str = Query(default="pending", alias="status"),
+    job_id: str = Query(default=""),
+    limit: int = Query(default=100, ge=1, le=300),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    conds = []
+    if status_filter:
+        conds.append(OrganizeDraft.status == status_filter)
+    if job_id:
+        conds.append(OrganizeDraft.job_id == job_id)
+    rows = (
+        await session.execute(
+            select(OrganizeDraft).where(*conds).order_by(OrganizeDraft.created_at.desc()).limit(limit)
+        )
+    ).scalars().all()
+    names = {
+        d.id: d.name
+        for d in (
+            await session.execute(select(Doc).where(Doc.id.in_({r.doc_id for r in rows})))
+        ).scalars().all()
+    } if rows else {}
+    return {"items": [org.draft_view(r, names.get(r.doc_id, "")) for r in rows]}
+
+
+@router.post("/organize/drafts/{draft_id}/accept")
+async def accept_draft(draft_id: str, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """采纳：这一条才真正改动文档。重复采纳是幂等的（status 已定就不再动）。"""
+    import time
+
+    row = await session.get(OrganizeDraft, draft_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "草稿不存在")
+    if row.status != "pending":
+        return {"ok": True, "already": row.status}
+
+    doc = await session.get(Doc, row.doc_id)
+    if doc is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "文档已删除")
+    payload = row.payload or {}
+    applied: dict[str, Any] = {}
+    if row.kind == "category":
+        name = str(payload.get("name") or "").strip()
+        if name:
+            cat_id = await service.resolve_category(session, name)
+            doc.category_id = cat_id
+            applied["category"] = name
+    elif row.kind == "tags":
+        add = [str(t)[:40] for t in (payload.get("add") or []) if str(t).strip()]
+        merged = list(dict.fromkeys([*(doc.tags or []), *add]))
+        doc.tags = merged[:30]
+        for t in add:
+            same = (await session.execute(select(DocTag).where(DocTag.name == t))).scalars().first()
+            if same is None:
+                session.add(DocTag(name=t, origin="agent", locked=0))
+        applied["tags"] = add
+    elif row.kind == "summary":
+        parsed = dict(doc.parsed or {})
+        parsed["aiSummary"] = str(payload.get("text") or "")[:400]
+        doc.parsed = parsed
+        applied["summary"] = parsed["aiSummary"][:60]
+    doc.updated_at = int(time.time() * 1000)
+    row.status = "accepted"
+    row.decided_at = int(time.time() * 1000)
+    await session.commit()
+    return {"ok": True, "applied": applied}
+
+
+@router.post("/organize/drafts/{draft_id}/reject")
+async def reject_draft(draft_id: str, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    import time
+
+    row = await session.get(OrganizeDraft, draft_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "草稿不存在")
+    if row.status == "pending":
+        row.status = "rejected"
+        row.decided_at = int(time.time() * 1000)
+        await session.commit()
+    return {"ok": True}
