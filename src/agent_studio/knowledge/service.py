@@ -89,6 +89,7 @@ async def ingest_bytes(
     source: str = "upload",
     source_url: str = "",
     category: str = "未分类",
+    category_id: str = "",
 ) -> Doc:
     """存原件 + 建记录（解析交给调用方排队/后台跑）。"""
     cfg = await default_storage(session)
@@ -109,6 +110,7 @@ async def ingest_bytes(
         storage_id=cfg.id,
         storage_key=put.key,
         storage_path=prov.display_path(put.key),
+        category_id=category_id,
         status="parsing",
         parsed={},
     )
@@ -116,6 +118,23 @@ async def ingest_bytes(
     await session.commit()
     await session.refresh(row)
     return row
+
+
+async def resolve_category(session: AsyncSession, name: str) -> str:
+    """按分类名拿 id；没有就建一个（用户显式选的分类直接算 user origin）。"""
+    from .models import Category
+
+    clean = (name or "未分类").strip() or "未分类"
+    row = (
+        await session.execute(select(Category).where(Category.name == clean, Category.parent_id == ""))
+    ).scalars().first()
+    if row is not None:
+        return row.id
+    row = Category(name=clean[:120], depth=1, origin="user", locked=1)
+    session.add(row)
+    await session.commit()
+    await session.refresh(row)
+    return row.id
 
 
 async def parse_doc(session: AsyncSession, doc_id: str) -> Doc | None:

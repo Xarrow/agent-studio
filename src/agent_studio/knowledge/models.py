@@ -98,3 +98,33 @@ class StorageConfig(Base):
     last_test_error: Mapped[str] = mapped_column(LongText, default="")
     created_at: Mapped[int] = mapped_column(Integer, default=now_ms)
     updated_at: Mapped[int] = mapped_column(Integer, default=now_ms)
+
+
+class Category(Base):
+    """分类树（最多 3 层）。origin=agent 的建议要等人确认才算数。"""
+
+    __tablename__ = "doc_category"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("cat_"))
+    workspace_id: Mapped[str] = mapped_column(String(32), default="ws_default", index=True)
+    parent_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    name: Mapped[str] = mapped_column(String(120), default="")
+    depth: Mapped[int] = mapped_column(Integer, default=1)
+    #: user | agent
+    origin: Mapped[str] = mapped_column(String(8), default="user")
+    #: 用户改过的分类加锁，Agent 不再覆盖
+    locked: Mapped[bool] = mapped_column(Integer, default=0)
+    created_at: Mapped[int] = mapped_column(Integer, default=now_ms)
+
+
+class DocTag(Base):
+    """扁平标签（多值）。同一张表同时记"谁提的"与"是否已确认"。"""
+
+    __tablename__ = "doc_tag"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("tag_"))
+    workspace_id: Mapped[str] = mapped_column(String(32), default="ws_default", index=True)
+    name: Mapped[str] = mapped_column(String(80), default="", index=True)
+    origin: Mapped[str] = mapped_column(String(8), default="user")
+    locked: Mapped[bool] = mapped_column(Integer, default=0)
+    created_at: Mapped[int] = mapped_column(Integer, default=now_ms)

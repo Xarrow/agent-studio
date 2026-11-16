@@ -14,7 +14,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api } from "@/lib/api";
-import type { KnowledgeDoc, KnowledgeStorage } from "@/lib/types";
+import type {
+  KnowledgeCategory,
+  KnowledgeDoc,
+  KnowledgeStorage,
+  KnowledgeTag,
+} from "@/lib/types";
 import { DetailPanel } from "@/components/ui/DetailPanel";
 import { Chip, KV, PageHead } from "@/components/ui/kit";
 import { useFeedback } from "@/components/ui/feedback";
@@ -43,7 +48,9 @@ const STATUS: Record<string, { label: string; tone: "ok" | "warn" | "err" | "mut
 
 export default function KnowledgePage() {
   const fb = useFeedback();
-  const [tab, setTab] = useState<"docs" | "storage">("docs");
+  const [tab, setTab] = useState<"docs" | "categories" | "storage">("docs");
+  const [urlOpen, setUrlOpen] = useState(false);
+  const [urlDraft, setUrlDraft] = useState({ url: "", name: "" });
   const [rows, setRows] = useState<KnowledgeDoc[] | null>(null);
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
@@ -120,8 +127,8 @@ export default function KnowledgePage() {
         desc="原始文档与解析结果；沉淀出的 Skill 会记录来源文档"
         actions={
           <>
-            <button className="btn" onClick={() => setTab("storage")} type="button">
-              存储设置
+            <button className="btn" onClick={() => setUrlOpen((v) => !v)} type="button">
+              加链接
             </button>
             <button className="btn btn-primary" onClick={() => fileRef.current?.click()} disabled={busy} type="button">
               {busy ? "上传中…" : "＋ 上传文档"}
@@ -144,13 +151,65 @@ export default function KnowledgePage() {
         <Chip tone={tab === "docs" ? "accent" : "muted"} title="文档库">
           <button type="button" onClick={() => setTab("docs")}>文档</button>
         </Chip>
+        <Chip tone={tab === "categories" ? "accent" : "muted"} title="分类树与标签">
+          <button type="button" onClick={() => setTab("categories")}>分类与标签</button>
+        </Chip>
         <Chip tone={tab === "storage" ? "accent" : "muted"} title="存储位置与容量">
           <button type="button" onClick={() => setTab("storage")}>存储设置</button>
         </Chip>
         <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
-          分类与标签、关联图谱、整理任务在后续阶段接入
+          整理 Agent 与关联图谱在后续阶段接入
         </span>
       </div>
+
+      {urlOpen && (
+        <div className="mb-3 rounded-lg p-3" style={{ background: "var(--color-surface-2)" }}>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              className="input h-8 flex-1 text-[12px]"
+              placeholder="https://…（公网地址；内网与元数据地址会被拒绝）"
+              value={urlDraft.url}
+              onChange={(e) => setUrlDraft((d) => ({ ...d, url: e.target.value }))}
+            />
+            <input
+              className="input h-8 w-40 text-[12px]"
+              placeholder="标题（可留空）"
+              value={urlDraft.name}
+              onChange={(e) => setUrlDraft((d) => ({ ...d, name: e.target.value }))}
+            />
+            <button
+              className="btn btn-primary btn-sm"
+              type="button"
+              disabled={busy || !urlDraft.url.trim()}
+              onClick={async () => {
+                setBusy(true);
+                try {
+                  const got = await api.knowledgeFromUrl({
+                    url: urlDraft.url.trim(),
+                    name: urlDraft.name.trim() || undefined,
+                  });
+                  fb.success(`已抓取 ${got.text_length} 字，正在解析`);
+                  setUrlDraft({ url: "", name: "" });
+                  setUrlOpen(false);
+                  await load();
+                } catch (e) {
+                  fb.error("抓取失败", e instanceof Error ? e.message : String(e));
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              抓取入库
+            </button>
+            <button className="btn btn-sm" type="button" onClick={() => setUrlOpen(false)}>
+              取消
+            </button>
+          </div>
+          <div className="mt-1.5 text-[11px]" style={{ color: "var(--color-text-3)" }}>
+            抓取会保存正文与一份 HTML 快照，原始网页改版也不影响这份知识
+          </div>
+        </div>
+      )}
 
       {tab === "docs" ? (
         <>
@@ -254,6 +313,8 @@ export default function KnowledgePage() {
             </div>
           )}
         </>
+      ) : tab === "categories" ? (
+        <CategoriesPanel onChanged={() => void load()} />
       ) : (
         <StoragePanel storages={storages} onRefresh={() => void loadStorages()} />
       )}
@@ -442,6 +503,244 @@ function StoragePanel({ storages, onRefresh }: { storages: KnowledgeStorage[] | 
       ))}
       <div className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
         新增 S3 兼容存储（OSS / COS / MinIO）与迁移向导在阶段 2 收尾时接上；当前默认是本地磁盘。
+      </div>
+    </div>
+  );
+}
+
+
+function CategoriesPanel({ onChanged }: { onChanged: () => void }) {
+  const fb = useFeedback();
+  const [items, setItems] = useState<KnowledgeCategory[] | null>(null);
+  const [tags, setTags] = useState<KnowledgeTag[] | null>(null);
+  const [newName, setNewName] = useState("");
+  const [newParent, setNewParent] = useState("");
+  const [editing, setEditing] = useState<{ id: string; name: string } | null>(null);
+  const [tagDraft, setTagDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const [c, t] = await Promise.all([api.knowledgeCategories(), api.knowledgeTags()]);
+      setItems(c.items);
+      setTags(t.items);
+    } catch (e) {
+      fb.error("读取分类失败", e instanceof Error ? e.message : String(e));
+      setItems([]);
+      setTags([]);
+    }
+  }, [fb]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const tops = (items ?? []).filter((c) => !c.parent_id);
+
+  const ordered = (() => {
+    if (!items) return [];
+    const out: KnowledgeCategory[] = [];
+    const walk = (pid: string) => {
+      for (const c of items.filter((x) => x.parent_id === pid)) {
+        out.push(c);
+        walk(c.id);
+      }
+    };
+    walk("");
+    return out;
+  })();
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <input
+            className="input h-8 w-48 text-[12px]"
+            placeholder="新建分类名"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+          />
+          <select
+            className="input h-8 w-40 text-[12px]"
+            value={newParent}
+            onChange={(e) => setNewParent(e.target.value)}
+          >
+            <option value="">顶级分类</option>
+            {tops.map((c) => (
+              <option key={c.id} value={c.id}>
+                归到「{c.name}」下
+              </option>
+            ))}
+          </select>
+          <button
+            className="btn btn-primary btn-sm"
+            type="button"
+            disabled={busy || !newName.trim()}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await api.knowledgeCreateCategory({ name: newName.trim(), parent_id: newParent || undefined });
+                setNewName("");
+                setNewParent("");
+                fb.success("已新建分类");
+                await load();
+                onChanged();
+              } catch (e) {
+                fb.error("新建失败", e instanceof Error ? e.message : String(e));
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            新建
+          </button>
+          <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+            最多 3 层；文档不跟着分类删
+          </span>
+        </div>
+
+        {items === null ? (
+          <div className="h-20 animate-pulse rounded-md" style={{ background: "var(--color-surface-3)" }} />
+        ) : ordered.length === 0 ? (
+          <div className="rounded-lg px-3 py-6 text-center text-[12px]"
+               style={{ background: "var(--color-surface-2)", color: "var(--color-text-3)" }}>
+            还没有分类。先建一个「合同」「技术文档」这样的顶级分类。
+          </div>
+        ) : (
+          <div className="rounded-lg" style={{ background: "var(--color-surface)" }}>
+            {ordered.map((c) => (
+              <div key={c.id} className="flex items-center gap-2 px-3 py-2" style={{ minHeight: 42 }}>
+                <span style={{ paddingLeft: (c.depth - 1) * 16 }}>
+                  <span className="text-[13px]">{c.name}</span>
+                  <span className="ml-2 text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                    {c.doc_count} 份
+                  </span>
+                </span>
+                <span className="ml-auto flex items-center gap-1.5">
+                  {editing?.id === c.id ? (
+                    <>
+                      <input
+                        className="input h-7 w-36 text-[12px]"
+                        value={editing.name}
+                        onChange={(e) => setEditing({ id: c.id, name: e.target.value })}
+                      />
+                      <button
+                        className="btn btn-sm"
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await api.knowledgeRenameCategory(c.id, editing.name.trim());
+                            setEditing(null);
+                            await load();
+                            onChanged();
+                          } catch (e) {
+                            fb.error("重命名失败", e instanceof Error ? e.message : String(e));
+                          }
+                        }}
+                      >
+                        保存
+                      </button>
+                      <button className="btn btn-sm" type="button" onClick={() => setEditing(null)}>
+                        取消
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button className="btn btn-sm" type="button" onClick={() => setEditing({ id: c.id, name: c.name })}>
+                        重命名
+                      </button>
+                      <button
+                        className="btn btn-sm"
+                        type="button"
+                        style={{ color: "var(--color-err)" }}
+                        onClick={async () => {
+                          try {
+                            await api.knowledgeDeleteCategory(c.id);
+                            fb.success("已删除分类，文档回到未分类");
+                            await load();
+                            onChanged();
+                          } catch (e) {
+                            fb.error("删除失败", e instanceof Error ? e.message : String(e));
+                          }
+                        }}
+                      >
+                        删除
+                      </button>
+                    </>
+                  )}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div>
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <input
+            className="input h-8 w-48 text-[12px]"
+            placeholder="新建标签"
+            value={tagDraft}
+            onChange={(e) => setTagDraft(e.target.value)}
+          />
+          <button
+            className="btn btn-sm"
+            type="button"
+            disabled={busy || !tagDraft.trim()}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await api.knowledgeCreateTag(tagDraft.trim());
+                setTagDraft("");
+                await load();
+                onChanged();
+              } catch (e) {
+                fb.error("新建标签失败", e instanceof Error ? e.message : String(e));
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            新增标签
+          </button>
+          <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+            标签是扁平的，一份文档可挂多个
+          </span>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {(tags ?? []).length === 0 ? (
+            <span className="text-[12px]" style={{ color: "var(--color-text-3)" }}>
+              还没有标签
+            </span>
+          ) : (
+            (tags ?? []).map((t) => (
+              <span
+                key={t.id}
+                className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px]"
+                style={{ background: "var(--color-surface-2)" }}
+              >
+                {t.name}
+                <button
+                  type="button"
+                  aria-label={`删除标签 ${t.name}`}
+                  className="text-[11px]"
+                  style={{ color: "var(--color-text-3)" }}
+                  onClick={async () => {
+                    try {
+                      await api.knowledgeDeleteTag(t.id);
+                      await load();
+                      onChanged();
+                    } catch (e) {
+                      fb.error("删除失败", e instanceof Error ? e.message : String(e));
+                    }
+                  }}
+                >
+                  ×
+                </button>
+              </span>
+            ))
+          )}
+        </div>
       </div>
     </div>
   );

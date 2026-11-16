@@ -184,6 +184,23 @@ export interface KnowledgeDoc {
   updated_at: number;
 }
 
+export interface KnowledgeCategory {
+  id: string;
+  parent_id: string;
+  name: string;
+  depth: number;
+  origin: string;
+  locked: boolean;
+  doc_count: number;
+}
+
+export interface KnowledgeTag {
+  id: string;
+  name: string;
+  origin: string;
+  locked: boolean;
+}
+
 export interface KnowledgeStorage {
   id: string;
   name: string;

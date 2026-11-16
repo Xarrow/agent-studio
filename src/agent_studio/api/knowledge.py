@@ -19,8 +19,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_session
 from ..security.crypto import encrypt
-from ..knowledge import service, storage
-from ..knowledge.models import Doc, DocChunk, StorageConfig
+from ..knowledge import fetch_url, service, storage
+from ..knowledge.models import Category, Doc, DocChunk, DocTag, StorageConfig
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +88,7 @@ async def upload_documents(
             data=data,
             mime=f.content_type or "",
             category=category,
+            category_id=await service.resolve_category(session, category),
         )
         created.append(_doc_view(doc))
         asyncio.create_task(_parse_later(doc.id))
@@ -334,3 +335,166 @@ async def set_default_storage(cfg_id: str, session: AsyncSession = Depends(get_s
         other.is_default = 1 if other.id == cfg.id else 0
     await session.commit()
     return {"ok": True}
+
+
+# --------------------------------------------------------------------------- #
+# 分类与标签（阶段 3）
+# --------------------------------------------------------------------------- #
+@router.get("/categories")
+async def list_categories(session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    rows = (await session.execute(select(Category).order_by(Category.depth, Category.name))).scalars().all()
+    counts = {
+        cid: n
+        for cid, n in (
+            await session.execute(
+                select(Doc.category_id, func.count()).group_by(Doc.category_id)
+            )
+        ).all()
+    }
+    return {
+        "items": [
+            {
+                "id": r.id,
+                "parent_id": r.parent_id,
+                "name": r.name,
+                "depth": r.depth,
+                "origin": r.origin,
+                "locked": bool(r.locked),
+                "doc_count": counts.get(r.id, 0),
+            }
+            for r in rows
+        ]
+    }
+
+
+@router.post("/categories", status_code=status.HTTP_201_CREATED)
+async def create_category(payload: dict[str, Any], session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "分类名不能为空")
+    parent_id = str(payload.get("parent_id") or "")
+    depth = 1
+    if parent_id:
+        parent = await session.get(Category, parent_id)
+        if parent is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "上级分类不存在")
+        depth = int(parent.depth or 1) + 1
+        if depth > 3:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "分类最多 3 层")
+    row = Category(name=name[:120], parent_id=parent_id, depth=depth, origin=str(payload.get("origin") or "user"))
+    session.add(row)
+    await session.commit()
+    await session.refresh(row)
+    return {"id": row.id, "name": row.name, "parent_id": row.parent_id, "depth": row.depth}
+
+
+@router.patch("/categories/{cat_id}")
+async def rename_category(cat_id: str, payload: dict[str, Any], session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    row = await session.get(Category, cat_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "分类不存在")
+    if str(payload.get("name") or "").strip():
+        row.name = str(payload["name"]).strip()[:120]
+        row.locked = 1 if payload.get("lock", True) else 0
+        row.origin = "user"
+    await session.commit()
+    return {"ok": True}
+
+
+@router.delete("/categories/{cat_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_category(cat_id: str, session: AsyncSession = Depends(get_session)) -> None:
+    """删分类：文档不删，只是回到「未分类」；子分类一并清空归属。"""
+    from sqlalchemy import update
+
+    kids = (await session.execute(select(Category).where(Category.parent_id == cat_id))).scalars().all()
+    for k in kids:
+        k.parent_id = ""
+        k.depth = 1
+    await session.execute(update(Doc).where(Doc.category_id == cat_id).values(category_id=""))
+    row = await session.get(Category, cat_id)
+    if row is not None:
+        await session.delete(row)
+    await session.commit()
+
+
+@router.get("/tags")
+async def list_tags(session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    rows = (await session.execute(select(DocTag).order_by(DocTag.name))).scalars().all()
+    return {
+        "items": [
+            {"id": r.id, "name": r.name, "origin": r.origin, "locked": bool(r.locked)} for r in rows
+        ]
+    }
+
+
+@router.post("/tags", status_code=status.HTTP_201_CREATED)
+async def create_tag(payload: dict[str, Any], session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "标签名不能为空")
+    same = (await session.execute(select(DocTag).where(DocTag.name == name))).scalars().first()
+    if same is not None:
+        return {"id": same.id, "name": same.name, "origin": same.origin}
+    row = DocTag(name=name[:80], origin=str(payload.get("origin") or "user"))
+    session.add(row)
+    await session.commit()
+    await session.refresh(row)
+    return {"id": row.id, "name": row.name, "origin": row.origin}
+
+
+@router.delete("/tags/{tag_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_tag(tag_id: str, session: AsyncSession = Depends(get_session)) -> None:
+    row = await session.get(DocTag, tag_id)
+    if row is None:
+        return
+    name = row.name
+    docs = (await session.execute(select(Doc))).scalars().all()
+    for d in docs:
+        tags = [t for t in (d.tags or []) if t != name]
+        if len(tags) != len(d.tags or []):
+            d.tags = tags
+    await session.delete(row)
+    await session.commit()
+
+
+# --------------------------------------------------------------------------- #
+# 链接抓取（带 SSRF 防护）
+# --------------------------------------------------------------------------- #
+@router.post("/documents/from-url", status_code=status.HTTP_201_CREATED)
+async def ingest_url(payload: dict[str, Any], session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """抓一页 → 存快照 + 正文 → 入库。安全校验在 fetch_url 里。"""
+    url = str(payload.get("url") or "").strip()
+    if not url:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "缺少 url")
+    try:
+        got = fetch_url.fetch_and_extract(url)
+    except fetch_url.FetchBlocked as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    # 正文当作 md 入库，快照另存一份（同名 .snapshot.html）
+    derived = got["final_url"].split("//")[-1].split("?")[0].split("#")[0].strip("/")
+    # 网址末段为空（example.com/）时退回主机名，避免出现 ".md" 这种空名
+    if not derived or derived.endswith("/"):
+        derived = got["final_url"].split("//")[-1].split("/")[0]
+    name = (payload.get("name") or derived[:120] or "网页").strip()
+    md_name = name if name.endswith(".md") else f"{name}.md"
+    category = str(payload.get("category") or "未分类")
+    doc = await service.ingest_bytes(
+        session,
+        name=md_name,
+        data=got["markdown"].encode("utf-8"),
+        mime="text/markdown",
+        source="url",
+        source_url=got["final_url"],
+        category=category,
+        category_id=await service.resolve_category(session, category),
+    )
+    # 快照单独存（同名 .snapshot.html），详情页可下载
+    try:
+        cfg = await service.default_storage(session)
+        svc = service.provider_of(cfg)
+        snap_key = doc.storage_key + ".snapshot.html"
+        svc.put_stream(snap_key, io.BytesIO(got["snapshot"]), content_type="text/html")
+    except Exception:  # noqa: BLE001 —— 快照失败不影响正文入库
+        logger.warning("网页快照保存失败：%s", url)
+    asyncio.create_task(_parse_later(doc.id))
+    return {"document": _doc_view(doc), "final_url": got["final_url"], "text_length": got["text_length"]}

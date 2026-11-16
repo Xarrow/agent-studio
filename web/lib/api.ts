@@ -46,7 +46,9 @@ import type {
   RemoteAgentCallRecord,
   RemoteAgentEventRecord,
   RemoteAgentParsed,
+  KnowledgeCategory,
   KnowledgeDoc,
+  KnowledgeTag,
   KnowledgeStorage,
   RemoteAgentRecord,
   StudioPeer,
@@ -494,6 +496,21 @@ export const api = {
   knowledgeReparse: (id: string) => post<{ ok: boolean }>(`/api/knowledge/documents/${id}/reparse`, {}),
   knowledgeDelete: (id: string) => request<void>(`/api/knowledge/documents/${id}`, { method: "DELETE" }),
   knowledgeSearch: (q: string) => request<{ items: unknown[] }>(`/api/knowledge/search?q=${encodeURIComponent(q)}`),
+  knowledgeFromUrl: (p: { url: string; name?: string; category?: string }) =>
+    post<{ document: KnowledgeDoc; final_url: string; text_length: number }>(
+      "/api/knowledge/documents/from-url",
+      p,
+    ),
+  knowledgeCategories: () => request<{ items: KnowledgeCategory[] }>("/api/knowledge/categories"),
+  knowledgeCreateCategory: (p: { name: string; parent_id?: string }) =>
+    post<{ id: string }>("/api/knowledge/categories", p),
+  knowledgeRenameCategory: (id: string, name: string) =>
+    request<{ ok: boolean }>(`/api/knowledge/categories/${id}`, { method: "PATCH", body: JSON.stringify({ name }) }),
+  knowledgeDeleteCategory: (id: string) =>
+    request<void>(`/api/knowledge/categories/${id}`, { method: "DELETE" }),
+  knowledgeTags: () => request<{ items: KnowledgeTag[] }>("/api/knowledge/tags"),
+  knowledgeCreateTag: (name: string) => post<{ id: string }>("/api/knowledge/tags", { name }),
+  knowledgeDeleteTag: (id: string) => request<void>(`/api/knowledge/tags/${id}`, { method: "DELETE" }),
   knowledgeStorages: () => request<{ items: KnowledgeStorage[] }>("/api/knowledge/storage"),
   knowledgeTestStorage: (id: string) =>
     post<{ ok: boolean; latency_ms?: number; error?: string }>(`/api/knowledge/storage/${id}/test`, {}),
