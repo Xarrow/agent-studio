@@ -492,6 +492,8 @@ export const api = {
       { method: "POST", body: fd },
     );
   },
+  knowledgePatchDoc: (id: string, body: { name?: string; category?: string; sub_category?: string; tags?: string[] }) =>
+    request<KnowledgeDoc>(`/api/knowledge/documents/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   knowledgeDoc: (id: string) => request<KnowledgeDoc & { chunks: number }>(`/api/knowledge/documents/${id}`),
   knowledgeText: (id: string) =>
     request<{ chunks: { ord: number; text: string; page?: number | null; sheet?: string }[] }>(
