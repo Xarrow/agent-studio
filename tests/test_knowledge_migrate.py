@@ -74,6 +74,11 @@ async def test_迁移把原件搬到目标存储(client, tmp_path, monkeypatch):
     got = await client.get(f"/api/knowledge/documents/{doc['id']}/original")
     assert got.status_code == 200 and b"content" in got.content
 
+    # 链接入库的 HTML 快照也要跟过来（否则「来源可复现」断在迁移上）
+    src_snap = Path(before["storage_path"] + ".snapshot.html")
+    if src_snap.exists():
+        assert any(p.name.endswith(".snapshot.html") for p in dst_root.rglob("*"))
+
     # 源文件默认保留（危险动作的默认行为）：原来的路径还在
     assert Path(before["storage_path"]).exists(), "源文件被删了，默认不该删源"
 
@@ -88,3 +93,41 @@ async def test_源目标相同被拒(client, tmp_path, monkeypatch):
     assert r.status_code == 422
     r2 = await client.post("/api/knowledge/storage/migrate", json={"to_id": ""})
     assert r2.status_code == 422
+
+
+async def test_迁移带着html快照一起走(client, tmp_path, monkeypatch):
+    from agent_studio.config import settings
+
+    monkeypatch.setattr(settings, "work_dir", tmp_path)
+    dst_root = Path(tmp_path) / "disk-c"
+    dst_root.mkdir(parents=True, exist_ok=True)
+
+    made = await client.post(
+        "/api/knowledge/storage",
+        json={
+            "name": "盘 C",
+            "type": "local",
+            "params": {"root": str(dst_root)},
+            "path_template": "{sha256[:2]}/{sha256}/{name}",
+            "is_default": False,
+        },
+    )
+    to_id = made.json()["id"]
+
+    r = await client.post(
+        "/api/knowledge/documents",
+        files={"files": ("带快照.md", b"# snap\n\nbody", "text/markdown")},
+    )
+    doc = r.json()["documents"][0]
+    detail = (await client.get(f"/api/knowledge/documents/{doc['id']}")).json()
+    src_path = Path(detail["storage_path"])
+    # 手工补一份快照（真实场景由「加链接」生成）
+    src_path.with_name(src_path.name + ".snapshot.html").write_text("<html>snapshot</html>", encoding="utf-8")
+
+    started = await client.post("/api/knowledge/storage/migrate", json={"from_id": "", "to_id": to_id})
+    job = await _wait_migration(client, started.json()["job"]["id"])
+    assert job["status"] == "done", job
+
+    snaps = [p for p in dst_root.rglob("*.snapshot.html")]
+    assert snaps, "快照没跟着搬"
+    assert snaps[0].read_text(encoding="utf-8") == "<html>snapshot</html>"

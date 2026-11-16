@@ -107,6 +107,18 @@ async def run(job_id: str) -> None:
                         dst.put_stream(key, io.BytesIO(data), content_type=doc.mime or "")
                         written.add(key)
                         job.bytes_moved += len(data)
+                    # 链接入库时另存的 HTML 快照（同名 .snapshot.html）跟着搬：
+                    # 少了它，「来源可复现」就断在那一次迁移上
+                    snap_key = key + ".snapshot.html"
+                    if snap_key not in written:
+                        try:
+                            snap = reader.get_bytes(snap_key)
+                            dst.put_stream(snap_key, io.BytesIO(snap), content_type="text/html")
+                            written.add(snap_key)
+                            job.bytes_moved += len(snap)
+                        except Exception:  # noqa: BLE001 —— 没有快照是正常的（上传的文档没有）
+                            pass
+
                     doc.storage_id = dst_cfg.id
                     doc.storage_path = dst.display_path(key)
                     job.moved += 1
@@ -118,7 +130,9 @@ async def run(job_id: str) -> None:
 
             # 保留源文件时不做删除；显式要求才清源（同键只删一次）
             if not job.keep_source and src is not None:
-                for key in sorted(written | {d.storage_key for d in docs if d.storage_key}):
+                keys = written | {d.storage_key for d in docs if d.storage_key}
+                keys |= {f"{k}.snapshot.html" for k in keys}
+                for key in sorted(keys):
                     try:
                         src.delete(key)
                     except Exception:  # noqa: BLE001
