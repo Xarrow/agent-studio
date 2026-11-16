@@ -52,6 +52,7 @@ def test_builtin_registry_shape():
         "job_cancel",
         # 工具按需加载的三个入口（不直接给模型的工具靠它们取用）
         "tool_search",
+        "knowledge_search",
         "tool_describe",
         "tool_call",
     }

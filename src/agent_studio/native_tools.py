@@ -769,6 +769,15 @@ PYTHON_SCHEMA: dict[str, Any] = {
     "required": ["code"],
 }
 
+KNOWLEDGE_SEARCH_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "query": {"type": "string", "description": "要查的内容或关键词（中文整句也行）"},
+        "top_k": {"type": "integer", "description": "返回几条（默认 5，最多 20）"},
+    },
+    "required": ["query"],
+}
+
 MEMORY_SEARCH_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -808,6 +817,38 @@ MEMORY_SAVE_SCHEMA: dict[str, Any] = {
     },
     "required": ["content"],
 }
+
+
+async def _knowledge_search(query: str, top_k: int = 5) -> str:
+    """**查知识中心里的文档**：返回命中的文档名 + 片段 + doc_id。
+
+    与 read_document 的区别：那个读的是本次会话上传的文件，这个查的是
+    已经入库、分好类、长期留存的知识（合同、规格书、内部文档）。
+    """
+    from .db import SessionLocal
+    from .knowledge import service as kb
+
+    text = (query or "").strip()
+    if not text:
+        return "查询为空。给一个关键词或一句话。"
+    k = max(1, min(int(top_k or 5), 20))
+    # 一句话里常常带几个词（"付款期限 多少天 账期"），整串去做 LIKE 必然查不到；
+    # 拆成词逐个查再合并——这是"整句检索"最省事又不引入向量库的做法
+    terms = [t for t in text.replace("，", " ").replace("、", " ").split() if len(t) >= 2][:6] or [text]
+    merged: dict[str, dict] = {}
+    async with SessionLocal() as session:
+        for term in terms:
+            for hit in await kb.search(session, term, limit=k, status="ready"):
+                merged.setdefault(hit["id"], hit)
+    hits = list(merged.values())[:k]
+    if not hits:
+        return f"知识库里没有和「{text}」相关的文档。可以换个说法，或先在知识中心上传。"
+    lines = [f"在知识库中找到 {len(hits)} 份相关文档："]
+    for i, h in enumerate(hits, 1):
+        where = f" 第 {h['page']} 页" if h.get("page") else ""
+        lines.append(f"{i}. 《{h['name']}》{where}（doc_id: {h['id']}）\n   片段：{h['snippet']}")
+    lines.append("需要看全文就用 doc_id 调 read_document 或让用户打开文档详情。")
+    return "\n".join(lines)
 
 
 async def _memory_search(query: str, top_k: int = 5) -> str:
@@ -2287,6 +2328,16 @@ NATIVE_TOOLS: dict[str, dict[str, Any]] = {
         "description": "把一段文字合成语音，文件落在 product/，用户可下载或播放。备选能力，长文分段调用。",
         "schema": SPEAK_SCHEMA,
         "flags": {"read_only": False, "concurrency_safe": False, "dangerous": False, "native": True},
+    },
+    "knowledge_search": {
+        "fn": _knowledge_search,
+        "description": (
+            "在知识中心的文档库里全文检索（合同、规格书、内部规范这类长期留存的知识），"
+            "返回文档名、命中片段和 doc_id。要引用公司资料、查以前归档的文档时用它；"
+            "查不到再考虑 web_search。"
+        ),
+        "schema": KNOWLEDGE_SEARCH_SCHEMA,
+        "flags": {"read_only": True, "concurrency_safe": True, "dangerous": False, "native": True},
     },
     "memory_search": {
         "fn": _memory_search,
