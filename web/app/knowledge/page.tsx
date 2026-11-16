@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api } from "@/lib/api";
+import { KnowledgeGraph } from "@/components/KnowledgeGraph";
 import type {
   KnowledgeCategory,
   OrganizeDraft,
@@ -50,7 +51,7 @@ const STATUS: Record<string, { label: string; tone: "ok" | "warn" | "err" | "mut
 
 export default function KnowledgePage() {
   const fb = useFeedback();
-  const [tab, setTab] = useState<"docs" | "categories" | "organize" | "storage">("docs");
+  const [tab, setTab] = useState<"docs" | "categories" | "organize" | "graph" | "storage">("docs");
   const [urlOpen, setUrlOpen] = useState(false);
   const [urlDraft, setUrlDraft] = useState({ url: "", name: "" });
   const [rows, setRows] = useState<KnowledgeDoc[] | null>(null);
@@ -158,6 +159,9 @@ export default function KnowledgePage() {
         </Chip>
         <Chip tone={tab === "organize" ? "accent" : "muted"} title="让助手读文档、提分类标签摘要建议">
           <button type="button" onClick={() => setTab("organize")}>整理</button>
+        </Chip>
+        <Chip tone={tab === "graph" ? "accent" : "muted"} title="文档、技能、助手之间的真实引用">
+          <button type="button" onClick={() => setTab("graph")}>图谱</button>
         </Chip>
         <Chip tone={tab === "storage" ? "accent" : "muted"} title="存储位置与容量">
           <button type="button" onClick={() => setTab("storage")}>存储设置</button>
@@ -318,8 +322,12 @@ export default function KnowledgePage() {
             </div>
           )}
         </>
+      ) : tab === "categories" ? (
+        <CategoriesPanel onChanged={() => void load()} />
       ) : tab === "organize" ? (
         <OrganizePanel docs={rows ?? []} onApplied={() => void load()} />
+      ) : tab === "graph" ? (
+        <KnowledgeGraph />
       ) : (
         <StoragePanel storages={storages} onRefresh={() => void loadStorages()} />
       )}
@@ -436,6 +444,20 @@ export default function KnowledgePage() {
 function StoragePanel({ storages, onRefresh }: { storages: KnowledgeStorage[] | null; onRefresh: () => void }) {
   const fb = useFeedback();
   const [busy, setBusy] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({
+    name: "",
+    type: "s3" as "local" | "s3",
+    endpoint: "",
+    bucket: "",
+    region: "",
+    access_key_id: "",
+    secret_access_key: "",
+    prefix: "",
+    root: "",
+    path_template: "{category}/{year}/{name}",
+    is_default: false,
+  });
   if (storages === null) {
     return <div className="h-24 animate-pulse rounded-md" style={{ background: "var(--color-line)" }} />;
   }
@@ -506,9 +528,126 @@ function StoragePanel({ storages, onRefresh }: { storages: KnowledgeStorage[] | 
           </div>
         </div>
       ))}
-      <div className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
-        新增 S3 兼容存储（OSS / COS / MinIO）与迁移向导在阶段 2 收尾时接上；当前默认是本地磁盘。
-      </div>
+      {!adding ? (
+        <button className="btn btn-sm" type="button" onClick={() => setAdding(true)}>
+          ＋ 新增存储
+        </button>
+      ) : (
+        <div className="rounded-lg p-3" style={{ background: "var(--color-surface-2)" }}>
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <select
+              className="input h-8 w-32 text-[12px]"
+              value={form.type}
+              onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as "local" | "s3" }))}
+            >
+              <option value="s3">S3 兼容</option>
+              <option value="local">本地磁盘</option>
+            </select>
+            <input
+              className="input h-8 w-44 text-[12px]"
+              placeholder="名字（如 公司 OSS）"
+              value={form.name}
+              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            />
+            <label className="flex items-center gap-1.5 text-[12px]">
+              <input
+                type="checkbox"
+                checked={form.is_default}
+                onChange={(e) => setForm((f) => ({ ...f, is_default: e.target.checked }))}
+              />
+              设为默认
+            </label>
+          </div>
+
+          {form.type === "s3" ? (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {([
+                ["endpoint", "Endpoint（如 https://oss-cn-hangzhou.aliyuncs.com）"],
+                ["bucket", "Bucket"],
+                ["region", "Region（可留空）"],
+                ["prefix", "对象前缀（如 docs/）"],
+                ["access_key_id", "Access Key ID"],
+                ["secret_access_key", "Secret Access Key"],
+              ] as const).map(([key, label]) => (
+                <input
+                  key={key}
+                  className="input h-8 text-[12px]"
+                  placeholder={label}
+                  type={key === "secret_access_key" ? "password" : "text"}
+                  value={form[key]}
+                  onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
+                />
+              ))}
+            </div>
+          ) : (
+            <input
+              className="input h-8 w-full text-[12px]"
+              placeholder="本地根目录（如 /data/knowledge）"
+              value={form.root}
+              onChange={(e) => setForm((f) => ({ ...f, root: e.target.value }))}
+            />
+          )}
+
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <input
+              className="input h-8 w-64 text-[12px]"
+              placeholder="路径模板"
+              value={form.path_template}
+              onChange={(e) => setForm((f) => ({ ...f, path_template: e.target.value }))}
+            />
+            <button
+              className="btn btn-primary btn-sm"
+              type="button"
+              disabled={busy === "new" || !form.name.trim()}
+              onClick={async () => {
+                setBusy("new");
+                try {
+                  const params: Record<string, string> =
+                    form.type === "s3"
+                      ? {
+                          endpoint: form.endpoint.trim(),
+                          bucket: form.bucket.trim(),
+                          region: form.region.trim(),
+                          prefix: form.prefix.trim(),
+                        }
+                      : { root: form.root.trim() };
+                  const secrets: Record<string, string> =
+                    form.type === "s3"
+                      ? {
+                          access_key_id: form.access_key_id.trim(),
+                          secret_access_key: form.secret_access_key,
+                        }
+                      : {};
+                  await api.knowledgeCreateStorage({
+                    name: form.name.trim(),
+                    type: form.type,
+                    params,
+                    secrets,
+                    path_template: form.path_template.trim() || "{category}/{year}/{name}",
+                    is_default: form.is_default,
+                  });
+                  fb.success("已新增存储，建议先点「测试连接」");
+                  setAdding(false);
+                  setForm((f) => ({ ...f, name: "", endpoint: "", bucket: "", access_key_id: "", secret_access_key: "" }));
+                  onRefresh();
+                } catch (e) {
+                  fb.error("新增失败", e instanceof Error ? e.message : String(e));
+                } finally {
+                  setBusy(null);
+                }
+              }}
+            >
+              保存
+            </button>
+            <button className="btn btn-sm" type="button" onClick={() => setAdding(false)}>
+              取消
+            </button>
+            <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+              密钥加密入库，页面上不再回显
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

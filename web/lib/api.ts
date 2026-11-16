@@ -528,6 +528,18 @@ export const api = {
   knowledgeTags: () => request<{ items: KnowledgeTag[] }>("/api/knowledge/tags"),
   knowledgeCreateTag: (name: string) => post<{ id: string }>("/api/knowledge/tags", { name }),
   knowledgeDeleteTag: (id: string) => request<void>(`/api/knowledge/tags/${id}`, { method: "DELETE" }),
+  knowledgeGraph: (limitDocs = 60) =>
+    request<{ nodes: { id: string; kind: string; label: string }[]; edges: { from: string; to: string; kind: string }[] }>(
+      `/api/knowledge/graph?limit_docs=${limitDocs}`,
+    ),
+  knowledgeCreateStorage: (p: {
+    name: string;
+    type: "local" | "s3";
+    params: Record<string, string>;
+    secrets?: Record<string, string>;
+    path_template?: string;
+    is_default?: boolean;
+  }) => post<KnowledgeStorage>("/api/knowledge/storage", p),
   knowledgeStorages: () => request<{ items: KnowledgeStorage[] }>("/api/knowledge/storage"),
   knowledgeTestStorage: (id: string) =>
     post<{ ok: boolean; latency_ms?: number; error?: string }>(`/api/knowledge/storage/${id}/test`, {}),

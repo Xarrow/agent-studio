@@ -701,3 +701,63 @@ async def make_skill_draft(
     await session.refresh(job)
     asyncio.create_task(org.run_job(job.id))
     return {"job": {"id": job.id, "status": job.status, "doc_count": 1}}
+
+
+# --------------------------------------------------------------------------- #
+# 关联图谱：文档 ↔ 分类 ↔ 技能 ↔ 助手
+# --------------------------------------------------------------------------- #
+@router.get("/graph")
+async def knowledge_graph(limit_docs: int = Query(default=60, ge=1, le=200), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """一张引用关系的快照：谁引用了谁。
+
+    只画真实存在的引用（文档的分类、技能来自哪份文档、助手挂了哪个技能），
+    不做"相似度连线"——那种线看起来热闹，但说不清依据。
+    """
+    from ..models import Agent, Skill
+
+    docs = (
+        await session.execute(select(Doc).order_by(Doc.updated_at.desc()).limit(limit_docs))
+    ).scalars().all()
+    doc_ids = {d.id for d in docs}
+    cats = {c.id: c for c in (await session.execute(select(Category))).scalars().all()}
+    skills = (await session.execute(select(Skill))).scalars().all()
+    agents = (await session.execute(select(Agent))).scalars().all()
+
+    nodes: list[dict[str, Any]] = []
+    edges: list[dict[str, str]] = []
+    seen: set[str] = set()
+
+    def add(kind: str, ident: str, label: str, **extra: Any) -> None:
+        key = f"{kind}:{ident}"
+        if key in seen:
+            return
+        seen.add(key)
+        nodes.append({"id": key, "kind": kind, "label": label, **extra})
+
+    for d in docs:
+        add("doc", d.id, d.name, status=d.status)
+        if d.category_id and d.category_id in cats:
+            c = cats[d.category_id]
+            add("category", c.id, c.name)
+            edges.append({"from": f"doc:{d.id}", "to": f"category:{c.id}", "kind": "分类"})
+
+    for s in skills:
+        src = list(getattr(s, "source_doc_ids", None) or [])
+        hits = [x for x in src if x in doc_ids]
+        if not hits:
+            continue
+        add("skill", s.id, s.name, ns=getattr(s, "ns", "") or "")
+        for doc_id in hits:
+            edges.append({"from": f"skill:{s.id}", "to": f"doc:{doc_id}", "kind": "沉淀自"})
+
+    for a in agents:
+        names = {str(n) for n in ((a.definition or {}).get("skills") or [])}
+        if not names:
+            continue
+        for s in skills:
+            if s.name in names:
+                add("agent", a.id, a.name)
+                add("skill", s.id, s.name, ns=getattr(s, "ns", "") or "")
+                edges.append({"from": f"agent:{a.id}", "to": f"skill:{s.id}", "kind": "挂载"})
+
+    return {"nodes": nodes, "edges": edges, "truncated": len(docs) >= limit_docs}
