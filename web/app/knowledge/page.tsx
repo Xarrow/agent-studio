@@ -845,6 +845,32 @@ function OrganizePanel({ docs, onApplied }: { docs: KnowledgeDoc[]; onApplied: (
           >
             开始整理
           </button>
+          <button
+            className="btn btn-sm"
+            type="button"
+            disabled={busy || !agentId || chosen.length === 0}
+            title="把选中的文档提炼成 SKILL.md 草稿（采纳后才写入 workspace）"
+            onClick={async () => {
+              setBusy(true);
+              try {
+                let n = 0;
+                for (const id of chosen) {
+                  await api.knowledgeSkillDraft(id, agentId);
+                  n += 1;
+                }
+                fb.success(`已提交 ${n} 份文档做 Skill 提炼，稍后刷新草稿`);
+                setPicked({});
+                await new Promise((r) => setTimeout(r, 4000));
+                await loadDrafts();
+              } catch (e) {
+                fb.error("提炼没能开始", e instanceof Error ? e.message : String(e));
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            提炼为 Skill
+          </button>
         </div>
         <div className="mt-2 grid gap-1 sm:grid-cols-2">
           {readyDocs.length === 0 ? (
@@ -893,11 +919,23 @@ function OrganizePanel({ docs, onApplied }: { docs: KnowledgeDoc[]; onApplied: (
               <div key={d.id} className="flex flex-wrap items-center gap-2 rounded-lg px-3 py-2"
                    style={{ background: "var(--color-surface-2)" }}>
                 <span className="rounded-full px-2 py-0.5 text-[11px]" style={{ background: "var(--color-surface-3)" }}>
-                  {d.kind === "category" ? "分类" : d.kind === "tags" ? "标签" : d.kind === "summary" ? "摘要" : d.kind}
+                  {d.kind === "category"
+                    ? "分类"
+                    : d.kind === "tags"
+                      ? "标签"
+                      : d.kind === "summary"
+                        ? "摘要"
+                        : d.kind === "skill"
+                          ? "Skill"
+                          : d.kind}
                 </span>
                 <span className="min-w-0 flex-1 truncate text-[12px]">
                   <span style={{ color: "var(--color-text-3)" }}>{d.doc_name || d.doc_id} → </span>
-                  {d.kind === "category" ? d.payload.name : d.kind === "tags" ? (d.payload.add ?? []).join("、") : d.payload.text}
+                  {d.kind === "category" || d.kind === "skill"
+                    ? d.payload.name
+                    : d.kind === "tags"
+                      ? (d.payload.add ?? []).join("、")
+                      : d.payload.text}
                 </span>
                 {typeof d.payload.confidence === "number" && (
                   <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>

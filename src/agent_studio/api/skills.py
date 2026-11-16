@@ -52,6 +52,7 @@ _FRONTMATTER = re.compile(r"^---\s*\n(.*?)\n---\s*\n?", re.DOTALL)
 
 def to_read(row: Skill) -> SkillRead:
     return SkillRead(
+        source_doc_ids=list(getattr(row, "source_doc_ids", None) or []),
         id=row.id,
         name=row.name,
         description=row.description or "",

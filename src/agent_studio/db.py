@@ -186,6 +186,8 @@ _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     # 技能来源隔离：命名空间 + 目录名（磁盘 system/ vendor/ workspace/）
     ("skill", "ns", "ns VARCHAR(16) DEFAULT ''"),
     ("skill", "slug", "slug VARCHAR(120) DEFAULT ''"),
+    # 知识中心溯源：技能来自哪些文档
+    ("skill", "source_doc_ids", "source_doc_ids JSON"),
     ("run", "session_id", "session_id VARCHAR(32)"),
     ("run", "turn_index", "turn_index INTEGER"),
     # 编排（Playground）：三列都可空，NULL = 独立执行，既有数据不受影响

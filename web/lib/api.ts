@@ -512,6 +512,8 @@ export const api = {
     if (p.job_id) sp.set("job_id", p.job_id);
     return request<{ items: OrganizeDraft[] }>(`/api/knowledge/organize/drafts?${sp.toString()}`);
   },
+  knowledgeSkillDraft: (docId: string, agentId: string) =>
+    post<{ job: { id: string } }>(`/api/knowledge/documents/${docId}/skill-draft`, { agent_id: agentId }),
   knowledgeAcceptDraft: (id: string) =>
     post<{ ok: boolean; applied?: Record<string, unknown> }>(`/api/knowledge/organize/drafts/${id}/accept`, {}),
   knowledgeRejectDraft: (id: string) =>

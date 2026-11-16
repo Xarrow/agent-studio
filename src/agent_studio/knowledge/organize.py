@@ -27,6 +27,16 @@ PROMPT_VERSION = "org-1"
 #: 单份文档送进模型的字符上限（够看清主题，又不至于把整本书塞进去）
 MAX_INPUT_CHARS = 6000
 
+SKILL_SYSTEM = """你是知识库的“技能提炼”助手。用户会给你一份文档的正文节选。
+请把它提炼成一条**可复用的技能**（SKILL.md），只输出一个 JSON 对象，不要解释、不要代码块：
+{"name":"技能名（中文，2~10 字）","description":"一句话说明什么时候用它（不超过 60 字）","body":"SKILL.md 正文（Markdown，200~1200 字）"}
+body 必须包含这些小节：
+## 适用场景   —— 什么任务该用它；
+## 步骤       —— 3~7 步，每步是可直接照做的动作，写清判断条件和边界；
+## 验收       —— 怎么算做对了；
+## 来源要点   —— 从文档里提炼的关键规则/参数/阈值（数字要照抄，不许编）。
+只写文档里能支撑的内容；文档没写的细节就写「文档未覆盖，需要现场确认」。"""
+
 SYSTEM = """你是知识库整理助手。用户会给你一份文档的正文节选。
 请只输出一个 JSON 对象，不要任何解释、不要 Markdown 代码块，格式：
 {"category":"分类名（2~6 字，尽量复用已有分类）","tags":["标签1","标签2"],"summary":"80 字以内的中文摘要","confidence":0~1}
@@ -114,12 +124,13 @@ async def run_job(job_id: str) -> None:
             if not text:
                 failed += 1
                 continue
+            skill_mode = "skill" in (job.kinds or [])
             reply, err = await chat_once(
                 base_url=base,
                 api_key=api_key or "",
                 model=model_name,
                 messages=[
-                    {"role": "system", "content": SYSTEM},
+                    {"role": "system", "content": SKILL_SYSTEM if skill_mode else SYSTEM},
                     {"role": "user", "content": f"文档名：{doc.name}\n\n正文节选：\n{text}"},
                 ],
                 timeout=90.0,
@@ -132,6 +143,16 @@ async def run_job(job_id: str) -> None:
             data = extract_json(reply)
             if not isinstance(data, dict):
                 failed += 1
+                continue
+            if "skill" in (job.kinds or []):
+                seeded = _skill_draft_of(doc, data)
+                if seeded is not None:
+                    session.add(
+                        OrganizeDraft(
+                            job_id=job.id, doc_id=doc.id, kind="skill", payload=seeded
+                        )
+                    )
+                    made += 1
                 continue
             for kind, payload in _drafts_of(doc, data):
                 session.add(
@@ -161,6 +182,30 @@ def _drafts_of(doc: Doc, data: dict[str, Any]) -> list[tuple[str, dict[str, Any]
     if summary:
         out.append(("summary", {"text": summary[:400], "confidence": _conf(data.get("confidence"))}))
     return out
+
+
+def _skill_draft_of(doc: Doc, data: dict[str, Any]) -> dict[str, Any] | None:
+    body = str(data.get("body") or "").strip()
+    name = str(data.get("name") or "").strip()[:60]
+    if not body or not name:
+        return None
+    desc = str(data.get("description") or "").strip()[:120]
+    # 统一带上 frontmatter：parse_skill_md 靠它取名字与描述
+    content = (
+        "---\n"
+        f"name: {name}\n"
+        f"description: {desc}\n"
+        "---\n\n"
+        f"{body}\n\n"
+        f"> 来源文档：{doc.name}（doc_id: {doc.id}）\n"
+    )
+    return {
+        "name": name,
+        "description": desc,
+        "body": content,
+        "doc_id": doc.id,
+        "doc_name": doc.name,
+    }
 
 
 def _conf(v: Any) -> float:

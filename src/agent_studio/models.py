@@ -112,6 +112,8 @@ class Skill(Base):
     last_used_run_id: Mapped[str | None] = mapped_column(String(32), default=None)
     #: active | stale（久了没人用）| archived（已从运行时撤下，内容还在库里）
     #: 来源命名空间：system / vendor / workspace（磁盘目录的第一级）
+    #: 这条技能是从哪些文档沉淀出来的（知识中心溯源）；空 = 不是从文档来的
+    source_doc_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
     ns: Mapped[str] = mapped_column(String(16), default="", index=True)
     #: 目录名（= ns 下的叶子目录名，通常是名字的 slug）
     slug: Mapped[str] = mapped_column(String(120), default="")

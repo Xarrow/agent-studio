@@ -273,6 +273,8 @@ export interface Skill {
   /** 来源命名空间：system / vendor / workspace（与磁盘一级目录一致） */
   ns?: "system" | "vendor" | "workspace" | string;
   slug?: string;
+  /** 知识中心溯源：这条技能从哪些文档沉淀出来 */
+  source_doc_ids?: string[];
   /** 两级归属与磁盘位置 */
   source_key?: string;
   dir_name?: string;

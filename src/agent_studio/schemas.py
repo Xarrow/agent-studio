@@ -341,6 +341,8 @@ class SkillUpdateRequest(BaseModel):
 
 
 class SkillRead(BaseModel):
+    #: 这条技能是从哪些知识文档沉淀出来的（溯源）；空 = 不是从文档来的
+    source_doc_ids: list[str] = []
     #: 来源命名空间 system / vendor / workspace（磁盘一级目录）
     ns: str = ""
     slug: str = ""

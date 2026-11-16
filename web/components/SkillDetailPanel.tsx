@@ -121,6 +121,15 @@ export function SkillDetailPanel({
         ...(files.length > 0
           ? [{ icon: <IconFile size={13} />, text: `${files.length} 个附件`, title: "附件" }]
           : []),
+        ...((skill.source_doc_ids?.length ?? 0) > 0
+          ? [
+              {
+                icon: <IconFile size={13} />,
+                text: `来自 ${skill.source_doc_ids?.length} 份知识文档`,
+                title: `来源文档：${(skill.source_doc_ids ?? []).join("、")}`,
+              },
+            ]
+          : []),
         ...(typeof skill.source?.repo === "string" && skill.source.repo
           ? [
               {

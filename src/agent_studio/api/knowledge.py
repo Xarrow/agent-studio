@@ -628,6 +628,32 @@ async def accept_draft(draft_id: str, session: AsyncSession = Depends(get_sessio
             if same is None:
                 session.add(DocTag(name=t, origin="agent", locked=0))
         applied["tags"] = add
+    elif row.kind == "skill":
+        from ..api.skills import _materialize, _upsert_skill
+
+        content = str(payload.get("body") or "")
+        name = str(payload.get("name") or "").strip()
+        if not content or not name:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "这条 skill 草稿内容不完整，已跳过")
+        skill_row, updated = await _upsert_skill(
+            session,
+            content=content,
+            files={},
+            fallback_name=name,
+            source_meta={
+                "type": "knowledge",
+                "doc_ids": [doc.id],
+                "doc_name": doc.name,
+            },
+        )
+        # 沉淀到 workspace 命名空间（可写、可被 Agent 直接用），并记下溯源
+        skill_row.ns = "workspace"
+        skill_row.slug = skill_row.slug or skill_row.dir_name or name
+        skill_row.source_doc_ids = list(dict.fromkeys([*(skill_row.source_doc_ids or []), doc.id]))
+        await session.commit()
+        await session.refresh(skill_row)
+        await _materialize(skill_row)
+        applied["skill"] = {"id": skill_row.id, "name": skill_row.name, "updated": updated}
     elif row.kind == "summary":
         parsed = dict(doc.parsed or {})
         parsed["aiSummary"] = str(payload.get("text") or "")[:400]
@@ -652,3 +678,26 @@ async def reject_draft(draft_id: str, session: AsyncSession = Depends(get_sessio
         row.decided_at = int(time.time() * 1000)
         await session.commit()
     return {"ok": True}
+
+
+@router.post("/documents/{doc_id}/skill-draft", status_code=status.HTTP_202_ACCEPTED)
+async def make_skill_draft(
+    doc_id: str, payload: dict[str, Any], session: AsyncSession = Depends(get_session)
+) -> dict[str, Any]:
+    """让助手把一份文档提炼成 SKILL.md 草稿（同样要人采纳才落盘）。"""
+    doc = await session.get(Doc, doc_id)
+    if doc is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "文档不存在")
+    if doc.status != "ready":
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "这份文档还没解析完，暂时不能提炼")
+    agent_id = str(payload.get("agent_id") or "")
+    from ..models import Agent
+
+    if not agent_id or await session.get(Agent, agent_id) is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "要选一个执行提炼的助手")
+    job = OrganizeJob(agent_id=agent_id, doc_ids=[doc_id], kinds=["skill"])
+    session.add(job)
+    await session.commit()
+    await session.refresh(job)
+    asyncio.create_task(org.run_job(job.id))
+    return {"job": {"id": job.id, "status": job.status, "doc_count": 1}}
