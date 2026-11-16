@@ -15,6 +15,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api } from "@/lib/api";
 import { KnowledgeGraph } from "@/components/KnowledgeGraph";
+import type { KnowledgeMigration } from "@/lib/types";
 import type {
   KnowledgeCategory,
   OrganizeDraft,
@@ -445,6 +446,29 @@ function StoragePanel({ storages, onRefresh }: { storages: KnowledgeStorage[] | 
   const fb = useFeedback();
   const [busy, setBusy] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [migs, setMigs] = useState<KnowledgeMigration[]>([]);
+  const [toId, setToId] = useState("");
+  const [fromId, setFromId] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    const tick = async () => {
+      try {
+        const got = await api.knowledgeMigrations();
+        if (alive) setMigs(got.items ?? []);
+      } catch {
+        /* 迁移历史读不到不影响主功能 */
+      }
+    };
+    void tick();
+    const t = setInterval(tick, 2000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, []);
+
+  const running = migs.find((m) => m.status === "running" || m.status === "queued");
   const [form, setForm] = useState({
     name: "",
     type: "s3" as "local" | "s3",
@@ -528,6 +552,99 @@ function StoragePanel({ storages, onRefresh }: { storages: KnowledgeStorage[] | 
           </div>
         </div>
       ))}
+      {/* 迁移：把已有文档的原件从一个存储搬到另一个；默认保留源文件 */}
+      <div className="rounded-lg p-3" style={{ background: "var(--color-surface-2)" }}>
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <span className="text-[12px]" style={{ color: "var(--color-text-2)" }}>
+            迁移文档
+          </span>
+          <select
+            className="input h-8 w-40 text-[12px]"
+            value={fromId}
+            onChange={(e) => setFromId(e.target.value)}
+            title="从哪个存储搬"
+          >
+            <option value="">全部已入库文档</option>
+            {(storages ?? []).map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+          <span className="text-[12px]" style={{ color: "var(--color-text-3)" }}>
+            →
+          </span>
+          <select
+            className="input h-8 w-40 text-[12px]"
+            value={toId}
+            onChange={(e) => setToId(e.target.value)}
+            title="搬到哪个存储"
+          >
+            <option value="">选目标存储</option>
+            {(storages ?? [])
+              .filter((s) => s.id !== fromId)
+              .map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+          </select>
+          <button
+            className="btn btn-sm"
+            type="button"
+            disabled={!toId || !!running || busy === "mig"}
+            onClick={async () => {
+              setBusy("mig");
+              try {
+                await api.knowledgeMigrate({ from_id: fromId || undefined, to_id: toId, keep_source: true });
+                fb.success("迁移已开始，进度在下面");
+                setToId("");
+                const got = await api.knowledgeMigrations();
+                setMigs(got.items ?? []);
+              } catch (e) {
+                fb.error("没能开始迁移", e instanceof Error ? e.message : String(e));
+              } finally {
+                setBusy(null);
+              }
+            }}
+          >
+            开始迁移
+          </button>
+          <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+            只搬原件、不动解析结果；源文件默认保留
+          </span>
+        </div>
+
+        {running ? (
+          <div className="mb-2">
+            <div className="mb-1 flex items-center justify-between text-[11px]" style={{ color: "var(--color-text-2)" }}>
+              <span>
+                正在搬到「{running.to_name}」：{running.moved}/{running.total}
+                {running.failed > 0 ? ` · 失败 ${running.failed}` : ""}
+              </span>
+              <span>{running.total > 0 ? Math.round((running.moved / running.total) * 100) : 0}%</span>
+            </div>
+            <div className="h-1.5 w-full overflow-hidden rounded-full" style={{ background: "var(--color-surface-3)" }}>
+              <div
+                className="h-full rounded-full transition-all"
+                style={{
+                  width: `${running.total > 0 ? Math.min(100, (running.moved / running.total) * 100) : 0}%`,
+                  background: "var(--color-accent, #2563eb)",
+                }}
+              />
+            </div>
+          </div>
+        ) : null}
+
+        {migs.filter((m) => m.status !== "running" && m.status !== "queued").slice(0, 3).map((m) => (
+          <div key={m.id} className="text-[11px]" style={{ color: m.status === "failed" ? "var(--color-danger, #dc2626)" : "var(--color-text-3)" }}>
+            {m.status === "done" ? "已完成" : "有失败"} · {m.from_name} → {m.to_name} · 搬了 {m.moved}/{m.total}
+            {m.failed > 0 ? ` · 失败 ${m.failed}` : ""}
+            {m.error ? ` · ${m.error.message.slice(0, 80)}` : ""}
+          </div>
+        ))}
+      </div>
+
       {!adding ? (
         <button className="btn btn-sm" type="button" onClick={() => setAdding(true)}>
           ＋ 新增存储

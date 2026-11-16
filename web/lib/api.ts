@@ -51,6 +51,7 @@ import type {
   KnowledgeTag,
   OrganizeDraft,
   OrganizeJob,
+  KnowledgeMigration,
   KnowledgeStorage,
   RemoteAgentRecord,
   StudioPeer,
@@ -254,6 +255,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 const post = <T>(p: string, body?: unknown) =>
   request<T>(p, { method: "POST", body: JSON.stringify(body ?? {}) });
+const get = <T>(p: string) => request<T>(p);
 const put = <T>(p: string, body?: unknown) =>
   request<T>(p, { method: "PUT", body: JSON.stringify(body ?? {}) });
 const del = <T = void,>(p: string) => request<T>(p, { method: "DELETE" });
@@ -540,6 +542,10 @@ export const api = {
     path_template?: string;
     is_default?: boolean;
   }) => post<KnowledgeStorage>("/api/knowledge/storage", p),
+  knowledgeMigrate: (p: { from_id?: string; to_id: string; keep_source?: boolean }) =>
+    post<{ job: KnowledgeMigration }>("/api/knowledge/storage/migrate", p),
+  knowledgeMigrations: () =>
+    get<{ items: KnowledgeMigration[] }>("/api/knowledge/storage/migrations"),
   knowledgeStorages: () => request<{ items: KnowledgeStorage[] }>("/api/knowledge/storage"),
   knowledgeTestStorage: (id: string) =>
     post<{ ok: boolean; latency_ms?: number; error?: string }>(`/api/knowledge/storage/${id}/test`, {}),

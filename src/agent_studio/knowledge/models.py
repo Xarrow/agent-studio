@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import JSON, Float, Integer, String, Text
+from sqlalchemy import JSON, BigInteger, Float, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..models import Base, LongText, new_id, now_ms
@@ -165,3 +165,27 @@ class OrganizeDraft(Base):
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
     created_at: Mapped[int] = mapped_column(Integer, default=now_ms)
     decided_at: Mapped[int | None] = mapped_column(Integer, default=None)
+
+
+class StorageMigration(Base):
+    """把已有文档从一个存储搬到另一个。搬的是**原件**，记录随搬随改。
+
+    为什么要有这张表：搬几百份文档是长活，页面得知道"搬到哪了、错在哪一份"，
+    不能一个请求挂在那儿等；断了也要能看清上次搬到什么程度。
+    """
+
+    __tablename__ = "storage_migration"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("mig"))
+    from_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    to_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    status: Mapped[str] = mapped_column(String(16), default="queued")  # queued|running|done|failed
+    total: Mapped[int] = mapped_column(Integer, default=0)
+    moved: Mapped[int] = mapped_column(Integer, default=0)
+    skipped: Mapped[int] = mapped_column(Integer, default=0)
+    failed: Mapped[int] = mapped_column(Integer, default=0)
+    bytes_moved: Mapped[int] = mapped_column(BigInteger, default=0)
+    keep_source: Mapped[int] = mapped_column(Integer, default=1)
+    error: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+    finished_at: Mapped[int] = mapped_column(BigInteger, default=0)

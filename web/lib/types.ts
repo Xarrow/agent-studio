@@ -225,6 +225,24 @@ export interface OrganizeDraft {
   created_at: number;
 }
 
+export interface KnowledgeMigration {
+  id: string;
+  from_id: string;
+  to_id: string;
+  from_name: string;
+  to_name: string;
+  status: "queued" | "running" | "done" | "failed";
+  total: number;
+  moved: number;
+  skipped: number;
+  failed: number;
+  bytes_moved: number;
+  keep_source: boolean;
+  error: { code: string; message: string } | null;
+  created_at: number;
+  finished_at: number;
+}
+
 export interface KnowledgeStorage {
   id: string;
   name: string;

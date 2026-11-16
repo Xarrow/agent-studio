@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+from urllib.parse import quote
 import json
 import logging
 from typing import Any
@@ -19,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_session
 from ..security.crypto import encrypt
-from ..knowledge import fetch_url, service, storage
+from ..knowledge import fetch_url, migrate as mig, service, storage
 from ..knowledge import organize as org
 from ..knowledge.models import (
     Category,
@@ -202,10 +203,16 @@ async def download_original(doc_id: str, session: AsyncSession = Depends(get_ses
         data = service.provider_of(cfg).get_bytes(row.storage_key)
     except storage.StorageError as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, f"存储读不到原件：{exc}") from exc
+    # 中文文件名不能直接塞进 header（HTTP 头是 latin-1，中文会 500）：
+    # ASCII 兜底 + RFC 5987 的 filename* 给浏览器里的真名
+    ascii_name = "".join(ch if 32 <= ord(ch) < 127 else "_" for ch in row.name) or "download"
+    quoted = quote(row.name, safe="")
     return StreamingResponse(
         io.BytesIO(data),
         media_type=row.mime or "application/octet-stream",
-        headers={"Content-Disposition": f'attachment; filename="{row.name}"'},
+        headers={
+            "Content-Disposition": f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quoted}"
+        },
     )
 
 
@@ -761,3 +768,62 @@ async def knowledge_graph(limit_docs: int = Query(default=60, ge=1, le=200), ses
                 edges.append({"from": f"agent:{a.id}", "to": f"skill:{s.id}", "kind": "挂载"})
 
     return {"nodes": nodes, "edges": edges, "truncated": len(docs) >= limit_docs}
+
+
+# --------------------------------------------------------------------------- #
+# 存储迁移：把已有文档从 A 存储搬到 B 存储
+# --------------------------------------------------------------------------- #
+@router.post("/storage/migrate", status_code=status.HTTP_202_ACCEPTED)
+async def start_migration(payload: dict[str, Any], session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """起一次迁移。搬原件、按内容寻址去重、默认保留源文件。"""
+    from ..knowledge.models import StorageMigration
+
+    to_id = str(payload.get("to_id") or "")
+    if not to_id or await session.get(StorageConfig, to_id) is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "要选一个目标存储")
+    from_id = str(payload.get("from_id") or "")
+    if from_id:
+        if await session.get(StorageConfig, from_id) is None:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "源存储不存在")
+        if from_id == to_id:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "源和目标不能是同一个存储")
+
+    running = (
+        await session.execute(select(StorageMigration).where(StorageMigration.status.in_(["queued", "running"])))
+    ).scalars().first()
+    if running is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "已经有一次迁移在跑，等它结束再开始新的")
+
+    job = StorageMigration(
+        from_id=from_id,
+        to_id=to_id,
+        status="queued",
+        keep_source=0 if payload.get("keep_source") is False else 1,
+    )
+    session.add(job)
+    await session.commit()
+    await session.refresh(job)
+    mig.start(job.id)
+    return {"job": mig.view(job)}
+
+
+@router.get("/storage/migrations")
+async def list_migrations(limit: int = Query(default=10, ge=1, le=50), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    from ..knowledge.models import StorageMigration
+
+    rows = (
+        await session.execute(
+            select(StorageMigration).order_by(StorageMigration.created_at.desc()).limit(limit)
+        )
+    ).scalars().all()
+    names = {
+        c.id: c.name
+        for c in (await session.execute(select(StorageConfig))).scalars().all()
+    }
+    items = []
+    for r in rows:
+        v = mig.view(r)
+        v["from_name"] = names.get(r.from_id, "（全部）")
+        v["to_name"] = names.get(r.to_id, "")
+        items.append(v)
+    return {"items": items}
