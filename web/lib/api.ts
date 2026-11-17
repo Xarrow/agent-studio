@@ -57,6 +57,7 @@ import type {
   DocVersion,
   SkillDraft,
   RecallStats,
+  PipelineDoc,
   RemoteAgentRecord,
   StudioPeer,
   StudioPeerAgent,
@@ -550,6 +551,13 @@ export const api = {
   }) => post<KnowledgeStorage>("/api/knowledge/storage", p),
 
   // ── 知识库流程（版本 / 标签 / Skill 草稿 / 召回）────────────────────────
+  knowledgePipeline: () =>
+    request<{ items: PipelineDoc[]; embed_configured: boolean }>("/api/knowledge/pipeline"),
+  knowledgeEmbed: (id: string) =>
+    post<{ ok: boolean; chunks: number; dim: number; model: string }>(
+      `/api/knowledge/documents/${id}/embed`,
+      {},
+    ),
   knowledgeDocTags: (id: string) =>
     request<{ items: DocTagLink[]; accepted: DocTagLink[]; candidates: DocTagLink[] }>(
       `/api/knowledge/documents/${id}/tags`,

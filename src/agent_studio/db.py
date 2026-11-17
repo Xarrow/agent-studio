@@ -193,6 +193,9 @@ _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     # 知识库流程：软删与快照键（快照不再靠文件名约定猜）
     ("doc", "deleted_at", "deleted_at INTEGER"),
     ("doc", "snapshot_key", "snapshot_key VARCHAR(600) DEFAULT ''"),
+    ("doc", "embed_status", "embed_status VARCHAR(12) DEFAULT 'none'"),
+    ("doc", "embed_model", "embed_model VARCHAR(120) DEFAULT ''"),
+    ("doc", "embed_dim", "embed_dim INTEGER DEFAULT 0"),
     ("run", "session_id", "session_id VARCHAR(32)"),
     ("run", "turn_index", "turn_index INTEGER"),
     # 编排（Playground）：三列都可空，NULL = 独立执行，既有数据不受影响

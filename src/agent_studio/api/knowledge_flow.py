@@ -199,6 +199,115 @@ async def rollback_version(
 
 
 # --------------------------------------------------------------------------- #
+# 入库流水线：上传 → 向量化 → 标签 → 技能（一个页面走完）
+# --------------------------------------------------------------------------- #
+@router.get("/pipeline")
+async def pipeline(session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """每份文档走到哪一步了，以及"下一步该做什么"。"""
+    rows = (
+        await session.execute(
+            select(Doc).where(Doc.deleted_at.is_(None)).order_by(Doc.updated_at.desc()).limit(100)
+        )
+    ).scalars().all()
+    tag_rows = (
+        await session.execute(
+            select(DocumentTag.doc_id, func.count()).group_by(DocumentTag.doc_id)
+        )
+    ).all()
+    tag_count = {d: int(c) for d, c in tag_rows}
+    skill_rows = (
+        await session.execute(
+            select(SkillDraft.doc_ids, SkillDraft.status).where(SkillDraft.status != "discarded")
+        )
+    ).all()
+    skilled: set[str] = set()
+    for doc_ids, _status in skill_rows:
+        for d in doc_ids or []:
+            skilled.add(str(d))
+
+    items = []
+    for d in rows:
+        steps = {
+            "uploaded": True,
+            "parsed": d.status == "ready",
+            "embedded": (d.embed_status or "none") == "ready",
+            "tagged": tag_count.get(d.id, 0) > 0,
+            "skilled": d.id in skilled,
+        }
+        if not steps["parsed"]:
+            nxt = "wait_parse"
+        elif not steps["embedded"]:
+            nxt = "embed"
+        elif not steps["tagged"]:
+            nxt = "tag"
+        elif not steps["skilled"]:
+            nxt = "skill"
+        else:
+            nxt = "done"
+        items.append(
+            {
+                "id": d.id,
+                "name": d.name,
+                "kind": d.kind,
+                "size": d.size,
+                "status": d.status,
+                "version": d.version,
+                "category_id": d.category_id,
+                "tags": d.tags or [],
+                "tag_count": tag_count.get(d.id, 0),
+                "embed_status": d.embed_status or "none",
+                "embed_model": d.embed_model or "",
+                "embed_dim": d.embed_dim or 0,
+                "steps": steps,
+                "next": nxt,
+                "updated_at": d.updated_at,
+            }
+        )
+    return {"items": items, "embed_configured": (await _embed_cfg(session))["configured"]}
+
+
+async def _embed_cfg(session: AsyncSession) -> dict[str, Any]:
+    from ..knowledge.embedding import embed_config
+
+    return await embed_config(session)
+
+
+@router.get("/embed/status")
+async def embed_status(session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    cfg = await _embed_cfg(session)
+    covered = (
+        await session.execute(
+            select(func.count()).select_from(Doc).where(
+                Doc.deleted_at.is_(None), Doc.embed_status == "ready"
+            )
+        )
+    ).scalar_one()
+    total = (
+        await session.execute(
+            select(func.count()).select_from(Doc).where(Doc.deleted_at.is_(None))
+        )
+    ).scalar_one()
+    return {**cfg, "embedded_docs": int(covered), "total_docs": int(total)}
+
+
+@router.post("/documents/{doc_id}/embed")
+async def embed_one(doc_id: str, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """把一份文档的正文块向量化。没配端点 → 422 + 人话（不假装成功）。"""
+    from ..knowledge.embedding import embed_document
+
+    doc = await session.get(Doc, doc_id)
+    if doc is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "文档不存在")
+    if doc.status != "ready":
+        raise HTTPException(status.HTTP_409_CONFLICT, "还没解析完成，等解析好再向量化")
+    try:
+        got = await embed_document(session, doc)
+    except RuntimeError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    return {"ok": True, **got}
+
+
+# --------------------------------------------------------------------------- #
 # 软删 / 回收站
 # --------------------------------------------------------------------------- #
 @router.post("/documents/{doc_id}/restore")
@@ -396,11 +505,73 @@ async def tag_usage(session: AsyncSession = Depends(get_session)) -> dict[str, A
 # --------------------------------------------------------------------------- #
 # 由标签 / 文档生成 Skill 草稿
 # --------------------------------------------------------------------------- #
-SKILL_SYSTEM = """你是知识库的"技能提炼"助手。用户会给你若干份文档的正文节选（按顺序拼接）。
-请把它们提炼成一条**可复用的技能**（SKILL.md），只输出一个 JSON 对象，不要解释、不要代码块：
-{"name":"技能名（中文，2~12 字）","description":"一句话说明什么时候用它（不超过 60 字）","body":"SKILL.md 正文（Markdown）"}
-body 必须包含：## 适用场景 / ## 步骤（3~7 步，可直接照做）/ ## 验收（怎么算做对了）/ ## 来源要点（关键规则、参数、阈值，数字照抄不许编）。
-只写文档里能支撑的内容；文档没写的细节写「文档未覆盖，需要现场确认」。"""
+
+QUERY_MAP_HEAD = "## 查询词映射"
+
+
+def parse_query_map(body: str) -> dict[str, list[str]]:
+    """从 SKILL.md 正文里抽出「查询词映射」表：用户说法 → 文档用词。
+
+    为什么在图谱/发布时解析而不是每次检索现解析：检索是热路径，一次请求要查几次；
+    发布是一次性动作，把它变成结构化数据后检索只做字典查表。
+    """
+    lines = (body or "").splitlines()
+    try:
+        start = next(i for i, l in enumerate(lines) if l.strip().startswith(QUERY_MAP_HEAD))
+    except StopIteration:
+        return {}
+    out: dict[str, list[str]] = {}
+    for raw in lines[start + 1 :]:
+        line = raw.strip()
+        if line.startswith("## "):
+            break
+        if not line.startswith("|") or set(line) <= set("|-: "):
+            continue
+        cells = [c.strip() for c in line.strip("|").split("|")]
+        if len(cells) < 2:
+            continue
+        left, right = cells[0], cells[1]
+        if left in ("用户可能说的词", "用户说法") or "用户" in left[:6]:
+            continue
+        keys = [k.strip() for k in left.replace("，", "、").replace(",", "、").split("、") if k.strip()]
+        vals = [v.strip() for v in right.replace("，", "、").replace(",", "、").split("、") if v.strip()]
+        for k in keys:
+            if k and vals:
+                out.setdefault(k, [])
+                for v in vals:
+                    if v not in out[k]:
+                        out[k].append(v)
+    return out
+
+
+SKILL_SYSTEM = """你是知识库的"检索计划"生成器。用户会给你若干份文档的正文节选。
+
+你的产物**不是操作指南**，而是一份给检索用的"找得到"计划：拿到它的人（或 Agent）
+能据此拼出正确的查询词、选对过滤条件，快速在向量库里命中原文。
+
+只输出一个 JSON 对象，不要解释、不要代码块：
+{"name":"技能名（2~12 字，描述这批文档管什么）",
+ "description":"一句话：什么问题该用它（不超过 60 字）",
+ "body":"Markdown 正文"}
+
+body 必须包含这四节：
+
+## 适用问题
+5~10 条**用户真实会怎么问**的短句（口语，不写文档标题）。例如「账期多久」「验收要几份材料」。
+
+## 查询词映射
+一张表：左边是用户可能说的词，右边是文档里实际用的词/同义词/缩写。
+例：账期 / 回款周期 → 付款期限；验收材料 → 验收资料、交付物清单。
+这一节是整份技能的核心：口语和文书写法对不上的地方，全靠它。
+
+## 检索策略
+- 关键词：3~8 个最能定位于本主题的词（名词优先，去掉"的、了、如何"这类虚词）
+- 过滤建议：该限定在哪些标签或文档上（写标签名）
+- 命中后：按哪一节/哪几段核对原文（写章节名或"第 N 条"）
+
+## 边界
+文档里没有的内容要明说"文档未覆盖"，不许推测数字、日期、条款。"""
+
 
 #: 送进模型的正文上限（多份文档拼接后）
 MAX_SOURCE_CHARS = 8000
@@ -521,6 +692,15 @@ async def publish_skill_draft(
         t for t in (row.tag_ids or []) if t not in (getattr(skill, "source_tag_ids", []) or [])
     ]
     from ..knowledge.fingerprint import fingerprint as _fp
+
+    try:
+        qmap = parse_query_map(skill.content or "")
+        if qmap:
+            src = dict(skill.source or {})
+            src["query_map"] = qmap
+            skill.source = src
+    except Exception:  # noqa: BLE001 —— 解析失败不影响发布
+        pass
 
     skill.source_fp = await _fp(session, list(skill.source_doc_ids or []), list(skill.source_tag_ids or []))
     await session.commit()

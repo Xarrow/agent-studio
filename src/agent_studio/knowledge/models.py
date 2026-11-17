@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import JSON, BigInteger, Float, Integer, String, Text
+from sqlalchemy import JSON, BigInteger, Float, Integer, LargeBinary, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..models import Base, LongText, new_id, now_ms
@@ -58,6 +58,10 @@ class Doc(Base):
     snapshot_key: Mapped[str] = mapped_column(String(600), default="")
     #: 软删时间（毫秒）。有值即在回收站，检索与列表默认排除
     deleted_at: Mapped[int | None] = mapped_column(Integer, default=None, index=True)
+    #: 向量化状态：none（未做）| pending | ready | failed —— 入库流水线的第三步
+    embed_status: Mapped[str] = mapped_column(String(12), default="none", index=True)
+    embed_model: Mapped[str] = mapped_column(String(120), default="")
+    embed_dim: Mapped[int] = mapped_column(Integer, default=0)
     #: 0~1，越小越靠前（占位，阶段 3 接"敏感/置顶"）
     rank: Mapped[float] = mapped_column(Float, default=0.0)
     created_at: Mapped[int] = mapped_column(Integer, default=now_ms)
@@ -279,3 +283,22 @@ class RecallLog(Base):
     latency_ms: Mapped[int] = mapped_column(Integer, default=0)
     agent_id: Mapped[str] = mapped_column(String(32), default="", index=True)
     created_at: Mapped[int] = mapped_column(Integer, default=now_ms, index=True)
+
+
+class DocEmbedding(Base):
+    """文档分块的向量（一期暴力余弦，规模上来再换 zvec）。
+
+    单独一张表而不是塞进 doc_chunk：向量体积是正文的几十倍，检索时只读这张，
+    列表/详情接口完全不受影响。
+    """
+
+    __tablename__ = "doc_embedding"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("emb_"))
+    doc_id: Mapped[str] = mapped_column(String(32), index=True)
+    ord: Mapped[int] = mapped_column(Integer, default=0)
+    dim: Mapped[int] = mapped_column(Integer, default=0)
+    model: Mapped[str] = mapped_column(String(120), default="")
+    #: float32 小端原始字节（struct 打包），读出后用 array 解析
+    vec: Mapped[bytes] = mapped_column(LargeBinary, default=b"")
+    created_at: Mapped[int] = mapped_column(Integer, default=now_ms)

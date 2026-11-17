@@ -23,6 +23,7 @@ import type {
   DocVersion,
   KnowledgeCategory,
   KnowledgeDoc,
+  PipelineDoc,
   RecallStats,
   SkillDraft,
   KnowledgeMigration,
@@ -332,6 +333,16 @@ export default function KnowledgePage() {
 
       {tab === "docs" ? (
         <div className="space-y-3">
+          <PipelineSection
+            onOpenDoc={(id) => {
+              setTab("docs");
+              setOpenId(id);
+            }}
+            onChanged={() => {
+              void loadDocs();
+              void loadMeta();
+            }}
+          />
           <Toolbar>
             <input
               className="input h-9 min-w-0 flex-1 text-[12px] sm:max-w-xs"
@@ -1846,6 +1857,146 @@ function TrashSection({ onChanged }: { onChanged: () => Promise<void> | void }) 
           </RowList>
         </div>
       )}
+    </Section>
+  );
+}
+
+
+/* ────────────────────────── 入库流水线（上传→向量化→标签→技能） ────────────────────────── */
+
+const STEP_LABEL: { key: "uploaded" | "parsed" | "embedded" | "tagged" | "skilled"; text: string }[] = [
+  { key: "uploaded", text: "上传" },
+  { key: "parsed", text: "解析" },
+  { key: "embedded", text: "向量化" },
+  { key: "tagged", text: "标签" },
+  { key: "skilled", text: "技能" },
+];
+
+function PipelineSection({
+  onOpenDoc,
+  onChanged,
+}: {
+  onOpenDoc: (id: string) => void;
+  onChanged: () => void;
+}) {
+  const fb = useFeedback();
+  const [rows, setRows] = useState<PipelineDoc[] | null>(null);
+  const [embedOk, setEmbedOk] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const got = await api.knowledgePipeline();
+      setRows(got.items ?? []);
+      setEmbedOk(got.embed_configured);
+    } catch {
+      setRows([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+    const t = window.setInterval(() => void load(), 4000);
+    return () => window.clearInterval(t);
+  }, [load]);
+
+  if (rows === null) {
+    return <div className="h-16 animate-pulse rounded-[12px]" style={{ background: "var(--color-surface-2)" }} />;
+  }
+  if (rows.length === 0) return null;
+
+  return (
+    <Section
+      title="入库流水线"
+      count={rows.length}
+      desc="每份文档走四步：解析 → 向量化 → 打标签 → 生成检索技能。哪一步没做，这里直接给按钮"
+      right={
+        embedOk ? null : (
+          <span className="text-[11px]" style={{ color: "var(--color-warn, #d97706)" }}>
+            向量化端点未配置
+          </span>
+        )
+      }
+    >
+      <div className="-mx-3 -my-3">
+        <RowList>
+          {rows.map((d) => (
+            <Row
+              key={d.id}
+              actions={
+                d.next === "wait_parse" ? (
+                  <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                    解析中…
+                  </span>
+                ) : d.next === "done" ? (
+                  <span className="text-[11px]" style={{ color: "var(--color-ok,#16a34a)" }}>
+                    已完成
+                  </span>
+                ) : (
+                  <button
+                    className="btn btn-sm"
+                    type="button"
+                    disabled={busy === d.id || (d.next === "embed" && !embedOk)}
+                    title={
+                      d.next === "embed" && !embedOk
+                        ? "先在「能力 → 工具检索」里配置向量化端点（base_url / 模型 / key）"
+                        : ""
+                    }
+                    onClick={async () => {
+                      if (d.next === "tag" || d.next === "skill") {
+                        onOpenDoc(d.id);
+                        return;
+                      }
+                      if (d.next !== "embed") return;
+                      setBusy(d.id);
+                      try {
+                        const got = await api.knowledgeEmbed(d.id);
+                        fb.success(`已向量化 ${got.chunks} 块（${got.dim} 维 · ${got.model}）`);
+                        await load();
+                        onChanged();
+                      } catch (e) {
+                        fb.error("向量化失败", e instanceof Error ? e.message : String(e));
+                      } finally {
+                        setBusy(null);
+                      }
+                    }}
+                  >
+                    {busy === d.id
+                      ? "处理中…"
+                      : d.next === "embed"
+                        ? "向量化"
+                        : d.next === "tag"
+                          ? "去打分标签"
+                          : "生成 Skill"}
+                  </button>
+                )
+              }
+            >
+              <span className="min-w-0 flex-1 truncate text-[13px]">{d.name}</span>
+              <span className="flex items-center gap-1">
+                {STEP_LABEL.map((st) => {
+                  const ok = d.steps[st.key];
+                  return (
+                    <span
+                      key={st.key}
+                      className="rounded px-1 py-[1px] text-[10.5px]"
+                      title={ok ? `${st.text}已完成` : `${st.text}还没做`}
+                      style={{
+                        background: ok
+                          ? "color-mix(in srgb, var(--color-accent) 12%, transparent)"
+                          : "var(--color-surface-3)",
+                        color: ok ? "var(--color-accent)" : "var(--color-text-3)",
+                      }}
+                    >
+                      {ok ? "✓" : "·"} {st.text}
+                    </span>
+                  );
+                })}
+              </span>
+            </Row>
+          ))}
+        </RowList>
+      </div>
     </Section>
   );
 }

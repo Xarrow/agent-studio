@@ -243,6 +243,24 @@ export interface KnowledgeMigration {
   finished_at: number;
 }
 
+export interface PipelineDoc {
+  id: string;
+  name: string;
+  kind: string;
+  size: number;
+  status: string;
+  version: number;
+  category_id: string;
+  tags: string[];
+  tag_count: number;
+  embed_status: "none" | "pending" | "ready" | "failed";
+  embed_model: string;
+  embed_dim: number;
+  steps: { uploaded: boolean; parsed: boolean; embedded: boolean; tagged: boolean; skilled: boolean };
+  next: "wait_parse" | "embed" | "tag" | "skill" | "done";
+  updated_at: number;
+}
+
 export interface DocTagLink {
   tag_id: string;
   name: string;

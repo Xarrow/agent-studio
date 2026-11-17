@@ -835,6 +835,30 @@ async def _knowledge_search(query: str, top_k: int = 5) -> str:
     # 一句话里常常带几个词（"付款期限 多少天 账期"），整串去做 LIKE 必然查不到；
     # 拆成词逐个查再合并——这是"整句检索"最省事又不引入向量库的做法
     terms = [t for t in text.replace("，", " ").replace("、", " ").split() if len(t) >= 2][:6] or [text]
+    # 用已发布技能的「查询词映射」把口语扩成文档用词（账期 → 付款期限）。
+    # 这一步是 Skill 存在的意义：向量/BM25 都救不了"用户说的词和文档里的词不一样"。
+    try:
+        from sqlalchemy import select as _select
+
+        from .models import Skill as _Skill
+
+        async with SessionLocal() as _s:
+            _rows = (
+                await _s.execute(_select(_Skill).where(_Skill.state == "active").limit(200))
+            ).scalars().all()
+        extra: list[str] = []
+        for _row in _rows:
+            qmap = (_row.source or {}).get("query_map") if isinstance(_row.source, dict) else None
+            if not isinstance(qmap, dict):
+                continue
+            for key, vals in qmap.items():
+                if key and key in text:
+                    for v in vals or []:
+                        if v and v not in terms and v not in extra:
+                            extra.append(v)
+        terms = (terms + extra)[:12]
+    except Exception:  # noqa: BLE001 —— 扩词失败就用原词
+        pass
     merged: dict[str, dict] = {}
     import time as _t
 
