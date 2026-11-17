@@ -520,6 +520,9 @@ async def publish_skill_draft(
     skill.source_tag_ids = list(getattr(skill, "source_tag_ids", []) or []) + [
         t for t in (row.tag_ids or []) if t not in (getattr(skill, "source_tag_ids", []) or [])
     ]
+    from ..knowledge.fingerprint import fingerprint as _fp
+
+    skill.source_fp = await _fp(session, list(skill.source_doc_ids or []), list(skill.source_tag_ids or []))
     await session.commit()
     await _materialize(skill)
 

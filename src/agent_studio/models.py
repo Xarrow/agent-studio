@@ -116,6 +116,9 @@ class Skill(Base):
     source_doc_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
     #: 由哪些标签生成（标签 → Skill 的溯源，图谱与"来源已变化"提示都读它）
     source_tag_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
+    #: 来源指纹（发布时算：来源文档的 id+版本+更新时间、来源标签的文档集合）。
+    #: 现在算出来的和它不一样 = 来源变了，界面上提示"可重新生成"
+    source_fp: Mapped[str] = mapped_column(String(40), default="")
     ns: Mapped[str] = mapped_column(String(16), default="", index=True)
     #: 目录名（= ns 下的叶子目录名，通常是名字的 slug）
     slug: Mapped[str] = mapped_column(String(120), default="")

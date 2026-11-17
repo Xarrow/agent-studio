@@ -795,6 +795,27 @@ async def knowledge_graph(limit_docs: int = Query(default=60, ge=1, le=200), ses
         for doc_id in hits:
             edges.append({"from": f"skill:{s.id}", "to": f"doc:{doc_id}", "kind": "沉淀自"})
 
+    # 标签层：文档 → 标签（只画已采纳的关系），标签 → 技能（skill.source_tag_ids）
+    from ..knowledge.models import DocTag, DocumentTag
+
+    links = (
+        await session.execute(
+            select(DocumentTag, DocTag)
+            .join(DocTag, DocTag.id == DocumentTag.tag_id)
+            .where(DocumentTag.status == "accepted")
+            .limit(400)
+        )
+    ).all()
+    for link, tag in links:
+        if link.doc_id not in doc_ids:
+            continue
+        add("tag", tag.id, tag.name)
+        edges.append({"from": f"doc:{link.doc_id}", "to": f"tag:{tag.id}", "kind": "打标签"})
+    for s in skills:
+        for tid in list(getattr(s, "source_tag_ids", None) or []):
+            add("skill", s.id, s.name, ns=getattr(s, "ns", "") or "")
+            edges.append({"from": f"tag:{tid}", "to": f"skill:{s.id}", "kind": "生成"})
+
     for a in agents:
         names = {str(n) for n in ((a.definition or {}).get("skills") or [])}
         if not names:

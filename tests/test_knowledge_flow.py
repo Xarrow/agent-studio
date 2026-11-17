@@ -182,3 +182,43 @@ async def test_召回面板给出四个口径的数(client, tmp_path, monkeypatc
     # 面板里的比率必须是 0~1 的数，不是百分比字符串
     assert 0.0 <= got["docs"]["rate"] <= 1.0
     assert 0.0 <= got["tags"]["rate"] <= 1.0
+
+
+async def test_来源变化后技能标记为过时(client, tmp_path, monkeypatch):
+    """发布时记来源指纹；文档出新版本后 /api/skills 要标 source_stale。"""
+    from agent_studio.config import settings
+    from agent_studio.db import SessionLocal
+    from agent_studio.knowledge.models import SkillDraft
+
+    monkeypatch.setattr(settings, "work_dir", tmp_path)
+    doc = await _upload(client, "变更规范.md", "# 变更\n\n第一条 先评估影响。")
+    await _wait_ready(client, doc["id"])
+
+    made = await client.post("/api/knowledge/skill-drafts", json={"doc_ids": [doc["id"]]})
+    assert made.status_code == 201, made.text
+    draft_id = made.json()["draft"]["id"]
+    async with SessionLocal() as s:
+        row = await s.get(SkillDraft, draft_id)
+        row.name = "变更评估流程"
+        row.description = "改需求前先评估影响"
+        row.body = "## 适用场景\n需求变更\n\n## 步骤\n1. 评估影响\n"
+        await s.commit()
+    pub = await client.post(f"/api/knowledge/skill-drafts/{draft_id}/publish")
+    assert pub.status_code == 200, pub.text
+    skill_id = pub.json()["skill_id"]
+
+    rows = (await client.get("/api/skills")).json()
+    mine = next(r for r in rows if r["id"] == skill_id)
+    assert mine["source_stale"] is False, "刚发布不该是过时"
+
+    # 出新版本 → 指纹变化
+    r = await client.post(
+        f"/api/knowledge/documents/{doc['id']}/versions",
+        files={"file": ("变更规范.md", _md("# 变更\n\n第一条 先评估影响。\n\n第二条 通知相关方。"), "text/markdown")},
+    )
+    assert r.status_code == 201
+    await _wait_ready(client, doc["id"])
+
+    rows2 = (await client.get("/api/skills")).json()
+    mine2 = next(r for r in rows2 if r["id"] == skill_id)
+    assert mine2["source_stale"] is True, "来源出了新版本，应标过时"

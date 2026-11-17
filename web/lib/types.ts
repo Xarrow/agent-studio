@@ -317,7 +317,10 @@ export interface Skill {
   source: Record<string, unknown>;
   content: string;
   files: Record<string, string>;
+  /** 来源在生成之后变过（文档出新版本 / 标签下加了文档） */
+  source_stale?: boolean;
   /** 列表接口瘦身：正文/附件全文不回传，只报附件数（详情接口才有全文） */
+
   files_count?: number;
   created_at: number;
   updated_at: number;

@@ -20,7 +20,7 @@ import { useFeedback } from "@/components/ui/feedback";
 
 interface GNode {
   id: string;
-  kind: "agent" | "skill" | "doc" | "category";
+  kind: "agent" | "skill" | "doc" | "category" | "tag";
   label: string;
 }
 interface GEdge {
@@ -30,10 +30,11 @@ interface GEdge {
 }
 
 const COLUMNS: { kind: GNode["kind"]; title: string }[] = [
-  { kind: "agent", title: "助手" },
-  { kind: "skill", title: "技能" },
-  { kind: "doc", title: "文档" },
   { kind: "category", title: "分类" },
+  { kind: "doc", title: "文档" },
+  { kind: "tag", title: "标签" },
+  { kind: "skill", title: "技能" },
+  { kind: "agent", title: "助手" },
 ];
 
 const NODE_W = 168;
@@ -112,6 +113,7 @@ export function KnowledgeGraph() {
     skill: "var(--color-ok, #16a34a)",
     doc: "var(--color-text-2)",
     category: "var(--color-warn, #d97706)",
+    tag: "var(--color-accent, #2563eb)",
   };
 
   return (

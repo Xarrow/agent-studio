@@ -242,6 +242,29 @@ async def sources_browse(sid: str, session: AsyncSession = Depends(get_session))
 async def grouped(session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     """按仓库来源聚合的列表（父=来源，子=技能）。界面默认用它，平铺视图仍用 /api/skills。"""
     groups = await service.grouped_skills(session)
+    # 给每个技能带上「来源是否已变化」—— 分组视图是默认视图，chip 得在这里也能显示
+    try:
+        from ..knowledge.fingerprint import stale_map
+        from ..models import Skill
+
+        rows = list((await session.execute(select(Skill))).scalars())
+        flags = await stale_map(session, rows)
+        def _flag(k: Any) -> Any:
+            sid = k.get("id", "") if isinstance(k, dict) else getattr(k, "id", "")
+            val = flags.get(sid, False)
+            if isinstance(k, dict):
+                k["source_stale"] = val
+            else:
+                setattr(k, "source_stale", val)
+            return k
+
+        for g in groups:
+            for k in g.get("skills", []):
+                _flag(k)
+    except Exception:  # noqa: BLE001 —— 统计失败不该让技能列表打不开
+        import logging
+
+        logging.getLogger(__name__).warning("分组视图来源指纹失败", exc_info=True)
     return {"groups": groups, "total": sum(g["counts"]["installed"] for g in groups)}
 
 

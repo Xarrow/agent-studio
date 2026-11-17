@@ -594,6 +594,18 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
                         </span>
                       );
                     })()}
+                    {s.source_stale && (
+                      <span
+                        className="shrink-0 rounded px-1 py-[1px] text-[10.5px]"
+                        title="来源文档出了新版本，或所属标签下加了新文档 —— 可到知识中心按该标签重新生成"
+                        style={{
+                          background: "color-mix(in srgb, var(--color-warn, #d97706) 14%, transparent)",
+                          color: "var(--color-warn, #d97706)",
+                        }}
+                      >
+                        来源已变化
+                      </span>
+                    )}
                     {s.pinned && (
                       <span title="已固定：自动整理不会动它" className="shrink-0" style={{ color: "var(--color-accent)" }}>
                         <IconPin size={12} />
@@ -1725,6 +1737,18 @@ function GroupedSkills({
                     <button className="min-w-0 flex-1 text-left" onClick={() => onOpen(k.id)} title={k.path || k.name}>
                       <div className="flex items-center gap-1.5">
                         <span className="truncate text-[12.5px]">{k.name}</span>
+                        {(k as unknown as { source_stale?: boolean }).source_stale ? (
+                          <span
+                            className="shrink-0 rounded px-1 py-[1px] text-[10px]"
+                            title="来源文档出了新版本，或所属标签下加了新文档 —— 可到知识中心按该标签重新生成"
+                            style={{
+                              background: "color-mix(in srgb, var(--color-warn, #d97706) 14%, transparent)",
+                              color: "var(--color-warn, #d97706)",
+                            }}
+                          >
+                            来源已变化
+                          </span>
+                        ) : null}
                         <span
                           className="shrink-0 rounded px-1 py-[1px] text-[10px]"
                           style={{ background: "var(--bg-hover)", color: "var(--color-text-3)" }}

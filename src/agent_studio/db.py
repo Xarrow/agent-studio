@@ -189,6 +189,7 @@ _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     # 知识中心溯源：技能来自哪些文档
     ("skill", "source_doc_ids", "source_doc_ids JSON"),
     ("skill", "source_tag_ids", "source_tag_ids JSON"),
+    ("skill", "source_fp", "source_fp VARCHAR(40) DEFAULT ''"),
     # 知识库流程：软删与快照键（快照不再靠文件名约定猜）
     ("doc", "deleted_at", "deleted_at INTEGER"),
     ("doc", "snapshot_key", "snapshot_key VARCHAR(600) DEFAULT ''"),

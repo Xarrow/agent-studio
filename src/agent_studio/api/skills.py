@@ -53,6 +53,7 @@ _FRONTMATTER = re.compile(r"^---\s*\n(.*?)\n---\s*\n?", re.DOTALL)
 def to_read(row: Skill) -> SkillRead:
     return SkillRead(
         source_doc_ids=list(getattr(row, "source_doc_ids", None) or []),
+        source_stale=bool(getattr(row, "_source_stale", False)),
         id=row.id,
         name=row.name,
         description=row.description or "",
@@ -83,6 +84,8 @@ def to_read_lite(row: Skill) -> SkillRead:
     列表响应从 3MB 降到 <10KB。
     """
     return SkillRead(
+        source_doc_ids=list(getattr(row, "source_doc_ids", None) or []),
+        source_stale=bool(getattr(row, "_source_stale", False)),
         id=row.id,
         name=row.name,
         description=row.description or "",
@@ -135,6 +138,15 @@ def parse_skill_md(text: str, fallback_name: str) -> tuple[str, str]:
 @router.get("", response_model=list[SkillRead])
 async def list_skills(session: AsyncSession = Depends(get_session)) -> list[SkillRead]:
     rows = (await session.execute(select(Skill).order_by(Skill.updated_at.desc()))).scalars().all()
+    # 来源是否变过（文档出新版本、标签下加了文档）—— 一次批量算，避免 N+1
+    try:
+        from ..knowledge.fingerprint import stale_map
+
+        flags = await stale_map(session, list(rows))
+        for r in rows:
+            setattr(r, "_source_stale", flags.get(r.id, False))
+    except Exception:  # noqa: BLE001 —— 统计失败不该让技能列表打不开
+        logger.warning("计算技能来源指纹失败（忽略）", exc_info=True)
     # 列表瘦身：正文/附件全文只在详情接口回（3MB → KB 级，公网不再卡 5~10 秒）
     return [to_read_lite(r) for r in rows]
 

@@ -130,6 +130,15 @@ export function SkillDetailPanel({
               },
             ]
           : []),
+        ...(skill.source_stale
+          ? [
+              {
+                icon: <IconFile size={13} />,
+                text: "来源已变化",
+                title: "来源文档出了新版本、或所属标签下加了新文档；可到知识中心按该标签重新生成",
+              },
+            ]
+          : []),
         ...(typeof skill.source?.repo === "string" && skill.source.repo
           ? [
               {
