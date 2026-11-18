@@ -23,6 +23,8 @@ dependencies = [
     "python-pptx>=1.0.2",
     # 本地向量化（纯 ONNX，不需要 torch/node）
     "fastembed>=0.4",
+    # 关键词索引：嵌入式 BM25（进程内，无服务；装不上时会自动退回 SQL LIKE）
+    "zvec>=0.8.1",
     # 只用 async 引擎：带上 [asyncio] extra 才会装上 greenlet。
     # 不写 extra 时 SQLAlchemy 的 greenlet marker 不含 platform_machine=='arm64'，
     # macOS（Apple Silicon）上会被判为"不需要"，一查库就报 greenlet is required。

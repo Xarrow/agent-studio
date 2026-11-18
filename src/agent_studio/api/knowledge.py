@@ -298,6 +298,12 @@ async def delete_document(
                 service.provider_of(cfg).delete(key)
             except storage.StorageError:
                 logger.warning("删除原件失败（记录照删）：%s", key)
+    try:
+        from ..knowledge import index as _zidx
+
+        await _zidx.delete_document(doc_id)
+    except Exception:  # noqa: BLE001
+        logger.info("清理 zvec 索引失败（忽略）：%s", doc_id, exc_info=True)
     await session.execute(delete(DocChunk).where(DocChunk.doc_id == doc_id))
     await session.execute(delete(DocumentVersion).where(DocumentVersion.doc_id == doc_id))
     await session.execute(delete(DocumentTag).where(DocumentTag.doc_id == doc_id))

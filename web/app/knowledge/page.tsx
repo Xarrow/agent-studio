@@ -1777,9 +1777,17 @@ function RecallSection() {
   const [open, setOpen] = useState<"" | "docs" | "tags">("");
   const [probe, setProbe] = useState("");
   const [probing, setProbing] = useState(false);
+  const [idx, setIdx] = useState<{ ready: boolean; docs: number; chunks: number; available: boolean; reason?: string } | null>(null);
   const [probeResult, setProbeResult] = useState<
     { items: { id: string; name: string; snippet: string; matched_path: string }[]; latency_ms: number } | null
   >(null);
+
+  useEffect(() => {
+    api
+      .knowledgeIndexStatus()
+      .then((got) => setIdx(got))
+      .catch(() => setIdx(null));
+  }, []);
 
   const runProbe = async () => {
     setProbing(true);
@@ -1845,6 +1853,11 @@ function RecallSection() {
             <button className="btn btn-sm" type="button" disabled={probing || !probe.trim()} onClick={() => void runProbe()}>
               {probing ? "查…" : "试一下"}
             </button>
+            {idx ? (
+              <span className="text-[11px]" style={{ color: idx.available ? "var(--color-text-3)" : "var(--color-warn, #d97706)" }}>
+                {idx.available ? `BM25 索引：${idx.chunks} 块 / ${idx.docs} 份` : "索引不可用（关键词走 SQL LIKE）"}
+              </span>
+            ) : null}
             {probeResult ? (
               <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
                 {probeResult.items.length} 条 · {probeResult.latency_ms}ms

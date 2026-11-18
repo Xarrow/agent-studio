@@ -197,6 +197,15 @@ async def parse_doc(session: AsyncSession, doc_id: str) -> Doc | None:
     doc.parsed = parsed.summary(int((time.time() - stamp) * 1000))
     doc.updated_at = int(time.time() * 1000)
     await session.commit()
+    # 写完正文顺手更新关键词索引（索引只是加速层，失败不影响文档可用）
+    try:
+        from . import index as _zidx
+
+        await _zidx.upsert_document(session, doc)
+    except Exception:  # noqa: BLE001
+        import logging as _log
+
+        _log.getLogger(__name__).info("写 zvec 索引失败（文档仍可用）", exc_info=True)
     await session.refresh(doc)
     return doc
 
@@ -267,7 +276,20 @@ async def hybrid_search(
     text = (q or "").strip()
     if not text:
         return []
-    like = await search(session, text, limit=limit * 2, status=status)
+    like: list[dict[str, Any]] = []
+    try:
+        from . import index as _zidx
+
+        like = await _zidx.search(session, text, limit=limit * 2)
+        if status:
+            like = [x for x in like if x.get("status") == status]
+    except Exception:  # noqa: BLE001 —— zvec 不可用/索引坏了：退回 SQL LIKE
+        import logging as _log
+
+        _log.getLogger(__name__).info("zvec 关键词路不可用，退回 SQL", exc_info=True)
+        like = []
+    if not like:
+        like = await search(session, text, limit=limit * 2, status=status)
     try:
         vec = await _emb.search_vector(session, text, limit=limit * 2)
     except Exception:  # noqa: BLE001 —— 向量路出问题不该让检索整体失败

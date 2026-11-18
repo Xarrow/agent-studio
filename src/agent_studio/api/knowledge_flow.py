@@ -483,6 +483,34 @@ async def skill_from_doc(
     return await create_skill_draft({**body, "doc_ids": [doc_id]}, session)
 
 
+@router.get("/index/status")
+async def index_status(session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """关键词索引（zvec BM25）的状态：可用 / 降级 / 条数。"""
+    from ..knowledge import index as _zidx
+
+    info = _zidx.status()
+    try:
+        import zvec  # noqa: F401
+
+        info["available"] = True
+    except Exception:  # noqa: BLE001
+        info["available"] = False
+        info.setdefault("reason", "没装 zvec（检索仍在用 SQL LIKE）")
+    return info
+
+
+@router.post("/index/rebuild")
+async def index_rebuild(session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """从 doc_chunk 全量重建关键词索引（换机器、索引损坏、批量导入后用）。"""
+    from ..knowledge import index as _zidx
+
+    try:
+        got = await _zidx.rebuild(session)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, f"重建失败：{exc}"[:300]) from exc
+    return {"ok": True, **got}
+
+
 @router.post("/recall/probe")
 async def recall_probe(
     payload: dict[str, Any], session: AsyncSession = Depends(get_session)

@@ -613,6 +613,12 @@ export const api = {
     post<{ skill_id: string; name: string }>(`/api/knowledge/skill-drafts/${id}/publish`, {}),
   knowledgeDiscardDraft: (id: string) =>
     post<{ ok: boolean }>(`/api/knowledge/skill-drafts/${id}/discard`, {}),
+  knowledgeIndexStatus: () =>
+    request<{ ready: boolean; docs: number; chunks: number; available: boolean; reason?: string }>(
+      "/api/knowledge/index/status",
+    ),
+  knowledgeIndexRebuild: () =>
+    post<{ ok: boolean; docs: number; chunks: number }>("/api/knowledge/index/rebuild", {}),
   knowledgeRecall: () => request<RecallStats>("/api/knowledge/recall"),
   knowledgeMigrate: (p: { from_id?: string; to_id: string; keep_source?: boolean }) =>
     post<{ job: KnowledgeMigration }>("/api/knowledge/storage/migrate", p),
