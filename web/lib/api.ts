@@ -585,6 +585,8 @@ export const api = {
     post<{ ok: boolean; name: string }>(`/api/knowledge/documents/${id}/tags/${tagId}/accept`, {}),
   knowledgeRemoveDocTag: (id: string, tagId: string) =>
     request<void>(`/api/knowledge/documents/${id}/tags/${tagId}`, { method: "DELETE" }),
+  knowledgeMergeTag: (id: string, intoId: string) =>
+    post<{ moved: number; into: string }>(`/api/knowledge/tags/${id}/merge`, { into_id: intoId }),
   knowledgeTagUsage: () =>
     request<{ items: { id: string; name: string; origin: string; doc_count: number }[] }>(
       "/api/knowledge/tags/usage",

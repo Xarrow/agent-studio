@@ -1273,6 +1273,7 @@ function TagsSection({
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [usage, setUsage] = useState<{ id: string; name: string; origin: string; doc_count: number }[]>([]);
+  const [merging, setMerging] = useState<{ id: string; into: string } | null>(null);
 
   const loadUsage = useCallback(async () => {
     try {
@@ -1362,6 +1363,55 @@ function TagsSection({
                       >
                         生成 Skill
                       </button>
+                      {merging?.id === t.id ? (
+                        <>
+                          <select
+                            className="input h-7 w-32 text-[11px]"
+                            value={merging.into}
+                            onChange={(e) => setMerging({ id: t.id, into: e.target.value })}
+                            aria-label="合并到哪个标签"
+                          >
+                            <option value="">合并到…</option>
+                            {usage
+                              .filter((x) => x.id !== t.id)
+                              .map((x) => (
+                                <option key={x.id} value={x.id}>
+                                  {x.name}
+                                </option>
+                              ))}
+                          </select>
+                          <button
+                            className="btn btn-sm"
+                            type="button"
+                            disabled={!merging.into}
+                            onClick={async () => {
+                              try {
+                                const got = await api.knowledgeMergeTag(t.id, merging.into);
+                                fb.success(`已合并到「${got.into}」（移动 ${got.moved} 份文档）`);
+                                setMerging(null);
+                                await onChanged();
+                                await loadUsage();
+                              } catch (e) {
+                                fb.error("合并失败", e instanceof Error ? e.message : String(e));
+                              }
+                            }}
+                          >
+                            确认
+                          </button>
+                          <button className="btn btn-sm" type="button" onClick={() => setMerging(null)}>
+                            取消
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          className="btn btn-sm"
+                          type="button"
+                          title="把同义标签并成一个（文档关系会一起搬过去）"
+                          onClick={() => setMerging({ id: t.id, into: "" })}
+                        >
+                          合并
+                        </button>
+                      )}
                       <button
                         className="btn btn-sm"
                         type="button"

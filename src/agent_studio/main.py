@@ -145,11 +145,27 @@ async def lifespan(_app: FastAPI):
     # **执行分发器**：所有执行都由它按并发上限取走（pending 就是队列）——
     # 重启后没跑完的单步执行会被它捡起来续跑（见 runner/dispatcher.py）。
     dispatcher_task = asyncio.create_task(dispatcher_loop())
+    # **回收站保留策略**：软删超过 30 天的文档自动彻底删除（原件 + 分块 + 索引）。
+    # 起在进程内而不是 cron：策略要跟着部署走，别人机器上不会有我们的定时任务。
+    async def _trash_sweeper() -> None:
+        while True:
+            try:
+                from .api.knowledge_flow import purge_expired_trash
+
+                gone = await purge_expired_trash()
+                if gone:
+                    logger.info("回收站清理：彻底删除 %s 份过期文档", gone)
+            except Exception:  # noqa: BLE001
+                logger.warning("回收站清理失败（下轮再试）", exc_info=True)
+            await asyncio.sleep(6 * 3600)
+
+    trash_task = asyncio.create_task(_trash_sweeper())
     try:
         yield
     finally:
         scheduler.cancel()
         dispatcher_task.cancel()
+        trash_task.cancel()
         logger.info("Agent Studio 关闭")
 
 

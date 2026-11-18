@@ -259,3 +259,37 @@ async def test_粘贴入库_自动关键词_试打召回(client, tmp_path, monke
     body = probe.json()
     assert "latency_ms" in body and isinstance(body["items"], list)
     assert any(x["id"] == doc["id"] for x in body["items"]), "同主题查询应命中刚入库的文档"
+
+
+async def test_回收站超期自动彻底删除(client, tmp_path, monkeypatch):
+    """软删超过 30 天 → 清理任务真删记录与原件。"""
+    import os
+
+    from agent_studio.config import settings
+    from agent_studio.api.knowledge_flow import purge_expired_trash
+    from agent_studio.db import SessionLocal
+    from agent_studio.knowledge.models import Doc
+
+    monkeypatch.setattr(settings, "work_dir", tmp_path)
+    doc = await _upload(client, "过期.md", "# 过期\n\n这份文档会被彻底清掉。")
+    await _wait_ready(client, doc["id"])
+    detail = (await client.get(f"/api/knowledge/documents/{doc['id']}")).json()
+    path = detail["storage_path"]
+
+    assert (await client.delete(f"/api/knowledge/documents/{doc['id']}")).status_code == 204
+    # 把删除时间往前拨 40 天
+    async with SessionLocal() as s:
+        row = await s.get(Doc, doc["id"])
+        row.deleted_at = row.deleted_at - 40 * 86_400_000
+        await s.commit()
+
+    assert await purge_expired_trash() >= 1
+    assert (await client.get(f"/api/knowledge/documents/{doc['id']}")).status_code == 404
+    assert not os.path.exists(path), "原件应被清掉"
+
+    # 没超期的不动
+    doc2 = await _upload(client, "未过期.md", "# 未过期\n\n这份还要留着。")
+    await _wait_ready(client, doc2["id"])
+    await client.delete(f"/api/knowledge/documents/{doc2['id']}")
+    await purge_expired_trash()
+    assert (await client.get(f"/api/knowledge/documents/{doc2['id']}")).status_code == 200

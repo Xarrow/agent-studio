@@ -1261,3 +1261,52 @@ async def _rerun_pipeline(doc_id: str) -> None:
                 await s.commit()
         except Exception:  # noqa: BLE001
             logger.warning("自动重跑失败：%s", doc_id, exc_info=True)
+
+
+#: 回收站保留天数（软删后多久自动彻底删除）
+TRASH_TTL_DAYS = 30
+
+
+async def purge_expired_trash(ttl_days: int = TRASH_TTL_DAYS) -> int:
+    """清掉回收站里超过保留期的文档（含原件）。返回删除条数。
+
+    为什么放在进程内而不是 cron：这是**数据保留策略**，跟服务生命周期绑着更可靠；
+    平台在别人机器上部署时没有我们的 cron，策略要自己带着走。
+    """
+    from ..knowledge import index as _zidx
+    from ..knowledge import service as _svc
+
+    cutoff = _now() - ttl_days * 86_400_000
+    removed = 0
+    from ..db import SessionLocal
+
+    async with SessionLocal() as session:
+        rows = (
+            await session.execute(
+                select(Doc).where(Doc.deleted_at.is_not(None), Doc.deleted_at < cutoff)
+            )
+        ).scalars().all()
+        for doc in rows:
+            try:
+                cfg = await session.get(StorageConfig, doc.storage_id) if doc.storage_id else None
+                cfg = cfg or await _svc.default_storage(session)
+                prov = _svc.provider_of(cfg)
+                for key in {doc.storage_key, getattr(doc, "snapshot_key", "")} - {""}:
+                    try:
+                        prov.delete(key)
+                    except Exception:  # noqa: BLE001
+                        pass
+                try:
+                    await _zidx.delete_document(doc.id)
+                except Exception:  # noqa: BLE001
+                    pass
+                await session.execute(sa_delete(DocChunk).where(DocChunk.doc_id == doc.id))
+                await session.execute(sa_delete(DocumentVersion).where(DocumentVersion.doc_id == doc.id))
+                await session.execute(sa_delete(DocumentTag).where(DocumentTag.doc_id == doc.id))
+                await session.delete(doc)
+                await session.commit()
+                removed += 1
+            except Exception:  # noqa: BLE001 —— 单份失败不该中断整批
+                logger.warning("清理回收站失败：%s", doc.id, exc_info=True)
+                await session.rollback()
+    return removed
