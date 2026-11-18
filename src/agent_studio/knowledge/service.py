@@ -251,3 +251,51 @@ async def search(
         if len(seen) >= limit:
             break
     return list(seen.values())
+
+
+async def hybrid_search(
+    session: AsyncSession, q: str, *, limit: int = 10, status: str = ""
+) -> list[dict[str, Any]]:
+    """关键词 + 向量两路检索，按 RRF 融合。
+
+    为什么要融合而不是二选一：关键词管"词对得上"（条款号、金额、专有名词），
+    向量管"意思近但词不一样"（账期 ↔ 付款期限）。单独任何一路都有明确失败场景。
+    没有配向量化时自动退化成纯关键词，调用方不用分支。
+    """
+    from . import embedding as _emb
+
+    text = (q or "").strip()
+    if not text:
+        return []
+    like = await search(session, text, limit=limit * 2, status=status)
+    try:
+        vec = await _emb.search_vector(session, text, limit=limit * 2)
+    except Exception:  # noqa: BLE001 —— 向量路出问题不该让检索整体失败
+        vec = []
+    if status:
+        vec = [v for v in vec if v.get("status") == status]
+
+    if not vec:
+        return like[:limit]
+
+    K = 60.0
+    fused: dict[str, dict[str, Any]] = {}
+    for rank, row in enumerate(like):
+        item = dict(row)
+        item["_score"] = item.get("_score", 0.0) + 1.0 / (K + rank)
+        item["matched_path"] = "keyword"
+        fused[row["id"]] = item
+    for rank, row in enumerate(vec):
+        got = fused.get(row["id"])
+        if got is None:
+            item = dict(row)
+            item["_score"] = 1.0 / (K + rank)
+            item["matched_path"] = "vector"
+            fused[row["id"]] = item
+        else:
+            got["_score"] += 1.0 / (K + rank)
+            got["matched_path"] = "both"
+    out = sorted(fused.values(), key=lambda x: x["_score"], reverse=True)
+    for row in out:
+        row["score"] = round(float(row.pop("_score", 0.0)), 4)
+    return out[:limit]

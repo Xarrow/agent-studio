@@ -287,7 +287,21 @@ async def embed_status(session: AsyncSession = Depends(get_session)) -> dict[str
             select(func.count()).select_from(Doc).where(Doc.deleted_at.is_(None))
         )
     ).scalar_one()
-    return {**cfg, "embedded_docs": int(covered), "total_docs": int(total)}
+    from ..knowledge.models import DocEmbedding
+
+    models = {
+        r[0]
+        for r in (await session.execute(select(DocEmbedding.model).distinct())).all()
+        if r[0]
+    }
+    mismatch = bool(cfg["configured"] and models and cfg["model"] not in models)
+    return {
+        **cfg,
+        "embedded_docs": int(covered),
+        "total_docs": int(total),
+        "index_models": sorted(models),
+        "model_mismatch": mismatch,
+    }
 
 
 @router.post("/documents/{doc_id}/embed")

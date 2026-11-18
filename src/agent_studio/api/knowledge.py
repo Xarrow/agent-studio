@@ -157,7 +157,7 @@ async def search_docs(
     from ..knowledge.models import RecallLog
 
     stamp = _t.time()
-    hits = await service.search(session, q, limit=limit)
+    hits = await service.hybrid_search(session, q, limit=limit)
     matched = "name" if any(str(q).lower() in h["name"].lower() for h in hits) else ("body" if hits else "none")
     session.add(
         RecallLog(

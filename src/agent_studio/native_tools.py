@@ -867,7 +867,7 @@ async def _knowledge_search(query: str, top_k: int = 5) -> str:
     stamp = _t.time()
     async with SessionLocal() as session:
         for term in terms:
-            for hit in await kb.search(session, term, limit=k, status="ready"):
+            for hit in await kb.hybrid_search(session, term, limit=k, status="ready"):
                 merged.setdefault(hit["id"], hit)
         hits = list(merged.values())[:k]
         # 埋点：召回率面板的"助手检索命中"只认这条

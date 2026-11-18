@@ -30,8 +30,12 @@ from .models import Doc, DocChunk, DocEmbedding
 
 logger = logging.getLogger(__name__)
 
-#: 与 tool_search 共用同一个 embedding 端点配置
-EMBED_SETTING_KEY = "toolsearch_embedding"
+#: 知识库自己的向量化配置（provider=local 时走本地 ONNX 模型，不需要 key）
+EMBED_SETTING_KEY = "knowledge_embedding"
+#: 回落：早期只有 tool_search 的 HTTP 配置，没单独配知识库就沿用它
+FALLBACK_SETTING_KEY = "toolsearch_embedding"
+#: 本地默认模型：中文小模型，512 维，约 95MB，纯 ONNX（不需要 torch）
+LOCAL_DEFAULT_MODEL = "BAAI/bge-small-zh-v1.5"
 #: 单次请求送多少块（多数 embedding 端点单请求上限 2048 token × N，16 块稳）
 BATCH = 16
 #: 单块送模型的字符上限（超长会 400，切一段够语义了）
@@ -39,8 +43,14 @@ MAX_CHARS = 2000
 
 
 async def embed_config(session: AsyncSession) -> dict[str, Any]:
-    """读出可用配置；没配就是 ``{"configured": False}``（界面据此提示去配置）。"""
+    """读出可用配置；没配就是 ``{"configured": False}``（界面据此提示去配置）。
+
+    两档：``provider=local`` 用本地 ONNX 模型（无需 key、无需联网），
+    否则按 OpenAI 兼容端点（base_url + model + key）。
+    """
     raw = await get_setting(session, EMBED_SETTING_KEY, None)
+    if not raw:
+        raw = await get_setting(session, FALLBACK_SETTING_KEY, None)
     conf: dict[str, Any] = {}
     if isinstance(raw, str) and raw.strip():
         try:
@@ -49,6 +59,9 @@ async def embed_config(session: AsyncSession) -> dict[str, Any]:
             conf = {}
     elif isinstance(raw, dict):
         conf = raw
+    if str(conf.get("provider") or "").strip() == "local":
+        model = str(conf.get("model") or LOCAL_DEFAULT_MODEL).strip() or LOCAL_DEFAULT_MODEL
+        return {"configured": True, "provider": "local", "base_url": "", "model": model, "has_key": False}
     base_url = str(conf.get("base_url") or "").strip().rstrip("/")
     model = str(conf.get("model") or "").strip()
     api_key = str(conf.get("api_key") or "").strip()
@@ -63,13 +76,62 @@ async def embed_config(session: AsyncSession) -> dict[str, Any]:
                 api_key = ""
     return {
         "configured": bool(base_url and model and api_key),
+        "provider": "http",
         "base_url": base_url,
         "model": model,
         "has_key": bool(api_key),
     }
 
 
-async def _client_embed(base_url: str, api_key: str, model: str, texts: list[str]) -> list[list[float]]:
+#: 本地模型单例。加载一次约 0.4 秒、常驻约 200MB，别每个请求都建。
+_LOCAL_MODELS: dict[str, Any] = {}
+#: 本地推理的批大小。实测一次塞 200 条长文本峰值 3.5GB，分批 16 后压回 375MB。
+LOCAL_BATCH = 16
+
+
+def _local_cache_dir() -> str:
+    """模型缓存目录：放在 data/work 下（跟数据一起备份），不能用临时目录。
+
+    踩过的坑：fastembed 默认缓存到 TMPDIR，而 Hermes/系统清理会把 scratch 目录
+    24 小时清掉 —— 第二天整个模型重新下 5 分钟。
+    """
+    from pathlib import Path as _Path
+
+    from ..config import settings as _settings
+
+    base = _Path(str(getattr(_settings, "work_dir", "data/work"))) / "models" / "fastembed"
+    base.mkdir(parents=True, exist_ok=True)
+    return str(base)
+
+
+def _local_model(model: str):
+    if model in _LOCAL_MODELS:
+        return _LOCAL_MODELS[model]
+    from fastembed import TextEmbedding  # 懒加载：没配本地模型的环境不需要这个依赖
+
+    # threads=2：6GB 小机器上别让 onnxruntime 抢满 4 核（实测会拖慢同一台机器上的 API）
+    inst = TextEmbedding(model, cache_dir=_local_cache_dir(), threads=2)
+    _LOCAL_MODELS[model] = inst
+    return inst
+
+
+def _local_embed(model: str, texts: list[str]) -> list[list[float]]:
+    inst = _local_model(model)
+    out: list[list[float]] = []
+    for i in range(0, len(texts), LOCAL_BATCH):
+        for vec in inst.embed(texts[i : i + LOCAL_BATCH]):
+            out.append([float(x) for x in vec])
+    return out
+
+
+async def _client_embed(
+    base_url: str, api_key: str, model: str, texts: list[str], *, provider: str = "http"
+) -> list[list[float]]:
+    if provider == "local":
+        import asyncio
+
+        return await asyncio.to_thread(_local_embed, model, texts)
+
     import httpx
 
     async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
@@ -87,20 +149,31 @@ async def _client_embed(base_url: str, api_key: str, model: str, texts: list[str
         return out
 
 
-async def embed_document(session: AsyncSession, doc: Doc) -> dict[str, Any]:
-    """把一份文档的全部分块向量化并落库。返回 {ok, chunks, dim, model} 或抛 RuntimeError。"""
+async def _resolve(session: AsyncSession) -> tuple[dict[str, Any], str]:
+    """返回 (配置, api_key)。本地模型不需要 key。"""
     conf = await embed_config(session)
-    if not conf["configured"]:
-        raise RuntimeError("还没配置 embedding 端点（设置 → 模型与服务 → 向量化端点）")
-
-    raw = await get_setting(session, EMBED_SETTING_KEY, None)
+    if not conf["configured"] or conf.get("provider") == "local":
+        return conf, ""
+    raw = await get_setting(session, EMBED_SETTING_KEY, None) or await get_setting(
+        session, FALLBACK_SETTING_KEY, None
+    )
     conf_raw = json.loads(raw) if isinstance(raw, str) and raw.strip() else (raw or {})
     api_key = str(conf_raw.get("api_key") or "").strip()
     if not api_key:
         enc = conf_raw.get("api_key_enc")
-        from ..security.crypto import decrypt
+        if enc:
+            from ..security.crypto import decrypt
 
-        api_key = decrypt(enc.encode() if isinstance(enc, str) else enc).strip()
+            api_key = decrypt(enc.encode() if isinstance(enc, str) else enc).strip()
+    return conf, api_key
+
+
+async def embed_document(session: AsyncSession, doc: Doc) -> dict[str, Any]:
+    """把一份文档的全部分块向量化并落库。返回 {ok, chunks, dim, model} 或抛 RuntimeError。"""
+    conf, api_key = await _resolve(session)
+    if not conf["configured"]:
+        raise RuntimeError("还没配置向量化方式（知识页流水线里选「本地模型」或填 API 端点）")
+    provider = str(conf.get("provider") or "http")
 
     chunks = (
         await session.execute(
@@ -124,7 +197,9 @@ async def embed_document(session: AsyncSession, doc: Doc) -> dict[str, Any]:
         for i in range(0, len(chunks), BATCH):
             batch = chunks[i : i + BATCH]
             texts = [(c.text or "")[:MAX_CHARS] or " " for c in batch]
-            vecs = await _client_embed(conf["base_url"], api_key, conf["model"], texts)
+            vecs = await _client_embed(
+                conf["base_url"], api_key, conf["model"], texts, provider=provider
+            )
             for c, v in zip(batch, vecs):
                 dim = dim or len(v)
                 session.add(
@@ -176,23 +251,35 @@ async def search_vector(
     session: AsyncSession, query: str, limit: int = 10
 ) -> list[dict[str, Any]]:
     """向量检索：返回按相似度排序的块。没配端点或没有向量就返回空（调用方退回 BM25）。"""
-    conf = await embed_config(session)
+    conf, api_key = await _resolve(session)
     if not conf["configured"]:
         return []
-    raw = await get_setting(session, EMBED_SETTING_KEY, None)
-    conf_raw = json.loads(raw) if isinstance(raw, str) and raw.strip() else (raw or {})
-    api_key = str(conf_raw.get("api_key") or "").strip()
-    if not api_key:
-        enc = conf_raw.get("api_key_enc")
-        from ..security.crypto import decrypt
-
-        api_key = decrypt(enc.encode() if isinstance(enc, str) else enc).strip()
+    provider = str(conf.get("provider") or "http")
     try:
-        qv = (await _client_embed(conf["base_url"], api_key, conf["model"], [query[:MAX_CHARS]]))[0]
+        qv = (
+            await _client_embed(
+                conf["base_url"], api_key, conf["model"], [query[:MAX_CHARS]], provider=provider
+            )
+        )[0]
     except Exception:  # noqa: BLE001 —— 检索不该因为端点抖动就 500
         logger.warning("查询向量失败（跳过向量路）", exc_info=True)
         return []
     q = array("f", qv)
+
+    # 硬护栏：只比当前模型产出的向量。跨模型余弦是"静默错"——不报错、只是排序变随机，
+    # 所以这里宁可查一次「库里到底有哪些模型」，把不一致说清楚。
+    models = {
+        r[0]
+        for r in (
+            await session.execute(select(DocEmbedding.model).distinct())
+        ).all()
+        if r[0]
+    }
+    if models and conf["model"] not in models:
+        raise RuntimeError(
+            f"已入库向量用的是 {', '.join(sorted(models))}，与当前配置 {conf['model']} 不一致；"
+            "请用同一模型重建向量（流水线里点「重建向量」）"
+        )
 
     rows = (
         await session.execute(
@@ -203,6 +290,9 @@ async def search_vector(
             .limit(20000)
         )
     ).all()
+    if not rows:
+        return []
+
     scored: list[tuple[float, DocEmbedding, Doc, DocChunk]] = []
     for emb, doc, chunk in rows:
         scored.append((_cosine(q, _unpack(emb.vec)), emb, doc, chunk))
