@@ -1827,12 +1827,17 @@ function RecallSection() {
   const [open, setOpen] = useState<"" | "docs" | "tags">("");
   const [probe, setProbe] = useState("");
   const [probing, setProbing] = useState(false);
+  const [cov, setCov] = useState<{ id: string; name: string; has_search: boolean; skills: string[] }[] | null>(null);
   const [idx, setIdx] = useState<{ ready: boolean; docs: number; chunks: number; available: boolean; reason?: string } | null>(null);
   const [probeResult, setProbeResult] = useState<
     { items: { id: string; name: string; snippet: string; matched_path: string }[]; latency_ms: number } | null
   >(null);
 
   useEffect(() => {
+    api
+      .knowledgeAgentsCoverage()
+      .then((got) => setCov(got.items ?? []))
+      .catch(() => setCov([]));
     api
       .knowledgeIndexStatus()
       .then((got) => setIdx(got))
@@ -1960,6 +1965,48 @@ function RecallSection() {
             )}
             {card("页面搜索命中", stats.search.rate, stats.search.queries ? `${stats.search.hit}/${stats.search.queries} 次` : "还没有搜索记录")}
           </div>
+
+          {cov && cov.length > 0 ? (
+            <div className="rounded-[10px] px-2.5 py-2" style={{ background: "var(--color-surface-2)" }}>
+              <div className="mb-1 text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                哪些助手能查到知识库（没挂检索工具的，召回率永远是 0）
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {cov.slice(0, 8).map((a) => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    className="rounded-full px-2 py-0.5 text-[11px]"
+                    title={a.has_search ? "已挂 knowledge_search，点一下摘掉" : "点一下挂上 knowledge_search"}
+                    style={{
+                      background: a.has_search
+                        ? "color-mix(in srgb, var(--color-accent) 14%, transparent)"
+                        : "var(--color-surface-3)",
+                      color: a.has_search ? "var(--color-accent)" : "var(--color-text-3)",
+                    }}
+                    onClick={async () => {
+                      try {
+                        const got = await api.knowledgeToggleAgentSearch(a.id, !a.has_search);
+                        setCov((prev) =>
+                          (prev ?? []).map((x) => (x.id === a.id ? { ...x, has_search: got.has_search } : x)),
+                        );
+                      } catch {
+                        /* 切换失败保持原样 */
+                      }
+                    }}
+                  >
+                    {a.has_search ? "✓ " : ""}
+                    {a.name}
+                  </button>
+                ))}
+                {cov.length > 8 ? (
+                  <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                    还有 {cov.length - 8} 个
+                  </span>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
 
           {open === "docs" ? (
             <div className="space-y-1">

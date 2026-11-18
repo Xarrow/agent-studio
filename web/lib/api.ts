@@ -615,6 +615,12 @@ export const api = {
     post<{ skill_id: string; name: string }>(`/api/knowledge/skill-drafts/${id}/publish`, {}),
   knowledgeDiscardDraft: (id: string) =>
     post<{ ok: boolean }>(`/api/knowledge/skill-drafts/${id}/discard`, {}),
+  knowledgeAgentsCoverage: () =>
+    request<{ items: { id: string; name: string; has_search: boolean; skills: string[] }[] }>(
+      "/api/knowledge/agents-coverage",
+    ),
+  knowledgeToggleAgentSearch: (id: string, enabled: boolean) =>
+    post<{ agent_id: string; has_search: boolean }>(`/api/knowledge/agents/${id}/search-tool`, { enabled }),
   knowledgeIndexStatus: () =>
     request<{ ready: boolean; docs: number; chunks: number; available: boolean; reason?: string }>(
       "/api/knowledge/index/status",

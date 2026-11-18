@@ -1310,3 +1310,72 @@ async def purge_expired_trash(ttl_days: int = TRASH_TTL_DAYS) -> int:
                 logger.warning("清理回收站失败：%s", doc.id, exc_info=True)
                 await session.rollback()
     return removed
+
+
+# --------------------------------------------------------------------------- #
+# 助手覆盖：谁能查到知识库
+# --------------------------------------------------------------------------- #
+@router.get("/agents-coverage")
+async def agents_coverage(session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """列出助手，以及它是否挂了 knowledge_search / 挂了多少技能。
+
+    为什么这个指标重要：知识库搭好但没人调它，召回率永远是 0——
+    面板上必须能一眼看到"哪些助手真的能查到"。
+    """
+    from ..models import Agent, Skill, Tool
+
+    tool = (
+        await session.execute(select(Tool).where(Tool.name == "knowledge_search"))
+    ).scalars().first()
+    tool_id = tool.id if tool else ""
+    agents = (await session.execute(select(Agent).order_by(Agent.created_at))).scalars().all()
+    skills = (await session.execute(select(Skill))).scalars().all()
+    skill_names = {s.name for s in skills}
+
+    items = []
+    for a in agents:
+        defn = a.definition or {}
+        refs = [str((t or {}).get("ref") or "") for t in (defn.get("tools") or [])]
+        mounted_skills = [n for n in (defn.get("skills") or []) if str(n) in skill_names]
+        items.append(
+            {
+                "id": a.id,
+                "name": a.name,
+                "has_search": bool(tool_id) and tool_id in refs,
+                "skills": mounted_skills,
+                "runtime": defn.get("runtime") or "agentscope",
+            }
+        )
+    # 挂了检索工具的排前面：这块的意义就是"谁真的能查到"，别让能查的排在第二页
+    items.sort(key=lambda x: (not x["has_search"], x["name"]))
+    return {"items": items, "tool_id": tool_id}
+
+
+@router.post("/agents/{agent_id}/search-tool")
+async def toggle_agent_search(
+    agent_id: str, payload: dict[str, Any], session: AsyncSession = Depends(get_session)
+) -> dict[str, Any]:
+    """给助手挂上 / 摘掉 knowledge_search（幂等）。"""
+    from ..models import Agent, Tool
+
+    agent = await session.get(Agent, agent_id)
+    if agent is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "助手不存在")
+    tool = (
+        await session.execute(select(Tool).where(Tool.name == "knowledge_search"))
+    ).scalars().first()
+    if tool is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "内置工具里还没有 knowledge_search，先同步一次内置工具")
+
+    want = bool(payload.get("enabled", True))
+    defn = dict(agent.definition or {})
+    tools = [dict(t) for t in (defn.get("tools") or [])]
+    refs = {str(t.get("ref") or "") for t in tools}
+    if want and tool.id not in refs:
+        tools.append({"ref": tool.id, "enabled": True})
+    if not want:
+        tools = [t for t in tools if str(t.get("ref") or "") != tool.id]
+    defn["tools"] = tools
+    agent.definition = defn
+    await session.commit()
+    return {"agent_id": agent.id, "has_search": want}
