@@ -222,3 +222,40 @@ async def test_来源变化后技能标记为过时(client, tmp_path, monkeypatc
     rows2 = (await client.get("/api/skills")).json()
     mine2 = next(r for r in rows2 if r["id"] == skill_id)
     assert mine2["source_stale"] is True, "来源出了新版本，应标过时"
+
+
+async def test_粘贴入库_自动关键词_试打召回(client, tmp_path, monkeypatch):
+    """一页流程的三步：粘贴 → 关键词 → 试打。向量化需要模型，这里只验不依赖模型的环节。"""
+    from agent_studio.config import settings
+
+    monkeypatch.setattr(settings, "work_dir", tmp_path)
+    text = (
+        "# 差旅报销规范\n\n第一条 出差前须提交申请。\n\n"
+        "第二条 住宿标准：一线城市每晚不超过 600 元。\n\n第三条 报销时限 15 个工作日。"
+    )
+    made = await client.post(
+        "/api/knowledge/documents/paste",
+        json={"title": "差旅报销", "text": text, "tags": ["报销"]},
+    )
+    assert made.status_code == 201, made.text
+    doc = made.json()["document"]
+    assert doc["name"].startswith("差旅报销")
+    assert "报销" in doc["tags"]
+
+    # 太短的拒掉
+    short = await client.post("/api/knowledge/documents/paste", json={"text": "太短"})
+    assert short.status_code == 422
+
+    await _wait_ready(client, doc["id"])
+    kw = await client.post(f"/api/knowledge/documents/{doc['id']}/keywords")
+    assert kw.status_code == 200, kw.text
+    names = [x["name"] for x in kw.json()["items"]]
+    assert names, "应至少抽出一个关键词"
+    assert any("报销" in n or "出差" in n or "差旅" in n for n in names), names
+
+    # 没有向量时走关键词路：用正文里确实出现的词（"报销"）来验通道
+    probe = await client.post("/api/knowledge/recall/probe", json={"query": "报销"})
+    assert probe.status_code == 200
+    body = probe.json()
+    assert "latency_ms" in body and isinstance(body["items"], list)
+    assert any(x["id"] == doc["id"] for x in body["items"]), "同主题查询应命中刚入库的文档"

@@ -129,7 +129,7 @@ async def add_version(
     doc.updated_at = _now()
     await session.commit()
 
-    asyncio.create_task(_parse_later(doc.id))
+    asyncio.create_task(_rerun_pipeline(doc.id))
     await session.refresh(doc)
     return {"document": _doc_brief(doc), "version": next_ver}
 
@@ -319,6 +319,195 @@ async def embed_one(doc_id: str, session: AsyncSession = Depends(get_session)) -
     except RuntimeError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     return {"ok": True, **got}
+
+
+
+# --------------------------------------------------------------------------- #
+# 粘贴入库
+# --------------------------------------------------------------------------- #
+@router.post("/documents/paste", status_code=status.HTTP_201_CREATED)
+async def paste_document(
+    payload: dict[str, Any], session: AsyncSession = Depends(get_session)
+) -> dict[str, Any]:
+    """贴一段文本直接入库（保 Markdown 语法；太短的拒掉，别把聊天碎片塞进知识库）。"""
+    text = str(payload.get("text") or "")
+    if len(text.strip()) < 20:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "正文太短（少于 20 字），不值得入库")
+    title = str(payload.get("title") or "").strip()[:120] or f"粘贴 {time.strftime('%m-%d %H:%M')}"
+    category = str(payload.get("category") or "未分类")
+    doc = await service.ingest_bytes(
+        session,
+        name=f"{title}.md",
+        data=text.encode("utf-8"),
+        mime="text/markdown",
+        source="paste",
+        category=category,
+        category_id=await service.resolve_category(session, category),
+    )
+    for name in payload.get("tags") or []:
+        tag = await _ensure_tag(session, str(name), origin="user")
+        session.add(DocumentTag(doc_id=doc.id, tag_id=tag.id, source="user", status="accepted"))
+        doc.tags = sorted({*(doc.tags or []), tag.name})
+    await session.commit()
+    asyncio.create_task(_parse_later(doc.id))
+    await session.refresh(doc)
+    return {"document": _doc_brief(doc)}
+
+
+# --------------------------------------------------------------------------- #
+# 关键词：向量化之后自动出候选标签（不花 30 秒等 LLM）
+# --------------------------------------------------------------------------- #
+#: 中文停用词/虚词片段：出现在候选词里就丢掉（"的""了""我们""可以"这类）
+_STOP = set(
+    "的 了 和 与 及 或 是 在 有 为 对 从 到 由 并 而 但 等 这 那 我们 你们 他们 可以 需要 "
+    "进行 通过 以及 如果 因为 所以 但是 一个 一种 没有 不是 就是 还有 什么 怎么 如何 哪些 "
+    "不超过 以上 以下 以内 以外 按 每 各 其 该 此 若 则 且 另 首次 同时 相关 有关".split()
+)
+
+
+def extract_keywords(texts: list[str], top_k: int = 8, title: str = "") -> list[tuple[str, float]]:
+    """从正文里抽候选关键词：中文 2~6 字片段 + 频次/覆盖度打分。
+
+    为什么不用 LLM：这一步在流水线里紧跟向量化，用户点完就想看到结果；
+    本地统计 <100ms，LLM 要 10~30 秒。质量不够的词由用户手动补/删。
+    """
+    import re
+    from collections import Counter
+
+    chunk_df: Counter = Counter()
+    tf: Counter = Counter()
+    for text in texts:
+        pieces = re.split(r"[^\u4e00-\u9fa5A-Za-z0-9]+", text or "")
+        seen_in_chunk: set[str] = set()
+        for piece in pieces:
+            if not piece:
+                continue
+            if re.fullmatch(r"[A-Za-z0-9]+", piece):
+                if 2 <= len(piece) <= 20:
+                    tf[piece] += 1
+                    seen_in_chunk.add(piece)
+                continue
+            for n in (2, 3, 4):
+                for i in range(len(piece) - n + 1):
+                    cand = piece[i : i + n]
+                    if cand in _STOP or any(w.startswith(cand) or cand.startswith(w) for w in _STOP):
+                        continue
+                    if any(w in cand for w in ("的", "了", "是", "在", "和", "与")):
+                        continue
+                    tf[cand] += 1
+                    seen_in_chunk.add(cand)
+        for w in seen_in_chunk:
+            chunk_df[w] += 1
+
+    total = max(1, len(texts))
+    scored: list[tuple[str, float]] = []
+    for word, count in tf.items():
+        if count < 2:
+            continue
+        df = max(1, chunk_df[word])
+        score = count * (1.0 + (total / df) ** 0.5) * (1.0 + 0.2 * (len(word) - 2))
+        if title and word in title:
+            score *= 2.5  # 标题里的词几乎一定是主题词
+        scored.append((word, round(score, 2)))
+    scored.sort(key=lambda x: (-x[1], -len(x[0])))
+    # 去冗余：短词是长词子串且分数接近时只留长的
+    out: list[tuple[str, float]] = []
+    for word, score in scored:
+        if any(word != w and word in w and score <= s * 1.15 for w, s in out):
+            continue
+        out.append((word, score))
+        if len(out) >= top_k:
+            break
+    return out
+
+
+@router.post("/documents/{doc_id}/keywords")
+async def make_keywords(
+    doc_id: str, payload: dict[str, Any] | None = None, session: AsyncSession = Depends(get_session)
+) -> dict[str, Any]:
+    """给文档产候选关键词标签（写 document_tag，status=candidate）。"""
+    doc = await session.get(Doc, doc_id)
+    if doc is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "文档不存在")
+    top_k = int(((payload or {}).get("top_k") or 8))
+    chunks = (
+        await session.execute(
+            select(DocChunk.text).where(DocChunk.doc_id == doc_id).order_by(DocChunk.ord)
+        )
+    ).scalars().all()
+    if not chunks:
+        raise HTTPException(status.HTTP_409_CONFLICT, "还没有解析文本，先等解析完成")
+    picks = extract_keywords(list(chunks), top_k=top_k, title=doc.name)
+    if not picks:
+        return {"items": [], "note": "正文太短，抽不出关键词，手动加更靠谱"}
+
+    made = []
+    for word, score in picks:
+        tag = await _ensure_tag(session, word, origin="model")
+        link = await session.get(DocumentTag, (doc_id, tag.id))
+        if link is None:
+            conf = min(0.95, 0.45 + score / 40.0)
+            session.add(
+                DocumentTag(
+                    doc_id=doc_id, tag_id=tag.id, source="model", confidence=round(conf, 2),
+                    status="candidate",
+                )
+            )
+        made.append({"tag_id": tag.id, "name": tag.name})
+    await session.commit()
+    return {"items": made, "count": len(made)}
+
+
+@router.post("/documents/{doc_id}/skill")
+async def skill_from_doc(
+    doc_id: str, payload: dict[str, Any] | None = None, session: AsyncSession = Depends(get_session)
+) -> dict[str, Any]:
+    """用这份文档（及其已采纳标签）生成一条 Skill 草稿 —— 文档页一键入口。"""
+    doc = await session.get(Doc, doc_id)
+    if doc is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "文档不存在")
+    if doc.status != "ready":
+        raise HTTPException(status.HTTP_409_CONFLICT, "还没解析完成，等解析好再生成")
+    tag_ids = list(
+        (
+            await session.execute(
+                select(DocumentTag.tag_id).where(
+                    DocumentTag.doc_id == doc_id, DocumentTag.status == "accepted"
+                )
+            )
+        ).scalars().all()
+    )
+    body = {"doc_ids": [doc_id], "tag_ids": tag_ids}
+    if payload and payload.get("agent_id"):
+        body["agent_id"] = str(payload["agent_id"])
+    return await create_skill_draft({**body, "doc_ids": [doc_id]}, session)
+
+
+@router.post("/recall/probe")
+async def recall_probe(
+    payload: dict[str, Any], session: AsyncSession = Depends(get_session)
+) -> dict[str, Any]:
+    """用一句话试打召回：返回命中列表、命中路径与延迟。"""
+    query = str(payload.get("query") or "").strip()
+    if not query:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "给一句想试的话")
+    limit = int(payload.get("limit") or 5)
+    stamp = time.time()
+    hits = await service.hybrid_search(session, query, limit=limit)
+    return {
+        "query": query,
+        "items": [
+            {
+                "id": h["id"],
+                "name": h["name"],
+                "snippet": h.get("snippet") or "",
+                "score": h.get("score"),
+                "matched_path": h.get("matched_path") or "keyword",
+            }
+            for h in hits
+        ],
+        "latency_ms": int((time.time() - stamp) * 1000),
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -1002,3 +1191,45 @@ async def _generate_skill_draft(draft_id: str, agent_id: str, text: str) -> None
         row.model = model_name
         row.error = {}
         await session.commit()
+
+
+#: 自动重跑单并发（本地 embedding 峰值 375MB，并发会把小机器打爆）
+_RERUN_LOCK = asyncio.Semaphore(1)
+
+
+async def _rerun_pipeline(doc_id: str) -> None:
+    """文档更新后重跑：解析 → 向量化 → 关键词。失败只记日志，不影响文档可用。"""
+    from ..db import SessionLocal
+    from ..knowledge.embedding import embed_document
+
+    async with _RERUN_LOCK:
+        try:
+            async with SessionLocal() as s:
+                await service.parse_doc(s, doc_id)
+            async with SessionLocal() as s:
+                doc = await s.get(Doc, doc_id)
+                if doc is not None and doc.status == "ready":
+                    try:
+                        await embed_document(s, doc)
+                    except Exception:  # noqa: BLE001 —— 没配向量化就跳过
+                        logger.info("自动重跑：跳过向量化（%s）", doc_id)
+            async with SessionLocal() as s:
+                chunks = (
+                    await s.execute(
+                        select(DocChunk.text).where(DocChunk.doc_id == doc_id).order_by(DocChunk.ord)
+                    )
+                ).scalars().all()
+                picks = extract_keywords(list(chunks), title=(doc.name if doc else ""))
+                for word, score in picks:
+                    tag = await _ensure_tag(s, word, origin="model")
+                    if await s.get(DocumentTag, (doc_id, tag.id)) is None:
+                        s.add(
+                            DocumentTag(
+                                doc_id=doc_id, tag_id=tag.id, source="model",
+                                confidence=round(min(0.95, 0.45 + score / 40.0), 2),
+                                status="candidate",
+                            )
+                        )
+                await s.commit()
+        except Exception:  # noqa: BLE001
+            logger.warning("自动重跑失败：%s", doc_id, exc_info=True)

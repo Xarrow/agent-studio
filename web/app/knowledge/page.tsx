@@ -107,6 +107,8 @@ export default function KnowledgePage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [urlOpen, setUrlOpen] = useState(false);
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasteDraft, setPasteDraft] = useState({ title: "", text: "", tags: "" });
   const [urlDraft, setUrlDraft] = useState({ url: "", name: "" });
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -244,6 +246,9 @@ export default function KnowledgePage() {
         }
         actions={
           <>
+            <button className="btn" onClick={() => setPasteOpen((v) => !v)} type="button">
+              粘贴文本
+            </button>
             <button className="btn" onClick={() => setUrlOpen((v) => !v)} type="button">
               加链接
             </button>
@@ -280,6 +285,69 @@ export default function KnowledgePage() {
           ]}
         />
       </div>
+
+      {pasteOpen ? (
+        <div className="mb-3 rounded-[12px] p-3" style={{ background: "var(--color-surface-2)" }}>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              className="input h-9 w-48 text-[12px]"
+              placeholder="标题（留空自动命名）"
+              value={pasteDraft.title}
+              onChange={(e) => setPasteDraft((d) => ({ ...d, title: e.target.value }))}
+            />
+            <input
+              className="input h-9 min-w-0 flex-1 text-[12px]"
+              placeholder="标签，逗号分隔（可留空，向量化后会自动提关键词）"
+              value={pasteDraft.tags}
+              onChange={(e) => setPasteDraft((d) => ({ ...d, tags: e.target.value }))}
+            />
+          </div>
+          <textarea
+            className="input mt-2 w-full text-[12.5px]"
+            rows={6}
+            placeholder="把正文贴进来（支持 Markdown：标题、列表、表格都保留）"
+            value={pasteDraft.text}
+            onChange={(e) => setPasteDraft((d) => ({ ...d, text: e.target.value }))}
+          />
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <button
+              className="btn btn-primary"
+              type="button"
+              disabled={busy === "paste" || pasteDraft.text.trim().length < 20}
+              onClick={async () => {
+                setBusy("paste");
+                try {
+                  const got = await api.knowledgePaste({
+                    title: pasteDraft.title.trim() || undefined,
+                    text: pasteDraft.text,
+                    category: catFilter ? catName(catFilter) : undefined,
+                    tags: pasteDraft.tags
+                      .split(/[,，、\s]+/)
+                      .map((x) => x.trim())
+                      .filter(Boolean),
+                  });
+                  fb.success(`已入库「${got.document.name}」，正在解析`);
+                  setPasteDraft({ title: "", text: "", tags: "" });
+                  setPasteOpen(false);
+                  await loadDocs();
+                } catch (e) {
+                  fb.error("粘贴入库失败", e instanceof Error ? e.message : String(e));
+                } finally {
+                  setBusy(null);
+                }
+              }}
+            >
+              入库
+            </button>
+            <button className="btn" type="button" onClick={() => setPasteOpen(false)}>
+              取消
+            </button>
+            <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+              至少 20 字；入库后点「向量化」就会自动给出关键词
+            </span>
+          </div>
+        </div>
+      ) : null}
 
       {urlOpen ? (
         <div className="mb-3 rounded-[12px] p-3" style={{ background: "var(--color-surface-2)" }}>
@@ -979,6 +1047,23 @@ function DocDetail({
           >
             下载原件
           </a>
+          <button
+            className="btn btn-sm"
+            type="button"
+            disabled={doc.status !== "ready"}
+            title={doc.status === "ready" ? "用这份文档和它的标签生成一条检索型技能草稿" : "等解析完成"}
+            onClick={async () => {
+              try {
+                const got = await api.knowledgeSkillFromDoc(doc.id);
+                fb.success(`已生成技能草稿「${got.draft.name || "生成中"}」`);
+                onChanged();
+              } catch (e) {
+                fb.error("生成技能失败", e instanceof Error ? e.message : String(e));
+              }
+            }}
+          >
+            生成技能
+          </button>
           <button
             className="btn btn-sm"
             type="button"
@@ -1690,6 +1775,23 @@ function RecallSection() {
   const { loaded, markLoaded } = useFirstLoad();
   const [stats, setStats] = useState<RecallStats | null>(null);
   const [open, setOpen] = useState<"" | "docs" | "tags">("");
+  const [probe, setProbe] = useState("");
+  const [probing, setProbing] = useState(false);
+  const [probeResult, setProbeResult] = useState<
+    { items: { id: string; name: string; snippet: string; matched_path: string }[]; latency_ms: number } | null
+  >(null);
+
+  const runProbe = async () => {
+    setProbing(true);
+    try {
+      const got = await api.knowledgeRecallProbe(probe.trim());
+      setProbeResult({ items: got.items, latency_ms: got.latency_ms });
+    } catch {
+      setProbeResult({ items: [], latency_ms: 0 });
+    } finally {
+      setProbing(false);
+    }
+  };
 
   useEffect(() => {
     api
@@ -1729,6 +1831,52 @@ function RecallSection() {
         </div>
       ) : (
         <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              className="input h-9 min-w-0 flex-1 text-[12px] sm:max-w-md"
+              placeholder="试一句：比如「住酒店能报销多少钱」"
+              value={probe}
+              onChange={(e) => setProbe(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && probe.trim()) void runProbe();
+              }}
+              aria-label="试打检索"
+            />
+            <button className="btn btn-sm" type="button" disabled={probing || !probe.trim()} onClick={() => void runProbe()}>
+              {probing ? "查…" : "试一下"}
+            </button>
+            {probeResult ? (
+              <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                {probeResult.items.length} 条 · {probeResult.latency_ms}ms
+              </span>
+            ) : null}
+          </div>
+          {probeResult ? (
+            <div className="space-y-1">
+              {probeResult.items.length === 0 ? (
+                <div className="text-[12px]" style={{ color: "var(--color-err,#dc2626)" }}>
+                  没查到——试试换个说法，或给文档补标签/补关键词
+                </div>
+              ) : (
+                probeResult.items.map((h) => (
+                  <div key={h.id} className="rounded-[8px] px-2 py-1.5" style={{ background: "var(--color-surface-2)" }}>
+                    <div className="flex items-center gap-1.5 text-[12px]">
+                      <span className="truncate">{h.name}</span>
+                      <span
+                        className="shrink-0 rounded px-1 text-[10px]"
+                        style={{ background: "var(--color-surface-3)", color: "var(--color-text-3)" }}
+                      >
+                        {h.matched_path === "both" ? "词+义" : h.matched_path === "vector" ? "语义" : "关键词"}
+                      </span>
+                    </div>
+                    <div className="truncate text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                      {h.snippet}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          ) : null}
           <div className="flex flex-wrap gap-2">
             {card(
               "文档自召回",
@@ -1951,7 +2099,16 @@ function PipelineSection({
                       setBusy(d.id);
                       try {
                         const got = await api.knowledgeEmbed(d.id);
-                        fb.success(`已向量化 ${got.chunks} 块（${got.dim} 维 · ${got.model}）`);
+                        fb.success(`已向量化 ${got.chunks} 块（${got.dim} 维 · ${got.model}），正在提关键词`);
+                        // 向量化完成立刻出候选关键词（用户点一次就把两件事做完）
+                        try {
+                          const kw = await api.knowledgeKeywords(d.id);
+                          if (kw.items?.length) {
+                            fb.success(`已提取 ${kw.items.length} 个关键词：${kw.items.map((x) => x.name).join("、")}`);
+                          }
+                        } catch {
+                          /* 关键词失败不影响向量化结果 */
+                        }
                         await load();
                         onChanged();
                       } catch (e) {

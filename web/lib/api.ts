@@ -551,6 +551,20 @@ export const api = {
   }) => post<KnowledgeStorage>("/api/knowledge/storage", p),
 
   // ── 知识库流程（版本 / 标签 / Skill 草稿 / 召回）────────────────────────
+  knowledgePaste: (p: { title?: string; text: string; category?: string; tags?: string[] }) =>
+    post<{ document: KnowledgeDoc }>("/api/knowledge/documents/paste", p),
+  knowledgeKeywords: (id: string, topK = 8) =>
+    post<{ items: { tag_id: string; name: string }[]; note?: string }>(
+      `/api/knowledge/documents/${id}/keywords`,
+      { top_k: topK },
+    ),
+  knowledgeSkillFromDoc: (id: string, agentId?: string) =>
+    post<{ draft: SkillDraft }>(`/api/knowledge/documents/${id}/skill`, agentId ? { agent_id: agentId } : {}),
+  knowledgeRecallProbe: (query: string, limit = 5) =>
+    post<{ query: string; items: { id: string; name: string; snippet: string; score?: number; matched_path: string }[]; latency_ms: number }>(
+      "/api/knowledge/recall/probe",
+      { query, limit },
+    ),
   knowledgePipeline: () =>
     request<{ items: PipelineDoc[]; embed_configured: boolean }>("/api/knowledge/pipeline"),
   knowledgeEmbed: (id: string) =>

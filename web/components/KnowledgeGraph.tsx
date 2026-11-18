@@ -50,6 +50,18 @@ function textWidth(s: string): number {
   return w;
 }
 
+const KIND_NAME: Record<string, string> = {
+  category: "分类",
+  doc: "文档",
+  tag: "标签",
+  skill: "技能",
+  agent: "助手",
+};
+
+function kindName(kind: string): string {
+  return KIND_NAME[kind] ?? kind;
+}
+
 function truncate(s: string, max: number): string {
   return s.length > max ? `${s.slice(0, max - 1)}…` : s;
 }
@@ -57,6 +69,18 @@ function truncate(s: string, max: number): string {
 export function KnowledgeGraph() {
   const fb = useFeedback();
   const [data, setData] = useState<{ nodes: GNode[]; edges: GEdge[] } | null>(null);
+  /** 点中的节点：高亮它的邻接；再点一次取消 */
+  const [selected, setSelected] = useState<string | null>(null);
+
+  const neighbors = useMemo(() => {
+    if (!data || !selected) return null;
+    const set = new Set<string>([selected]);
+    for (const e of data.edges) {
+      if (e.from === selected) set.add(e.to);
+      if (e.to === selected) set.add(e.from);
+    }
+    return set;
+  }, [data, selected]);
 
   const load = useCallback(async () => {
     try {
@@ -170,8 +194,13 @@ export function KnowledgeGraph() {
                   key={`${e.from}-${e.to}-${i}`}
                   d={`M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`}
                   fill="none"
-                  stroke="var(--color-border-strong)"
-                  strokeWidth={1.2}
+                  stroke={
+                    neighbors && (e.from === selected || e.to === selected)
+                      ? "var(--color-accent)"
+                      : "var(--color-border-strong)"
+                  }
+                  strokeWidth={neighbors && (e.from === selected || e.to === selected) ? 2 : 1.2}
+                  opacity={neighbors && !(e.from === selected || e.to === selected) ? 0.25 : 1}
                 />
               );
             })}
@@ -179,15 +208,28 @@ export function KnowledgeGraph() {
             {data!.nodes.map((n) => {
               const p = layout.pos.get(n.id);
               if (!p) return null;
+              const dim = neighbors ? !neighbors.has(n.id) : false;
+              const isSel = selected === n.id;
               return (
-                <g key={n.id}>
+                <g
+                  key={n.id}
+                  role="button"
+                  tabIndex={0}
+                  style={{ cursor: "pointer", opacity: dim ? 0.3 : 1 }}
+                  onClick={() => setSelected(isSel ? null : n.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") setSelected(isSel ? null : n.id);
+                  }}
+                >
+                  <title>{`${kindName(n.kind)}：${n.label}`}</title>
                   <rect
                     x={p.x}
                     y={p.y}
                     width={p.w}
                     height={NODE_H}
                     rx={8}
-                    fill="var(--color-surface)"
+                    fill={isSel ? "color-mix(in srgb, var(--color-accent) 12%, var(--color-surface))" : "var(--color-surface)"}
+                    stroke={isSel ? "var(--color-accent)" : "none"}
                   />
                   <rect x={p.x} y={p.y + 9} width={3} height={NODE_H - 18} rx={1.5} fill={kindColor[n.kind]} />
                   <text x={p.x + 12} y={p.y + NODE_H / 2 + 4} fontSize={12} fill="var(--color-text-1)">
@@ -199,6 +241,19 @@ export function KnowledgeGraph() {
           </svg>
         </div>
       )}
+
+      {selected ? (
+        <div className="flex flex-wrap items-center gap-2 text-[12px]" style={{ color: "var(--color-text-2)" }}>
+          <span>
+            已选中：{kindName((selected.split(":")[0] as GNode["kind"]) || "doc")} ·{" "}
+            {data?.nodes.find((n) => n.id === selected)?.label}
+            {neighbors ? `（${neighbors.size - 1} 个直接关联）` : ""}
+          </span>
+          <button className="btn btn-sm" type="button" onClick={() => setSelected(null)}>
+            取消选中
+          </button>
+        </div>
+      ) : null}
 
       <div className="flex flex-wrap gap-3 text-[11px]" style={{ color: "var(--color-text-3)" }}>
         {COLUMNS.map((c) => (
