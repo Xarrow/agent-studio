@@ -293,3 +293,25 @@ async def test_回收站超期自动彻底删除(client, tmp_path, monkeypatch):
     await client.delete(f"/api/knowledge/documents/{doc2['id']}")
     await purge_expired_trash()
     assert (await client.get(f"/api/knowledge/documents/{doc2['id']}")).status_code == 200
+
+
+async def test_向量索引不可用时检索仍工作(client, tmp_path, monkeypatch):
+    """HNSW/关键词索引挂了要退回 SQL，不许整体 500（降级路径的可证伪断言）。"""
+    from agent_studio.config import settings
+    from agent_studio.knowledge import index as zidx
+    from agent_studio.knowledge import embedding as zemb
+
+    monkeypatch.setattr(settings, "work_dir", tmp_path)
+    doc = await _upload(client, "降级验证.md", "# 降级\n\n这段话用来验证索引挂掉之后还能不能查。")
+    await _wait_ready(client, doc["id"])
+
+    def boom(*_a, **_k):
+        raise RuntimeError("索引坏了")
+
+    monkeypatch.setattr(zidx, "search", boom)
+    monkeypatch.setattr(zidx, "vec_search", boom)
+    monkeypatch.setattr(zemb, "search_vector", boom)
+
+    got = await client.post("/api/knowledge/recall/probe", json={"query": "索引挂掉"})
+    assert got.status_code == 200, got.text
+    assert any(x["id"] == doc["id"] for x in got.json()["items"]), "降级到 SQL LIKE 后仍应命中"

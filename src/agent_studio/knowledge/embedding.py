@@ -232,6 +232,12 @@ async def embed_document(session: AsyncSession, doc: Doc) -> dict[str, Any]:
             )
         ).all()
         _zidx.vec_upsert(doc.id, doc.version, [(int(o), list(_unpack(v))) for o, v in rows])
+        from sqlalchemy import func as _func
+
+        total = (
+            await session.execute(select(_func.count()).select_from(DocEmbedding))
+        ).scalar_one()
+        _zidx.write_vec_meta(int(total), int(dim))
     except Exception:  # noqa: BLE001
         logger.info("写 HNSW 失败（检索会退回 SQLite 暴力）", exc_info=True)
     return {"ok": True, "chunks": done, "dim": dim, "model": conf["model"]}

@@ -306,9 +306,15 @@ async def rebuild(session: AsyncSession, workspace_id: str = "ws_default") -> di
     except Exception:  # noqa: BLE001
         logger.warning("重建向量索引整体失败（忽略）", exc_info=True)
 
+    from sqlalchemy import func as _func
+
+    from .models import DocEmbedding as _DE
+
+    real_vecs = (await session.execute(select(_func.count()).select_from(_DE))).scalar_one()
+    write_vec_meta(int(real_vecs), 512 if not docs else int(getattr(docs[0], "embed_dim", 0) or 512))
     _STATUS.update(ready=True, reason="", docs=len(docs), chunks=total)
     _write_meta(len(docs), total, workspace_id)
-    return {"docs": len(docs), "chunks": total, "vectors": vec_total}
+    return {"docs": len(docs), "chunks": total, "vectors": int(real_vecs)}
 
 # --------------------------------------------------------------------------- #
 # 向量索引（HNSW）：规模上来后替代 SQLite 暴力余弦
@@ -402,16 +408,19 @@ def vec_upsert(doc_id: str, version: int, rows: list[tuple[int, list[float]]], w
     if batch:
         col.insert(batch)
         written += len(batch)
-    meta = Path(vec_dir(workspace_id)).with_suffix(".meta.json")
-    try:
-        prev = json.loads(meta.read_text(encoding="utf-8"))
-    except Exception:  # noqa: BLE001
-        prev = {"chunks": 0, "dim": dim}
-    prev["chunks"] = int(prev.get("chunks") or 0) + written
-    prev["dim"] = dim
-    meta.parent.mkdir(parents=True, exist_ok=True)
-    meta.write_text(json.dumps(prev), encoding="utf-8")
+    # 条数由调用方按库里的真实行数写（见 write_vec_meta）——
+    # 之前在这里累加，重建 + 单篇更新叠加后数字会翻倍（实测 50 vs 25）。
     return written
+
+
+def write_vec_meta(chunks: int, dim: int, workspace_id: str = "ws_default") -> None:
+    """按真实行数写向量索引 meta（调用方负责统计）。"""
+    import json
+    from pathlib import Path
+
+    meta = Path(vec_dir(workspace_id)).with_suffix(".meta.json")
+    meta.parent.mkdir(parents=True, exist_ok=True)
+    meta.write_text(json.dumps({"chunks": int(chunks), "dim": int(dim)}), encoding="utf-8")
 
 
 def vec_delete(doc_id: str, workspace_id: str = "ws_default") -> None:
