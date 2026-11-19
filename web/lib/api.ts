@@ -560,6 +560,8 @@ export const api = {
     ),
   knowledgeSkillFromDoc: (id: string, agentId?: string) =>
     post<{ draft: SkillDraft }>(`/api/knowledge/documents/${id}/skill`, agentId ? { agent_id: agentId } : {}),
+  knowledgeSampleQueries: (id: string) =>
+    request<{ items: string[]; note: string }>(`/api/knowledge/documents/${id}/sample-queries`),
   knowledgeRecallProbe: (query: string, limit = 5) =>
     post<{ query: string; items: { id: string; name: string; snippet: string; score?: number; matched_path: string }[]; latency_ms: number }>(
       "/api/knowledge/recall/probe",

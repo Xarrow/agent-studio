@@ -275,15 +275,6 @@ export default function KnowledgePage() {
       />
 
       <div className="mb-3">
-        <Segmented
-          value={tab}
-          onChange={setTab}
-          options={[
-            { key: "docs", label: "文档", count: docs?.length },
-            { key: "meta", label: "分类与标签", count: cats.length || undefined },
-            { key: "settings", label: "设置" },
-          ]}
-        />
       </div>
 
       {pasteOpen ? (
@@ -399,362 +390,54 @@ export default function KnowledgePage() {
         </div>
       ) : null}
 
-      {tab === "docs" ? (
-        <div className="space-y-3">
-          <PipelineSection
-            onOpenDoc={(id) => {
-              setTab("docs");
-              setOpenId(id);
-            }}
-            onChanged={() => {
-              void loadDocs();
-              void loadMeta();
-            }}
-          />
-          <Toolbar>
-            <input
-              className="input h-9 min-w-0 flex-1 text-[12px] sm:max-w-xs"
-              placeholder="搜文件名"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              aria-label="搜文件名"
-            />
-            <select
-              className="input h-9 w-40 text-[12px]"
-              value={catFilter}
-              onChange={(e) => setCatFilter(e.target.value)}
-              aria-label="按分类筛选"
-            >
-              <option value="">全部分类</option>
-              {cats.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}（{c.doc_count}）
-                </option>
-              ))}
-              <option value="__none">未分类</option>
-            </select>
-            {catFilter && catFilter !== "__none" ? (
-              <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
-                上传会直接进「{catName(catFilter)}」
-              </span>
-            ) : null}
-            <span className="ml-auto hidden text-[11px] sm:inline" style={{ color: "var(--color-text-3)" }}>
-              {shown.length} / {docs?.length ?? 0} 份
-            </span>
-          </Toolbar>
+      {/* 卡片流：一份文档一张卡，投放 / 标签 / 技能 / 试打 / 版本 / 原文全在卡内 */}
+      <DocumentFlow
+        docs={shown}
+        cats={cats}
+        agents={agents}
+        agentId={agentId}
+        onUpload={(files) => void upload(files)}
+        q={q}
+        onQuery={setQ}
+        catFilter={catFilter}
+        onCatFilter={setCatFilter}
+        onChanged={() => {
+          void loadDocs();
+          void loadMeta();
+        }}
+      />
 
-          {drafts.length > 0 ? (
-            <Section
-              title="待确认的草稿"
-              count={drafts.length}
-              defaultOpen={false}
-              desc="助手建议的分类、标签、摘要与 Skill；采纳才写进文档，忽略就丢掉"
-            >
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
-                  采纳会直接改文档（分类 / 标签 / 摘要 / 新建 Skill）
-                </span>
-                <button
-                    className="btn btn-sm ml-auto"
-                    type="button"
-                    disabled={busy === "accept-all"}
-                    onClick={async () => {
-                      setBusy("accept-all");
-                      try {
-                        for (const d of drafts) await api.knowledgeAcceptDraft(d.id);
-                        fb.success(`已采纳 ${drafts.length} 条`);
-                        await Promise.all([loadDocs(), loadMeta()]);
-                      } catch (e) {
-                        fb.error("批量采纳失败", e instanceof Error ? e.message : String(e));
-                      } finally {
-                        setBusy(null);
-                      }
-                    }}
-                  >
-                    全部采纳
-                  </button>
-                  <button
-                    className="btn btn-sm"
-                    type="button"
-                    style={{ color: "var(--color-muted)" }}
-                    disabled={busy === "reject-all"}
-                    onClick={async () => {
-                      setBusy("reject-all");
-                      try {
-                        for (const d of drafts) await api.knowledgeRejectDraft(d.id);
-                        fb.success("已忽略全部草稿");
-                        await loadMeta();
-                      } catch (e) {
-                        fb.error("批量忽略失败", e instanceof Error ? e.message : String(e));
-                      } finally {
-                        setBusy(null);
-                      }
-                    }}
-                  >
-                    全部忽略
-                  </button>
-              </div>
-              <div className="-mx-3 -my-3">
-                <RowList>
-                  {drafts.map((d) => (
-                    <Row
-                      key={d.id}
-                      actions={
-                        <>
-                          <button
-                            className="btn btn-primary btn-sm"
-                            type="button"
-                            onClick={async () => {
-                              try {
-                                await api.knowledgeAcceptDraft(d.id);
-                                fb.success("已采纳");
-                                await Promise.all([loadDocs(), loadMeta()]);
-                              } catch (e) {
-                                fb.error("采纳失败", e instanceof Error ? e.message : String(e));
-                              }
-                            }}
-                          >
-                            采纳
-                          </button>
-                          <button
-                            className="btn btn-sm"
-                            type="button"
-                            style={{ color: "var(--color-muted)" }}
-                            onClick={async () => {
-                              try {
-                                await api.knowledgeRejectDraft(d.id);
-                                await loadMeta();
-                              } catch (e) {
-                                fb.error("忽略失败", e instanceof Error ? e.message : String(e));
-                              }
-                            }}
-                          >
-                            忽略
-                          </button>
-                        </>
-                      }
-                    >
-                      <Chip tone="muted">{DRAFT_LABEL[d.kind] ?? d.kind}</Chip>
-                      <span className="min-w-0 flex-1 truncate text-[12.5px]">
-                        <span style={{ color: "var(--color-text-3)" }}>{d.doc_name || d.doc_id} · </span>
-                        {d.kind === "category" || d.kind === "skill"
-                          ? d.payload.name
-                          : d.kind === "tags"
-                            ? (d.payload.add ?? []).join("、")
-                            : d.payload.text}
-                      </span>
-                      {typeof d.payload.confidence === "number" ? (
-                        <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
-                          把握 {Math.round(d.payload.confidence * 100)}%
-                        </span>
-                      ) : null}
-                    </Row>
-                  ))}
-                </RowList>
-              </div>
-            </Section>
-          ) : null}
-
-          {chosen.length > 0 ? (
-            <SelectionBar
-              count={chosen.length}
-              onClear={() => setPicked({})}
-              onSelectAll={() => {
-                const all: Record<string, boolean> = {};
-                for (const d of readyDocs) all[d.id] = true;
-                setPicked(all);
+      <div className="mt-4 space-y-3">
+        <RecallSection />
+        <Section
+          title="知识关系"
+          desc="文档 → 分类、技能 → 来源文档、助手 → 技能；点节点可筛上面的卡片"
+          defaultOpen={false}
+        >
+          <KnowledgeGraph />
+        </Section>
+        <Section title="库设置" desc="分类、标签、存储、迁移、回收站" defaultOpen={false}>
+          <div className="space-y-3">
+            <CategoriesSection
+              cats={cats}
+              firstLoad={!loaded}
+              onChanged={async () => {
+                await Promise.all([loadMeta(), loadDocs()]);
               }}
-              allSelected={readyDocs.length > 0 && chosen.length >= readyDocs.length}
-              selectAllLabel={`全选已就绪（${readyDocs.length}）`}
-              actions={
-                <>
-                  <select
-                    className="input h-8 w-48 text-[12px]"
-                    value={agentId}
-                    onChange={(e) => setAgentId(e.target.value)}
-                    aria-label="用哪个助手"
-                    title="用哪个助手读这些文档"
-                  >
-                    {agents.length === 0 ? <option value="">（还没有可用助手）</option> : null}
-                    {agents.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.name}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    className="btn btn-sm"
-                    type="button"
-                    disabled={busy === "org" || !agentId || chosen.length === 0}
-                    onClick={async () => {
-                      setBusy("org");
-                      try {
-                        await api.knowledgeOrganize({ agent_id: agentId, doc_ids: chosen });
-                        fb.success("已开始整理，草稿会出现在上方");
-                        setPicked({});
-                        await loadMeta();
-                      } catch (e) {
-                        fb.error("整理没能开始", e instanceof Error ? e.message : String(e));
-                      } finally {
-                        setBusy(null);
-                      }
-                    }}
-                  >
-                    让助手整理
-                  </button>
-                  <button
-                    className="btn btn-sm"
-                    type="button"
-                    title="把选中的文档提炼成 SKILL.md 草稿（采纳后才写入 workspace）"
-                    disabled={busy === "skill" || !agentId || chosen.length === 0}
-                    onClick={async () => {
-                      setBusy("skill");
-                      try {
-                        let n = 0;
-                        for (const id of chosen) {
-                          await api.knowledgeSkillDraft(id, agentId);
-                          n += 1;
-                        }
-                        fb.success(`已提交 ${n} 份文档做 Skill 提炼，稍后刷新草稿`);
-                        setPicked({});
-                        await loadMeta();
-                      } catch (e) {
-                        fb.error("提炼没能开始", e instanceof Error ? e.message : String(e));
-                      } finally {
-                        setBusy(null);
-                      }
-                    }}
-                  >
-                    提炼为 Skill
-                  </button>
-                </>
-              }
             />
-          ) : null}
-
-          {docs === null ? (
-            <div className="space-y-2">
-              {[0, 1, 2].map((i) => (
-                <div key={i} className="h-11 animate-pulse rounded-[10px]" style={{ background: "var(--color-surface-2)" }} />
-              ))}
-            </div>
-          ) : shown.length === 0 ? (
-            <Empty
-              title={docs.length === 0 ? "还没有文档" : "这个筛选下没有文档"}
-              hint={
-                docs.length === 0
-                  ? "把文件拖到下面这块，或点右上「上传文档」。支持 PDF / DOCX / XLSX / PPTX / MD / TXT / HTML，单文件 100MB 内"
-                  : "换个分类或清空搜索再看看"
-              }
-              action={
-                docs.length === 0 ? (
-                  <button className="btn btn-primary btn-sm" type="button" onClick={() => fileRef.current?.click()}>
-                    上传第一份文档
-                  </button>
-                ) : (
-                  <button
-                    className="btn btn-sm"
-                    type="button"
-                    onClick={() => {
-                      setQ("");
-                      setCatFilter("");
-                    }}
-                  >
-                    清空筛选
-                  </button>
-                )
-              }
+            <TagsSection
+              tags={tags}
+              firstLoad={!loaded}
+              onChanged={async () => {
+                await Promise.all([loadMeta(), loadDocs()]);
+              }}
             />
-          ) : (
-            <RowList>
-              {shown.map((r) => {
-                const open = openId === r.id;
-                return (
-                  <div key={r.id}>
-                    <Row
-                      expanded={open}
-                      onToggle={() => setOpenId(open ? null : r.id)}
-                      actions={
-                        <>
-                          <SelectBox
-                            checked={!!picked[r.id]}
-                            disabled={r.status !== "ready"}
-                            title={r.status === "ready" ? "选中这份文档" : "解析完成后才能整理"}
-                            onChange={(v) => setPicked((p) => ({ ...p, [r.id]: v }))}
-                          />
-                        </>
-                      }
-                    >
-                      <span className="min-w-0 flex-1 truncate text-[13px]">{r.name}</span>
-                      {r.status !== "ready" ? <StatusDot status={r.status} /> : null}
-                      <Chip tone="muted">{catName(r.category_id)}</Chip>
-                      <span className="hidden text-[11px] sm:inline" style={{ color: "var(--color-text-3)" }}>
-                        {r.parsed?.textLength ? `${r.parsed.textLength.toLocaleString()} 字` : sizeText(r.size)}
-                      </span>
-                      <span className="hidden w-16 text-right text-[11px] sm:inline" style={{ color: "var(--color-text-3)" }}>
-                        {ago(r.updated_at)}
-                      </span>
-                    </Row>
-                    {open ? <DocDetail doc={r} cats={cats} onPatch={patchDoc} onChanged={() => { void loadDocs(); void loadMeta(); }} onDeleted={() => {
-                      setOpenId(null);
-                      void loadDocs();
-                      void loadMeta();
-                    }} /> : null}
-                  </div>
-                );
-              })}
-            </RowList>
-          )}
-
-          <div
-            className="rounded-[12px] px-3 py-3 text-[12px]"
-            style={{ background: "var(--color-surface-2)", color: "var(--color-text-3)" }}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDragOver(true);
-            }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setDragOver(false);
-              if (e.dataTransfer.files?.length) void upload(e.dataTransfer.files);
-            }}
-          >
-            {dragOver ? "松手即上传" : "把文件拖到这里也能上传"}
+            <StorageSection storages={storages} firstLoad={!loaded} onChanged={loadMeta} />
+            <MigrateSection storages={storages} />
+            <TrashSection onChanged={loadMeta} />
           </div>
-        </div>
-      ) : tab === "meta" ? (
-        <div className="space-y-3">
-          <CategoriesSection
-            cats={cats}
-            firstLoad={!loaded}
-            onChanged={async () => {
-              await Promise.all([loadMeta(), loadDocs()]);
-            }}
-          />
-          <TagsSection
-            tags={tags}
-            firstLoad={!loaded}
-            onChanged={async () => {
-              await Promise.all([loadMeta(), loadDocs()]);
-            }}
-          />
-          <RecallSection />
-          <Section title="知识关系" desc="文档 → 分类、技能 → 来源文档、助手 → 技能；只画真实引用">
-            <KnowledgeGraph />
-          </Section>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          <StorageSection
-            storages={storages}
-            firstLoad={!loaded}
-            onChanged={loadMeta}
-          />
-          <MigrateSection storages={storages} />
-          <TrashSection onChanged={loadMeta} />
-        </div>
-      )}
+        </Section>
+      </div>
     </div>
   );
 }
@@ -780,6 +463,24 @@ function DocDetail({
   const [tagDraft, setTagDraft] = useState("");
   const [tagLinks, setTagLinks] = useState<DocTagLink[] | null>(null);
   const [versions, setVersions] = useState<DocVersion[]>([]);
+  const [samples, setSamples] = useState<string[]>([]);
+  const [probeQ, setProbeQ] = useState("");
+  const [probing, setProbing] = useState(false);
+  const [probeRes, setProbeRes] = useState<
+    { items: { id: string; name: string; snippet: string; matched_path: string }[]; latency_ms: number } | null
+  >(null);
+
+  const runProbe = async (query: string) => {
+    setProbing(true);
+    try {
+      const got = await api.knowledgeRecallProbe(query, 3);
+      setProbeRes({ items: got.items, latency_ms: got.latency_ms });
+    } catch {
+      setProbeRes({ items: [], latency_ms: 0 });
+    } finally {
+      setProbing(false);
+    }
+  };
 
   const loadTags = useCallback(async () => {
     try {
@@ -792,6 +493,10 @@ function DocDetail({
 
   useEffect(() => {
     void loadTags();
+    api
+      .knowledgeSampleQueries(doc.id)
+      .then((got) => setSamples(got.items ?? []))
+      .catch(() => setSamples([]));
     api
       .knowledgeVersions(doc.id)
       .then((got) => setVersions(got.items ?? []))
@@ -981,6 +686,73 @@ function DocDetail({
             {doc.parsed?.sheets?.length ? ` · ${doc.parsed.sheets.join("、")}` : ""}
           </KV>
           <KV k="来源">{doc.source === "url" ? doc.source_url || "链接" : "本地上传"}</KV>
+        </div>
+
+        {/* 试打：用文档自己的话试，不让用户造词 */}
+        <div className="rounded-[10px] px-2.5 py-2" style={{ background: "var(--color-surface-2)" }}>
+          <div className="mb-1 text-[11px]" style={{ color: "var(--color-text-3)" }}>
+            试打检索 · 用文档里的原话（点一条即查）
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {(samples ?? []).map((q) => (
+              <button
+                key={q}
+                type="button"
+                className="rounded-full px-2 py-0.5 text-[11px]"
+                style={{ background: "var(--color-surface-3)", color: "var(--color-text-2)" }}
+                onClick={() => {
+                  setProbeQ(q);
+                  void runProbe(q);
+                }}
+              >
+                {q}
+              </button>
+            ))}
+            <input
+              className="input h-7 w-40 text-[11px]"
+              placeholder="或输入文档里出现过的词…"
+              value={probeQ}
+              onChange={(e) => setProbeQ(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && probeQ.trim()) void runProbe(probeQ.trim());
+              }}
+              aria-label="试打查询"
+            />
+            <button
+              className="btn btn-sm"
+              type="button"
+              disabled={probing || !probeQ.trim()}
+              onClick={() => void runProbe(probeQ.trim())}
+            >
+              {probing ? "查…" : "查"}
+            </button>
+            {probeRes ? (
+              <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                {probeRes.items.length} 条 · {probeRes.latency_ms}ms
+              </span>
+            ) : null}
+          </div>
+          {probeRes ? (
+            <div className="mt-1 space-y-1">
+              {probeRes.items.length === 0 ? (
+                <div className="text-[11.5px]" style={{ color: "var(--color-err,#dc2626)" }}>
+                  没查到：这段文字可能还没进索引，或换文档里出现过的词再试
+                </div>
+              ) : (
+                probeRes.items.slice(0, 3).map((h) => (
+                  <div key={h.id} className="rounded-[8px] px-2 py-1 text-[11.5px]" style={{ background: "var(--color-surface-3)" }}>
+                    <span className="mr-1">{h.name}</span>
+                    <span style={{ color: "var(--color-text-3)" }}>
+                      {h.matched_path === "both" ? "词+义" : h.matched_path === "vector" ? "语义" : "关键词"}
+                    </span>
+                    <div className="truncate" style={{ color: "var(--color-text-2)" }}>
+                      {h.snippet}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          ) : null}
         </div>
 
         {doc.error?.message ? (
@@ -2265,5 +2037,287 @@ function PipelineSection({
         </RowList>
       </div>
     </Section>
+  );
+}
+
+/* ────────────────────────── 卡片流（一份文档一张卡） ────────────────────────── */
+
+type FlowStep = { uploaded: boolean; parsed: boolean; embedded: boolean; tagged: boolean; skilled: boolean };
+
+function DocumentFlow({
+  docs,
+  cats,
+  agents,
+  agentId,
+  onUpload,
+  q,
+  onQuery,
+  catFilter,
+  onCatFilter,
+  onChanged,
+}: {
+  docs: KnowledgeDoc[];
+  cats: KnowledgeCategory[];
+  agents: { id: string; name: string }[];
+  agentId: string;
+  onUpload: (files: FileList | File[]) => void;
+  q: string;
+  onQuery: (v: string) => void;
+  catFilter: string;
+  onCatFilter: (v: string) => void;
+  onChanged: () => void;
+}) {
+  const fb = useFeedback();
+  const [flow, setFlow] = useState<Record<string, { steps: FlowStep; next: string }>>({});
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const loadFlow = useCallback(async () => {
+    try {
+      const got = await api.knowledgePipeline();
+      const map: Record<string, { steps: FlowStep; next: string }> = {};
+      for (const it of got.items ?? []) map[it.id] = { steps: it.steps, next: it.next };
+      setFlow(map);
+    } catch {
+      setFlow({});
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadFlow();
+    const t = window.setInterval(() => void loadFlow(), 5000);
+    return () => window.clearInterval(t);
+  }, [loadFlow]);
+
+  const stepsOf = (d: KnowledgeDoc): FlowStep =>
+    flow[d.id]?.steps ?? {
+      uploaded: true,
+      parsed: d.status === "ready",
+      embedded: d.embed_status === "ready",
+      tagged: (d.tags?.length ?? 0) > 0,
+      skilled: false,
+    };
+  const nextOf = (d: KnowledgeDoc): string => flow[d.id]?.next ?? (d.status === "ready" ? "embed" : "wait_parse");
+
+  const primary = async (d: KnowledgeDoc) => {
+    const next = nextOf(d);
+    if (next === "embed") {
+      setBusy(d.id);
+      try {
+        const got = await api.knowledgeEmbed(d.id);
+        fb.success(`已向量化 ${got.chunks} 块，正在提关键词`);
+        try {
+          const kw = await api.knowledgeKeywords(d.id);
+          if (kw.items?.length) fb.success(`关键词 ${kw.items.length} 个：${kw.items.map((x) => x.name).join("、")}`);
+        } catch {
+          /* 关键词失败不影响向量化 */
+        }
+        await loadFlow();
+        onChanged();
+      } catch (e) {
+        fb.error("向量化失败", e instanceof Error ? e.message : String(e));
+      } finally {
+        setBusy(null);
+      }
+      return;
+    }
+    if (next === "tag") {
+      setBusy(d.id);
+      try {
+        const kw = await api.knowledgeKeywords(d.id);
+        fb.success(kw.items?.length ? `已提 ${kw.items.length} 个候选标签` : "正文太短，抽不出关键词，手动加更靠谱");
+        setOpenId(d.id);
+        await loadFlow();
+        onChanged();
+      } catch (e) {
+        fb.error("出关键词失败", e instanceof Error ? e.message : String(e));
+      } finally {
+        setBusy(null);
+      }
+      return;
+    }
+    if (next === "skill") {
+      setBusy(d.id);
+      try {
+        const got = await api.knowledgeSkillFromDoc(d.id, agentId || undefined);
+        fb.success(`已生成技能草稿「${got.draft.name || "生成中"}」`);
+        await loadFlow();
+        onChanged();
+      } catch (e) {
+        fb.error("生成技能失败", e instanceof Error ? e.message : String(e));
+      } finally {
+        setBusy(null);
+      }
+    }
+  };
+
+  const actionLabel = (next: string) =>
+    next === "wait_parse" ? "解析中…" : next === "embed" ? "向量化" : next === "tag" ? "出关键词" : next === "skill" ? "生成技能" : "已完成";
+
+  const [drag, setDrag] = useState(false);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+
+  return (
+    <div className="space-y-2">
+      {/* 投放卡：与文档卡同一形态，流程第一格就是"把它拖进来" */}
+      <div
+        className="flex flex-wrap items-center gap-3 rounded-[12px] px-3 py-3"
+        style={{ background: drag ? "color-mix(in srgb, var(--color-accent) 12%, var(--color-surface-2))" : "var(--color-surface-2)" }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDrag(true);
+        }}
+        onDragLeave={() => setDrag(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDrag(false);
+          if (e.dataTransfer.files?.length) onUpload(e.dataTransfer.files);
+        }}
+      >
+        <span
+          className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] text-[16px]"
+          style={{ background: "var(--color-surface)", color: "var(--color-accent)" }}
+          aria-hidden
+        >
+          ＋
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[12.5px]">{drag ? "松手即入库" : "拖文件到这里 · 或点右侧上传 / 粘贴文本 / 贴链接"}</span>
+          <span className="block text-[11px]" style={{ color: "var(--color-text-3)" }}>
+            PDF / DOCX / XLSX / PPTX / MD / TXT / HTML，单文件 100MB 内
+          </span>
+        </span>
+        <button className="btn btn-sm" type="button" onClick={() => fileRef.current?.click()}>
+          选择文件
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          multiple
+          hidden
+          onChange={(e) => {
+            if (e.target.files) onUpload(e.target.files);
+            e.target.value = "";
+          }}
+        />
+      </div>
+
+      <Toolbar>
+        <input
+          className="input h-9 min-w-0 flex-1 text-[12px] sm:max-w-xs"
+          placeholder="搜文档名（正文命中会一起出现在结果里）"
+          value={q}
+          onChange={(e) => onQuery(e.target.value)}
+          aria-label="搜文档"
+        />
+        <select
+          className="input h-9 w-36 text-[12px]"
+          value={catFilter}
+          onChange={(e) => onCatFilter(e.target.value)}
+          aria-label="按分类筛选"
+        >
+          <option value="">全部分类</option>
+          {cats.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+        <span className="ml-auto text-[11px]" style={{ color: "var(--color-text-3)" }}>
+          {docs.length} 份
+        </span>
+      </Toolbar>
+
+      {docs.length === 0 ? (
+        <Empty
+          title="还没有文档"
+          hint="把文件拖到右上「上传文档」，或点「粘贴文本」直接入库；上传后这一行就是它的流程卡"
+        />
+      ) : null}
+
+      {docs.map((d) => {
+        const st = stepsOf(d);
+        const next = nextOf(d);
+        const open = openId === d.id;
+        return (
+          <div
+            key={d.id}
+            className="overflow-hidden rounded-[12px]"
+            style={{ background: "var(--color-surface)" }}
+          >
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 px-3 py-2.5">
+              <button
+                type="button"
+                className="flex min-h-[32px] min-w-0 flex-1 items-center gap-2 text-left"
+                onClick={() => setOpenId(open ? null : d.id)}
+                aria-expanded={open}
+              >
+                <span className="text-[11px]" style={{ color: "var(--color-muted)" }}>
+                  {open ? "▾" : "▸"}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-[13px]">{d.name}</span>
+              </button>
+              <span className="flex items-center gap-1">
+                {([
+                  ["解析", st.parsed],
+                  ["向量", st.embedded],
+                  ["标签", st.tagged],
+                  ["技能", st.skilled],
+                ] as [string, boolean][]).map(([label, ok]) => (
+                  <span
+                    key={label}
+                    className="rounded-full px-1.5 py-[1px] text-[10.5px]"
+                    style={{
+                      background: ok ? "color-mix(in srgb, var(--color-accent) 12%, transparent)" : "var(--color-surface-3)",
+                      color: ok ? "var(--color-accent)" : "var(--color-text-3)",
+                    }}
+                    title={`${label}${ok ? "已完成" : "还没做"}`}
+                  >
+                    {ok ? "✓" : "·"} {label}
+                  </span>
+                ))}
+              </span>
+              <button
+                className="btn btn-sm"
+                type="button"
+                style={{ color: "var(--color-text-2)" }}
+                onClick={() => setOpenId(d.id)}
+                title="看解析后的正文与原文"
+              >
+                原文
+              </button>
+              <button
+                className="btn btn-sm"
+                type="button"
+                disabled={next === "wait_parse" || next === "done" || busy === d.id}
+                style={next === "done" ? { color: "var(--color-ok,#16a34a)" } : undefined}
+                onClick={() => void primary(d)}
+              >
+                {busy === d.id ? "处理中…" : actionLabel(next)}
+              </button>
+            </div>
+            {open ? (
+              <DocDetail
+                doc={d}
+                cats={cats}
+                onPatch={async (id, body) => {
+                  try {
+                    await api.knowledgePatchDoc(id, body);
+                    onChanged();
+                  } catch (e) {
+                    fb.error("保存失败", e instanceof Error ? e.message : String(e));
+                  }
+                }}
+                onChanged={onChanged}
+                onDeleted={() => {
+                  setOpenId(null);
+                  onChanged();
+                }}
+              />
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
   );
 }

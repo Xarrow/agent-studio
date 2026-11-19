@@ -511,6 +511,41 @@ async def index_rebuild(session: AsyncSession = Depends(get_session)) -> dict[st
     return {"ok": True, **got}
 
 
+@router.get("/documents/{doc_id}/sample-queries")
+async def sample_queries(doc_id: str, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """给「试打」用的候选查询：**全部取自文档本身**（正文首句 / 已采纳标签）。
+
+    不编造问法：让用户用文档里的原话去试，测的才是索引本身，
+    而不是"用户会不会造词"。前端点一条即查。
+    """
+    import re
+
+    doc = await session.get(Doc, doc_id)
+    if doc is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "文档不存在")
+    out: list[str] = []
+    for name in (doc.tags or [])[:2]:
+        n = str(name).strip()
+        if n and n not in out:
+            out.append(n)
+    chunks = (
+        await session.execute(
+            select(DocChunk.text).where(DocChunk.doc_id == doc_id).order_by(DocChunk.ord).limit(3)
+        )
+    ).scalars().all()
+    for text in chunks:
+        clean = re.sub(r"[#>*`_]+", " ", (text or ""))
+        clean = re.sub(r"\s+", " ", clean).strip()
+        if not clean:
+            continue
+        first = re.split(r"[。；;!?！？]", clean)[0].strip()[:28]
+        if len(first) >= 6 and first not in out:
+            out.append(first)
+        if len(out) >= 4:
+            break
+    return {"items": out[:4], "note": "这些是从本文正文与标签里取的原文，不是编的例子"}
+
+
 @router.post("/recall/probe")
 async def recall_probe(
     payload: dict[str, Any], session: AsyncSession = Depends(get_session)

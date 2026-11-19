@@ -179,6 +179,8 @@ export interface KnowledgeDoc {
   status: "uploading" | "parsing" | "ready" | "failed" | string;
   error: { code?: string; message?: string; retryable?: boolean };
   parsed: { textLength?: number; pages?: number | null; sheets?: string[]; parserVersion?: string; ms?: number };
+  embed_status?: "none" | "pending" | "ready" | "failed";
+  embed_model?: string;
   version: number;
   created_at: number;
   updated_at: number;

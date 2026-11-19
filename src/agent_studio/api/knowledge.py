@@ -59,6 +59,8 @@ def _doc_view(row: Doc, *, with_text: bool = False) -> dict[str, Any]:
         "error": row.error or {},
         "parsed": row.parsed or {},
         "version": row.version,
+        "embed_status": getattr(row, "embed_status", "none"),
+        "embed_model": getattr(row, "embed_model", ""),
         "created_at": row.created_at,
         "updated_at": row.updated_at,
     }
