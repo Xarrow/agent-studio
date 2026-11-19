@@ -20,7 +20,7 @@ import { useFeedback } from "@/components/ui/feedback";
 
 interface GNode {
   id: string;
-  kind: "agent" | "skill" | "doc" | "category" | "tag";
+  kind: "agent" | "skill" | "doc" | "tag";
   label: string;
 }
 interface GEdge {
@@ -30,7 +30,6 @@ interface GEdge {
 }
 
 const COLUMNS: { kind: GNode["kind"]; title: string }[] = [
-  { kind: "category", title: "分类" },
   { kind: "doc", title: "文档" },
   { kind: "tag", title: "标签" },
   { kind: "skill", title: "技能" },
@@ -51,7 +50,6 @@ function textWidth(s: string): number {
 }
 
 const KIND_NAME: Record<string, string> = {
-  category: "分类",
   doc: "文档",
   tag: "标签",
   skill: "技能",
@@ -141,7 +139,6 @@ export function KnowledgeGraph({
     agent: "var(--color-accent, #2563eb)",
     skill: "var(--color-ok, #16a34a)",
     doc: "var(--color-text-2)",
-    category: "var(--color-warn, #d97706)",
     tag: "var(--color-accent, #2563eb)",
   };
 

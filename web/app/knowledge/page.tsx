@@ -93,7 +93,7 @@ export default function KnowledgePage() {
   const { loaded, markLoaded } = useFirstLoad();
   const [tab, setTab] = useState<"docs" | "meta" | "settings">("docs");
   const [q, setQ] = useState("");
-  const [catFilter, setCatFilter] = useState("");
+  const [tagFilter, setTagFilter] = useState("");
   const [docs, setDocs] = useState<KnowledgeDoc[] | null>(null);
   const [cats, setCats] = useState<KnowledgeCategory[]>([]);
   const [tags, setTags] = useState<KnowledgeTag[]>([]);
@@ -177,8 +177,8 @@ export default function KnowledgePage() {
     if (!list.length) return;
     setBusy("upload");
     try {
-      const catName = catFilter ? cats.find((c) => c.id === catFilter)?.name ?? "未分类" : "未分类";
-      const got = await api.knowledgeUpload(list, catName);
+      // 只用标签组织（不再写分类）
+      const got = await api.knowledgeUpload(list, "未分类");
       if (got.duplicates?.length) {
         fb.warn(`已存在相同内容：${got.duplicates.map((d) => d.name).join("、")}（已跳过）`);
       }
@@ -222,12 +222,12 @@ export default function KnowledgePage() {
     const list = docs ?? [];
     const key = q.trim().toLowerCase();
     return list.filter((d) => {
-      if (catFilter === "__none" ? d.category_id !== "" : catFilter && d.category_id !== catFilter) return false;
+      if (tagFilter && !(d.tags ?? []).includes(tagFilter)) return false;
       if (!key) return true;
       if (d.name.toLowerCase().includes(key)) return true;
       return (bodyHits ?? []).includes(d.id);
     });
-  }, [docs, q, catFilter, bodyHits]);
+  }, [docs, q, tagFilter, bodyHits]);
 
   const readyDocs = shown.filter((d) => d.status === "ready");
   const chosen = Object.keys(picked).filter((k) => picked[k]);
@@ -312,7 +312,7 @@ export default function KnowledgePage() {
                   const got = await api.knowledgePaste({
                     title: pasteDraft.title.trim() || undefined,
                     text: pasteDraft.text,
-                    category: catFilter ? catName(catFilter) : undefined,
+
                     tags: pasteDraft.tags
                       .split(/[,，、\s]+/)
                       .map((x) => x.trim())
@@ -366,7 +366,6 @@ export default function KnowledgePage() {
                   const got = await api.knowledgeFromUrl({
                     url: urlDraft.url.trim(),
                     name: urlDraft.name.trim() || undefined,
-                    category: catFilter ? catName(catFilter) : undefined,
                   });
                   fb.success(`已抓取 ${got.text_length} 字，正在解析`);
                   setUrlDraft({ url: "", name: "" });
@@ -402,8 +401,9 @@ export default function KnowledgePage() {
         onClearGraphFilter={() => setGraphSel(null)}
         q={q}
         onQuery={setQ}
-        catFilter={catFilter}
-        onCatFilter={setCatFilter}
+        tagFilter={tagFilter}
+        onTagFilter={setTagFilter}
+        tags={tags.map((t) => t.name)}
         onChanged={() => {
           void loadDocs();
           void loadMeta();
@@ -414,20 +414,13 @@ export default function KnowledgePage() {
         <RecallSection />
         <Section
           title="知识关系"
-          desc="文档 → 分类、技能 → 来源文档、助手 → 技能；点节点可筛上面的卡片"
+          desc="文档 → 标签 → 技能 → 助手；点节点可筛上面的卡片"
           defaultOpen={false}
         >
           <KnowledgeGraph onSelect={setGraphSel} />
         </Section>
-        <Section title="库设置" desc="分类、标签、存储、迁移、回收站" defaultOpen={false}>
+        <Section title="库设置" desc="标签、存储、迁移、回收站" defaultOpen={false}>
           <div className="space-y-3">
-            <CategoriesSection
-              cats={cats}
-              firstLoad={!loaded}
-              onChanged={async () => {
-                await Promise.all([loadMeta(), loadDocs()]);
-              }}
-            />
             <TagsSection
               tags={tags}
               firstLoad={!loaded}
@@ -528,21 +521,6 @@ function DocDetail({
     <RowDetail>
       <div className="space-y-3">
         <div className="grid grid-cols-1 gap-x-6 gap-y-1.5 sm:grid-cols-2">
-          <KV k="分类">
-            <select
-              className="input h-8 w-44 text-[12px]"
-              value={doc.category_id || ""}
-              onChange={(e) => void onPatch(doc.id, { category: e.target.value })}
-              aria-label="改分类"
-            >
-              <option value="">未分类</option>
-              {cats.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </KV>
           <KV k="标签">
             <span className="flex flex-wrap items-center gap-1">
               {tagLinks === null ? (
@@ -1672,7 +1650,7 @@ function RecallSection() {
           <div className="flex flex-wrap items-center gap-2">
             <input
               className="input h-9 min-w-0 flex-1 text-[12px] sm:max-w-md"
-              placeholder="试一句：比如「住酒店能报销多少钱」"
+              placeholder="输入文档里出现过的词或句子…"
               value={probe}
               onChange={(e) => setProbe(e.target.value)}
               onKeyDown={(e) => {
@@ -2057,8 +2035,9 @@ function DocumentFlow({
   onClearGraphFilter,
   q,
   onQuery,
-  catFilter,
-  onCatFilter,
+  tagFilter,
+  onTagFilter,
+  tags,
   onChanged,
 }: {
   docs: KnowledgeDoc[];
@@ -2070,8 +2049,9 @@ function DocumentFlow({
   onClearGraphFilter: () => void;
   q: string;
   onQuery: (v: string) => void;
-  catFilter: string;
-  onCatFilter: (v: string) => void;
+  tagFilter: string;
+  onTagFilter: (v: string) => void;
+  tags: string[];
   onChanged: () => void;
 }) {
   const fb = useFeedback();
@@ -2220,14 +2200,14 @@ function DocumentFlow({
         />
         <select
           className="input h-9 w-36 text-[12px]"
-          value={catFilter}
-          onChange={(e) => onCatFilter(e.target.value)}
-          aria-label="按分类筛选"
+          value={tagFilter}
+          onChange={(e) => onTagFilter(e.target.value)}
+          aria-label="按标签筛选"
         >
-          <option value="">全部分类</option>
-          {cats.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
+          <option value="">全部标签</option>
+          {tags.map((t) => (
+            <option key={t} value={t}>
+              {t}
             </option>
           ))}
         </select>

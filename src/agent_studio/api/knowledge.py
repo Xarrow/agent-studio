@@ -790,10 +790,6 @@ async def knowledge_graph(limit_docs: int = Query(default=60, ge=1, le=200), ses
 
     for d in docs:
         add("doc", d.id, d.name, status=d.status)
-        if d.category_id and d.category_id in cats:
-            c = cats[d.category_id]
-            add("category", c.id, c.name)
-            edges.append({"from": f"doc:{d.id}", "to": f"category:{c.id}", "kind": "分类"})
 
     for s in skills:
         src = list(getattr(s, "source_doc_ids", None) or [])
