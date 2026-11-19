@@ -766,6 +766,12 @@ export function ChatConsole({
     try {
       const detail = await api.session(sid, 30);
       if (seq !== loadSeqRef.current) return;
+      // 恢复这个会话上次的阅读位置（没有记录就由下面的"贴底"逻辑接管）
+      const savedScroll =
+        prevSidRef.current && prevSidRef.current !== sid
+          ? Number(sessionStorage.getItem(`chat.scroll.${sid}`) || 0)
+          : 0;
+      prevSidRef.current = sid;
       setCurKind(detail.session.kind ?? "chat");
       setCurTicket(detail.session.ticket_title ?? null);
       setCurParent(detail.session.parent_session_id ?? null);
@@ -795,6 +801,37 @@ export function ChatConsole({
         ? historyRef.current.filter((x) => (x.turn_index || 0) < earliestFresh)
         : [];
       setHistory(older.length ? [...older, ...fresh] : fresh);
+      // 回到这个会话上次的阅读位置：等这一帧画完再设（否则 scrollHeight 还是旧的）
+      if (savedScroll > 0) {
+        // 先关掉"自动贴底"：否则 setHistory 之后的那个 effect 会立刻把视图拽到底，
+        // 等我们 120ms 后想恢复位置时已经晚了（实测刷新后总是落在最底）。
+        followRef.current = false;
+        // 内容高度要等 Markdown/代码块排完才知道：分几次试，直到能落到位。
+        // 只试 5 次（约 0.9s），避免和用户的主动滚动打架。
+        let tries = 0;
+        const restore = () => {
+          const el = boxRef.current;
+          if (!el) {
+            // 首屏还没挂上滚动容器：等一下再试（否则刷新后永远恢复不了）
+            if (++tries < 25) window.setTimeout(restore, 200);
+            return;
+          }
+          const max = Math.max(0, el.scrollHeight - el.clientHeight);
+          const target = Math.min(savedScroll, max);
+          if (max - target < 24) {
+            if (++tries < 25) window.setTimeout(restore, 200);
+            return;
+          }
+          el.scrollTop = target;
+          followRef.current = false;
+          suppressFollowUntil.current = Date.now() + 2500;
+          setAtBottom(false);
+          if (Math.abs(el.scrollTop - target) > 4 && ++tries < 5) {
+            window.setTimeout(restore, 150);
+          }
+        };
+        window.setTimeout(restore, 120);
+      }
       setBeforeTurn(
         older.length
           ? Math.min(...older.map((x) => x.turn_index || 1)) - 1
@@ -1038,6 +1075,10 @@ export function ChatConsole({
      惹人烦的毛病。离开底部时右下浮一个「回到最新」。 */
   const followRef = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
+  /** 恢复阅读位置后的静默期：这段时间内不自动贴底（否则刚恢复就被拽到最底） */
+  const suppressFollowUntil = useRef(0);
+  /** 上一个打开的会话：用来判断"是切会话还是首次进入"（首次进入要贴底，切会话要恢复位置） */
+  const prevSidRef = useRef<string | null>(null);
   /* 程序自己滚的时候，不要被 onScroll 判成"用户往上翻了"。
      否则：贴底 → 中间态触发 scroll → gap 很大 → follow=false → 再也不贴底，
      表现就是每次进会话都差一截空白。 */
@@ -1059,6 +1100,7 @@ export function ChatConsole({
   }, [hitl, pinBottom]);
 
   useEffect(() => {
+    if (Date.now() < suppressFollowUntil.current) return;
     if (!followRef.current) return;
     const el = boxRef.current;
     if (!el) return;
@@ -1070,9 +1112,17 @@ export function ChatConsole({
     if (el0) setTopScrolled(el0.scrollTop > 2);
     // 自己刚贴过底（120ms 内）产生的那次 scroll 不算用户操作
     if (Date.now() - lastPinAt.current < 120) return;
+    // 记住每个会话的阅读位置（切走再切回不用重新滚到底）
+    if (sessionId && el0) {
+      try {
+        sessionStorage.setItem(`chat.scroll.${sessionId}`, String(Math.round(el0.scrollTop)));
+      } catch {
+        /* 隐私模式写不进去是正常的 */
+      }
+    }
     const el = boxRef.current;
     if (!el) return;
-    const near = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    const near = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
     followRef.current = near;
     setAtBottom(near);
   };
