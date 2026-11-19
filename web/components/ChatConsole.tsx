@@ -3625,7 +3625,7 @@ export function ChatConsole({
                 <textarea
                   ref={taRef}
                   rows={1}
-                  className="block w-full resize-none bg-transparent border-0 outline-none px-4 py-3 text-[14px] leading-[24px] min-h-[56px]"
+                  className="block w-full resize-none bg-transparent border-0 outline-none px-4 py-2.5 text-[14px] leading-[24px] min-h-[44px] sm:min-h-[56px] sm:py-3"
                   style={{ maxHeight: 208 }}
                   placeholder={
                     paused
