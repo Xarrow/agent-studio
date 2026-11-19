@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { Nav } from "@/components/Nav";
 import { FeedbackProvider } from "@/components/ui/feedback";
@@ -7,6 +7,19 @@ import { AccessGate } from "@/components/AccessGate";
 export const metadata: Metadata = {
   title: "Agent Studio",
   description: "可视化 Agent 配置与运行观测平台",
+};
+
+/**
+ * 手机键盘：`interactiveWidget: "resizes-content"` 让可视区随键盘缩小，
+ * 输入坞（贴底的那块）就不会被键盘盖住 —— Chrome/Android 认这条；
+ * iOS Safari 忽略它，那边靠 dvh + 滚动容器被动适配。
+ * viewportFit: cover 是为了刘海屏下的 safe-area 生效。
+ */
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  interactiveWidget: "resizes-content",
 };
 
 /**
