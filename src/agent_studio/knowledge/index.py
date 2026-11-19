@@ -277,6 +277,165 @@ async def rebuild(session: AsyncSession, workspace_id: str = "ws_default") -> di
             total += await upsert_document(session, d, workspace_id)
         except Exception:  # noqa: BLE001
             logger.warning("重建索引失败：%s", d.id, exc_info=True)
+    # 向量一起重建（从 doc_embedding 表读，正文与向量都以 SQLite 为真源）
+    vec_total = 0
+    try:
+        from array import array
+
+        from .models import DocEmbedding
+
+        for d in docs:
+            if d.status != "ready":
+                continue
+            rows = (
+                await session.execute(
+                    select(DocEmbedding.ord, DocEmbedding.vec).where(DocEmbedding.doc_id == d.id)
+                )
+            ).all()
+            if not rows:
+                continue
+            vec_rows = []
+            for o, blob in rows:
+                arr = array("f")
+                arr.frombytes(blob[: len(blob) - (len(blob) % 4)])
+                vec_rows.append((int(o), list(arr)))
+            try:
+                vec_total += vec_upsert(d.id, d.version, vec_rows, workspace_id)
+            except Exception:  # noqa: BLE001
+                logger.warning("重建向量索引失败：%s", d.id, exc_info=True)
+    except Exception:  # noqa: BLE001
+        logger.warning("重建向量索引整体失败（忽略）", exc_info=True)
+
     _STATUS.update(ready=True, reason="", docs=len(docs), chunks=total)
     _write_meta(len(docs), total, workspace_id)
-    return {"docs": len(docs), "chunks": total}
+    return {"docs": len(docs), "chunks": total, "vectors": vec_total}
+
+# --------------------------------------------------------------------------- #
+# 向量索引（HNSW）：规模上来后替代 SQLite 暴力余弦
+# --------------------------------------------------------------------------- #
+_VEC: dict[str, Any] = {}
+
+
+def vec_dir(workspace_id: str = "ws_default") -> str:
+    from pathlib import Path
+
+    return str(Path(str(getattr(settings, "work_dir", "data/work"))) / "zvec" / f"{workspace_id}_vec")
+
+
+def vec_status() -> dict[str, Any]:
+    import json
+    import os
+
+    from pathlib import Path
+
+    try:
+        meta = json.loads(Path(vec_dir()).with_suffix(".meta.json").read_text(encoding="utf-8"))
+        return {"ready": True, "chunks": int(meta.get("chunks") or 0), "dim": int(meta.get("dim") or 0)}
+    except Exception:  # noqa: BLE001
+        return {"ready": False, "chunks": 0, "dim": 0}
+
+
+def _vec_open(dim: int, workspace_id: str = "ws_default"):
+    import os
+
+    import zvec
+
+    path = vec_dir(workspace_id)
+    got = _VEC.get(path)
+    if got is not None:
+        return got
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    if os.path.isdir(path) and os.listdir(path):
+        col = zvec.open(path=path)
+    else:
+        if os.path.isdir(path):
+            os.rmdir(path)
+        schema = zvec.CollectionSchema(
+            name="vec",
+            fields=[
+                zvec.FieldSchema(name="doc_id", data_type=zvec.DataType.STRING),
+                zvec.FieldSchema(name="ord", data_type=zvec.DataType.INT32),
+            ],
+            vectors=[
+                zvec.VectorSchema(
+                    name="emb",
+                    data_type=zvec.DataType.VECTOR_FP32,
+                    dimension=dim,
+                    index_param=zvec.HnswIndexParam(metric_type=zvec.MetricType.COSINE),
+                )
+            ],
+        )
+        col = zvec.create_and_open(path=path, schema=schema)
+    _VEC[path] = col
+    return col
+
+
+def vec_upsert(doc_id: str, version: int, rows: list[tuple[int, list[float]]], workspace_id: str = "ws_default") -> int:
+    """把一份文档的块向量写进 HNSW。rows = [(ord, vector), ...]"""
+    import json
+    from pathlib import Path
+
+    import zvec
+
+    if not rows:
+        return 0
+    dim = len(rows[0][1])
+    col = _vec_open(dim, workspace_id)
+    try:
+        col.delete_by_filter(f"doc_id = '{doc_id}'")
+    except Exception:  # noqa: BLE001
+        pass
+    batch: list[Any] = []
+    written = 0
+    for ord_, vec in rows:
+        batch.append(
+            zvec.Doc(
+                id=f"{doc_id}:{version}:{ord_}",
+                vectors={"emb": [float(x) for x in vec]},
+                fields={"doc_id": doc_id, "ord": int(ord_)},
+            )
+        )
+        if len(batch) >= 512:
+            col.insert(batch)
+            written += len(batch)
+            batch = []
+    if batch:
+        col.insert(batch)
+        written += len(batch)
+    meta = Path(vec_dir(workspace_id)).with_suffix(".meta.json")
+    try:
+        prev = json.loads(meta.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        prev = {"chunks": 0, "dim": dim}
+    prev["chunks"] = int(prev.get("chunks") or 0) + written
+    prev["dim"] = dim
+    meta.parent.mkdir(parents=True, exist_ok=True)
+    meta.write_text(json.dumps(prev), encoding="utf-8")
+    return written
+
+
+def vec_delete(doc_id: str, workspace_id: str = "ws_default") -> None:
+    try:
+        path = vec_dir(workspace_id)
+        col = _VEC.get(path)
+        if col is None:
+            return
+        col.delete_by_filter(f"doc_id = '{doc_id}'")
+    except Exception:  # noqa: BLE001
+        logger.warning("向量索引删除失败（忽略）：%s", doc_id, exc_info=True)
+
+
+def vec_search(query_vec: list[float], *, limit: int = 10, workspace_id: str = "ws_default") -> list[tuple[str, int, float]]:
+    """HNSW 检索，返回 [(doc_id, ord, score)]。不可用时抛异常由调用方降级。"""
+    import zvec
+
+    col = _vec_open(len(query_vec), workspace_id)
+    hits = col.query(
+        queries=zvec.Query(field_name="emb", vector=[float(x) for x in query_vec]),
+        topk=max(limit * 4, 20),
+        output_fields=["doc_id", "ord"],
+    )
+    out: list[tuple[str, int, float]] = []
+    for h in hits:
+        out.append((str(h.fields.get("doc_id") or ""), int(h.fields.get("ord") or 0), float(getattr(h, "score", 0.0) or 0.0)))
+    return out

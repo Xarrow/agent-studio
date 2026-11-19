@@ -304,6 +304,7 @@ async def delete_document(
         from ..knowledge import index as _zidx
 
         await _zidx.delete_document(doc_id)
+        _zidx.vec_delete(doc_id)
     except Exception:  # noqa: BLE001
         logger.info("清理 zvec 索引失败（忽略）：%s", doc_id, exc_info=True)
     await session.execute(delete(DocChunk).where(DocChunk.doc_id == doc_id))

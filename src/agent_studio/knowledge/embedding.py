@@ -222,6 +222,18 @@ async def embed_document(session: AsyncSession, doc: Doc) -> dict[str, Any]:
     doc.embed_model = conf["model"]
     doc.embed_dim = dim
     await session.commit()
+    # 同步写进 HNSW（规模上来后靠它检索；写失败不影响向量已落库，检索会退回暴力余弦）
+    try:
+        from . import index as _zidx
+
+        rows = (
+            await session.execute(
+                select(DocEmbedding.ord, DocEmbedding.vec).where(DocEmbedding.doc_id == doc.id)
+            )
+        ).all()
+        _zidx.vec_upsert(doc.id, doc.version, [(int(o), list(_unpack(v))) for o, v in rows])
+    except Exception:  # noqa: BLE001
+        logger.info("写 HNSW 失败（检索会退回 SQLite 暴力）", exc_info=True)
     return {"ok": True, "chunks": done, "dim": dim, "model": conf["model"]}
 
 
@@ -280,6 +292,59 @@ async def search_vector(
             f"已入库向量用的是 {', '.join(sorted(models))}，与当前配置 {conf['model']} 不一致；"
             "请用同一模型重建向量（流水线里点「重建向量」）"
         )
+
+    # 先试 HNSW（zvec）；不可用再退回 SQLite 暴力余弦
+    try:
+        from . import index as _zidx
+
+        ann = _zidx.vec_search([float(x) for x in q], limit=limit)
+        if ann:
+            # zvec 的 COSINE 返回的是**距离**（0 = 完全相同，越大越远）——
+            # 转成相似度再报给上层，否则界面上"分数"越大越差的观感会反过来。
+            sims = [(did, ord_, 1.0 - float(score)) for did, ord_, score in ann]
+            doc_ids = list(dict.fromkeys(d for d, _o, _s in sims))[:limit]
+            docs = {
+                d.id: d
+                for d in (
+                    await session.execute(select(Doc).where(Doc.id.in_(doc_ids), Doc.deleted_at.is_(None)))
+                ).scalars().all()
+            }
+            # 一次取回所有命中块，避免 N+1（之前每命中一条查一次库，20 条就 700ms）
+            chunks = (
+                await session.execute(
+                    select(DocChunk).where(DocChunk.doc_id.in_(doc_ids))
+                )
+            ).scalars().all()
+            by_pair = {(c.doc_id, c.ord): c for c in chunks}
+            out: list[dict[str, Any]] = []
+            seen: set[str] = set()
+            for did, ord_, sim in sims:
+                doc = docs.get(did)
+                if doc is None or did in seen:
+                    continue
+                seen.add(did)
+                chunk = by_pair.get((did, ord_))
+                snippet = ((chunk.text if chunk else "") or "").replace("\n", " ")[:240]
+                out.append(
+                    {
+                        "id": doc.id,
+                        "name": doc.name,
+                        "kind": doc.kind,
+                        "status": doc.status,
+                        "snippet": snippet,
+                        "page": chunk.page if chunk else None,
+                        "sheet": chunk.sheet if chunk else "",
+                        "updated_at": doc.updated_at,
+                        "score": round(float(sim), 4),
+                        "matched_path": "vector",
+                    }
+                )
+                if len(out) >= limit:
+                    break
+            if out:
+                return out
+    except Exception:  # noqa: BLE001 —— HNSW 不可用就走下面的暴力路
+        logger.info("HNSW 不可用，改用暴力余弦", exc_info=True)
 
     rows = (
         await session.execute(
