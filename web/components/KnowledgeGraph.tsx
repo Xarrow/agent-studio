@@ -66,7 +66,12 @@ function truncate(s: string, max: number): string {
   return s.length > max ? `${s.slice(0, max - 1)}…` : s;
 }
 
-export function KnowledgeGraph() {
+export function KnowledgeGraph({
+  onSelect,
+}: {
+  /** 点节点时把「相关的文档 id」抛给外面，用来筛文档卡片 */
+  onSelect?: (sel: { kind: string; label: string; docIds: string[] } | null) => void;
+} = {}) {
   const fb = useFeedback();
   const [data, setData] = useState<{ nodes: GNode[]; edges: GEdge[] } | null>(null);
   /** 点中的节点：高亮它的邻接；再点一次取消 */
@@ -216,7 +221,24 @@ export function KnowledgeGraph() {
                   role="button"
                   tabIndex={0}
                   style={{ cursor: "pointer", opacity: dim ? 0.3 : 1 }}
-                  onClick={() => setSelected(isSel ? null : n.id)}
+                  onClick={() => {
+                    const next = isSel ? null : n.id;
+                    setSelected(next);
+                    if (!onSelect) return;
+                    if (!next) {
+                      onSelect(null);
+                      return;
+                    }
+                    // 选中节点 → 收集一跳之内能到达的 doc 节点
+                    const ids = new Set<string>();
+                    const kind = next.split(":")[0];
+                    if (kind === "doc") ids.add(next.slice(4));
+                    for (const e of data?.edges ?? []) {
+                      if (e.from === next && e.to.startsWith("doc:")) ids.add(e.to.slice(4));
+                      if (e.to === next && e.from.startsWith("doc:")) ids.add(e.from.slice(4));
+                    }
+                    onSelect({ kind, label: n.label, docIds: Array.from(ids) });
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") setSelected(isSel ? null : n.id);
                   }}

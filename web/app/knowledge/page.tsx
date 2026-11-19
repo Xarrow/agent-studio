@@ -108,6 +108,7 @@ export default function KnowledgePage() {
   const [dragOver, setDragOver] = useState(false);
   const [urlOpen, setUrlOpen] = useState(false);
   const [pasteOpen, setPasteOpen] = useState(false);
+  const [graphSel, setGraphSel] = useState<{ kind: string; label: string; docIds: string[] } | null>(null);
   const [pasteDraft, setPasteDraft] = useState({ title: "", text: "", tags: "" });
   const [urlDraft, setUrlDraft] = useState({ url: "", name: "" });
   const fileRef = useRef<HTMLInputElement>(null);
@@ -397,6 +398,8 @@ export default function KnowledgePage() {
         agents={agents}
         agentId={agentId}
         onUpload={(files) => void upload(files)}
+        graphFilter={graphSel}
+        onClearGraphFilter={() => setGraphSel(null)}
         q={q}
         onQuery={setQ}
         catFilter={catFilter}
@@ -414,7 +417,7 @@ export default function KnowledgePage() {
           desc="文档 → 分类、技能 → 来源文档、助手 → 技能；点节点可筛上面的卡片"
           defaultOpen={false}
         >
-          <KnowledgeGraph />
+          <KnowledgeGraph onSelect={setGraphSel} />
         </Section>
         <Section title="库设置" desc="分类、标签、存储、迁移、回收站" defaultOpen={false}>
           <div className="space-y-3">
@@ -764,7 +767,7 @@ function DocDetail({
           </div>
         ) : null}
 
-        <div>
+        <div id={`raw-${doc.id}`}>
           <div className="mb-1.5 flex items-center gap-2 text-[12px]">
             <span style={{ color: "var(--color-text-2)" }}>解析文本</span>
             {chunks.length > 2 ? (
@@ -2050,6 +2053,8 @@ function DocumentFlow({
   agents,
   agentId,
   onUpload,
+  graphFilter,
+  onClearGraphFilter,
   q,
   onQuery,
   catFilter,
@@ -2061,6 +2066,8 @@ function DocumentFlow({
   agents: { id: string; name: string }[];
   agentId: string;
   onUpload: (files: FileList | File[]) => void;
+  graphFilter: { kind: string; label: string; docIds: string[] } | null;
+  onClearGraphFilter: () => void;
   q: string;
   onQuery: (v: string) => void;
   catFilter: string;
@@ -2155,6 +2162,7 @@ function DocumentFlow({
     next === "wait_parse" ? "解析中…" : next === "embed" ? "向量化" : next === "tag" ? "出关键词" : next === "skill" ? "生成技能" : "已完成";
 
   const [drag, setDrag] = useState(false);
+  const shownDocs = graphFilter ? docs.filter((d) => graphFilter.docIds.includes(d.id)) : docs;
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   return (
@@ -2224,18 +2232,29 @@ function DocumentFlow({
           ))}
         </select>
         <span className="ml-auto text-[11px]" style={{ color: "var(--color-text-3)" }}>
-          {docs.length} 份
+          {shownDocs.length} 份
         </span>
       </Toolbar>
 
-      {docs.length === 0 ? (
+      {graphFilter ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-[10px] px-2.5 py-1.5 text-[11.5px]"
+             style={{ background: "color-mix(in srgb, var(--color-accent) 10%, transparent)" }}>
+          <span>图谱筛选：{graphFilter.kind === "doc" ? "文档" : graphFilter.kind === "tag" ? "标签" : graphFilter.kind === "skill" ? "技能" : graphFilter.kind === "category" ? "分类" : "助手"} · {graphFilter.label}</span>
+          <span style={{ color: "var(--color-text-3)" }}>{shownDocs.length} 份</span>
+          <button className="btn btn-sm ml-auto" type="button" onClick={onClearGraphFilter}>
+            取消筛选
+          </button>
+        </div>
+      ) : null}
+
+      {shownDocs.length === 0 ? (
         <Empty
           title="还没有文档"
           hint="把文件拖到右上「上传文档」，或点「粘贴文本」直接入库；上传后这一行就是它的流程卡"
         />
       ) : null}
 
-      {docs.map((d) => {
+      {shownDocs.map((d) => {
         const st = stepsOf(d);
         const next = nextOf(d);
         const open = openId === d.id;
@@ -2281,7 +2300,12 @@ function DocumentFlow({
                 className="btn btn-sm"
                 type="button"
                 style={{ color: "var(--color-text-2)" }}
-                onClick={() => setOpenId(d.id)}
+                onClick={() => {
+                  setOpenId(d.id);
+                  window.setTimeout(() => {
+                    document.getElementById(`raw-${d.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  }, 120);
+                }}
                 title="看解析后的正文与原文"
               >
                 原文
