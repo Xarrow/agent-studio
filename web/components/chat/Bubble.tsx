@@ -101,6 +101,8 @@ export function Bubble({
 }) {
   const isUser = role === "user";
   const [open, setOpen] = useState(false);
+  /** 长回答折叠：超过 600 字先收成 8 行，展开才全文（回看时不被巨长回答顶走） */
+  const [expanded, setExpanded] = useState(false);
   const [events, setEvents] = useState<RunEvent[] | null>(null);
   const [loadingEv, setLoadingEv] = useState(false);
   /** 完整记录弹框（气泡内自己持有 —— 它是独立组件，不是 ChatConsole 的作用域） */
@@ -474,7 +476,44 @@ export function Bubble({
               {userBody}
             </>
           ) : (
-            <Markdown text={content} chat />
+            (() => {
+              const long = !streaming && content.length > 600;
+              const collapsed = long && !expanded;
+              return (
+                <>
+                  <div
+                    style={
+                      collapsed
+                        ? { maxHeight: 208, overflow: "hidden", position: "relative" }
+                        : undefined
+                    }
+                  >
+                    <Markdown text={content} chat />
+                    {collapsed ? (
+                      <div
+                        aria-hidden
+                        className="pointer-events-none absolute inset-x-0 bottom-0 h-12"
+                        style={{
+                          background:
+                            "linear-gradient(to top, var(--color-surface), transparent)",
+                        }}
+                      />
+                    ) : null}
+                  </div>
+                  {long ? (
+                    <button
+                      type="button"
+                      className="mt-1 text-[11.5px]"
+                      style={{ color: "var(--color-accent)" }}
+                      onClick={() => setExpanded((v) => !v)}
+                      aria-expanded={expanded}
+                    >
+                      {expanded ? "收起" : `展开全文 · ${content.length} 字`}
+                    </button>
+                  ) : null}
+                </>
+              );
+            })()
           )}
           {streaming && <span className="live-dot ml-0.5">▍</span>}
         </div>
