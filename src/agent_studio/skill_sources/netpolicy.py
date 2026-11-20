@@ -161,6 +161,9 @@ class NetPolicy:
         return httpx.AsyncClient(
             timeout=httpx.Timeout(self.read_timeout, connect=self.connect_timeout),
             follow_redirects=False,      # 自己走，才能做跨主机脱敏与降级拦截
+            # 代理一律由 self.proxy_for() 决定：trust_env=True 会让 httpx 再读一层
+            # 环境变量，于是 proxy_mode=off 也照样走代理（回环地址因此连不上）
+            trust_env=False,
             verify=verify,
             headers=headers or {},
             proxy=proxy or None,

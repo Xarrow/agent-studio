@@ -4,7 +4,7 @@
 ====
 ``parse_source(raw, *, sources=None, cwd=None, strict=True)`` 返回 ``SourceRef``：
 
-    kind:      github | gitlab | git | local
+    kind:      github | gitlab | git | local | site | file
     host:      主机名（本地来源为空串）
     owner/repo 仓库（本地来源为空串）
     ref:       分支/标签/SHA，None = 仓库默认分支
@@ -24,6 +24,11 @@ URL：``https://github.com/o/r``、``/tree/<ref>/<sub>``、``.git`` 结尾、
      ``https://gitlab.com/o/r``、``https://host/group/sub/repo``（GitLab 多级）
 SSH：``git@host:o/r.git``、``ssh://git@host:22/o/r.git``
 其他：``https://host/o/r.git`` 视为通用 git；无法判断时报 unrecognized_source
+站点索引：``https://archify.si``（只有主机名，或一级路径）→ kind=site，
+      取回时按 ``/.well-known/agent-skills/index.json`` → ``/.well-known/skills/index.json``
+      探测清单（agentskills.io discovery 0.2.0），再按清单里的 url 下载归档。
+直链：``https://host/x/SKILL.md``、``.../pkg.zip``、``.tar.gz``、``.tgz`` → kind=file
+      （单个 SKILL.md 直接落盘；归档按包解压）
 已登记来源引用：``来源名:技能名``、``来源名/子路径@技能名``
 
 安全：拒绝控制字符、空白、``..`` 片段、非 http/https/ssh 协议、file:// 与设备路径。
@@ -45,6 +50,10 @@ _HTTP = re.compile(r"^https?://", re.IGNORECASE)
 _SLUG = re.compile(r"^[A-Za-z0-9_.\-]+$")
 _OWNER_REPO = re.compile(r"^(?P<owner>[A-Za-z0-9_.\-]+)/(?P<repo>[A-Za-z0-9_.\-]+)(?P<rest>/.*)?$")
 _REF_OK = re.compile(r"^[A-Za-z0-9_.\-/]{1,120}$")
+# 这些主机只有「仓库」一种含义：裸域名不是站点索引
+_REPO_HOSTS = {"github.com", "gitlab.com", "bitbucket.org", "gitee.com", "codeberg.org", "git.sr.ht"}
+# 直链文件的后缀（SKILL.md 或归档包）
+_FILE_TAIL = re.compile(r"(?i)(skill\.md$|\.(zip|tar|tar\.gz|tgz|tar\.bz2|tar\.xz)$)")
 
 
 class SourceError(ValueError):
@@ -66,6 +75,8 @@ class SourceRef:
     subpath: str | None = None
     skill: str | None = None
     raw: str = ""
+    #: kind=site/file 时的完整地址（站点清单入口 / 直链文件）
+    url: str = ""
     source_id: str | None = None
     ambiguity: list[str] = field(default_factory=list)
     notes: str = ""
@@ -88,6 +99,7 @@ class SourceRef:
             "subpath": self.subpath,
             "skill": self.skill,
             "raw": self.raw,
+            "url": self.url,
             "source_id": self.source_id,
             "ambiguity": list(self.ambiguity),
             "notes": self.notes,
@@ -338,11 +350,32 @@ def _from_http(url: str, raw: str, skill: str | None, ref: str | None) -> Source
     if u.scheme not in ("http", "https"):
         raise SourceError("invalid_source", f"不支持的协议：{u.scheme}", "只接受 http/https")
     host = (u.hostname or "").lower()
+    # 保留端口：站点索引/直链的 url 要能原样再取一次（丢掉 :8080 就连不上了）
+    netloc = (u.netloc or host).lower()
+    if netloc.startswith("www."):
+        netloc = netloc[4:]
     if host.startswith("www."):
         host = host[4:]
     if not host:
         raise SourceError("invalid_source", f"地址里没有主机名：{url}", "检查一下链接")
     segs = [x for x in u.path.split("/") if x]
+    # 直链文件：结尾就是 SKILL.md / 归档包 —— 不按仓库解析
+    if segs and _FILE_TAIL.search(segs[-1]):
+        clean = f"{u.scheme}://{netloc}/" + "/".join(segs)
+        return SourceRef(kind="file", host=host, url=clean, skill=skill, raw=raw, notes="直链文件")
+    # 站点索引：**只有主机名**才算（skills CLI 的 "site index" 就是这种）。
+    # 带一级路径的（example.com/a）仍旧报「看不出 owner/repo」——
+    # 否则用户少打一段仓库名时，会被静默当成站点去探清单。
+    if not segs and host not in _REPO_HOSTS:
+        clean = f"{u.scheme}://{netloc}" + ("/" + "/".join(segs) if segs else "")
+        return SourceRef(
+            kind="site",
+            host=host,
+            url=clean,
+            skill=skill,
+            raw=raw,
+            notes="站点索引（先探 well-known 清单）",
+        )
     if segs and segs[0] == "-":  # gem 风格，不认
         raise SourceError("unrecognized_source", "这不是仓库地址", "用仓库根地址或 /tree/ 地址")
 

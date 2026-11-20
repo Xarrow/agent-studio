@@ -243,7 +243,12 @@ def _commit_from_archive_name(url: str) -> str:
 
 
 def unpack_archive(data: bytes, dest: Path) -> None:
-    """安全解压：拒绝穿越/绝对路径/链接逃逸/设备文件，限制条目与总大小。"""
+    """安全解压：拒绝穿越/绝对路径/链接逃逸/设备文件，限制条目与总大小。
+
+    zip 与 tar.gz 都认（站点清单里的 ``type: archive`` 常见是 zip）。
+    """
+    if data[:2] == b"PK":
+        return _unpack_zip(data, dest)
     dest.mkdir(parents=True, exist_ok=True)
     total = 0
     count = 0
@@ -291,6 +296,189 @@ def unpack_archive(data: bytes, dest: Path) -> None:
             target.parent.mkdir(parents=True, exist_ok=True)
             with open(target, "wb") as fh:
                 shutil.copyfileobj(fobj, fh)
+
+
+def _unpack_zip(data: bytes, dest: Path) -> None:
+    import zipfile
+
+    dest.mkdir(parents=True, exist_ok=True)
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(data))
+    except zipfile.BadZipFile as exc:
+        raise FetchError("bad_archive", f"zip 解析失败：{exc}", "换一个来源") from exc
+    total = 0
+    with zf:
+        names = [n for n in zf.namelist() if n]
+        tops = {n.split("/")[0] for n in names}
+        strip = ""
+        if len(tops) == 1 and all(n == next(iter(tops)) or n.startswith(next(iter(tops)) + "/") for n in names):
+            strip = next(iter(tops)) + "/"
+        if len(names) > MAX_ENTRIES:
+            raise FetchError("too_many_entries", f"压缩包条目超过 {MAX_ENTRIES}")
+        for info in zf.infolist():
+            raw_name = info.filename
+            if raw_name.startswith("/") or ".." in Path(raw_name).parts:
+                raise FetchError("unsafe_path", f"压缩包里有非法路径：{raw_name}")
+            name = raw_name[len(strip):] if strip and raw_name.startswith(strip) else raw_name
+            if not name:
+                continue
+            if ".." in Path(name).parts:
+                raise FetchError("unsafe_path", f"压缩包里有非法路径：{name}")
+            if info.is_dir():
+                (dest / name).mkdir(parents=True, exist_ok=True)
+                continue
+            # zip 的符号链接靠外部属性位判断（0xA000 在 Unix 权限高位）
+            if (info.external_attr >> 16) & 0o170000 == 0o120000:
+                raise FetchError("unsafe_entry", f"压缩包里有链接：{name}")
+            total += info.file_size
+            if total > MAX_UNPACKED_BYTES:
+                raise FetchError("too_large", f"解压后超过 {MAX_UNPACKED_BYTES // (1024 * 1024)}MB")
+            target = dest / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with zf.open(info) as src, open(target, "wb") as fh:
+                shutil.copyfileobj(src, fh)
+
+
+SITE_INDEX_PATHS = (
+    "/.well-known/agent-skills/index.json",   # agentskills.io discovery 0.2.0（archify.si 用这个）
+    "/.well-known/skills/index.json",
+    "/skills.json",
+)
+
+ARCHIVE_SUFFIX = (".zip", ".tar.gz", ".tgz", ".tar", ".tar.bz2", ".tar.xz")
+
+
+def _is_archive(url: str) -> bool:
+    path = url.split("?")[0].split("#")[0].lower()
+    return path.endswith(ARCHIVE_SUFFIX)
+
+
+def _verify_digest(data: bytes, digest: str) -> None:
+    want = (digest or "").strip().lower()
+    if not want:
+        return
+    algo, _, hexv = want.partition(":")
+    if algo != "sha256" or not hexv:
+        return                      # 不认识的摘要格式：不假装验过，也不阻断
+    import hashlib
+
+    got = hashlib.sha256(data).hexdigest()
+    if got != hexv:
+        raise FetchError(
+            "digest_mismatch",
+            f"下载内容和清单里的摘要不一致（清单 {hexv[:12]}…，实际 {got[:12]}…）",
+            "站点可能正在发版；重试一次，仍然不一致就别装",
+        )
+
+
+def _pick_entry(entries: list[dict[str, Any]], skill: str | None) -> dict[str, Any]:
+    if skill:
+        for e in entries:
+            if str(e.get("name") or "") == skill:
+                return e
+        names = ", ".join(str(e.get("name")) for e in entries[:12])
+        raise FetchError("skill_not_found", f"清单里没有叫 {skill} 的技能", f"清单里有：{names}")
+    if len(entries) == 1:
+        return entries[0]
+    names = ", ".join(str(e.get("name")) for e in entries[:12])
+    raise FetchError("skill_choice_required", "这个站点索引里有多个技能，要指定一个", f"可选：{names}")
+
+
+async def fetch_via_site(ref: SourceRef, *, policy: NetPolicy) -> Fetched:
+    """站点索引：先探 well-known 清单，再按清单里的地址下归档。
+
+    这是 ``npx skills add https://archify.si`` 实际走的路径：
+    站点在 ``/.well-known/agent-skills/index.json`` 列出 ``{name, type: archive, url, digest}``，
+    CLI 下载 url 指向的 zip 并按 digest 校验。这里原生照做，不需要 Node。
+    """
+    from urllib.parse import urljoin, urlparse
+
+    base = (ref.url or f"https://{ref.host}").rstrip("/")
+    origin = "{0.scheme}://{0.netloc}".format(urlparse(base))
+    cands: list[str] = []
+    for root in dict.fromkeys([base, origin]):
+        for path in SITE_INDEX_PATHS:
+            cands.append(root + path)
+    errors: list[str] = []
+    index_url = ""
+    payload: Any = None
+    for url in cands:
+        try:
+            r = await policy.get(url, max_bytes=2 * 1024 * 1024)
+        except NetError as exc:
+            errors.append(f"{url} → {exc.code}")
+            continue
+        data = r[0] if isinstance(r, tuple) else r
+        try:
+            import json
+
+            payload = json.loads(data.decode("utf-8", "ignore"))
+        except Exception:  # noqa: BLE001
+            errors.append(f"{url} → 不是 JSON")
+            continue
+        index_url = url
+        break
+    if payload is None:
+        raise FetchError(
+            "no_site_index",
+            f"{ref.host} 没有技能清单（试过 {len(cands)} 个 well-known 地址）",
+            "这个地址可能只是普通网站；换成仓库地址（owner/repo）或直链 SKILL.md",
+        )
+
+    entries = payload.get("skills") if isinstance(payload, dict) else payload
+    if not isinstance(entries, list) or not entries:
+        raise FetchError("no_site_index", f"{index_url} 里没有列出技能", "确认站点清单格式")
+    entries = [e for e in entries if isinstance(e, dict)]
+    entry = _pick_entry(entries, ref.skill)
+
+    name = str(entry.get("name") or (ref.skill or "skill"))
+    target = str(entry.get("url") or entry.get("download") or "")
+    if not target:
+        raise FetchError("no_site_index", f"{index_url} 里的 {name} 没有下载地址")
+    file_url = urljoin(index_url, target)
+
+    data, final = await policy.get(file_url, max_bytes=MAX_ARCHIVE_BYTES)
+    _verify_digest(data, str(entry.get("digest") or ""))
+
+    root = Path(tempfile.mkdtemp(prefix="studio-skill-site-"))
+    if _is_archive(file_url):
+        unpack_archive(data, root / "repo")
+    else:
+        # 单个 SKILL.md：按 <技能名>/SKILL.md 落位，让后续发现逻辑照常工作
+        (root / "repo" / name).mkdir(parents=True, exist_ok=True)
+        (root / "repo" / name / "SKILL.md").write_bytes(data)
+    notes = [f"来自站点索引 {index_url}"]
+    if entry.get("digest"):
+        notes.append("已按清单里的 sha256 校验")
+    return Fetched(
+        root=root / "repo",
+        commit=str(entry.get("digest") or entry.get("version") or ""),
+        integrity="verified",
+        via="site",
+        url_used=final,
+        notes=notes,
+    )
+
+
+async def fetch_via_file(ref: SourceRef, *, policy: NetPolicy) -> Fetched:
+    """直链：SKILL.md 或归档包。"""
+    url = ref.url or ref.raw
+    data, final = await policy.get(url, max_bytes=MAX_ARCHIVE_BYTES)
+    root = Path(tempfile.mkdtemp(prefix="studio-skill-url-"))
+    if _is_archive(url):
+        unpack_archive(data, root / "repo")
+    else:
+        name = (ref.skill or _name_from_url(url) or "skill").strip("/") or "skill"
+        (root / "repo" / name).mkdir(parents=True, exist_ok=True)
+        (root / "repo" / name / "SKILL.md").write_bytes(data)
+    return Fetched(root=root / "repo", via="url", url_used=final, integrity="unverified", notes=["直链下载，没有摘要可校验"])
+
+
+def _name_from_url(url: str) -> str:
+    from urllib.parse import urlparse
+
+    segs = [x for x in urlparse(url).path.split("/") if x]
+    return segs[-2] if len(segs) >= 2 else ""
 
 
 async def resolve_commit(
@@ -350,6 +538,10 @@ async def fetch(
     """按可用性选路：prefer=archive 且平台已适配 → 归档；否则 git。"""
     if ref.kind == "local":
         raise FetchError("invalid_source", "本地来源不走下载")
+    if ref.kind == "site":
+        return await fetch_via_site(ref, policy=policy)
+    if ref.kind == "file":
+        return await fetch_via_file(ref, policy=policy)
     plat = platform_for(ref.host, platforms)
     if prefer == "archive" and plat and plat.archive_template:
         return await fetch_via_archive(ref, policy=policy, platforms=platforms, token=token)

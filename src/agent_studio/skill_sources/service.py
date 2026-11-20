@@ -222,9 +222,10 @@ async def install(
     from ..api.skills import _materialize, _upsert_skill
 
     source_meta = {
-        "type": "repo",
+        # site/file 是"站点索引 / 直链"，不是仓库 —— 类型要如实记，更新判断才知道该怎么做
+        "type": "site" if ref.kind == "site" else ("file" if ref.kind == "file" else "repo"),
         "source_id": ref.source_id,
-        "repo": ref.slug,
+        "repo": ref.slug or ref.url or ref.raw,
         "host": ref.host,
         "ref": ref.ref or "HEAD",
         "subpath": ref.subpath,
@@ -613,7 +614,7 @@ async def _ensure_source_row(session: AsyncSession, ref: SourceRef, *, commit: s
     if existing is None:
         existing = SkillSource(
             name=f"{owner}/{repo}" if owner else (address.rsplit("/", 1)[-1] or "本地来源"),
-            kind="local" if ref.kind == "local" else "git",
+            kind="local" if ref.kind == "local" else ("site" if ref.kind == "site" else ("file" if ref.kind == "file" else "git")),
             address=address,
             host=host,
             owner=owner,
