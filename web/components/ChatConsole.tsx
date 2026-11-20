@@ -767,10 +767,10 @@ export function ChatConsole({
       const detail = await api.session(sid, 30);
       if (seq !== loadSeqRef.current) return;
       // 恢复这个会话上次的阅读位置（没有记录就由下面的"贴底"逻辑接管）
-      const savedScroll =
-        prevSidRef.current && prevSidRef.current !== sid
-          ? Number(sessionStorage.getItem(`chat.scroll.${sid}`) || 0)
-          : 0;
+      // 恢复条件：这个会话里有"用户主动上滚过"的标记。
+      // 没有标记 = 上次是贴底看的 → 本次照旧贴底（打开即最新）。
+      const userScrolled = sessionStorage.getItem(`chat.scroll.${sid}.user`) === "1";
+      const savedScroll = userScrolled ? Number(sessionStorage.getItem(`chat.scroll.${sid}`) || 0) : 0;
       prevSidRef.current = sid;
       setCurKind(detail.session.kind ?? "chat");
       setCurTicket(detail.session.ticket_title ?? null);
@@ -1107,6 +1107,41 @@ export function ChatConsole({
     // 流式时用瞬时滚动（smooth 会被每帧的新内容打断，反而抖）
     pinBottom();
   }, [history, live, pinBottom]);
+
+  /* 恢复阅读位置：放在独立 effect 里而不是 loadMessages 里 ——
+     首屏加载根本走不到那段（页面初始化另有路径），实测刷新后总是被贴底覆盖。
+     这里以「有用户上滚标记 + 该会话还没恢复过」为条件，最多试 12 次（2.4s）。 */
+  const restoredRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!sessionId) return;
+    if (restoredRef.current.has(sessionId)) return;
+    let saved = 0;
+    try {
+      if (sessionStorage.getItem(`chat.scroll.${sessionId}.user`) !== "1") return;
+      saved = Number(sessionStorage.getItem(`chat.scroll.${sessionId}`) || 0);
+    } catch {
+      return;
+    }
+    if (!saved) return;
+    restoredRef.current.add(sessionId);
+    let tries = 0;
+    const tick = () => {
+      const el = boxRef.current;
+      if (el) {
+        const max = Math.max(0, el.scrollHeight - el.clientHeight);
+        const target = Math.min(saved, max);
+        if (max - target >= 24) {
+          el.scrollTop = target;
+          followRef.current = false;
+          suppressFollowUntil.current = Date.now() + 2000;
+          setAtBottom(false);
+          if (Math.abs(el.scrollTop - target) <= 4) return;
+        }
+      }
+      if (++tries < 12) window.setTimeout(tick, 200);
+    };
+    window.setTimeout(tick, 150);
+  }, [sessionId, history.length]);
   const onScroll = () => {
     const el0 = boxRef.current;
     if (el0) setTopScrolled(el0.scrollTop > 2);
@@ -1116,6 +1151,10 @@ export function ChatConsole({
     if (sessionId && el0) {
       try {
         sessionStorage.setItem(`chat.scroll.${sessionId}`, String(Math.round(el0.scrollTop)));
+        // 只有"用户真的往上翻过"才值得刷新后恢复；贴底浏览不算
+        const far = el0.scrollHeight - el0.scrollTop - el0.clientHeight > 80;
+        if (far) sessionStorage.setItem(`chat.scroll.${sessionId}.user`, "1");
+        else sessionStorage.removeItem(`chat.scroll.${sessionId}.user`);
       } catch {
         /* 隐私模式写不进去是正常的 */
       }
@@ -1952,6 +1991,21 @@ export function ChatConsole({
      这里在 50/300/900ms 各贴一次，之后就交给上面的跟随逻辑。 */
   useEffect(() => {
     if (!sessionId) return;
+    // 这个会话上次是"用户上滚过的"→ 交给恢复逻辑，别在这里贴底
+    // （这条兜底会在 900ms 再贴一次，正是刷新后恢复位置又被拽下去的原因）
+    let keepPosition = false;
+    try {
+      keepPosition =
+        sessionStorage.getItem(`chat.scroll.${sessionId}.user`) === "1" &&
+        Number(sessionStorage.getItem(`chat.scroll.${sessionId}`) || 0) > 0;
+    } catch {
+      keepPosition = false;
+    }
+    if (keepPosition) {
+      followRef.current = false;
+      setAtBottom(false);
+      return;
+    }
     followRef.current = true;
     setAtBottom(true);
     const timers = [50, 300, 900].map((ms) => window.setTimeout(() => pinBottom(), ms));
