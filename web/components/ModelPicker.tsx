@@ -106,13 +106,14 @@ function dedupeModels(list: string[]): string[] {
 }
 
 export function ModelPicker({
-  providers,
+  providers = [],
   provider,
   credentialId,
   value,
   onChange,
 }: {
-  providers: Provider[];
+  /** 可选：只关心这一条凭据的模型时可以不传（清单全靠探测） */
+  providers?: Provider[];
   provider: string;
   credentialId?: string | null;
   value: string;

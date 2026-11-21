@@ -18,6 +18,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useImeGuard } from "@/lib/ime";
 import { api, fmt } from "@/lib/api";
+import { ModelPicker } from "@/components/ModelPicker";
 import type { Credential } from "@/lib/types";
 import { DLG_BACKDROP, DLG_CARD } from "@/components/ui/kit";
 
@@ -146,21 +147,15 @@ export function CredentialChatDialog({
         {/* 模型选择 */}
         <div className="flex items-center gap-2 mb-3">
           <span className="text-[12px] text-[var(--color-muted)] shrink-0">模型</span>
-          <select
-            className="input mono flex-1"
-            value={model}
-            disabled={probing || !models.length}
-            onChange={(e) => setModel(e.target.value)}
-          >
-            {probing && <option value={model}>取模型中…</option>}
-            {!probing && !models.length && <option value="">（没有可用模型，先去编辑里选）</option>}
-            {!probing &&
-              models.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-          </select>
+          {/* 原来是原生 select 平铺 488 项，还默认选第一个而不是这条凭据的默认模型（复测 F20） */}
+          <div className="min-w-0 flex-1">
+            <ModelPicker
+              provider={credential.provider}
+              credentialId={credential.id}
+              value={model}
+              onChange={setModel}
+            />
+          </div>
           {turns.length > 0 && (
             <button className="btn shrink-0" onClick={() => setTurns([])}>
               清空
