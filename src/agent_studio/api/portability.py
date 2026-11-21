@@ -502,9 +502,26 @@ async def import_bundle(
             continue
         from ..security.crypto import encrypt
 
+        # provider 缺失时不能默认成 openai：包里没写这一项，落成 openai 之后
+        # 助手再引用它，请求就打到了 OpenAI（实测踩过）。按 base_url 推断，
+        # 推断不出来就留空，让界面提示用户补——猜错的代价比留空大得多。
+        provider = str(item.get("provider") or "").strip()
+        if not provider:
+            host = (item.get("base_url") or "").lower()
+            provider = (
+                "deepseek" if "deepseek" in host
+                else "volcengine" if "volces" in host
+                else "anthropic" if "anthropic" in host
+                else "dashscope" if "aliyuncs" in host
+                else "moonshot" if "moonshot" in host
+                else ""
+            )
+            if not provider:
+                logger.warning("导入凭据 %s 没有 provider，base_url=%s —— 留空待用户补", cname, item.get("base_url"))
+
         sec = Secret(
             name=cname,
-            provider=str(item.get("provider") or "openai"),
+            provider=provider or "openai",
             base_url=item.get("base_url"),
             default_model=item.get("default_model"),
             ciphertext=encrypt(api_key),
