@@ -1132,13 +1132,21 @@ async def _memory_save(
         # 去重：同一句话重复存会把记忆库撑成两份（验收实测：蓝色鲸鱼、SQLite、
         # 工作目录、Clash 代理各存了两遍）。同内容（忽略标点/空白）已存在就不再写。
         norm = "".join(body.split())
+        # 去重要把**归档**的也算上：只看 active/candidate 时，用户归档掉一条、
+        # 助手再说一遍就会又存一份（实测东京库里 20 条有 10 组重复）。
+        # 命中归档项就把它恢复成 active —— 那正是用户的意图，而不是再造一条。
         dup = (
             await session.execute(
-                select(Memory).where(Memory.status.in_(("active", "candidate")))
+                select(Memory).where(Memory.status.in_(("active", "candidate", "archived")))
             )
         ).scalars().all()
         for old_mem in dup:
             if "".join((old_mem.content or "").split()) == norm:
+                if old_mem.status == "archived":
+                    old_mem.status = status
+                    old_mem.updated_at = now_ms()
+                    await session.commit()
+                    return f"这条之前归档过（{old_mem.id}），已恢复，没有重复保存。"
                 return f"这条已经记过了（{old_mem.id}），没有重复保存。"
         session.add(
             Memory(
