@@ -1130,7 +1130,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
 
             <div>
               <label className="label">
-                运行时（切换后下方可配置项随之变化）
+                运行时
               </label>
               <select
                 className="input"
@@ -1192,8 +1192,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 {/* 项目上下文：放在目录里的 AGENTS.md 会被自动读进来 ——
                     这是"这个项目该怎么做"的地方，不该混进上面那个 system prompt（换项目就不适用了） */}
                 <p className="mt-1.5 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
-                  放一个 <span className="mono">AGENTS.md</span> 写项目规矩（跑什么命令、产物放哪、别碰哪些文件），
-                  每次开工自动读（≤8000 字）。
+                  放一个 <span className="mono">AGENTS.md</span> 写项目规矩，每次开工自动读（≤8000 字）。
                 </p>
                 <p className="mt-1 text-[12px] mono" style={{ color: "var(--color-muted)" }}>
                   实际位置：

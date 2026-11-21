@@ -264,7 +264,6 @@ export default function EnvironmentPage() {
       {/* ── 运行环境：这台机器有什么、缺了能装 ─────────────── */}
       <Section
         title="运行环境"
-        desc="本机 Python / Node；缺了一键装到平台目录"
         defaultOpen={false}
       >
         <RuntimeCard />
@@ -273,7 +272,6 @@ export default function EnvironmentPage() {
       {/* ── 浏览器驱动：助手用哪个内核上网 ─────────────────── */}
       <Section
         title="浏览器驱动"
-        desc="助手操作网页用的内核；装哪个、用哪个都在这"
         defaultOpen={false}
       >
         <BrowserDriversCard />
@@ -416,9 +414,6 @@ export default function EnvironmentPage() {
                   setTest(null);
                 }}
               />
-              <p className="text-[12px] text-[var(--color-muted)] mt-1">
-                一个文件就是整个数据库，不需要额外服务。适合本地开发和单机使用。
-              </p>
             </div>
           ) : (
             <>
@@ -643,7 +638,6 @@ export default function EnvironmentPage() {
       {/* 对外接入：把平台当 AG-UI 端点用（任何 AG-UI 客户端都能驱动这些助手） */}
       <Section
         title="对外接入 · AG-UI"
-        desc="暴露 AG-UI SSE 端点，外部客户端可直接驱动助手"
         defaultOpen={false}
       >
         <AguiCard />
@@ -652,7 +646,6 @@ export default function EnvironmentPage() {
       {/* 工具检索：tool_search 的稠密路（向量）端点 —— 没配时纯 BM25 照常工作 */}
       <Section
         title="工具检索 · tool_search"
-        desc="按需工具的检索引擎：词面检索默认可用，配 embeddings 加一路语义检索"
         defaultOpen={false}
       >
         <ToolSearchCard />
@@ -661,7 +654,6 @@ export default function EnvironmentPage() {
       {/* 内置搜索：Agent 的 web_search 靠它 —— 坏了必须能看见 */}
       <Section
         title="内置搜索 · web_search"
-        desc="腾讯搜索为主、Bing RSS 兜底；每天自检一次，坏了这里会变红"
         defaultOpen={false}
       >
         <SearchHealthCard />

@@ -485,11 +485,7 @@ export default function CredentialsPage() {
                           </div>
                         )}
                       </div>
-                    ) : (
-                      <div className="mt-3 text-[12px]" style={{ color: "var(--color-muted)" }}>
-                        点上面的「测试连接」验一下能不能通 —— 延迟与可用模型会显示在这里。
-                      </div>
-                    )}
+                    ) : null}
                   </DetailPanel>
                 )}
               </Fragment>
@@ -510,7 +506,6 @@ export default function CredentialsPage() {
         <Section
           title="支持的 Provider"
           count={`${byProvider.length} 家`}
-          desc="服务商地址平台已知；钥匙在上面的列表里配"
         >
           <div className="flex flex-col">
             {byProvider.map(({ meta, items }) => (

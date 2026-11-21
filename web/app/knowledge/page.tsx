@@ -15,6 +15,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { isImeEvent } from "@/lib/ime";
 
 import { api } from "@/lib/api";
 import { KnowledgeGraph } from "@/components/KnowledgeGraph";
@@ -334,9 +335,6 @@ export default function KnowledgePage() {
             <button className="btn" type="button" onClick={() => setPasteOpen(false)}>
               取消
             </button>
-            <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
-              至少 20 字；入库后点「向量化」就会自动给出关键词
-            </span>
           </div>
         </div>
       ) : null}
@@ -384,9 +382,6 @@ export default function KnowledgePage() {
               取消
             </button>
           </div>
-          <div className="mt-1.5 text-[11px]" style={{ color: "var(--color-text-3)" }}>
-            抓取会保存正文和一份 HTML 快照；原始网页以后改版也不影响这份知识
-          </div>
         </div>
       ) : null}
 
@@ -414,7 +409,6 @@ export default function KnowledgePage() {
         <RecallSection />
         <Section
           title="知识关系"
-          desc="文档 → 标签 → 技能 → 助手；点节点可筛上面的卡片"
           defaultOpen={false}
         >
           <KnowledgeGraph onSelect={setGraphSel} />
@@ -602,6 +596,7 @@ function DocDetail({
                 value={tagDraft}
                 onChange={(e) => setTagDraft(e.target.value)}
                 onKeyDown={async (e) => {
+                  if (isImeEvent(e)) return;
                   if (e.key === "Enter" && tagDraft.trim()) {
                     await api.knowledgeAddDocTag(doc.id, { name: tagDraft.trim(), source: "user" });
                     setTagDraft("");
@@ -695,6 +690,7 @@ function DocDetail({
               value={probeQ}
               onChange={(e) => setProbeQ(e.target.value)}
               onKeyDown={(e) => {
+                if (isImeEvent(e)) return;
                 if (e.key === "Enter" && probeQ.trim()) void runProbe(probeQ.trim());
               }}
               aria-label="试打查询"
@@ -1637,7 +1633,6 @@ function RecallSection() {
   return (
     <Section
       title="召回情况"
-      desc="「查得到吗」的四个数：文档自召回、标签召回、助手真实检索命中、页面搜索命中"
     >
       {!loaded && !stats ? (
         <div className="h-16 animate-pulse rounded-[10px]" style={{ background: "var(--color-surface-2)" }} />
@@ -1654,6 +1649,7 @@ function RecallSection() {
               value={probe}
               onChange={(e) => setProbe(e.target.value)}
               onKeyDown={(e) => {
+                if (isImeEvent(e)) return;
                 if (e.key === "Enter" && probe.trim()) void runProbe();
               }}
               aria-label="试打检索"
@@ -1722,7 +1718,7 @@ function RecallSection() {
           {cov && cov.length > 0 ? (
             <div className="rounded-[10px] px-2.5 py-2" style={{ background: "var(--color-surface-2)" }}>
               <div className="mb-1 text-[11px]" style={{ color: "var(--color-text-3)" }}>
-                哪些助手能查到知识库（没挂检索工具的，召回率永远是 0）
+                哪些助手能查到知识库
               </div>
               <div className="flex flex-wrap items-center gap-1.5">
                 {cov.slice(0, 8).map((a) => (
@@ -2170,9 +2166,9 @@ function DocumentFlow({
           ＋
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block text-[12.5px]">{drag ? "松手即入库" : "拖文件到这里 · 或点右侧上传 / 粘贴文本 / 贴链接"}</span>
+          <span className="block text-[12.5px]">{drag ? "松手即入库" : "拖文件进来，或选择文件"}</span>
           <span className="block text-[11px]" style={{ color: "var(--color-text-3)" }}>
-            PDF / DOCX / XLSX / PPTX / MD / TXT / HTML，单文件 100MB 内
+            PDF · DOCX · XLSX · PPTX · MD · TXT · HTML · ≤100MB
           </span>
         </span>
         <button className="btn btn-sm" type="button" onClick={() => fileRef.current?.click()}>

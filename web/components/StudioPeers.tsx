@@ -14,6 +14,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
+import { isImeEvent } from "@/lib/ime";
 
 import { api } from "@/lib/api";
 import type { StudioPeer, StudioPeerAgent, StudioPeerRemote } from "@/lib/types";
@@ -196,7 +197,7 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
     <div className="mt-5">
       <Section
         title="节点"
-        desc="连接另一个 Agent Studio；点节点在右侧看它的详情与它开放的助手"
+        desc="连接另一个 Agent Studio"
         right={
           <button
             className="btn btn-sm"
@@ -222,7 +223,7 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
             {myToken ? maskToken(myToken) : "（读取中…）"}
           </code>
           <span className="hidden text-[11px] sm:inline" style={{ color: "var(--color-text-3)" }}>
-            对端读我的助手清单 / 握手 / 心跳时要用
+            对端读清单/握手/心跳时用
           </span>
           <button
             className="btn btn-sm"
@@ -368,7 +369,9 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
                 tabIndex={0}
                 onClick={() => void openNode(p.id)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
+                  // 空格不激活：那是滚动键，误触就把详情弹出来了（Enter 才开）
+                  if (isImeEvent(e)) return;
+                  if (e.key === "Enter") {
                     e.preventDefault();
                     void openNode(p.id);
                   }
@@ -619,7 +622,8 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
                           tabIndex={0}
                           onClick={() => setOpenAgent(aOpen ? null : a.id)}
                           onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
+                            if (isImeEvent(e)) return;
+                            if (e.key === "Enter") {
                               e.preventDefault();
                               setOpenAgent(aOpen ? null : a.id);
                             }

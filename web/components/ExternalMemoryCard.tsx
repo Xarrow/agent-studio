@@ -175,7 +175,7 @@ export function ExternalMemoryCard() {
           )
         ) : null}
         <span className="text-[12px] text-[var(--color-muted)]">
-          {cfg.ready ? cfg.base_url : "接自己的记忆库（可与内置混用）"}
+          {cfg.ready ? cfg.base_url : "接自己的记忆库"}
         </span>
       </button>
 
@@ -190,9 +190,6 @@ export function ExternalMemoryCard() {
             />
             <span className="text-[12px]">
               启用外部记忆（关掉只是不启用，配置会留着）
-              <span className="block text-[12px] text-[var(--color-muted)]">
-                启用后还要在助手的记忆设置里选它
-              </span>
             </span>
           </label>
 
@@ -280,9 +277,6 @@ export function ExternalMemoryCard() {
           <details className="rounded-[8px] border border-[var(--color-border)]">
             <summary data-tap-lg className="min-h-[36px] cursor-pointer px-3 py-2 text-[12px]">
               接口字段映射（高级）
-              <span className="ml-2 text-[12px]" style={{ color: "var(--color-muted)" }}>
-                对方字段名跟标准契约不一样时才填
-              </span>
             </summary>
             <div className="space-y-3 border-t px-3 py-3" style={{ borderColor: "var(--color-border)" }}>
               <p className="text-[12px]" style={{ color: "var(--color-muted)" }}>
@@ -359,7 +353,7 @@ export function ExternalMemoryCard() {
           </div>
           {!cfg.ready ? (
             <p className="text-[12px] text-[var(--color-muted)]">
-              提示：「测试连接」用的是**已保存**的配置 —— 改完先点保存，再测试。
+              「测试连接」用的是已保存的配置 —— 改完先保存。
             </p>
           ) : null}
         </div>

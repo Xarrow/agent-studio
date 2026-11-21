@@ -353,7 +353,7 @@ export default function MemoriesPage() {
               {showMore ? "▾" : "▸"} 更多选项
             </button>
             <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
-              默认所有助手共用
+              所有助手共用
             </span>
           </div>
 

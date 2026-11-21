@@ -330,7 +330,6 @@ export default function ToolsPage() {
                     把选中的 {picked.size} 个工具加到哪个助手？
                   </h2>
                   <p className="mt-1 text-[12px]" style={{ color: "var(--color-muted)" }}>
-                    已经挂过的会自动跳过，不会重复。
                   </p>
                 </div>
                 <div className="p-2">
@@ -598,7 +597,7 @@ export default function ToolsPage() {
                         {/* ── 哪些助手在用：就地勾选增删（与助手页能力区双向同步） ── */}
                         <div className="mt-2.5">
                           <div className="mb-1 text-[12px]" style={{ color: "var(--color-muted)" }}>
-                            哪些助手在用（勾选 = 挂给这个助手，去掉勾 = 摘下；和助手页「能力」是同一份数据）
+                            哪些助手在用
                           </div>
                           {Object.keys(agentNames).length === 0 ? (
                             <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
@@ -638,7 +637,6 @@ export default function ToolsPage() {
                           </div>
                         ) : (
                           <div className="mt-2.5 text-[12px]" style={{ color: "var(--color-muted)" }}>
-                            点右侧「试运行」就在这里出参数表单（按签名自动生成，不用手写 JSON）。
                           </div>
                         )}
                         {testOut[t.id] ? (

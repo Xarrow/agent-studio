@@ -420,11 +420,7 @@ export function RunPanel({
                 清空上下文
               </button>
             </>
-          ) : (
-            <span className="text-[12px] text-[var(--color-muted)]">
-              每次执行相互独立；新建会话即可让 Agent 记住前几轮
-            </span>
-          )}
+          ) : null}
         </div>
 
         <div className="flex items-center gap-2 mb-3 flex-wrap">

@@ -63,7 +63,7 @@ function CallList({ rows }: { rows: RemoteAgentCallRecord[] | null }) {
   if (!rows.length)
     return (
       <p className="text-[12px]" style={{ color: "var(--color-muted)" }}>
-        还没通过它调过远端 —— 助手勾上它之后每调一次，这里就多一条
+        还没有调用记录
       </p>
     );
   return (
@@ -143,7 +143,7 @@ function SkillTable({ parsed }: { parsed: RemoteAgentParsed }) {
   if (!skills.length) {
     return (
       <p className="text-[12px]" style={{ color: "var(--color-muted)" }}>
-        这个远端没在卡片里声明技能（只给了名字/描述）—— 挂上后靠描述让模型判断。
+        远端没声明技能，挂上后靠描述判断
       </p>
     );
   }
@@ -620,7 +620,6 @@ export default function RemoteAgentsPage() {
 
       <Section
         title="远端自注册（A2A 推送）"
-        desc="把地址给远端，它推卡片过来即注册；重推 = 更新"
         defaultOpen={false}
       >
         <div className="flex flex-col gap-2">

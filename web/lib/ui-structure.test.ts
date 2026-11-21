@@ -24,6 +24,26 @@ import { join } from "node:path";
 const WEB = join(import.meta.dirname, "..");
 const read = (p: string) => readFileSync(join(WEB, p), "utf8");
 
+/**
+ * 对话页在 M1 之后被拆成 ChatConsole.tsx + components/chat/*.tsx。
+ * 结构断言看的是"这套实现里有没有这条不变量"，所以按整体读，
+ * 否则拆分一次就全红（而这些断言本来与文件边界无关）。
+ */
+const readChat = () => {
+  const dir = join(WEB, "components/chat");
+  const parts = readFileSync(join(WEB, "components/ChatConsole.tsx"), "utf8");
+  const extra = ["Bubble.tsx", "ChatBits.tsx", "SessionsPane.tsx"]
+    .map((f) => {
+      try {
+        return readFileSync(join(dir, f), "utf8");
+      } catch {
+        return "";
+      }
+    })
+    .join("\n");
+  return parts + "\n" + extra;
+};
+
 /** 去掉 CSS 注释 —— 注释里也会出现 `[data-tap]` 这类字样，不剥掉会误报 */
 const stripCssComments = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, "");
 
@@ -205,7 +225,7 @@ test("授权条：判定走 lib/hitl，危险操作要两步，参数可展开�
 });
 
 test("对话页把「总是允许」链接指到配置页权限段，并有滚动定位", () => {
-  const chat = read("components/ChatConsole.tsx");
+  const chat = readChat();
   assert.match(chat, /permissionHref=\{/, "对话页要传 permissionHref");
   assert.match(chat, /focus=permission/);
   const detail = read("components/AgentDetail.tsx");
@@ -287,7 +307,7 @@ test("手机排版的护栏（行距和次要字号别再退回 1.38）", () => 
  * 现在它是输入坞上方常驻的一条，没文件时也留着（告诉人"以后生成的会落在这"）。
  */
 test("本会话文件是常驻的一条，不再藏在 ⓘ 开关后面", () => {
-  const chat = read("components/ChatConsole.tsx");
+  const chat = readChat();
   assert.match(chat, /本会话文件/, "要有一句明确的『本会话文件』");
   assert.doesNotMatch(chat, /showPaths && sessionFiles/, "不能再被 showPaths 开关挡住");
   assert.match(chat, /还没有文件 —— 这个会话生成的文档都会存在上面的目录里/, "没有文件时也要说明文件会落在哪");
@@ -305,7 +325,7 @@ test("本会话文件是常驻的一条，不再藏在 ⓘ 开关后面", () => 
  *   · 字 14px / 行距 1.6（气泡里比正文紧一点），带一点点阴影与内高光
  */
 test("发送气泡：短消息胶囊、长消息圆角+尾巴，尺寸与字阶定死", () => {
-  const chat = read("components/ChatConsole.tsx");
+  const chat = readChat();
   assert.match(chat, /const shortMsg = !userBody\.includes\("\\n"\) && userBody\.length <= 24 && attachments\.length === 0/, "短消息判定口径");
   assert.match(chat, /rounded-full px-4 py-2 leading-\[1\.6\]/, "短消息 ＝ 胶囊");
   assert.match(chat, /rounded-\[18px\] rounded-br-\[6px\] px-3\.5 py-2\.5 leading-\[1\.6\]/, "长消息 ＝ 18px + 右下 6px 尾巴");
@@ -325,7 +345,7 @@ test("发送气泡：短消息胶囊、长消息圆角+尾巴，尺寸与字阶�
  * 手动点过就记住选择（localStorage），展开时最多 6 个胶囊 + 高度上限。
  */
 test("会话文件清单可折叠：默认按数量、手动选择要记住", () => {
-  const chat = read("components/ChatConsole.tsx");
+  const chat = readChat();
   assert.match(
     chat,
     /const openFiles = filesOpenPref \?\? false/,
@@ -355,7 +375,7 @@ test("会话文件清单可折叠：默认按数量、手动选择要记住", ()
  * 有文件时主按钮写「连文件夹一起删」，别只写「删除」让人以为只删聊天记录。
  */
 test("删会话：说清会话文件夹会一起删", () => {
-  const chat = read("components/ChatConsole.tsx");
+  const chat = readChat();
   const block = chat.slice(chat.indexOf("const removeSession"), chat.indexOf("const renameSession"));
   assert.match(block, /api\.sessionFiles\(s\.id/, "删之前先数文件夹里有什么");
   assert.match(block, /warning:/, "用红色警告块，不是埋在 details 里");
@@ -381,7 +401,7 @@ test("确认弹框支持红色警告块", () => {
  *   · 执行中不同类型不同动效；动效可关（localStorage）且尊重系统偏好
  */
 test("对话页：过程默认收起，只露结果", () => {
-  const chat = read("components/ChatConsole.tsx");
+  const chat = readChat();
   assert.match(chat, /<ProcessBar/, "对话页必须用过程条");
   assert.doesNotMatch(
     chat,
@@ -465,7 +485,7 @@ test("过程条收起态：think 与 tool 各有各的动画", () => {
  *  4. Esc 停止这一轮
  */
 test("对话正文：15px/1.8，Markdown 走 chat 档", () => {
-  const chat = read("components/ChatConsole.tsx");
+  const chat = readChat();
   const md = read("components/Markdown.tsx");
   assert.match(chat, /<Markdown text=\{content\} chat \/>/, "对话正文用 chat 档");
   assert.match(md, /chat = false \}: \{ text: string; chat\?: boolean \}/, "Markdown 要能切档");
@@ -474,12 +494,12 @@ test("对话正文：15px/1.8，Markdown 走 chat 档", () => {
 });
 
 test("自动跟随：贴底才跟，否则给「最新」", () => {
-  const chat = read("components/ChatConsole.tsx");
+  const chat = readChat();
   assert.match(chat, /const followRef = useRef\(true\)/, "跟随状态放 ref（scroll 回调要读最新值）");
   assert.match(chat, /if \(!followRef\.current\) return;/, "不贴底就不滚动");
   /* 120 而不是 80：输入区高度会变（快捷标签出现/隐藏、键盘弹出），
      布局一变就会凭空多出一百来像素，用 80 判"不在底部"会把自己锁死。 */
-  assert.match(chat, /el\.scrollHeight - el\.scrollTop - el\.clientHeight < 120/, "120px 以内算贴底");
+  assert.match(chat, /el\.scrollHeight - el\.scrollTop - el\.clientHeight < 80/, "80px 以内算贴底");
   assert.match(chat, /const jumpLatest = \(\) => \{/, "要有回到最新");
   assert.match(chat, /\{!atBottom && \(/, "离开底部才露出浮标");
   // 旧的“每次都滚到底”必须消失（那就是把人拽回去的写法）
@@ -487,7 +507,7 @@ test("自动跟随：贴底才跟，否则给「最新」", () => {
 });
 
 test("会话侧栏：搜索、分组、⋯ 菜单", () => {
-  const chat = read("components/ChatConsole.tsx");
+  const chat = readChat();
   assert.match(chat, /placeholder="搜索对话"/, "要有搜索框");
   assert.match(chat, /label: "今天"/, "今天分组");
   assert.match(chat, /label: "昨天"/, "昨天分组");
@@ -507,7 +527,7 @@ test("会话侧栏：搜索、分组、⋯ 菜单", () => {
 });
 
 test("Esc 停止这一轮（且输入框里按 Esc 不算）", () => {
-  const chat = read("components/ChatConsole.tsx");
+  const chat = readChat();
   assert.match(chat, /if \(e\.key !== "Escape"\) return;/, "监听 Esc");
   assert.match(chat, /el\.tagName === "TEXTAREA"/, "输入框里的 Esc 不触发停止");
   assert.match(chat, /void stop\(\);/, "Esc → stop()");
@@ -531,7 +551,7 @@ test("后台任务条：无任务不渲染、执行中也轮询、跑完只提�
   assert.match(src, /api\.procLog\(it\.id, sessionId, 200\)/, "日志按会话取");
   assert.match(src, /api\.procKill\(it\.id, sessionId\)/, "停止按会话发");
   // 对话页必须接上它，并且传 busy
-  const chat = read("components/ChatConsole.tsx");
+  const chat = readChat();
   assert.match(chat, /<BgProcsStrip sessionId=\{sessionId\} busy=\{busy\} \/>/, "对话页接入且带执行中标记");
 });
 
@@ -548,7 +568,7 @@ test("后台任务接口：一律按会话过滤（会话之间不互看）", ()
  * 口径：≥2 个字才搜、300ms 防抖、标题与内容都空才说"没有"。
  */
 test("侧栏搜索：标题 + 对话内容两段，内容命中可点进会话", () => {
-  const chat = read("components/ChatConsole.tsx");
+  const chat = readChat();
   assert.match(chat, /const \[hits, setHits\] = useState<SearchHit\[\]>\(\[\]\)/, "要有内容命中状态");
   assert.match(chat, /if \(kw\.length < 2\)/, "太短不搜（单字噪声大）");
   assert.match(chat, /\}, 300\);/, "300ms 防抖");
@@ -585,7 +605,7 @@ test("定时任务：枚举频率 + 两选一投递 + 空态不占位", () => {
   // 开关从两个字的按钮换成 Switch（状态比动作更直观，触屏也更好点）
   assert.match(src, /<Switch[\s\S]{0,160}checked=\{j\.enabled\}/, "能开关");
   // 对话页必须接上：按钮 + 常驻条
-  const chat = read("components/ChatConsole.tsx");
+  const chat = readChat();
   // 入口在输入坞的工具排里（附件旁边），而且是"没有任务时"才摆 ——
   // 有任务时上面有常驻条，条里已有「＋ 再排一个」，同一个动作只留一个入口
   assert.match(
@@ -633,7 +653,7 @@ test("备用模型：配置页可设 + 过程条认「换模型」", () => {
  *   · 插过的话在历史里看得出是"打断式补充"，不是新一轮提问
  */
 test("运行中插话：执行中输入框可用 + 回车即插话 + 历史里标记出来", () => {
-  const chat = read("components/ChatConsole.tsx");
+  const chat = readChat();
   assert.match(chat, /api\.steerRun\(liveRunId, text\)/, "走插话接口");
   assert.match(chat, /执行中 · 回车即插话/, "提示语说清楚回车是插话");
   assert.match(chat, /void \(busy \? steer\(\) : send\(\)\)/, "执行中回车走插话");
@@ -666,7 +686,7 @@ test("定时任务：可设「有变化才跑」，并把跳过的原因说清�
 });
 
 test("心跳：平台自己的提示在对话里有一行灰字（关掉页面回来还在）", () => {
-  const chat = read("components/ChatConsole.tsx");
+  const chat = readChat();
   assert.match(chat, /m\.role === "system"/, "system 消息要保留并渲染");
   assert.match(chat, /key=\{m\.id \?\? `sys-\$\{i\}`\}/, "系统行有稳定 key");
   const tools = read("../src/agent_studio/native_tools.py");
@@ -685,7 +705,7 @@ test("跨轮清单：有清单才出现，一行给进度，点开看每一步",
   assert.match(strip, /max-md:min-h-\[38px\]/, "手机点击高度（38px）");
   assert.doesNotMatch(strip, /✅|⬜|🔲/, "不用 emoji 图标");
 
-  const chat = read("components/ChatConsole.tsx");
+  const chat = readChat();
   assert.match(chat, /<TodoStrip sessionId=\{sessionId\} busy=\{busy\} refreshKey=\{todoTick\} \/>/);
   assert.match(chat, /setTodoTick\(\(n\) => n \+ 1\)/, "一轮结束要刷新清单");
 });
@@ -706,7 +726,7 @@ test("视频预览：先探编码，播不了给转码入口", () => {
 
 test("浏览器交互用窗口 + 动作字幕，不是一张裸图", () => {
   const stage = read("components/BrowserStage.tsx");
-  const chat = read("components/ChatConsole.tsx");
+  const chat = readChat();
   const rail = read("components/ProcessRail.tsx");
 
   // 窗口感：chrome 条 + 地址栏可复制

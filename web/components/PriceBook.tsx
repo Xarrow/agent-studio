@@ -149,9 +149,6 @@ export function PriceBook() {
             </option>
           ))}
         </select>
-        <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
-          每百万 token 的价格 —— 填了才在运行记录里显示金额；留空 = 不算钱（显示「—」）
-        </span>
         <button
           type="button"
           onClick={() => void save()}

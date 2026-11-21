@@ -177,8 +177,7 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
           <div className="min-w-0 flex-1">
             <h2 className="text-[14px] font-medium">记忆</h2>
             <p className="text-[12px] text-[var(--color-muted)] mt-1">
-              打开后，这个 Agent 会在每次对话前自动回忆起相关的历史信息，
-              并在对话结束后自动总结值得记住的内容。
+              对话前自动回忆相关内容，对话后自动总结。
             </p>
           </div>
           {/* 开关用 kit.Switch：圆点定位与触屏命中区都在零件里收口，
@@ -300,8 +299,7 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
       <section className="card p-4">
         <h3 className="text-[13px] font-medium mb-1">所有助手共用的记忆（{shared.length}）</h3>
         <p className="text-[12px] text-[var(--color-muted)] mb-3">
-          这些它对每个助手都生效。想让某个助手单独拥有一份（可以各自改、互不影响），
-          用「复制到它」。
+          对每个助手都生效。
         </p>
         {shared.length === 0 ? (
           <p className="text-[12px] text-[var(--color-muted)]">还没有共用记忆。</p>

@@ -14,6 +14,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { isImeEvent } from "@/lib/ime";
 
 import { api } from "@/lib/api";
 import { useFeedback } from "@/components/ui/feedback";
@@ -237,6 +238,7 @@ export function KnowledgeGraph({
                     onSelect({ kind, label: n.label, docIds: Array.from(ids) });
                   }}
                   onKeyDown={(e) => {
+                    if (isImeEvent(e)) return;
                     if (e.key === "Enter") setSelected(isSel ? null : n.id);
                   }}
                 >

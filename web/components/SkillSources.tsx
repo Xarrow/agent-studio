@@ -207,9 +207,6 @@ export function SkillSourcesDialog({
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
             <h2 className="text-[16px] font-medium">技能来源与更新</h2>
-            <p className="mt-1 text-[12px] text-[var(--color-muted)]">
-              登记一个来源后可浏览、安装、批量检查更新；技能仍然经导入管线校验后原子安装。
-            </p>
           </div>
           <button className="btn" onClick={onClose}>
             关闭
@@ -362,9 +359,6 @@ export function SkillSourcesDialog({
           </>
         ) : (
           <>
-            <p className="mb-2 text-[12px] text-[var(--color-muted)]">
-              两级判断：先看提交有没有变，再看技能目录内容哈希有没有变 —— 仓库改别的文件不会误报。
-            </p>
             {updates.length === 0 ? (
               <Empty title="还没检查过" hint="点右上「检查更新」；结果会缓存，默认 6 小时一次。" />
             ) : (

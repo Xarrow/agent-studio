@@ -146,7 +146,7 @@ export function StoragePanel() {
     // 存储体检是低频动作：默认收起，页面上只留一行；要整理再展开
     <Section
       title="存储"
-      desc="事件会随执行累积；自动整理每小时最多跑一次，也可手动"
+      desc="每小时最多自动整理一次"
       defaultOpen={false}
     >
 
