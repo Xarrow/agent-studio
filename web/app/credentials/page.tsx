@@ -179,7 +179,10 @@ export default function CredentialsPage() {
               // 用户确认后才被后端 409 拒 —— 看着像"能删但没生效"（验收报的 P0）。
               disabled: (c.used_by ?? 0) > 0,
               onSelect: () => void remove(c),
-              hint: (c.used_by ?? 0) > 0 ? `${c.used_by} 个助手在用，删不掉` : undefined,
+              hint:
+                (c.used_by ?? 0) > 0
+                  ? `${c.used_by} 个助手在用，删不掉${c.used_by_names?.length ? "：" + c.used_by_names.join("、") : ""}`
+                  : undefined,
             },
           ]}
         />
@@ -192,12 +195,15 @@ export default function CredentialsPage() {
       fb.warn("这条配置还在用", `${c.used_by} 个助手引用了它；先给它们换一条再删。`);
       return;
     }
-    const ok = await fb.confirm({
-      title: `删除配置「${c.name}」？`,
+    // 没被引用才走到这里：仍然要求输入配置名，避免手滑（删的是长期可用的钥匙）
+    const typed = await fb.prompt({
+      title: `删除配置「${c.name}」`,
+      label: `输入配置名「${c.name}」确认`,
       description: "对话和记忆不会跟着删；这条钥匙会立刻失效。",
-      danger: true,
+      validate: (v) => (v.trim() === c.name ? null : "名字不一致，没有删除"),
       confirmText: "删除",
     });
+    const ok = typed !== null && typed.trim() === c.name;
     if (!ok) return;
     try {
       await api.deleteCredential(c.id);

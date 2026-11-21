@@ -1937,8 +1937,13 @@ export function ChatConsole({
     setLiveRunId("");
     setLive(null);
     setBusy(false);
-    // 输入在发送时就清空了，别再说"输入还在"（验收时被当场指出与事实不符）
-    fb.warn("已停止", "这一轮已中止；要改问法就重新输入");
+    // 停止后把本轮原输入放回输入框并聚焦：用户多半是想改一句再发，
+    // 让他重新敲一遍整段是最没道理的（验收要求）
+    if (liveInput) {
+      setInput(liveInput);
+      requestAnimationFrame(() => taRef.current?.focus());
+    }
+    fb.warn("已停止", "这一轮已中止，输入已放回输入框，改完再发");
   };
 
   /* Esc 停止这一轮（对标主流：想停手时不用去够按钮）。

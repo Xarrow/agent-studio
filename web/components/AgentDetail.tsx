@@ -1457,30 +1457,63 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
               </p>
             </div>
 
-            <div>
-              <label className="label">temperature</label>
-              <input
-                className="input mono"
-                type="number"
-                step="0.1"
-                min="0"
-                max="2"
-                /* 两位小数：API/导入来的值可能是 0.699999988079071（float32 尾巴），
-                   原样显示既难看又像被改过 */
-                value={Math.round(Number((def.model.params as Record<string, number>)?.temperature ?? 0.7) * 100) / 100}
-                onChange={(e) =>
-                  patch({
-                    model: {
-                      ...def.model,
-                      params: {
-                        ...(def.model.params ?? {}),
-                        temperature: Math.round(Number(e.target.value) * 100) / 100,
-                      },
-                    },
-                  })
-                }
-              />
-            </div>
+            {/* 专业参数收进折叠区：普通用户不该先面对看不懂的旋钮 */}
+            <details className="rounded-[10px]" style={{ background: "var(--color-surface-2)" }}>
+              <summary
+                data-tap
+                className="flex min-h-[40px] cursor-pointer items-center gap-2 px-3 text-[12.5px]"
+                style={{ color: "var(--color-text-2)" }}
+              >
+                高级参数
+                <span className="text-[11.5px]" style={{ color: "var(--color-text-3)" }}>
+                  temperature{" "}
+                  {Math.round(Number((def.model.params as Record<string, number>)?.temperature ?? 0.7) * 100) / 100}
+                  （默认 0.70）
+                </span>
+              </summary>
+              <div className="px-3 pb-3">
+                <label className="label">temperature</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    className="input mono"
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="2"
+                    /* 两位小数：API/导入来的值可能是 0.699999988079071（float32 尾巴） */
+                    value={Math.round(Number((def.model.params as Record<string, number>)?.temperature ?? 0.7) * 100) / 100}
+                    onChange={(e) =>
+                      patch({
+                        model: {
+                          ...def.model,
+                          params: {
+                            ...(def.model.params ?? {}),
+                            temperature: Math.round(Number(e.target.value) * 100) / 100,
+                          },
+                        },
+                      })
+                    }
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() =>
+                      patch({
+                        model: {
+                          ...def.model,
+                          params: { ...(def.model.params ?? {}), temperature: 0.7 },
+                        },
+                      })
+                    }
+                  >
+                    恢复默认
+                  </button>
+                </div>
+                <p className="mt-1 text-[11.5px]" style={{ color: "var(--color-text-3)" }}>
+                  越低越稳、越高越发散；范围 0–2，日常 0.7 够用。
+                </p>
+              </div>
+            </details>
             </div>
           </section>
 

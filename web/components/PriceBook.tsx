@@ -105,7 +105,7 @@ export function PriceBook() {
         {used(r) ? fmt.num(used(r)) : "—"}
       </div>
       <label className="flex shrink-0 items-center gap-1.5 text-[12px]" style={{ color: "var(--color-muted)" }}>
-        输入/百万
+        输入{currency}/百万
         <input
           inputMode="decimal"
           value={draft[r.model]?.i ?? ""}
@@ -118,7 +118,7 @@ export function PriceBook() {
         />
       </label>
       <label className="flex shrink-0 items-center gap-1.5 text-[12px]" style={{ color: "var(--color-muted)" }}>
-        输出/百万
+        输出{currency}/百万
         <input
           inputMode="decimal"
           value={draft[r.model]?.o ?? ""}

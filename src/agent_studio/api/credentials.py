@@ -98,13 +98,17 @@ async def list_credentials(
     from ..models import Agent as AgentRow
 
     used: dict[str, int] = {}
-    for _aid, defn in (await session.execute(select(AgentRow.id, AgentRow.definition))).all():
+    used_names: dict[str, list[str]] = {}
+    for _aid, _aname, defn in (
+        await session.execute(select(AgentRow.id, AgentRow.name, AgentRow.definition))
+    ).all():
         try:
             ref = (defn or {}).get("model", {}).get("credential_ref")
         except AttributeError:
             ref = None
         if ref:
             used[ref] = used.get(ref, 0) + 1
+            used_names.setdefault(ref, []).append(_aname or _aid)
     out: list[CredentialRead] = []
     for r in rows:
         # masked_key 用真实 key 的头尾特征（原来列表不取明文，恒为固定 8 点，
@@ -116,6 +120,7 @@ async def list_credentials(
             masked = None
         item = to_read(r, masked)
         item.used_by = used.get(r.id, 0)
+        item.used_by_names = used_names.get(r.id, [])[:5]
         out.append(item)
     return out
 

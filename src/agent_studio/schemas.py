@@ -815,6 +815,8 @@ class CredentialRead(BaseModel):
     created_at: int
     #: 有多少个助手在用这条（>0 时删除会被拒绝，界面上要先看得见）
     used_by: int = 0
+    #: 具体是哪些助手（最多 5 个名字）—— 只给数字，用户还得自己去找
+    used_by_names: list[str] = []
 
 
 class CredentialTestRequest(BaseModel):

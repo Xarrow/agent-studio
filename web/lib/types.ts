@@ -26,6 +26,8 @@ export interface Credential {
   created_at: number;
   /** 有多少个助手在用这条（>0 时后端拒绝删除） */
   used_by?: number;
+  /** 具体是哪些助手（最多 5 个）—— 只给数字用户还得自己去找 */
+  used_by_names?: string[];
 }
 
 export interface CredentialTestResult {
