@@ -1096,6 +1096,8 @@ async def _memory_save(
     用户还得去记忆页逐条点确认。Hermes 就是存完即用，这里对齐。
     退出机制仍然在：记忆页能逐条归档/删掉，来源标 agent 便于回查。
     """
+    from sqlalchemy import select
+
     from .db import SessionLocal
     from .memory import external
     from .memory.policy import get_policy
@@ -1127,6 +1129,17 @@ async def _memory_save(
         if save_mode == "off":
             return "这个助手关了记忆写入（记忆策略里设成了「不许存」），这条没存。要记的话让用户去记忆面板改。"
         status = "candidate" if save_mode == "confirm" else "active"
+        # 去重：同一句话重复存会把记忆库撑成两份（验收实测：蓝色鲸鱼、SQLite、
+        # 工作目录、Clash 代理各存了两遍）。同内容（忽略标点/空白）已存在就不再写。
+        norm = "".join(body.split())
+        dup = (
+            await session.execute(
+                select(Memory).where(Memory.status.in_(("active", "candidate")))
+            )
+        ).scalars().all()
+        for old_mem in dup:
+            if "".join((old_mem.content or "").split()) == norm:
+                return f"这条已经记过了（{old_mem.id}），没有重复保存。"
         session.add(
             Memory(
                 agent_id=agent_id,

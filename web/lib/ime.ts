@@ -67,7 +67,10 @@ type AnyKeyEvent = {
 };
 
 /** 事件本身是否就是「组字中」的信号（React 合成事件与原生事件都吃） */
-export function isImeEvent(e: AnyKeyEvent | null | undefined): boolean {
+export function isImeEvent(
+  e: AnyKeyEvent | null | undefined,
+  opts?: { skipSettle?: boolean },
+): boolean {
   ensureGlobal();
   const native = e?.nativeEvent ?? undefined;
   if (native?.isComposing || e?.isComposing) return true;
@@ -75,6 +78,10 @@ export function isImeEvent(e: AnyKeyEvent | null | undefined): boolean {
   if (native?.keyCode === 229 || e?.keyCode === 229 || e?.which === 229) return true;
   // 组字中（事件本身没带信号的情况）以及刚结束组字的那一小段
   if (composing) return true;
+  // skipSettle：只认"这一刻正在组字"，不认组字刚结束的静默期。
+  // 搜索框这类"回车即提交一次"的地方要用它 —— 否则中文用户打完"蓝色"立刻回车，
+  // 会被 300ms 静默期吞掉（验收报的"回车没反应"）。聊天发送不能用（会重复发）。
+  if (opts?.skipSettle) return false;
   return endedAt > 0 && Date.now() - endedAt < SETTLE_MS;
 }
 

@@ -457,8 +457,10 @@ export default function MemoriesPage() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {
-            // 中文组字中的回车是选字 —— 别拿它触发搜索
-            if (e.key === "Enter" && !isImeEvent(e)) void load();
+            // 中文组字中的回车是选字；但**组字刚结束的那一小段不能也算组字** ——
+            // isImeEvent 带了 300ms 静默期，中文用户打完"蓝色"立刻回车就被吞掉了
+            // （验收报的"回车没反应，得点刷新"）。这里只认原生 isComposing。
+            if (e.key === "Enter" && !isImeEvent(e, { skipSettle: true })) void load();
           }}
         />
         <button className="btn ml-auto" onClick={() => void load()}>

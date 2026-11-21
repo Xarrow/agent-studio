@@ -1893,3 +1893,25 @@ export const STATUS_STYLE: Record<string, string> = {
   pending: "text-[var(--color-muted)]",
   waiting_hitl: "text-[var(--color-warn)]",
 };
+
+/**
+ * 运行失败原因翻译成人话。
+ *
+ * 验收时贴回来的是「HTTP 405：HTTP 405」「ValueError: provider=deepseek 需要 api_key」——
+ * 业务用户看不懂，也不知道下一步做什么。原始文本放 title，界面上只给结论 + 去处。
+ */
+export function humanizeRunError(raw: string | null | undefined): string {
+  const t = (raw ?? "").trim();
+  if (!t) return "";
+  const needKey = t.match(/provider=([a-z0-9-]+)\s*需要\s*api_key/i);
+  if (needKey) return `这个助手用的 ${needKey[1]} 还没配密钥（到「LLM 配置」加一条，再在助手配置里选上）`;
+  if (/api[_ ]?key.*(invalid|无效)/i.test(t) || /401/.test(t)) return "密钥无效或过期（检查「LLM 配置」里这条的 key）";
+  if (/403/.test(t)) return "对方拒绝了这次请求（通常是 key 没有该模型权限）";
+  if (/404/.test(t)) return "请求地址不存在（检查端点与模型名）";
+  if (/429|rate limit/i.test(t)) return "请求太频繁，被服务商限流了（稍后重试）";
+  if (/timeout|timed out|超时/i.test(t)) return "等待超时（可把助手配置里的超时调大）";
+  const m = t.match(/HTTP\s*(\d{3})/i);
+  if (m) return `对方返回 HTTP ${m[1]}（服务商侧的问题，详情看原文）`;
+  if (/^ValueError/i.test(t)) return "配置不完整，检查这个助手的模型与密钥";
+  return t.length > 120 ? t.slice(0, 120) + "…" : t;
+}

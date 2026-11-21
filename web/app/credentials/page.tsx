@@ -220,7 +220,7 @@ export default function CredentialsPage() {
         desc={
           <>
             让 AI 能工作的「钥匙」。在这里填一次，所有助手都能用；存进来会加密，不会再明文显示。
-            支持 {providers.length} 家服务商，同一家可以配多套（主号 / 备用号）。
+            {providers.length ? `支持 ${providers.length} 家服务商` : "支持多家服务商"}，同一家可以配多套。
           </>
         }
         actions={

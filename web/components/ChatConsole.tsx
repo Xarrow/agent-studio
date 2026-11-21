@@ -1137,6 +1137,9 @@ export function ChatConsole({
     resetLiveEvents();
     setLiveRunId("");
     setHitl(null);
+    // 失败提示也属于上一个会话：不清的话，A 的「这一轮失败了：已停止」会跟到
+    // 新建的空会话里（验收报的"错误条串会话"）
+    setFailed(null);
     // busy 不在这里清：先问一句本节话有没有在跑的 run，没有才置空闲。
     // 无条件置 false 会让输入框在 run 还在跑时变成"可以再发一条"。
     // 浏览器现场同样属于上一个会话：画面帧、动作字幕、过程回顾都要清掉，
@@ -3060,6 +3063,16 @@ export function ChatConsole({
                     ✦
                   </div>
                   <p className="text-[15px] font-medium">{currentAgent?.name || "Agent"}</p>
+                  {/* 这个助手是干什么的：直接用配置里的一句话职责，比一排通用建议卡
+                      更能让人知道该说什么（验收反馈：空状态跟助手身份无关） */}
+                  {currentAgent?.description ? (
+                    <p
+                      className="mx-auto mt-1 max-w-[360px] text-[12px] leading-relaxed"
+                      style={{ color: "var(--color-muted)" }}
+                    >
+                      {currentAgent.description}
+                    </p>
+                  ) : null}
                   {agents.length > 1 && (
                     <button
                       data-tap

@@ -31,7 +31,7 @@
 import Link from "next/link";
 import { useFirstLoad } from "@/lib/useFirstLoad";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, fmt } from "@/lib/api";
+import { api, fmt, humanizeRunError } from "@/lib/api";
 import type {
   ActivityItem,
   Agent,
@@ -1402,7 +1402,7 @@ export function RunsPanel() {
                         style={{ color: it.error ? "var(--color-err)" : "var(--color-muted)" }}
                       >
                         {it.error ? (
-                          <>✗ {it.error}</>
+                          <span title={it.error}>✗ {humanizeRunError(it.error)}</span>
                         ) : (
                           <>
                             {it.model && it.kind !== "llm_test" ? <span className="mono">{it.model}</span> : null}
@@ -1519,7 +1519,7 @@ export function RunsPanel() {
                                     style={{ color: "var(--color-err)" }}
                                     title={st.error}
                                   >
-                                    {st.error}
+                                    {humanizeRunError(st.error)}
                                   </span>
                                 )}
                               </div>
