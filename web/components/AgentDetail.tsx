@@ -152,6 +152,10 @@ export function AgentDetail({
    * 改了配置界面毫无变化，切走就悄悄丢了，而且试跑用的是**旧版本**却毫无提示。
    */
   const [savedSnap, setSavedSnap] = useState<string>("");
+  /** 服务端最后一次确认保存的定义。改名只该提交"这一份 + 新名字"，
+      不能把界面上尚未保存的其他改动一起写回去（否则会同时出现
+      「名称已保存」和「有未保存的改动」，以及版本号打架）。 */
+  const savedDefRef = useRef<AgentDefinition | null>(null);
   /** 一句话职责（agent.description）—— 它会显示在 Playground 的选助手气泡里。
       跟 def 分开存（它不属于 definition），但**必须一起参与"未保存"判断**。 */
   const [desc, setDesc] = useState<string>("");
@@ -207,6 +211,7 @@ export function AgentDetail({
       setDef(withDefaults(a.definition));
       // 快照也要用"补过默认值"的那份，否则远端 A2A（没 model 字段）一进来就判成"有未保存改动"
       setSavedSnap(snap(withDefaults(a.definition), a.description ?? ""));
+      savedDefRef.current = withDefaults(a.definition);
       setDesc(a.description ?? "");
       setProviders(p);
       setCreds(c);
@@ -492,18 +497,22 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
   /** 只改名字的轻量保存：失焦时调用。
    *  同时写顶层 name 与 def.name（历史数据里这两个可能已经不一致，保存一次就统一）。 */
   const saveNameOnly = async (next: string) => {
+    if (nameTimer.current) {
+      window.clearTimeout(nameTimer.current);
+      nameTimer.current = 0;
+    }
     try {
+      const base = savedDefRef.current ?? (defRef.current ?? def)!;
       const updated = await api.updateAgent(
         agentId,
-        {
-          name: next,
-          definition: { ...((defRef.current ?? def) as AgentDefinition), name: next },
-        },
+        { name: next, definition: { ...base, name: next } },
         agent?.version,
       );
       setAgent(updated);
-      setDef(withDefaults(updated.definition));
-      setSavedSnap(snap(updated.definition, updated.description ?? ""));
+      // 只把"名字"写回界面：其他字段用户可能正在改，不能被服务端回包覆盖
+      setDef((d) => (d ? { ...d, name: updated.name } : withDefaults(updated.definition)));
+      savedDefRef.current = withDefaults(updated.definition);
+      setSavedSnap(snap(withDefaults(updated.definition), updated.description ?? ""));
       setMsg("名称已保存");
       setTimeout(() => setMsg(null), 2000);
     } catch (e) {
@@ -517,6 +526,12 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
 
 
   const save = async () => {
+    // 有排队中的"改名自动保存"就先取消：两次 PUT 并发会撞版本号，
+    // 用户会看到"名称已保存"和"当前版本 3，你编辑的是 2"同时出现（验收报的）
+    if (nameTimer.current) {
+      window.clearTimeout(nameTimer.current);
+      nameTimer.current = 0;
+    }
     setSaving(true);
     setMsg(null);
     setSaveErr(null);
@@ -538,6 +553,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
       );
       setAgent(updated);
       setDef(withDefaults(updated.definition));
+      savedDefRef.current = withDefaults(updated.definition);
       setSavedSnap(snap(updated.definition, updated.description ?? ""));
       setMsg(`已保存（v${updated.version}）`);
       setSavedFlash(true);
@@ -1394,8 +1410,11 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
             <div>
               <label className="label">备用模型（可选）</label>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
+                {/* 两格分别是「哪家」和「哪个模型」—— 之前只有一个总标题，
+                    用户以为第一格就是模型，看到 DeepSeek/OpenAI 以为填错了 */}
                 <select
                   className="input"
+                  aria-label="备用模型的服务商"
                   value={def.fallback?.provider ?? ""}
                   onChange={(e) => {
                     const name = e.target.value;
