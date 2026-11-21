@@ -19,6 +19,12 @@ import { MemoryPicker } from "./MemoryPicker";
 
 const EVENT = "studio:panel-open";
 
+/** 外部（侧栏徽标等）也能打开同一块独占面板：派发这个事件即可 */
+export const EXCLUSIVE_OPEN_EVENT = "studio:exclusive-open";
+export function openExclusive(name: string) {
+  window.dispatchEvent(new CustomEvent(EXCLUSIVE_OPEN_EVENT, { detail: name }));
+}
+
 function useExclusive(name: string) {
   const [open, setOpen] = useState(false);
 
@@ -30,6 +36,17 @@ function useExclusive(name: string) {
     };
     window.addEventListener(EVENT, onOther);
     return () => window.removeEventListener(EVENT, onOther);
+  }, [name]);
+
+  // 外部要求打开（同一时刻只留一块：先派发 EVENT 让别家关掉）
+  useEffect(() => {
+    const onOpen = (e: Event) => {
+      if ((e as CustomEvent<string>).detail !== name) return;
+      window.dispatchEvent(new CustomEvent(EVENT, { detail: name }));
+      setOpen(true);
+    };
+    window.addEventListener(EXCLUSIVE_OPEN_EVENT, onOpen);
+    return () => window.removeEventListener(EXCLUSIVE_OPEN_EVENT, onOpen);
   }, [name]);
 
   const toggle = () => {

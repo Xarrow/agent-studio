@@ -36,7 +36,7 @@ import { RunDetailById } from "@/components/RunDetailDialog";
 import { AgentDetailDialog } from "./AgentDetailDialog";
 import { ICON_PATHS, SETUP_ITEMS, USE_ITEMS } from "@/lib/nav-items";
 import { AgentSwitcher } from "./AgentSwitcher";
-import { SkillEntry, ToolEntry, MemoryEntry } from "./ToolEntries";
+import { SkillEntry, ToolEntry, MemoryEntry, openExclusive } from "./ToolEntries";
 import { Sheet } from "./ui/Sheet";
 import { Bubble } from "@/components/chat/Bubble";
 import { SessionsPane } from "@/components/chat/SessionsPane";
@@ -1049,7 +1049,12 @@ export function ChatConsole({
   }, [sessionId, agentId]);
 
   // 切会话：先把上一会话的实时现场收掉，再载入历史
+  /** 上一次这个效应跑的是哪条会话：same-session 的重跑（比如只换了 agentId）不该拆现场 */
+  const teardownSidRef = useRef<string>("");
   useEffect(() => {
+    const sameSid = !!sessionId && teardownSidRef.current === sessionId;
+    teardownSidRef.current = sessionId;
+    if (sameSid) return;              // 同一条会话：不动流、不清屏（否则会把正在跑的 run 掐掉）
     // 不关流的话，旧会话里还在跑的 run 会继续往 live 里追加文本，
     // 串到新会话的屏幕上 —— 这就是"A 会话的内容出现在 B 会话"的根因
     if (esRef.current) { esRef.current.close(); esRef.current = null; }
@@ -1058,7 +1063,8 @@ export function ChatConsole({
     resetLiveEvents();
     setLiveRunId("");
     setHitl(null);
-    setBusy(false);
+    // busy 不在这里清：先问一句本节话有没有在跑的 run，没有才置空闲。
+    // 无条件置 false 会让输入框在 run 还在跑时变成"可以再发一条"。
     // 浏览器现场同样属于上一个会话：画面帧、动作字幕、过程回顾都要清掉，
     // 否则切过去还能看到别人会话里那张网页截图和「打开 example.com」
     setBrowserFrame(null);
@@ -1075,7 +1081,10 @@ export function ChatConsole({
       // ── 刷新恢复：会话里还有在跑的 run 就重新挂上 SSE ──
       // 后端没停（事件继续落库），只是页面的 SSE 断了；stream 端点
       // 先回放已落库事件再推增量，接上即恢复现场，不丢任何内容。
-      if (!sessionId) return;
+      if (!sessionId) {
+        setBusy(false);
+        return;
+      }
       try {
         const inflight = await api.inFlightRuns(sessionId);
         const live1 = inflight.find((r) => r.status === "running" || r.status === "pending");
@@ -1093,7 +1102,10 @@ export function ChatConsole({
           const inputText = lastUser?.content ?? "";
           setBusy(true);
           attachStream(live1.id, inputText);
-        } else if (hitl1) {
+        } else {
+          setBusy(false);
+        }
+        if (hitl1) {
           // 停在等确认：把确认条恢复出来（现场从历史 + pending_hitl 读）
           const r = await api.run(hitl1.id).catch(() => null);
           if (r?.pending_hitl) {
@@ -1106,6 +1118,7 @@ export function ChatConsole({
         }
       } catch {
         /* 恢复失败不阻塞会话加载 —— 历史照常显示 */
+        setBusy(false);
       }
     })();
   }, [sessionId, agentId, loadMessages]);
@@ -2451,6 +2464,7 @@ export function ChatConsole({
               pinned={pinned}
               onTogglePin={togglePin}
               onExport={(s) => void exportSession(s, "md")}
+              onOpenSkills={() => openExclusive("skill")}
               onExportJson={(s) => void exportSession(s, "json")}
               onCollapse={toggleNav}
             />
@@ -2591,7 +2605,8 @@ export function ChatConsole({
                     pinned={pinned}
                     onTogglePin={togglePin}
                     onExport={(s) => void exportSession(s, "md")}
-                    onExportJson={(s) => void exportSession(s, "json")}
+                    onOpenSkills={() => openExclusive("skill")}
+              onExportJson={(s) => void exportSession(s, "json")}
                     onCollapse={() => setMobileNav(false)}
                   />
                   <div className="shrink-0 border-t border-[var(--color-border)] pb-[env(safe-area-inset-bottom)]">

@@ -6,6 +6,7 @@
     "dev": "NEXT_PUBLIC_API_BASE=http://192.168.2.11:8848 next dev",
     "build": "next build && node scripts/audit-microcopy.mjs --check",
     "microcopy": "node scripts/audit-microcopy.mjs",
+    "qa:chat": "node scripts/qa-chat.mjs",
     "start": "next start",
     "lint": "eslint",
     "test": "node --test --experimental-strip-types lib/canvas/*.test.ts lib/tool-params.test.ts lib/ime.test.ts lib/revision-diff.test.ts lib/mermaid.test.ts lib/tex.test.ts lib/dataviz.test.ts lib/ui-structure.test.ts lib/work-paths.test.ts lib/history-layers.test.ts lib/hitl.test.ts lib/files.test.ts lib/highlight.test.ts lib/messages.test.ts lib/browser-frame.test.ts lib/run-timeline.test.ts lib/markdown-loop.test.ts lib/turn.test.ts lib/timeline.test.ts lib/agent-colors.test.ts"

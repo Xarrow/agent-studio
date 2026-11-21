@@ -38,6 +38,7 @@ export function SessionsPane({
   onTogglePin,
   onExport,
   onExportJson,
+  onOpenSkills,
 }: {
   sessions: Session[];
   sessionId: string;
@@ -55,6 +56,8 @@ export function SessionsPane({
   onTogglePin: (id: string) => void;
   onExport: (s: Session) => void;
   onExportJson: (s: Session) => void;
+  /** 打开助手的技能面板（侧栏「技能 N」徽标 -> 与输入框上方那颗按钮同一块面板） */
+  onOpenSkills?: () => void;
   /** 助手身份块：会话都属于某个助手，它排在列表最上面 */
   agentSlot?: React.ReactNode;
   /** 当前助手 id：工作区记忆按助手分开存 */
@@ -65,6 +68,8 @@ export function SessionsPane({
   const [q, setQ] = useState("");
   /** 打开菜单的会话 id（一次只开一个） */
   const [menuFor, setMenuFor] = useState<string | null>(null);
+  /** 「导出…」展开成两种格式时的目标会话 */
+  const [exportFor, setExportFor] = useState<string | null>(null);
   /** 对话**内容**命中的结果（标题命中在本地即时过滤，内容命中要问后端） */
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [hitBusy, setHitBusy] = useState(false);
@@ -80,8 +85,6 @@ export function SessionsPane({
   const [onlyPinned, setOnlyPinned] = useState(false);
   /** 当前项目工作区（按助手记，null = 无项目纯对话） */
   const [workspace, setWorkspace] = useState<string | null>(null);
-  const [wsOpen, setWsOpen] = useState(false);
-  const [wsDraft, setWsDraft] = useState("");
   /** 技能数（全局 / 该项目下的），给工作区卡片上的胶囊用 */
   const [skillRows, setSkillRows] = useState<{ name: string; source?: Record<string, unknown> }[]>([]);
   const [foldedGroups, setFoldedGroups] = useState<Set<string>>(() => new Set());
@@ -112,7 +115,6 @@ export function SessionsPane({
     if (path) window.localStorage.setItem(`studio.workspace.${agentId}`, path);
     else window.localStorage.removeItem(`studio.workspace.${agentId}`);
     setWorkspace(path);
-    setWsOpen(false);
   };
 
   /** 项目内技能：来源地址落在工作区目录下的那些（口径写在卡片 tooltip 里） */
@@ -271,69 +273,29 @@ export function SessionsPane({
       {agentSlot && (
         <div className="px-1.5 pt-1.5 pb-1 mb-1">{agentSlot}</div>
       )}
-      {/* 当前项目工作区：一句话说清"这条对话在哪个目录下干活、带了多少技能"。
-          选一次记在浏览器里（按助手分开），不改变平台的数据模型。 */}
-      <div className="px-2.5 pb-1.5">
-        <div
-          className="rounded-[var(--radius-sm)] px-2 py-1.5"
-          style={{ background: "var(--color-surface-2)" }}
+      {/* 助手会什么：一个可点的「技能 N」。
+          项目工作目录属于助手设置（对话页不再出现「无项目 · 纯对话 切换」——
+          它让人误以为"换项目 = 换对话"，而它只是这个助手在哪个目录干活）。 */}
+      <div className="px-2.5 pb-1.5 flex flex-wrap items-center gap-1">
+        <button
+          type="button"
+          data-tap
+          onClick={onOpenSkills}
+          title="这个助手挂了哪些技能（点开就地勾选）"
+          className="rounded-full px-1.5 py-[1px] text-[10.5px] tabular-nums transition-colors hover:brightness-[0.97]"
+          style={{ background: "var(--bg-hover)", color: "var(--color-text-2)" }}
         >
-          <button
-            type="button"
-            data-tap
-            onClick={() => {
-              setWsDraft(workspace ?? "");
-              setWsOpen((v) => !v);
-            }}
-            className="flex w-full items-center gap-1.5 text-left"
-            title={workspace ? `工作区：${workspace}` : "当前是纯对话模式（没有绑定项目目录）"}
+          技能 {globalSkills}
+        </button>
+        {projectSkills.length > 0 && (
+          <span
+            className="rounded-full px-1.5 py-[1px] text-[10.5px] tabular-nums"
+            style={{ background: "var(--bg-hover)", color: "var(--color-text-2)" }}
+            title="来源地址落在当前工作区目录下的技能"
           >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ color: "var(--color-text-3)" }}>
-              <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-            </svg>
-            <span className="mono min-w-0 flex-1 truncate text-[11.5px]" style={{ color: workspace ? "var(--color-text)" : "var(--color-text-3)" }}>
-              {workspace || "无项目 · 纯对话"}
-            </span>
-            <span className="shrink-0 text-[10.5px]" style={{ color: "var(--color-text-3)" }}>切换</span>
-          </button>
-          <div className="mt-1 flex flex-wrap items-center gap-1">
-            <span className="rounded-full px-1.5 py-[1px] text-[10.5px] tabular-nums" style={{ background: "var(--bg-hover)", color: "var(--color-text-2)" }}>
-              技能 {globalSkills}
-            </span>
-            {/* 「项目技能 0」这种恒为零的徽标是噪音：没有项目技能时就不出现 */}
-            {projectSkills.length > 0 && (
-              <span className="rounded-full px-1.5 py-[1px] text-[10.5px] tabular-nums" style={{ background: "var(--bg-hover)", color: "var(--color-text-2)" }} title="来源地址落在当前工作区目录下的技能">
-                项目 {projectSkills.length}
-              </span>
-            )}
-          </div>
-          {wsOpen && (
-            <div className="mt-1.5 space-y-1">
-              <input
-                className="input w-full text-[12px]"
-                placeholder="项目目录，例如 ~/projects/my-app"
-                value={wsDraft}
-                onChange={(e) => setWsDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (isImeEvent(e)) return;
-                  if (e.key === "Enter") setWorkspaceFor(wsDraft.trim() || null);
-                  if (e.key === "Escape") setWsOpen(false);
-                }}
-              />
-              <div className="flex items-center gap-1.5">
-                <button className="btn btn-primary h-7 text-[11.5px]" onClick={() => setWorkspaceFor(wsDraft.trim() || null)}>
-                  绑定
-                </button>
-                <button className="btn h-7 text-[11.5px]" onClick={() => setWorkspaceFor(null)}>
-                  无项目
-                </button>
-                <button className="btn h-7 text-[11.5px] ml-auto" onClick={() => setWsOpen(false)}>
-                  取消
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+            项目 {projectSkills.length}
+          </span>
+        )}
       </div>
 
       {/* 头部：新对话 + 管理（批量） */}
@@ -738,27 +700,30 @@ export function SessionsPane({
                                         onTogglePin(s.id);
                                       }}
                                     />
+                                    {/* 导出收成一个入口：两种格式是同一件事的两种壳，
+                                        平铺成两行只有选择成本（原来 7 项里 4 项是导出/复制） */}
                                     <MenuItem
-                                      label="导出 Markdown"
+                                      label={exportFor === s.id ? "导出 · Markdown" : "导出…"}
                                       onClick={() => {
-                                        setMenuFor(null);
-                                        onExport(s);
+                                        if (exportFor === s.id) {
+                                          setMenuFor(null);
+                                          setExportFor(null);
+                                          onExport(s);
+                                        } else {
+                                          setExportFor(s.id);
+                                        }
                                       }}
                                     />
-                                    <MenuItem
-                                      label="导出 JSON"
-                                      onClick={() => {
-                                        setMenuFor(null);
-                                        onExportJson(s);
-                                      }}
-                                    />
-                                    <MenuItem
-                                      label="复制对话"
-                                      onClick={() => {
-                                        setMenuFor(null);
-                                        void copyConversation(s);
-                                      }}
-                                    />
+                                    {exportFor === s.id && (
+                                      <MenuItem
+                                        label="导出 · JSON（含事件与用量）"
+                                        onClick={() => {
+                                          setMenuFor(null);
+                                          setExportFor(null);
+                                          onExportJson(s);
+                                        }}
+                                      />
+                                    )}
                                     <MenuItem
                                       label="复制链接"
                                       onClick={() => {
@@ -890,6 +855,19 @@ export function SessionsPane({
               style={{ color: "var(--color-text-2)", background: "var(--color-surface-2)" }}
             >
               {selected.size === sessions.length ? "取消全选" : "全选"}
+            </button>
+            {/* 空对话（0 轮）一键选出来：以前连点「新对话」会攒下一串，删起来得逐条点 */}
+            <button
+              type="button"
+              data-tap
+              onClick={() => {
+                const empties = sessions.filter((x) => (x.turn_count ?? 0) === 0).map((x) => x.id);
+                setSelected(new Set(empties));
+              }}
+              className="h-8 rounded-[var(--radius-xs)] px-2 text-[length:var(--fs-sm)]"
+              style={{ background: "var(--bg-hover)", color: "var(--color-text-2)" }}
+            >
+              选空对话
             </button>
             <button
               type="button"
