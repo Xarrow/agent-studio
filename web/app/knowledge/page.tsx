@@ -667,7 +667,7 @@ function DocDetail({
         {/* 试打：用文档自己的话试，不让用户造词 */}
         <div className="rounded-[10px] px-2.5 py-2" style={{ background: "var(--color-surface-2)" }}>
           <div className="mb-1 text-[11px]" style={{ color: "var(--color-text-3)" }}>
-            试打检索 · 用文档里的原话（点一条即查）
+            试打检索
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
             {(samples ?? []).map((q) => (

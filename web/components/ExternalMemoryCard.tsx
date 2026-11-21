@@ -189,7 +189,7 @@ export function ExternalMemoryCard() {
               onChange={(e) => setDraft((d) => ({ ...d, enabled: e.target.checked }))}
             />
             <span className="text-[12px]">
-              启用外部记忆（关掉只是不启用，配置会留着）
+              启用外部记忆（关掉不删配置）
             </span>
           </label>
 

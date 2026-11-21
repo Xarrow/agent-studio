@@ -225,12 +225,6 @@ export function SkillSourcesDialog({
               { key: "updates", label: "检查更新" },
             ]}
           />
-          {settings && (
-            <span className="text-[12px] text-[var(--color-muted)]">
-              模式：{settings.effective_mode?.[0]}（{settings.effective_mode?.[1]}）·
-              npx {settings.env.npx ? "可用" : "未安装"} · git {settings.env.git ? "可用" : "未安装"}
-            </span>
-          )}
           <button className="btn ml-auto" disabled={busy} onClick={() => void checkAll(true)}>
             <IconRefresh size={14} />
             检查更新
@@ -252,9 +246,6 @@ export function SkillSourcesDialog({
                   <option value="npx">始终用 skills CLI</option>
                   <option value="native">始终用内置实现</option>
                 </select>
-                <span className="ml-auto text-[11px] text-[var(--color-muted)]">
-                  {settings?.npx_pin ? `固定版本 ${settings.npx_pin}` : "未固定 CLI 版本 → 默认走内置实现"}
-                </span>
               </div>
             </div>
 

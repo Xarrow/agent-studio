@@ -713,9 +713,6 @@ function NewAgentDialog({
         <div className="mb-4 flex items-start gap-3">
           <div className="min-w-0 flex-1">
             <h2 className="text-[16px] font-medium mb-1">新建助手</h2>
-            <p className="text-[12px] text-[var(--color-muted)]">
-              回答三个问题就行，其他的它会自己配好。
-            </p>
           </div>
           <div className="flex shrink-0 flex-col items-end gap-1">
             <button
@@ -839,9 +836,6 @@ function NewAgentDialog({
             <div className="mt-3">
               <label className="label flex items-center gap-1.5" title="Playground 列表里显示这句话">
                 一句话职责
-                <span className="text-[12px] font-normal" style={{ color: "var(--color-muted)" }}>
-                  （选助手时会显示，已按预设自动填好）
-                </span>
               </label>
               <input
                 className="input"
