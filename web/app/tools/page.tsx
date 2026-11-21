@@ -264,6 +264,20 @@ export default function ToolsPage() {
   const hiddenTools = tools.filter(isHiddenTool);
   const visibleTools = showHidden ? tools : tools.filter((t) => !isHiddenTool(t));
   const filtered = kindFilter ? visibleTools.filter((t) => t.kind === kindFilter) : visibleTools;
+  /** 每个分类一项，数字之和 = 全部（缺哪类就等于在骗人） */
+  const KIND_LABEL: Record<string, string> = {
+    native: "平台能力",
+    builtin: "内置",
+    http: "HTTP",
+    code: "代码",
+    fork: "分派",
+    a2a: "远程",
+  };
+  const kindChips = Array.from(new Set(visibleTools.map((t) => t.kind)))
+    .map((k) => ({ key: k, label: KIND_LABEL[k] ?? k, count: visibleTools.filter((t) => t.kind === k).length }))
+    .filter((c) => c.count > 0)
+    .sort((a, b) => b.count - a.count);
+
   const counts = {
     builtin: visibleTools.filter((t) => t.kind === "builtin").length,
     http: visibleTools.filter((t) => t.kind === "http").length,
@@ -380,15 +394,10 @@ export default function ToolsPage() {
               value={kindFilter}
               onChange={setKindFilter}
               options={[
+                // 各项之和必须等于「全部」：以前只列了内置/HTTP/代码/分派，
+                // 而库里还有 native（平台能力）和 a2a（远程），48 ≠ 9+2+0+1（验收报的）
                 { key: "", label: "全部", count: visibleTools.length },
-                { key: "builtin", label: "内置", count: counts.builtin },
-                { key: "http", label: "HTTP", count: counts.http },
-                { key: "code", label: "代码", count: counts.code },
-                // 分派是平台给助手的"分身"能力（一个助手 → 多个实例并行）——
-                // 单独一类，否则用户在"内置/HTTP/代码"里翻不到它
-                ...(counts.fork > 0
-                  ? [{ key: "fork", label: "分派", count: counts.fork }]
-                  : []),
+                ...kindChips,
               ]}
             />
             <div className="ml-auto flex flex-wrap items-center gap-1.5">
@@ -398,7 +407,8 @@ export default function ToolsPage() {
                   onClick={() => setShowHidden((v) => !v)}
                   title="平台内部工具（worker_/proc_/fork_）与当前平台不可用的工具"
                 >
-                  {showHidden ? "隐藏内部工具" : `显示内部与不可用（${hiddenTools.length}）`}
+                  {/* 表头「48 工具」是全部；这里说明差在哪 11 个，数字才对得上 */}
+                  {showHidden ? "收起内部/不可用" : `已藏 ${hiddenTools.length} 个内部/不可用`}
                 </button>
               )}
               <button className="btn" disabled={syncing} onClick={sync}>

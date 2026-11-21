@@ -126,12 +126,14 @@ test("配置页：不得内嵌对话页的会话列表 / 三视图（第二道�
   const src = read("components/AgentDetail.tsx");
   assert.doesNotMatch(src, /<RunPanel/, "配置页又引回了 RunPanel（内嵌会话列表 + 三视图）");
   assert.doesNotMatch(src, /"原始 JSON"/, "配置页又出现了原始 JSON 视图");
-  assert.match(src, /AgentQuickRun/, "配置页应当用 AgentQuickRun（单轮试跑）");
+  // 试跑入口只剩对话页一处（UX-009：快速试跑与「打开对话页」是同一件事的两个壳）
+  assert.match(src, /\/exec\?agent=/, "配置页应当给一个去对话页试跑的入口");
+  assert.doesNotMatch(src, /<AgentQuickRun/, "配置页又内嵌了快速试跑（与对话页重复）");
 });
 
 test("配置页：主操作（试跑）不得埋在后面 —— 常驻卡片 + 窄屏提前", () => {
   const src = read("components/AgentDetail.tsx");
-  assert.match(src, /快速试跑/, "缺快速试跑卡");
+  assert.match(src, /试一句/, "缺试跑入口卡");
   assert.match(src, /max-xl:order-first/, "试跑卡缺窄屏提前（否则手机上排在三屏之后）");
   assert.match(src, /max-xl:contents/, "右列包裹层缺窄屏 contents（contents + order-first 是一对）");
   assert.match(src, /xl:grid xl:grid-cols-\[minmax\(0,1fr\)_400px\]/, "缺桌面双列网格");
