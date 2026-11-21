@@ -726,14 +726,20 @@ export function ChatConsole({
     })();
   }, [fb]);
 
+  /** 每个助手最近一次的会话清单（ETag 304 时按助手取，别拿当前渲染的那份） */
+  const listByAgentRef = useRef<Map<string, Session[]>>(new Map());
   const loadSessions = useCallback(
     async (aid: string): Promise<Session[]> => {
       if (!aid) return [];
       try {
         const r = await api.sessions(aid, listEtagRef.current.get(aid) ?? null);
-        const list = r.notModified ? sessionsRef.current : r.list;
+        // 304 时必须回**这个助手**上次的清单。之前回的是 sessionsRef（当前渲染的那份，
+        // 换助手后还是上一个助手的）—— 于是"这条会话属不属于新助手"的判断被带偏，
+        // 切了助手内容还是旧的（用户报的正是这个）。
+        const list = r.notModified ? (listByAgentRef.current.get(aid) ?? []) : r.list;
         if (!r.notModified) {
           listEtagRef.current.set(aid, r.etag);
+          listByAgentRef.current.set(aid, r.list);
           setSessions(r.list);
         }
         // 侧栏另外挂 Router / 派活两组 —— 它们跨助手，不能只按当前助手过滤
@@ -922,31 +928,55 @@ export function ChatConsole({
   }, [busy, sessionId, loadMessages]);
 
   // 切 Agent：重载会话列表，选中最近一个；没有就自动建一个
+  /** 当前会话 id 的镜像：effect 里要判断"这条会话到底属于谁" */
+  const sidRef = useRef(sessionId);
+  sidRef.current = sessionId;
+  /** 深链（?s=）带来的会话是否还享有"优先权"。用户一旦自己换助手，立即失效 */
+  const deepPendingRef = useRef(Boolean(initialSession));
+
+  /**
+   * 判定规则（幂等，重复运行也安全）：
+   *   ① 当场点名的会话优先（pickSession 跨助手打开）
+   *   ② 当前会话就在这个助手名下 → 保持不动
+   *   ③ 深链还没被用户打断 → 保持（深链可能指向别的助手，稍后由深链逻辑切换助手）
+   *   ④ 否则取这个助手最近的一条；一条都没有就新建
+   *
+   * 之前用"这次是不是换了助手"来判断，会被 effect 重复执行破坏：
+   * 第二次跑时标志已更新，于是又按 initialSession 把上一个助手的会话设回来 ——
+   * 顶部显示 B、内容还是 A（用户报的就是这个）。
+   */
   useEffect(() => {
     if (!agentId) return;
     void (async () => {
       const list = await loadSessions(agentId);
-      // 深链（/exec?s=…）优先：地址里点名的那一个会话，哪怕它不在这个助手名下也照开
-      const want = initialSession || deepSidRef.current || pendingPick.current;
+      const pick = pendingPick.current;
       pendingPick.current = null;
-      if (
-        want &&
-        (list.some((x) => x.id === want) || initialSession === want || deepSidRef.current === want)
-      ) {
-        setSessionId(want);
-      } else if (list.length > 0) {
+      const cur = sidRef.current;
+      const deepOk =
+        deepPendingRef.current &&
+        !!cur &&
+        (cur === initialSession || cur === deepSidRef.current);
+      if (pick && list.some((x) => x.id === pick)) {
+        setSessionId(pick);
+        return;
+      }
+      if (cur && (list.some((x) => x.id === cur) || deepOk)) {
+        if (deepOk) deepPendingRef.current = false;
+        return;
+      }
+      if (list.length > 0) {
         setSessionId(list[0].id);
-      } else {
-        try {
-          const s = await api.createSession(agentId, "新对话");
-          setSessions([s]);
-          setSessionId(s.id);
-        } catch (e) {
-          fb.error("新建会话失败", e instanceof Error ? e.message : String(e));
-        }
+        return;
+      }
+      try {
+        const s = await api.createSession(agentId, "新对话");
+        setSessions([s]);
+        setSessionId(s.id);
+      } catch (e) {
+        fb.error("新建会话失败", e instanceof Error ? e.message : String(e));
       }
     })();
-  }, [agentId, loadSessions, fb]);
+  }, [agentId, loadSessions, fb, initialSession]);
 
   /* 深链：组件自己读一次地址（?s= 或 /exec/<id>）。
      不依赖上层传 prop —— prop 要走 effect 才到位，中间那几拍已经被
@@ -963,6 +993,7 @@ export function ChatConsole({
       q.get("s") || (window.location.pathname.match(/^\/exec\/([^/?#]+)/)?.[1] ?? "");
     if (!sid) return;
     deepSidRef.current = sid;
+    deepPendingRef.current = true;
     setSessionId(sid);
     void api
       .session(sid, 1)
@@ -1916,6 +1947,14 @@ export function ChatConsole({
   /* 切会话也记一层：手机上左滑回到**上一个会话**，而不是退出网页。
      抽屉里点会话会顺带关抽屉 —— close() 对非栈顶层只摘记录不回退，
      所以先 push 会话层，抽屉那条记录随后被静默摘掉，不会多退一级。 */
+  /** 用户主动换助手：深链优先权立即作废，绝不能把上一个助手的会话带过来 */
+  const switchAgent = (id: string) => {
+    deepPendingRef.current = false;
+    deepSidRef.current = "";
+    pendingPick.current = null;
+    setAgentId(id);
+  };
+
   const pickSession = (id: string, takeOver = false) => {
     if (!id || id === sessionId) return;
     const prev = sessionId;
@@ -2376,7 +2415,7 @@ export function ChatConsole({
                       variant="sidebar"
                       agents={agents}
                       value={agentId}
-                      onChange={setAgentId}
+                      onChange={switchAgent}
                       busy={busy}
                       open={switcherOpen === "sidebar"}
                       onOpenChange={(v) => setSwitcherOpen(v ? "sidebar" : null)}
@@ -2408,7 +2447,7 @@ export function ChatConsole({
                 variant="mini"
                 agents={agents}
                 value={agentId}
-                onChange={setAgentId}
+                onChange={switchAgent}
                 busy={busy}
                 open={switcherOpen === "mini"}
                 onOpenChange={(v) => setSwitcherOpen(v ? "mini" : null)}
@@ -2511,7 +2550,7 @@ export function ChatConsole({
                             variant="sidebar"
                             agents={agents}
                             value={agentId}
-                            onChange={setAgentId}
+                            onChange={switchAgent}
                             busy={busy}
                             open={switcherOpen === "sidebar"}
                             onOpenChange={(v) => setSwitcherOpen(v ? "sidebar" : null)}
@@ -2611,7 +2650,7 @@ export function ChatConsole({
                 className="flex-1"
                 agents={agents}
                 value={agentId}
-                onChange={setAgentId}
+                onChange={switchAgent}
                 busy={busy}
                 open={switcherOpen === "bar"}
                 onOpenChange={(v) => setSwitcherOpen(v ? "bar" : null)}
