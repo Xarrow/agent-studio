@@ -473,6 +473,12 @@ export function Menu({
               style={it.danger ? { color: "var(--color-err)" } : undefined}
             >
               <span>{it.label}</span>
+              {/* hint 直接显示，不靠 title —— 触屏没有 hover，藏在 title 里等于没写 */}
+              {it.hint ? (
+                <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                  {it.hint}
+                </span>
+              ) : null}
             </button>
           ))}
         </div>

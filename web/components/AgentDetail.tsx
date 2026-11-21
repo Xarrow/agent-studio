@@ -402,6 +402,18 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
   /** 这个助手实际用的那条 LLM 配置 */
   const usedCred = creds.find((c) => c.id === def.model.credential_ref) ?? null;
   const usableCreds = creds.filter((c) => c.provider === def.model.provider);
+  /**
+   * 本地运行时 + 需要 key 的服务商 + 没绑凭据 = 一定跑不起来。
+   * 以前只在运行时才报「需要 api_key」，用户已经离开配置页了。
+   * A2A 助手例外：模型由远端管，这里不需要凭据。
+   */
+  const credMissing =
+    def.runtime !== "a2a" &&
+    Boolean(providerMeta?.requires_key) &&
+    !def.model.credential_ref;
+  const credReason = credMissing
+    ? `没选 LLM 配置：${providerMeta?.display_name ?? def.model.provider} 需要密钥，这个助手现在跑不起来`
+    : "";
   const errors = issues.filter((i) => i.level === "error");
   const warnings = issues.filter((i) => i.level === "warning");
 
@@ -738,8 +750,14 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
           <button
             data-tap
             className="btn btn-primary"
-            disabled={saving || !dirty}
-            title={dirty ? "把这一版写回去（会记一条历史版本）" : "没有未保存的改动"}
+            disabled={saving || !dirty || credMissing}
+            title={
+              credMissing
+                ? credReason
+                : dirty
+                  ? "把这一版写回去（会记一条历史版本）"
+                  : "没有未保存的改动"
+            }
             onClick={save}
           >
             {saving ? "保存中…" : savedFlash ? "✓ 已保存" : dirty ? "● 保存修改" : "保存"}
@@ -1310,6 +1328,11 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                     </p>
                   );
                 })()}
+                {credMissing && (
+                  <p className="mt-1 text-[12px]" style={{ color: "var(--color-err)" }}>
+                    {credReason}
+                  </p>
+                )}
                 {usedCred && usedCred.provider !== def.model.provider && (
                   <p className="mt-1 text-[12px]" style={{ color: "var(--color-warn)" }}>
                     当前凭据「{usedCred.name}」属于 {usedCred.provider}，与所选 Provider

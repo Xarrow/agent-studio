@@ -5,7 +5,7 @@ import { useFirstLoad } from "@/lib/useFirstLoad";
 import { api, fmt } from "@/lib/api";
 import type { Credential, CredentialTestResult, Provider } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
-import { Chip, DLG_BACKDROP, DLG_CARD, Empty, KV, PageHead, Row, RowList, Section } from "@/components/ui/kit";
+import { Chip, DLG_BACKDROP, DLG_CARD, Empty, KV, Menu, PageHead, Row, RowList, Section } from "@/components/ui/kit";
 import { DetailPanel } from "@/components/ui/DetailPanel";
 import {
   IconChat,
@@ -131,6 +131,60 @@ export default function CredentialsPage() {
     }
   };
 
+  /**
+   * 一条凭据的动作集：**行内和展开面板共用这一套**（以前两处各写一遍，措辞还不一致）。
+   * 只留 3 个：编辑 / 自检 / ⋯。「自检」= 探端点 + 验证 key 真的能调；
+   * 原来并排的「测试连接」「对话测试」名字太近、用户分不清，对话调试收进 ⋯。
+   */
+  const credActions = (c: Credential, big = false) => {
+    const btn = big ? "btn btn-sm" : "btn text-[12px] max-md:w-9 max-md:px-0";
+    const primary = big ? "btn btn-primary btn-sm" : "btn text-[12px] max-md:w-9 max-md:px-0";
+    const label = (text: string) => (big ? text : <span className="max-md:hidden">{text}</span>);
+    return (
+      <>
+        <button type="button" className={primary} title="编辑" aria-label="编辑" onClick={() => setEditing(c)}>
+          <IconPencil size={big ? 14 : undefined} className={big ? undefined : "md:hidden"} />
+          {label("编辑")}
+        </button>
+        <button
+          type="button"
+          className={btn}
+          title="拿这条钥匙探一次端点，验证它能不能真的调用"
+          aria-label="自检"
+          disabled={testing === c.id}
+          onClick={() => {
+            setExpanded(c.id);
+            void test(c.id);
+          }}
+        >
+          <IconLink size={big ? 14 : undefined} className={big ? undefined : "md:hidden"} />
+          {label(testing === c.id ? "自检中…" : "自检")}
+        </button>
+        <Menu
+          title="更多"
+          items={[
+            {
+              label: revealed[c.id] ? "隐藏密钥" : "显示密钥",
+              onSelect: () => {
+                setExpanded(c.id);          // 明文只在展开面板里出现，先展开再说
+                if (revealed[c.id]) hide(c.id);
+                else void reveal(c);
+              },
+            },
+            { label: "对话测试", onSelect: () => setChatting(c), hint: "跟模型聊一句，不经过助手" },
+            {
+              label: "删除",
+              danger: true,
+              onSelect: () => void remove(c),
+              // 被引用时后端会拒绝，菜单里先把原因写出来
+              hint: (c.used_by ?? 0) > 0 ? `${c.used_by} 个助手在用，删不掉` : undefined,
+            },
+          ]}
+        />
+      </>
+    );
+  };
+
   const remove = async (c: Credential) => {
     const ok = await fb.confirm({
       title: `删除配置「${c.name}」？`,
@@ -234,77 +288,7 @@ export default function CredentialsPage() {
                 <Row
                   expanded={open}
                   onToggle={() => setExpanded(open ? null : c.id)}
-                  actions={
-                    <>
-                      <button
-                        type="button"
-                        className="btn text-[12px] max-md:w-9 max-md:px-0"
-                        title="编辑"
-                        aria-label="编辑"
-                        onClick={() => setEditing(c)}
-                      >
-                        <IconPencil className="md:hidden" />
-                        <span className="max-md:hidden">编辑</span>
-                      </button>
-                      {revealed[c.id] ? (
-                        <button
-                          type="button"
-                          className="btn text-[12px] max-md:w-9 max-md:px-0"
-                          title="隐藏密钥"
-                          aria-label="隐藏密钥"
-                          onClick={() => hide(c.id)}
-                        >
-                          <IconEye className="md:hidden" />
-                          <span className="max-md:hidden">隐藏密钥</span>
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          className="btn text-[12px] max-md:w-9 max-md:px-0"
-                          title="显示密钥"
-                          aria-label="显示密钥"
-                          onClick={() => void reveal(c)}
-                        >
-                          <IconEye className="md:hidden" />
-                          <span className="max-md:hidden">显示密钥</span>
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        className="btn text-[12px] max-md:w-9 max-md:px-0"
-                        title="直接跟模型聊，不经过助手"
-                        aria-label="对话测试"
-                        onClick={() => setChatting(c)}
-                      >
-                        <IconChat className="md:hidden" />
-                        <span className="max-md:hidden">对话测试</span>
-                      </button>
-                      <button
-                        type="button"
-                        className="btn text-[12px] max-md:w-9 max-md:px-0"
-                        aria-label="测试连接"
-                        disabled={testing === c.id}
-                        onClick={() => {
-                          setExpanded(c.id);
-                          void test(c.id);
-                        }}
-                      >
-                        <IconLink className="md:hidden" />
-                        <span className="max-md:hidden">{testing === c.id ? "测试中…" : "测试连接"}</span>
-                      </button>
-                      <button
-                        type="button"
-                        className="btn text-[12px] max-md:w-9 max-md:px-0"
-                        title="删除这条配置"
-                        aria-label="删除"
-                        style={{ color: "var(--color-err)" }}
-                        onClick={() => void remove(c)}
-                      >
-                        <IconTrash className="md:hidden" />
-                        <span className="max-md:hidden">删除</span>
-                      </button>
-                    </>
-                  }
+                  actions={credActions(c)}
                 >
                   <span className="min-w-0 flex-1 basis-[240px]">
                     <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
@@ -377,42 +361,7 @@ export default function CredentialsPage() {
                         ? [{ icon: <IconPlus size={13} />, text: `添加于 ${fmt.relative(c.created_at)}`, title: "添加时间" }]
                         : []),
                     ]}
-                    actions={
-                      <>
-                        <button type="button" className="btn btn-primary btn-sm" onClick={() => setEditing(c)}>
-                          <IconPencil size={14} />
-                          编辑
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-sm"
-                          disabled={testing === c.id}
-                          title="拿这条钥匙真发一个请求，看通不通"
-                          onClick={() => void test(c.id)}
-                        >
-                          <IconLink size={14} />
-                          {testing === c.id ? "测试中…" : "测试连接"}
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-sm"
-                          title="直接跟模型聊，不经过助手"
-                          onClick={() => setChatting(c)}
-                        >
-                          <IconChat size={14} />
-                          对话测试
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-sm ml-auto"
-                          style={{ color: "var(--color-err)" }}
-                          onClick={() => void remove(c)}
-                        >
-                          <IconTrash size={14} />
-                          删除
-                        </button>
-                      </>
-                    }
+                    actions={credActions(c, true)}
                     onClose={() => setExpanded(null)}
                   >
                     {/* 密钥本体：默认掩码，点了才显示 —— 明文只在这个区块里出现 */}

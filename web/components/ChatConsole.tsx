@@ -36,7 +36,7 @@ import { RunDetailById } from "@/components/RunDetailDialog";
 import { AgentDetailDialog } from "./AgentDetailDialog";
 import { ICON_PATHS, SETUP_ITEMS, USE_ITEMS } from "@/lib/nav-items";
 import { AgentSwitcher } from "./AgentSwitcher";
-import { SkillEntry, ToolEntry, MemoryEntry, openExclusive } from "./ToolEntries";
+import { SkillEntry, ToolEntry, MemoryEntry } from "./ToolEntries";
 import { Sheet } from "./ui/Sheet";
 import { Bubble } from "@/components/chat/Bubble";
 import { SessionsPane } from "@/components/chat/SessionsPane";
@@ -2536,7 +2536,6 @@ export function ChatConsole({
               pinned={pinned}
               onTogglePin={togglePin}
               onExport={(s) => void exportSession(s, "md")}
-              onOpenSkills={() => openExclusive("skill")}
               onExportJson={(s) => void exportSession(s, "json")}
               onCollapse={toggleNav}
             />
@@ -2677,8 +2676,7 @@ export function ChatConsole({
                     pinned={pinned}
                     onTogglePin={togglePin}
                     onExport={(s) => void exportSession(s, "md")}
-                    onOpenSkills={() => openExclusive("skill")}
-              onExportJson={(s) => void exportSession(s, "json")}
+                    onExportJson={(s) => void exportSession(s, "json")}
                     onCollapse={() => setMobileNav(false)}
                   />
                   <div className="shrink-0 border-t border-[var(--color-border)] pb-[env(safe-area-inset-bottom)]">

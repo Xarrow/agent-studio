@@ -38,7 +38,6 @@ export function SessionsPane({
   onTogglePin,
   onExport,
   onExportJson,
-  onOpenSkills,
 }: {
   sessions: Session[];
   sessionId: string;
@@ -56,8 +55,6 @@ export function SessionsPane({
   onTogglePin: (id: string) => void;
   onExport: (s: Session) => void;
   onExportJson: (s: Session) => void;
-  /** 打开助手的技能面板（侧栏「技能 N」徽标 -> 与输入框上方那颗按钮同一块面板） */
-  onOpenSkills?: () => void;
   /** 助手身份块：会话都属于某个助手，它排在列表最上面 */
   agentSlot?: React.ReactNode;
   /** 当前助手 id：工作区记忆按助手分开存 */
@@ -273,30 +270,9 @@ export function SessionsPane({
       {agentSlot && (
         <div className="px-1.5 pt-1.5 pb-1 mb-1">{agentSlot}</div>
       )}
-      {/* 助手会什么：一个可点的「技能 N」。
-          项目工作目录属于助手设置（对话页不再出现「无项目 · 纯对话 切换」——
-          它让人误以为"换项目 = 换对话"，而它只是这个助手在哪个目录干活）。 */}
-      <div className="px-2.5 pb-1.5 flex flex-wrap items-center gap-1">
-        <button
-          type="button"
-          data-tap
-          onClick={onOpenSkills}
-          title="这个助手挂了哪些技能（点开就地勾选）"
-          className="rounded-full px-1.5 py-[1px] text-[10.5px] tabular-nums transition-colors hover:brightness-[0.97]"
-          style={{ background: "var(--bg-hover)", color: "var(--color-text-2)" }}
-        >
-          技能 {globalSkills}
-        </button>
-        {projectSkills.length > 0 && (
-          <span
-            className="rounded-full px-1.5 py-[1px] text-[10.5px] tabular-nums"
-            style={{ background: "var(--bg-hover)", color: "var(--color-text-2)" }}
-            title="来源地址落在当前工作区目录下的技能"
-          >
-            项目 {projectSkills.length}
-          </span>
-        )}
-      </div>
+      {/* 助手会什么不再在侧栏放徽标：它和输入框上方的「技能」按钮开同一块面板，
+          两个入口做一件事（侧栏是"会话导航"，技能属于"这个助手会什么"）。
+          信息本身在面板里就有，这里不再占位。 */}
 
       {/* 头部：新对话 + 管理（批量） */}
       <div className="px-2.5 pb-1.5 flex items-center gap-1.5">
