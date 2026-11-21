@@ -184,6 +184,44 @@ export default function AgentsPage() {
     }
   };
 
+  /** 就地换模型：不跳详情页，选完立刻生效（验收要求「改名、换模型不进详情页即可完成」） */
+  const quickModel = async (a: Agent, name: string) => {
+    if (!name || !a.definition) return;
+    setBusy(a.id);
+    try {
+      const updated = await api.updateAgent(
+        a.id,
+        {
+          name: a.name,
+          definition: { ...a.definition, model: { ...a.definition.model, name } },
+        },
+        a.version,
+      );
+      setAgents((prev) => prev.map((x) => (x.id === a.id ? { ...x, ...updated } : x)));
+      fb.success("模型已换", `${a.name} → ${name}`);
+    } catch (e) {
+      // 版本冲突（列表里的 version 落后一次保存）：拿最新那份再试一次，
+      // 而不是把用户顶到"换个模型还要先刷新"的尴尬处
+      const msg = e instanceof Error ? e.message : String(e);
+      try {
+        const fresh = await api.agent(a.id);
+        const def = fresh.definition ?? a.definition;
+        const updated = await api.updateAgent(
+          a.id,
+          { name: fresh.name, definition: { ...def, model: { ...def.model, name } } },
+          fresh.version,
+        );
+        setAgents((prev) => prev.map((x) => (x.id === a.id ? { ...x, ...updated } : x)));
+        fb.success("模型已换", `${a.name} → ${name}`);
+      } catch {
+        fb.error("换模型失败", msg);
+        await load();
+      }
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const remove = async (agent: Agent) => {
     // 先数清会连带删掉多少会话：只说"一并清理"用户不知道代价多大
     let n = 0;
@@ -495,6 +533,29 @@ export default function AgentsPage() {
                     {a.description ? (
                       <div className="mb-3 text-[13px] leading-relaxed">{a.description}</div>
                     ) : null}
+
+                    {/* 就地换模型：看完列表里这行就知道它用哪个模型、能直接换，
+                        不用点进详情页改完再回来（验收 UX-014） */}
+                    {a.definition && a.definition.runtime !== "a2a" && (
+                      <div
+                        className="mb-3 rounded-[10px] px-3 py-2.5"
+                        style={{ background: "var(--color-surface-2)" }}
+                      >
+                        <div
+                          className="mb-1.5 text-[11.5px]"
+                          style={{ color: "var(--color-text-3)" }}
+                        >
+                          模型（换完立刻生效）
+                        </div>
+                        <ModelPicker
+                          providers={providers}
+                          provider={a.definition.model.provider}
+                          credentialId={a.definition.model.credential_ref ?? null}
+                          value={a.definition.model.name}
+                          onChange={(v) => void quickModel(a, v)}
+                        />
+                      </div>
+                    )}
 
                     {/* 血缘：派生自谁 / 派生出哪些 —— 有血缘才显示，没有就不占一行 */}
                     {(a.parent_id || childrenOf(a.id).length > 0) && (
