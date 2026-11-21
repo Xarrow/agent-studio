@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { api, fmt } from "@/lib/api";
 import { useFirstLoad } from "@/lib/useFirstLoad";
+import Markdown from "@/components/Markdown";
 import type { Agent, Tool } from "@/lib/types";
 import {
   Chip,
@@ -305,7 +306,8 @@ export default function ToolsPage() {
             value={tab}
             onChange={setTab}
             options={[
-              { key: "tools", label: "工具", count: tools.length },
+              // 加载完再显示数字：否则先闪「工具 0」，用户以为库里空了
+              { key: "tools", label: "工具", count: loaded ? tools.length : undefined },
               { key: "skills", label: "Skills", count: skillCount ?? undefined },
               { key: "mcp", label: "MCP", count: mcpCount ?? undefined },
             ]}
@@ -562,7 +564,8 @@ export default function ToolsPage() {
                           className="mt-0.5 block truncate text-[12px]"
                           style={{ color: "var(--color-muted)" }}
                         >
-                          {t.description || "没有说明"}
+                          {/* 摘要行只留纯文本（单行截断）：星号原样显示比不显示更糟 */}
+                          {(t.description || "没有说明").replace(/\*\*/g, "")}
                           {t.kind === "http" ? (
                             <>
                               {" · "}
@@ -622,7 +625,11 @@ export default function ToolsPage() {
                               <span className="mono">{schemaProps.join(", ")}</span>
                             </KV>
                           ) : null}
-                          {t.description ? <KV k="说明">{t.description}</KV> : null}
+                          {t.description ? (
+                            <KV k="说明">
+                              <Markdown text={t.description} />
+                            </KV>
+                          ) : null}
                         </div>
                         {/* ── 哪些助手在用：就地勾选增删（与助手页能力区双向同步） ── */}
                         <div className="mt-2.5">

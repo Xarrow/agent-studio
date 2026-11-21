@@ -272,7 +272,8 @@ export default function AgentsPage() {
     <div className="p-4 md:p-6 lg:p-7 max-w-6xl">
       <PageHead
         title="助手"
-        desc={`${agents.length} 个 Agent · 点一行看清配置与最近一次`}
+        // 数据没回来之前不要报 0（复测 F4：先闪一个假 0，几秒后才变真数）
+        desc={loaded ? `${agents.length} 个助手 · 点一行看清配置与最近一次` : "正在读取助手清单…"}
         actions={
           <button className="btn btn-primary" onClick={() => setShowNew(true)}>
             + 新建 Agent

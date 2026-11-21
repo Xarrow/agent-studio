@@ -18,6 +18,7 @@ import { isImagePath, linkifyWorkPaths, workUrl } from "@/lib/work-paths";
 import React, { memo } from "react";
 import { FileChip, useFileOpener } from "@/components/FileDialog";
 import { looksLikeFilePath } from "@/lib/files";
+import { unwrapJson } from "@/lib/unwrap-json";
 
 /**
  * 行内代码。**只有同时满足「像文件路径」+「这里有文件预览入口」时才做成卡片**，
@@ -571,4 +572,23 @@ function MarkdownBody({ text, chat = false }: { text: string; chat?: boolean }) 
  * 没有 memo 的话每次 commit 都要把整篇 Markdown 重新解析一遍 —— 会话越长越卡。
  * 这里把「同样的 text 就不重算」钉死。
  */
-export default memo(MarkdownBody);
+function MarkdownShell(props: React.ComponentProps<typeof MarkdownBody>) {
+  const unwrapped = typeof props.text === "string" ? unwrapJson(props.text) : null;
+  if (!unwrapped) return <MarkdownBody {...props} />;
+  return (
+    <div>
+      <MarkdownBody {...props} text={unwrapped.body} />
+      <details className="mt-2 rounded-[8px] px-2.5 py-1.5" style={{ background: "var(--color-surface-2)" }}>
+        <summary className="cursor-pointer text-[11.5px]" style={{ color: "var(--color-text-3)" }}>
+          原始 JSON
+        </summary>
+        <pre className="mt-1 max-h-[260px] overflow-auto whitespace-pre-wrap break-all text-[11.5px]">
+          {unwrapped.raw}
+        </pre>
+      </details>
+    </div>
+  );
+}
+
+
+export default memo(MarkdownShell);
