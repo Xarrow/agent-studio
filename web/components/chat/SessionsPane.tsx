@@ -343,7 +343,7 @@ export function SessionsPane({
             data-tap
             onClick={() => setOnlyPinned((v) => !v)}
             aria-pressed={onlyPinned}
-            className="rounded-full px-2 py-[2px] text-[11px] transition-colors"
+            className="shrink-0 whitespace-nowrap rounded-full px-2 py-[2px] text-[11px] transition-colors"
             style={{
               background: onlyPinned ? "var(--bg-selected)" : "transparent",
               color: onlyPinned ? "var(--color-text)" : "var(--color-text-3)",
@@ -352,7 +352,7 @@ export function SessionsPane({
           >
             仅看置顶
           </button>
-          <span className="text-[10.5px]" style={{ color: "var(--color-text-3)" }}>
+          <span className="text-[10.5px] truncate" style={{ color: "var(--color-text-3)" }}>
             {pinned.size ? `${pinned.size} 条已置顶` : "还没置顶任何对话"}
           </span>
         </div>

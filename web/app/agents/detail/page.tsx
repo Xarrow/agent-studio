@@ -19,10 +19,22 @@ import { AgentDetail } from "@/components/AgentDetail";
 
 export default function AgentEditorPage() {
   const [agentId, setAgentId] = useState<string | undefined>(undefined);
+  /** 读地址前先别下结论：以前第一帧就渲染"URL 里没有助手 id"，
+      带 ?id= 的正常访问也会闪一下这句错误（验收报的"刷新闪现"）。 */
+  const [checked, setChecked] = useState(false);
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("id");
     if (id) setAgentId(id);
+    setChecked(true);
   }, []);
+  if (!checked) {
+    return (
+      <div className="p-4 md:p-6 lg:p-7 max-w-5xl space-y-3" aria-busy="true">
+        <div className="h-5 w-40 rounded" style={{ background: "var(--color-surface-3)" }} />
+        <div className="h-3 w-64 rounded" style={{ background: "var(--color-surface-3)" }} />
+      </div>
+    );
+  }
   if (!agentId) {
     return (
       <div className="p-4 md:p-6 lg:p-7 max-w-5xl">

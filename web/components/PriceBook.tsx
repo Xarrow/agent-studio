@@ -29,7 +29,8 @@ type Row = {
   priced: boolean;
 };
 
-const CURRENCIES = ["¥", "$", "€", "元"];
+// 「元」和 ¥ 是同一个币种，两个选项只会让人犹豫一下（验收提到）
+const CURRENCIES = ["¥", "$", "€"];
 
 export function PriceBook() {
   const fb = useFeedback();
@@ -143,7 +144,7 @@ export function PriceBook() {
           className="input"
           style={{ width: 76, paddingLeft: 6, paddingRight: 6 }}
         >
-          {CURRENCIES.map((c) => (
+          {[...new Set([currency, ...CURRENCIES])].map((c) => (
             <option key={c} value={c}>
               {c}
             </option>

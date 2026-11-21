@@ -239,6 +239,7 @@ export default function CredentialsPage() {
       {showNew && (
         <NewCredentialDialog
           providers={providers}
+          creds={creds}
           onClose={() => setShowNew(false)}
           onCreated={async () => {
             setShowNew(false);
@@ -502,10 +503,13 @@ export default function CredentialsPage() {
 // --------------------------------------------------------------------------- //
 function NewCredentialDialog({
   providers,
+  creds,
   onClose,
   onCreated,
 }: {
   providers: Provider[];
+  /** 已有配置：用来在保存前就拦住"名字重复"，而不是等后端 409 */
+  creds: Credential[];
   onClose: () => void;
   onCreated: () => void;
 }) {
@@ -545,7 +549,15 @@ function NewCredentialDialog({
 
   const save = async () => {
     if (!name.trim()) {
-      setErr("请填写配置名称");
+      setErr("先给这条配置起个名字（输入框里那行灰字是示例，不是已填好）");
+      return;
+    }
+    if (!apiKey.trim()) {
+      setErr(`${meta?.display_name ?? provider} 需要 API Key，粘贴一下再保存`);
+      return;
+    }
+    if (creds.some((c) => c.name === name.trim())) {
+      setErr(`“${name.trim()}”这个名字已经用过了，换一个`);
       return;
     }
     setBusy(true);
@@ -601,7 +613,7 @@ function NewCredentialDialog({
               className="input"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="deepseek-main"
+              placeholder="给它起个名字，例如 deepseek-主号"
             />
           </div>
 
@@ -762,11 +774,17 @@ function EditCredentialDialog({
 
   /** 按**手填**的模型名做一次真实连通性测试（后端 /test 支持带 model ✓，max_tokens=1 ✓ 几乎不花钱） */
   const testModel = async () => {
-    if (!model.trim()) return;
+    // 没选模型也能自检：用这条配置里存的默认模型，再不行用该家第一个推荐模型。
+    // 以前按钮直接置灰，用户以为"编辑时不能测、必须重填密钥"（验收报的）
+    const target = model.trim() || credential.default_model || meta?.models?.[0] || "";
+    if (!target) {
+      setProbeNote("这条配置没有默认模型，先选一个再测");
+      return;
+    }
     setBusy(true);
     setProbeNote("测试中…");
     try {
-      const r = await api.testCredential(credential.id, model.trim());
+      const r = await api.testCredential(credential.id, target);
       setProbeNote(
         r.ok
           ? `✓ 这个模型能用 · 延迟 ${fmt.ms(r.latency_ms)}${r.model ? ` · ${r.model}` : ""}`
@@ -911,11 +929,11 @@ function EditCredentialDialog({
               </button>
               <button
                 className="btn shrink-0"
-                disabled={!model.trim() || busy}
-                title="发一次极小调用验证（几乎不花钱）"
+                disabled={busy}
+                title="用这条配置里已保存的密钥发一次极小调用（几乎不花钱）"
                 onClick={() => void testModel()}
               >
-                测试
+                {busy ? "自检中…" : "自检"}
               </button>
               {model && (
                 <button

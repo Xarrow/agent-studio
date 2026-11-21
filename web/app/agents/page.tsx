@@ -646,9 +646,11 @@ function NewAgentDialog({
     const p = withCred ?? providers[0];
     if (!p) return;
     setProvider(p.name);
-    setModel(p.models?.[0] ?? "");
-    const c = creds.find((x) => x.provider === p.name);
-    setCredRef(c?.id ?? "");
+    const c0 = creds.find((x) => x.provider === p.name);
+    // 优先用这条密钥已经在用的模型（LLM 配置里的「默认模型」）——
+    // 以前一律取 provider 静态清单第一个，用户看到的和建成后的不是同一个
+    setModel(c0?.default_model || p.models?.[0] || "");
+    setCredRef(c0?.id ?? "");
   }, [providers, creds]);
 
   const caps = runtimes.find((r) => r.name === runtime);
@@ -891,8 +893,8 @@ function NewAgentDialog({
                   onChange={(e) => {
                     const p = providers.find((x) => x.name === e.target.value);
                     setProvider(e.target.value);
-                    setModel(p?.models?.[0] ?? "");
                     const c = creds.find((x) => x.provider === e.target.value);
+                    setModel(c?.default_model || p?.models?.[0] || "");
                     setCredRef(c?.id ?? "");
                   }}
                 >
@@ -907,6 +909,10 @@ function NewAgentDialog({
                   })}
                 </select>
                 <p className="text-[12px] text-[var(--color-muted)] mt-1.5">
+                  模型：<span className="mono">{model || "（这家没有推荐清单，建成后可在配置里选）"}</span>
+                  {selectedCred ? ` · 密钥：${selectedCred.name}` : ""}
+                </p>
+                <p className="text-[12px] text-[var(--color-muted)] mt-1">
                   {selectedCred
                     ? `使用你的密钥：${selectedCred.name}（${selectedCred.masked_key}）`
                     : usableCreds.length === 0
