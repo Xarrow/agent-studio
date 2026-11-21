@@ -531,7 +531,10 @@ export function Bubble({
           >
             {ts ? (
               <span className="mr-1.5 text-[11px] tabular-nums" style={{ color: "var(--color-muted)" }}>
-                {new Date(ts * 1000).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}
+                {/* ts 是**毫秒**时间戳（后端 now_ms 落库）。以前这里又乘了 1000，
+                    年月直接溢出到几万年后，时间显示成 14:50 / 03:12 这种随机值 ——
+                    同一个会话里时间跳来跳去，用户会怀疑对话被改过。 */}
+                {new Date(ts).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}
               </span>
             ) : null}
 

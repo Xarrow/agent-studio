@@ -574,9 +574,24 @@ export function ChatConsole({
   const mergeMsgs = useCallback(
     <T extends { id?: number; turn_index: number }>(a: T[], b: T[]): T[] => {
       const byKey = new Map<string, T>();
+      /* 服务端那份的"内容键"：本地乐观消息（没有 id）如果和它同轮同文，就应该被它替换，
+         否则同一条消息会同时以"乐观项 + 服务端项"出现两遍（用户看到自己的话重复，
+         刷新后消失 —— 实测就是这个）。 */
+      const ckey = (m: T) => String((m as { content?: string }).content ?? "").trim();
+      const serverKeys = new Set(
+        [...a, ...b].filter((m) => typeof m.id === "number").map(ckey),
+      );
       const put = (m: T, i: number) => {
-        // 有 id 的按 id 去重（服务端消息）；本地乐观消息没有 id，用序号保住不被吞
-        const k = typeof m.id === "number" ? `id:${m.id}` : `local:${i}:${m.turn_index}`;
+        if (typeof m.id === "number") {
+          const k = `id:${m.id}`;
+          if (!byKey.has(k)) byKey.set(k, m);
+          return;
+        }
+        // 本地乐观消息：发送时还不知道轮次（turn_index=0）。只要服务端已经有同一条
+        // 内容的消息，就丢掉乐观项 —— 否则同一句话会渲染两遍（验收报的 P0：
+        // "顶部回显 + 下方正式气泡"，刷新后才消失）。
+        if ((m.turn_index || 0) === 0 && serverKeys.has(ckey(m))) return;
+        const k = `local:${i}:${m.turn_index}`;
         if (!byKey.has(k)) byKey.set(k, m);
       };
       a.forEach(put);
@@ -1919,7 +1934,8 @@ export function ChatConsole({
     setLiveRunId("");
     setLive(null);
     setBusy(false);
-    fb.warn("已停止", "这一轮已中止；输入还在，改改再发就行");
+    // 输入在发送时就清空了，别再说"输入还在"（验收时被当场指出与事实不符）
+    fb.warn("已停止", "这一轮已中止；要改问法就重新输入");
   };
 
   /* Esc 停止这一轮（对标主流：想停手时不用去够按钮）。

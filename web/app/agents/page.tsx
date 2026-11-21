@@ -196,6 +196,7 @@ export default function AgentsPage() {
     try {
       await api.deleteAgent(agent.id);
       await load();
+      fb.success("已删除", `「${agent.name}」及其记忆绑定一并清理`);
     } catch (e) {
       fb.error("删除 Agent 失败", e instanceof Error ? e.message : String(e));
     } finally {
@@ -239,9 +240,11 @@ export default function AgentsPage() {
           providers={providers}
           creds={creds}
           onClose={() => setShowNew(false)}
-          onCreated={async () => {
+          onCreated={async (createdName?: string) => {
             setShowNew(false);
             await load();
+            // 建完没有任何反馈，用户不知道成没成（验收时被指出）
+            fb.success("助手建好了", createdName ? `「${createdName}」已出现在列表里` : undefined);
           }}
         />
       )}
@@ -592,7 +595,7 @@ function NewAgentDialog({
   providers: Provider[];
   creds: Credential[];
   onClose: () => void;
-  onCreated: () => void;
+  onCreated: (createdName?: string) => void;
 }) {
   const [name, setName] = useState("");
   const [presetKey, setPresetKey] = useState<string | null>(null);
@@ -688,7 +691,7 @@ function NewAgentDialog({
           runtime_options: {},
         },
       });
-      onCreated();
+      onCreated(name.trim());
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {

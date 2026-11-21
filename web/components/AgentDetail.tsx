@@ -1445,12 +1445,17 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 step="0.1"
                 min="0"
                 max="2"
-                value={Number((def.model.params as Record<string, number>)?.temperature ?? 0.7)}
+                /* 两位小数：API/导入来的值可能是 0.699999988079071（float32 尾巴），
+                   原样显示既难看又像被改过 */
+                value={Math.round(Number((def.model.params as Record<string, number>)?.temperature ?? 0.7) * 100) / 100}
                 onChange={(e) =>
                   patch({
                     model: {
                       ...def.model,
-                      params: { ...(def.model.params ?? {}), temperature: Number(e.target.value) },
+                      params: {
+                        ...(def.model.params ?? {}),
+                        temperature: Math.round(Number(e.target.value) * 100) / 100,
+                      },
                     },
                   })
                 }

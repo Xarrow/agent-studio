@@ -175,8 +175,10 @@ export default function CredentialsPage() {
             {
               label: "删除",
               danger: true,
+              // 被引用时**直接禁用**：以前只是文案写"删不掉"，点下去仍然弹确认框，
+              // 用户确认后才被后端 409 拒 —— 看着像"能删但没生效"（验收报的 P0）。
+              disabled: (c.used_by ?? 0) > 0,
               onSelect: () => void remove(c),
-              // 被引用时后端会拒绝，菜单里先把原因写出来
               hint: (c.used_by ?? 0) > 0 ? `${c.used_by} 个助手在用，删不掉` : undefined,
             },
           ]}
@@ -186,9 +188,13 @@ export default function CredentialsPage() {
   };
 
   const remove = async (c: Credential) => {
+    if ((c.used_by ?? 0) > 0) {
+      fb.warn("这条配置还在用", `${c.used_by} 个助手引用了它；先给它们换一条再删。`);
+      return;
+    }
     const ok = await fb.confirm({
       title: `删除配置「${c.name}」？`,
-      description: "引用它的 Agent 将无法运行。",
+      description: "对话和记忆不会跟着删；这条钥匙会立刻失效。",
       danger: true,
       confirmText: "删除",
     });
