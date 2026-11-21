@@ -3351,7 +3351,8 @@ export function ChatConsole({
                 className="fab-in absolute right-3 lg:right-5 inline-flex items-center gap-1.5 rounded-full pl-2.5 pr-3 h-8 text-[12px] shadow-md z-10"
                 style={{
                   // 输入坞现在是浮起来的，这个按钮要跟着抬到它上面
-                  bottom: dockH + 12,
+                  // 抬高一点并给正文留出右侧空位：原来贴着输入坞，会压住最后一行字
+                  bottom: dockH + 20,
                   background: "color-mix(in srgb, var(--color-surface) 88%, transparent)",
                   backdropFilter: "blur(8px)",
                   WebkitBackdropFilter: "blur(8px)",

@@ -19,7 +19,7 @@ export default function ManagePage() {
   return (
     <div className="p-4 md:p-6 lg:p-7">
       <PageHead
-        title="管理"
+        title="运行记录"
         desc="每次执行一行，点开看过程与耗时"
       />
       <RunsPanel />

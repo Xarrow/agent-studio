@@ -25,7 +25,7 @@ export function railItems(): NavItem[] {
 export const USE_ITEMS: NavItem[] = [
   {
     href: "/exec",
-    label: "Agent 执行",
+    label: "对话",
     icon: "exec",
     // 对话式干活入口（画布已退役）：选一个助手、说话、看它怎么想怎么做。
     tip: "选助手，说任务，全程可见",
@@ -34,17 +34,17 @@ export const USE_ITEMS: NavItem[] = [
 
 /** 配置 / 管理 —— 业务相关，放在图标轨上半区 */
 export const SETUP_ITEMS: NavItem[] = [
-  { href: "/runs", label: "管理", icon: "manage", tip: "每次执行一行，点开看过程与耗时" },
-  { href: "/agents", label: "Agents", icon: "agents", tip: "一个会自己想办法做事的 AI" },
+  { href: "/runs", label: "运行记录", icon: "manage", tip: "每次执行一行，点开看过程与耗时" },
+  { href: "/agents", label: "助手", icon: "agents", tip: "一个会自己想办法做事的 AI" },
   { href: "/memories", label: "记忆", icon: "memory", tip: "跨对话的长期记性" },
   { href: "/knowledge", label: "知识中心", icon: "library", tip: "上传文档、解析成可检索的知识，并沉淀为 Skill" },
   { href: "/tools", label: "能力", icon: "tools", tip: "工具 / Skills / MCP —— 助手能用的东西都在这" },
-  { href: "/remote-agents", label: "远程 Agent 管理", icon: "exchange", tip: "接入外部 A2A agent，挂到助手调用" },
+  { href: "/remote-agents", label: "远程节点", icon: "exchange", tip: "接入外部 A2A agent，挂到助手调用" },
 ];
 
 /** 系统级 —— 低频、跟"干活"无关，固定沉底（分隔线以下） */
 export const SYSTEM_ITEMS: NavItem[] = [
-  { href: "/credentials", label: "API 密钥", icon: "key", tip: "模型服务商的密钥，本机加密保存，不进代码库" },
+  { href: "/credentials", label: "LLM 配置", icon: "key", tip: "模型服务商的密钥，本机加密保存，不进代码库" },
   { href: "/environment", label: "系统设置", icon: "database", tip: "数据存哪、隧道与端口：默认 SQLite，可换 MySQL / PostgreSQL" },
 ];
 

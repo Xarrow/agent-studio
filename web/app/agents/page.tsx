@@ -219,7 +219,7 @@ export default function AgentsPage() {
   return (
     <div className="p-4 md:p-6 lg:p-7 max-w-6xl">
       <PageHead
-        title="Agents"
+        title="助手"
         desc={`${agents.length} 个 Agent · 点一行看清配置与最近一次`}
         actions={
           <button className="btn btn-primary" onClick={() => setShowNew(true)}>
