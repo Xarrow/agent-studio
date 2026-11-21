@@ -41,6 +41,17 @@ const STATUS: Record<string, { label: string; tone: Tone }> = {
   revoked: { label: "已撤销", tone: "muted" },
 };
 
+/** 状态要能反映"我能不能主动连它"。没地址（对方是内网/由它发心跳）时，
+    标成「正常」会让人以为可以点同步、可以推卡片 —— 实际只能等它来。
+    （验收报的：hpc 显示正常，但地址未知、已同步 0/0、上次同步从未） */
+function peerStatus(p: { status?: string; base_url?: string | null }) {
+  const base = STATUS[p.status ?? "active"] ?? STATUS.active;
+  if ((p.status ?? "active") === "active" && !p.base_url) {
+    return { label: "只能被动接收", tone: "warn" as Tone };
+  }
+  return base;
+}
+
 const ARUN: Record<string, { label: string; tone: Tone }> = {
   ok: { label: "可用", tone: "ok" },
   unknown: { label: "未检测", tone: "muted" },
@@ -191,7 +202,7 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
   const curAgents = selPeer ? nodeAgents[selPeer] : undefined;
   const curRemote = selPeer ? nodeRemote[selPeer] : null;
   const curErr = selPeer ? nodeErr[selPeer] || "" : "";
-  const curSt = cur ? STATUS[cur.status] ?? STATUS.active : STATUS.active;
+  const curSt = cur ? peerStatus(cur) : STATUS.active;
 
   return (
     <div className="mt-5">
@@ -360,7 +371,7 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
           </div>
         ) : (
           active.map((p) => {
-            const st = STATUS[p.status] ?? STATUS.active;
+            const st = peerStatus(p);
             const isSel = selPeer === p.id;
             return (
               <div

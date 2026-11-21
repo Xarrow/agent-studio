@@ -810,7 +810,8 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
             }
             onClick={save}
           >
-            {saving ? "保存中…" : savedFlash ? "✓ 已保存" : dirty ? "● 保存修改" : "保存"}
+            {/* 不再同时显示「✓ 已保存」和顶部的「已保存（v4）」—— 同一件事说两遍 */}
+            {saving ? "保存中…" : dirty ? "● 保存修改" : "保存"}
           </button>
         </div>
       </header>
