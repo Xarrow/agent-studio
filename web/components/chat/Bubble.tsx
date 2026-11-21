@@ -20,6 +20,20 @@ import { FileRowButton } from "@/components/FileDialog";
 import { isImeEvent } from "@/lib/ime";
 import { RunDetailById } from "@/components/RunDetailDialog";
 
+/** 时间戳：当天只给 HH:mm；不是今天就带日期（历史会话里只有 14:50 根本判断不出哪天） */
+export function fmtStamp(ts: number | string | Date): string {
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return "";
+  const hm = d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+  const now = new Date();
+  const sameDay =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate();
+  if (sameDay) return hm;
+  return `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${hm}`;
+}
+
 /** 气泡里的动作条（复制 / 重试 / 编辑…）：常驻可见，不靠 hover */
 export function MsgAction({
   label,
@@ -537,7 +551,7 @@ export function Bubble({
                 {/* ts 是**毫秒**时间戳（后端 now_ms 落库）。以前这里又乘了 1000，
                     年月直接溢出到几万年后，时间显示成 14:50 / 03:12 这种随机值 ——
                     同一个会话里时间跳来跳去，用户会怀疑对话被改过。 */}
-                {new Date(ts).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}
+                {fmtStamp(ts)}
               </span>
             ) : null}
 

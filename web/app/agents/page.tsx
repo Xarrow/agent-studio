@@ -185,9 +185,19 @@ export default function AgentsPage() {
   };
 
   const remove = async (agent: Agent) => {
+    // 先数清会连带删掉多少会话：只说"一并清理"用户不知道代价多大
+    let n = 0;
+    try {
+      const r = await api.sessions(agent.id);
+      n = r.list.length;
+    } catch {
+      n = 0;
+    }
     const ok = await fb.confirm({
-      title: `删除 Agent「${agent.name}」？`,
-      description: "记忆绑定与挂载关系一并清理",
+      title: `删除助手「${agent.name}」？`,
+      description: n
+        ? `会同时删掉它的 ${n} 个会话（对话记录不可恢复），记忆绑定与挂载关系一并清理。`
+        : "它还没有会话，只删这个助手本身：记忆绑定与挂载关系一并清理。",
       danger: true,
       confirmText: "删除",
     });
