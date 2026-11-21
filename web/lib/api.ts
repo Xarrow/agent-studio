@@ -468,6 +468,8 @@ export const api = {
       /** 只改开关时不必带 definition（服务端不会因此产生新版本） */
       expose_remote?: boolean;
       expose_note?: string;
+      /** 自动保存传 false：只改内容、不生成新版本（版本留给「记为一版」） */
+      bump_version?: boolean;
     },
     /** 我读到的那一版：并发编辑时服务端据此拒绝静默覆盖 */
     version?: number,

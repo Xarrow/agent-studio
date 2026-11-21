@@ -575,6 +575,9 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
           name: nextName,
           definition: def,
           description: desc.trim() || undefined,
+          // 自动保存不生成版本：每改一个字就 +1 会把历史刷成噪音（复测 F6）。
+          // 想要一个可回滚的里程碑，用户点「记为一版」。
+          bump_version: !opts.auto,
         },
         agent?.version,
       );
@@ -853,7 +856,19 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
             ) : dirty ? (
               "改动待保存…"
             ) : autoAt ? (
-              `已自动保存 · ${autoAt}`
+              <>
+                <span>{`已自动保存 · ${autoAt}`}</span>
+                {/* 版本只在显式「记为一版」时生成 —— 自动保存不再刷版本号（复测 F6） */}
+                <button
+                  data-tap
+                  className="btn btn-sm"
+                  disabled={saving}
+                  title="把当前这一版记进历史（可回滚）；平时自动保存不会产生版本"
+                  onClick={() => void save()}
+                >
+                  记为一版
+                </button>
+              </>
             ) : (
               ""
             )}
