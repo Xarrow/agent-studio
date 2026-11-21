@@ -177,7 +177,9 @@
   from { opacity: 0; transform: translateY(4px); }
   to   { opacity: 1; transform: none; }
 }
-.session-enter { animation: session-enter var(--dur-2) var(--ease) both; }
+/* 不写 fill-mode：动画万一没跑（后台标签、动画被节流），元素回落到自身的
+   opacity:1，历史消息照样看得见。带 both 时卡在 0% 就是整块空白（实测复现）。 */
+.session-enter { animation: session-enter var(--dur-2) var(--ease); }
 @media (prefers-reduced-motion: reduce) {
   .session-enter { animation: none; }
 }

@@ -843,8 +843,17 @@ export function ChatConsole({
           ? Math.min(...older.map((x) => x.turn_index || 1)) - 1
           : Number(detail.before_turn ?? 0),
       );
-    } catch {
-      if (seq === loadSeqRef.current) setHistory([]);
+    } catch (e) {
+      if (seq === loadSeqRef.current) {
+        setHistory([]);
+        // 会话不存在（被删了 / 深链抄错）：不能停在一屏空白 + 地址里留着死 id。
+        // 清掉 sessionId，让"切助手"的逻辑重新挑一条活的，并说一句为什么。
+        const msg = e instanceof Error ? e.message : String(e);
+        if (/不存在|not found|404/i.test(msg)) {
+          fb.error("这条对话不存在了", "可能已被删除；已切到最近的对话");
+          setSessionId("");
+        }
+      }
     } finally {
       if (seq === loadSeqRef.current) setMessagesLoading(false);
     }
@@ -1294,6 +1303,12 @@ export function ChatConsole({
 
   const newChat = async () => {
     if (!agentId) return;
+    // 已经在一条空会话上：直接复用它。否则连点几次就堆出几条 0 轮空会话，
+    // 侧栏被"新对话"刷屏（实测点 3 次 = 3 条）。
+    if (sessionId && history.length === 0 && !busy && !live) {
+      taRef.current?.focus();
+      return;
+    }
     try {
       const s = await api.createSession(agentId, "新对话");
       await loadSessions(agentId);
@@ -3996,6 +4011,9 @@ export function ChatConsole({
                       <button
                         data-tap
                         type="button"
+                        aria-label={
+                          paused ? "运行暂停，先处理授权" : "发送消息"
+                        }
                         title={
                           paused
                             ? "运行暂停，先处理授权"

@@ -298,11 +298,14 @@ export function SessionsPane({
           </button>
           <div className="mt-1 flex flex-wrap items-center gap-1">
             <span className="rounded-full px-1.5 py-[1px] text-[10.5px] tabular-nums" style={{ background: "var(--bg-hover)", color: "var(--color-text-2)" }}>
-              全局技能 {globalSkills}
+              技能 {globalSkills}
             </span>
-            <span className="rounded-full px-1.5 py-[1px] text-[10.5px] tabular-nums" style={{ background: "var(--bg-hover)", color: "var(--color-text-2)" }} title="来源地址落在当前工作区目录下的技能">
-              项目技能 {projectSkills.length}
-            </span>
+            {/* 「项目技能 0」这种恒为零的徽标是噪音：没有项目技能时就不出现 */}
+            {projectSkills.length > 0 && (
+              <span className="rounded-full px-1.5 py-[1px] text-[10.5px] tabular-nums" style={{ background: "var(--bg-hover)", color: "var(--color-text-2)" }} title="来源地址落在当前工作区目录下的技能">
+                项目 {projectSkills.length}
+              </span>
+            )}
           </div>
           {wsOpen && (
             <div className="mt-1.5 space-y-1">
