@@ -750,17 +750,21 @@ export function RunsPanel() {
               <span title={`今日 ${usage.today.calls} 次 · 近 ${usage.days} 天 ${usage.period.calls} 次`}>
                 今日 <b style={{ color: "var(--color-text)" }}>{usage.today.calls}</b> 次
               </span>
+              {/* 「共 28 条」是全部记录数，这里只统计近 N 天 —— 两个口径不标范围就永远对不上（复测 F8） */}
               <span
                 title={
                   usage.stats && usage.stats.runs > 0
-                    ? `近 ${usage.days} 天：${usage.stats.ok} 成功 · ${usage.stats.failed} 失败`
-                    : "暂无执行"
+                    ? `近 ${usage.days} 天共 ${usage.stats.runs} 次：${usage.stats.ok} 成功 / ${usage.stats.failed} 失败`
+                    : "近段时间没有执行"
                 }
               >
-                历史成功率{" "}
+                近 {usage.days} 天{" "}
+                <b style={{ color: "var(--color-text)" }}>{usage.stats?.ok ?? 0}</b> 成功
+                <span style={{ opacity: 0.6 }}> / </span>
                 <b style={{ color: usage.stats && usage.stats.failed > 0 ? "var(--color-err)" : "var(--color-text)" }}>
-                  {usage.stats?.success_rate != null ? `${usage.stats.success_rate}%` : "—"}
-                </b>
+                  {usage.stats?.failed ?? 0}
+                </b>{" "}
+                失败
               </span>
               <span title={`今日 · 近 ${usage.days} 天 ${fmt.num(usage.period.tokens_in + usage.period.tokens_out)}`}>
                 token <b style={{ color: "var(--color-text)" }}>{fmt.num(usage.today.tokens_in + usage.today.tokens_out)}</b>
@@ -1739,7 +1743,9 @@ export function RunsPanel() {
                 </span>
               </>
             ) : (
-              <span style={{ color: "var(--color-muted)" }}>共 {serverTotal} 条，已到底</span>
+              <span style={{ color: "var(--color-muted)" }}>
+                全部记录共 {serverTotal} 条，已到底
+              </span>
             )}
           </div>
         )}
