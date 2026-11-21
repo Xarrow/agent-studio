@@ -1613,7 +1613,9 @@ function RecallSection() {
       .finally(markLoaded);
   }, [markLoaded]);
 
-  const card = (label: string, rate: number, detail: string, onClick?: () => void) => (
+  /** rate = null 表示"还没有分母"（0 份文档 / 没被查过）——
+      这种情况显示「—」而不是 0%：0% 会被读成"查不到"，而事实是"还没数据"。 */
+  const card = (label: string, rate: number | null, detail: string, onClick?: () => void) => (
     <button
       type="button"
       onClick={onClick}
@@ -1623,7 +1625,9 @@ function RecallSection() {
       <div className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
         {label}
       </div>
-      <div className="text-[18px] font-medium">{Math.round(rate * 100)}%</div>
+      <div className="text-[18px] font-medium">
+        {rate === null ? "—" : `${Math.round(rate * 100)}%`}
+      </div>
       <div className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
         {detail}
       </div>
@@ -1697,22 +1701,26 @@ function RecallSection() {
           <div className="flex flex-wrap gap-2">
             {card(
               "文档自召回",
-              stats.docs.rate,
+              stats.docs.total > 0 ? stats.docs.rate : null,
               `${stats.docs.hit}/${stats.docs.total} 份查得到自己`,
               stats.docs.misses.length ? () => setOpen(open === "docs" ? "" : "docs") : undefined,
             )}
             {card(
               "标签召回",
-              stats.tags.rate,
+              stats.tags.total > 0 ? stats.tags.rate : null,
               `${stats.tags.hit}/${stats.tags.total} 个标签查得全`,
               stats.tags.misses.length ? () => setOpen(open === "tags" ? "" : "tags") : undefined,
             )}
             {card(
               "助手检索命中",
-              stats.agent.rate,
+              stats.agent.queries > 0 ? stats.agent.rate : null,
               stats.agent.queries ? `${stats.agent.hit}/${stats.agent.queries} 次 · 均值 ${stats.agent.avg_latency_ms}ms` : "还没被助手查过",
             )}
-            {card("页面搜索命中", stats.search.rate, stats.search.queries ? `${stats.search.hit}/${stats.search.queries} 次` : "还没有搜索记录")}
+            {card(
+              "页面搜索命中",
+              stats.search.queries > 0 ? stats.search.rate : null,
+              stats.search.queries ? `${stats.search.hit}/${stats.search.queries} 次` : "还没有搜索记录",
+            )}
           </div>
 
           {cov && cov.length > 0 ? (

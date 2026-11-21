@@ -252,14 +252,25 @@ export default function ToolsPage() {
     }
   };
 
-  const filtered = kindFilter ? tools.filter((t) => t.kind === kindFilter) : tools;
+  /* 默认收起两类东西：
+     · 平台内部工具（worker_* / proc_* / fork_*）—— 是运行时和 Router 的控制通道，
+       普通用户配助手时不需要看到；
+     · 当前平台不可用的（如 Windows 的 powershell）—— 列出来只会让人以为能勾。
+     顶部给一个「显示内部与不可用（N）」开关，需要的人一按就出来。 */
+  const [showHidden, setShowHidden] = useState(false);
+  const isInternal = (name: string) => /^(worker_|proc_|fork_)/.test(name);
+  const isHiddenTool = (t: (typeof tools)[number]) =>
+    ((t.kind as string) === "native" && isInternal(t.name)) || t.flags?.platform_ok === false;
+  const hiddenTools = tools.filter(isHiddenTool);
+  const visibleTools = showHidden ? tools : tools.filter((t) => !isHiddenTool(t));
+  const filtered = kindFilter ? visibleTools.filter((t) => t.kind === kindFilter) : visibleTools;
   const counts = {
-    builtin: tools.filter((t) => t.kind === "builtin").length,
-    http: tools.filter((t) => t.kind === "http").length,
-    code: tools.filter((t) => t.kind === "code").length,
+    builtin: visibleTools.filter((t) => t.kind === "builtin").length,
+    http: visibleTools.filter((t) => t.kind === "http").length,
+    code: visibleTools.filter((t) => t.kind === "code").length,
     // 分派是**平台原生**工具（助手因此能把自己的任务拆给多个实例并行处理）——
     // 不归进"内置/HTTP/代码"里的任何一类，否则用户按分类找会找不到它。
-    fork: tools.filter((t) => t.kind === "fork").length,
+    fork: visibleTools.filter((t) => t.kind === "fork").length,
   };
 
   return (
@@ -369,7 +380,7 @@ export default function ToolsPage() {
               value={kindFilter}
               onChange={setKindFilter}
               options={[
-                { key: "", label: "全部", count: tools.length },
+                { key: "", label: "全部", count: visibleTools.length },
                 { key: "builtin", label: "内置", count: counts.builtin },
                 { key: "http", label: "HTTP", count: counts.http },
                 { key: "code", label: "代码", count: counts.code },
@@ -381,6 +392,15 @@ export default function ToolsPage() {
               ]}
             />
             <div className="ml-auto flex flex-wrap items-center gap-1.5">
+              {hiddenTools.length > 0 && (
+                <button
+                  className="btn"
+                  onClick={() => setShowHidden((v) => !v)}
+                  title="平台内部工具（worker_/proc_/fork_）与当前平台不可用的工具"
+                >
+                  {showHidden ? "隐藏内部工具" : `显示内部与不可用（${hiddenTools.length}）`}
+                </button>
+              )}
               <button className="btn" disabled={syncing} onClick={sync}>
                 {syncing ? "同步中…" : "同步内置工具"}
               </button>
