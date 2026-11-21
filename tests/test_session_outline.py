@@ -139,9 +139,19 @@ async def test_打开会话只取最近N轮并给游标(client):
     r = await client.get(f"/api/sessions/{sid}?turns=5")
     assert r.status_code == 200
     body = r.json()
-    assert body["before_turn"] == 7
+    # 游标 = 已加载的最小轮（`before=X` 取 < X，正好接上这一轮，不会跳过第 8 轮）
+    assert body["before_turn"] == 8
     turns = sorted({m["turn_index"] for m in body["messages"]})
     assert turns == [8, 9, 10, 11, 12]
+
+    # 按游标往前翻，两页之间不能有空洞（曾经少一轮：detail 给 7、turns 又少一轮）
+    older = (await client.get(f"/api/sessions/{sid}/turns?before=8&limit=5")).json()
+    older_turns = sorted({m["turn_index"] for m in older["messages"]})
+    assert older_turns == [3, 4, 5, 6, 7]
+    assert older["before_turn"] == 3
+    oldest = (await client.get(f"/api/sessions/{sid}/turns?before=3&limit=5")).json()
+    assert sorted({m["turn_index"] for m in oldest["messages"]}) == [1, 2]
+    assert oldest["before_turn"] == 0
 
 
 @pytest.mark.asyncio
@@ -155,7 +165,7 @@ async def test_open_聚合接口带目录与消息(client):
     body = r.json()
     assert body["session"]["id"] == sid
     assert len(body["outline"]) == 6  # 目录始终全量
-    assert body["before_turn"] == 3
+    assert body["before_turn"] == 4
     assert sorted({m["turn_index"] for m in body["messages"]}) == [4, 5, 6]
 
 

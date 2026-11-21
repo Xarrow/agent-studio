@@ -356,7 +356,8 @@ async def get_session_detail(
         last_turn = max(int(r.turn_index or 0) for r in all_rows)
         start = max(1, last_turn - turns + 1)
         rows = [r for r in all_rows if int(r.turn_index or 0) >= start]
-        before_turn = start - 1 if start > 1 else 0
+        # 游标 = 已加载的最小轮（`before=X` 取 < X，正好接上这一轮）
+        before_turn = start if start > 1 else 0
     names = await _agent_names(session, [row.agent_id])
     turns = len({r.turn_index for r in all_rows})
     head = _to_read(row, turns, names.get(row.agent_id))
@@ -722,7 +723,9 @@ async def session_turns(
             }
             for r in rows
         ],
-        "before_turn": max(0, lowest - 1),
+        # 同上：给「这一页最小轮」，下一页 < 它，上一页最后一轮不会被跳过。
+        # 已经到第 1 轮（或空页）就没有更早的了，给 0 让前端停下。
+        "before_turn": lowest if lowest > 1 else 0,
         "has_more": lowest > 1,
     }
 
@@ -963,7 +966,7 @@ async def open_session(
         },
         "outline": outline,
         "turns_loaded": turns,
-        "before_turn": start_turn - 1,
+        "before_turn": start_turn if start_turn > 1 else 0,
         "messages": [
             {
                 "id": m.id,

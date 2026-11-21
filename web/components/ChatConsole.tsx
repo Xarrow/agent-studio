@@ -587,9 +587,12 @@ export function ChatConsole({
   const olderFailedRef = useRef(false);
   /** 人真的滚动过吗？打开会话时 scrollTop 还是 0，不能因此自动把整段历史拉下来 */
   const userScrolledRef = useRef(false);
+  /** 请求级锁：state 更新是异步的，同一次滚动里连发两次 onScroll 会双请求（实测一次到顶发了 2 个） */
+  const loadingOlderRef = useRef(false);
 
   const loadOlder = useCallback(async () => {
-    if (!sessionId || loadingOlder || !beforeTurn) return;
+    if (!sessionId || loadingOlderRef.current || !beforeTurn) return;
+    loadingOlderRef.current = true;
     setLoadingOlder(true);
     const box = document.querySelector("[data-msg-scroll]");
     const prevH = box?.scrollHeight ?? 0;
@@ -619,6 +622,7 @@ export function ChatConsole({
       olderFailedRef.current = true;
       fb.error("加载更早的消息失败", "网络恢复后重试");
     } finally {
+      loadingOlderRef.current = false;
       setLoadingOlder(false);
     }
   }, [sessionId, loadingOlder, beforeTurn, toHistory, fb]);
