@@ -38,7 +38,7 @@ PROVIDERS: dict[str, ProviderMeta] = {
         default_base_url="https://api.deepseek.com/v1",
         models=["deepseek-v4-pro", "deepseek-v4-flash", "deepseek-chat", "deepseek-reasoner"],
         docs_url="https://api-docs.deepseek.com",
-        note="性价比高，OpenAI 兼容协议",
+        note="官方端点，按量计费",
     ),
     # 工具类凭据（不是对话模型）：搜索 / 抓取 / OCR / ASR / TTS。
     # 单独列一个 provider，是为了让用户在「API 密钥」页能像配模型一样配它，
