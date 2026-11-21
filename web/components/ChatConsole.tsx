@@ -563,6 +563,31 @@ export function ChatConsole({
   }, [outline, history.length, sessionId]);
 
   /** 把后端拿到的消息转成界面用的形状（首屏与翻页共用一份规则） */
+  /**
+   * 合并两批消息：按 id 去重、按 (turn_index, id) 排序。
+   *
+   * 为什么不能"取更早的那段再拼最近这段"：往前翻页和后台刷新是两条并发路径，
+   * 它们各自基于不同时刻的 history 做函数式更新，拼出来的结果会**中间缺一段**
+   * （实测：1..10 + 32..61，11..31 整段消失，界面上就是对话断了一截）。
+   * 按 id 求并集，任何先后顺序都不会丢。
+   */
+  const mergeMsgs = useCallback(
+    <T extends { id?: number; turn_index: number }>(a: T[], b: T[]): T[] => {
+      const byKey = new Map<string, T>();
+      const put = (m: T, i: number) => {
+        // 有 id 的按 id 去重（服务端消息）；本地乐观消息没有 id，用序号保住不被吞
+        const k = typeof m.id === "number" ? `id:${m.id}` : `local:${i}:${m.turn_index}`;
+        if (!byKey.has(k)) byKey.set(k, m);
+      };
+      a.forEach(put);
+      b.forEach(put);
+      return [...byKey.values()].sort(
+        (x, y) => (x.turn_index || 0) - (y.turn_index || 0) || (x.id || 0) - (y.id || 0),
+      );
+    },
+    [],
+  );
+
   const toHistory = useCallback(
     (msgs: { id: number; turn_index: number; role: string; content: string; run_id: string | null; ts: number; sources_count?: number }[]) =>
       msgs
@@ -600,7 +625,7 @@ export function ChatConsole({
     try {
       const r = await api.sessionTurns(sessionId, { before: beforeTurn, limit: 20 });
       const older = toHistory(r.messages as never);
-      setHistory((h) => [...older, ...h]);
+      setHistory((h) => mergeMsgs(older, h));
       setBeforeTurn(Number(r.before_turn ?? 0));
       /* 锚点补偿要**多次**做：插入的旧消息里若有图片/代码高亮/折叠块，
          高度是分几拍长出来的。只在第一帧补一次，用户会看到内容"跳"一下
@@ -782,7 +807,13 @@ export function ChatConsole({
     [fb],
   );
 
-  const loadMessages = useCallback(async (sid: string) => {
+  /**
+   * ``reset``：是否先清空当前内容。
+   * 只有"换会话/回滚"这种内容真的换了才清；**刷新/轮询必须不清** ——
+   * 清了之后 historyRef 变空，随后的并集合并只剩最近 30 轮，
+   * 用户已经翻上去的旧历史整段消失（实测：61 轮 → 50 轮，1..12 没了）。
+   */
+  const loadMessages = useCallback(async (sid: string, opts?: { reset?: boolean }) => {
     if (!sid) {
       setHistory([]);
       return;
@@ -791,8 +822,9 @@ export function ChatConsole({
     // 消息画到新会话上（用户看到的是"切成功但内容还是旧的"）。
     const seq = ++loadSeqRef.current;
     setMessagesLoading(true);
-    // 立刻清空旧内容：宁可先看骨架，也不要让上一会话的字留在屏幕上
-    setHistory((h) => (h.length ? [] : h));
+    // 换会话时才清屏（宁可先看骨架，也不要让上一会话的字留在屏幕上）；
+    // 同一会话的刷新保留现有内容，避免把翻上去的历史清掉
+    if (opts?.reset) setHistory((h) => (h.length ? [] : h));
     try {
       const detail = await api.session(sid, 30);
       if (seq !== loadSeqRef.current) return;
@@ -825,12 +857,11 @@ export function ChatConsole({
             ts: m.ts,
             sources_count: m.sources_count ?? 0,
           }));
-      // 保留已经往上翻出来的更早消息：轮询/刷新不该把用户翻上去的历史又吞掉
-      const earliestFresh = fresh.length ? Math.min(...fresh.map((x) => x.turn_index || 0)) : Infinity;
-      const older = Number.isFinite(earliestFresh)
-        ? historyRef.current.filter((x) => (x.turn_index || 0) < earliestFresh)
-        : [];
-      setHistory(older.length ? [...older, ...fresh] : fresh);
+      // 保留已经往上翻出来的更早消息：轮询/刷新不该把用户翻上去的历史又吞掉。
+      // 用 id 并集而不是"取更早的一段"—— 两条并发路径各自基于不同时刻的 history，
+      // 按区间拼会中间缺一段（实测丢过 11..31）。
+      const older = historyRef.current;
+      setHistory(older.length ? mergeMsgs(older, fresh) : fresh);
       // 回到这个会话上次的阅读位置：等这一帧画完再设（否则 scrollHeight 还是旧的）
       if (savedScroll > 0) {
         // 先关掉"自动贴底"：否则 setHistory 之后的那个 effect 会立刻把视图拽到底，
@@ -862,10 +893,12 @@ export function ChatConsole({
         };
         window.setTimeout(restore, 120);
       }
+      // 游标语义：`before=X` 取 turn_index < X，所以游标给「已加载的最小轮」本身。
+      // 这里以前写的是 `最小轮 - 1`，后端改成同一口径后它会让那一轮永远取不到（漏一轮）。
+      const oldestMerged = older.length ? Math.min(...older.map((x) => x.turn_index || 1)) : 0;
       setBeforeTurn(
-        older.length
-          ? Math.min(...older.map((x) => x.turn_index || 1)) - 1
-          : Number(detail.before_turn ?? 0),
+        // 已经含第 1 轮就没有更早的了（给 1 会显示"还有 1 轮"，点开是空）
+        oldestMerged > 1 ? oldestMerged : older.length ? 0 : Number(detail.before_turn ?? 0),
       );
     } catch (e) {
       if (seq === loadSeqRef.current) {
@@ -1103,7 +1136,7 @@ export function ChatConsole({
     liveMeta.current = { url: "", title: "" };
     clearFrame();
     void (async () => {
-      await loadMessages(sessionId);
+      await loadMessages(sessionId, { reset: true });
       // ── 刷新恢复：会话里还有在跑的 run 就重新挂上 SSE ──
       // 后端没停（事件继续落库），只是页面的 SSE 断了；stream 端点
       // 先回放已落库事件再推增量，接上即恢复现场，不丢任何内容。
@@ -1377,7 +1410,7 @@ export function ChatConsole({
     if (!sessionId) return;
     try {
       const r = await api.rewindSession(sessionId, turnIndex);
-      await loadMessages(sessionId);
+      await loadMessages(sessionId, { reset: true });
       await loadSessions(agentId);
       setInput(text);
       fb.success(
@@ -1868,7 +1901,7 @@ export function ChatConsole({
     if (!sessionId) return;
     try {
       const r = await api.rewindSession(sessionId, turnIndex);
-      await loadMessages(sessionId);
+      await loadMessages(sessionId, { reset: true });
       await loadSessions(agentId);
       fb.info("已作废这一轮之后的回答", `删了 ${r.deleted} 条，按新问法重答`);
       await send(text);
