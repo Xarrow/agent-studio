@@ -935,7 +935,9 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
           操作/观测在侧列 sticky 常驻 —— 「试跑」不再埋在第 5 段，
           屏幕一进来就能跑。窄屏自动退回单列（右列内容排到配置后面）。
           内容量宽从 1007px 收到 ~760px：System Prompt 一行不再横扫全屏。 */}
-      <div className="flex flex-col gap-4 xl:grid xl:grid-cols-[minmax(0,1fr)_400px] xl:items-start">
+      {/* 右列从 400 收到 340：之前两张卡 + 折叠段占掉近 1/3 宽，
+          把主表单压成很窄的一条（复测 F15） */}
+      <div className="flex flex-col gap-4 xl:grid xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
         {/* ══ 左列：配置 ══ */}
         <div className="min-w-0 space-y-4">
       {/* ── 基础配置 ──────────────────────────
@@ -1658,11 +1660,11 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
             配置页的主操作是「试跑看效果」，所以它是常驻卡片、不进折叠；
             历史版本 / 评测 / 记忆是偶尔才翻的，统一收进一个「更多」段 ——
             之前它们是三个并列的折叠段，把主操作挤到了第 5 段之后。 */}
-        <div className="min-w-0 space-y-4 xl:sticky xl:top-4 max-xl:contents">
+        <section className="card min-w-0 space-y-3 p-3.5 xl:sticky xl:top-4 max-xl:order-first">
           {/* 试跑只留一个入口：对话页（能看完整现场、能多轮、能改口）。
               原来这里还有一套「快速试跑」，跟右上角的「打开对话页」是同一件事的两个壳，
               两处都能跑、结果各说一套 —— 验收要求删掉重复入口。 */}
-          <section className="card p-4 max-xl:order-first">
+          <div>
             <div className="flex items-center justify-between gap-2">
               <div className="min-w-0">
                 <h2 className="text-[14px] font-medium">试一句</h2>
@@ -1679,13 +1681,13 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 先修上面的 {errors.length} 个问题，它会跑不起来
               </p>
             )}
-          </section>
+          </div>
 
           {/* ── 收这些话：路由的第一层 ────────────────────────────────
               为什么放在助手自己的配置页：写这句话的语境就是"我在给这个助手定范围"，
               放到全局路由表里，改的时候得在两处之间对照（用户口径：绑定动作归属
               对象自己的配置页）。 */}
-          <RouteRules agentId={agentId} />
+          <RouteRules agentId={agentId} bare />
 
           <Fold
             title="更多"
@@ -1713,7 +1715,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
               </div>
             </div>
           </Fold>
-        </div>
+        </section>
         {/* ══ 右列完 ══ */}
       </div>
       {/* ══ 双列容器完 ══ */}

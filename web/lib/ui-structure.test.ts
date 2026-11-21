@@ -135,8 +135,9 @@ test("配置页：主操作（试跑）不得埋在后面 —— 常驻卡片 + 
   const src = read("components/AgentDetail.tsx");
   assert.match(src, /试一句/, "缺试跑入口卡");
   assert.match(src, /max-xl:order-first/, "试跑卡缺窄屏提前（否则手机上排在三屏之后）");
-  assert.match(src, /max-xl:contents/, "右列包裹层缺窄屏 contents（contents + order-first 是一对）");
-  assert.match(src, /xl:grid xl:grid-cols-\[minmax\(0,1fr\)_400px\]/, "缺桌面双列网格");
+  // 右列现在是一张整卡（三块合一）＋窄屏提前，不再是 contents 包一层
+  assert.match(src, /max-xl:order-first/, "右列缺窄屏提前");
+  assert.match(src, /xl:grid xl:grid-cols-\[minmax\(0,1fr\)_340px\]/, "缺桌面双列网格（右列 340）");
 });
 
 test("配置页：概览数字不得再占一张四格卡（下面每节已有完整信息）", () => {

@@ -37,7 +37,14 @@ const CONF: Record<
  * 之所以要「试」：人写规则时想的是"这样写就一定分给它"，但真实的话不会照着
  * 你写的样子说 —— 能先撞一句，才敢把规则留在那儿。
  */
-export function RouteRules({ agentId }: { agentId: string }) {
+export function RouteRules({
+  agentId,
+  bare = false,
+}: {
+  agentId: string;
+  /** 嵌在别的卡片里时不套自己的边框（避免卡中卡的阴影与双层留白） */
+  bare?: boolean;
+}) {
   const fb = useFeedback();
   // 中文输入法组字期间 Enter 是「选字」不是「提交」—— 两个输入框都要挡
   const addIme = useImeGuard();
@@ -115,7 +122,7 @@ export function RouteRules({ agentId }: { agentId: string }) {
   };
 
   return (
-    <section className="card mb-4 overflow-hidden">
+    <section className={bare ? "overflow-hidden" : "card mb-4 overflow-hidden"}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
