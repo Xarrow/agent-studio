@@ -124,6 +124,38 @@ async function post(path, data) {
     }
   }
 
+  /* ⑧ 会话消息分页：首屏只给最近若干轮，往前翻能拿到更早的且游标递减 */
+  {
+    const agents = (await get("/api/agents")).body;
+    const list = Array.isArray(agents) ? agents : (agents?.items ?? []);
+    let best = null;
+    for (const ag of list.slice(0, 8)) {
+      const ss = (await get(`/api/sessions?agent_id=${ag.id}`)).body;
+      for (const s of ss) {
+        if ((s.turn_count ?? 0) > (best?.turn_count ?? 0)) best = s;
+      }
+    }
+    if (best && (best.turn_count ?? 0) > 1) {
+      const page = (await get(`/api/sessions/${best.id}?turns=1`)).body;
+      const bt = Number(page.before_turn ?? 0);
+      check("⑧ 首屏只取最近 1 轮，且给出更早的游标", bt > 0, `before_turn=${bt} turns=${best.turn_count}`);
+      const older = (await get(`/api/sessions/${best.id}/turns?before=${bt}&limit=5`)).body;
+      const olderTurns = [...new Set((older.messages ?? []).map((m) => m.turn_index))];
+      check(
+        "⑧ 往前翻拿到更早的轮次（全部小于游标）",
+        olderTurns.length > 0 && olderTurns.every((t) => t < bt),
+        `轮次=${olderTurns.slice(0, 6).join(",")}`,
+      );
+      check(
+        "⑧ 游标继续递减（不重复也不回退）",
+        Number(older.before_turn ?? 0) < bt,
+        `${bt} → ${older.before_turn}`,
+      );
+    } else {
+      ok("⑧ 没有多轮会话（跳过）");
+    }
+  }
+
   /* ── --slow：真的起一轮，验证"切走不掐现场 / 切回能接上"的契约 ──────────
      前端回挂依赖三件后端事实，这三件错了就会串台或白屏：
        ⑤ 切走期间服务端仍在跑（in_flight 仍能查到这条 run）

@@ -583,20 +583,40 @@ export function ChatConsole({
   );
 
   /** 往上翻：取更早的 20 轮插到头部，并保持滚动锚点（不跳） */
+  /** 上一次往前翻失败了？失败就停下，等用户手动点按钮再试 —— 否则滚动一次报一次错 */
+  const olderFailedRef = useRef(false);
+  /** 人真的滚动过吗？打开会话时 scrollTop 还是 0，不能因此自动把整段历史拉下来 */
+  const userScrolledRef = useRef(false);
+
   const loadOlder = useCallback(async () => {
     if (!sessionId || loadingOlder || !beforeTurn) return;
     setLoadingOlder(true);
     const box = document.querySelector("[data-msg-scroll]");
     const prevH = box?.scrollHeight ?? 0;
+    const prevTop = box?.scrollTop ?? 0;
     try {
       const r = await api.sessionTurns(sessionId, { before: beforeTurn, limit: 20 });
       const older = toHistory(r.messages as never);
       setHistory((h) => [...older, ...h]);
       setBeforeTurn(Number(r.before_turn ?? 0));
+      /* 锚点补偿要**多次**做：插入的旧消息里若有图片/代码高亮/折叠块，
+         高度是分几拍长出来的。只在第一帧补一次，用户会看到内容"跳"一下
+         （实测：补了 102px，实际长了 2698px）。这里连补三拍，
+         每次都用「当前高度 - 插入前高度」重新算。 */
+      const settle = () => {
+        if (!box) return;
+        const grew = box.scrollHeight - prevH;
+        if (grew > 0) box.scrollTop = prevTop + grew;
+      };
       requestAnimationFrame(() => {
-        if (box) box.scrollTop += box.scrollHeight - prevH;
+        settle();
+        requestAnimationFrame(() => {
+          settle();
+          window.setTimeout(settle, 160);
+        });
       });
     } catch {
+      olderFailedRef.current = true;
       fb.error("加载更早的消息失败", "网络恢复后重试");
     } finally {
       setLoadingOlder(false);
@@ -1052,6 +1072,8 @@ export function ChatConsole({
   /** 上一次这个效应跑的是哪条会话：same-session 的重跑（比如只换了 agentId）不该拆现场 */
   const teardownSidRef = useRef<string>("");
   useEffect(() => {
+    userScrolledRef.current = false;
+    olderFailedRef.current = false;
     const sameSid = !!sessionId && teardownSidRef.current === sessionId;
     teardownSidRef.current = sessionId;
     if (sameSid) return;              // 同一条会话：不动流、不清屏（否则会把正在跑的 run 掐掉）
@@ -1198,6 +1220,19 @@ export function ChatConsole({
   const onScroll = () => {
     const el0 = boxRef.current;
     if (el0) setTopScrolled(el0.scrollTop > 2);
+    /* 滑到顶部附近就自动往前翻（手机上没有 hover，也没人去点"加载更早"那颗按钮）。
+       阈值 120px：比一次惯性滚动小，滑到顶就能触发；loadOlder 自己带 loadingOlder 锁，
+       连续滚动不会叠加请求。加载后它会把 scrollTop 按新增高度补回去，视觉上不跳。 */
+    if (
+      el0 &&
+      userScrolledRef.current &&
+      el0.scrollTop < 120 &&
+      beforeTurn > 0 &&
+      !loadingOlder &&
+      !olderFailedRef.current
+    ) {
+      void loadOlder();
+    }
     // 自己刚贴过底（120ms 内）产生的那次 scroll 不算用户操作
     if (Date.now() - lastPinAt.current < 120) return;
     // 记住每个会话的阅读位置（切走再切回不用重新滚到底）
@@ -2929,6 +2964,9 @@ export function ChatConsole({
             className="flex-1 overflow-auto max-lg:pt-[calc(44px+env(safe-area-inset-top))]"
             ref={boxRef}
             onScroll={onScroll}
+            onWheel={() => { userScrolledRef.current = true; }}
+            onTouchMove={() => { userScrolledRef.current = true; }}
+            onKeyDown={() => { userScrolledRef.current = true; }}
             style={{ paddingBottom: dockH + 14, scrollbarGutter: "stable" }}
             data-msg-scroll
           >
@@ -2938,7 +2976,10 @@ export function ChatConsole({
                   type="button"
                   data-tap
                   disabled={loadingOlder}
-                  onClick={() => void loadOlder()}
+                  onClick={() => {
+                    olderFailedRef.current = false;   // 手动点 = 重试
+                    void loadOlder();
+                  }}
                   className="mx-auto block rounded-full border px-3 py-1 text-[12px] hover:bg-[var(--bg-selected)] disabled:opacity-60"
                   style={{ borderColor: "var(--color-border)", color: "var(--color-text-2)" }}
                 >
