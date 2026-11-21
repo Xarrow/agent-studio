@@ -57,13 +57,14 @@ async def test_validate_rejects_unknown_provider():
 
 
 async def test_validate_rejects_bad_temperature():
-    rt = get_runtime("agentscope")
-    definition = AgentDefinition(
-        name="t",
-        model=ModelSpec(provider="deepseek", name="m", params={"temperature": 5}),
-    )
-    issues = await rt.validate(definition)
-    assert any("temperature" in (i.field or "") for i in issues)
+    """越界的 temperature 现在**构造 ModelSpec 时就拒**（schema 层校验），
+    比等到运行时 validate 更早 —— 用户保存就拿到可读的中文提示。"""
+    import pytest as _pytest
+    from pydantic import ValidationError
+
+    with _pytest.raises(ValidationError) as ei:
+        ModelSpec(provider="deepseek", name="m", params={"temperature": 5})
+    assert "temperature" in str(ei.value)
 
 
 async def test_validate_warns_missing_credential():

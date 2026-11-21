@@ -343,6 +343,40 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
 
+  /**
+   * 站内跳转同样要拦：点顶部导航去别的页，SPA 不会触发 beforeunload，
+   * 改动静默丢掉（实测：改完「一句话职责」点 Agents，回来改动没了）。
+   * 这里捕获阶段拦内部链接，确认后才跳；跳之前置 bypass，避免 beforeunload 再弹一次。
+   */
+  const leaveOkRef = useRef(false);
+  useEffect(() => {
+    if (!dirty) return;
+    const onClick = (e: MouseEvent) => {
+      if (leaveOkRef.current) return;
+      const a = (e.target as HTMLElement | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
+      if (!a) return;
+      const href = a.getAttribute("href") || "";
+      if (!href.startsWith("/") || href.startsWith("//")) return;   // 只拦站内
+      if (href === location.pathname + location.search) return;
+      e.preventDefault();
+      e.stopPropagation();
+      void fb
+        .confirm({
+          title: "离开这个页面？",
+          description: "这个助手有未保存的修改，离开后就丢了。",
+          confirmText: "离开",
+          danger: true,
+        })
+        .then((ok) => {
+          if (!ok) return;
+          leaveOkRef.current = true;
+          window.location.href = href;
+        });
+    };
+    document.addEventListener("click", onClick, true);
+    return () => document.removeEventListener("click", onClick, true);
+  }, [dirty, fb]);
+
   /** 最新 def 的快照：名称自动保存是**异步**的，不能拿旧闭包里的 def 覆盖别的字段。 */
   const defRef = useRef(def);
   defRef.current = def;

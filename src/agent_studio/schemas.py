@@ -38,6 +38,39 @@ class ModelSpec(BaseModel):
     api_key: str | None = Field(default=None, exclude=True)  # 仅创建/测试时传入
     base_url: str | None = None
 
+    @model_validator(mode="after")
+    def _check_params(self) -> "ModelSpec":
+        """生成参数的范围校验。
+
+        为什么必须在这里拦：``params`` 以前是裸 dict，temperature=5 / -1 / "abc"
+        都能保存成功（实测 201），然后**运行时才炸**，报的还是
+        ``AttributeError: 'dict' object has no attribute 'max_tokens'`` ——
+        用户看不懂、也定位不到是自己填的那个数字。
+        未知键不拦（各家协议不同，导入别家配置时常见），但已知键必须合法。
+        """
+        p = self.params or {}
+        limits: dict[str, tuple[float, float, type]] = {
+            "temperature": (0.0, 2.0, float),
+            "top_p": (0.0, 1.0, float),
+            "presence_penalty": (-2.0, 2.0, float),
+            "frequency_penalty": (-2.0, 2.0, float),
+        }
+        for key, (lo, hi, kind) in limits.items():
+            if key not in p:
+                continue
+            v = p[key]
+            if isinstance(v, bool) or not isinstance(v, (int, float)):
+                raise ValueError(f"{key} 必须是数字（当前：{v!r}）")
+            if not (lo <= float(v) <= hi):
+                raise ValueError(f"{key} 要在 {lo:g}–{hi:g} 之间（当前：{v}）")
+        if "max_tokens" in p:
+            v = p["max_tokens"]
+            if isinstance(v, bool) or not isinstance(v, int):
+                raise ValueError(f"max_tokens 必须是整数（当前：{v!r}）")
+            if not (1 <= v <= 200_000):
+                raise ValueError(f"max_tokens 要在 1–200000 之间（当前：{v}）")
+        return self
+
 
 class ToolRef(BaseModel):
     ref: str                       # Tool.id
@@ -713,6 +746,27 @@ class HitlResumeRequest(BaseModel):
 # --------------------------------------------------------------------------- #
 # LLM 凭据 / Provider DTO
 # --------------------------------------------------------------------------- #
+
+def _check_base_url(v: str | None) -> str | None:
+    """端点必须是 http(s) 地址。
+
+    以前 "not-a-url" 能保存成功（实测 201），错误一路拖到探测/运行时才出现，
+    报的是「连不上 not-a-url」—— 用户以为自己填对了。空串 = 用服务商默认端点。
+    """
+    if v is None:
+        return None
+    t = v.strip()
+    if not t:
+        return None
+    if not (t.startswith("http://") or t.startswith("https://")):
+        raise ValueError("端点要以 http:// 或 https:// 开头")
+    from urllib.parse import urlparse
+
+    if not urlparse(t).hostname:
+        raise ValueError("端点里没有主机名")
+    return t
+
+
 class CredentialCreate(BaseModel):
     """新增一套 provider 凭据（key）。同一 provider 可存多套。"""
 
@@ -720,6 +774,11 @@ class CredentialCreate(BaseModel):
     provider: str
     api_key: str = ""
     base_url: str | None = None
+
+    @field_validator("base_url")
+    @classmethod
+    def _url(cls, v: str | None) -> str | None:
+        return _check_base_url(v)
     # 新增时就能指定默认模型（有些服务商没有 /models 清单，只能手填 ✓）
     default_model: str | None = None
 
@@ -731,6 +790,11 @@ class CredentialUpdate(BaseModel):
     provider: str | None = None      # 允许改（选错了可以纠正）
     api_key: str | None = None       # 留空表示不修改
     base_url: str | None = None
+
+    @field_validator("base_url")
+    @classmethod
+    def _url(cls, v: str | None) -> str | None:
+        return _check_base_url(v)
     #: 选定的默认模型：可来自探测清单，也可手填；空字符串 = 清空
     default_model: str | None = None
 

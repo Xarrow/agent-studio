@@ -26,6 +26,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import type { Provider } from "@/lib/types";
+import { isImeEvent } from "@/lib/ime";
 
 /** 探测结果缓存：同一条凭据不重复打网络（探测要 1-2 秒） */
 const probeCache = new Map<string, string[]>();
@@ -52,6 +53,10 @@ export function ModelPicker({
   const [note, setNote] = useState<string | null>(null);
   /** 换服务商时"模型被换掉"的说明（静默改值是更糟的体验） */
   const [switchNote, setSwitchNote] = useState<string | null>(null);
+  /** 下拉展开 / 过滤词 / 键盘高亮项 */
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const [hi, setHi] = useState(0);
   const [manual, setManual] = useState(false);
   const probedFor = useRef<string | null>(null);
 
@@ -134,6 +139,13 @@ export function ModelPicker({
     return out;
   }, [candidates, value, provider]);
 
+  /** 输入即过滤：大小写不敏感，去空格（" GPT " 也能命中） */
+  const filtered = useMemo(() => {
+    const k = q.trim().toLowerCase();
+    if (!k) return options;
+    return options.filter((m) => m.toLowerCase().includes(k));
+  }, [options, q]);
+
   /* 换了服务商：旧的模型名必须换掉，并说清楚换成了什么（不能静默改值） */
   const prevProvider = useRef(provider);
   useEffect(() => {
@@ -190,28 +202,100 @@ export function ModelPicker({
   return (
     <div>
       <div className="flex gap-2">
-        <select
-          className="input mono flex-1"
-          value={value}
-          disabled={probing}
-          onChange={(e) => {
-            if (e.target.value === "__manual__") {
-              setManual(true);
-              return;
-            }
-            onChange(e.target.value);
-          }}
-        >
-          {probing && <option value={value}>探测中…</option>}
-          {!probing && !value && <option value="">— 请选择模型 —</option>}
-          {!probing &&
-            options.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          <option value="__manual__">✎ 手动填写…</option>
-        </select>
+        {/* 可搜索的下拉：清单长的时候（OpenAI 30+、OpenRouter 100+）原生 select
+            只能一路滚，还没有"没有匹配"这个状态。这里手写一个零依赖 combobox：
+            输入即过滤、键盘上下选、Enter 确认、Esc 关掉、底部保留手填入口。 */}
+        <div className="relative flex-1">
+          <input
+            className="input mono w-full"
+            value={open ? q : value}
+            placeholder={open ? "输入关键字过滤…" : "选择模型"}
+            aria-label="模型"
+            aria-expanded={open}
+            role="combobox"
+            aria-controls="model-options"
+            autoComplete="off"
+            disabled={probing}
+            onFocus={() => {
+              setOpen(true);
+              setQ("");
+              setHi(0);
+            }}
+            onBlur={() => window.setTimeout(() => setOpen(false), 140)}
+            onChange={(e) => {
+              setQ(e.target.value);
+              setOpen(true);
+              setHi(0);
+            }}
+            onKeyDown={(e) => {
+              if (isImeEvent(e)) return;
+              if (e.key === "ArrowDown") {
+                e.preventDefault();
+                setOpen(true);
+                setHi((i) => Math.min(i + 1, filtered.length - 1));
+              } else if (e.key === "ArrowUp") {
+                e.preventDefault();
+                setHi((i) => Math.max(i - 1, 0));
+              } else if (e.key === "Enter") {
+                e.preventDefault();
+                const pick = filtered[hi];
+                if (pick) {
+                  onChange(pick);
+                  setOpen(false);
+                }
+              } else if (e.key === "Escape") {
+                setOpen(false);
+              }
+            }}
+          />
+          {open && (
+            <div
+              id="model-options"
+              role="listbox"
+              className="absolute left-0 right-0 z-30 mt-1 max-h-[240px] overflow-y-auto rounded-[10px] border shadow-lg"
+              style={{ background: "var(--color-surface)", borderColor: "var(--color-border)" }}
+            >
+              {filtered.length === 0 ? (
+                <div className="px-3 py-2 text-[12px]" style={{ color: "var(--color-text-3)" }}>
+                  {probing ? "正在探测…" : "没有匹配的模型"}
+                </div>
+              ) : (
+                filtered.map((m, i) => (
+                  <button
+                    key={m}
+                    type="button"
+                    role="option"
+                    aria-selected={m === value}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      onChange(m);
+                      setOpen(false);
+                    }}
+                    className="flex min-h-[38px] w-full items-center px-3 text-left text-[12.5px] mono"
+                    style={{
+                      background: i === hi ? "var(--color-surface-2)" : "transparent",
+                      color: m === value ? "var(--color-accent)" : undefined,
+                    }}
+                  >
+                    {m}
+                  </button>
+                ))
+              )}
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  setManual(true);
+                  setOpen(false);
+                }}
+                className="flex min-h-[38px] w-full items-center border-t px-3 text-left text-[12.5px]"
+                style={{ borderColor: "var(--color-border)", color: "var(--color-text-2)" }}
+              >
+                ✎ 手动填写…
+              </button>
+            </div>
+          )}
+        </div>
         {credentialId && (
           <button
             className="btn shrink-0"
