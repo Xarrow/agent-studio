@@ -345,7 +345,10 @@ export default function AgentsPage() {
                       </Link>
                       <button
                         type="button"
+                        /* 次要动作：无边框、灰字 —— 与主操作「设置/定义」拉开层级，
+                           但不藏起来（用户明确否决把常用动作收进 ⋯） */
                         className="btn text-[12px] max-md:w-9 max-md:px-0"
+                        style={{ borderColor: "transparent", background: "transparent", color: "var(--color-text-3)" }}
                         title="改名"
                         aria-label="改名"
                         disabled={busy === a.id}
@@ -360,6 +363,7 @@ export default function AgentsPage() {
                       <button
                         type="button"
                         className="btn text-[12px] max-md:w-9 max-md:px-0"
+                        style={{ borderColor: "transparent", background: "transparent", color: "var(--color-text-3)" }}
                         aria-label="复制一份"
                         disabled={busy === a.id}
                         title="按这份配置再建一个"
@@ -370,8 +374,8 @@ export default function AgentsPage() {
                       </button>
                       <button
                         type="button"
-                        className="btn text-[12px] max-md:w-9 max-md:px-0"
-                        style={{ color: "var(--color-err)" }}
+                        className="btn text-[12px] max-md:w-9 max-md:px-0 ml-1"
+                        style={{ borderColor: "transparent", background: "transparent", color: "var(--color-err)" }}
                         aria-label="删除"
                         title="删除这个助手（会再确认一次）"
                         disabled={busy === a.id}

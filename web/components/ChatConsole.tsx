@@ -4318,7 +4318,8 @@ export function ChatConsole({
                         onClick={() => void send()}
                         /* 实心强调色只留给"发送"：有内容 = 蓝底白箭头；
                            空内容 = 灰底，点了也没反应。 */
-                        className="w-9 h-9 shrink-0 grid place-items-center rounded-full transition-colors disabled:cursor-not-allowed"
+                        /* 44px 热区：原来 36px，窄屏上手指按不准（复测 F12） */
+                        className="w-10 h-10 shrink-0 grid place-items-center rounded-full transition-colors disabled:cursor-not-allowed"
                         style={{
                           background:
                             input.trim() || pendingFiles.length > 0
