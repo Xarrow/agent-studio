@@ -124,6 +124,9 @@ class AgentDefinition(BaseModel):
     #: → 定义必须**看得见、改得动**，不能只藏在运行时的注入里。
     orchestrator_brief: str = ""
     system_prompt: str = "You are a helpful assistant."
+    #: 开场白：新会话空状态第一屏直接显示这句话（不是通用建议卡）。
+    #: 留空 = 用「一句话职责」兜底，别让空会话变成一个空白页。
+    opening_line: str = ""
     model: ModelSpec = Field(default_factory=ModelSpec)
     #: 备用模型：主模型不可用（key 失效 / 模型下线 / 持续限流）时整轮换它重跑一次。
     #: 留空 = 不兜底（出错就出错）。备用模型可以挂另一家 provider（凭据各自解析）。

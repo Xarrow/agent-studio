@@ -3073,12 +3073,12 @@ export function ChatConsole({
                   <p className="text-[15px] font-medium">{currentAgent?.name || "Agent"}</p>
                   {/* 这个助手是干什么的：直接用配置里的一句话职责，比一排通用建议卡
                       更能让人知道该说什么（验收反馈：空状态跟助手身份无关） */}
-                  {currentAgent?.description ? (
+                  {(currentAgent?.definition?.opening_line || currentAgent?.description) ? (
                     <p
-                      className="mx-auto mt-1 max-w-[360px] text-[12px] leading-relaxed"
+                      className="mx-auto mt-1 max-w-[360px] text-[12.5px] leading-relaxed"
                       style={{ color: "var(--color-muted)" }}
                     >
-                      {currentAgent.description}
+                      {currentAgent?.definition?.opening_line || currentAgent?.description}
                     </p>
                   ) : null}
                   {agents.length > 1 && (
@@ -3098,15 +3098,13 @@ export function ChatConsole({
                       </svg>
                     </button>
                   )}
-                  {currentAgent?.description && (
-                    <p className="text-[12.5px] text-[var(--color-muted)] mt-1.5 leading-relaxed">
-                      {currentAgent.description}
-                    </p>
-                  )}
                 </div>
-                {/* 开场建议：主流对话的做法是给"能直接点的事"，不是一堆空提示。
-                    点了只填进输入框（不自动发），人还能改。 */}
-                <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {/* 开场建议：本来是一组写死的通用卡（分析文件 / 上网查 / 写代码），
+                    跟这个助手干什么毫无关系 —— 助手配了开场白就不再摆这套，
+                    让它自己的话占第一屏（验收：建议卡要跟助手身份有关）。 */}
+                <div
+                  className={currentAgent?.definition?.opening_line ? "hidden" : "mt-6 grid grid-cols-1 sm:grid-cols-2 gap-2"}
+                >
                   {[
                     {
                       icon: (

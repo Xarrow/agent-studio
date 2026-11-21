@@ -993,6 +993,21 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 maxLength={140}
               />
             </div>
+            {/* 开场白：新会话空状态第一屏就是这句话。原来是通用建议卡，
+                跟这个助手一点关系都没有（验收反馈） */}
+            <div>
+              <label className="label" title="新会话第一屏显示这句话；留空就用上面的一句话职责">
+                开场白（新会话第一屏说这句）
+              </label>
+              <input
+                className="input"
+                value={def.opening_line ?? ""}
+                onChange={(e) => patch({ opening_line: e.target.value })}
+                placeholder="例如：把日志或报错贴给我，我帮你定位"
+                maxLength={200}
+              />
+            </div>
+
             {/* 流程里的角色（用户："agent 分类定义 Orchestrator —— 分析任务，管理上下文，
                 验证结果，归纳总结能力，可以放在最开始 agent 和 最后的 agent"）。
                 枚举值用**选择器**（不让用户手打）＋ option 里写通俗解释，不出现第二个术语。 */}

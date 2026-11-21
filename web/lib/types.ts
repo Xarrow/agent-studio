@@ -72,6 +72,8 @@ export interface AgentDefinition {
   /** 编排者职责定义（留空 = 用平台内置那份）；只有 role=orchestrator 时生效 */
   orchestrator_brief?: string;
   system_prompt: string;
+  /** 开场白：新会话空状态第一屏显示这句话（留空则退回一句话职责） */
+  opening_line?: string;
   model: ModelSpec;
   /** 备用模型：主模型不可用（key 失效 / 下线 / 持续 5xx）时整轮换它重跑一次 */
   fallback?: ModelSpec | null;
