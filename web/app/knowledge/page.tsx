@@ -242,9 +242,11 @@ export default function KnowledgePage() {
         desc={
           docs === null
             ? "原始文档与解析结果；沉淀出的 Skill 会记录来源文档"
-            : `${docs.length} 份文档${parsingCount ? ` · ${parsingCount} 份解析中` : ""}${
-                drafts.length ? ` · ${drafts.length} 条草稿待确认` : ""
-              }`
+            : docs.length === 0
+              ? "还没有文档：上传文件、粘贴文本，或把链接丢进来"
+              : `${docs.length} 份文档${parsingCount ? ` · ${parsingCount} 份解析中` : ""}${
+                  drafts.length ? ` · ${drafts.length} 条草稿待确认` : ""
+                }`
         }
         actions={
           <>
