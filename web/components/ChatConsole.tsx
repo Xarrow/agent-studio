@@ -19,9 +19,11 @@ import { agentColor } from "@/lib/turn";
 
 /** worker 会话的识别色：Router 是蓝、派出去的活是琥珀、普通对话不上色 */
 const WORKER_COLOR = "var(--color-worker)";
+import { createPortal } from "react-dom";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api, fmt, withToken } from "@/lib/api";
-import type { Agent, Run, RunEvent, Session, SearchHit, Skill, Tool, Memory } from "@/lib/types";
+import { ModelPicker } from "@/components/ModelPicker";
+import type { Agent, Credential, Provider, Run, RunEvent, Session, SearchHit, Skill, Tool, Memory } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
 import { ProcessBar, eventsToSteps, recallProc, rememberProc } from "@/components/ui/run-timeline";
 import BgProcsStrip from "@/components/BgProcsStrip";
@@ -69,7 +71,30 @@ export function ChatConsole({
 }) {
   const fb = useFeedback();
 
+  /* 页眉换模型要能列出模型名，先备着服务商与密钥（一次就够；拿不到就只读显示） */
+  useEffect(() => {
+    void (async () => {
+      try {
+        const [p, c] = await Promise.all([api.providers(), api.credentials()]);
+        setProviders(p);
+        setCreds(c);
+      } catch {
+        /* 不挡住对话 */
+      }
+    })();
+  }, []);
+
   const [agents, setAgents] = useState<Agent[]>([]);
+  /** 页眉换模型用：服务商清单 + 已配密钥（只拉一次） */
+  const [providers, setProviders] = useState<Provider[]>([]);
+  const [creds, setCreds] = useState<Credential[]>([]);
+  /** 页眉「换模型」浮层（必须和其它 state 一起放在组件顶部，否则 hook 顺序会变） */
+  const [modelOpen, setModelOpen] = useState(false);
+  const [modelBusy, setModelBusy] = useState(false);
+  /** 浮层挂在 body 上，位置按按钮实时算 */
+  const [modelAnchor, setModelAnchor] = useState<{ x: number; y: number } | null>(null);
+  /** 页眉「换模型」浮层 */
+  /* 页眉浮层的状态在组件顶部声明（hook 顺序必须恒定） */
   /**
    * 跟谁聊。
    *
@@ -2387,6 +2412,29 @@ export function ChatConsole({
   }
 
   const currentAgent = agents.find((a) => a.id === agentId);
+
+  /** 换模型：改的是这个助手的定义（下一次发送就生效），改完把列表里那份也换掉 */
+  const quickSwitchModel = async (name: string) => {
+    const a = currentAgent;
+    if (!a || !name || !a.definition) return;
+    setModelOpen(false);
+    setModelBusy(true);
+    try {
+      const updated = await api.updateAgent(
+        a.id,
+        { name: a.name, definition: { ...a.definition, model: { ...a.definition.model, name } } },
+        a.version,
+      );
+      setAgents((prev) => prev.map((x) => (x.id === a.id ? { ...x, ...updated } : x)));
+      fb.success("模型已换", `${a.name} 现在用 ${name}，下一条就用它`);
+    } catch (e) {
+      fb.error("换模型失败", e instanceof Error ? e.message : String(e));
+    } finally {
+      setModelBusy(false);
+    }
+  };
+
+
   /** 顶栏要显示/改名的当前会话 */
   const curSes = sessions.find((x) => x.id === sessionId);
   /** 最新一条助手/用户消息：动作条要常驻（更早的靠 hover） */
@@ -2805,6 +2853,66 @@ export function ChatConsole({
                 open={switcherOpen === "bar"}
                 onOpenChange={(v) => setSwitcherOpen(v ? "bar" : null)}
               />
+            )}
+
+            {/* 页眉直接写「用什么模型」，点一下就换 —— 以前对话中换模型要
+                去配置页、还要新开会话（复测 F3：对话内根本没有入口） */}
+            {currentAgent?.definition && currentAgent.definition.runtime !== "a2a" && (
+              <div className="relative shrink-0">
+                <button
+                  data-tap
+                  onClick={(e) => {
+                    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                    setModelAnchor({ x: r.left, y: r.bottom + 6 });
+                    setModelOpen((v) => !v);
+                  }}
+                  disabled={modelBusy}
+                  title="换模型（改的是这个助手，下一条消息就用新的）"
+                  aria-label="换模型"
+                  aria-expanded={modelOpen}
+                  className="hidden md:inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-[11.5px] hover:bg-[var(--color-surface-2)]"
+                  style={{ color: "var(--color-text-3)" }}
+                >
+                  <span className="mono max-w-[150px] truncate">
+                    {modelBusy ? "保存中…" : currentAgent.definition.model?.name || "未指定模型"}
+                  </span>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="m6 9 6 6 6-6" />
+                  </svg>
+                </button>
+                {/* 浮层挂在 body 上：header 有 overflow/定位上下文，绝对定位会被裁掉
+                    （实测输入框宽高为 0，等于看不见） */}
+                {modelOpen &&
+                  modelAnchor &&
+                  typeof document !== "undefined" &&
+                  createPortal(
+                    <>
+                      <div
+                        className="fixed inset-0 z-[60]"
+                        onClick={() => setModelOpen(false)}
+                        aria-hidden="true"
+                      />
+                      <div
+                        className="fixed z-[61] w-[330px] rounded-[10px] p-2 shadow-xl"
+                        style={{
+                          left: Math.max(8, Math.min(modelAnchor.x, window.innerWidth - 346)),
+                          top: modelAnchor.y,
+                          background: "var(--color-surface)",
+                          border: "1px solid var(--color-border)",
+                        }}
+                      >
+                        <ModelPicker
+                          providers={providers}
+                          provider={currentAgent.definition.model?.provider ?? ""}
+                          credentialId={currentAgent.definition.model?.credential_ref ?? null}
+                          value={currentAgent.definition.model?.name ?? ""}
+                          onChange={(v) => void quickSwitchModel(v)}
+                        />
+                      </div>
+                    </>,
+                    document.body,
+                  )}
+              </div>
             )}
 
             <div className="ml-auto flex items-center gap-0.5 shrink-0">
