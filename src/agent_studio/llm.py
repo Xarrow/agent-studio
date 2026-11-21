@@ -27,7 +27,9 @@ def _chat_url(base_url: str) -> str:
     """
     base = (base_url or "").strip().rstrip("/")
     if not base:
-        base = "https://api.openai.com/v1"
+        # 以前这里默默退回 api.openai.com —— 配置的是 DeepSeek、报错却说打到了
+        # OpenAI，用户没法理解。宁可明确报"没配端点"。
+        raise ValueError("没有配置 base_url：这次调用不知道该打哪个端点")
     if base.endswith("/chat/completions"):
         return base
     return f"{base}/chat/completions"

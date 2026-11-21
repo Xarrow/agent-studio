@@ -995,7 +995,10 @@ def build_agent(
     from ...runner.recorder import ModelCallRecorder
 
     recorder = ModelCallRecorder(
-        provider=defn.model.provider or "", model=defn.model.name or ""
+        provider=defn.model.provider or "",
+        model=defn.model.name or "",
+        # 端点也记下来：报错说"打到 openai"时，一行数据就能对账
+        base_url=defn.model.base_url or "",
     )
 
     # 危险动作闸门：夹在 AgentScope 权限引擎**之前**。

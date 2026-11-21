@@ -115,9 +115,12 @@ class ModelCallRecorder(MiddlewareBase):
     所以不要去实现其它钩子）。
     """
 
-    def __init__(self, *, provider: str = "", model: str = "") -> None:
+    def __init__(self, *, provider: str = "", model: str = "", base_url: str = "") -> None:
         self._provider = provider
         self._model = model
+        #: 这次执行实际用的端点（从解析后的凭据取）。记到 llm_call 上，
+        #: "配置 deepseek 却报 openai" 这种问题能一眼对账，不用再猜。
+        self._base_url = base_url
         #: 这条执行里的第几次调用（1 起）。实例是**每次编译一个**（即每次执行一个），
         #: 所以计数天然按执行隔离。
         self._seq = 0
@@ -135,10 +138,14 @@ class ModelCallRecorder(MiddlewareBase):
         model_obj = input_kwargs.get("current_model")
         model_name = self._model or str(getattr(model_obj, "model_name", "") or "")
         provider = self._provider or str(getattr(model_obj, "provider", "") or "")
+        base_url = self._base_url or str(
+            getattr(getattr(model_obj, "credential", None), "base_url", "") or ""
+        )
         request_text = _dump_json(
             {
                 "model": model_name,
                 "provider": provider,
+                "base_url": base_url,
                 # 生成参数（温度/最大长度等）—— 模型实例上，不在 input_kwargs 里
                 "generate_kwargs": _plain(getattr(model_obj, "generate_kwargs", {}) or {}),
                 "messages": _plain(input_kwargs.get("messages")),
@@ -151,16 +158,18 @@ class ModelCallRecorder(MiddlewareBase):
             result = await next_handler(**input_kwargs)
         except BaseException as exc:  # noqa: BLE001 —— 失败的调用同样要留证
             await self._save(
-                run_id, seq, provider, model_name, request_text, "", started, t0, 0, 0, 0,
+                run_id, seq, provider, model_name, base_url, request_text, "", started, t0, 0, 0, 0,
                 error=f"{type(exc).__name__}: {exc}",
             )
             raise
 
         if hasattr(result, "__aiter__"):
-            return self._wrap_stream(result, run_id, seq, provider, model_name, request_text, started, t0)
+            return self._wrap_stream(
+                result, run_id, seq, provider, model_name, base_url, request_text, started, t0
+            )
 
         await self._save(
-            run_id, seq, provider, model_name, request_text,
+            run_id, seq, provider, model_name, base_url, request_text,
             _dump_json(_response_payload(result)), started, t0, *_usage_of(result),
         )
         return result
@@ -169,7 +178,8 @@ class ModelCallRecorder(MiddlewareBase):
     # 流式：累加增量分片，流结束再落库
     # ------------------------------------------------------------------ #
     async def _wrap_stream(self, stream: Any, run_id: str, seq: int, provider: str,
-                           model_name: str, request_text: str, started: int, t0: float) -> Any:
+                           model_name: str, base_url: str, request_text: str,
+                           started: int, t0: float) -> Any:
         acc = None      # 增量累加（只在"流被打断、没等到终片"时才用得上）
         terminal = None  # 权威终片
         last = None
@@ -206,7 +216,7 @@ class ModelCallRecorder(MiddlewareBase):
                 payload = _dump_json(_response_payload(target)) if target is not None else ""
                 err = f"{type(failed).__name__}: {failed}" if failed else None
                 usage = _usage_of(target) if target is not None else (0, 0, 0)
-                await self._save(run_id, seq, provider, model_name, request_text,
+                await self._save(run_id, seq, provider, model_name, base_url, request_text,
                                  payload, started, t0, *usage, error=err)
             except Exception:  # noqa: BLE001
                 logger.warning("模型调用记录（流式）落库失败", exc_info=True)
@@ -214,7 +224,7 @@ class ModelCallRecorder(MiddlewareBase):
     # ------------------------------------------------------------------ #
     # 落库
     # ------------------------------------------------------------------ #
-    async def _save(self, run_id: str, seq: int, provider: str, model_name: str,
+    async def _save(self, run_id: str, seq: int, provider: str, model_name: str, base_url: str,
                     request_text: str, response_text: str, started: int, t0: float,
                     tokens_in: int, tokens_out: int, cache_read: int,
                     error: str | None = None) -> None:
@@ -230,6 +240,7 @@ class ModelCallRecorder(MiddlewareBase):
                         iteration=seq,
                         provider=provider or None,
                         model=model_name or None,
+                        base_url=base_url or None,
                         started_at=started,
                         ended_at=now_ms(),
                         duration_ms=int((time.monotonic() - t0) * 1000),

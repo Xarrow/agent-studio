@@ -482,7 +482,15 @@ async def resolve_credential(
                 )
                 return key, cred_url
             return key, (cred_url or def_url)
-    return os.environ.get("STUDIO_DEFAULT_API_KEY"), definition.model.base_url
+    # 没有凭据时，端点也不能空着：以前空 base_url 会一路退到 api.openai.com，
+    # 于是"助手配的是 DeepSeek、报错却说打了 OpenAI"。至少落到该 provider 的官方端点。
+    fallback_url = definition.model.base_url
+    if not fallback_url:
+        try:
+            fallback_url = get_provider(definition.model.provider).default_base_url
+        except Exception:  # noqa: BLE001 —— 未知 provider 就保持空，让上层明确报错
+            fallback_url = definition.model.base_url
+    return os.environ.get("STUDIO_DEFAULT_API_KEY"), fallback_url
 
 
 def _with_base_url(definition: AgentDefinition, base_url: str | None) -> AgentDefinition:

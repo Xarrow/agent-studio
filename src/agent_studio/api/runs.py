@@ -413,6 +413,7 @@ async def get_trace(run_id: str, session: AsyncSession = Depends(get_session)) -
         llm_calls=[
             LlmCallRead(
                 id=c.id, iteration=c.iteration, provider=c.provider, model=c.model,
+                base_url=getattr(c, "base_url", None) or None,
                 started_at=c.started_at, ended_at=c.ended_at, duration_ms=c.duration_ms,
                 ttft_ms=c.ttft_ms, tokens_in=c.tokens_in, tokens_out=c.tokens_out,
                 tokens_cache_read=c.tokens_cache_read, cost_usd=c.cost_usd or 0.0,

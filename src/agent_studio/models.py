@@ -263,6 +263,9 @@ class LlmCall(Base):
 
     provider: Mapped[str | None] = mapped_column(String(32), default=None)
     model: Mapped[str | None] = mapped_column(String(64), default=None)
+    #: 这一次请求实际打到的端点 —— "配置的是 A，报错说打到了 B" 这类问题，
+    #: 没有这个字段就只能靠猜（已踩过一次）。
+    base_url: Mapped[str | None] = mapped_column(String(300), default=None)
 
     started_at: Mapped[int] = mapped_column(Integer)
     ended_at: Mapped[int | None] = mapped_column(Integer, default=None)

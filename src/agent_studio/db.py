@@ -179,6 +179,8 @@ _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("agent", "expose_remote", "expose_remote BOOLEAN DEFAULT 0"),
     ("agent", "expose_note", "expose_note VARCHAR(200) DEFAULT ''"),
     # 远端助手来自哪个节点（节点级管理用）
+    # 这次模型调用实际打到的端点："配置 A、报错说打到 B" 只能靠它定位
+    ("llm_call", "base_url", "base_url VARCHAR(300) DEFAULT ''"),
     ("remote_agent", "peer_id", "peer_id VARCHAR(32)"),
     ("remote_agent", "peer_studio_id", "peer_studio_id VARCHAR(32)"),
     ("studio_peer", "card", "card JSON"),

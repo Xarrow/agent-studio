@@ -551,6 +551,8 @@ class LlmCallRead(BaseModel):
     iteration: int
     provider: str | None
     model: str | None
+    #: 实际打到的端点（老数据为空）——用来对账"配置 deepseek 却报 openai"
+    base_url: str | None = None
     started_at: int
     ended_at: int | None
     duration_ms: int | None
