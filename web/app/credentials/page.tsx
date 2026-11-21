@@ -310,6 +310,12 @@ export default function CredentialsPage() {
                     <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                       <span className="truncate text-[14px] font-medium">{c.name}</span>
                       <Chip tone="muted">{c.provider_display}</Chip>
+                      {/* 被几个助手在用：删除会被拒绝，先让用户看得见 */}
+                      {(c.used_by ?? 0) > 0 && (
+                        <Chip tone="muted" title="删掉这条，这些助手就没有可用的钥匙了">
+                          {c.used_by} 个助手在用
+                        </Chip>
+                      )}
                       {c.last_test_ok === true && <Chip tone="ok">上次测试通过</Chip>}
                       {c.last_test_ok === false && <Chip tone="err">上次测试失败</Chip>}
                       {/* 失败原因落库了就该给用户看（last_test_error 随列表返回，

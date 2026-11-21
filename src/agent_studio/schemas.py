@@ -749,6 +749,8 @@ class CredentialRead(BaseModel):
     last_test_ok: bool | None = None
     last_test_error: str | None = None
     created_at: int
+    #: 有多少个助手在用这条（>0 时删除会被拒绝，界面上要先看得见）
+    used_by: int = 0
 
 
 class CredentialTestRequest(BaseModel):

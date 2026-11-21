@@ -24,6 +24,8 @@ export interface Credential {
   last_test_ok: boolean | null;
   last_test_error: string | null;
   created_at: number;
+  /** 有多少个助手在用这条（>0 时后端拒绝删除） */
+  used_by?: number;
 }
 
 export interface CredentialTestResult {

@@ -94,6 +94,17 @@ async def list_credentials(
     if provider:
         stmt = stmt.where(Secret.provider == normalize_provider(provider))
     rows = (await session.execute(stmt)).scalars().all()
+    # 谁在用这条：删除会被拒绝，列表里就得先看得见（不然点下去才报错）
+    from ..models import Agent as AgentRow
+
+    used: dict[str, int] = {}
+    for _aid, defn in (await session.execute(select(AgentRow.id, AgentRow.definition))).all():
+        try:
+            ref = (defn or {}).get("model", {}).get("credential_ref")
+        except AttributeError:
+            ref = None
+        if ref:
+            used[ref] = used.get(ref, 0) + 1
     out: list[CredentialRead] = []
     for r in rows:
         # masked_key 用真实 key 的头尾特征（原来列表不取明文，恒为固定 8 点，
@@ -103,7 +114,9 @@ async def list_credentials(
             masked = mask(decrypt(r.ciphertext))
         except Exception:  # noqa: BLE001 —— 解不开（主密钥变更）就保持 8 点
             masked = None
-        out.append(to_read(r, masked))
+        item = to_read(r, masked)
+        item.used_by = used.get(r.id, 0)
+        out.append(item)
     return out
 
 
@@ -221,7 +234,27 @@ async def reveal_credential_key(
 async def delete_credential(
     credential_id: str, session: AsyncSession = Depends(get_session)
 ) -> None:
+    """删凭据。**被助手引用时拒绝** —— 一键删掉"钥匙"，那几个助手下次就全跑不了，
+    而报错是「需要 api_key」，用户根本联想不到是刚才那次删除。"""
     row = await _get_or_404(session, credential_id)
+    from ..models import Agent as AgentRow
+
+    users: list[str] = []
+    for aid, name, defn in (
+        await session.execute(select(AgentRow.id, AgentRow.name, AgentRow.definition))
+    ).all():
+        try:
+            ref = (defn or {}).get("model", {}).get("credential_ref")
+        except AttributeError:
+            ref = None
+        if ref == credential_id:
+            users.append(name or aid)
+    if users:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"还有 {len(users)} 个助手在用这条配置（{', '.join(users[:5])}）。"
+            "先给它们换一条，或删掉那些助手。",
+        )
     await session.delete(row)
     await session.commit()
 

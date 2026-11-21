@@ -50,6 +50,8 @@ export function ModelPicker({
   const [probedIsReal, setProbedIsReal] = useState(false);
   const [probing, setProbing] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  /** 换服务商时"模型被换掉"的说明（静默改值是更糟的体验） */
+  const [switchNote, setSwitchNote] = useState<string | null>(null);
   const [manual, setManual] = useState(false);
   const probedFor = useRef<string | null>(null);
 
@@ -109,21 +111,53 @@ export function ModelPicker({
   //     那几条是代码里写死的，账号里未必存在，混进来只会让人选错）
   //   · 探测不到       → 退回 provider 推荐清单 + 当前值
   //   · 无论如何都带上当前值，保证已有配置不会被悄悄改掉
-  const options = useMemo(() => {
+  /** 挂载时是哪家：只有在"没换过服务商"时才保留原值，换过就不该把旧家的模型带过来 */
+  const providerAtMount = useRef(provider);
+  const candidates = useMemo(() => {
     const out: string[] = [];
     const push = (v?: string | null) => {
       const k = (v ?? "").trim();
       if (k && !out.includes(k)) out.push(k);
     };
-    if (probedIsReal) {
-      probed.forEach(push);
-    } else {
-      probed.forEach(push);
-      (meta?.models ?? []).forEach(push);
-    }
-    push(value);
+    probed.forEach(push);
+    if (!probedIsReal) (meta?.models ?? []).forEach(push);
     return out;
-  }, [probed, probedIsReal, meta, value]);
+  }, [probed, probedIsReal, meta]);
+
+  const options = useMemo(() => {
+    const out = [...candidates];
+    const cur = (value ?? "").trim();
+    // 当前值只有在"属于这家"或"用户根本没换过服务商"时才进候选 ——
+    // 否则会出现 openai 的下拉里躺着 deepseek-flash，选下去就是一个必然 400 的组合
+    const belongs = candidates.includes(cur);
+    if (cur && (belongs || provider === providerAtMount.current) && !out.includes(cur)) out.push(cur);
+    return out;
+  }, [candidates, value, provider]);
+
+  /* 换了服务商：旧的模型名必须换掉，并说清楚换成了什么（不能静默改值） */
+  const prevProvider = useRef(provider);
+  useEffect(() => {
+    if (prevProvider.current === provider) return;
+    prevProvider.current = provider;
+    // 换服务商：上一家的探测结果立刻作废（它属于上一条凭据，留着只会选错）
+    setProbed([]);
+    setProbedIsReal(false);
+    setNote(null);
+    probedFor.current = null;
+    if (!value) return;
+    // 只用**新这家**的静态清单挑默认值，绝不拿旧候选（旧候选此刻还是上一家的）
+    const statics = meta?.models ?? [];
+    if (statics.includes(value)) return;
+    const next = statics[0] ?? "";
+    if (next) {
+      onChange(next);
+      setSwitchNote(`已换成 ${next}（原模型属于上一家服务商）`);
+    } else {
+      onChange("");
+      setSwitchNote("这家还没有可用清单，请手动填写模型名");
+      setManual(true);
+    }
+  }, [provider, meta, value, onChange]);
 
   // 探测不到任何候选 → 直接进手填模式，别让用户对着空下拉框发呆
   useEffect(() => {
@@ -190,6 +224,9 @@ export function ModelPicker({
           </button>
         )}
       </div>
+      {switchNote && (
+        <p className="text-[12px] mt-1.5" style={{ color: "var(--color-warn)" }}>{switchNote}</p>
+      )}
       {note && (
         <p className="text-[12px] text-[var(--color-muted)] mt-1.5">{note}</p>
       )}
