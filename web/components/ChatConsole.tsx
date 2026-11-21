@@ -1440,6 +1440,21 @@ export function ChatConsole({
     }
   };
 
+  /** 重试一条回答：服务端把这一轮及之后删掉，然后用同一句提问重跑。
+      只改本地 history 是不够的 —— 服务端还留着旧的一轮，刷新后又变两条（复测 F5）。 */
+  const retryReply = async (turnIndex: number | undefined, text: string) => {
+    if (!sessionId || busy) return;
+    try {
+      if (turnIndex) {
+        await api.rewindSession(sessionId, turnIndex);
+        await loadMessages(sessionId, { reset: true });
+      }
+      await send(text, { reuse: true });
+    } catch (e) {
+      fb.error("重试失败", e instanceof Error ? e.message : String(e));
+    }
+  };
+
   /** 从这轮之前另起会话（原会话不动） */
   const branchFrom = async (turnIndex: number) => {
     if (!sessionId) return;
@@ -1823,7 +1838,7 @@ export function ChatConsole({
     }
   };
 
-  const send = async (override?: unknown) => {
+  const send = async (override?: unknown, opts: { reuse?: boolean } = {}) => {
     // 允许传文本进来（重试时用）—— 传进来的可能是事件对象，所以只认字符串
     const text = (typeof override === "string" ? override : input).trim();
     if ((!text && pendingFiles.length === 0) || busy || !sessionId || !agentId) return;
@@ -1857,8 +1872,12 @@ export function ChatConsole({
     setBrowserPaused(false);
     setLive({ role: "user", text: composed });
     // 直接进入助手流式态（user 消息由 live 显示，完成后由 history 接管）
-    const userEcho = { role: "user" as const, content: composed, run_id: null, turn_index: 0 };
-    setHistory((h) => [...h, userEcho]);
+    // 重试（reuse）：这条用户消息已经在 history 里了，再 push 一次就变成
+    // 「同一句话两条 + 两条回复」（验收实测：重试一次 1 轮变 2 轮）
+    if (!opts.reuse) {
+      const userEcho = { role: "user" as const, content: composed, run_id: null, turn_index: 0 };
+      setHistory((h) => [...h, userEcho]);
+    }
     setLive({ role: "assistant", text: "" });
     setLiveInput(composed);
 
@@ -2100,6 +2119,8 @@ export function ChatConsole({
   /** 助手选择面板开合：「哪个形态被点开了」。三种挂载点只认自己那一份，
    *  共用布尔值会让面板在窗口跨断点缩放后凭空冒出来（桌面开着的面板飘到手机上）。 */
   const [switcherOpen, setSwitcherOpen] = useState<null | "bar" | "sidebar" | "mini">(null);
+  /** 空状态里那份「换一个助手」列表（不依赖侧栏是否展开） */
+  const [emptySwitchOpen, setEmptySwitchOpen] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
   /** 抽屉里的菜单项点完就跳页 —— 抽屉的关闭**交给路由变化**来做。
@@ -3082,21 +3103,47 @@ export function ChatConsole({
                     </p>
                   ) : null}
                   {agents.length > 1 && (
-                    <button
-                      data-tap
-                      onClick={() =>
-                        setSwitcherOpen(
-                          window.innerWidth < 1024 ? "bar" : navOpen ? "sidebar" : "mini",
-                        )
-                      }
-                      className="mt-1 inline-flex items-center gap-1 text-[12px] rounded-md px-2 h-7 hover:bg-[var(--color-surface-2)]"
-                      style={{ color: "var(--color-accent)" }}
-                    >
-                      换一个助手
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <path d="m6 9 6 6 6-6" />
-                      </svg>
-                    </button>
+                    <>
+                      <button
+                        data-tap
+                        aria-expanded={emptySwitchOpen}
+                        onClick={() => setEmptySwitchOpen((v) => !v)}
+                        className="mt-1 inline-flex items-center gap-1 text-[12px] rounded-md px-2 h-7 hover:bg-[var(--color-surface-2)]"
+                        style={{ color: "var(--color-accent)" }}
+                      >
+                        换一个助手
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ transform: emptySwitchOpen ? "rotate(180deg)" : "none" }}>
+                          <path d="m6 9 6 6 6-6" />
+                        </svg>
+                      </button>
+                      {/* 空状态自己给列表：以前借用侧栏/迷你两套浮层，
+                          侧栏收起时那个入口不在视口里，点了像没反应（复测 F2） */}
+                      {emptySwitchOpen && (
+                        <div
+                          className="mx-auto mt-2 max-h-[220px] w-full max-w-[360px] overflow-y-auto rounded-[10px] p-1 text-left"
+                          style={{ background: "var(--color-surface-2)" }}
+                        >
+                          {agents.map((a) => (
+                            <button
+                              key={a.id}
+                              type="button"
+                              data-tap
+                              onClick={() => {
+                                setEmptySwitchOpen(false);
+                                switchAgent(a.id);
+                              }}
+                              className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left hover:bg-[var(--color-surface-3)]"
+                              style={{ background: a.id === agentId ? "var(--color-surface-3)" : "transparent" }}
+                            >
+                              <span className="min-w-0 flex-1 truncate text-[12.5px]">{a.name}</span>
+                              <span className="mono shrink-0 truncate text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                                {a.definition?.model?.name || "远端管理"}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
                 {/* 开场建议：本来是一组写死的通用卡（分析文件 / 上网查 / 写代码），
@@ -3225,7 +3272,16 @@ export function ChatConsole({
                       onEdited={(content2) =>
                         setHistory((h) => h.map((x, j) => (j === i ? { ...x, content: content2 } : x)))
                       }
-                      onRetry={m.role === "user" && !busy ? () => void send(m.content) : undefined}
+                      onRetry={
+                        m.role === "user" && !busy
+                          ? () => {
+                              // 原地重新生成：这条用户消息之后的内容全部作废，
+                              // 不新增一条一模一样的问句
+                              setHistory((h) => h.slice(0, i + 1));
+                              void send(m.content, { reuse: true });
+                            }
+                          : undefined
+                      }
                       onRewind={
                         m.role === "user" && m.turn_index && !busy
                           ? () => void rewindTo(m.turn_index!, m.content)
@@ -3243,7 +3299,7 @@ export function ChatConsole({
                       }
                       onRetryReply={
                         m.role === "assistant" && !busy && prevUser
-                          ? () => void send(prevUser)
+                          ? () => void retryReply(m.turn_index, prevUser)
                           : undefined
                       }
                       onOpenDock={(rid) => {
