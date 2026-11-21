@@ -33,6 +33,53 @@ const probeCache = new Map<string, string[]>();
 /** 该缓存是否来自服务商真实返回 */
 const probeCacheReal = new Map<string, boolean>();
 
+/** 模型单价：/api/prices 一次拉全量，选择器里并排显示，方便一眼比价 */
+type Price = { in_per_mtok: number; out_per_mtok: number };
+let priceCache: { currency: string; map: Map<string, Price> } | null = null;
+let priceLoading: Promise<void> | null = null;
+function loadPrices(): Promise<void> {
+  if (priceCache) return Promise.resolve();
+  if (priceLoading) return priceLoading;
+  priceLoading = api
+    .prices()
+    .then((r) => {
+      const map = new Map<string, Price>();
+      for (const it of r.items ?? []) {
+        // 没定价的（priced=false / 两个 0）不显示单价 ——「¥0/¥0」比不显示更误导
+        const inP = Number(it.in_per_mtok) || 0;
+        const outP = Number(it.out_per_mtok) || 0;
+        if (inP <= 0 && outP <= 0) continue;
+        map.set(String(it.model).toLowerCase(), { in_per_mtok: inP, out_per_mtok: outP });
+      }
+      priceCache = { currency: r.currency || "¥", map };
+    })
+    .catch(() => {
+      priceCache = { currency: "¥", map: new Map() };
+    });
+  return priceLoading;
+}
+
+/** 最近用过的模型（跨页面共享，置顶显示） */
+const RECENT_KEY = "as.recentModels";
+function readRecent(): string[] {
+  try {
+    const raw = localStorage.getItem(RECENT_KEY);
+    const arr = raw ? (JSON.parse(raw) as string[]) : [];
+    return Array.isArray(arr) ? arr.filter((x) => typeof x === "string").slice(0, 5) : [];
+  } catch {
+    return [];
+  }
+}
+function pushRecent(m: string) {
+  if (!m) return;
+  try {
+    const next = [m, ...readRecent().filter((x) => x !== m)].slice(0, 5);
+    localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+  } catch {
+    /* 隐私模式下 localStorage 会抛，忽略 */
+  }
+}
+
 export function ModelPicker({
   providers,
   provider,
@@ -59,6 +106,19 @@ export function ModelPicker({
   const [hi, setHi] = useState(0);
   const [manual, setManual] = useState(false);
   const probedFor = useRef<string | null>(null);
+  /** 价格表（用于并排显示输入/输出单价） */
+  const [prices, setPrices] = useState<{ currency: string; map: Map<string, Price> } | null>(null);
+  /** 最近用过的模型，置顶 */
+  const [recent, setRecent] = useState<string[]>([]);
+  /** 是否显示 :batch / ~ 别名这些重复档（默认隐藏） */
+  const [showAll, setShowAll] = useState(false);
+  /** 未去重的原始探测清单 */
+  const [rawList, setRawList] = useState<string[]>([]);
+
+  useEffect(() => {
+    void loadPrices().then(() => setPrices(priceCache));
+    setRecent(readRecent());
+  }, []);
 
   const meta = useMemo(() => providers.find((p) => p.name === provider), [providers, provider]);
 
@@ -100,7 +160,9 @@ function dedupeModels(list: string[]): string[] {
         const r = await api.credentialModels(credentialId);
         // 优先用真实清单；探测不到就用该服务商的推荐清单兜底
         const isReal = (r.models?.length ?? 0) > 0;
-        const list = dedupeModels((isReal ? r.models : (r.suggested ?? [])) || []);
+        const src = (isReal ? r.models : (r.suggested ?? [])) || [];
+        setRawList(src.map((x) => String(x)));
+        const list = dedupeModels(src);
         probeCache.set(key, list);
         probeCacheReal.set(key, isReal);
         setProbed(list);
@@ -162,12 +224,37 @@ function dedupeModels(list: string[]): string[] {
     return out;
   }, [candidates, value, provider]);
 
-  /** 输入即过滤：大小写不敏感，去空格（" GPT " 也能命中） */
+  /** 「显示全部」时把 :batch / ~ 别名这些重复档也放出来（默认不显示） */
+  const baseList = useMemo(() => {
+    if (showAll && rawList.length) return rawList;
+    return options;
+  }, [showAll, rawList, options]);
+
+  /** 输入即过滤：大小写不敏感，去空格（" GPT " 也能命中）；也支持多词 */
   const filtered = useMemo(() => {
-    const k = q.trim().toLowerCase();
-    if (!k) return options;
-    return options.filter((m) => m.toLowerCase().includes(k));
-  }, [options, q]);
+    const k = q.trim().toLowerCase().replace(/\s+/g, " ");
+    if (!k) return baseList;
+    const parts = k.split(" ");
+    return baseList.filter((m) => {
+      const low = m.toLowerCase();
+      return parts.every((x) => low.includes(x));
+    });
+  }, [baseList, q]);
+
+  /** 最近用过的置顶（只在没搜索时出现） */
+  const pinned = useMemo(
+    () => (q.trim() ? [] : recent.filter((m) => filtered.includes(m))),
+    [q, recent, filtered],
+  );
+  const rest = useMemo(() => filtered.filter((m) => !pinned.includes(m)), [filtered, pinned]);
+
+  /** 一行右侧的价格：有定价就显示「输入/输出 每百万」，没有就留空（不编数字） */
+  const priceLabel = (m: string) => {
+    const p = prices?.map.get(m.toLowerCase());
+    if (!p) return "";
+    const cur = prices?.currency ?? "¥";
+    return `${cur}${p.in_per_mtok}/${p.out_per_mtok} · 每百万`;
+  };
 
   /* 换了服务商：旧的模型名必须换掉，并说清楚换成了什么（不能静默改值） */
   const prevProvider = useRef(provider);
@@ -264,6 +351,8 @@ function dedupeModels(list: string[]): string[] {
                 const pick = filtered[hi];
                 if (pick) {
                   onChange(pick);
+                  pushRecent(pick);
+                  setRecent(readRecent());
                   setOpen(false);
                 }
               } else if (e.key === "Escape") {
@@ -280,30 +369,64 @@ function dedupeModels(list: string[]): string[] {
             >
               {filtered.length === 0 ? (
                 <div className="px-3 py-2 text-[12px]" style={{ color: "var(--color-text-3)" }}>
-                  {probing ? "正在探测…" : "没有匹配的模型"}
+                  {probing ? "正在探测…" : q ? "没有匹配的模型" : "这家没有可选清单"}
+                  {q ? (
+                    <button
+                      type="button"
+                      className="ml-2 underline"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => setQ("")}
+                    >
+                      清空
+                    </button>
+                  ) : null}
                 </div>
               ) : (
-                filtered.map((m, i) => (
-                  <button
-                    key={m}
-                    type="button"
-                    role="option"
-                    aria-selected={m === value}
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => {
-                      onChange(m);
-                      setOpen(false);
-                    }}
-                    className="flex min-h-[38px] w-full items-center px-3 text-left text-[12.5px] mono"
-                    style={{
-                      background: i === hi ? "var(--color-surface-2)" : "transparent",
-                      color: m === value ? "var(--color-accent)" : undefined,
-                    }}
-                  >
-                    {m}
-                  </button>
-                ))
+                <>
+                  {pinned.length > 0 && (
+                    <div className="px-3 pt-2 pb-1 text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                      最近使用
+                    </div>
+                  )}
+                  {[...pinned, ...rest].map((m, i) => (
+                    <button
+                      key={m}
+                      type="button"
+                      role="option"
+                      aria-selected={m === value}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        onChange(m);
+                        pushRecent(m);
+                        setRecent(readRecent());
+                        setOpen(false);
+                      }}
+                      className="flex min-h-[38px] w-full items-center gap-2 px-3 text-left"
+                      style={{
+                        background: i === hi ? "var(--color-surface-2)" : "transparent",
+                        color: m === value ? "var(--color-accent)" : undefined,
+                      }}
+                    >
+                      <span className="mono flex-1 truncate text-[12.5px]">{m}</span>
+                      {priceLabel(m) ? (
+                        <span className="shrink-0 text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                          {priceLabel(m)}
+                        </span>
+                      ) : null}
+                    </button>
+                  ))}
+                </>
               )}
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => setShowAll((v) => !v)}
+                className="flex min-h-[36px] w-full items-center justify-between border-t px-3 text-left text-[12px]"
+                style={{ borderColor: "var(--color-border)", color: "var(--color-text-3)" }}
+              >
+                <span>{showAll ? "隐藏重复档（:batch / ~ 别名）" : `显示全部原始档${rawList.length ? `（${rawList.length}）` : ""}`}</span>
+                <span>{showAll ? "已显示" : ""}</span>
+              </button>
               <button
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}

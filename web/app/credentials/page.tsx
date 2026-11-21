@@ -7,6 +7,7 @@ import type { Credential, CredentialTestResult, Provider } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
 import { Chip, DLG_BACKDROP, DLG_CARD, Empty, KV, Menu, PageHead, Row, RowList, Section } from "@/components/ui/kit";
 import { DetailPanel } from "@/components/ui/DetailPanel";
+import { ModelPicker } from "@/components/ModelPicker";
 import {
   IconChat,
   IconCheck,
@@ -921,18 +922,21 @@ function EditCredentialDialog({
               {/* 模型**可以手填**（用户要求：编辑配置里手动添加模型 → 测试 → 保存 ✓）
                   探测只是"能选就不填"的便利 ✓ —— 有些服务商（如火山引擎方舟的 Agent Plan key）
                   根本没有 /models 清单，探测不出来，只能手填 ✓ */}
-              <input
-                className="input mono min-w-0 flex-1"
-                placeholder="手填，或点右侧探测后选"
-                value={model}
-                onChange={(e) => {
-                  setModel(e.target.value);
-                  setProbeNote(null);
-                }}
-              />
-              <button className="btn shrink-0" disabled={probing} onClick={probeModels}>
-                {probing ? "探测中…" : "探测可用模型"}
-              </button>
+              {/* 与助手配置页、备用模型、新建向导用同一个选择器：
+                  搜索 / 大小写不敏感 / 多词 / :batch 与 ~ 别名去重 / 单价并排 /
+                  最近使用置顶 —— 以前这里是 462 个 chip 平铺，翻不动也选不准 */}
+              <div className="min-w-0 flex-1">
+                <ModelPicker
+                  providers={providers}
+                  provider={provider}
+                  credentialId={credential.id}
+                  value={model}
+                  onChange={(v) => {
+                    setModel(v);
+                    setProbeNote(null);
+                  }}
+                />
+              </div>
               <button
                 className="btn shrink-0"
                 disabled={busy}
@@ -941,59 +945,7 @@ function EditCredentialDialog({
               >
                 {busy ? "自检中…" : "自检"}
               </button>
-              {model && (
-                <button
-                  className="btn shrink-0"
-                  title="清除已选模型"
-                  onClick={() => {
-                    setModel("");
-                    setProbeNote(null);
-                  }}
-                >
-                  清除
-                </button>
-              )}
             </div>
-
-            {probeNote && (
-              <p
-                className="text-[12px] mt-1.5"
-                style={{
-                  color: probeNote.startsWith("探测失败") || probeNote.startsWith("✗")
-                    ? "var(--color-err)"
-                    : "var(--color-muted)",
-                }}
-              >
-                {probeNote}
-              </p>
-            )}
-
-            {found.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mt-2">
-                {found.map((m) => {
-                  const on = model.trim() === m;
-                  return (
-                    <button
-                      key={m}
-                      onClick={() => setModel(m)}
-                      className="tag mono"
-                      style={{
-                        cursor: "pointer",
-                        background: on
-                          ? "color-mix(in srgb, var(--color-accent) 16%, transparent)"
-                          : undefined,
-                        color: on ? "var(--color-accent)" : undefined,
-                        borderColor: on ? "var(--color-accent)" : undefined,
-                      }}
-                    >
-                      {on ? "● " : ""}
-                      {m}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
             {model.trim() === "" && (
               <p className="text-[12px] text-[var(--color-muted)] mt-1.5">
                 未选择时，模型由使用它的助手决定（在助手的模型设置里选）。
