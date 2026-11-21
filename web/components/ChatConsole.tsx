@@ -2662,6 +2662,8 @@ export function ChatConsole({
             <button
               data-tap
               className="shrink-0 w-9 h-9 flex items-center justify-center rounded-lg text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] active:bg-[var(--color-surface-2)]"
+              /* 图标按钮：title 只是鼠标提示，读屏要 aria-label */
+              aria-label="对话列表"
               title="对话列表"
               onClick={() => {
                 setNavView("sessions");
