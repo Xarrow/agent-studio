@@ -41,6 +41,7 @@ import { ModelPicker } from "@/components/ModelPicker";
 const PRESETS = [
   {
     key: "orchestrator",
+    opening: "把要办的事交给我，我先拆清楚再往下派。",
     icon: "✦",
     label: "编排、统筹",
     desc: "管整条流程：分析 → 管上下文 → 验证 → 归纳",
@@ -49,6 +50,7 @@ const PRESETS = [
   },
   {
     key: "code",
+    opening: "把报错或代码贴给我，我先看看问题在哪。",
     icon: "💻",
     label: "写代码、查错",
     desc: "写代码、找 bug、解释代码",
@@ -57,6 +59,7 @@ const PRESETS = [
   },
   {
     key: "qa",
+    opening: "有什么想弄明白的，直接问。",
     icon: "📚",
     label: "答疑解惑",
     desc: "回答各种问题，把概念讲明白",
@@ -65,6 +68,7 @@ const PRESETS = [
   },
   {
     key: "research",
+    opening: "给我一个题目或链接，我把要点理出来。",
     icon: "🔍",
     label: "查资料、做整理",
     desc: "查信息、提炼要点、做总结",
@@ -288,11 +292,13 @@ export default function AgentsPage() {
           providers={providers}
           creds={creds}
           onClose={() => setShowNew(false)}
-          onCreated={async (createdName?: string) => {
+          onCreated={async (created) => {
             setShowNew(false);
             await load();
-            // 建完没有任何反馈，用户不知道成没成（验收时被指出）
-            fb.success("助手建好了", createdName ? `「${createdName}」已出现在列表里` : undefined);
+            // 建完直接进对话页说第一句 —— 不再有「建好之后该干嘛」这一步，
+            // 也不用回详情页找「快速试跑」那个重复入口（验收 UX-009）
+            fb.success("助手建好了", `「${created.name}」已建好，去说第一句`);
+            window.location.href = `/exec?agent=${created.id}`;
           }}
         />
       )}
@@ -666,42 +672,39 @@ function NewAgentDialog({
   providers: Provider[];
   creds: Credential[];
   onClose: () => void;
-  onCreated: (createdName?: string) => void;
+  onCreated: (created: { id: string; name: string }) => void;
 }) {
   const [name, setName] = useState("");
+  /** 名字是不是用户自己写的：没写过就跟着模板走（不用为一个字段多想） */
+  const [nameTouched, setNameTouched] = useState(false);
   const [presetKey, setPresetKey] = useState<string | null>(null);
-  /** 它在流程里扮演什么角色 —— 枚举用**选择**，不问不填。
-   *  编排者（Orchestrator）自带四项职责：分析任务 / 管理上下文 / 验证结果 / 归纳总结；
-   *  在这里就能定下来，省掉"先建普通助手，再改成编排者"那一步。 */
+  /** 它在流程里扮演什么角色 —— 枚举用**选择**，不问不填 */
   const [newRole, setNewRole] = useState<"worker" | "orchestrator">("worker");
   const [runtime, setRuntime] = useState(runtimes[0]?.name ?? "agentscope");
   const [provider, setProvider] = useState("");
   const [model, setModel] = useState("");
   const [credRef, setCredRef] = useState("");
   const [prompt, setPrompt] = useState("");
-  /** 一句话职责 —— 会出现在选助手的地方（Playground 的「＋ 加一步」气泡）。
-      默认跟预设走（预设的 desc 就是一句现成的职责），可改 —— 用户不用为一个字段多想。 */
   const [desc, setDesc] = useState("");
+  /** 开场白：新会话第一屏说这句；模板会带一条，可改 */
+  const [opening, setOpening] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  /** 关闭的两步确认态（首次点关闭 → 变成"再点一次"）。
-   *  用户明确要求：破坏性/丢改动的动作**不用原生弹窗**，用变色 + 再点一次。 */
+  /** 关闭的两步确认态（首次点关闭 → 变成"再点一次"） */
   const [confirmClose, setConfirmClose] = useState(false);
 
-  /** 填过东西没有 —— 决定了关闭要不要两步确认（空表单直接关） */
-  const dirty = !!(name.trim() || presetKey || prompt.trim() || desc.trim());
+  const dirty = !!(name.trim() || presetKey || prompt.trim() || desc.trim() || opening.trim());
 
   const requestClose = () => {
     if (dirty && !confirmClose) {
       setConfirmClose(true);
-      window.setTimeout(() => setConfirmClose(false), 4000);   // 4 秒内有效
+      window.setTimeout(() => setConfirmClose(false), 4000);
       return;
     }
     onClose();
   };
 
-  /** Esc 关闭（浮层再长也能关；未保存时同样走两步确认） */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") requestClose();
@@ -711,15 +714,13 @@ function NewAgentDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dirty, confirmClose]);
 
-  // 初始化「用哪个 AI」：优先选**已经配好密钥**的服务商，并自动带上那条密钥
+  // 初始化「用哪个 AI」：优先选已经配好密钥的服务商，并自动带上那条密钥
   useEffect(() => {
     const withCred = providers.find((p) => creds.some((c) => c.provider === p.name));
     const p = withCred ?? providers[0];
     if (!p) return;
     setProvider(p.name);
     const c0 = creds.find((x) => x.provider === p.name);
-    // 优先用这条密钥已经在用的模型（LLM 配置里的「默认模型」）——
-    // 以前一律取 provider 静态清单第一个，用户看到的和建成后的不是同一个
     setModel(c0?.default_model || p.models?.[0] || "");
     setCredRef(c0?.id ?? "");
   }, [providers, creds]);
@@ -731,27 +732,39 @@ function NewAgentDialog({
   const isCustom = presetKey === "custom";
   const selectedCred = creds.find((c) => c.id === credRef);
 
+  const pickPreset = (p: (typeof PRESETS)[number]) => {
+    setPresetKey(p.key);
+    // 角色与用途是正交的两个维度，但选了「编排、统筹」这种，角色跟着预选上
+    setNewRole(p.key === "orchestrator" ? "orchestrator" : "worker");
+    if (p.key !== "custom") {
+      setPrompt(p.prompt);
+      setDesc(p.desc);
+      setOpening(("opening" in p && String(p.opening)) || "");
+      if (!nameTouched) setName(p.label);
+    }
+  };
+
   const submit = async () => {
     if (!name.trim()) {
-      setErr("先给它起个名字吧");
+      setErr("先给它起个名字（点上面的模板会自动填）");
       return;
     }
     if (!presetKey) {
-      setErr("选一个它要做的事（第 ② 步）");
+      setErr("先选一个它要做的事");
       return;
     }
     setBusy(true);
+    setErr(null);
     try {
-      await api.createAgent({
+      const created = await api.createAgent({
         name: name.trim(),
-        // 一句话职责必带：没手填就用预设的（预设的 desc 本来就是一句职责）——
-        // 这样"新建的助手"天然就有可展示的职责，不用回头补。
         description: (desc.trim() || preset?.desc || "").slice(0, 140) || undefined,
         definition: {
           runtime,
           name: name.trim(),
           role: newRole,
           system_prompt: prompt.trim() || "你是一个乐于助人的助手。",
+          opening_line: opening.trim(),
           model: {
             provider,
             name: model || providerMeta?.models?.[0] || "",
@@ -764,7 +777,7 @@ function NewAgentDialog({
           runtime_options: {},
         },
       });
-      onCreated(name.trim());
+      onCreated({ id: created.id, name: created.name || name.trim() });
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -772,23 +785,55 @@ function NewAgentDialog({
     }
   };
 
+  /** 预览区：右栏就是它建成后的样子（开场白、模型、密钥随输入实时变） */
+  const preview = (
+    <div className="space-y-3">
+      <div className="rounded-[14px] p-4" style={{ background: "var(--color-surface-2)" }}>
+        <div className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+          新会话第一屏
+        </div>
+        <div className="mt-3 flex items-center gap-2">
+          <span
+            className="inline-flex h-8 w-8 items-center justify-center rounded-2xl text-[15px]"
+            style={{ background: "var(--color-surface-3)", color: "var(--color-text-2)" }}
+          >
+            ✦
+          </span>
+          <span className="truncate text-[14px] font-medium">{name.trim() || "未命名助手"}</span>
+        </div>
+        <p className="mt-2 text-[13px] leading-relaxed" style={{ color: "var(--color-text-2)" }}>
+          {opening.trim() || desc.trim() || "（还没有开场白，第一屏会是空的）"}
+        </p>
+        <div
+          className="mt-4 flex items-center rounded-[10px] px-3 py-2.5 text-[12.5px]"
+          style={{ background: "var(--color-surface)", color: "var(--color-text-3)" }}
+        >
+          说点什么…
+        </div>
+      </div>
+      <div className="text-[12px] leading-relaxed" style={{ color: "var(--color-text-3)" }}>
+        <div>
+          模型 <span className="mono">{model || "（建好后在配置里选）"}</span>
+        </div>
+        <div className="mt-0.5">
+          {selectedCred ? `密钥 ${selectedCred.name}` : "这条模型还没配密钥"}
+        </div>
+        <div className="mt-0.5">
+          {newRole === "orchestrator" ? "编排者：分析 → 上下文 → 验证 → 归纳" : "干活：做完交给下一个"}
+        </div>
+      </div>
+    </div>
+  );
+
   return (
-    <div
-      className={DLG_BACKDROP}
-      onClick={requestClose}
-    >
-      {/* 面板本体：点它不关（否则点输入框就把弹层关掉了） */}
-      {/* 手机上：面板最高 92vh、内容自己滚、**「取消 / 创建」常驻底部** ——
-          否则"创建"被顶到视口外面，手指要先把整个表单滚到底才够得到 ✗（实测过） */}
+    <div className={DLG_BACKDROP} onClick={requestClose}>
       <div
-        className="card flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-b-none rounded-t-[14px] p-5 sm:my-auto sm:max-h-[88dvh] sm:rounded-[12px]"
+        className="card flex max-h-[92dvh] w-full max-w-[880px] flex-col overflow-hidden rounded-b-none rounded-t-[14px] p-5 sm:my-auto sm:max-h-[88dvh] sm:rounded-[12px]"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* 头部：标题 + **右上角固定的关闭键** —— 之前只有最底部一个"取消"，
-            内容一长就得滚到底才找得到，用户反馈"弹出来关不掉"。 */}
-        <div className="mb-4 flex items-start gap-3">
+        <div className="mb-3 flex items-start gap-3">
           <div className="min-w-0 flex-1">
-            <h2 className="text-[16px] font-medium mb-1">新建助手</h2>
+            <h2 className="text-[16px] font-medium">新建助手</h2>
           </div>
           <div className="flex shrink-0 flex-col items-end gap-1">
             <button
@@ -809,256 +854,206 @@ function NewAgentDialog({
           </div>
         </div>
 
-        {/* 正文：手机上自己滚 —— 卡片封顶 92dvh，「取消 / 创建」常驻下方（原来正文没有滚动，内容 897px 直接被裁，按钮在视口外）。 */}
-        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto">
-          {/* ① 名字 */}
-          <div>
-            <label className="label flex items-center gap-1.5">
-              <span className="text-[var(--color-accent)] font-semibold">①</span>
-              它叫什么名字？
-            </label>
-            <input
-              className="input"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="例如：代码小助手"
-              autoFocus
-            />
-          </div>
-
-
-          {/* ② 做什么 —— 选一个预设，自动带上「角色设定」 */}
-          <div>
-            <label className="label flex items-center gap-1.5">
-              <span className="text-[var(--color-accent)] font-semibold">②</span>
-              你希望它帮你做什么？
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              {PRESETS.map((p) => {
-                const on = presetKey === p.key;
-                return (
-                  <button
-                    key={p.key}
-                    type="button"
-                    onClick={() => {
-                      setPresetKey(p.key);
-                      // 分类与角色是**正交**的两个维度，所以不合并成一道题；
-                      // 但选了「编排、统筹」这类，角色跟着预选上，省一次点击（③ 仍可改）
-                      setNewRole(p.key === "orchestrator" ? "orchestrator" : "worker");
-                      if (p.key !== "custom") {
-                        setPrompt(p.prompt);
-                        setDesc(p.desc); // 一句话职责跟预设走（用户可改，不用自己编）
-                      }
-                    }}
-                    className={`text-left rounded-md p-3 transition-colors border ${
-                      on
-                        ? "border-[var(--color-accent)] bg-[color-mix(in_srgb,var(--color-accent)_8%,transparent)]"
-                        : "border-[var(--color-border)] hover:border-[var(--color-accent-dim)]"
-                    }`}
-                  >
-                    <div className="text-[13.5px] font-medium">
-                      {p.icon} {p.label}
-                    </div>
-                    <div className="text-[12px] text-[var(--color-muted)] mt-0.5 leading-snug">
-                      {p.desc}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-          {/* ③ 角色 —— 枚举就两个，做成"选一张卡"，不让人打字（用户："让用户选择而不是输入"） */}
-          <div>
-            <label
-              className="label flex items-center gap-1.5"
-              title="干活：做完交下一步。编排者：管整条流程，最后验证归纳"
-            >
-              <span className="text-[var(--color-accent)] font-semibold">③</span>
-              它在流程里扮演什么角色？
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              {([
-                { v: "worker" as const, t: "干活", d: "做完这一步，交给下一个" },
-                { v: "orchestrator" as const, t: "编排者", d: "分析 / 上下文 / 验证 / 归纳" },
-              ]).map((o) => {
-                const on = newRole === o.v;
-                return (
-                  <button
-                    key={o.v}
-                    type="button"
-                    onClick={() => setNewRole(o.v)}
-                    className="rounded-[10px] border px-3 py-2 text-left"
-                    style={{
-                      borderColor: on ? "var(--color-accent)" : "var(--color-border)",
-                      background: on ? "color-mix(in srgb, var(--color-accent) 6%, transparent)" : "var(--color-surface)",
-                    }}
-                  >
-                    <div className="text-[13px] font-medium" style={{ color: on ? "var(--color-accent)" : undefined }}>
-                      {o.t}
-                    </div>
-                    <div className="mt-0.5 text-[12px] text-[var(--color-muted)]">{o.d}</div>
-                  </button>
-                );
-              })}
-            </div>
-            {newRole === "orchestrator" && (
-              <div className="mt-1.5 text-[12px] text-[var(--color-muted)]">
-                建好之后可以在它的详情页看到并修改**编排者的职责定义**。
+        {/* 一页填完：左边配置、右边就是它建成后的样子；手机上预览排在末尾一块 */}
+        <div className="grid min-h-0 flex-1 gap-5 overflow-y-auto md:grid-cols-[minmax(0,1fr)_minmax(0,300px)]">
+          <div className="space-y-4">
+            {/* ① 用途模板：点了就把名字、交代、开场白一起带进来 */}
+            <div>
+              <label className="label">它帮你做什么？（选一个，下面的都会自动填好）</label>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {PRESETS.map((p) => {
+                  const on = presetKey === p.key;
+                  return (
+                    <button
+                      key={p.key}
+                      type="button"
+                      onClick={() => pickPreset(p)}
+                      className="rounded-md p-2.5 text-left transition-colors"
+                      style={{
+                        background: on ? "color-mix(in srgb, var(--color-accent) 10%, transparent)" : "var(--color-surface-2)",
+                        outline: on ? "1.5px solid var(--color-accent)" : "none",
+                      }}
+                    >
+                      <div
+                        className="text-[13px] font-medium"
+                        style={{ color: on ? "var(--color-accent)" : undefined }}
+                      >
+                        {p.icon} {p.label}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
-            )}
-          </div>
-            {/* 一句话职责：不在"三个问题"里 —— 选预设时自动带出来，想改才改。
-                它决定了用户在选助手时能不能一眼认出这个助手。 */}
-            <div className="mt-3">
-              <label className="label flex items-center gap-1.5" title="Playground 列表里显示这句话">
-                一句话职责
-              </label>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="label">名字</label>
+                <input
+                  className="input"
+                  value={name}
+                  onChange={(e) => {
+                    setNameTouched(true);
+                    setName(e.target.value);
+                  }}
+                  placeholder="点上面的模板会自动填"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="label">一句话职责</label>
+                <input
+                  className="input"
+                  value={desc}
+                  onChange={(e) => setDesc(e.target.value)}
+                  placeholder="例如：写代码、找 bug"
+                  maxLength={60}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="label">开场白（新会话第一屏说这句）</label>
               <input
                 className="input"
-                value={desc}
-                onChange={(e) => setDesc(e.target.value)}
-                placeholder="例如：查服务状态；写代码、找 bug"
-                maxLength={60}
+                value={opening}
+                onChange={(e) => setOpening(e.target.value)}
+                placeholder="例如：把日志或报错贴给我，我帮你定位"
+                maxLength={120}
               />
             </div>
 
-            {/* 自定义时才让人写「角色设定」 */}
-            {(isCustom || (preset && presetKey !== "custom")) && (
-              <div className="mt-3">
-                <label className="label flex items-center gap-1.5">
-                  {isCustom ? "写一段交代（角色设定）" : "它会按这段交代做事（可修改）"}
-                  <Hint text={HINTS.systemPrompt} />
-                </label>
-                <textarea
-                  className="input"
-                  rows={isCustom ? 4 : 2}
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  placeholder={
-                    isCustom
-                      ? "例如：你是我的读书笔记助手，整理成要点，语气简洁。"
-                      : undefined
-                  }
-                />
-              </div>
-            )}
-          </div>
+            <div>
+              <label className="label">它会按这段交代做事（可修改）</label>
+              <textarea
+                className="input"
+                rows={isCustom ? 4 : 3}
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                placeholder="例如：你是我的读书笔记助手，整理成要点，语气简洁。"
+              />
+            </div>
 
-          {/* ③ 用哪个 AI —— 自动选好推荐项，不用懂 Provider/模型/密钥 */}
-          <div>
-            <label className="label flex items-center gap-1.5">
-              <span className="text-[var(--color-accent)] font-semibold">④</span>
-              <Hint text="已替你选好推荐项，不用改">
-                用哪个 AI
-              </Hint>
-            </label>
-            {providers.length === 0 ? (
-              <div className="text-[12px] text-[var(--color-err)]">
-                还没有可用的服务商，请先到「LLM 配置」添加一个。
-              </div>
-            ) : (
-              <>
-                <select
-                  className="input"
-                  value={provider}
-                  onChange={(e) => {
-                    const p = providers.find((x) => x.name === e.target.value);
-                    setProvider(e.target.value);
-                    const c = creds.find((x) => x.provider === e.target.value);
-                    setModel(c?.default_model || p?.models?.[0] || "");
-                    setCredRef(c?.id ?? "");
-                  }}
-                >
-                  {providers.map((p) => {
-                    const hasKey = creds.some((c) => c.provider === p.name);
-                    return (
-                      <option key={p.name} value={p.name}>
-                        {p.display_name}
-                        {hasKey ? "（已配置钥匙 ✓）" : "（还没配钥匙）"}
-                      </option>
-                    );
-                  })}
-                </select>
-                <p className="text-[12px] text-[var(--color-muted)] mt-1.5">
-                  模型：<span className="mono">{model || "（这家没有推荐清单，建成后可在配置里选）"}</span>
-                  {selectedCred ? ` · 密钥：${selectedCred.name}` : ""}
+            <div>
+              <label className="label">模型</label>
+              <ModelPicker
+                providers={providers}
+                provider={provider}
+                credentialId={credRef || null}
+                value={model}
+                onChange={setModel}
+              />
+              {providers.length === 0 && (
+                <p className="mt-1 text-[12px]" style={{ color: "var(--color-err)" }}>
+                  还没有可用的服务商，先去「LLM 配置」加一个。
                 </p>
-                <p className="text-[12px] text-[var(--color-muted)] mt-1">
-                  {selectedCred
-                    ? `使用你的密钥：${selectedCred.name}（${selectedCred.masked_key}）`
-                    : usableCreds.length === 0
-                      ? "这个服务商还没有密钥，去「LLM 配置」加一个吧。"
-                      : "会自动选用已配置的密钥。"}
+              )}
+              {providers.length > 0 && usableCreds.length === 0 && (
+                <p className="mt-1 text-[12px]" style={{ color: "var(--color-err)" }}>
+                  {providerMeta?.display_name ?? provider} 还没有密钥，建成后跑不起来。
                 </p>
-              </>
-            )}
-          </div>
+              )}
+            </div>
 
-          {/* 高级：运行时与参数 —— 默认收起 */}
-          <div>
-            <button
-              type="button"
-              data-tap
-              onClick={() => setShowAdvanced((v) => !v)}
-              className="text-[12px] text-[var(--color-accent)] flex items-center gap-1"
-            >
-              <span>{showAdvanced ? "▾" : "▸"}</span> 高级设置（一般不用改）
-            </button>
-            {showAdvanced && (
-              <div className="mt-3 space-y-3 pl-3 border-l-2 border-[var(--color-border)]">
-                <div>
-                  <label className="label flex items-center gap-1.5">
-                    <Hint text={HINTS.runtime}>运行时</Hint>
-                  </label>
-                  <select
-                    className="input"
-                    value={runtime}
-                    onChange={(e) => setRuntime(e.target.value)}
-                  >
-                    {runtimes.map((r) => (
-                      <option key={r.name} value={r.name}>
-                        {r.display_name}
-                      </option>
-                    ))}
-                  </select>
-                  {caps && (
-                    <div className="flex flex-wrap gap-1.5 mt-2">
-                      {caps.supports_hitl && (
-                        <Hint text={HINTS.hitl}><span className="tag">人工确认</span></Hint>
-                      )}
-                      {caps.supports_thinking && (
-                        <Hint text={HINTS.thinking}><span className="tag">思考过程</span></Hint>
-                      )}
-                      {caps.supports_skills && (
-                        <Hint text={HINTS.skill}><span className="tag">Skill</span></Hint>
-                      )}
-                    </div>
-                  )}
+            <div>
+              <label className="label">它在流程里扮演什么角色</label>
+              <div className="grid grid-cols-2 gap-2">
+                {([
+                  { v: "worker" as const, t: "干活", d: "做完这一步，交给下一个" },
+                  { v: "orchestrator" as const, t: "编排者", d: "分析 / 上下文 / 验证 / 归纳" },
+                ]).map((o) => {
+                  const on = newRole === o.v;
+                  return (
+                    <button
+                      key={o.v}
+                      type="button"
+                      onClick={() => setNewRole(o.v)}
+                      className="rounded-[10px] px-3 py-2 text-left"
+                      style={{
+                        background: on ? "color-mix(in srgb, var(--color-accent) 8%, transparent)" : "var(--color-surface-2)",
+                        outline: on ? "1.5px solid var(--color-accent)" : "none",
+                      }}
+                    >
+                      <div
+                        className="text-[13px] font-medium"
+                        style={{ color: on ? "var(--color-accent)" : undefined }}
+                      >
+                        {o.t}
+                      </div>
+                      <div className="mt-0.5 text-[12px]" style={{ color: "var(--color-text-3)" }}>
+                        {o.d}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <button
+                type="button"
+                data-tap
+                onClick={() => setShowAdvanced((v) => !v)}
+                className="flex items-center gap-1 text-[12px]"
+                style={{ color: "var(--color-accent)" }}
+              >
+                <span>{showAdvanced ? "▾" : "▸"}</span> 高级设置（一般不用改）
+              </button>
+              {showAdvanced && (
+                <div className="mt-2 space-y-3">
+                  <div>
+                    <label className="label">运行时</label>
+                    <select className="input" value={runtime} onChange={(e) => setRuntime(e.target.value)}>
+                      {runtimes.map((r) => (
+                        <option key={r.name} value={r.name}>
+                          {r.display_name}
+                        </option>
+                      ))}
+                    </select>
+                    {caps && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {caps.supports_hitl && <span className="tag">人工确认</span>}
+                        {caps.supports_thinking && <span className="tag">思考过程</span>}
+                        {caps.supports_skills && <span className="tag">Skill</span>}
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <label className="label">用哪条密钥</label>
+                    <select
+                      className="input"
+                      value={credRef}
+                      onChange={(e) => setCredRef(e.target.value)}
+                    >
+                      <option value="">不指定（运行时再定）</option>
+                      {usableCreds.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
-                <div>
-                  <label className="label flex items-center gap-1.5">
-                    <Hint text="贵的更聪明，便宜的更快">模型</Hint>
-                  </label>
-                  <ModelPicker
-                    providers={providers}
-                    provider={provider}
-                    credentialId={credRef}
-                    value={model}
-                    onChange={setModel}
-                  />
-                </div>
+              )}
+            </div>
+
+            {err && (
+              <div className="text-[12px]" style={{ color: "var(--color-err)" }}>
+                {err}
               </div>
             )}
           </div>
 
-          {err && <div className="text-[12px] text-[var(--color-err)]">{err}</div>}
+          <div className="md:sticky md:top-0 md:self-start">{preview}</div>
         </div>
 
-        {/* 动作条：吸在面板底部（sticky），窗口再小也够得到 */}
         <div
-          className="sticky bottom-0 -mx-5 mt-5 flex justify-end gap-2 border-t bg-[var(--color-surface)] px-5 pb-1 pt-3"
+          className="sticky bottom-0 -mx-5 mt-4 flex items-center justify-end gap-2 border-t bg-[var(--color-surface)] px-5 pb-1 pt-3"
           style={{ borderColor: "var(--color-border)" }}
         >
+          <span className="mr-auto text-[12px]" style={{ color: "var(--color-text-3)" }}>
+            {presetKey ? "创建后会直接进对话页试一句" : "先选一个它要做的事"}
+          </span>
           <button className="btn" onClick={requestClose}>
             取消
           </button>
@@ -1067,7 +1062,7 @@ function NewAgentDialog({
             disabled={busy || !name.trim() || !presetKey}
             onClick={submit}
           >
-            {busy ? "创建中…" : "创建"}
+            {busy ? "创建中…" : "创建并开始聊"}
           </button>
         </div>
       </div>

@@ -285,10 +285,13 @@ export function ModelPicker({
     }
   }, [provider, meta, value, onChange]);
 
-  // 探测不到任何候选 → 直接进手填模式，别让用户对着空下拉框发呆
+  // 探测**跑完之后**还是空的才进手填模式；探测还没回来就切手填，
+  // 用户会以为这家没清单（新建助手里就撞上过）
   useEffect(() => {
-    if (!probing && options.length === 0) setManual(true);
-  }, [probing, options.length]);
+    if (probing) return;
+    if (!credentialId || probedFor.current !== credentialId) return;
+    if (options.length === 0) setManual(true);
+  }, [probing, options.length, credentialId]);
 
   if (manual) {
     return (

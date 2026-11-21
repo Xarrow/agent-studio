@@ -26,7 +26,6 @@ import { RevisionHistory } from "@/components/RevisionHistory";
 import { PermissionScope, type GuardConf, type PermConf } from "@/components/PermissionScope";
 import { Hint } from "@/components/ui/hint";
 import { ModelPicker } from "@/components/ModelPicker";
-import { AgentQuickRun } from "@/components/AgentQuickRun";
 import { Segmented, Switch } from "@/components/ui/kit";
 import { copyText } from "@/lib/clipboard";
 import { useFeedback } from "@/components/ui/feedback";
@@ -1645,19 +1644,26 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
             历史版本 / 评测 / 记忆是偶尔才翻的，统一收进一个「更多」段 ——
             之前它们是三个并列的折叠段，把主操作挤到了第 5 段之后。 */}
         <div className="min-w-0 space-y-4 xl:sticky xl:top-4 max-xl:contents">
+          {/* 试跑只留一个入口：对话页（能看完整现场、能多轮、能改口）。
+              原来这里还有一套「快速试跑」，跟右上角的「打开对话页」是同一件事的两个壳，
+              两处都能跑、结果各说一套 —— 验收要求删掉重复入口。 */}
           <section className="card p-4 max-xl:order-first">
-            <div className="flex items-center gap-2 mb-3">
-              <h2 className="text-[14px] font-medium">快速试跑</h2>
-              <span className="text-[11.5px] text-[var(--color-muted)]">
-                一句话，看它这一轮干了什么
-              </span>
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <h2 className="text-[14px] font-medium">试一句</h2>
+                <p className="mt-0.5 text-[11.5px]" style={{ color: "var(--color-text-3)" }}>
+                  在对话页跑，能看完整现场（工具、耗时、检索）
+                </p>
+              </div>
+              <a className="btn btn-primary shrink-0" href={`/exec?agent=${agentId}`}>
+                去对话页
+              </a>
             </div>
-            <AgentQuickRun
-              agentId={agentId}
-              disabled={errors.length > 0}
-              unsaved={dirty}
-              onSave={save}
-            />
+            {errors.length > 0 && (
+              <p className="mt-2 text-[12px]" style={{ color: "var(--color-err)" }}>
+                先修上面的 {errors.length} 个问题，它会跑不起来
+              </p>
+            )}
           </section>
 
           {/* ── 收这些话：路由的第一层 ────────────────────────────────
