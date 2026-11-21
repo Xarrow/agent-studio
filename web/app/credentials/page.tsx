@@ -7,7 +7,7 @@ import type { Credential, CredentialTestResult, Provider } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
 import { Chip, DLG_BACKDROP, DLG_CARD, Empty, KV, Menu, PageHead, Row, RowList, Section } from "@/components/ui/kit";
 import { DetailPanel } from "@/components/ui/DetailPanel";
-import { ModelPicker } from "@/components/ModelPicker";
+import { ModelPicker, dedupeModelNames } from "@/components/ModelPicker";
 import {
   IconChat,
   IconCheck,
@@ -532,27 +532,65 @@ function NewCredentialDialog({
 
   const meta = providers.find((p) => p.name === provider);
   const effectiveBase = baseUrl || meta?.default_base_url || "";
+  /** 名称是否被用户手动改过（没改过就跟着服务商自动生成，例如 deepseek-2） */
+  const nameTouched = useRef(false);
+  /** 探测到的可选用模型（去重后） */
+  const [autoModels, setAutoModels] = useState<string[]>([]);
+  /** 自动测试是否已为这个 key 跑过（同一个 key 只自动测一次） */
+  const autoTestedFor = useRef<string>("");
+  /** 探测结果的筛选词（462 个模型不许再平铺成墙） */
+  const [modelFilter, setModelFilter] = useState("");
+
+  /* 自动命名：不预填一个已存在的名字（验收时 deepseek-main 被预填 → 报「请填写配置名称」） */
+  useEffect(() => {
+    if (nameTouched.current) return;
+    const base = provider;
+    const taken = new Set(creds.map((c) => c.name));
+    let n = 1;
+    while (taken.has(`${base}-${n}`)) n += 1;
+    setName(`${base}-${n}`);
+  }, [provider, creds]);
 
   const doTest = async () => {
     setBusy(true);
     setErr(null);
     setTested(null);
     try {
-      setTested(
-        await api.probeCredential({
-          name: name || "probe",
-          provider,
-          api_key: apiKey,
-          base_url: effectiveBase || null,
-          default_model: model.trim() || null,
-        }),
-      );
+      const r = await api.probeCredential({
+        name: name || "probe",
+        provider,
+        api_key: apiKey,
+        base_url: effectiveBase || null,
+        default_model: model.trim() || null,
+      });
+      setTested(r);
+      // 探测成功就把可选用模型直接铺出来（去重用跟选择器同一套规则），
+      // 用户不用再点一次「探测」再回填
+      if (r.ok && (r.models?.length ?? 0) > 0) {
+        const list = dedupeModelNames(r.models);
+        setAutoModels(list);
+        if (!model.trim() && list[0]) setModel(list[0]);
+      }
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
   };
+
+  /* 粘贴即测：key 看起来像真的（≥20 字符）就自动跑一次连通性测试，
+     不用用户再点「测试连接」；同一个 key 只自动测一次，失败后手动可重试 */
+  useEffect(() => {
+    const k = apiKey.trim();
+    if (k.length < 20) return;
+    if (autoTestedFor.current === k) return;
+    const t = window.setTimeout(() => {
+      autoTestedFor.current = k;
+      void doTest();
+    }, 800);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiKey]);
 
   const save = async () => {
     if (!name.trim()) {
@@ -619,8 +657,11 @@ function NewCredentialDialog({
             <input
               className="input"
               value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="给它起个名字，例如 deepseek-主号"
+              onChange={(e) => {
+                nameTouched.current = true;
+                setName(e.target.value);
+              }}
+              placeholder="自动生成，如 deepseek-1"
             />
           </div>
 
@@ -681,8 +722,42 @@ function NewCredentialDialog({
               className={`text-[12px] ${tested.ok ? "text-[var(--color-ok)]" : "text-[var(--color-err)]"}`}
             >
               {tested.ok
-                ? `✓ 连接成功 · 延迟 ${fmt.ms(tested.latency_ms)} · 发现 ${tested.models.length} 个模型`
+                ? `✓ 连接成功 · 延迟 ${fmt.ms(tested.latency_ms)} · 可用 ${autoModels.length || tested.models.length} 个模型`
                 : `✗ ${tested.error}`}
+            </div>
+          )}
+
+          {/* 探测到的模型就地可选（带筛选），不用再点一次「探测」 */}
+          {autoModels.length > 0 && (
+            <div>
+              <input
+                className="input"
+                placeholder={`在 ${autoModels.length} 个模型里筛选…`}
+                value={modelFilter}
+                onChange={(e) => setModelFilter(e.target.value)}
+              />
+              <div
+                className="mt-1 max-h-[168px] overflow-y-auto rounded-[10px]"
+                style={{ background: "var(--color-surface-2)" }}
+              >
+                {autoModels
+                  .filter((m) => m.toLowerCase().includes(modelFilter.trim().toLowerCase()))
+                  .slice(0, 60)
+                  .map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setModel(m)}
+                      className="mono flex min-h-[32px] w-full items-center px-3 text-left text-[12px]"
+                      style={{
+                        color: m === model ? "var(--color-accent)" : "var(--color-text-2)",
+                        background: m === model ? "var(--color-surface-3)" : "transparent",
+                      }}
+                    >
+                      {m}
+                    </button>
+                  ))}
+              </div>
             </div>
           )}
           {err && <div className="text-[12px] text-[var(--color-err)]">{err}</div>}

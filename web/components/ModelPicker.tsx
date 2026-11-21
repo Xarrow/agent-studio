@@ -80,6 +80,31 @@ function pushRecent(m: string) {
   }
 }
 
+/** 探测回来的清单去重：OpenRouter 这类会同时给 foo、foo:batch、~foo 三种壳，
+    平铺出来就是 462 个芯片墙，还容易选到"批量档"。规则：
+    ① 有基础名的，丢掉 `:batch` 档；② 有非 `~` 版本的，丢掉 `~` 别名；③ 其余按原样去重。 */
+export function dedupeModelNames(list: string[]): string[] {
+  return dedupeModels(list);
+}
+
+function dedupeModels(list: string[]): string[] {
+  const names = list.map((x) => String(x || "").trim()).filter(Boolean);
+  const lower = new Set(names.map((n) => n.toLowerCase()));
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const n of names) {
+    const base = n.replace(/:batch$/i, "");
+    const bare = base.replace(/^~/, "");
+    if (/:batch$/i.test(n) && lower.has(base.toLowerCase())) continue;
+    if (base.startsWith("~") && lower.has(bare.toLowerCase())) continue;
+    const k = bare.toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(n);
+  }
+  return out;
+}
+
 export function ModelPicker({
   providers,
   provider,
@@ -121,27 +146,6 @@ export function ModelPicker({
   }, []);
 
   const meta = useMemo(() => providers.find((p) => p.name === provider), [providers, provider]);
-
-/** 探测回来的清单去重：OpenRouter 这类会同时给 foo、foo:batch、~foo 三种壳，
-    平铺出来就是 462 个芯片墙，还容易选到"批量档"。规则：
-    ① 有基础名的，丢掉 `:batch` 档；② 有非 `~` 版本的，丢掉 `~` 别名；③ 其余按原样去重。 */
-function dedupeModels(list: string[]): string[] {
-  const names = list.map((x) => String(x || "").trim()).filter(Boolean);
-  const lower = new Set(names.map((n) => n.toLowerCase()));
-  const out: string[] = [];
-  const seen = new Set<string>();
-  for (const n of names) {
-    const base = n.replace(/:batch$/i, "");
-    const bare = base.replace(/^~/, "");
-    if (/:batch$/i.test(n) && lower.has(base.toLowerCase())) continue;
-    if (base.startsWith("~") && lower.has(bare.toLowerCase())) continue;
-    const k = bare.toLowerCase();
-    if (seen.has(k)) continue;
-    seen.add(k);
-    out.push(n);
-  }
-  return out;
-}
 
   const doProbe = useCallback(
     async (force = false) => {
