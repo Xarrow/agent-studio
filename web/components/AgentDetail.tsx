@@ -124,6 +124,9 @@ export function AgentDetail({
   const [saving, setSaving] = useState(false);
   /** 保存成功后在按钮里闪 2 秒「✓ 已保存」——比右上角一行绿字更好找 */
   const [savedFlash, setSavedFlash] = useState(false);
+  /** G-1 自动保存：停手 800ms 自动落库，界面上只有这一个状态位 */
+  const [autoAt, setAutoAt] = useState<string>("");
+  const [autoErr, setAutoErr] = useState<string | null>(null);
   /** 顶部「⋯」：复制为副本这类低频动作收进来 */
   const [moreOpen, setMoreOpen] = useState(false);
   /** System Prompt 页内全屏 */
@@ -389,6 +392,31 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
   /** 名称自动落库的定时器：改完停 900ms 存一次（不依赖是否触发失焦）。 */
   const nameTimer = useRef<number | null>(null);
 
+  /** 自动保存的定时器（G-1）：改完停手 800ms 落库；连改只算最后一次 */
+  const autoTimer = useRef<number | null>(null);
+
+  /** 最新一版 save（自动保存定时器里调用；hook 必须放在早退之前） */
+  const saveRef = useRef<(o?: { auto?: boolean }) => Promise<void>>(async () => {});
+
+  /* G-1：停手 800ms 自动保存 —— 配置页不该有「保存」这个动作，
+     用户改完就该是改完了。连改只算最后一次；名称为空/缺凭据时不自动存。 */
+  useEffect(() => {
+    if (!def || !dirty) return;
+    if (!(def.name ?? "").trim()) return;
+    // 缺凭据的助手存了也跑不起来，等用户选完再存（这里不能引用下面的 credMissing：那个在早退之后）
+    const pm = providers.find((p) => p.name === def.model.provider);
+    if (def.runtime !== "a2a" && pm?.requires_key && !def.model.credential_ref) return;
+    if (autoTimer.current) window.clearTimeout(autoTimer.current);
+    autoTimer.current = window.setTimeout(() => {
+      autoTimer.current = 0;
+      void saveRef.current({ auto: true });
+    }, 800);
+    return () => {
+      if (autoTimer.current) window.clearTimeout(autoTimer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirty, def, desc, providers]);
+
   if (!def || !agent) {
 
     if (notFound) {
@@ -525,7 +553,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
   };
 
 
-  const save = async () => {
+  const save = async (opts: { auto?: boolean } = {}) => {
     // 有排队中的"改名自动保存"就先取消：两次 PUT 并发会撞版本号，
     // 用户会看到"名称已保存"和"当前版本 3，你编辑的是 2"同时出现（验收报的）
     if (nameTimer.current) {
@@ -555,21 +583,32 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
       setDef(withDefaults(updated.definition));
       savedDefRef.current = withDefaults(updated.definition);
       setSavedSnap(snap(updated.definition, updated.description ?? ""));
-      setMsg(`已保存（v${updated.version}）`);
-      setSavedFlash(true);
-      window.setTimeout(() => setSavedFlash(false), 2000);
-      setTimeout(() => setMsg(null), 2500);
+      setAutoErr(null);
+      if (opts.auto) {
+        // 自动保存：顶部只留一个安静的时间戳，不弹 toast（否则每停一次手就闪一下）
+        setAutoAt(new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }));
+      } else {
+        setMsg(`已保存（v${updated.version}）`);
+        setSavedFlash(true);
+        window.setTimeout(() => setSavedFlash(false), 2000);
+        setTimeout(() => setMsg(null), 2500);
+        setAutoAt(new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }));
+      }
     } catch (e) {
       // 保存被后端拒（比如文件范围里有内核不允许的目录）必须**当场看见** ——
       // 原来只 setErr，而 err 只在"加载失败"那个分支渲染，页面上等于什么都没发生
       // 后端是 pydantic 422："definition：Value error, <人话>"，只留人话
       const raw = e instanceof Error ? e.message : String(e);
-      setSaveErr(raw.replace(/^definition：Value error,\s*/, "").replace(/^Value error,\s*/, ""));
+      const clean = raw.replace(/^definition：Value error,\s*/, "").replace(/^Value error,\s*/, "");
+      setSaveErr(clean);
       setErr(e instanceof Error ? e.message : String(e));
+      setAutoErr(clean);
     } finally {
       setSaving(false);
     }
   };
+
+  saveRef.current = save;
 
   const toggleTool = (id: string) => {
     const has = def.tools.some((t) => t.ref === id);
@@ -797,22 +836,29 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
           </div>
           {/* 没改动就禁用：点了会白写一条版本记录（save() 无条件 PUT）——
                 配置页不该因为「手滑点一下保存」多出一版历史 */}
-          <button
-            data-tap
-            className="btn btn-primary"
-            disabled={saving || !dirty || credMissing}
-            title={
-              credMissing
-                ? credReason
-                : dirty
-                  ? "把这一版写回去（会记一条历史版本）"
-                  : "没有未保存的改动"
-            }
-            onClick={save}
-          >
-            {/* 不再同时显示「✓ 已保存」和顶部的「已保存（v4）」—— 同一件事说两遍 */}
-            {saving ? "保存中…" : dirty ? "● 保存修改" : "保存"}
-          </button>
+          {/* 只有一个状态位：保存中 / 已自动保存·时间 / 保存失败[重试] */}
+          <div className="flex items-center gap-2 text-[12.5px]" style={{ color: "var(--color-text-3)" }}>
+            {credMissing ? (
+              <span style={{ color: "var(--color-err)" }} title={credReason}>
+                缺少 LLM 配置，暂不保存
+              </span>
+            ) : autoErr ? (
+              <>
+                <span style={{ color: "var(--color-err)" }}>保存失败：{autoErr}</span>
+                <button data-tap className="btn btn-sm" onClick={() => void save()}>
+                  重试
+                </button>
+              </>
+            ) : saving ? (
+              "保存中…"
+            ) : dirty ? (
+              "改动待保存…"
+            ) : autoAt ? (
+              `已自动保存 · ${autoAt}`
+            ) : (
+              ""
+            )}
+          </div>
         </div>
       </header>
 
