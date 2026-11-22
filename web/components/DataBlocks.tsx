@@ -44,16 +44,16 @@ function Shell({
   const [showRaw, setShowRaw] = useState(false);
   const [copied, setCopied] = useState(false);
   return (
-    <div className="my-2 overflow-hidden rounded-lg border border-slate-200">
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-slate-200 bg-slate-50 px-2.5 py-1.5">
-        <span className="text-[12px] font-medium text-slate-600">{title}</span>
-        {hint ? <span className="text-[12px] text-slate-400">{hint}</span> : null}
+    <div className="my-2 overflow-hidden rounded-lg border border-[var(--color-border)]">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1.5">
+        <span className="text-[12px] font-medium text-[var(--color-text)]">{title}</span>
+        {hint ? <span className="text-[12px] text-[var(--color-muted)]">{hint}</span> : null}
         <div className="ml-auto flex items-center gap-1">
           <button
             type="button"
             onClick={() => setShowRaw((v) => !v)}
             data-tap
-            className="rounded px-1.5 py-1 text-[12px] text-slate-500 hover:bg-slate-200/70"
+            className="rounded px-1.5 py-1 text-[12px] text-[var(--color-muted)] hover:bg-[var(--color-surface-3)]"
           >
             {showRaw ? "看渲染" : "看源码"}
           </button>
@@ -65,7 +65,7 @@ function Shell({
               window.setTimeout(() => setCopied(false), 1500);
             }}
             data-tap
-            className="rounded px-1.5 py-1 text-[12px] text-slate-500 hover:bg-slate-200/70"
+            className="rounded px-1.5 py-1 text-[12px] text-[var(--color-muted)] hover:bg-[var(--color-surface-3)]"
           >
             {copied ? "已复制" : "复制"}
           </button>
@@ -77,7 +77,7 @@ function Shell({
             <CodeBlock code={raw} lang={rawLang} bare />
           </div>
         ) : (
-          <pre className="max-h-[420px] overflow-auto bg-white px-3 py-2 text-[12px] leading-[1.6] text-slate-800">
+          <pre className="max-h-[420px] overflow-auto px-3 py-2 text-[12px] leading-[1.6] text-[var(--color-text)]">
             {raw}
           </pre>
         )
@@ -97,9 +97,9 @@ const KIND_COLOR: Record<string, string> = {
   string: "hl-str",
   number: "hl-num",
   boolean: "hl-kw",
-  null: "text-slate-400",
-  object: "text-slate-500",
-  array: "text-slate-500",
+  null: "text-[var(--color-muted)]",
+  object: "text-[var(--color-muted)]",
+  array: "text-[var(--color-muted)]",
 };
 
 function TreeNode({
@@ -117,11 +117,11 @@ function TreeNode({
   if (!node.collapsible) {
     return (
       <div className="flex items-start gap-1.5 py-[1px] font-mono text-[12px] leading-[1.55]" style={{ paddingLeft: pad }}>
-        <span className="shrink-0 text-[12px] text-slate-400">
+        <span className="shrink-0 text-[12px] text-[var(--color-muted)]">
           {node.key === "$" ? "" : node.key}
         </span>
-        {node.key !== "$" ? <span className="text-slate-400">:</span> : null}
-        <span className={`break-all ${KIND_COLOR[node.kind] ?? "text-slate-700"}`}>
+        {node.key !== "$" ? <span className="text-[var(--color-muted)]">:</span> : null}
+        <span className={`break-all ${KIND_COLOR[node.kind] ?? "text-[var(--color-text)]"}`}>
           {node.kind === "string" ? `"${node.text}"` : node.text}
         </span>
       </div>
@@ -136,14 +136,14 @@ function TreeNode({
         className="flex w-full items-center gap-1.5 text-left"
         style={{ paddingLeft: pad }}
       >
-        <span className="w-3 shrink-0 text-slate-400">{open ? "▾" : "▸"}</span>
+        <span className="w-3 shrink-0 text-[var(--color-muted)]">{open ? "▾" : "▸"}</span>
         {node.key !== "$" ? (
           <>
             <span className="hl-key">{node.key}</span>
-            <span className="text-slate-400">:</span>
+            <span className="text-[var(--color-muted)]">:</span>
           </>
         ) : null}
-        <span className={KIND_COLOR[node.kind] ?? "text-slate-500"}>{node.text}</span>
+        <span className={KIND_COLOR[node.kind] ?? "text-[var(--color-muted)]"}>{node.text}</span>
       </button>
       {open
         ? node.children.map((child, i) => (
@@ -159,7 +159,7 @@ export function JsonBlock({ code }: { code: string }) {
   if (!tree) return <CodeBlock code={code} lang="json" />;
   return (
     <Shell title="JSON" hint={tree.collapsible ? "点行首箭头折叠/展开" : undefined} raw={code} rawLang="json">
-      <div className="max-h-[420px] overflow-auto bg-white px-2 py-1.5">
+      <div className="max-h-[420px] overflow-auto px-2 py-1.5">
         <TreeNode node={tree} depth={0} defaultOpen />
       </div>
     </Shell>
@@ -175,16 +175,16 @@ export function CsvBlock({ code, delimiter }: { code: string; delimiter: string 
   return (
     <Shell title={delimiter === "\t" ? "TSV" : "CSV"} hint={`${table.rows.length} 行`} raw={code}>
       {table.header.length >= 3 ? (
-        <p className="px-2.5 pt-1 text-[12px] text-slate-400 lg:hidden">← 左右滑动看更多列 →</p>
+        <p className="px-2.5 pt-1 text-[12px] text-[var(--color-muted)] lg:hidden">← 左右滑动看更多列 →</p>
       ) : null}
-      <div className="max-h-[420px] overflow-auto bg-white">
+      <div className="max-h-[420px] overflow-auto">
         <table className="w-full border-collapse text-[12px]">
-          <thead className="sticky top-0 bg-slate-50">
+          <thead className="sticky top-0 bg-[var(--color-surface-2)]">
             <tr>
               {table.header.map((h, i) => (
                 <th
                   key={i}
-                  className="whitespace-nowrap border-b border-slate-200 px-2.5 py-1.5 text-left font-medium text-slate-600"
+                  className="whitespace-nowrap border-b border-[var(--color-border)] px-2.5 py-1.5 text-left font-medium text-[var(--color-text)]"
                 >
                   {h}
                 </th>
@@ -193,9 +193,9 @@ export function CsvBlock({ code, delimiter }: { code: string; delimiter: string 
           </thead>
           <tbody>
             {table.rows.map((r, ri) => (
-              <tr key={ri} className={ri % 2 ? "bg-slate-50/60" : ""}>
+              <tr key={ri} className={ri % 2 ? "bg-[var(--color-surface-2)]/60" : ""}>
                 {r.map((c, ci) => (
-                  <td key={ci} className="border-b border-slate-100 px-2.5 py-1.5 align-top text-slate-700">
+                  <td key={ci} className="border-b border-[var(--color-border)] px-2.5 py-1.5 align-top text-[var(--color-text)]">
                     {c}
                   </td>
                 ))}
@@ -226,7 +226,7 @@ export function ChartBlock({ code }: { code: string }) {
 
   return (
     <Shell title="图表" hint={spec.kind === "bar" ? "柱状图" : spec.kind === "line" ? "折线图" : "饼图"} raw={code}>
-      <div className="bg-white px-2 py-2">
+      <div className="px-2 py-2">
         <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label="图表">
           {spec.kind !== "pie" ? (
             <>
@@ -313,7 +313,7 @@ export function ChartBlock({ code }: { code: string }) {
         {spec.series.length > 1 ? (
           <div className="mt-1 flex flex-wrap gap-3 px-1">
             {spec.series.map((s, i) => (
-              <span key={i} className="inline-flex items-center gap-1.5 text-[12px] text-slate-600">
+              <span key={i} className="inline-flex items-center gap-1.5 text-[12px] text-[var(--color-text)]">
                 <span className="inline-block h-2 w-2 rounded-sm" style={{ background: color(i) }} />
                 {s.name}
               </span>
@@ -332,15 +332,15 @@ const DIFF_STYLE: Record<string, string> = {
   add: "bg-emerald-50 text-emerald-800",
   del: "bg-rose-50 text-rose-800",
   hunk: "bg-blue-50/70 text-blue-700",
-  meta: "text-slate-400",
-  ctx: "text-slate-700",
+  meta: "text-[var(--color-muted)]",
+  ctx: "text-[var(--color-text)]",
 };
 
 export function DiffBlock({ code }: { code: string }) {
   const lines = useMemo(() => parseDiff(code), [code]);
   return (
     <Shell title="改动" hint={`+${lines.filter((l) => l.type === "add").length} / -${lines.filter((l) => l.type === "del").length}`} raw={code}>
-      <div className="max-h-[420px] overflow-auto bg-white py-1 font-mono text-[12px] leading-[1.55]">
+      <div className="max-h-[420px] overflow-auto py-1 font-mono text-[12px] leading-[1.55]">
         {lines.map((l, i) => (
           <div key={i} className={`whitespace-pre-wrap break-all px-2.5 ${DIFF_STYLE[l.type] ?? ""}`}>
             {l.text || " "}

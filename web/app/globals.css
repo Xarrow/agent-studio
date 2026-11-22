@@ -971,8 +971,9 @@ body {
        也一律关掉
    ──────────────────────────────────────────────────────────────────────────── */
 .proc {
-  --proc-bg: #f6f7f9;
-  --proc-border: #e4e7ec;
+  /* 跟着主题走：之前写死浅色，深色主题下面是浅灰底配浅色字，实测看不见 */
+  --proc-bg: var(--color-surface-2);
+  --proc-border: var(--color-border);
   border: 1px solid var(--proc-border);
   background: var(--proc-bg);
   border-radius: 10px;
@@ -980,7 +981,7 @@ body {
   transition: border-color 0.16s ease;
 }
 .proc:hover {
-  border-color: #d3d8e0;
+  border-color: var(--color-border-strong);
 }
 
 /* 收起态：一行。36px 是手机与桌面共同的下限（点得中） */
