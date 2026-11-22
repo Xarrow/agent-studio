@@ -419,7 +419,8 @@ export default function ToolsPage() {
               options={[
                 // 各项之和必须等于「全部」：以前只列了内置/HTTP/代码/分派，
                 // 而库里还有 native（平台能力）和 a2a（远程），48 ≠ 9+2+0+1（验收报的）
-                { key: "", label: "全部", count: visibleTools.length },
+                // 加载完才给数字：否则首屏先写「0 全部」，用户以为库里没有工具
+                { key: "", label: "全部", count: loaded ? visibleTools.length : undefined },
                 ...kindChips,
               ]}
             />

@@ -291,7 +291,11 @@ export default function RemoteAgentsPage() {
     <div className="p-4 md:p-6 lg:p-7 max-w-5xl">
       <PageHead
         title="远程节点"
-        desc={`注册外部 A2A agent · 已挂载 ${stats.bound} / ${stats.total}`}
+        desc={
+          rows === null
+            ? "注册外部 A2A agent · 正在读取…"
+            : `注册外部 A2A agent · 已挂载 ${stats.bound} / ${stats.total}`
+        }
         actions={
           <>
             <button className="btn btn-primary" onClick={() => setRegistering(true)}>
@@ -312,9 +316,10 @@ export default function RemoteAgentsPage() {
           value={filter}
           onChange={setFilter}
           options={[
-            { key: "all", label: "全部", count: stats.total },
-            { key: "ok", label: "可用", count: stats.ok },
-            { key: "error", label: "异常", count: stats.bad },
+            // 加载完再给数字：首屏先写「0 全部 / 0 可用」会被当成一台都没接
+            { key: "all", label: "全部", count: rows === null ? undefined : stats.total },
+            { key: "ok", label: "可用", count: rows === null ? undefined : stats.ok },
+            { key: "error", label: "异常", count: rows === null ? undefined : stats.bad },
             { key: "off", label: "已停用" },
           ]}
         />

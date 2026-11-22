@@ -1465,15 +1465,19 @@ export function ChatConsole({
     }
   };
 
-  /** 重试一条回答：服务端把这一轮及之后删掉，然后用同一句提问重跑。
-      只改本地 history 是不够的 —— 服务端还留着旧的一轮，刷新后又变两条（复测 F5）。 */
-  const retryReply = async (turnIndex: number | undefined, text: string) => {
+  /** 原地重新生成这一轮：服务端把这一轮及之后作废，再用同一句提问重跑。
+      重试（助手回复）与重发（用户消息）都走这一条 —— **只换答案**：不新增用户消息、
+      不增加轮数（只截本地 history 不够：服务端那条问句还在，刷新后又变两条，实测）。 */
+  const regenerate = async (turnIndex: number | undefined, text: string) => {
     if (!sessionId || busy) return;
+    if (!turnIndex) {
+      fb.error("没法重试这一轮", "这一轮还没落库，刷新页面后再试");
+      return;
+    }
     try {
-      if (turnIndex) {
-        await api.rewindSession(sessionId, turnIndex);
-        await loadMessages(sessionId, { reset: true });
-      }
+      await api.rewindSession(sessionId, turnIndex);
+      await loadMessages(sessionId, { reset: true });
+      await loadSessions(agentId);
       await send(text, { reuse: true });
     } catch (e) {
       fb.error("重试失败", e instanceof Error ? e.message : String(e));
@@ -3406,10 +3410,10 @@ export function ChatConsole({
                       onRetry={
                         m.role === "user" && !busy
                           ? () => {
-                              // 原地重新生成：这条用户消息之后的内容全部作废，
-                              // 不新增一条一模一样的问句
-                              setHistory((h) => h.slice(0, i + 1));
-                              void send(m.content, { reuse: true });
+                              // 原地重新生成：这一轮及之后在**服务端**作废，再用同一句问句重跑。
+                              // 只截本地 history 会把服务端那条留下 —— 刷新后 1 轮变 2 轮、
+                              // 用户气泡出现两次（实测）。
+                              void regenerate(m.turn_index, m.content);
                             }
                           : undefined
                       }
@@ -3430,7 +3434,7 @@ export function ChatConsole({
                       }
                       onRetryReply={
                         m.role === "assistant" && !busy && prevUser
-                          ? () => void retryReply(m.turn_index, prevUser)
+                          ? () => void regenerate(m.turn_index, prevUser)
                           : undefined
                       }
                       onOpenDock={(rid) => {

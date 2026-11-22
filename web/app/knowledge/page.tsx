@@ -390,6 +390,7 @@ export default function KnowledgePage() {
       {/* 卡片流：一份文档一张卡，投放 / 标签 / 技能 / 试打 / 版本 / 原文全在卡内 */}
       <DocumentFlow
         docs={shown}
+        loading={docs === null}
         cats={cats}
         agents={agents}
         agentId={agentId}
@@ -2033,6 +2034,7 @@ type FlowStep = { uploaded: boolean; parsed: boolean; embedded: boolean; tagged:
 
 function DocumentFlow({
   docs,
+  loading = false,
   cats,
   agents,
   agentId,
@@ -2047,6 +2049,8 @@ function DocumentFlow({
   onChanged,
 }: {
   docs: KnowledgeDoc[];
+  /** 文档还没拉回来：别把「还没加载」说成「0 份 / 还没有文档」 */
+  loading?: boolean;
   cats: KnowledgeCategory[];
   agents: { id: string; name: string }[];
   agentId: string;
@@ -2225,7 +2229,7 @@ function DocumentFlow({
           ))}
         </select>
         <span className="ml-auto text-[11px]" style={{ color: "var(--color-text-3)" }}>
-          {shownDocs.length} 份
+          {loading ? "读取中…" : `${shownDocs.length} 份`}
         </span>
       </Toolbar>
 
@@ -2240,7 +2244,14 @@ function DocumentFlow({
         </div>
       ) : null}
 
-      {shownDocs.length === 0 ? (
+      {loading ? (
+        <div
+          className="rounded-[12px] px-3 py-6 text-center text-[12.5px]"
+          style={{ background: "var(--color-surface)", color: "var(--color-muted)" }}
+        >
+          正在读取文档清单…
+        </div>
+      ) : shownDocs.length === 0 ? (
         <Empty
           title="还没有文档"
           hint="把文件拖到右上「上传文档」，或点「粘贴文本」直接入库；上传后这一行就是它的流程卡"

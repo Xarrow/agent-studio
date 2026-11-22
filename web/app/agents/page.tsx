@@ -293,11 +293,11 @@ export default function AgentsPage() {
           providers={providers}
           creds={creds}
           onClose={() => setShowNew(false)}
-          onCreated={async (created) => {
-            setShowNew(false);
-            await load();
-            // 建完直接进对话页说第一句 —— 不再有「建好之后该干嘛」这一步，
-            // 也不用回详情页找「快速试跑」那个重复入口（验收 UX-009）
+          onCreated={(created) => {
+            // 建好就立刻给反馈并进对话页。
+            // 以前这里先 `await load()`（七个接口，实测约 4 秒）再跳：弹窗已经关了、
+            // 列表数字没变、界面一动不动 —— 用户看到的就是「点了创建，4 秒啥也没发生」。
+            // 列表在对话页待够了回来再说，不需要为一次跳转先把它刷完。
             fb.success("助手建好了", `「${created.name}」已建好，去说第一句`);
             window.location.href = `/exec?agent=${created.id}`;
           }}
@@ -696,12 +696,16 @@ function NewAgentDialog({
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** 建好了：按钮换成「已建好 ✓」并停在这里一拍，让人看得见结果再跳对话页 */
+  const [created, setCreated] = useState(false);
   /** 关闭的两步确认态（首次点关闭 → 变成"再点一次"） */
   const [confirmClose, setConfirmClose] = useState(false);
 
   const dirty = !!(name.trim() || presetKey || prompt.trim() || desc.trim() || opening.trim());
 
   const requestClose = () => {
+    // 创建请求在路上：这时候关掉弹窗会让人以为没建成（且没法给失败提示）
+    if (busy || created) return;
     if (dirty && !confirmClose) {
       setConfirmClose(true);
       window.setTimeout(() => setConfirmClose(false), 4000);
@@ -717,7 +721,7 @@ function NewAgentDialog({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dirty, confirmClose]);
+  }, [dirty, confirmClose, busy, created]);
 
   // 初始化「用哪个 AI」：优先选已经配好密钥的服务商，并自动带上那条密钥
   useEffect(() => {
@@ -782,9 +786,17 @@ function NewAgentDialog({
           runtime_options: {},
         },
       });
-      onCreated({ id: created.id, name: created.name || name.trim() });
+      // 成功也要有可见状态：按钮变「已建好 ✓」，停 650ms 让人看见，再进对话页
+      setCreated(true);
+      window.setTimeout(() => onCreated({ id: created.id, name: created.name || name.trim() }), 650);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      // 人话：网络断/服务没起来时不要甩「Failed to fetch」
+      setErr(
+        /failed to fetch|networkerror|load failed|network request failed/i.test(msg)
+          ? "连不上服务（网络断了，或服务没在跑）—— 稍后再点一次"
+          : msg.replace(/^\s*(error|http \d+):?\s*/i, ""),
+      );
     } finally {
       setBusy(false);
     }
@@ -1056,18 +1068,24 @@ function NewAgentDialog({
           className="sticky bottom-0 -mx-5 mt-4 flex items-center justify-end gap-2 border-t bg-[var(--color-surface)] px-5 pb-1 pt-3"
           style={{ borderColor: "var(--color-border)" }}
         >
-          <span className="mr-auto text-[12px]" style={{ color: "var(--color-text-3)" }}>
-            {presetKey ? "创建后会直接进对话页试一句" : "先选一个它要做的事"}
+          <span className="mr-auto text-[12px]" style={{ color: created ? "var(--color-ok)" : "var(--color-text-3)" }}>
+            {created
+              ? "建好了，正在进入对话页…"
+              : busy
+                ? "正在创建助手，好了会立刻进对话页…"
+                : presetKey
+                  ? "创建后会直接进对话页试一句"
+                  : "先选一个它要做的事"}
           </span>
-          <button className="btn" onClick={requestClose}>
+          <button className="btn" disabled={busy || created} onClick={requestClose}>
             取消
           </button>
           <button
             className="btn btn-primary"
-            disabled={busy || !name.trim() || !presetKey}
+            disabled={busy || created || !name.trim() || !presetKey}
             onClick={submit}
           >
-            {busy ? "创建中…" : "创建并开始聊"}
+            {created ? "已建好 ✓" : busy ? "创建中…" : "创建并开始聊"}
           </button>
         </div>
       </div>

@@ -637,8 +637,15 @@ test("定时任务：枚举频率 + 两选一投递 + 空态不占位", () => {
 test("备用模型：配置页可设 + 过程条认「换模型」", () => {
   const agent = read("components/AgentDetail.tsx");
   assert.match(agent, /备用模型（可选）/, "配置页有入口");
-  assert.match(agent, /不设 —— 主模型出问题就报错/, "不设 = 不兜底，行为不变");
-  assert.match(agent, /patch\(\{ fallback: null \}\)/, "能取消");
+  // 备用模型的候选**只取主模型这一家的模型**（同一个 ModelPicker、同一条凭据）。
+  // 以前这里是「先选服务商」的下拉，标签也写着服务商，用户以为要填服务商。
+  const at = agent.indexOf("备用模型（可选）");
+  const block = agent.slice(at, at + 2600);
+  assert.match(block, /provider=\{def\.model\.provider\}/, "候选取自主模型的服务商");
+  assert.doesNotMatch(block, /备用模型的服务商/, "不再让用户给备用模型挑服务商");
+  assert.doesNotMatch(block, /<select/, "不再是一个只列服务商的下拉");
+  assert.match(agent, /patch\(\{\s*fallback: null\s*\}\)/, "能取消");
+  assert.match(agent, /不设/, "有「不设」这个口子");
 
   const tl = read("components/ui/run-timeline.tsx");
   assert.match(tl, /"model_fallback"/, "事件流里认这个事件");

@@ -479,8 +479,14 @@ export default function CredentialsPage() {
       <div className="mt-3">
         <Section
           title="支持的 Provider"
-          count={`${byProvider.length} 家`}
+          // 加载完再报家数：否则首屏先写「支持的 Provider 0 家」，用户以为一家都不支持
+          count={loaded ? `${byProvider.length} 家` : undefined}
         >
+          {!loaded ? (
+            <div className="py-2 text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+              正在读取服务商清单…
+            </div>
+          ) : (
           <div className="flex flex-col">
             {byProvider.map(({ meta, items }) => (
               <div
@@ -505,6 +511,7 @@ export default function CredentialsPage() {
               </div>
             ))}
           </div>
+          )}
         </Section>
       </div>
     </div>

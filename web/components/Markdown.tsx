@@ -568,9 +568,65 @@ function MarkdownBody({ text, chat = false }: { text: string; chat?: boolean }) 
 }
 
 /**
+ * 来源卡片：knowledge / 检索类工具返回的 `source` 字段。
+ *
+ * 以前只把 answer 抽出来、source 留在「原始 JSON」折叠块里 —— 用户看到的是
+ * 一段散文，来源（哪份文档、原文哪一句）根本不知道去哪看。这里直接把
+ * 文件名 + 原文摘录摆出来；有 url 时给一条可点的链接。
+ */
+function SourceCard({ source }: { source: Record<string, unknown> }) {
+  const str = (k: string) => (typeof source[k] === "string" ? (source[k] as string) : "");
+  const title = str("title") || str("doc_name") || str("name") || str("file_name") || "";
+  const url = str("url") || str("href") || str("source_url") || "";
+  const quote = str("quote") || str("snippet") || str("text") || str("excerpt") || "";
+  const id = str("doc_id") || str("id") || "";
+  const score = typeof source.score === "number" ? source.score : null;
+  if (!title && !url && !quote && !id) return null;
+  return (
+    <div
+      data-source-card
+      className="mt-2.5 rounded-[10px] px-3 py-2 text-[12px] leading-relaxed"
+      style={{ background: "var(--color-surface-2)", color: "var(--color-text-2)" }}
+    >
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+          来源
+        </span>
+        {url ? (
+          <a
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            className="font-medium underline decoration-dotted break-all"
+            style={{ color: "var(--color-accent)" }}
+          >
+            {title || url}
+          </a>
+        ) : (
+          <span className="font-medium break-all">{title || id}</span>
+        )}
+        {score != null && (
+          <span className="text-[11px] tabular-nums" style={{ color: "var(--color-text-3)" }}>
+            相关度 {score.toFixed(2)}
+          </span>
+        )}
+      </div>
+      {quote && (
+        <div className="mt-1 whitespace-pre-wrap break-words" style={{ color: "var(--color-text-2)" }}>
+          「{quote}」
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
  * 聊天里的历史消息内容不会变，但父组件每秒 commit 好几次（流式文本、动作字幕）。
  * 没有 memo 的话每次 commit 都要把整篇 Markdown 重新解析一遍 —— 会话越长越卡。
  * 这里把「同样的 text 就不重算」钉死。
+ *
+ * 模型/工具输出统一在这里过一层渲染：整条 JSON（含流式半截）抽出正文 + 来源卡片，
+ * 原始大括号不进正文；解析不出来就是普通文本/Markdown。
  */
 function MarkdownShell(props: React.ComponentProps<typeof MarkdownBody>) {
   const unwrapped = typeof props.text === "string" ? unwrapJson(props.text) : null;
@@ -578,14 +634,7 @@ function MarkdownShell(props: React.ComponentProps<typeof MarkdownBody>) {
   return (
     <div>
       <MarkdownBody {...props} text={unwrapped.body} />
-      <details className="mt-2 rounded-[8px] px-2.5 py-1.5" style={{ background: "var(--color-surface-2)" }}>
-        <summary className="cursor-pointer text-[11.5px]" style={{ color: "var(--color-text-3)" }}>
-          原始 JSON
-        </summary>
-        <pre className="mt-1 max-h-[260px] overflow-auto whitespace-pre-wrap break-all text-[11.5px]">
-          {unwrapped.raw}
-        </pre>
-      </details>
+      {unwrapped.source && <SourceCard source={unwrapped.source} />}
     </div>
   );
 }

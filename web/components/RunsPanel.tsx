@@ -671,7 +671,7 @@ export function RunsPanel() {
         >
           {KIND_TABS.map((t) => (
             <option key={t.key} value={t.key}>
-              {t.label} {t.key === "all" ? total : (counts[t.key] ?? 0)}
+              {t.label} {loaded ? (t.key === "all" ? total : (counts[t.key] ?? 0)) : ""}
             </option>
           ))}
         </select>
@@ -695,7 +695,9 @@ export function RunsPanel() {
                 }}
               >
                 {t.label}
-                <span className="ml-1 tabular-nums" style={{ opacity: on ? 0.85 : 0.6 }}>{n}</span>
+                {loaded ? (
+                  <span className="ml-1 tabular-nums" style={{ opacity: on ? 0.85 : 0.6 }}>{n}</span>
+                ) : null}
               </button>
             );
           })}
