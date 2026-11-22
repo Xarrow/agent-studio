@@ -798,3 +798,10 @@ test("对话页配置抽屉：三页签（配置/会话/记忆），会话可切
   const chat = read("components/ChatConsole.tsx");
   assert.match(chat, /onPickSession=/, "对话页要把切会话接上");
 });
+
+test("记忆页：有「合并重复」（归档可恢复，不物理删）", () => {
+  const src = read("app/memories/page.tsx");
+  assert.match(src, /合并重复/, "记忆页缺合并重复入口");
+  assert.match(src, /bulkMemoryStatus\([^)]*"archived"/, "合并应把多余条目置为 archived（可恢复），不是删除");
+  assert.doesNotMatch(src, /bulkDeleteMemories\(dup/, "合并不得物理删除");
+});
