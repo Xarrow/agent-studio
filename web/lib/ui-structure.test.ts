@@ -805,3 +805,10 @@ test("记忆页：有「合并重复」（归档可恢复，不物理删）", ()
   assert.match(src, /bulkMemoryStatus\([^)]*"archived"/, "合并应把多余条目置为 archived（可恢复），不是删除");
   assert.doesNotMatch(src, /bulkDeleteMemories\(dup/, "合并不得物理删除");
 });
+
+test("能力页：有搜索（名称/说明/参数都能命中）", () => {
+  const src = read("app/tools/page.tsx");
+  assert.match(src, /搜索工具/, "能力页缺搜索框");
+  assert.match(src, /input_schema/, "搜索应包含参数名（只搜名字找不到「传什么」）");
+  assert.match(src, /query/, "缺少搜索状态");
+});

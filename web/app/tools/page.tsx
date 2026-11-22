@@ -259,12 +259,23 @@ export default function ToolsPage() {
      · 当前平台不可用的（如 Windows 的 powershell）—— 列出来只会让人以为能勾。
      顶部给一个「显示内部与不可用（N）」开关，需要的人一按就出来。 */
   const [showHidden, setShowHidden] = useState(false);
+  const [query, setQuery] = useState("");
   const isInternal = (name: string) => /^(worker_|proc_|fork_)/.test(name);
   const isHiddenTool = (t: (typeof tools)[number]) =>
     ((t.kind as string) === "native" && isInternal(t.name)) || t.flags?.platform_ok === false;
   const hiddenTools = tools.filter(isHiddenTool);
   const visibleTools = showHidden ? tools : tools.filter((t) => !isHiddenTool(t));
-  const filtered = kindFilter ? visibleTools.filter((t) => t.kind === kindFilter) : visibleTools;
+  /** 搜索：名称 / 说明 / 参数名都算（48 个工具只靠滚太慢） */
+  const kw = query.trim().toLowerCase();
+  const filtered = (kindFilter ? visibleTools.filter((t) => t.kind === kindFilter) : visibleTools).filter(
+    (t) => {
+      if (!kw) return true;
+      const parts = kw.split(/\s+/);
+      const props = (t.input_schema as { properties?: Record<string, unknown> })?.properties;
+      const hay = `${t.name} ${t.description ?? ""} ${props ? Object.keys(props).join(" ") : ""}`.toLowerCase();
+      return parts.every((x) => hay.includes(x));
+    },
+  );
   /** 每个分类一项，数字之和 = 全部（缺哪类就等于在骗人） */
   const KIND_LABEL: Record<string, string> = {
     native: "平台能力",
@@ -392,6 +403,16 @@ export default function ToolsPage() {
 
           {/* 工具条一行：类型筛选（带计数）+ 两个动作 */}
           <Toolbar>
+            <input
+              className="input h-8 w-[180px] shrink-0 text-[12px]"
+              placeholder="搜工具名 / 说明 / 参数"
+              aria-label="搜索工具"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") setQuery("");
+              }}
+            />
             <Segmented
               value={kindFilter}
               onChange={setKindFilter}
