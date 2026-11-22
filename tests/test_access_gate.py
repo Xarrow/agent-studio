@@ -98,3 +98,19 @@ def test_version_and_health_are_exempt(client: TestClient) -> None:
     for path in ("/api/version", "/api/health"):
         r = client.get(path, headers=FETCH)
         assert r.status_code == 200, f"{path} 应免口令"
+
+
+def test_错误口令回到口令页并带一次性标记(tmp_path, monkeypatch):
+    """浏览器式请求被拒时返回口令页，并种 studio_try=1（页面据此提示"口令不对"）。"""
+    from fastapi.testclient import TestClient
+
+    import agent_studio.main as m
+
+    monkeypatch.setattr(m, "ACCESS_TOKEN", "s3cret")
+    monkeypatch.setattr(m, "TUNNEL_PEERS", {"testclient", "127.0.0.1", "::1"})
+    client = TestClient(m.app)
+    r = client.get("/", headers={"Accept": "text/html", "Authorization": "Bearer wrong"})
+    assert r.status_code == 401
+    assert "需要访问口令" in r.text
+    assert r.cookies.get("studio_try") == "1"
+    assert "口令不对，再试一次" in r.text

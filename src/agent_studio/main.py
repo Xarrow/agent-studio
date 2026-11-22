@@ -298,6 +298,14 @@ _AUTH_PAGE = """<!doctype html>
 <script>
 (function(){
   var inp=document.getElementById('t'),btn=document.getElementById('go'),err=document.getElementById('e');
+  // 带着口令来的（之前输过一次）又被拦回这里 = 口令不对。以前页面一片安静，
+  // 用户以为"点了没反应"（复测：错误口令没有任何提示）
+  try{
+    if((document.cookie||'').indexOf('studio_try=1')>=0){
+      err.textContent='口令不对，再试一次';
+      document.cookie='studio_try=; path=/; max-age=0';
+    }
+  }catch(_){}
   function go(){
     var v=(inp.value||'').trim();
     if(!v){err.textContent='请输入访问口令';return;}
@@ -353,11 +361,14 @@ async def require_access_token(request: "Request", call_next):
     # 浏览器打开页面（导航请求）给一个能输口令的页面：JSON 401 落到地址栏里
     # 就是一段白页文本，用户既进不去也不知道该干什么 —— 现场反馈是"页面卡住了"。
     if _wants_html(request):
-        return HTMLResponse(
+        resp = HTMLResponse(
             _AUTH_PAGE,
             status_code=401,
             headers={"Cache-Control": "no-store"},
         )
+        # 标记"刚被拒过"：口令页读到它就能说「口令不对」，而不是静默回来（30 秒后失效）
+        resp.set_cookie("studio_try", "1", max_age=30, path="/", samesite="lax")
+        return resp
     return JSONResponse(
         status_code=401,
         content={"detail": "需要访问口令。请在页面上输入，或带上 Authorization: Bearer ***"},
