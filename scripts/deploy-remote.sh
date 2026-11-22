@@ -98,18 +98,31 @@ REQ="$ROOT/requirements-lock.txt"
 [ -x "$PY" ] || { echo "[!] 找不到包内运行时 $PY（这个包不是离线一体包？）"; exit 1; }
 [ -d "$SP" ] || { echo "[!] 找不到依赖目录 $SP"; exit 1; }
 
-# 缺什么：逐条比 lock 的固定版本与 site-packages 里读到的已装版本
-MISSING="$(PYTHONPATH="$SP" "$PY" - "$REQ" <<'PY'
+# 缺什么：逐条比 lock 的固定版本与 vendor 里读到的已装版本
+#
+# 两个坑（都是实测踩的）：
+#  · 必须 -S 起 python：不然包内运行时自己的 site-packages 也会进 sys.path，
+#    "手工 pip 装进 site-packages" 的那几份会把缺失掩盖掉（vendor 其实没有，检查却通过）。
+#  · lock 里有平台条件依赖（pywin32 / colorama 只在 win32、httpx2-jsfetch 只在 emscripten），
+#    不按 marker 过滤就会去 linux 上装 pywin32，pip 直接 no matching distribution。
+MISSING="$(PYTHONPATH="$SP" "$PY" -S - "$REQ" <<'PY'
 import sys
 import importlib.metadata as md
+from packaging.markers import Marker
 
 want = {}
 for line in open(sys.argv[1], encoding="utf-8"):
     line = line.split("#", 1)[0].strip()
     if not line or "==" not in line:
         continue
-    name, ver = line.split("==", 1)
-    ver = ver.split(";", 1)[0].strip()          # 去掉环境 marker，只比版本
+    name, rest = line.split("==", 1)
+    ver, _, marker = rest.partition(";")
+    if marker.strip():
+        try:
+            if not Marker(marker.strip()).evaluate():
+                continue                      # 这条只对别的平台才要
+        except Exception:
+            pass                              # marker 解析不了就当需要（宁可多装）
     want[name.strip().lower().replace("_", "-")] = ver.strip()
 
 have = {}
@@ -130,27 +143,72 @@ if [ -z "$MISSING" ]; then
 else
   echo "$MISSING" | sed 's/^/      补装: /'
   printf '%s\n' "$MISSING" > /tmp/as-missing-req.txt
+  # pip --target 的老毛病：同名目录已存在时它只「跳过」不覆盖，于是旧代码 + 新 dist-info
+  # 并存（cryptography 50.0.1 的 .so、50.0.2 的 METADATA —— 元数据说新、跑的是旧）。
+  # 所以先精确删掉这些包的旧 dist-info，再用 --upgrade 强制覆盖。
+  while IFS= read -r pin; do
+    pkg="${pin%%==*}"
+    rm -rf "$SP/$pkg"-*.dist-info
+  done < /tmp/as-missing-req.txt
   # --no-deps：传递依赖也逐条写在 lock 里，让 pip 只装我们点名的，绝不顺手动别的版本
   PYTHONPATH="$SP" "$PY" -m pip install -q --disable-pip-version-check \
-    --no-warn-script-location --only-binary=:all: --no-deps \
+    --no-warn-script-location --only-binary=:all: --no-deps --upgrade \
     --target "$SP" -r /tmp/as-missing-req.txt
   chown -R agentstudio:agentstudio "$ROOT/vendor/$ARCH"
 fi
 
-# 自检：WebRTC 媒体栈必须真的 import 得起来（原生扩展，缺 .so 只有 import 时才知道）
-PYTHONPATH="$SP" "$PY" - <<'PY'
+# 自检（同样 -S，只看 vendor）：WebRTC 媒体栈必须真的 import 得起来 ——
+# 原生扩展缺 .so 时 pip 不会报，只有 import 才知道。
+# 顺带卡「元数据新、代码旧」：拿模块自己的 __version__ 跟 dist-info 对一遍。
+PYTHONPATH="$SP" "$PY" -S - <<'PY'
 import importlib.metadata as md
+
 for name in ("aiortc", "av", "pylibsrtp", "aioice", "cryptography"):
     try:
-        print(f"      {name}=={md.version(name)}")
+        meta = md.version(name)
     except Exception as exc:  # noqa: BLE001
-        raise SystemExit(f"[!] {name} 不可用：{exc}")
+        raise SystemExit(f"[!] vendor 里 {name} 不可用：{exc}")
+    print(f"      {name}=={meta}")
+
+try:
+    import cryptography
+
+    if cryptography.__version__ != md.version("cryptography"):
+        raise SystemExit(
+            "      [!] cryptography 代码版本 %s 与 dist-info %s 不一致（vendor 有残留副本）"
+            % (cryptography.__version__, md.version("cryptography"))
+        )
+except SystemExit:
+    raise
+except Exception as exc:  # noqa: BLE001
+    raise SystemExit(f"[!] cryptography 导入失败：{exc}")
+
 try:
     import av.codec  # noqa: F401
     av.codec.Codec("libx264", "w")
     print("      libx264 编码器可用")
 except Exception as exc:  # noqa: BLE001
     print(f"      [!] libx264 不可用（会走 VP8 兜底）：{exc}")
+PY
+
+# 提醒：包内运行时自己的 site-packages 不该再躺手工装的依赖（版本会和 vendor 打架）
+"$PY" - "$REQ" <<'PY'
+import importlib.metadata as md
+import sys
+
+want = set()
+for line in open(sys.argv[1], encoding="utf-8"):
+    line = line.split("#", 1)[0].strip()
+    if "==" in line:
+        want.add(line.split("==", 1)[0].strip().lower().replace("_", "-"))
+
+dups = sorted({
+    (d.metadata["Name"] or "").lower().replace("_", "-")
+    for d in md.distributions()
+} & want - {"pip"})
+if dups:
+    print("      [!] 运行时 site-packages 里还有手工装的同名包：" + ", ".join(dups))
+    print("          （vendor 才是权威；这些是历史遗留，建议移到备份目录后重启）")
 PY
 REMOTE_DEPS
 fi

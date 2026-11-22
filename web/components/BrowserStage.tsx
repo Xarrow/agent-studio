@@ -28,6 +28,15 @@ import { onFrame, latestFrame } from "@/lib/browser-frame";
 import { isImeEvent } from "@/lib/ime";
 import { mapToPage } from "@/lib/video-map";
 import { BrowserRtc, markRtcBad, rtcKnownBad, type RtcStats } from "@/lib/webrtc";
+import {
+  FpsMeter,
+  KEY_BUTTONS,
+  keyBody,
+  shouldStartRtc,
+  streamStatusText,
+  type KeySpec,
+  type StreamFacts,
+} from "@/lib/browser-live";
 
 export type BrowserAction = { action: string; summary: string; target?: string; url?: string };
 export type BrowserFrameData = { data: string; url: string; title: string };
@@ -131,8 +140,8 @@ function ControlBar({
   pulse?: number;
   /** 接管请求正在等当前原子动作做完（后端软停）—— 按钮必须说"正在停手" */
   taking?: boolean;
-  /** 画面链路实测（模式 + fps）—— 用户一眼看出现在是不是流畅模式 */
-  stream?: { mode: "webrtc" | "jpeg"; fps: number; latency?: number; connecting?: boolean; reason?: string } | null;
+  /** 画面链路实测（模式 + fps）—— 用户一眼看出现在是不是流畅模式；**任何一档都带数字** */
+  stream?: StreamFacts | null;
   /** 兼容模式下的「切回流畅模式」 */
   onRetry?: () => void;
 }) {
@@ -167,36 +176,24 @@ function ControlBar({
           <span className="min-w-0 flex-1 truncate text-[11px]" style={{ color: "var(--color-muted)" }}>
             {hint}
           </span>
-          {/* 画面链路（实测）：流畅模式带 fps/延迟；回退后写「兼容模式」并给一个手动切回 */}
+          {/* 画面链路（实测）：流畅模式带 fps/延迟；回退后写「兼容模式」+ JPEG 实测 fps 并给一个手动切回 */}
           {stream ? (
-            stream.mode === "webrtc" ? (
-              <span
-                title="实时视频（WebRTC）实测值：帧率与端到端延迟估算"
-                className="shrink-0 rounded-[6px] px-1.5 py-0.5 text-[10.5px] tabular-nums"
-                style={{
-                  color: "var(--color-ok)",
-                  background: "color-mix(in srgb, var(--color-ok) 12%, transparent)",
-                }}
-              >
-                {stream.connecting
-                  ? "流畅模式 · 连接中…"
-                  : `流畅 · ${Math.round(stream.fps)}fps${stream.latency ? ` · ${Math.round(stream.latency)}ms` : ""}`}
-              </span>
-            ) : (
+            stream.mode === "jpeg" ? (
               <span className="flex shrink-0 items-center gap-1">
                 <span
+                  data-stream-stat
                   title={
                     stream.reason
-                      ? `实时视频没连上（${stream.reason}），已自动切回兼容画面`
-                      : "实时视频没连上，已自动切回兼容画面 —— 操作不受影响，只是帧率低"
+                      ? `实时视频没连上（${stream.reason}），已自动切回兼容画面 · 数字是这一秒实际收到的 JPEG 帧数`
+                      : "兼容画面 · 数字是这一秒实际收到的 JPEG 帧数"
                   }
-                  className="rounded-[6px] px-1.5 py-0.5 text-[10.5px]"
+                  className="rounded-[6px] px-1.5 py-0.5 text-[10.5px] tabular-nums"
                   style={{
                     color: "var(--color-warn)",
                     background: "color-mix(in srgb, var(--color-warn) 14%, transparent)",
                   }}
                 >
-                  兼容模式 · 流畅度较低
+                  {streamStatusText(stream)}
                 </span>
                 {onRetry ? (
                   <button
@@ -210,6 +207,21 @@ function ControlBar({
                     切回流畅模式
                   </button>
                 ) : null}
+              </span>
+            ) : (
+              <span
+                data-stream-stat
+                title="实时视频（WebRTC）实测值：帧率来自 getStats 的 framesDecoded；延迟 = 抖动缓冲 + RTT/2（估算）"
+                className="shrink-0 rounded-[6px] px-1.5 py-0.5 text-[10.5px] tabular-nums"
+                style={{
+                  color: stream.mode === "webrtc" ? "var(--color-ok)" : "var(--color-muted)",
+                  background:
+                    stream.mode === "webrtc"
+                      ? "color-mix(in srgb, var(--color-ok) 12%, transparent)"
+                      : "var(--color-surface-3)",
+                }}
+              >
+                {streamStatusText(stream)}
               </span>
             )
           ) : null}
@@ -371,6 +383,11 @@ export function BrowserStage({
   const [retryToken, setRetryToken] = useState(0);
   const [videoReady, setVideoReady] = useState(false);
   const [hasFrame, setHasFrame] = useState(false);
+  /** JPEG 通道实测 fps（1 秒滑动窗口）—— 兼容/连接中都有数字可看，不能只有形容词 */
+  const meterRef = useRef(new FpsMeter());
+  const [jpegFps, setJpegFps] = useState(0);
+  /** 视频轨可能比 <video> 挂载先到：先收在 ref 里，元素一挂上就接上 */
+  const streamRef = useRef<MediaStream | null>(null);
   const [thumb, setThumb] = useState("");
   const [text, setText] = useState("");
   const [copied, setCopied] = useState(false);
@@ -422,6 +439,11 @@ export function BrowserStage({
   }, []);
   /* 回看某一步：画面切到那一步的截图，地址栏/字幕跟着变；点「回到最新」恢复直播 */
   const [viewStep, setViewStep] = useState<BrowserStep | null>(null);
+  /* 当前显示的是「历史步骤截图」还是实时画面。
+     ⚠ 只在**还没有实时帧**时才回落到最后一步；而且这个值**不许再反过来当 WebRTC 的门** ——
+     旧版 `if (!hasFrame && !frame) return` 与它构成环：显示历史 → 实时 <img> 不渲染 →
+     imgRef 为 null → 帧回调提前 return → hasFrame 永假 → 永远显示历史、永不建连。 */
+  const shown = viewStep ?? (!hasFrame && !frame && steps && steps.length > 0 ? steps[steps.length - 1] : null);
   useEffect(() => {
     if (variant === "panel" && onLoadSteps) onLoadSteps();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -434,13 +456,16 @@ export function BrowserStage({
     let pending = "";
     const apply = () => {
       raf = 0;
+      if (!pending) return;
       const img = imgRef.current;
-      if (!img || !pending) return;
-      img.src = `data:image/jpeg;base64,${pending}`;
+      if (img) img.src = `data:image/jpeg;base64,${pending}`;
+      // 「收到过实时帧」由**事件**置位，不依赖这一帧有没有写进 DOM：
+      // 写不进去（正在回看历史步骤、元素还没挂上）也不能把 WebRTC 的门锁死。
       setHasFrame(true);
     };
     const sub = onFrame((f) => {
       pending = f.data;
+      meterRef.current.push(performance.now());
       if (raf) return;
       raf = requestAnimationFrame(apply);
     });
@@ -455,15 +480,36 @@ export function BrowserStage({
     };
   }, []);
 
+  /* 面板状态区每秒刷一次「这一秒实际收到几帧 JPEG」——兼容模式/连接中都有数字可看 */
+  useEffect(() => {
+    if (variant !== "panel") return;
+    const tick = () => setJpegFps(meterRef.current.fps(performance.now()));
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [variant]);
+
   /* ── WebRTC 主链路 ────────────────────────────────────────────────────
      面板打开、浏览器还活着就先试实时视频。失败只**报给 UI**（切兼容模式），
      绝不自动重试；用户点「切回流畅模式」才再来一次（retryToken）。 */
   const browserLive =
     !!control && control.status !== "none" && control.status !== "closed" && control.alive !== false;
   useEffect(() => {
-    if (variant !== "panel" || !sessionId || !browserLive) return;
-    if (!hasFrame && !frame) return;
-    if (rtcKnownBad(sessionId) && retryToken === 0) {
+    if (!sessionId) return;
+    // 门只看三样：面板打开、会话有活浏览器、这个会话没被判定过连不上。
+    // 画面状态（hasFrame / frame / 是否在回看历史）只作为诊断参数传进去，**不参与判定** ——
+    // 旧版在这里判 hasFrame，于是"有历史步骤、暂无实时帧"的会话永远不发 webrtc/config。
+    const decision = shouldStartRtc({
+      variant,
+      sessionId,
+      browserLive,
+      knownBad: rtcKnownBad(sessionId),
+      retryToken,
+      hasFrame,
+      hasSnapshotFrame: !!frame,
+      showingHistory: !!shown,
+    });
+    if (decision === "skip") return;
+    if (decision === "fallback") {
       setRtcMode("fallback");
       return;
     }
@@ -477,6 +523,9 @@ export function BrowserStage({
         rtc = await BrowserRtc.start(sessionId, {
           onTrack: (s) => {
             if (dead) return;
+            // 视频轨可能比 <video> 挂载先到（连接中才渲染它）——先收进 ref，
+            // 元素挂上后由下面的 effect 接上，不能让 track 在这一拍丢。
+            streamRef.current = s;
             const v = videoRef.current;
             if (!v) return;
             v.srcObject = s;
@@ -490,6 +539,7 @@ export function BrowserStage({
             setRtcMode("fallback");
             setRtcReason(reason);
             setStreamStats(null);
+            streamRef.current = null;
             markRtcBad(sessionId, true);
           },
           onMessage: (m) => {
@@ -520,9 +570,20 @@ export function BrowserStage({
       dead = true;
       rtc?.dispose(true);
       if (rtcRef.current === rtc) rtcRef.current = null;
+      streamRef.current = null;
     };
+    // hasFrame / frame / shown 不在依赖里：它们只做诊断，变了也不该重建连接
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [variant, sessionId, browserLive, hasFrame, retryToken]);
+  }, [variant, sessionId, browserLive, retryToken]);
+
+  /* <video> 挂上（rtcMode 变 connecting/live）时把已到手的视频轨接上去 */
+  useEffect(() => {
+    const v = videoRef.current;
+    const s = streamRef.current;
+    if (!v || !s || v.srcObject === s) return;
+    v.srcObject = s;
+    void v.play().catch(() => {});
+  }, [rtcMode]);
 
   const retryRtc = useCallback(() => {
     if (!sessionId) return;
@@ -670,6 +731,20 @@ export function BrowserStage({
     if (!rtcRef.current?.send(body)) void onUserInput?.(body);
   };
 
+  /** 面板上的常用按键（触屏没有键盘）：与键盘事件走同一条 DataChannel / HTTP 通路 */
+  const sendKey = (spec: KeySpec) => {
+    if (shown) {
+      say("正在回看历史步骤 · 点「回到最新」后按键才作用于实时画面", lastPoint.current);
+      return;
+    }
+    if (control && control.status !== "none" && !canClick) {
+      denied(undefined, lastPoint.current);
+      return;
+    }
+    const body = keyBody(spec);
+    if (!rtcRef.current?.send(body)) void onUserInput?.(body);
+  };
+
   const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
     if (shown) {
       const rect = e.currentTarget.getBoundingClientRect();
@@ -712,9 +787,6 @@ export function BrowserStage({
   // 状态类伪动作（wait_login）不参与"当前这一行" —— 见 ActionLine 里同一处理
   const realActions = actions.filter((a) => a.action !== "wait_login");
   const last = realActions[realActions.length - 1];
-  /* 没有实时帧（刷新过 / 这轮结束清掉了）时，默认停在这一轮的最后一步 ——
-     面板打开就该看见"它最后停在哪一页"，而不是一块空白。 */
-  const shown = viewStep ?? (!hasFrame && !frame && steps && steps.length > 0 ? steps[steps.length - 1] : null);
 
   /* ── 缩略条（消息流内） ───────────────────────────────────────────── */
   if (variant === "inline") {
@@ -887,16 +959,17 @@ export function BrowserStage({
         taking={taking}
         stream={
           rtcMode === "fallback"
-            ? { mode: "jpeg", fps: 0, reason: rtcReason }
+            ? { mode: "jpeg", fps: 0, jpegFps, reason: rtcReason }
             : rtcMode === "live" || rtcMode === "connecting" || streamStats
               ? {
                   mode: "webrtc",
                   fps: streamStats?.fps ?? 0,
                   latency: streamStats?.latency,
                   connecting: rtcMode === "connecting",
+                  jpegFps,
                   reason: rtcReason,
                 }
-              : null
+              : { mode: "idle", fps: 0, jpegFps }
         }
         onRetry={rtcMode === "fallback" && sessionId ? retryRtc : undefined}
       />
@@ -911,58 +984,57 @@ export function BrowserStage({
         aria-label="浏览器画面（点一下可键盘操作）"
         style={{ background: "var(--color-video-bg)" }}
       >
+        {/* 实时层**常驻挂载**：video 与 JPEG <img> 一直在 DOM 里，回看历史步骤时截图只是盖在上面。
+            以前实时元素写在 !shown 分支里 —— 显示历史时 imgRef 为 null，帧回调提前 return，
+            hasFrame 永假，于是画面永远停在历史截图、WebRTC 永远不启动。 */}
+        <video
+          ref={videoRef}
+          className="pointer-events-none absolute inset-0 h-full w-full object-contain object-top select-none"
+          style={{ opacity: rtcMode === "live" ? 1 : 0 }}
+          autoPlay
+          playsInline
+          muted
+          draggable={false}
+          onLoadedData={() => setVideoReady(true)}
+          onPlaying={() => setVideoReady(true)}
+        />
+        <img
+          ref={imgRef}
+          alt={frame?.title || "浏览器画面"}
+          className="absolute inset-0 block h-full w-full cursor-crosshair object-contain object-top select-none"
+          style={{ opacity: hasFrame && !(rtcMode === "live" && videoReady) && !shown ? 1 : 0 }}
+          draggable={false}
+        />
+        {rtcMode === "connecting" ? (
+          <div
+            className="pointer-events-none absolute left-1/2 top-2 z-[2] -translate-x-1/2 rounded-full px-2.5 py-1 text-[11px]"
+            style={{ background: "rgba(15,23,42,0.72)", color: "#fff" }}
+          >
+            正在连接流畅模式…
+          </div>
+        ) : null}
+        {hasFrame || rtcMode === "live" || shown ? null : (
+          <div className="flex h-full min-h-[160px] items-center justify-center text-[12px]" style={{ color: "var(--color-text-3)" }}>
+            还未打开网页
+          </div>
+        )}
+        {/* 回看某一步：截图盖在实时层上（这是显式选择，不代表实时画面不存在） */}
         {shown ? (
           <img
             src={withToken(shown.url_file)}
             alt={shown.summary}
-            className="absolute inset-0 h-full w-full object-contain object-top select-none"
+            className="absolute inset-0 z-[1] h-full w-full object-contain object-top select-none"
+            style={{ background: "var(--color-video-bg)" }}
             draggable={false}
           />
-        ) : (
-          <>
-            {/* WebRTC 主链路：<video> 接 SRTP 视频轨。透明期（连接中）先让 JPEG 顶着 */}
-            {rtcMode === "live" || rtcMode === "connecting" ? (
-              <video
-                ref={videoRef}
-                className="pointer-events-none absolute inset-0 h-full w-full object-contain object-top select-none"
-                style={{ opacity: rtcMode === "live" ? 1 : 0 }}
-                autoPlay
-                playsInline
-                muted
-                draggable={false}
-                onLoadedData={() => setVideoReady(true)}
-                onPlaying={() => setVideoReady(true)}
-              />
-            ) : null}
-            <img
-              ref={imgRef}
-              alt={frame?.title || "浏览器画面"}
-              className="absolute inset-0 block h-full w-full cursor-crosshair object-contain object-top select-none"
-              style={{ opacity: hasFrame && !(rtcMode === "live" && videoReady) ? 1 : 0 }}
-              draggable={false}
-            />
-            {rtcMode === "connecting" ? (
-              <div
-                className="pointer-events-none absolute left-1/2 top-2 -translate-x-1/2 rounded-full px-2.5 py-1 text-[11px]"
-                style={{ background: "rgba(15,23,42,0.72)", color: "#fff" }}
-              >
-                正在连接流畅模式…
-              </div>
-            ) : null}
-            {waiting && hasFrame ? (
-              <span
-                aria-hidden
-                className="pointer-events-none absolute inset-0 rounded-[2px]"
-                style={{ boxShadow: "inset 0 0 0 2px var(--color-warn)" }}
-              />
-            ) : null}
-            {hasFrame || rtcMode === "live" ? null : (
-              <div className="flex h-full min-h-[160px] items-center justify-center text-[12px]" style={{ color: "var(--color-text-3)" }}>
-                还未打开网页
-              </div>
-            )}
-          </>
-        )}
+        ) : null}
+        {waiting && (hasFrame || rtcMode === "live") ? (
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-0 z-[2] rounded-[2px]"
+            style={{ boxShadow: "inset 0 0 0 2px var(--color-warn)" }}
+          />
+        ) : null}
         {/* 就地反馈：点在哪儿就在哪儿说（滚动的反馈贴在底部中央） */}
         {feedback ? (
           <div
@@ -983,6 +1055,32 @@ export function BrowserStage({
           </div>
         ) : null}
       </div>
+
+      {/* 常用按键：触屏没有键盘，Enter/Tab/Esc 以前无处可点（点了搜索框也只能打字不能提交） */}
+      {onUserInput ? (
+        <div
+          className="flex flex-wrap items-center gap-1.5 px-2.5 py-1.5"
+          style={{ background: "var(--color-surface-2)" }}
+        >
+          <span className="shrink-0 text-[10.5px]" style={{ color: "var(--color-muted)" }}>
+            按键
+          </span>
+          {KEY_BUTTONS.map((k) => (
+            <button
+              key={k.key}
+              type="button"
+              data-tap
+              data-key-button={k.key}
+              onClick={() => sendKey(k)}
+              title={k.title}
+              className="h-[30px] min-w-[44px] rounded-[7px] px-2 text-[11.5px] max-md:h-[44px]"
+              style={{ color: "var(--color-text-2)", background: "var(--color-surface-3)" }}
+            >
+              {k.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       {shown ? (
         <div className="flex items-center gap-2 px-2.5 py-1.5" style={{ background: "var(--color-surface-2)" }}>

@@ -14,7 +14,10 @@
  *      （估算，界面上也写"估算"）。没有帧就说 0，不编。
  */
 
-import { api, type BrowserStreamState } from "@/lib/api";
+// 显式 .ts 后缀：这条 import 链要能被 node --test（strip-types）直接加载，
+// 才能用假 RTCPeerConnection 验「真的发了 webrtc/config 并连上」（见 browser-live.test.ts）。
+// tsconfig 里已开 allowImportingTsExtensions（noEmit:true 下合法）。
+import { api, type BrowserStreamState } from "./api.ts";
 
 export type RtcStats = {
   fps: number;
@@ -55,7 +58,11 @@ export class BrowserRtc {
   private stopped = false;
   private opened = false;
 
-  private constructor(private readonly sessionId: string) {}
+  private readonly sessionId: string;
+
+  private constructor(sessionId: string) {
+    this.sessionId = sessionId;
+  }
 
   static async start(sessionId: string, handlers: RtcHandlers): Promise<BrowserRtc> {
     if (typeof window === "undefined" || typeof RTCPeerConnection === "undefined") {
