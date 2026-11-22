@@ -47,7 +47,9 @@ def test_凭据位置一律拒绝(name, inp):
     v = _call(name, **inp)
     assert v is not None, f"{name} {inp} 应该被拦"
     assert v.risk == g.RISK_DENY
-    assert v.rule == "sensitive-path"
+    # ``~/.hermes`` 从 2026-11 起走更专门的「禁区」规则（理由文案是用户要的
+    # 「该目录受保护」），其余凭据位置仍是 ``sensitive-path``。两者都是硬拦。
+    assert v.rule in ("sensitive-path", "protected-dir")
 
 
 @pytest.mark.parametrize(

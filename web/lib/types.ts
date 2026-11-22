@@ -1681,3 +1681,21 @@ export interface SkillGroupList {
   groups: SkillGroup[];
   total: number;
 }
+
+/** 一条文件操作审计（GET /api/file-audit 的 items[]） */
+export interface FileAuditRow {
+  id: number;
+  ts: number;
+  agent_id: string;
+  agent_name: string;
+  run_id: string;
+  session_id: string;
+  path: string;
+  /** 新建 / 覆盖 / 删除 / 移动 */
+  op: string;
+  /** allowed / approved / rejected / skipped / blocked */
+  result: string;
+  result_label: string;
+  rule: string;
+  detail: string;
+}

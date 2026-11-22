@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -776,13 +777,56 @@ async def resume_run(
         or ""
     ).strip()
 
+    # 这次问的是不是一次「写文件」—— 文件类动作的允许/拒绝要按次算、按次记
+    # （用户第 5 条：按钮叫「允许一次」；第 6 条：被确认/被拒绝都要留一条审计）。
+    _file_acts = {
+        str(k): v
+        for k, v in ((_hitl.get("file_actions") or {}) if isinstance(_hitl.get("file_actions"), dict) else {}).items()
+        if isinstance(v, dict)
+    }
+    _file_act = next(iter(_file_acts.values()), None)
+
     # 点「允许」= 这次运行里别再问同一个工具：会话级白名单只在编译期读一次，
     # 中途写库救不了正在跑的这轮，模型循环调同一个工具就会一直弹（实测踩到）。
-    if payload.confirm and _tool_name:
+    # **越界写除外**：它是一次一议（要整目录放行走「本会话内允许该目录」）。
+    if payload.confirm and _tool_name and _file_act is None:
         from ..runtimes.agentscope_rt.guard import allow_for_run
 
         _rule = str(_hitl.get("rule") or _hitl.get("guard_rule") or "")
         allow_for_run(run_id, _tool_name, rule=_rule)
+
+    # 审计：用户点了允许还是拒绝，都要能查到（路径/操作/谁）
+    if _file_act is not None:
+        from .. import file_policy
+
+        await file_policy.audit(
+            _file_act,
+            result=file_policy.RESULT_APPROVED if payload.confirm else file_policy.RESULT_REJECTED,
+            rule=str(_hitl.get("rule") or "file-write"),
+            agent_id=str(run.agent_id or ""),
+            run_id=str(run.id or ""),
+            session_id=str(run.session_id or ""),
+        )
+        # 「本会话内允许该目录」：目录由**服务端**从待确认内容里取（客户端传的
+        # 目录不认，免得被改成一个更宽的路径）。存成 dir:<realpath>，编译期读进
+        # session_allow，守卫按「目标是否在这个目录下」判。
+        if payload.confirm and payload.allow_dir and run.session_id:
+            _dir = str(_file_act.get("dir") or os.path.dirname(str(_file_act.get("path") or "")))
+            if _dir:
+                from ..models import SessionAllow
+
+                key = "dir:" + os.path.realpath(_dir)
+                exists = (
+                    await session.execute(
+                        select(SessionAllow).where(
+                            SessionAllow.session_id == run.session_id,
+                            SessionAllow.tool_name == key,
+                        )
+                    )
+                ).scalar_one_or_none()
+                if exists is None:
+                    session.add(SessionAllow(session_id=run.session_id, tool_name=key))
+                    await session.commit()
 
     # 「本会话内不再问这个工具」：先把允许记下来，再续跑 ——
     # 顺序反了的话，续跑立刻又弹一次（用户会以为按钮没生效）。

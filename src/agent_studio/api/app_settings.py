@@ -29,6 +29,9 @@ ALLOWED: dict[str, type] = {
     "guard_deny_patterns": list,
     # tool_search 稠密路的 embedding 端点（native_tools._toolsearch_embed_fn 读）
     "toolsearch_embedding": dict,
+    # 「危险模式」：助手往会话目录之外写文件时不再弹确认（用户主动打开，
+    # 默认关）。读它的是 file_policy.skip_confirm()，带 2 秒进程内缓存。
+    "file_policy_danger_mode": bool,
 }
 
 # 没设过时的默认值（前端拿到的就是它，不需要自己写一份默认）
@@ -39,6 +42,8 @@ DEFAULTS: dict[str, Any] = {
     "guard_deny_patterns": ["shutdown", "reboot", "mkfs", "dd if=", ":(){", "crontab -r", "> /dev/sda"],
     # tool_search 的 embedding 端点：空 = 稠密路关闭，纯 BM25 照常工作
     "toolsearch_embedding": {},
+    # 危险模式默认关：越界写要用户点头（用户第 4 条）
+    "file_policy_danger_mode": False,
 }
 
 
@@ -98,6 +103,11 @@ async def write_setting(
     await session.commit()
     if key == "toolsearch_embedding":
         value = _redact_embed_conf(value)
+    if key == "file_policy_danger_mode":
+        # 守卫那边有 2 秒缓存：改完立刻失效，用户关掉之后下一句就别再被跳过
+        from .. import file_policy
+
+        file_policy.invalidate_skip_cache()
     return {"key": key, "value": value}
 
 

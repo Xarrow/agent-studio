@@ -744,6 +744,9 @@ class HitlResumeRequest(BaseModel):
     payload: dict[str, Any] | None = None
     #: 「这个会话里，这个工具别再问了」—— 只有 confirm=True 时才有意义
     remember: bool = False
+    #: 「本会话内允许该目录」—— 只对文件写入的确认有意义。目录由服务端从待确认
+    #: 内容里取（不认客户端传的路径），存成 SessionAllow 的 ``dir:<realpath>``。
+    allow_dir: bool = False
 
 
 # --------------------------------------------------------------------------- #

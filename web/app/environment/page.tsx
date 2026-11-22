@@ -25,6 +25,7 @@ import { RuntimeCard } from "@/components/RuntimeCard";
 import { AguiCard } from "@/components/AguiCard";
 import { ToolSearchCard } from "@/components/ToolSearchCard";
 import { SearchHealthCard } from "@/components/SearchHealthCard";
+import { FilePolicySettings } from "@/components/FilePolicySettings";
 
 /** 表单字段（SQLite 只用 path，其余是网络库的连接参数） */
 type Form = {
@@ -282,6 +283,15 @@ export default function EnvironmentPage() {
           </>
         }
       />
+
+      {/* ── 助手文件权限：读不限制 / 越界写要点头 / 危险模式 / 审计 ──
+          放在最前面一块：这是"助手能对你机器做什么"的开关，比选哪个库更该先看见。 */}
+      <Section
+        title="助手文件权限"
+        desc="读不限制（禁区除外）；写会话目录之外要你点头；危险模式可跳过确认"
+      >
+        <FilePolicySettings />
+      </Section>
 
       {/* ── 运行环境：这台机器有什么、缺了能装 ─────────────── */}
       <Section

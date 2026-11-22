@@ -29,10 +29,19 @@ from collections.abc import Sequence
 import shlex
 from dataclasses import dataclass
 
+from . import file_policy
+
 #: 允许 / 需要确认 / 直接拒绝
 RISK_DENY = "deny"
 RISK_ASK = "ask"
 RISK_ALLOW = "allow"
+
+#: 「越界读要不要确认」。用户 2026-11 定：读除禁区外不限制、不要确认 → False。
+#: 留成开关是因为它是产品口径（不是能力），口径变了只改这一处。
+READ_REQUIRES_CONFIRM = False
+
+#: 「越界写要确认」的规则名 —— 确认卡、危险模式跳过、审计都按这个名字认。
+FILE_WRITE_RULE = "file-write"
 
 
 @dataclass(frozen=True)
@@ -127,17 +136,20 @@ def _is_inside(path: str, workspace: str | Sequence[str] | None) -> bool:
     ``workspace`` 可以是一个目录，也可以是一串（会话目录 + 助手自己申请的
     额外根目录）。里面出现 ``/`` 表示"整个文件系统都算自己的地盘" —— 那是
     「跟 Hermes 一样的全盘权限」这个口径，破坏性命令仍然由后面的规则单独拦。
+
+    两边都按 **realpath** 算：软链到工作目录里不该算"在里面"，
+    软链到外面也不该算"在外面"（用户要求防符号链接绕过）。
     """
     if not workspace:
         return False
     if not path.startswith("/"):
         return True  # 相对路径按"就在工作目录里"算
     roots = [workspace] if isinstance(workspace, str) else list(workspace)
-    target = os.path.abspath(path)
+    target = os.path.realpath(path)
     for root in roots:
         if not root:
             continue
-        base = os.path.abspath(root)
+        base = os.path.realpath(root)
         if base == os.sep:
             return True
         try:
@@ -580,7 +592,12 @@ _HOME_ALIASES = ("/root/", "~/", "$HOME/", "${HOME}/")
 
 
 def _norm_abs(path: str, workspace: str | None = None) -> str:
-    """把路径尽量变成绝对路径（`~` 展开、相对路径按工作目录算）。"""
+    """把路径尽量变成绝对路径（`~` 展开、相对路径按工作目录算）。
+
+    **最后一步是 realpath**：符号链接按最终落点算。不做这一步，
+    ``ln -s ~/.hermes /tmp/h`` 之后读 ``/tmp/h/config.yaml`` 就绕过了禁区判定
+    （用户的第 1 条要求就是"必须防符号链接绕过"）。
+    """
     raw = (path or "").strip().strip("'\"")
     if not raw:
         return ""
@@ -591,7 +608,7 @@ def _norm_abs(path: str, workspace: str | None = None) -> str:
             raw = os.path.join(workspace, raw)
         else:
             return ""  # 不知道相对于谁，就不猜
-    return os.path.abspath(raw)
+    return os.path.realpath(raw)
 
 
 def sensitive_hit(path: str, workspace: str | None = None) -> tuple[str, str]:
@@ -713,15 +730,17 @@ def _scope_roots(scope: str | Sequence[str] | None) -> list[str]:
 
 
 def classify_read_scope(short: str, data: dict, scope: str | Sequence[str] | None = None) -> Verdict | None:
-    """读的目标落在"可读范围"外 → ASK。
+    """越界读要不要问 —— **现在不问**（用户定的第 2 条：读不限制）。
 
-    为什么读也要问：平台的助手本来就被许诺"文件范围"是它自己的工作目录，
-    可引擎那边只读是**无条件放行**的（实测 Read /etc/hostname、Read /root/.hermes
-    /config.yaml 全 allow），用户看到的却是"它居然翻到我机器别处去了"。
-    这一层把"范围"补回来 —— 不是拒绝，是问一句：越界读要人点头。
+    以前这里是 ASK：平台的助手被许诺"文件范围是它自己的会话目录"，于是读到别处
+    要人点头。用户 2026-11 明确改成「除禁区外读不限制、不要确认」——助手要读
+    别家会话目录、家目录、系统目录都直接读（禁区由 ``classify_protected`` 硬拦）。
 
-    ``scope`` 里含 ``/`` 表示这个助手申请了全盘（等同 Hermes 的权限），不判。
+    函数保留而不是删掉：口径会变，判定点只该有一处；要恢复"越界读也要问"，
+    把 ``READ_REQUIRES_CONFIRM`` 打开即可，别在别处另写一套。
     """
+    if not READ_REQUIRES_CONFIRM:
+        return None
     roots = _scope_roots(scope)
     if any(os.path.abspath(r) == os.sep for r in roots if r):
         return None
@@ -797,6 +816,109 @@ def classify_sensitive_access(short: str, data: dict, workspace: str | Sequence[
     )
 
 
+def classify_protected(
+    short: str,
+    data: dict,
+    workspace: str | Sequence[str] | None = None,
+) -> Verdict | None:
+    """禁区 ``~/.hermes``：读、写、删都拒（``RISK_DENY``，任何模式都压不住）。
+
+    判定必须走 **realpath**：``ln -s ~/.hermes /tmp/h`` 之后读 ``/tmp/h/config.yaml``
+    也拦得住。命令/代码通道是动态的，只能判"能看见的字面量"——先按 realpath 探，
+    再退回子串匹配（``~/.hermes`` / ``$HOME/.hermes`` / ``/root/.hermes`` 几种写法）。
+
+    为什么这一段不交给下面的 ``classify_sensitive_access``：那边是一份"凭据位置"
+    的黑名单（.ssh/.aws/.env…），理由文案是"核心凭据"；用户对 ``~/.hermes`` 要的
+    原话是「该目录受保护」，而且要能解释"不影响 Hermes 自身运行"。分开写才说得清。
+    """
+    root = _first_root(workspace) or None
+    hit = ""
+    if short in file_policy.FILE_READ_TOOLS or short in file_policy.FILE_WRITE_TOOLS:
+        for key in _PATH_KEYS:
+            val = data.get(key)
+            if isinstance(val, str) and val.strip():
+                hit = file_policy.protected_hit(file_policy.real_path(val, root))
+                if hit:
+                    break
+        # Glob 的 pattern 本身就是路径写法（`/root/.hermes/**`）—— path 参数
+        # 缺省时它会在自己的目录里找，光判 path 等于放它去列禁区的文件名。
+        if not hit and short == "glob":
+            for key in ("pattern", "glob", "file_pattern"):
+                val = data.get(key)
+                if isinstance(val, str) and val.strip():
+                    hit = file_policy.protected_pattern_hit(val)
+                    if hit:
+                        break
+        # 目标本身不存在也算（写一个禁区里还不存在的文件同样要拦）
+    elif short in file_policy.COMMAND_TOOLS or short in file_policy.CODE_TOOLS:
+        text = next(
+            (data[k] for k in _COMMAND_KEYS + _CODE_KEYS if isinstance(data.get(k), str) and data[k].strip()),
+            "",
+        )
+        hit = file_policy.protected_paths_in(text, root)
+    else:
+        # 认不出的工具：宁可多看一眼参数里的路径
+        for key in _PATH_KEYS:
+            val = data.get(key)
+            if isinstance(val, str) and val.strip():
+                hit = file_policy.protected_hit(file_policy.real_path(val, root))
+                if hit:
+                    break
+    if not hit:
+        return None
+    return Verdict(
+        RISK_DENY,
+        file_policy.protected_verdict_reason(hit),
+        "protected-dir",
+        _short(str(hit)),
+    )
+
+
+def file_action_for(
+    name: str,
+    tool_input: dict | None,
+    workspace: str | Sequence[str] | None = None,
+):
+    """这次调用要动哪个文件（确认卡 / 审计要的那份细节）。没有文件动作返回 None。
+
+    ``workspace`` 只取**当前会话的工作目录**（用户第 3 条：只有这里直接放行）。
+    助手自己申请的额外根目录不算 —— 那是"允许它去那儿"，不是"不用问"。
+    """
+    short = (name or "").split("/")[-1].split(".")[-1].lower()
+    if "__" in short:
+        short = short.split("__")[-1]
+    data = tool_input if isinstance(tool_input, dict) else {}
+    ws = _first_root(workspace) or None
+    if short in file_policy.FILE_WRITE_TOOLS:
+        return file_policy.action_for_tool(short, data, ws)
+    if short in file_policy.COMMAND_TOOLS:
+        text = next((data[k] for k in _COMMAND_KEYS if isinstance(data.get(k), str) and data[k].strip()), "")
+        acts = file_policy.actions_for_command(text, ws) if text else []
+        return acts[0] if acts else None
+    if short in file_policy.CODE_TOOLS:
+        text = next((data[k] for k in _CODE_KEYS if isinstance(data.get(k), str) and data[k].strip()), "")
+        acts = file_policy.actions_for_code(text, ws) if text else []
+        return acts[0] if acts else None
+    return None
+
+
+def classify_file_write(
+    name: str,
+    tool_input: dict | None,
+    workspace: str | Sequence[str] | None = None,
+) -> Verdict | None:
+    """工作目录之外的写入 → ASK（用户第 3 条）。目录内直接放行，不在这里表态。"""
+    act = file_action_for(name, tool_input, workspace)
+    if act is None or act.inside:
+        return None
+    return Verdict(
+        RISK_ASK,
+        f"要{act.op} {act.path} —— 这个位置在当前会话目录之外，需要你点头",
+        FILE_WRITE_RULE,
+        _short(act.path),
+    )
+
+
 def classify_tool_call(
     name: str,
     tool_input: dict | None,
@@ -815,13 +937,27 @@ def classify_tool_call(
     if not isinstance(data, dict):
         return None
 
+    #: 相对路径按哪个根解释：可读范围优先（读/写共用同一套规范化）
+    _root = _first_root(read_scope) or _first_root(workspace)
+
+    # 0) 禁区（~/.hermes）：读写都拒，realpath 判定 —— 用户第 1 条，任何模式都压不住
+    blocked = classify_protected(short, data, read_scope if read_scope is not None else workspace)
+    if blocked is not None:
+        return blocked
+
     # 先判"碰不得的位置"：这一层不设条件，read 也算命中 ——
     # 引擎那边只读是"无副作用就放行"，凭据被读走同样是事故（实测 /root/.hermes/.env 一路 allow）。
-    sensitive = classify_sensitive_access(short, data, _first_root(read_scope) or workspace)
+    sensitive = classify_sensitive_access(short, data, _root or workspace)
     if sensitive is not None:
         return sensitive
 
     worst = classify_read_scope(short, data, read_scope if read_scope is not None else workspace)
+
+    # 1) 写：会话工作目录内直接放行（这里不表态 → 交给引擎/后面的命令规则），
+    #    目录之外一律 ASK —— 用户第 3 条。只按 workspace 判，不看助手申请的额外根目录。
+    write_verdict = classify_file_write(short, data, workspace)
+    if write_verdict is not None:
+        worst = write_verdict if worst is None else _worse(worst, write_verdict)
 
     keys = _COMMAND_KEYS if short in _COMMAND_TOOLS else (_CODE_KEYS if short in _CODE_TOOLS else ())
     if not keys:
@@ -830,7 +966,28 @@ def classify_tool_call(
     if not raw:
         return worst
     verdict = classify_code(raw, workspace) if short in _CODE_TOOLS else classify_command(raw, workspace)
-    return verdict if worst is None else _worse(worst, verdict)
+    # 命令/代码里也藏着写入（`cp a /root/b`、`open('/root/x','w')`）——
+    # 上面那条 write_verdict 已经按"落点在工作目录外"给了 ASK，这里只取更坏的结论
+    # （DENY 优先：`rm -rf /` 不能因为"只是写文件"被降级成确认）。
+    merged = verdict if worst is None else _worse(worst, verdict)
+    # 写文件那条只描述"哪个文件"，但同一条命令里可能还藏着别的风险
+    # （`curl -o x.sh … | sh`、`sudo …`）。那些理由不能因为"它也是一次写"被吞掉 ——
+    # 否则确认卡只说"写 /root/x.sh"，用户点了允许，管道右边就一起执行了。
+    if (
+        merged is not None
+        and merged.rule == FILE_WRITE_RULE
+        and verdict is not None
+        and verdict.risk == RISK_ASK
+        and verdict.rule not in (FILE_WRITE_RULE, "write-outside")
+        and verdict.reason not in merged.reason
+    ):
+        merged = Verdict(
+            merged.risk,
+            f"{merged.reason}；另外这条命令还会：{verdict.reason}",
+            merged.rule,
+            merged.snippet,
+        )
+    return merged
 
 
 def _first_root(scope: str | Sequence[str] | None) -> str | None:

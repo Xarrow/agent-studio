@@ -4,6 +4,7 @@ import { CommandPalette } from "@/components/CommandPalette";
 import { Nav } from "@/components/Nav";
 import { FeedbackProvider } from "@/components/ui/feedback";
 import { AccessGate } from "@/components/AccessGate";
+import { DangerModeBanner } from "@/components/DangerModeBanner";
 
 export const metadata: Metadata = {
   title: "Agent Studio",
@@ -53,7 +54,12 @@ export default function RootLayout({
             <Nav />
             {/* pt-[52px]：移动端顶栏是 fixed，给内容留出高度（≥768px 无顶栏）。
                 52 是全站顶栏唯一规格（导航条 / 对话条 / 抽屉头都是 52）。 */}
-            <main className="flex-1 overflow-auto pt-[44px] md:pt-0">{children}</main>
+            <main className="flex-1 overflow-auto pt-[44px] md:pt-0">
+              {/* 危险模式开着时全站顶部一条红条（常驻 + 一键关回）——
+                  挂在 main 里而不是每个页面各写一遍：漏一页就等于"藏起来了" */}
+              <DangerModeBanner />
+              {children}
+            </main>
           </div>
         </FeedbackProvider>
             <CommandPalette />

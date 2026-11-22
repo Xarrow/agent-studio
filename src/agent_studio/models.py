@@ -1220,3 +1220,31 @@ class RouteRule(Base):
     note: Mapped[str | None] = mapped_column(String(200), default=None)
     created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
     updated_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+
+
+class FileAudit(Base):
+    """文件操作审计 —— 谁、什么时候、要动哪个文件、结果是被允许还是被拦下。
+
+    为什么单独一张表而不是塞进 run_event：审计的读法是「最近都动过哪些文件」，
+    按时间倒序翻，跟某一次执行的详情不是一回事；而且被拒绝/被禁区拦下的操作
+    未必有一次成功的执行可以参考（用户点拒绝之后这一轮就收尾了）。
+    只记「文件类动作」四类结果：工作目录内放行 / 用户允许 / 用户拒绝 /
+    危险模式跳过 / 禁区拦截 —— 不记读（读不限制，记了只会把日志淹掉）。
+    """
+
+    __tablename__ = "file_audit"
+    __table_args__ = (Index("idx_file_audit_ts", "ts"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ts: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+    agent_id: Mapped[str] = mapped_column(String(32), default="")
+    agent_name: Mapped[str] = mapped_column(String(120), default="")
+    run_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    session_id: Mapped[str] = mapped_column(String(32), default="")
+    path: Mapped[str] = mapped_column(Text)
+    #: 新建 / 覆盖 / 删除 / 移动
+    op: Mapped[str] = mapped_column(String(16), default="")
+    #: allowed / approved / rejected / skipped / blocked
+    result: Mapped[str] = mapped_column(String(16), default="")
+    rule: Mapped[str] = mapped_column(String(40), default="")
+    detail: Mapped[str] = mapped_column(Text, default="")

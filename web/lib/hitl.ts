@@ -102,6 +102,28 @@ export type CallView = {
   full: string;
   /** 风险提示（null = 没看出风险） */
   risk: { level: "danger" | "caution"; reason: string } | null;
+  /** 写文件确认卡要的那份细节（后端在判定时算好的，见 file_policy.Action） */
+  file?: FileAction;
+};
+
+/** 后端 `payload.file_actions[call_id]` 的形状（file_policy.Action.as_dict） */
+export type FileAction = {
+  path: string;
+  shown?: string;
+  op: string;
+  inside?: boolean;
+  protected?: string;
+  exists?: boolean;
+  size?: number;
+  lines?: number;
+  preview?: string;
+  before?: string[];
+  after?: string[];
+  command?: string;
+  agent?: string;
+  agent_id?: string;
+  workspace?: string;
+  dir?: string;
 };
 
 /** 危险命令指纹：命中即标红并二次确认 */
@@ -155,15 +177,20 @@ function riskOf(label: string, args: Record<string, unknown> | null, rawText: st
 export function summarizeCalls(payload: Record<string, unknown> | null | undefined): CallView[] {
   const calls = (payload?.tool_calls as ToolCall[] | undefined) ?? [];
   const guardReasons = (payload?.guard_reasons as Record<string, string> | undefined) ?? {};
+  const fileActions = (payload?.file_actions as Record<string, FileAction> | undefined) ?? {};
   return calls.map((tc) => {
     const raw = tc.name ?? "";
     const guardReason = tc.id ? guardReasons[tc.id] : undefined;
+    const file = tc.id ? fileActions[tc.id] : undefined;
     const label = toolLabel(raw);
     const input = parseToolInput(tc.input);
     const full =
       input !== null ? JSON.stringify(input, null, 2) : typeof tc.input === "string" ? tc.input : "{}";
     let detail: string;
-    if (!input) {
+    if (file) {
+      // 文件写入：要害就是"完整路径 + 操作类型"，别让用户去 JSON 里找
+      detail = `${file.op} ${file.path}`;
+    } else if (!input) {
       detail = (typeof tc.input === "string" ? tc.input : "").slice(0, 240) || "（没有参数）";
     } else {
       const key = KEY_PRIORITY.find((k) => typeof input[k] === "string") ?? Object.keys(input)[0] ?? "";
@@ -175,7 +202,7 @@ export function summarizeCalls(payload: Record<string, unknown> | null | undefin
     const risk = guardReason
       ? ({ level: "danger", reason: guardReason } as const)
       : riskOf(label, input, detail);
-    return { raw, label, detail, full, risk };
+    return { raw, label, detail, full, risk, file };
   });
 }
 

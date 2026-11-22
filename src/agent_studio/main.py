@@ -505,6 +505,10 @@ from .api import knowledge as knowledge_api  # noqa: E402
 from .api import knowledge_flow as knowledge_flow_api  # noqa: E402
 
 app.include_router(app_settings_api.router)
+# 文件操作审计（设置页那块「危险模式」下面就是它）：只读，不新开一级导航
+from .api import file_audit as file_audit_api  # noqa: E402
+
+app.include_router(file_audit_api.router)
 app.include_router(search_health_api.router)
 app.include_router(studio_api.router)
 app.include_router(studios_api.router, prefix="/api/studios")

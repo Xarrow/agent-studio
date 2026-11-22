@@ -17,6 +17,7 @@ import type {
   Delegation,
   TicketList,
   GuardrailsRead,
+  FileAuditRow,
   AutoStartResult,
   RouteDecision,
   RouteRule,
@@ -757,6 +758,16 @@ export const api = {
   setAppSetting: (key: string, value: unknown) =>
     put<{ key: string; value: unknown }>(`/api/app-settings/${key}`, { value }),
 
+  // 文件操作审计（设置页「危险模式」下面就是它）
+  fileAudit: (limit = 30) =>
+    request<{
+      items: FileAuditRow[];
+      total: number;
+      danger_mode: boolean;
+      results: { value: string; label: string }[];
+      protected: string[];
+    }>(`/api/file-audit?limit=${limit}`),
+
   // Skill
   skills: () => request<Skill[]>("/api/skills"),
   /** 内置搜索通道自检（设置页用；GET 只读，POST 才真搜） */
@@ -1263,7 +1274,9 @@ export const api = {
     post<{ run_id: string; status: string }>(`/api/runs/${id}/refill`, {}),
   resumeRun: (
     id: string,
-    body: { confirm: boolean; reason?: string; payload?: unknown; remember?: boolean },
+    // allow_dir 是后端口径（snake_case，见 schemas.HitlResumeRequest）——
+    // 写成 camelCase 会被 pydantic 当未知字段丢掉，按钮点了没反应。
+    body: { confirm: boolean; reason?: string; payload?: unknown; remember?: boolean; allow_dir?: boolean },
   ) => post<{ resumed: boolean }>(`/api/runs/resume/${id}`, body),
   compareRuns: (a: string, b: string) =>
     request<{

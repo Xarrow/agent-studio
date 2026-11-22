@@ -89,7 +89,7 @@ def normalize_event(ev: Any, run_id: str = "", seq: int = 0) -> UnifiedEvent | N
     if etype == "hitl_request":
         # 把危险动作闸门给的理由挂上（AgentScope 的确认事件只有工具名和参数）。
         # 授权条上要能回答"为什么拦我"，否则用户只能自己审命令。
-        from .guard import guard_reasons
+        from .guard import file_actions, guard_reasons
 
         reasons = guard_reasons()
         if reasons:
@@ -98,6 +98,17 @@ def normalize_event(ev: Any, run_id: str = "", seq: int = 0) -> UnifiedEvent | N
                 for tc in (raw.get("tool_calls") or [])
                 if isinstance(tc, dict) and str(tc.get("id")) in reasons
             }
+        # 「要写哪个文件」的结构化细节（完整路径 / 操作类型 / 内容摘要或差异）——
+        # 确认卡要写清这四项，而引擎的确认事件里只有原始入参。
+        actions = file_actions()
+        if actions:
+            picked = {
+                str(tc.get("id")): actions[str(tc.get("id"))]
+                for tc in (raw.get("tool_calls") or [])
+                if isinstance(tc, dict) and str(tc.get("id")) in actions
+            }
+            if picked:
+                payload["file_actions"] = picked
 
     return UnifiedEvent(
         run_id=run_id,

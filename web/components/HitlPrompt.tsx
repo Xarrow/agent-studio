@@ -36,7 +36,99 @@
 import { useEffect, useRef, useState } from "react";
 
 import { api } from "@/lib/api";
-import { highestRisk, summarizeCalls } from "@/lib/hitl";
+import { highestRisk, summarizeCalls, type FileAction } from "@/lib/hitl";
+
+/** 一次文件写入确认卡：写清「哪个助手、完整路径、操作、写什么」。 */
+function FileWriteBlock({ file, compact }: { file: FileAction; compact?: boolean }) {
+  const opTone =
+    file.op === "删除"
+      ? "var(--color-err)"
+      : file.op === "移动"
+        ? "var(--color-warn)"
+        : "var(--color-accent)";
+  const dir = file.dir || (file.path.includes("/") ? file.path.slice(0, file.path.lastIndexOf("/")) || "/" : "");
+  const name = dir && file.path.startsWith(dir) ? file.path.slice(dir.length).replace(/^\//, "") : file.path;
+  const kb = Math.max(1, Math.round((file.size || 0) / 1024));
+  return (
+    <div className="rounded-[10px] px-2.5 py-2" style={{ background: "var(--color-surface)" }}>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="text-[13px] font-medium">
+          {file.agent ? `${file.agent} 要` : "助手要"}
+          <span style={{ color: opTone }}>{file.op}</span>
+          一个文件
+        </span>
+        {file.exists && file.op !== "删除" && (
+          <span className="rounded-full px-1.5 py-[1px] text-[10.5px]" style={{ background: "var(--color-surface-2)", color: "var(--color-muted)" }}>
+            已有文件会被覆盖
+          </span>
+        )}
+        <span className="ml-auto text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+          {file.op === "删除" ? "" : file.lines ? `${file.lines} 行` : file.size ? `${kb} KB` : ""}
+        </span>
+      </div>
+
+      {/* 完整目标路径：目录灰、文件名深，一眼看清落在哪 */}
+      <div
+        className="mono mt-1.5 rounded-md px-2 py-1.5 text-[12px] leading-relaxed break-all"
+        style={{ background: "var(--color-surface-2)", color: "var(--color-text)" }}
+        title="完整目标路径"
+      >
+        <span style={{ color: "var(--color-muted)" }}>{dir}</span>
+        <span className="font-medium">{dir ? `/${name}` : name}</span>
+      </div>
+
+      {/* 内容摘要 / 差异要点 */}
+      {file.before && file.before.length > 0 && file.after && file.after.length > 0 ? (
+        <div className={`mt-1.5 grid gap-1.5 ${compact ? "" : "md:grid-cols-2"}`}>
+          <div>
+            <div className="text-[11px] mb-0.5" style={{ color: "var(--color-muted)" }}>
+              现在的内容（前几行）
+            </div>
+            <pre
+              className="mono text-[11px] rounded-md px-2 py-1.5 overflow-auto max-h-28 whitespace-pre-wrap break-all"
+              style={{ background: "var(--color-surface-2)", color: "var(--color-muted)" }}
+            >
+              {file.before.join("\n")}
+            </pre>
+          </div>
+          <div>
+            <div className="text-[11px] mb-0.5" style={{ color: "var(--color-muted)" }}>
+              写入后（前几行）
+            </div>
+            <pre
+              className="mono text-[11px] rounded-md px-2 py-1.5 overflow-auto max-h-28 whitespace-pre-wrap break-all"
+              style={{ background: "color-mix(in srgb, var(--color-accent) 7%, var(--color-surface-2))" }}
+            >
+              {file.after.join("\n")}
+            </pre>
+          </div>
+        </div>
+      ) : file.preview ? (
+        <div className="mt-1.5">
+          <div className="text-[11px] mb-0.5" style={{ color: "var(--color-muted)" }}>
+            内容摘要
+          </div>
+          <pre
+            className="mono text-[11px] rounded-md px-2 py-1.5 overflow-auto max-h-28 whitespace-pre-wrap break-all"
+            style={{ background: "var(--color-surface-2)" }}
+          >
+            {file.preview}
+          </pre>
+        </div>
+      ) : null}
+
+      {file.command && (
+        <div className="mono text-[11px] mt-1.5 break-all" style={{ color: "var(--color-muted)" }}>
+          命令：{file.command}
+        </div>
+      )}
+      <div className="text-[11.5px] mt-1.5" style={{ color: "var(--color-muted)" }}>
+        这个位置在<strong style={{ color: "var(--color-text)" }}>当前会话目录之外</strong>，
+        所以要你点一下。拒绝的话它不会写，并且会在对话里说明。
+      </div>
+    </div>
+  );
+}
 
 export function HitlPrompt({
   runId,
@@ -73,6 +165,17 @@ export function HitlPrompt({
   const calls = summarizeCalls(payload);
   const danger = highestRisk(calls) === "danger";
   const risky = calls.filter((c) => c.risk?.level === "danger");
+  /** 写文件的确认（后端在判定时算好，带完整路径/操作/内容要点） */
+  const fileCalls = calls.filter((c) => c.file);
+  const otherCalls = calls.filter((c) => !c.file);
+  /** 这批文件写落在哪些目录里（只有一个才给「本会话内允许该目录」） */
+  const fileDirs = Array.from(new Set(fileCalls.map((c) => c.file?.dir || "").filter(Boolean)));
+  /** 头部那行小字（提前算好，别在 JSX 里嵌套模板串 —— 小字审计会误判成解释文案） */
+  const headCount = fileCalls.length
+    ? `${fileCalls.length} 个文件操作`
+    : calls.length
+      ? `${calls.length} 个操作`
+      : "";
 
   /**
    * 这一次授权请求的身份：reply_id + 各 tool_call id。
@@ -100,7 +203,7 @@ export function HitlPrompt({
     setRemember(false);
   }, [sig]);
 
-  const resume = async (confirm: boolean, rememberTool = false) => {
+  const resume = async (confirm: boolean, rememberTool = false, allowDir = false) => {
     if (busy || sent !== null) return;
     setBusy(true);
     setSent(confirm);
@@ -110,6 +213,7 @@ export function HitlPrompt({
       await api.resumeRun(runId, {
         confirm,
         ...(rememberTool ? { remember: true } : {}),
+        ...(allowDir ? { allow_dir: true } : {}),
         ...(payload && Object.keys(payload).length ? { payload } : {}),
       });
       onResumed?.(confirm);
@@ -185,10 +289,10 @@ export function HitlPrompt({
           className="text-[13px] font-medium"
           style={{ color: danger ? "var(--color-err)" : "var(--color-warn)" }}
         >
-          需要你授权才能继续
+          {fileCalls.length > 0 && !danger ? "要写会话目录之外的文件" : "需要你授权才能继续"}
         </span>
         <span className="text-[12px] text-[var(--color-muted)]">
-          {calls.length > 0 ? `${calls.length} 个操作` : "助手发起了授权请求"}
+          {headCount}
         </span>
         {danger && (
           <span
@@ -200,10 +304,13 @@ export function HitlPrompt({
         )}
       </div>
 
-      {/* 中间：一条一个操作 */}
+      {/* 中间：文件写入确认（写清路径/操作/内容），其余操作按老样子 */}
       {calls.length > 0 && (
         <div className={compact ? "px-3 py-2 space-y-2" : "px-3 py-2.5 space-y-2.5"}>
-          {calls.map((c, i) => (
+          {fileCalls.map((c, i) => (
+            <FileWriteBlock key={`f${i}`} file={c.file as FileAction} compact={compact} />
+          ))}
+          {otherCalls.map((c, i) => (
             <div key={i} className="rounded-lg px-2.5 py-2" style={{ background: "var(--color-surface-2)" }}>
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-[13px] font-medium">{c.label}</span>
@@ -304,6 +411,46 @@ export function HitlPrompt({
               </button>
             </div>
           </div>
+        ) : fileCalls.length > 0 && !danger ? (
+          /* 文件写入：三个动作摆在一起（允许一次是主操作，目录级放行是进阶项） */
+          <>
+            <button
+              data-tap
+              className="btn btn-sm"
+              disabled={busy}
+              onClick={() => void resume(true)}
+              style={{
+                background: "color-mix(in srgb, var(--color-accent) 12%, transparent)",
+                borderColor: "color-mix(in srgb, var(--color-accent) 40%, transparent)",
+                color: "var(--color-accent)",
+              }}
+            >
+              {busy ? "处理中…" : "允许一次"}
+            </button>
+            {fileDirs.length === 1 && (
+              <button
+                data-tap
+                className="btn btn-sm"
+                disabled={busy}
+                onClick={() => void resume(true, false, true)}
+                title={`本会话内，写到 ${fileDirs[0]} 下的文件都不再问（换会话重新问）`}
+              >
+                本会话内允许该目录
+              </button>
+            )}
+            <button
+              data-tap
+              className="btn btn-sm"
+              style={{ color: "var(--color-err)" }}
+              disabled={busy}
+              onClick={() => void resume(false)}
+            >
+              拒绝
+            </button>
+            <span className="text-[12px] text-[var(--color-muted)]">
+              拒绝后它不会写，会在对话里说明。
+            </span>
+          </>
         ) : (
           <>
             <button

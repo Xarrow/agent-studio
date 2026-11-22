@@ -111,6 +111,22 @@ test("后端给了理由就听后端的（它知道为什么问）", () => {
   assert.match(calls[0].risk!.reason, /递归删除/);
 });
 
+test("文件写入：确认卡用后端的路径/操作细节，别再让人去 JSON 里找", () => {
+  const calls = summarizeCalls({
+    tool_calls: [{ id: "tc_f", name: "Write", input: { file_path: "/root/a.md", content: "x" } }],
+    file_actions: {
+      tc_f: { path: "/root/a.md", op: "新建", inside: false, dir: "/root", preview: "x" },
+    },
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].detail, "新建 /root/a.md");
+  assert.equal(calls[0].file?.dir, "/root");
+  const plain = summarizeCalls({
+    tool_calls: [{ id: "tc_g", name: "Write", input: { file_path: "/root/b.md" } }],
+  });
+  assert.equal(plain[0].file, undefined, "没有 file_actions 时按老样子显示");
+});
+
 test("没给理由时仍然按前端指纹判（老数据/别的运行时）", () => {
   const calls = summarizeCalls({
     tool_calls: [{ id: "tc_1", name: "bash", input: { command: "rm -rf /" } }],
