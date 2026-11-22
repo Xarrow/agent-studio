@@ -22,12 +22,65 @@ const py = (p: string) => readFileSync(join(WEB, "..", "src/agent_studio", p), "
 
 test("徽章/按钮文案来自后端状态，不再自己判 busy", () => {
   const stage = read("components/BrowserStage.tsx");
-  assert.match(stage, /\{control\.badge\}/, "徽章文字必须直接渲染后端给的 badge");
-  assert.match(stage, /\{control\.button\}/, "按钮文案必须直接渲染后端给的 button");
-  assert.match(stage, /control\.button_action/, "按钮动作也由后端指定（take / release）");
+  assert.match(stage, /control[!?]?\.badge/, "徽章文字必须直接渲染后端给的 badge");
+  assert.match(stage, /control[!?]?\.button/, "按钮文案必须直接渲染后端给的 button");
+  assert.match(stage, /control[!?]?\.button_action/, "按钮动作也由后端指定（take / release）");
   assert.match(stage, /\{control\.footer\}/, "底部文案来自后端（本轮结束/已过期都是它）");
   assert.match(stage, /notice\?: string/, "被拒绝的原因要有位置显示");
   assert.doesNotMatch(stage, /onPauseChange/, "旧的协作式暂停闸应当彻底消失（那是抢控的来源）");
+});
+
+test("运行中任何形态都有可点的接管，点到就当场解释", () => {
+  const stage = read("components/BrowserStage.tsx");
+  // 状态还没同步到时（第一轮刚起来）也要有兜底的「接管」—— 实测这一瞬面板里
+  // 只有一条红色横幅、没有按钮，用户点不动也停不下来。
+  assert.match(stage, /live \? "接管" : ""/, "状态未到时要有兜底按钮文案");
+  assert.match(stage, /data-browser-take/, "接管按钮要有稳定的可点标记（三种形态同一处）");
+  assert.doesNotMatch(stage, /onWheel=\{shown \? undefined : handleWheel\}/, "回看态也不能吞掉滚动");
+  assert.match(stage, /denied_hint/, "非 user 态的人话原因来自后端");
+  assert.match(stage, /browser-inline-feedback/, "点击处就地反馈要有一个可见落点");
+  assert.match(stage, /browser-take-pulse/, "被拒时接管按钮要高亮");
+  assert.match(stage, /onControl\?\.\("take"\)/, "横幅里提到「接管」时整条横幅可点");
+});
+
+test("状态文案单一来源：运行条/主底部/面板都读 public_state", () => {
+  const chat = read("components/ChatConsole.tsx");
+  assert.match(chat, /statusText=\{browserCtl\?\.run_bar \|\| undefined\}/, "顶部运行条读后端的 run_bar");
+  assert.match(chat, /browserCtl\?\.chat_status \|\| "助手正在执行…"/, "对话主底部读后端的 chat_status");
+  // 圆点的状态词按 phase 派生，**四个入口（桌面侧栏×2 / mini / 顶栏）共用同一句** ——
+  // 以前只有顶栏那一处读浏览器状态，桌面侧栏同一页面仍写「执行中」。
+  assert.match(chat, /browserCtl\?\.phase === "waiting_user"[\s\S]{0,40}"等你处理"/, "等用户时芯片不许再写执行中");
+  assert.equal((chat.match(/<AgentSwitcher/g) || []).length, 4, "对话页有四个助手切换入口");
+  assert.equal(
+    (chat.match(/statusText=\{agentDotText\}/g) || []).length,
+    4,
+    "四个入口必须用同一句状态词（各写一份必然漂移）",
+  );
+  assert.match(chat, /browserCtl\?\.phase_text \|\| "等你处理"/, "等登录卡片标题也来自 public_state");
+  assert.match(chat, /setBrowserNotice\(""\);\s*\n\s*return;/, "状态一变就清掉旧的 409 横幅");
+});
+
+test("步数口径：胶片条跟 public_state 的同一轮，不跟上一轮", () => {
+  const chat = read("components/ChatConsole.tsx");
+  assert.match(
+    chat,
+    /const runId = browserCtlRef\.current\?\.run_id \|\| liveRunId \|\| lastBrowserRun\.current/,
+    "步骤留档优先取控制器记的那一轮（否则标签说本轮、图是上一轮）",
+  );
+  assert.match(chat, /\[browserCtl\?\.run_id, browserCtl\?\.step_count\]/, "本轮每走一步就同步胶片条");
+  const stage = read("components/BrowserStage.tsx");
+  assert.match(stage, /control\?\.step_count \?\? steps\?\.length/, "缩略条用后端的本轮数，不数内存动作");
+  assert.match(stage, /control\?\.step_label \|\| `过程 \$\{steps\.length\} 步`/, "面板胶片条同一口径");
+});
+
+test("状态类动作不参与当前行（「等你登录」不许残留在底部）", () => {
+  const stage = read("components/BrowserStage.tsx");
+  assert.match(
+    stage,
+    /actions\.filter\(\(a\) => a\.action !== "wait_login"\)/,
+    "wait_login 是状态不是动作：交还后它不能继续当「当前这一行」",
+  );
+  assert.match(stage, /\(running && last\?\.summary\) \|\|[\s\S]{0,40}control\?\.action_line/, "当前行优先用后端状态，其次才是实时动作");
 });
 
 test("会话级浏览器直播：run 结束也不断", () => {

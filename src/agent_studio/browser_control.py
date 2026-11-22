@@ -85,6 +85,9 @@ class Control:
     running: bool = False
     #: 用户在这一段接管里做过什么（人话，交还时进助手的上下文）
     user_notes: list[str] = field(default_factory=list)
+    #: 助手真实执行过的动作 (run_id, 人话) —— 交还摘要里要分清楚"谁做的"。
+    #: 没有这份清单时，模型会把自己上一轮的动作误当成用户的（实测它会反过来否认）。
+    agent_actions: list[tuple[str, str]] = field(default_factory=list)
     #: 交还时抓的页面摘要，等助手下一次动作时消费
     pending_brief: str = ""
     #: 正在执行的原子动作数（接管要等它归零 —— 不许点一半）
@@ -111,9 +114,12 @@ def get_for_session(session_id: str) -> Control | None:
 def ensure(key: str, session_id: str, run_id: str = "") -> Control:
     c = _CONTROLS.get(key)
     if c is None:
-        c = Control(key=key, session_id=session_id, run_id=run_id)
+        c = Control(key=key, session_id=session_id, run_id=run_id, running=bool(run_id))
         _CONTROLS[key] = c
         _ensure_janitor()
+        # 第一条状态就要推出去：上一版这里不推，第一轮跑起来时前端手里还是
+        # 「没有浏览器」，面板只剩一条 409 横幅、没有可点的「接管」（实测）。
+        publish_state(c)
     else:
         if session_id:
             c.session_id = session_id
@@ -152,29 +158,48 @@ def sync_page(c: Control, sess: Any) -> None:
 # --------------------------------------------------------------------------- #
 # 对外文案（**后端定，前端只渲染** —— 三处永远一致的前提）
 # --------------------------------------------------------------------------- #
+def _phase(c: Control) -> tuple[str, str]:
+    """→ (阶段, 一句话)。**所有显示面**都从这一对派生，前端不再各判各的。"""
+    if not c.alive or c.status == CLOSED:
+        return "expired", "浏览器已过期"
+    if c.status == WAITING:
+        return "waiting_user", "等你处理"
+    if c.status == PAUSED:
+        return "paused", "已暂停"
+    if c.status == USER:
+        return "user", "你在操作"
+    return ("agent_running", "助手操作中") if c.running else ("agent_idle", "助手待命")
+
+
 def _badge(c: Control) -> tuple[str, str, str]:
     """→ (徽章文字, 按钮文字, 按钮动作)"""
-    if c.status == AGENT:
-        return ("助手操作中" if c.running else "助手待命"), "接管", "take"
-    if c.status == WAITING:
-        return "等你操作", "交还给 Agent", "release"
-    if c.status == USER:
+    phase, _text = _phase(c)
+    if phase == "agent_running":
+        return "助手操作中", "接管", "take"
+    if phase == "agent_idle":
+        return "助手待命", "接管", "take"
+    if phase == "waiting_user":
+        # 和 phase_text / 运行条 / 主底部同一个词：同一屏上「等你操作」和
+        # 「等你处理」并存过一次，用户读成两套状态。
+        return "等你处理", "交还给 Agent", "release"
+    if phase == "user":
         return "你在操作", "交还给 Agent", "release"
-    if c.status == PAUSED:
+    if phase == "paused":
         return "已暂停", "交还给 Agent", "release"
     return "浏览器已过期", "", ""
 
 
 def _footer(c: Control) -> str:
-    if c.status == AGENT and not c.running:
+    phase, _ = _phase(c)
+    if phase == "agent_idle":
         return "已交还给助手 · 发消息让它接着干"
-    if c.status == AGENT:
+    if phase == "agent_running":
         return "助手正在操作 · 点「接管」可以随时接手"
-    if c.status == WAITING:
-        return "等你完成登录 · 弄好后点「交还给 Agent」"
-    if c.status == PAUSED:
+    if phase == "waiting_user":
+        return "等你完成操作 · 弄好后点「交还给 Agent」"
+    if phase == "paused":
         return "已暂停 · 点「交还给 Agent」让它继续"
-    if c.status == CLOSED:
+    if phase == "expired":
         return "浏览器已过期 · 发消息让它重新打开"
     if c.round_ended:
         return "本轮已结束 · 浏览器还开着，你可以继续操作，或发消息让它接着干"
@@ -182,17 +207,94 @@ def _footer(c: Control) -> str:
 
 
 def _hint(c: Control) -> str:
-    if c.status == AGENT and not c.running:
-        return "控制权在助手这边，但它这一轮已经结束 —— 发一条消息让它接着干。"
-    if c.status == AGENT:
+    phase, _ = _phase(c)
+    if phase == "agent_idle":
+        return "控制权在助手这边，但它这一轮已经结束 —— 发一条消息让它接着干，或点「接管」自己操作。"
+    if phase == "agent_running":
         return "助手正在操作页面。点「接管」它做完当前这一步就停手，画面归你。"
-    if c.status == WAITING:
+    if phase == "waiting_user":
         return c.reason or "请在浏览器里完成操作，好了点「交还给 Agent」。"
-    if c.status == USER:
+    if phase == "user":
         return c.reason or "现在是你在操作。交还后助手会知道你动过什么，接着往下做。"
-    if c.status == PAUSED:
+    if phase == "paused":
         return c.reason or "已暂停。交还给 Agent 之后它才继续。"
     return c.reason or "浏览器会话已过期（30 分钟没有操作）。"
+
+
+def _run_bar(c: Control) -> str:
+    """顶部运行条 / 对话页眉的状态文案。
+
+    空串 = 用执行过程自己的文案（它正按事件推进）；非空 = 覆盖它 ——
+    等用户处理、用户接管这两种时候，说「正在运行 tool_call」是假话。
+    """
+    phase, _ = _phase(c)
+    if phase == "waiting_user":
+        return "等你处理 · 处理完点「交还给 Agent」继续"
+    if phase == "paused":
+        return "已暂停 · 交还给 Agent 之后继续"
+    if phase == "user":
+        return "你在操作浏览器 · 助手已停手，等你交还"
+    return ""
+
+
+def _chat_status(c: Control) -> str:
+    """对话主底部那一行（输入坞上方）——只在这轮还在跑时显示。"""
+    phase, _ = _phase(c)
+    if phase == "waiting_user":
+        return "等你处理 · 登录/确认后点「交还给 Agent」"
+    if phase == "paused":
+        return "已暂停 · 交还给 Agent 之后继续"
+    if phase == "user":
+        return "你在操作浏览器 · 助手在等你交还"
+    return ""
+
+
+def _action_line(c: Control) -> str:
+    """面板底部「当前这一行」——没有实时动作时用它，避免残留上一段的
+    「等你登录」。这是日志和状态最容易打架的地方。"""
+    phase, _text = _phase(c)
+    if phase == "agent_running":
+        return ""  # 让实时动作字幕说话
+    if phase == "agent_idle":
+        return "助手待命 · 发消息让它接着干，或点「接管」自己操作"
+    if phase == "waiting_user":
+        return c.reason or "等你处理 · 弄好后点「交还给 Agent」"
+    if phase == "paused":
+        return c.reason or "已暂停 · 交还给 Agent 之后继续"
+    if phase == "expired":
+        return "浏览器已过期 · 发消息让它重新打开"
+    return "本轮已结束 · 浏览器还开着，你可以继续操作" if c.round_ended else "你在操作 · 点「交还给 Agent」让它接着干"
+
+
+def _denied_hint(c: Control) -> str:
+    """非 user 态下用户操作画面时给他看的人话（前端立即显示在点击处）。"""
+    phase, _ = _phase(c)
+    if phase == "agent_running":
+        return "助手正在操作浏览器 —— 先点「接管」，它就停手把画面给你"
+    if phase == "agent_idle":
+        return "助手这一轮已经结束，画面现在是只读 —— 先点「接管」，画面就归你"
+    if phase == "paused":
+        return "助手已暂停 —— 先点「交还给 Agent」让它继续"
+    if phase == "expired":
+        return "浏览器已过期（30 分钟没有操作）· 发消息让它重新打开"
+    return ""
+
+
+def step_count_for(c: Control) -> int:
+    """本轮（``run_id``）浏览器真实执行的步数 —— **卡片上的唯一口径**。
+
+    以前卡片用内存里收到几行动作（刷新清零、换个面板又变），和留档步数
+    对不上；现在一律按这一轮落盘的步骤索引数，刷新前后同一个数。
+    """
+    if not c.session_id or not c.run_id:
+        return 0
+    try:
+        from .browser_trace import read_index
+        from .runner.service import session_work_dir
+
+        return len(read_index(session_work_dir(c.session_id), c.run_id))
+    except Exception:  # pragma: no cover —— 数不出来就说 0，不该挡住状态接口
+        return 0
 
 
 def public_state(session_id: str) -> dict[str, Any]:
@@ -203,6 +305,8 @@ def public_state(session_id: str) -> dict[str, Any]:
             "session_id": session_id,
             "alive": False,
             "status": "none",
+            "phase": "none",
+            "phase_text": "浏览器未打开",
             "holder": "none",
             "badge": "",
             "tone": "muted",
@@ -210,6 +314,10 @@ def public_state(session_id: str) -> dict[str, Any]:
             "button_action": "",
             "hint": "",
             "footer": "",
+            "run_bar": "",
+            "chat_status": "",
+            "action_line": "",
+            "denied_hint": "",
             "url": "",
             "title": "",
             "reason": "",
@@ -219,13 +327,19 @@ def public_state(session_id: str) -> dict[str, Any]:
             "running": False,
             "can_click": False,
             "run_id": "",
+            "step_count": 0,
+            "step_label": "",
         }
     badge, button, action = _badge(c)
+    phase, phase_text = _phase(c)
     holder = AGENT if c.status == AGENT else ("none" if c.status == CLOSED else "user")
+    steps = step_count_for(c)
     return {
         "session_id": session_id,
         "alive": bool(c.alive and c.status != CLOSED),
         "status": c.status,
+        "phase": phase,
+        "phase_text": phase_text,
         "holder": holder,
         "badge": badge,
         "tone": _TONE.get(c.status, "muted"),
@@ -233,6 +347,10 @@ def public_state(session_id: str) -> dict[str, Any]:
         "button_action": action,
         "hint": _hint(c),
         "footer": _footer(c),
+        "run_bar": _run_bar(c),
+        "chat_status": _chat_status(c),
+        "action_line": _action_line(c),
+        "denied_hint": _denied_hint(c),
         "url": c.url,
         "title": c.title,
         "reason": c.reason,
@@ -242,6 +360,10 @@ def public_state(session_id: str) -> dict[str, Any]:
         "running": c.running,
         "can_click": c.status in (USER, WAITING, PAUSED),
         "run_id": c.run_id,
+        # 步数口径：**本轮**。所有形态（缩略条 / 右栏 / 浮层）和刷新前后都读它。
+        # 0 步时不给标签：卡片上写「本轮 0 步」既没信息量，又容易被读成"口径坏了"。
+        "step_count": steps,
+        "step_label": f"本轮 {steps} 步" if steps else "",
     }
 
 
@@ -277,8 +399,8 @@ async def set_status(
 ) -> None:
     async with c.cond:
         c.status = status
-        if reason:
-            c.reason = reason
+        # 不带原因 = 清掉上一段的（否则「等你登录」会粘到下一段状态上）
+        c.reason = reason or ""
         if round_ended is not None:
             c.round_ended = round_ended
         c.since = now_ms()
@@ -394,8 +516,11 @@ async def gate_agent(c: Control, run_id: str, what: str = "操作") -> str:
         c.last_active = now_ms()
         return ""
     if c.status == AGENT:
+        changed = not c.running
         c.running = True
         c.last_active = now_ms()
+        if changed:
+            publish_state(c)  # 徽章「助手待命 → 助手操作中」必须当场推给前端
         return ""
 
     # 同一轮里用户按了接管/等登录：停在这里等交还（绝不和用户抢同一个页面）
@@ -415,7 +540,9 @@ def user_gate(c: Control | None) -> str:
     if c is None or not c.alive or c.status == CLOSED:
         return "这个会话现在没有开着的浏览器（可能已过期），发消息让它重新打开"
     if c.status == AGENT:
-        return "助手正在操作浏览器 —— 先点「接管」，它就停手把画面给你"
+        # 「待命」和「正在干」是两件事：以前都写"助手正在操作浏览器"，
+        # 交还后用户点画面会看到一句假话，还以为点坏了。
+        return _denied_hint(c)
     return ""
 
 
@@ -429,6 +556,19 @@ def add_note(c: Control, text: str) -> None:
     c.user_notes.append(text)
     del c.user_notes[:-30]
     publish_note(c, text)
+
+
+def add_agent_action(c: Control, text: str, run_id: str = "") -> None:
+    """记一条**助手真实执行过**的动作（交还摘要的第一段靠它）。
+
+    为什么不从执行记录反查：run 的浏览器步骤索引只留"改了画面"的动作，
+    read/wait 也在执行记录里；而且摘要要在工具调用返回的那一刻就拼好。
+    """
+    text = (text or "").strip()
+    if not text:
+        return
+    c.agent_actions.append((run_id or c.run_id, text))
+    del c.agent_actions[:-60]
 
 
 async def page_summary(sess: Any) -> str:
@@ -447,19 +587,44 @@ async def page_summary(sess: Any) -> str:
     return head + (f"\n页面可见文字（节选）：{text}" if text else "")
 
 
+def _handoff_facts(c: Control, notes: list[str], page: str = "") -> str:
+    """交还摘要的**结构**（模型分不清"谁做的"就会自己打自己）。
+
+    实测：只写「用户在你停手期间操作了页面」时，模型在下一轮会把自己上一轮
+    的滚动/点击当成用户的，甚至回一句「我并没有真正调用浏览器工具」。所以
+    固定两段、点名归属，并明确"以上助手操作均已真实执行"。
+    """
+    mine = [s for _rid, s in c.agent_actions if s][-12:]
+    lines = ["〔浏览器控制权交接 · 事实清单〕"]
+    if mine:
+        lines.append("一、助手已执行（这些是你真实执行过的浏览器动作，执行记录可查）：")
+        lines += [f"  - {s}" for s in mine]
+    else:
+        lines.append("一、助手已执行：本轮还没有执行过浏览器动作。")
+    if notes:
+        lines.append("二、用户接管期间的操作（用户本人做的，**不是你做的**）：")
+        lines += [f"  - {s}" for s in notes[-12:]]
+    if page:
+        head = page if page.startswith("当前页面：") else "当前页面：" + page
+        lines.append(head.replace("\n", "\n  "))
+    if mine:
+        lines.append("以上助手操作均已真实执行，不要否认。")
+    if notes:
+        lines.append("第二段是用户本人做的：不要当成你的动作，也不要因此否认第一段。")
+    return "\n".join(lines)
+
+
 async def consume_brief(c: Control, sess: Any) -> str:
-    """把"用户动过什么"交给助手（只给一次，给完就清）。"""
+    """把"谁做了什么"交给助手（只给一次，给完就清）。"""
     pending = c.pending_brief
     notes = c.user_notes[:]
+    # 没有交接（既没摘要也没有用户动作）就别每步都塞一遍事实清单
     if not pending and not notes:
         return ""
     c.pending_brief = ""
     c.user_notes.clear()
-    parts: list[str] = []
-    if notes:
-        parts.append("用户在你停手期间操作了页面：" + "；".join(notes[-10:]))
-    parts.append(pending or await page_summary(sess))
-    return "〔用户刚动过这个浏览器，先看这段再决定下一步〕\n" + "\n".join(parts)
+    page = pending or await page_summary(sess)
+    return _handoff_facts(c, notes, page)
 
 
 class UserInputDenied(Exception):
@@ -517,14 +682,10 @@ async def hand_back(c: Control, sess: Any) -> None:
     """用户点「交还给 Agent」：抓页面摘要 + 落一条会话消息，然后放行助手。"""
     notes = c.user_notes[:]
     summary = await page_summary(sess) if sess is not None else ""
-    lines = []
-    if notes:
-        lines.append("你在浏览器里：" + "；".join(notes[-10:]))
+    # 只放页面快照；"用户动过什么"留在 user_notes 里，由 consume_brief 和
+    # "助手已执行"一起拼成两段事实清单（各写一遍会让同一句话出现两次）。
     if summary:
-        lines.append(summary)
-    brief = "\n".join(lines)
-    if brief:
-        c.pending_brief = brief
+        c.pending_brief = summary
     if c.session_id and notes:
         await _note_message(c, "〔用户操作〕" + "；".join(notes[-10:]) + "。已交还给助手，它接下来会看到这些。")
     await resume_agent(c)

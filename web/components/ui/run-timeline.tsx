@@ -663,6 +663,7 @@ export function ProcessBar({
   open: openProp,
   onToggle,
   loading = false,
+  statusText,
 }: {
   steps: Step[];
   running?: boolean;
@@ -677,6 +678,12 @@ export function ProcessBar({
   onToggle?: () => void;
   /** 展开态正在拉事件 */
   loading?: boolean;
+  /**
+   * 运行中那一行的覆盖文案（比如「等你处理 · 点交还继续」）。
+   * 浏览器等用户操作/用户接管时，说"正在运行 tool_call"是假话 —— 文案由后端状态给，
+   * 这里只负责显示，不自己推断。
+   */
+  statusText?: string;
 }) {
   const [openState, setOpenState] = useState(defaultOpen);
   const controlled = typeof openProp === "boolean";
@@ -812,8 +819,8 @@ export function ProcessBar({
           }
         >
           {running
-            ? `${phaseText(proc, true)}${
-                proc.length > 0 ? ` · 第 ${proc.length} 步` : ""
+            ? `${
+                statusText ? statusText : `${phaseText(proc, true)}${proc.length > 0 ? ` · 第 ${proc.length} 步` : ""}`
               }${
                 typeof elapsedMs === "number" && elapsedMs > 0
                   ? ` · 已用 ${fmtDuration(elapsedMs)}`

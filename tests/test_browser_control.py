@@ -68,6 +68,25 @@ def _ctl(status: str = bc.AGENT, run_id: str = "run_1") -> bc.Control:
     return c
 
 
+def test_徽章与阶段文字同一个词_三态不漏():
+    """同一屏上曾出现「等你操作」和「等你处理」两个词 —— 同一状态只能有一个说法。
+
+    徽章 (面板/缩略条) 与 phase_text (运行条/主底部/等登录卡片标题) 必须逐字相同，
+    否则用户会以为这是两件事。
+    """
+    c = _ctl(bc.AGENT)
+    for status, running, word in [
+        (bc.AGENT, True, "助手操作中"),
+        (bc.AGENT, False, "助手待命"),
+        (bc.USER, False, "你在操作"),
+        (bc.WAITING, False, "等你处理"),
+        (bc.PAUSED, False, "已暂停"),
+    ]:
+        c.status, c.running = status, running
+        st = bc.public_state("s1")
+        assert st["badge"] == st["phase_text"] == word, f"{status}/{running} 两处说法不一致"
+
+
 def test_三处文案来自同一份状态():
     """徽章 / 按钮 / 底部文案必须同一个对象给出 —— v1 "已暂停但芯片写运行中"就是各判各的。"""
     c = _ctl(bc.AGENT)
@@ -82,7 +101,7 @@ def test_三处文案来自同一份状态():
 
     bc._CONTROLS[c.key].status = bc.WAITING
     st = bc.public_state("s1")
-    assert st["badge"] == "等你操作" and st["button_action"] == "release"
+    assert st["badge"] == "等你处理" and st["button_action"] == "release"
 
     bc._CONTROLS[c.key].status = bc.CLOSED
     st = bc.public_state("s1")
@@ -290,3 +309,110 @@ async def test_助手待命与操作中的徽章不混用():
     await bc.gate_agent(c, "run_1", "click")
     st = bc.public_state("s1")
     assert st["running"] is True and st["badge"] == "助手操作中"
+
+
+# --------------------------------------------------------------------------- #
+# 2026-11 复测的四个缺陷：显示面单一来源 / 就地反馈 / 步数口径 / 交还摘要
+# --------------------------------------------------------------------------- #
+def test_所有显示面同一口径_三态各自说什么():
+    """徽章/状态行/底部/运行条/主底部/横幅提示都从 public_state 派生。
+
+    复测原话：已是「你在操作」时横幅还写「助手正在操作」；等登录时顶部芯片
+    仍「执行中」、运行条仍「正在运行 tool_call」。
+    """
+    c = _ctl(bc.AGENT)
+    st = bc.public_state("s1")
+    assert st["phase"] == "agent_running"
+    assert st["badge"] == "助手操作中" and st["button_action"] == "take"
+    assert st["run_bar"] == "" and st["chat_status"] == ""  # 交给过程条自己说
+    assert "接管" in st["denied_hint"]
+
+    # 交还后（没人跑）：徽章是待命，不许再说「正在操作」
+    c.status, c.running = bc.AGENT, False
+    st = bc.public_state("s1")
+    assert st["phase"] == "agent_idle" and st["badge"] == "助手待命"
+    assert "正在操作" not in st["action_line"]
+
+    # 用户接管：横幅提示必须为空（不是 user 态就没有"要你先接管"这句话）
+    c.status, c.running, c.round_ended = bc.USER, False, False
+    st = bc.public_state("s1")
+    assert st["phase_text"] == "你在操作" and st["denied_hint"] == ""
+    assert "助手正在操作" not in st["footer"]
+    assert "你在操作" in st["run_bar"] and "助手已停手" in st["run_bar"]
+
+    # 等用户登录：顶部芯片/运行条/主底部都写「等你处理」，不再写执行中
+    c.status, c.reason = bc.WAITING, "请在浏览器里完成登录"
+    st = bc.public_state("s1")
+    assert st["phase_text"] == "等你处理" and st["badge"] == "等你处理"
+    assert st["run_bar"].startswith("等你处理")
+    assert "等你处理" in st["chat_status"]
+    assert "tool_call" not in st["run_bar"] and "正在执行" not in st["chat_status"]
+
+
+async def test_等登录交还后不残留等你登录():
+    c = _ctl(bc.WAITING)
+    c.reason = "请在浏览器里完成登录"
+    await bc.resume_agent(c)
+    st = bc.public_state("s1")
+    for k in ("badge", "footer", "hint", "run_bar", "chat_status", "action_line"):
+        assert "登录" not in st[k], f"{k} 还残留登录文案：{st[k]}"
+
+
+def test_助手待命时点画面给的是待命原因():
+    """交还后（助手待命）用户点画面：必须解释"这一轮已结束，先点接管"，
+    不能复读"助手正在操作浏览器"（复测就是被这句假话挡住）。"""
+    c = _ctl(bc.AGENT)
+    c.running = False
+    why = bc.user_gate(c)
+    assert "这一轮已经结束" in why and "接管" in why
+    assert "正在操作" not in why
+
+
+async def test_交还摘要分两段且明确助手动作真实执行过():
+    """模型曾回「我并没有真正调用浏览器工具」—— 摘要必须点名归属。"""
+    c = _ctl(bc.USER)
+    bc.add_agent_action(c, "打开 duckduckgo.com", "run_1")
+    bc.add_agent_action(c, "往下滚", "run_1")
+    c.user_notes.append("用户点击了 搜索框")
+    c.pending_brief = "当前页面：DuckDuckGo — https://duckduckgo.com"
+
+    brief = await bc.consume_brief(c, FakeSess())
+    assert "一、助手已执行" in brief and "二、用户接管期间的操作" in brief
+    assert "以上助手操作均已真实执行" in brief
+    assert "不是你做的" in brief
+    assert brief.index("打开 duckduckgo.com") < brief.index("用户点击了 搜索框")
+    assert await bc.consume_brief(c, FakeSess()) == "", "同一份摘要只给一次"
+
+
+def test_步数口径是本轮_刷新前后同一个数(monkeypatch, tmp_path):
+    from agent_studio.browser_trace import record_step
+    from agent_studio.runner import service as svc
+
+    monkeypatch.setattr(svc, "session_work_dir", lambda sid: tmp_path)
+    c = _ctl(bc.AGENT, run_id="run_a")
+    for i in range(3):
+        record_step(tmp_path, "run_a", i + 1, "click", f"第{i + 1}步")
+
+    st = bc.public_state("s1")
+    assert st["step_count"] == 3 and st["step_label"] == "本轮 3 步"
+    # 再读一次 = 刷新：同一个数（以前内存里数动作，刷新就变）
+    assert bc.public_state("s1")["step_count"] == 3
+    # 新的一轮从 0 开始，不带上一轮
+    c.run_id = "run_b"
+    assert bc.public_state("s1")["step_count"] == 0
+
+
+async def test_第一轮一建控制权就把状态推给前端(monkeypatch):
+    """上一版 ensure() 不推状态：第一轮跑起来时前端手里还是「没有浏览器」，
+    面板只有 409 横幅、没有可点的接管（复测缺陷 1 的根）。"""
+    seen: list[dict] = []
+    monkeypatch.setattr(bc, "_publish", lambda c, ev: seen.append(ev))
+    c = bc.ensure("ses:s1", "s1", "run_1")
+    assert seen and seen[-1]["type"] == "browser_state"
+    assert seen[-1]["payload"]["badge"] == "助手操作中", "第一轮正在跑，不能说待命"
+    assert seen[-1]["payload"]["button_action"] == "take"
+
+    c.running = False
+    await bc.gate_agent(c, "run_1", "click")
+    assert seen[-1]["payload"]["badge"] == "助手操作中"
+

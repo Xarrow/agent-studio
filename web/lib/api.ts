@@ -312,6 +312,9 @@ export type BrowserControlState = {
   session_id: string;
   /** none = 这个会话还没开过浏览器 */
   status: "none" | "agent" | "user" | "waiting_user" | "paused" | "closed";
+  /** 阶段（唯一口径）：agent_running / agent_idle / user / waiting_user / paused / expired / none */
+  phase?: "none" | "agent_running" | "agent_idle" | "user" | "waiting_user" | "paused" | "expired";
+  phase_text?: string;
   holder: "agent" | "user" | "none";
   alive: boolean;
   badge: string;
@@ -320,6 +323,14 @@ export type BrowserControlState = {
   button_action: "take" | "release" | "";
   hint: string;
   footer: string;
+  /** 顶部运行条的覆盖文案（空串 = 用执行过程自己的文案） */
+  run_bar?: string;
+  /** 对话主底部那一行（空串 = 用默认的「助手正在执行…」） */
+  chat_status?: string;
+  /** 没有实时动作时面板的那一行（避免残留「等你登录」） */
+  action_line?: string;
+  /** 非 user 态下用户操作画面时显示的人话（点击处就地显示） */
+  denied_hint?: string;
   url: string;
   title: string;
   reason: string;
@@ -330,6 +341,9 @@ export type BrowserControlState = {
   running: boolean;
   can_click: boolean;
   run_id: string;
+  /** 本轮浏览器步数（唯一口径；缩略条/右栏/浮层/刷新前后都读它） */
+  step_count?: number;
+  step_label?: string;
 };
 
 export const api = {

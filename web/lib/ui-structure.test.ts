@@ -420,7 +420,7 @@ test("对话页：过程默认收起，只露结果", () => {
     /<RunTimeline steps=\{eventsToSteps/,
     "不许再把完整时间线摊在消息流里（默认只给结果）",
   );
-  assert.match(chat, /running\n\s*elapsedMs=\{liveElapsed\}/, "执行中要带 running + 耗时");
+  assert.match(chat, /running[\s\S]{0,120}elapsedMs=\{liveElapsed\}/, "执行中要带 running + 耗时");
 });
 
 test("过程条：剔掉输入和回答，默认收起", () => {

@@ -751,6 +751,22 @@ body {
   animation: pulse-dot 1.4s ease-in-out infinite;
 }
 
+/* 用户被拒时把「接管」按钮闪一下 —— 告诉他"要点的就是这里"，不靠再读一遍横幅 */
+@keyframes browser-take-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 55%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 7px color-mix(in srgb, var(--color-accent) 0%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 0%, transparent);
+  }
+}
+.browser-take-pulse {
+  animation: browser-take-pulse 1.1s ease-out 2;
+}
+
 /* 统一反馈层（Toast）动画 */
 @keyframes toast-in {
   from {

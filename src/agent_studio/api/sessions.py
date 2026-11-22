@@ -1049,7 +1049,11 @@ async def browser_control_act(
     c = bc.get_for_session(session_id)
     action = str((payload or {}).get("action") or "")
     if c is None:
-        raise HTTPException(status.HTTP_409_CONFLICT, "这个会话现在没有开着的浏览器")
+        # 助手还没打开浏览器 / 已过期：说清是哪一种，别只给一句"没有浏览器"
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "这个会话现在没有开着的浏览器（助手还没打开，或者已过期 30 分钟）· 它一打开这里就能点「接管」",
+        )
     if action == "take":
         ok, why = await bc.take(c)
         if not ok:

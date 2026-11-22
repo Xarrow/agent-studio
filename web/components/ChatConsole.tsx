@@ -432,6 +432,24 @@ export function ChatConsole({
   const [browserCtl, setBrowserCtl] = useState<BrowserControlState | null>(null);
   /** 被拒绝的人话原因（409）—— 必须显示在画面上，不许静默吞掉 */
   const [browserNotice, setBrowserNotice] = useState("");
+  /** 当前状态的最新值（SSE 回调里读它，避免 effect 闭包里拿到旧的 null） */
+  const browserCtlRef = useRef<BrowserControlState | null>(null);
+  browserCtlRef.current = browserCtl;
+  const ctlSyncAt = useRef(0);
+  /** 主动补一次状态：动作/画面先到、状态后到（或事件没赶上）时也要立刻有按钮 */
+  const syncBrowserCtl = useCallback(async () => {
+    if (!sessionId) return;
+    const now = Date.now();
+    if (now - ctlSyncAt.current < 1200) return;
+    ctlSyncAt.current = now;
+    try {
+      const st = await api.browserControlState(sessionId);
+      setBrowserCtl(st);
+      browserCtlRef.current = st;
+    } catch {
+      /* 状态拿不到不影响看画面 */
+    }
+  }, [sessionId]);
   /** 会话加载的请求序号（防旧回包覆盖新会话） */
   const loadSeqRef = useRef(0);
   /** 还没加载的更早轮次的上界（0 = 已到顶）；配合 api.sessionTurns 往上翻 */
@@ -526,6 +544,16 @@ export function ChatConsole({
   /* 「需要你上手」只在最后一个动作是 wait_login 时为真 —— 不用后端再加标记，
      动作流本身就是真相来源（登录完成后助手会继续 navigate/click，状态自然解除）。 */
   const browserWaiting = browserCtl?.status === "waiting_user";
+  /* 顶栏/侧栏那个圆点的状态词 —— **四处 AgentSwitcher 共用同一句**（以前只有
+     顶栏那一处读了浏览器状态，桌面侧栏仍写「执行中」，同一个页面两种说法）。 */
+  const agentDotText =
+    browserCtl?.phase === "waiting_user"
+      ? "等你处理"
+      : browserCtl?.phase === "user"
+        ? "你在操作"
+        : browserCtl?.phase === "paused"
+          ? "已暂停"
+          : undefined;
   /** 本次发送的内容（作为执行过程的第一段「输入」） */
   const [liveInput, setLiveInput] = useState("");
   /** 正在跑的这一轮的 run id —— 停止时要拿它去 abort 后端 */
@@ -1197,6 +1225,10 @@ export function ChatConsole({
     setBrowserActions([]);
     setBrowserSteps([]);
     setBrowserOpen(false);
+    // 控制权状态也属于上一个会话：不清的话切过去第一帧还挂着别人的徽章/步数
+    // （新会话的直播流会立刻推一份真状态过来）
+    setBrowserCtl(null);
+    setBrowserNotice("");
     lastBrowserRun.current = "";
     liveMeta.current = { url: "", title: "" };
     clearFrame();
@@ -1627,8 +1659,12 @@ export function ChatConsole({
    *  凭证只走这条路进浏览器，不进模型、不落库。 */
   /** 拉这一次浏览器执行的步骤留档 */
   const loadBrowserSteps = useCallback(async () => {
-    const runId = lastBrowserRun.current || liveRunId;
+    // 口径 = public_state 的「本轮」。优先跟控制器记的那一轮，其次本次流的 run，
+    // 最后才是"这个会话最近一次浏览器执行" —— 以前固定取最后者，卡片标签说
+    // 「本轮 N 步」而胶片条放的是上一轮，29 / 7 两套数就是这么打架的。
+    const runId = browserCtlRef.current?.run_id || liveRunId || lastBrowserRun.current;
     if (!sessionId || !runId) return;
+    lastBrowserRun.current = runId;
     try {
       const r = await api.browserSteps(sessionId, runId);
       setBrowserSteps(r.steps ?? []);
@@ -1662,6 +1698,13 @@ export function ChatConsole({
     if (browserOpen) void loadBrowserSteps();
   }, [browserOpen, loadBrowserSteps]);
 
+  /* 换了一轮、或本轮又走了一步 → 胶片条跟着换。以前只在"打开面板"和"进会话"
+     时拉一次，本轮已经走了 5 步、条上还是上一轮的那几张图。 */
+  useEffect(() => {
+    if (browserCtl?.run_id) void loadBrowserSteps();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [browserCtl?.run_id, browserCtl?.step_count]);
+
   const sendBrowser = useCallback(
     async (body: Record<string, unknown>) => {
       if (!sessionId) return;
@@ -1670,11 +1713,13 @@ export function ChatConsole({
         if (r?.state) setBrowserCtl(r.state);
         setBrowserNotice("");
       } catch (e) {
-        // 被拒（助手正在操作 / 已过期）→ 把后端那句人话摆出来，不许静默吞掉
+        // 被拒（助手正在操作 / 已过期）→ 把后端那句人话摆出来，不许静默吞掉。
+        // 同时补一次状态：面板上的徽章/按钮必须立刻和这句话一致。
         setBrowserNotice(e instanceof Error ? e.message : String(e));
+        void syncBrowserCtl();
       }
     },
-    [sessionId],
+    [sessionId, syncBrowserCtl],
   );
 
   /** 接管 / 交还 —— 后端改完状态整份回给我们，直接渲染（前端不判断） */
@@ -1687,9 +1732,10 @@ export function ChatConsole({
         setBrowserNotice("");
       } catch (e) {
         setBrowserNotice(e instanceof Error ? e.message : String(e));
+        void syncBrowserCtl();
       }
     },
-    [sessionId],
+    [sessionId, syncBrowserCtl],
   );
 
   /**
@@ -1714,6 +1760,10 @@ export function ChatConsole({
         // 控制权状态：徽章 / 按钮 / 底部文案全由它决定
         if (ev.type === "browser_state") {
           setBrowserCtl(p as unknown as BrowserControlState);
+          browserCtlRef.current = p as unknown as BrowserControlState;
+          // 状态一变，上一条 409 横幅就是旧话了（"你在操作"时还挂着
+          // "助手正在操作浏览器" —— 实测就是这样自相矛盾的）
+          setBrowserNotice("");
           return;
         }
         // 用户自己的动作（人话）—— 也进动作字幕，让他看到"系统记住了我做了什么"
@@ -1726,6 +1776,9 @@ export function ChatConsole({
           return;
         }
         if (ev.type === "browser_action") {
+          // 画面/动作先到、控制权状态还没到（第一轮刚起来）—— 立刻补一次，
+          // 否则面板上只有画面、没有可点的「接管」（实测就是这个缺口）
+          if (!browserCtlRef.current || browserCtlRef.current.status === "none") void syncBrowserCtl();
           const summary = typeof p.summary === "string" ? p.summary : "";
           if (summary) {
             pendingActions.current.push({
@@ -1738,6 +1791,7 @@ export function ChatConsole({
           }
         }
         if (ev.type === "browser_frame" && typeof p.frame === "string") {
+          if (!browserCtlRef.current || browserCtlRef.current.status === "none") void syncBrowserCtl();
           const u = typeof p.url === "string" ? p.url : "";
           // 收尾时会吐 about:blank 的白屏帧，丢掉它；url 偶尔为空（后端还没读到
           // document.URL）—— 那种时候沿用上一次的地址，别把地址栏清空。
@@ -1759,7 +1813,7 @@ export function ChatConsole({
       }
     };
     return () => es.close();
-  }, [sessionId, flushActions]);
+  }, [sessionId, flushActions, syncBrowserCtl]);
 
   const attachStream = (runId: string, sentText: string, reattachments = 0) => {
     const es = new EventSource(api.streamUrl(runId));
@@ -2803,6 +2857,7 @@ export function ChatConsole({
                   value={agentId}
                   onChange={switchAgent}
                   busy={busy}
+                  statusText={agentDotText}
                   open={switcherOpen === "sidebar"}
                   onOpenChange={(v) => setSwitcherOpen(v ? "sidebar" : null)}
                   onSettings={agentId ? () => setConfigAgent(agentId) : undefined}
@@ -2834,6 +2889,7 @@ export function ChatConsole({
                 value={agentId}
                 onChange={switchAgent}
                 busy={busy}
+                statusText={agentDotText}
                 open={switcherOpen === "mini"}
                 onOpenChange={(v) => setSwitcherOpen(v ? "mini" : null)}
               />
@@ -2939,6 +2995,7 @@ export function ChatConsole({
                             value={agentId}
                             onChange={switchAgent}
                             busy={busy}
+                            statusText={agentDotText}
                             open={switcherOpen === "sidebar"}
                             onOpenChange={(v) => setSwitcherOpen(v ? "sidebar" : null)}
                             onSettings={agentId ? () => setConfigAgent(agentId) : undefined}
@@ -3042,6 +3099,7 @@ export function ChatConsole({
                 value={agentId}
                 onChange={switchAgent}
                 busy={busy}
+                statusText={agentDotText}
                 open={switcherOpen === "bar"}
                 onOpenChange={(v) => setSwitcherOpen(v ? "bar" : null)}
               />
@@ -3617,6 +3675,7 @@ export function ChatConsole({
                     actions={browserActions}
                     control={browserCtl}
                     notice={browserNotice}
+                    live={busy}
                     onControl={(a) => void browserControl(a)}
                     onOpen={() => {
                       // 宽屏：右栏就是它的位置（对话不被遮）；窄屏没有右栏，仍用浮层
@@ -3637,6 +3696,7 @@ export function ChatConsole({
                     <ProcessBar
                       steps={liveSteps}
                       running
+                      statusText={browserCtl?.run_bar || undefined}
                       elapsedMs={liveElapsed}
                       detail={
                         liveRunId ? (
@@ -3787,7 +3847,10 @@ export function ChatConsole({
                       className="h-1.5 w-1.5 rounded-full"
                       style={{ background: "var(--color-warn)" }}
                     />
-                    需要你在浏览器里操作
+                    {browserCtl?.phase_text || "等你处理"}
+                    <span className="text-[12px] font-normal" style={{ color: "var(--color-muted)" }}>
+                      · 在浏览器里完成操作
+                    </span>
                   </div>
                   <p className="mt-1 text-[12.5px] leading-relaxed" style={{ color: "var(--color-text-2)" }}>
                     {browserCtl?.reason ||
@@ -4332,11 +4395,15 @@ export function ChatConsole({
                   placeholder={
                     paused
                       ? "运行暂停，先处理上面的授权…"
-                      : busy
-                        ? "执行中 · 回车即插话"
-                        : pendingFiles.length > 0
-                          ? `附了 ${pendingFiles.length} 个文件，说点什么…`
-                          : "说点什么…"
+                      : browserCtl?.phase === "waiting_user"
+                        ? "等你处理 · 也可以在下面直接说"
+                        : browserCtl?.phase === "user"
+                          ? "你在操作浏览器 · 发消息让助手接着干"
+                          : busy
+                            ? "执行中 · 回车即插话"
+                            : pendingFiles.length > 0
+                              ? `附了 ${pendingFiles.length} 个文件，说点什么…`
+                              : "说点什么…"
                   }
                   value={input}
                   disabled={paused}
@@ -4464,7 +4531,7 @@ export function ChatConsole({
                     {dragging
                       ? "松手即添加为附件"
                       : busy && !paused
-                        ? "助手正在执行…"
+                        ? (browserCtl?.chat_status || "助手正在执行…")
                         : ""}
                   </span>
                   <div className="ml-auto flex items-center gap-1">
@@ -4670,6 +4737,7 @@ export function ChatConsole({
           steps={browserSteps}
           browserControl={browserCtl}
           browserNotice={browserNotice}
+          browserLive={busy}
           onBrowserControl={(a) => void browserControl(a)}
           onBrowserOpenFull={() => setBrowserOpen(true)}
           onUserClick={async (x, y) => sendBrowser({ kind: "click", x, y })}
@@ -4720,6 +4788,7 @@ export function ChatConsole({
               actions={browserActions}
               control={browserCtl}
               notice={browserNotice}
+              live={busy}
               onControl={(a) => void browserControl(a)}
               onUserClick={async (x, y) => sendBrowser({ kind: "click", x, y })}
               onUserText={async (text) => sendBrowser({ kind: "text", text })}

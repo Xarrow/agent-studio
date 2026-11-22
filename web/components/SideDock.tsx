@@ -46,6 +46,7 @@ export function SideDock({
   steps,
   browserControl,
   browserNotice,
+  browserLive,
   onBrowserControl,
   onBrowserOpenFull,
   onUserClick,
@@ -83,6 +84,8 @@ export function SideDock({
   browserControl?: BrowserControlState | null;
   /** 被拒绝的人话原因（409）——要显示出来 */
   browserNotice?: string;
+  /** 这一轮正在跑（状态还没同步过来时也要有可点的接管） */
+  browserLive?: boolean;
   onBrowserControl?: (action: "take" | "release") => void;
   onBrowserOpenFull?: () => void;
   onUserClick?: (x: number, y: number) => void | Promise<void>;
@@ -500,6 +503,7 @@ export function SideDock({
                 steps={steps}
                 control={browserControl}
                 notice={browserNotice}
+                live={browserLive}
                 onControl={onBrowserControl}
                 onUserClick={onUserClick}
                 onUserText={onUserText}

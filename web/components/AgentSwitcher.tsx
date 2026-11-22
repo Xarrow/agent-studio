@@ -34,6 +34,7 @@ export function AgentSwitcher({
   value,
   onChange,
   busy,
+  statusText,
   open,
   onOpenChange,
   variant = "bar",
@@ -44,6 +45,8 @@ export function AgentSwitcher({
   value: string;
   onChange: (id: string) => void;
   busy?: boolean;
+  /** 圆点的状态文案（默认「执行中」/「在线」）—— 浏览器等用户操作时说「等你处理」 */
+  statusText?: string;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   /** bar=顶栏紧凑徽章（手机 / 侧栏收起时）；sidebar=会话列表顶部的身份块 */
@@ -215,8 +218,8 @@ export function AgentSwitcher({
         <>
         <span
           className="shrink-0 w-[6px] h-[6px] rounded-full"
-          data-tip={busy ? "执行中" : "在线"}
-          aria-label={busy ? "执行中" : "在线"}
+          data-tip={statusText || (busy ? "执行中" : "在线")}
+          aria-label={statusText || (busy ? "执行中" : "在线")}
           style={{ background: busy ? "var(--color-accent)" : "var(--color-ok)" }}
         />
         <svg

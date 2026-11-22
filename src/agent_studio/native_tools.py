@@ -1286,9 +1286,19 @@ async def _browser(
 
     # 执行过程留档：动作执行完把"当时的画面 + 这一步是什么"存进会话目录。
     # 直播帧只进内存（seq<0），不存的话刷新就没了 —— 用户没法复盘它当时看到了什么。
-    # 步号跨工具调用递增：`_browser` 每调一次是新函数执行，局部计数会一直从 1 开始
-    # （实测三张图全叫 01-xxx.jpg）
-    _step = {"n": int(getattr(sess, "_step_n", 0))}
+    # 步号**每轮从这一轮已有的步数接着数**：浏览器跨轮保活，沿用 sess 上的累计值
+    # 会让卡片出现「第 29 步 / 共 7 步」这种两套口径（实测）。
+    def _run_steps_done() -> int:
+        try:
+            from .browser_trace import read_index
+            from .runner.service import session_work_dir as _swd0
+
+            sid0 = str(ctx.get("session_id") or "")
+            return len(read_index(_swd0(sid0), run_id)) if sid0 else 0
+        except Exception:  # pragma: no cover
+            return 0
+
+    _step = {"n": _run_steps_done()}
 
     async def _record(summary: str, res: str) -> None:
         if str(res).startswith("✗"):
@@ -1349,33 +1359,42 @@ async def _browser(
         return _res
 
     await bc.begin_action(ctl)
+    _summary = ""
+    _note = ""
     try:
         if action == "navigate":
-            _emit(f"打开 {_host(url)}")
+            _summary = f"打开 {_host(url)}"
+            _emit(_summary)
             _res = await sess.navigate(url or "about:blank", wait_s)
-            await _record(f"打开 {_host(url)}", _res)
+            await _record(_summary, _res)
         elif action == "click":
             if not selector:
                 return "✗ click 需要 selector"
-            _emit(f"点击 {_short(selector)}", selector)
+            _summary = f"点击 {_short(selector)}"
+            _emit(_summary, selector)
             _res = await sess.click(selector)
-            await _record(f"点击 {_short(selector)}", _res)
+            await _record(_summary, _res)
         elif action == "type":
             if not selector:
                 return "✗ type 需要 selector"
-            _emit(f"输入「{_short(value, 16)}」", selector)
+            _summary = f"输入「{_short(value, 16)}」"
+            _note = f"在输入框里输入了 {len(value or '')} 个字符"
+            _emit(_summary, selector)
             _res = await sess.type_text(selector, value)
             # 输入的内容不进留档（可能是密码/手机号）—— 只记"输入了 16 个字符"
             await _record(f"输入了 {len(value or '')} 个字符", _res)
         elif action == "read":
-            _emit("读页面内容")
+            _summary = "读页面内容"
+            _emit(_summary)
             _res = await sess.read(selector or "body")  # 读不产生画面变化，不留档
         elif action == "scroll":
-            _emit("往下滚" if dy >= 0 else "往上滚")
+            _summary = "往下滚" if dy >= 0 else "往上滚"
+            _emit(_summary)
             _res = await sess.scroll(dy)
-            await _record("往下滚" if dy >= 0 else "往上滚", _res)
+            await _record(_summary, _res)
         elif action == "wait":
-            _emit(f"等页面 {wait_s:g}s")
+            _summary = f"等页面 {wait_s:g}s"
+            _emit(_summary)
             _res = await sess.wait(wait_s)
         else:
             return f"✗ 未知动作: {action}"
@@ -1384,6 +1403,11 @@ async def _browser(
 
     bc.sync_page(ctl, sess)
     bc.touch(ctl)
+    # 交还摘要要分得清"谁做的"：把这一步记成"助手已执行"，并推一次状态 ——
+    # 卡片上的「本轮 N 步」也就在这一步之后立刻变（不用等整轮结束）。
+    if (_note or _summary) and not str(_res).startswith("✗"):
+        bc.add_agent_action(ctl, _note or _summary, run_id)
+    bc.publish_state(ctl)
     return await _with_brief(_res)
 
 
