@@ -6,11 +6,16 @@
  * 入口放回会话抽屉底部；两处各写一份菜单迟早会漂移，所以只留一份定义。
  */
 
+/** 四个分组：导航从「9 个平铺入口」收成 4 段（对话 / 助手 / 资源 / 系统）。
+    分组只影响**怎么摆**，不改路由 —— 老链接、书签、深链一律照旧可用。 */
+export type NavGroupKey = "work" | "agents" | "resource" | "system";
+
 export type NavItem = {
   href: string;
   label: string;
   icon: string;
   tip: string;
+  group: NavGroupKey;
   /** 快捷键提示（Alt+1…9 按图标轨从上到下顺序） */
   short?: string;
 };
@@ -27,6 +32,7 @@ export const USE_ITEMS: NavItem[] = [
     href: "/exec",
     label: "对话",
     icon: "exec",
+    group: "work",
     // 对话式干活入口（画布已退役）：选一个助手、说话、看它怎么想怎么做。
     tip: "选助手，说任务，全程可见",
   },
@@ -34,18 +40,18 @@ export const USE_ITEMS: NavItem[] = [
 
 /** 配置 / 管理 —— 业务相关，放在图标轨上半区 */
 export const SETUP_ITEMS: NavItem[] = [
-  { href: "/runs", label: "运行记录", icon: "manage", tip: "每次执行一行，点开看过程与耗时" },
-  { href: "/agents", label: "助手", icon: "agents", tip: "一个会自己想办法做事的 AI" },
-  { href: "/memories", label: "记忆", icon: "memory", tip: "跨对话的长期记性" },
-  { href: "/knowledge", label: "知识中心", icon: "library", tip: "上传文档、解析成可检索的知识，并沉淀为 Skill" },
-  { href: "/tools", label: "能力", icon: "tools", tip: "工具 / Skills / MCP —— 助手能用的东西都在这" },
-  { href: "/remote-agents", label: "远程节点", icon: "exchange", tip: "接入外部 A2A agent，挂到助手调用" },
+  { href: "/agents", label: "助手", icon: "agents", group: "agents", tip: "一个会自己想办法做事的 AI" },
+  { href: "/runs", label: "运行记录", icon: "manage", group: "agents", tip: "每次执行一行，点开看过程与耗时" },
+  { href: "/knowledge", label: "知识中心", icon: "library", group: "resource", tip: "上传文档、解析成可检索的知识，并沉淀为 Skill" },
+  { href: "/memories", label: "记忆", icon: "memory", group: "resource", tip: "跨对话的长期记性" },
+  { href: "/tools", label: "能力", icon: "tools", group: "resource", tip: "工具 / Skills / MCP —— 助手能用的东西都在这" },
 ];
 
 /** 系统级 —— 低频、跟"干活"无关，固定沉底（分隔线以下） */
 export const SYSTEM_ITEMS: NavItem[] = [
-  { href: "/credentials", label: "LLM 配置", icon: "key", tip: "模型服务商的密钥，本机加密保存，不进代码库" },
-  { href: "/environment", label: "系统设置", icon: "database", tip: "数据存哪、隧道与端口：默认 SQLite，可换 MySQL / PostgreSQL" },
+  { href: "/credentials", label: "LLM 配置", icon: "key", group: "system", tip: "模型服务商的密钥，本机加密保存，不进代码库" },
+  { href: "/remote-agents", label: "远程节点", icon: "exchange", group: "system", tip: "接入外部 A2A agent，挂到助手调用" },
+  { href: "/environment", label: "系统设置", icon: "database", group: "system", tip: "数据存哪、隧道与端口：默认 SQLite，可换 MySQL / PostgreSQL" },
 ];
 
 /** 图标路径（24×24 描边）：与 NavItem.icon 对应 */
@@ -61,3 +67,16 @@ export const ICON_PATHS: Record<string, string> = {
   database: "M12 3c4.4 0 8 1.3 8 3s-3.6 3-8 3-8-1.3-8-3 3.6-3 8-3zM4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3", // 数据库
   key: "M14.5 4a5.5 5.5 0 1 1-4.9 8L4 17.6V20h2.4l1-1v-2h2v-2h2l1.2-1.2A5.5 5.5 0 0 1 14.5 4z", // 钥匙
 };
+
+/** 分组顺序与标题（导航、手机抽屉共用；只改摆法，不改路由） */
+export const NAV_GROUPS: { key: NavGroupKey; label: string }[] = [
+  { key: "work", label: "对话" },
+  { key: "agents", label: "助手" },
+  { key: "resource", label: "资源" },
+  { key: "system", label: "系统" },
+];
+
+/** 按分组取条目（组内顺序沿用定义顺序） */
+export function itemsOfGroup(key: NavGroupKey): NavItem[] {
+  return [...USE_ITEMS, ...SETUP_ITEMS, ...SYSTEM_ITEMS].filter((i) => i.group === key);
+}

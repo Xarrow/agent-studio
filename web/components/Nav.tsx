@@ -24,7 +24,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import { ICON_PATHS, SETUP_ITEMS, SYSTEM_ITEMS, USE_ITEMS, railItems, type NavItem } from "@/lib/nav-items";
+import { ICON_PATHS, NAV_GROUPS, SETUP_ITEMS, SYSTEM_ITEMS, USE_ITEMS, itemsOfGroup, railItems, type NavItem } from "@/lib/nav-items";
 import { api } from "@/lib/api";
 
 type Item = NavItem;
@@ -218,20 +218,21 @@ export function Nav() {
               </button>
             </div>
             <nav className="p-2 flex-1">
-              {groupLabel("使用")}
-              {USE_ITEMS.map((l) => (
-                <Link key={l.href} href={l.href} className={rowCls(isActive(l.href))} title={l.tip}>
-                  <Icon d={ICON_PATHS[l.icon] ?? ""} size={14} />
-                  <span>{l.label}</span>
-                </Link>
-              ))}
-              {groupLabel("配置")}
-              {SETUP_ITEMS.map((l) => (
-                <Link key={l.href} href={l.href} className={rowCls(isActive(l.href))} title={l.tip}>
-                  <Icon d={ICON_PATHS[l.icon] ?? ""} size={14} />
-                  <span>{l.label}</span>
-                </Link>
-              ))}
+              {NAV_GROUPS.map((g) => {
+                const items = itemsOfGroup(g.key);
+                if (!items.length) return null;
+                return (
+                  <div key={g.key}>
+                    {groupLabel(g.label)}
+                    {items.map((l) => (
+                      <Link key={l.href} href={l.href} className={rowCls(isActive(l.href))} title={l.tip}>
+                        <Icon d={ICON_PATHS[l.icon] ?? ""} size={14} />
+                        <span>{l.label}</span>
+                      </Link>
+                    ))}
+                  </div>
+                );
+              })}
             </nav>
           </aside>
         </>
@@ -269,46 +270,45 @@ export function Nav() {
           {expanded && <span className="text-[12px]">收起</span>}
         </button>
 
-        {expanded && <NavGroupLabel>使用</NavGroupLabel>}
-        {USE_ITEMS.map((l) => {
-          const withShort = railItems().find((x) => x.href === l.href) ?? l;
+        {/* 四段分组（对话 / 助手 / 资源 / 系统）—— 9 个入口平铺时找不到东西，
+            分组只改摆法，路由一条没动；未展开时用间距区分同一组 */}
+        {NAV_GROUPS.map((g, gi) => {
+          const items = itemsOfGroup(g.key);
+          if (!items.length) return null;
           return (
-            <RailLink
-              key={l.href}
-              item={withShort}
-              expanded={expanded}
-              active={isActive(l.href)}
-            />
-          );
-        })}
-
-        {expanded && <NavGroupLabel>配置</NavGroupLabel>}
-        {SETUP_ITEMS.map((l) => {
-          const withShort = railItems().find((x) => x.href === l.href) ?? l;
-          return (
-            <RailLink
-              key={l.href}
-              item={withShort}
-              expanded={expanded}
-              active={isActive(l.href)}
-              dot={l.href === "/tools" && envReady === false ? "var(--color-danger)" : undefined}
-            />
-          );
-        })}
-
-        <div className={`my-1 h-px ${expanded ? "w-full" : "w-6"}`} style={{ background: "var(--color-border)" }} />
-        {expanded && <NavGroupLabel>系统</NavGroupLabel>}
-
-        {SYSTEM_ITEMS.map((l) => {
-          const withShort = railItems().find((x) => x.href === l.href) ?? l;
-          return (
-            <RailLink
-              key={l.href}
-              item={withShort}
-              expanded={expanded}
-              active={isActive(l.href)}
-              dot={l.href === "/environment" ? (envReady ? "var(--color-ok)" : "var(--color-warn)") : undefined}
-            />
+            <div key={g.key} className="contents">
+              {/* 只有一条的组不写组标题（否则会出现「对话 / 对话」这种重复感） */}
+              {gi > 0 &&
+                (expanded ? (
+                  items.length > 2 ? (
+                    <NavGroupLabel>{g.label}</NavGroupLabel>
+                  ) : (
+                    <div className="h-1.5" aria-hidden />
+                  )
+                ) : (
+                  <div className="my-1 h-px w-6" style={{ background: "var(--color-border)" }} />
+                ))}
+              {items.map((l) => {
+                const withShort = railItems().find((x) => x.href === l.href) ?? l;
+                return (
+                  <RailLink
+                    key={l.href}
+                    item={withShort}
+                    expanded={expanded}
+                    active={isActive(l.href)}
+                    dot={
+                      l.href === "/tools" && envReady === false
+                        ? "var(--color-danger)"
+                        : l.href === "/environment"
+                          ? envReady
+                            ? "var(--color-ok)"
+                            : "var(--color-warn)"
+                          : undefined
+                    }
+                  />
+                );
+              })}
+            </div>
           );
         })}
 

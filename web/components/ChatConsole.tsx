@@ -36,7 +36,7 @@ import { useImeGuard, isImeEvent } from "@/lib/ime";
 import Markdown from "@/components/Markdown";
 import { RunDetailById } from "@/components/RunDetailDialog";
 import { AgentDetailDialog } from "./AgentDetailDialog";
-import { ICON_PATHS, SETUP_ITEMS, SYSTEM_ITEMS, USE_ITEMS } from "@/lib/nav-items";
+import { ICON_PATHS, NAV_GROUPS, SETUP_ITEMS, SYSTEM_ITEMS, USE_ITEMS, itemsOfGroup } from "@/lib/nav-items";
 import { AgentSwitcher } from "./AgentSwitcher";
 import { SkillEntry, ToolEntry, MemoryEntry } from "./ToolEntries";
 import { Sheet } from "./ui/Sheet";
@@ -2696,17 +2696,16 @@ export function ChatConsole({
                       条目同源（USE_ITEMS / SETUP_ITEMS）、同样分「使用 / 配置」两组，
                       手机上不另造一种排版 —— 换个设备不该像换了个产品。 */}
                   <div className="flex-1 overflow-y-auto px-2 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
-                    {[
-                      { label: "使用", items: USE_ITEMS },
-                      { label: "配置", items: SETUP_ITEMS },
-                      // 系统级也要有：手机上对话页不出顶栏，缺这组就再也到不了
-                      // 「API 密钥」「系统设置」（验收报的"窄屏抽屉只有 6 项"）
-                      { label: "系统", items: SYSTEM_ITEMS },
-                    ].map((grp) => (
+                    {NAV_GROUPS.map((g) => ({ label: g.label, items: itemsOfGroup(g.key) })).map((grp) => (
                       <div key={grp.label} className="mb-1.5">
-                        <div className="px-2 pt-2 pb-1 text-[11px] font-semibold tracking-[0.06em] text-[var(--color-muted)]">
-                          {grp.label}
-                        </div>
+                        {/* 只有一条的组不写组名（否则「对话 / 对话」念两遍） */}
+                        {grp.items.length > 2 ? (
+                          <div className="px-2 pt-2 pb-1 text-[11px] font-semibold tracking-[0.06em] text-[var(--color-muted)]">
+                            {grp.label}
+                          </div>
+                        ) : (
+                          <div className="h-1.5" aria-hidden />
+                        )}
                         {grp.items.map((item) => (
                           /* 这一处**故意用原生 a**，不用 next/link。
                              手机上（从 /exec 的抽屉点出去）Link 的客户端导航会被
