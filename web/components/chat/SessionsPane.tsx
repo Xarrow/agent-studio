@@ -352,9 +352,13 @@ export function SessionsPane({
           >
             仅看置顶
           </button>
-          <span className="text-[10.5px] truncate" style={{ color: "var(--color-text-3)" }}>
-            {pinned.size ? `${pinned.size} 条已置顶` : "还没置顶任何对话"}
-          </span>
+          {/* 只有真的在「仅看置顶」或确实有置顶时才说这句 ——
+              平时常驻「还没置顶任何对话」等于一句噪音（复测 F17） */}
+          {(onlyPinned || pinned.size > 0) && (
+            <span className="text-[10.5px] truncate" style={{ color: "var(--color-text-3)" }}>
+              {pinned.size ? `${pinned.size} 条已置顶` : "没有置顶的对话"}
+            </span>
+          )}
         </div>
       </div>
 
