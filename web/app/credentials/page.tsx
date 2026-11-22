@@ -720,6 +720,14 @@ function NewCredentialDialog({
                 {busy ? "测试中…" : "测试"}
               </button>
             </div>
+            {/* 手填也不是不行（方舟的 ep-xxx 清单里没有），但要让人知道自己填的不是清单里的名字 */}
+            {autoModels.length > 0 &&
+              model.trim() &&
+              !autoModels.some((m) => m.toLowerCase() === model.trim().toLowerCase()) && (
+                <p className="mt-1 text-[11.5px]" style={{ color: "var(--color-warn)" }}>
+                  这个名字不在探测到的清单里，确认没打错再用（上面列表里可以直接点）
+                </p>
+              )}
           </div>
 
           {tested && (
@@ -772,8 +780,14 @@ function NewCredentialDialog({
           <button className="btn" onClick={onClose}>
             取消
           </button>
-          <button className="btn" disabled={busy || !apiKey} onClick={doTest}>
-            测试连接
+          {/* 按钮禁用时要说明为什么 —— 之前点了没反应，用户以为坏了（复测 F19） */}
+          <button
+            className="btn"
+            disabled={busy || !apiKey.trim()}
+            title={!apiKey.trim() ? "先粘贴 API Key，才能测这条配置通不通" : "用这个 Key 发一次极小调用"}
+            onClick={doTest}
+          >
+            {!apiKey.trim() ? "先填 Key 再测" : "测试连接"}
           </button>
           <button className="btn btn-primary" disabled={busy} onClick={save}>
             {busy ? "处理中…" : "保存"}
