@@ -145,6 +145,48 @@ export default function MemoriesPage() {
     }
   }, [agentId, status, kind, layer, query, fb, markLoaded]);
 
+  /**
+   * 合并重复：同一句话被存了多份（归档过的重复存、导入、多个助手各记一次都会这样）。
+   * 保留最早那条，其余移入「已停用」—— 归档是可恢复的，不物理删除。
+   */
+  const mergeDuplicates = async () => {
+    try {
+      const all = await api.memories({});
+      const norm = (t: string) => (t || "").replace(/[\s，。、；;:：]/g, "");
+      const groups = new Map<string, typeof all>();
+      for (const m of all) {
+        if (m.status === "archived") continue;
+        const k = norm(m.content);
+        if (!k) continue;
+        const arr = groups.get(k) ?? [];
+        arr.push(m);
+        groups.set(k, arr);
+      }
+      const dupIds: string[] = [];
+      for (const arr of groups.values()) {
+        if (arr.length < 2) continue;
+        const sorted = [...arr].sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
+        const keep = sorted.find((x) => x.status === "active") ?? sorted[0];
+        for (const m of sorted) if (m.id !== keep.id) dupIds.push(m.id);
+      }
+      if (!dupIds.length) {
+        fb.info("没有重复记忆", "每条都只存了一份");
+        return;
+      }
+      const ok = await fb.confirm({
+        title: `合并 ${dupIds.length} 条重复记忆？`,
+        description: `同一句话存了多份：每组保留最早的一条，其余 ${dupIds.length} 条移入「已停用」（随时可以恢复）。`,
+        confirmText: "合并",
+      });
+      if (!ok) return;
+      const r = await api.bulkMemoryStatus(dupIds, "archived");
+      await load();
+      fb.success(`已合并 ${r.updated} 条`, "在「已停用」里可以恢复");
+    } catch (e) {
+      fb.error("合并失败", e instanceof Error ? e.message : String(e));
+    }
+  };
+
   useEffect(() => {
     void load();
     // 只在真实筛选变化时重载（fb 是稳定引用）
@@ -319,9 +361,18 @@ export default function MemoriesPage() {
           </>
         }
         actions={
-          <button className="btn btn-primary" onClick={() => setComposeOpen((v) => !v)}>
-            {composeOpen ? "收起" : "+ 记一条"}
-          </button>
+          <>
+            <button
+              className="btn"
+              title="同一句话存了多份时，保留最早一条、其余移入已停用（可恢复）"
+              onClick={() => void mergeDuplicates()}
+            >
+              合并重复
+            </button>
+            <button className="btn btn-primary" onClick={() => setComposeOpen((v) => !v)}>
+              {composeOpen ? "收起" : "+ 记一条"}
+            </button>
+          </>
         }
       />
 
