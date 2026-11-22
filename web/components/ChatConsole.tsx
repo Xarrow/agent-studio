@@ -1517,57 +1517,70 @@ export function ChatConsole({
     }
   };
 
-  const removeSession = async (s: Session) => {
-    // 先数一下这个会话的文件夹里有什么 —— 删会话会**连文件夹一起删**，
+  /** 删会话：一个确认框（列清影响），确认后真删 —— 消息、执行记录、会话文件夹一起清。
+      单个与批量共用，批量只汇总数字，不弹 N 次。 */
+  const removeSessions = async (list: Session[]) => {
+    if (list.length === 0) return;
+    const one = list.length === 1 ? list[0] : null;
+    // 先数一下文件夹里有什么 —— 删会话会**连文件夹一起删**，
     // 不提前说清楚，用户以为只是删掉聊天记录，产物就没了。
     let fileCount = 0;
     let fileBytes = 0;
-    let dirLabel = `sessions/${s.id}`;
-    try {
-      const fl = await api.sessionFiles(s.id, 1000);
-      fileCount = fl.count;
-      fileBytes = (fl.files || []).reduce((a, f) => a + (f.size || 0), 0);
-      if (fl.work_dir) {
-        // 展示给人看的短路径：只留 `sessions/<会话号>` 这一段（绝对路径太长）
-        const seg = fl.work_dir.split("/").filter(Boolean);
-        if (seg.length >= 2) dirLabel = seg.slice(-2).join("/");
+    let dirLabel = one ? `sessions/${one.id}` : "";
+    for (const s of list) {
+      try {
+        const fl = await api.sessionFiles(s.id, 1000);
+        fileCount += fl.count;
+        fileBytes += (fl.files || []).reduce((a, f) => a + (f.size || 0), 0);
+        if (one && fl.work_dir) {
+          const seg = fl.work_dir.split("/").filter(Boolean);
+          if (seg.length >= 2) dirLabel = seg.slice(-2).join("/");
+        }
+      } catch {
+        /* 数不到文件不影响删除本身 */
       }
-    } catch {
-      /* 数不到文件不影响删除本身，就退化成只说"文件夹会一起删" */
     }
-
+    const turns = list.reduce((a, s) => a + (s.turn_count || 0), 0);
     const ok = await fb.confirm({
-      title: `删除对话「${s.title || s.id}」？`,
-      description: "对话删掉，执行记录保留",
-      details: [
-        `${s.turn_count} 轮对话 · ${s.message_count} 条消息`,
-        `${dirLabel}/ 文件夹`,
-      ],
+      title: one ? `删除对话「${one.title || one.id}」？` : `删除选中的 ${list.length} 个对话？`,
+      description: "对话、执行记录（含事件流与工具调用明细）、会话文件夹一并删除",
+      details: one
+        ? [`${one.turn_count} 轮对话 · ${one.message_count} 条消息`, `${dirLabel}/ 文件夹`]
+        : [`共 ${list.length} 个对话 · ${turns} 轮`, "每个对话的执行记录与会话文件夹都一起删"],
       warning:
         fileCount > 0
-          ? `文件夹里 ${fileCount} 个文件（${fmt.bytes(fileBytes)}）会一起删掉，找不回来`
+          ? `文件夹里${one ? "" : "共"} ${fileCount} 个文件（${fmt.bytes(fileBytes)}）会一起删掉，找不回来`
           : "会话文件夹会一起删，现在是空的",
       danger: true,
-      confirmText: fileCount > 0 ? "连文件夹一起删" : "删除",
+      confirmText: one ? (fileCount > 0 ? "连文件夹一起删" : "删除") : `删除 ${list.length} 个`,
     });
     if (!ok) return;
-    try {
-      const res = await api.deleteSession(s.id);
-      const list = await loadSessions(agentId);
-      if (s.id === sessionId) {
-        setSessionId(list.length > 0 ? list[0].id : "");
+
+    let runs = 0;
+    let dirs = 0;
+    let failed = 0;
+    for (const s of list) {
+      try {
+        const res = (await api.deleteSession(s.id)) as { deleted_runs?: number; removed_dir?: string | null };
+        runs += res?.deleted_runs ?? 0;
+        if (res?.removed_dir) dirs += 1;
+      } catch {
+        failed += 1;
       }
-      fb.success(
-        res?.removed_dir
-          ? fileCount > 0
-            ? `已删除（含文件夹里的 ${fileCount} 个文件）`
-            : "已删除（会话文件夹也清掉了）"
-          : "已删除",
-      );
-    } catch (e) {
-      fb.error("删除失败", e instanceof Error ? e.message : String(e));
+    }
+    const left = await loadSessions(agentId);
+    if (list.some((s) => s.id === sessionId)) {
+      setSessionId(left.length > 0 ? left[0].id : "");
+    }
+    const extra = [runs ? `执行记录 ${runs} 条` : "", dirs ? "会话文件夹" : ""].filter(Boolean).join("、");
+    if (failed) {
+      fb.error(`删除了 ${list.length - failed} 个，${failed} 个失败`, "刷新列表后可以再试一次");
+    } else {
+      fb.success(extra ? `已删除 ${list.length} 个（含${extra}）` : `已删除 ${list.length} 个`);
     }
   };
+
+  const removeSession = (s: Session) => removeSessions([s]);
 
   /** 行内改名：列表里直接改，不再弹框（阶段 2 的要求） */
   const renameSessionInline = async (s: Session, title: string) => {
@@ -1579,19 +1592,6 @@ export function ChatConsole({
     }
   };
 
-  /** 真删（不弹确认）：撤销窗口由会话列表自己管，8 秒后才走到这里 */
-  const deleteSessionNow = async (s: Session) => {
-    try {
-      const res = await api.deleteSession(s.id);
-      const list = await loadSessions(agentId);
-      if (s.id === sessionId) {
-        setSessionId(list.length > 0 ? list[0].id : "");
-      }
-      fb.success(res?.removed_dir ? "已删除（会话文件夹也清掉了）" : "已删除");
-    } catch (e) {
-      fb.error("删除失败", e instanceof Error ? e.message : String(e));
-    }
-  };
 
   const renameSession = async (s: Session) => {
     const name = await fb.prompt({
@@ -2750,7 +2750,8 @@ export function ChatConsole({
               onNew={() => void newChat()}
               onRename={(s) => void renameSession(s)}
               onRemove={(s) => void removeSession(s)}
-              onDelete={(s) => void deleteSessionNow(s)}
+              onDelete={(s) => void removeSession(s)}
+              onDeleteMany={(list) => void removeSessions(list)}
               onRenameCommit={(s, t) => void renameSessionInline(s, t)}
               pinned={pinned}
               onTogglePin={togglePin}
@@ -2892,7 +2893,8 @@ export function ChatConsole({
                     }}
                     onRename={(s) => void renameSession(s)}
                     onRemove={(s) => void removeSession(s)}
-                    onDelete={(s) => void deleteSessionNow(s)}
+                    onDelete={(s) => void removeSession(s)}
+                    onDeleteMany={(list) => void removeSessions(list)}
                     onRenameCommit={(s, t) => void renameSessionInline(s, t)}
                     pinned={pinned}
                     onTogglePin={togglePin}
@@ -3196,7 +3198,7 @@ export function ChatConsole({
                     danger
                     onClick={() => {
                       setHeaderMenu(false);
-                      void deleteSessionNow(curSes);
+                      void removeSession(curSes);
                     }}
                   />
                 </div>

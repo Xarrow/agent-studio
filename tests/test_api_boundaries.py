@@ -137,8 +137,9 @@ async def test_管理页tab数字等于列表行数(client):
     assert sum(d["counts"].values()) == d["total"] == len(d["items"])
 
 
-async def test_删会话后记录仍按会话归组(client):
-    """删会话不再解绑 run：记录页要的是"一次会话一项"，不是散成 N 行。"""
+async def test_删会话连执行记录一起删(client):
+    """删会话 = 连它的执行记录一起删（2026-11-22 用户口径：一处删干净，
+    不接受"对话删了、过程还留在运行记录里"）。"""
     aid = await _mk_agent(client)
     sid = (
         await client.post("/api/sessions", json={"agent_id": aid, "title": "删了也要归组"})
@@ -165,18 +166,18 @@ async def test_删会话后记录仍按会话归组(client):
             )
         await db.commit()
 
-    assert (await client.delete(f"/api/sessions/{sid}")).status_code == 200
+    res = (await client.delete(f"/api/sessions/{sid}")).json()
+    assert res["deleted"] == 1
+    assert res["deleted_runs"] == 2, "删会话没把执行记录一起清"
 
     async with SessionLocal() as db:
-        left = (await db.execute(text("select count(*) from run where session_id=:s"), {"s": sid})).scalar_one()
-    assert left == 2, "删会话把 run 的会话归属清掉了"
+        left = (
+            await db.execute(text("select count(*) from run where session_id=:s"), {"s": sid})
+        ).scalar_one()
+    assert left == 0, "会话删了，执行记录还在"
 
     d = (await client.get("/api/runs/timeline?limit=200")).json()
-    row = next(i for i in d["items"] if i["id"] == sid)
-    assert row["kind"] == "chat"
-    assert row.get("session_deleted") is True, "删了会话却没标出来"
-    assert row["subtitle"] == "2 轮"
-    assert row["fanout"]["total"] == 2
+    assert all(i["id"] != sid for i in d["items"]), "运行记录里还留着这个已删会话"
 
 
 async def test_无会话的对话轮次按助手并成一行(client):

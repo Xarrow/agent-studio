@@ -1043,20 +1043,42 @@ async def update_session(
 async def delete_session(
     session_id: str, session: AsyncSession = Depends(get_session)
 ) -> dict:
-    """删除会话（消息级联清理；Run 记录保留）。
+    """删除会话：消息、执行记录（Run + 事件流 + 调用明细）、会话目录一起删。
 
-    Run 的会话归属**不清空**：以前这里是 ``run.session_id = None``，后果是删完会话
-    那几轮记录掉进"无会话"，类型从对话降级成"助手试跑"，列表里一场对话散成好几行
-    （每行顶着一个助手名）。记录页要的是"一次会话一项"，所以归属留着，会话行没了
-    就在前端标「会话已删除」。
+    以前这里保留 Run（只把归属留着、前端标「会话已删除」），用户的反馈是
+    「删了会话，过程还留在运行记录里」—— 一次删除只删一半，等于没删干净。
+    现在改成真删：这个会话的 Run 全清（正在跑的先拒绝，让人自己中断）。
     """
     row = await session.get(ChatSession, session_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"会话不存在: {session_id}")
     # 会话级的「已拒绝动作」名单跟着会话一起消失（它只在这个会话内有效）
     from sqlalchemy import delete as _delete
+    from sqlalchemy import select as _select
 
-    from ..models import SessionDeniedAction
+    from ..models import Run, SessionDeniedAction
+    from .runs import IN_FLIGHT, _delete_runs
+
+    # 还在跑的先拦住：删到一半把执行现场拆了，run 会永远停在 running
+    live = (
+        await session.execute(
+            _select(Run.id).where(Run.session_id == session_id, Run.status.in_(IN_FLIGHT))
+        )
+    ).scalars().all()
+    if live:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"这个会话还有 {len(live)} 条执行没结束，先中断它们再删会话",
+        )
+
+    run_ids = (
+        await session.execute(_select(Run.id).where(Run.session_id == session_id))
+    ).scalars().all()
+    removed_runs = 0
+    if run_ids:
+        # _delete_runs 返回 (deleted, skipped)；这里已先拦掉在跑的，正常不会有 skipped
+        _d, _skipped = await _delete_runs(session, list(run_ids))
+        removed_runs = int(_d)
 
     await session.execute(
         _delete(SessionDeniedAction).where(SessionDeniedAction.session_id == session_id)
@@ -1068,6 +1090,7 @@ async def delete_session(
     published = _remove_published(session_id)
     return {
         "deleted": 1,
+        "deleted_runs": removed_runs,
         "unbound_runs": 0,
         "removed_dir": removed,
         "removed_published": published,

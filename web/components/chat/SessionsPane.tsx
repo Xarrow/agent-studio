@@ -33,6 +33,7 @@ export function SessionsPane({
   onCollapse,
   agentSlot,
   onDelete,
+  onDeleteMany,
   onRenameCommit,
   pinned,
   onTogglePin,
@@ -48,6 +49,8 @@ export function SessionsPane({
   onCollapse: () => void;
   /** 直接删（不弹确认）—— 撤销窗口由列表自己管，过了 8 秒才调用它 */
   onDelete: (s: Session) => void | Promise<void>;
+  /** 批量删除：一个确认框，别弹 N 次 */
+  onDeleteMany?: (list: Session[]) => void | Promise<void>;
   /** 行内改名提交 */
   onRenameCommit: (s: Session, title: string) => void | Promise<void>;
   /** 置顶集合（与顶栏共用一份） */
@@ -85,7 +88,6 @@ export function SessionsPane({
   /** 技能数（全局 / 该项目下的），给工作区卡片上的胶囊用 */
   const [skillRows, setSkillRows] = useState<{ name: string; source?: Record<string, unknown> }[]>([]);
   const [foldedGroups, setFoldedGroups] = useState<Set<string>>(() => new Set());
-  const [undo, setUndo] = useState<{ n: number; restore: () => void } | null>(null);
   const pending = useRef(new Map<string, { s: Session; timer: ReturnType<typeof setTimeout> }>());
   const [hidden, setHidden] = useState<Set<string>>(() => new Set());
   const fb = useFeedback();
@@ -150,29 +152,19 @@ export function SessionsPane({
     if (t && t !== (s.title || "")) void onRenameCommit(s, t);
   };
 
-  /** 删 = 先从列表拿掉 + 给 8 秒撤销；到点才真的调接口 */
+  /** 删 = 列表先拿掉（乐观），同一刻弹确认框；确认后才真删（连带执行记录）。
+      以前这里拖 8 秒再偷偷调接口，确认框会延迟弹出来，跟撤销条打架。 */
   const dropSession = (s: Session, opts?: { silent?: boolean }) => {
     setHidden((prev) => new Set(prev).add(s.id));
-    const entry = pending.current.get(s.id);
-    if (entry) clearTimeout(entry.timer);
-    const timer = setTimeout(() => {
-      pending.current.delete(s.id);
-      void onDelete(s);
-      setUndo((cur) => (cur && cur.n > 1 ? { ...cur, n: cur.n - 1 } : null));
-    }, 8000);
-    pending.current.set(s.id, { s, timer });
-    setUndo((cur) => ({
-      n: (cur?.n ?? 0) + 1,
-      restore: () => {
-        for (const [, v] of pending.current) {
-          clearTimeout(v.timer);
-        }
-        pending.current.clear();
-        setHidden(new Set());
-        setUndo(null);
-      },
-    }));
     if (!opts?.silent) setMenuFor(null);
+    void Promise.resolve(onDelete(s)).finally(() => {
+      // 没删（用户取消/失败）就放回列表；真删了父级会刷新，这一项本就不在了
+      setHidden((prev) => {
+        const next = new Set(prev);
+        next.delete(s.id);
+        return next;
+      });
+    });
   };
 
   // 输入停下来 300ms 再搜（打一个字发一次请求既慢又抖）
@@ -869,7 +861,11 @@ export function SessionsPane({
               onClick={() => {
                 const victims = sessions.filter((s) => selected.has(s.id));
                 setSelected(new Set());
-                for (const v of victims) dropSession(v, { silent: true });
+                setManaging(false);
+                // 乐观移除，失败由父级刷新带回
+                victims.forEach((v) => setHidden((prev) => new Set(prev).add(v.id)));
+                if (onDeleteMany) void onDeleteMany(victims);
+                else for (const v of victims) dropSession(v, { silent: true });
               }}
               className="ml-auto h-8 rounded-[var(--radius-xs)] px-2.5 text-[length:var(--fs-sm)] disabled:opacity-45"
               style={{ color: "var(--color-err)", background: "color-mix(in srgb, var(--color-err) 10%, transparent)" }}
@@ -880,25 +876,6 @@ export function SessionsPane({
         </div>
       )}
 
-      {/* 删除后的撤销提示：8 秒内可撤回（这期间并没有真的调接口） */}
-      {undo && (
-        <div
-          className="absolute inset-x-2 bottom-2 z-50 flex items-center gap-2 rounded-[var(--radius-md)] px-3 py-2 text-[length:var(--fs-sm)]"
-          style={{ background: "var(--color-text)", color: "var(--color-bg)", boxShadow: "var(--shadow-2)" }}
-          role="status"
-        >
-          <span className="min-w-0 flex-1 truncate">{undo.n > 1 ? `已删除 ${undo.n} 个对话` : "已删除"}</span>
-          <button
-            type="button"
-            className="shrink-0 underline"
-            onClick={() => {
-              undo.restore();
-            }}
-          >
-            撤销
-          </button>
-        </div>
-      )}
     </>
   );
 }

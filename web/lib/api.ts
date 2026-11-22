@@ -1656,6 +1656,7 @@ export const api = {
       body: JSON.stringify(patch),
     }),
   /** 删会话：会**连会话文件夹一起删**（removed_dir 是删掉的绝对路径，没删是 null） */
+  /** 删会话：消息、执行记录（Run + 事件 + 调用明细）、会话文件夹一起清 */
   deleteSession: (id: string) =>
     del<{ deleted: number; unbound_runs: number; removed_dir: string | null }>(
       `/api/sessions/${id}`,
