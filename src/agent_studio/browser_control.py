@@ -637,37 +637,125 @@ async def apply_user_input(c: Control, sess: Any, payload: dict[str, Any]) -> st
     非持有者（助手正在操作）直接抛 ``UserInputDenied`` —— 前端必须把原因显示出来，
     不许静默吞掉。
     """
+    detail = await apply_user_input_detail(c, sess, payload)
+    return str(detail.get("ok") or "")
+
+
+async def apply_user_input_detail(c: Control, sess: Any, payload: dict[str, Any]) -> dict[str, Any]:
+    """同 ``apply_user_input``，但把「回执」一起交出来（WebRTC DataChannel 用）。
+
+    回执是这一包要补的旧账：用户点了一个真实元素，**必须**有可见变化、动作记录，
+    或者一句"没点中/没有变化"。以前只写了一条 note，前端在 WebRTC 模式下拿不到
+    它；现在 note + feedback 一起回给点击处。
+    """
+    kind = str(payload.get("kind") or "")
+    # 鼠标移动是连续噪声：只在用户持有控制权时执行，被拒也不弹提示（否则每 16ms 一条）
+    if kind == "move":
+        if user_gate(c):
+            return {"ok": "", "note": "", "feedback": "", "changed": False, "state": public_state(c.session_id)}
+        x, y = float(payload.get("x", 0)), float(payload.get("y", 0))
+        touch(c)
+        try:
+            await sess.mouse_move(x, y)
+        except Exception:
+            logger.debug("鼠标移动失败", exc_info=True)
+        return {"ok": "", "note": "", "feedback": "", "changed": False, "state": public_state(c.session_id)}
+
     why = user_gate(c)
     if why:
         raise UserInputDenied(why)
-    kind = str(payload.get("kind") or "")
     before = str(getattr(sess, "_last_url", "") or "")
+    sig_before = ""
+    if hasattr(sess, "page_signature"):
+        try:
+            sig_before = await sess.page_signature()
+        except Exception:  # pragma: no cover
+            sig_before = ""
+    note = ""
+    feedback = ""
+    changed = False
+
     if kind == "click":
         x, y = float(payload.get("x", 0)), float(payload.get("y", 0))
-        label = ""
+        button = str(payload.get("button") or "left")
+        count = int(payload.get("clickCount") or 1)
+        hit: dict[str, Any] = {}
+        if hasattr(sess, "hit_test"):
+            try:
+                hit = await sess.hit_test(x, y) or {}
+            except Exception:  # pragma: no cover
+                hit = {}
+        label = str(hit.get("label") or "")
+        if not label:
+            try:
+                label = await sess.element_label(x, y)
+            except Exception:  # pragma: no cover
+                label = ""
         try:
-            label = await sess.element_label(x, y)
-        except Exception:  # pragma: no cover
-            label = ""
-        text = await sess.user_click(x, y)
-        note = f"用户点击了 {label or f'({int(x)},{int(y)}) 处'}"
+            text = await sess.user_click(x, y, button=button, click_count=count)
+        except TypeError:  # 假浏览器/老签名只有 (x, y)
+            text = await sess.user_click(x, y)
+        # 点击效果可能是异步的（切 tab/展开菜单）：等一下再看指纹；还没变就再等一拍
+        sig_after = ""
+        if hasattr(sess, "page_signature"):
+            try:
+                sig_after = await sess.page_signature()
+                if sig_after and sig_before and sig_after == sig_before:
+                    await asyncio.sleep(0.45)
+                    sig_after = await sess.page_signature()
+            except Exception:  # pragma: no cover
+                sig_after = ""
+        changed = bool(sig_after and sig_before and sig_after != sig_before)
+        if not changed and not sig_before:
+            changed = bool(getattr(sess, "_last_url", "") and getattr(sess, "_last_url", "") != before)
+        # 点到留白（没有可交互元素）—— 这是"没点中"，必须当场说原因
+        if hit and hit.get("actionable") is False:
+            note = f"用户点了空白处（{label or '页面背景'}，没有可点的元素）"
+            feedback = "这里没有可点的元素（点到空白处了）"
+        else:
+            note = f"用户点击了 {label or f'({int(x)},{int(y)}) 处'}"
+            if changed:
+                feedback = f"已点击 {label or '这里'} · 页面有变化"
+            else:
+                note += "（页面没有可见变化）"
+                feedback = f"已点击 {label or '这里'} · 页面没有可见变化"
     elif kind == "text":
         raw = str(payload.get("text") or "")
         text = await sess.user_type(raw)
         # 内容不进事件流（可能就是密码/手机号）—— 只记字符数
         note = f"用户在页面输入框里输入了 {len(raw)} 个字符"
+        feedback = f"已送入输入框（{len(raw)} 个字符）"
+        changed = True
+    elif kind in ("key", "keydown"):
+        from .browser_session import describe_key
+
+        text = await sess.key_event(payload)
+        note = f"用户按了 {describe_key(payload)}"
+        feedback = f"已按 {describe_key(payload)}"
+        changed = True
+    elif kind == "wheel":
+        x, y = float(payload.get("x", 0)), float(payload.get("y", 0))
+        dx, dy = float(payload.get("dx", 0)), float(payload.get("dy", 0))
+        if dx == 0 and dy == 0:
+            return {"ok": "没有滚动量", "note": "", "feedback": "", "changed": False, "state": public_state(c.session_id)}
+        text = await sess.wheel(x, y, dx, dy)
+        note = f"用户{'向下' if dy > 0 else '向上' if dy < 0 else '横向'}滚动了 {int(abs(dy) or abs(dx))}px"
+        feedback = ""
+        changed = True
     elif kind == "scroll":
         dy = int(float(payload.get("dy", 0)))
         if dy == 0:
-            return "没有滚动量"
+            return {"ok": "没有滚动量", "note": "", "feedback": "", "changed": False, "state": public_state(c.session_id)}
         text = await sess.scroll(dy)
         note = f"用户{'向下' if dy > 0 else '向上'}滚动了 {abs(dy)}px"
+        feedback = ""
+        changed = True
     else:
         raise UserInputDenied(f"未知输入类型: {kind}")
     sync_page(c, sess)
     touch(c)
     after = str(getattr(sess, "_last_url", "") or "")
-    if after and after != before:
+    if kind == "click" and after and after != before:
         try:
             from urllib.parse import urlparse
 
@@ -675,7 +763,13 @@ async def apply_user_input(c: Control, sess: Any, payload: dict[str, Any]) -> st
         except Exception:  # pragma: no cover
             note += f"，页面跳到了 {after}"
     add_note(c, note)
-    return text
+    return {
+        "ok": text,
+        "note": note,
+        "feedback": feedback,
+        "changed": changed,
+        "state": public_state(c.session_id),
+    }
 
 
 async def hand_back(c: Control, sess: Any) -> None:

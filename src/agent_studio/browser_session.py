@@ -59,8 +59,45 @@ FRAME_MIN_INTERVAL_MS = 200
 READ_MAX_CHARS = 20_000
 #: 单个动作的默认超时
 ACTION_TIMEOUT_S = 45
-#: 视口（帧大小直接决定 SSE 负载；800×600 够看清操作，又不至于帧过大）
-VIEWPORT = {"width": 800, "height": 600, "deviceScaleFactor": 1}
+#: 视口。WebRTC 主链路按 1280 宽推流；JPEG 兼容模式仍按 800 宽、5fps 推
+#: （SSE 负载口径没变）。16:10 和面板的可用区域接近，留白比 4:3 少。
+VIEWPORT = {"width": 1280, "height": 800, "deviceScaleFactor": 1}
+#: 视频档的 screencast 参数（CDP 侧编码一张 JPEG 的代价随质量上升）
+VIDEO_FRAME_QUALITY = 68
+VIDEO_MAX_FPS = 24
+
+#: 键盘：DOM key → Windows 虚拟键码（CDP 要它才能触发默认行为，比如 Enter 提交）
+_VK = {
+    "Enter": 13, "Tab": 9, "Escape": 27, "Backspace": 8, "Delete": 46,
+    "ArrowLeft": 37, "ArrowUp": 38, "ArrowRight": 39, "ArrowDown": 40,
+    "Home": 36, "End": 35, "PageUp": 33, "PageDown": 34, "Insert": 45,
+    " ": 32, "Spacebar": 32,
+    "Shift": 16, "Control": 17, "Alt": 18, "Meta": 91, "CapsLock": 20,
+    "F1": 112, "F2": 113, "F3": 114, "F4": 115, "F5": 116, "F6": 117,
+    "F7": 118, "F8": 119, "F9": 120, "F10": 121, "F11": 122, "F12": 123,
+}
+
+
+def describe_key(payload: dict[str, Any]) -> str:
+    """按键的人话（动作字幕/回执用）—— 只记\"按了什么\"，不记输入内容。"""
+    key = str(payload.get("key") or "")
+    names = {
+        "Enter": "回车", "Tab": "Tab", "Escape": "Esc", "Backspace": "退格",
+        "Delete": "Delete", "ArrowLeft": "←", "ArrowUp": "↑", "ArrowRight": "→",
+        "ArrowDown": "↓", " ": "空格", "PageUp": "PageUp", "PageDown": "PageDown",
+        "Home": "Home", "End": "End",
+    }
+    label = names.get(key, key if len(key) > 1 else "字符")
+    mods = []
+    if payload.get("ctrlKey"):
+        mods.append("Ctrl")
+    if payload.get("altKey"):
+        mods.append("Alt")
+    if payload.get("metaKey"):
+        mods.append("⌘")
+    if payload.get("shiftKey") and len(key) > 1:
+        mods.append("Shift")
+    return "+".join(mods + [label]) if mods else label
 
 
 def _private_host_check(host: str) -> bool:
@@ -290,6 +327,12 @@ class BrowserSession:
         self._ctx: str = ""
         self._proto: str = "cdp"
         self._frame_task: asyncio.Task[None] | None = None
+        #: WebRTC 出口（browser_webrtc.FrameSink）。非空时 CDP 按视频档推帧，
+        #: 这里每帧都喂给它；SSE 的 JPEG 仍按老节流（5fps）—— 两套口径互不影响。
+        self._video_sink: Any = None
+        self._screencast_mode: str = "jpeg"
+        self._screencast_on: bool = False
+        self._closing: bool = False
 
     # -- 生命周期 ----------------------------------------------------------- #
     def _child_env(self) -> dict[str, str]:
@@ -422,20 +465,64 @@ class BrowserSession:
             )
         except Exception:  # pragma: no cover —— 老内核没有这个方法就退回窗口尺寸
             logger.debug("设定视口失败，沿用窗口尺寸", exc_info=True)
-        # 画面流：Chromium 主动推帧（每有变化才推，quality 60 的一帧 ~40-80KB）
+        # 画面流：Chromium 主动推帧（每有变化才推）
         self._cdp.on("Page.screencastFrame", self._handle_frame)
-        await self._cdp.send(
-            "Page.startScreencast",
-            {
-                "format": "jpeg",
-                # 画面只是"让人看得见它在干嘛"，不是录屏：不给 maxFrameRate
-                # Chromium 会按页面变化把 30 帧/秒全推过来，SSE 和前端都扛不住。
-                "quality": FRAME_QUALITY,
-                "maxWidth": VIEWPORT["width"],
-                "maxHeight": VIEWPORT["height"],
-                "everyNthFrame": FRAME_EVERY_NTH,
-            },
-        )
+        await self._start_screencast("jpeg")
+
+    async def _start_screencast(self, mode: str) -> None:
+        """按模式（重）启 screencast。
+
+        · ``jpeg``：兼容模式/喂 SSE 的那条，5fps、800 宽 —— 2026-10-22 修卡顿时
+          定下的口径，别放宽（tests/test_browser_frame_throttle.py 守着）。
+        · ``video``：WebRTC 主链路，1280 宽、24fps、质量 68。SSE 那边仍由
+          ``_handle_frame`` 按 200ms 节流，前端不会因为视频档被灌满。
+        """
+        if self._cdp is None:
+            return
+        if self._screencast_on and self._screencast_mode == mode:
+            return
+        if self._screencast_on:
+            try:
+                await self._cdp.send("Page.stopScreencast")
+            except Exception:  # pragma: no cover - 没在推时停会报错，忽略
+                pass
+        params: dict[str, Any] = {
+            "format": "jpeg",
+            "quality": FRAME_QUALITY if mode == "jpeg" else VIDEO_FRAME_QUALITY,
+            "maxWidth": 800 if mode == "jpeg" else VIEWPORT["width"],
+            "maxHeight": 500 if mode == "jpeg" else VIEWPORT["height"],
+            "everyNthFrame": FRAME_EVERY_NTH if mode == "jpeg" else 1,
+        }
+        if mode == "video":
+            params["maxFrameRate"] = VIDEO_MAX_FPS
+        try:
+            await self._cdp.send("Page.startScreencast", params)
+        except Exception:
+            # 老内核不认识 maxFrameRate 时退回不带它的调用（不影响画面，只是更快丢帧）
+            logger.info("startScreencast 带 maxFrameRate 失败，退回默认参数", exc_info=True)
+            params.pop("maxFrameRate", None)
+            await self._cdp.send("Page.startScreencast", params)
+        self._screencast_mode = mode
+        self._screencast_on = True
+
+    async def enable_video_mode(self, sink: Any) -> None:
+        """WebRTC 连上/开始协商：把 CDP 的帧率提上来，帧同时喂给视频轨。"""
+        await self._ensure()
+        if self._bidi is not None:
+            raise RuntimeError("Firefox/BiDi 内核不支持推流（画面走定时截图）")
+        self._video_sink = sink
+        await self._start_screencast("video")
+
+    async def disable_video_mode(self, sink: Any = None) -> None:
+        if self._closing:
+            return
+        if sink is not None and self._video_sink is not sink:
+            return  # 已经有别的观看者接管了，别把它关掉
+        self._video_sink = None
+        try:
+            await self._start_screencast("jpeg")
+        except Exception:  # pragma: no cover - 浏览器已退出
+            logger.debug("恢复 JPEG 推流失败", exc_info=True)
 
     async def _handle_frame(self, params: dict[str, Any]) -> None:
         """帧到达：回 ack（不 ack Chromium 会暂停推流），然后推给 EventBus。"""
@@ -446,6 +533,14 @@ class BrowserSession:
         except Exception:  # pragma: no cover
             pass
         data = params.get("data", "")
+        # WebRTC 主链路：视频档的帧（1280 宽、24fps）**不等 SSE 节流**，每帧都进
+        # 视频轨。体积上限也放宽（高质量 JPEG 在复杂页面上会超过 400KB，但视频轨
+        # 是一帧一帧解码的，不存在把 SSE 堵住的问题）。
+        if self._video_sink is not None and data:
+            try:
+                self._video_sink.push(data)
+            except Exception:  # pragma: no cover
+                logger.debug("视频轨喂帧失败", exc_info=True)
         if len(data) > FRAME_MAX_BYTES:
             return
         # 节流：Chromium 在页面有动画/滚动时会猛推帧，按最小间隔丢掉多余的
@@ -849,8 +944,35 @@ class BrowserSession:
         except Exception:  # pragma: no cover
             return ""
 
-    async def user_click(self, x: float, y: float) -> str:
-        """用户在画面上点了一下（坐标已由前端换算成视口坐标）。"""
+    async def mouse_move(self, x: float, y: float) -> None:
+        """鼠标移动（悬停/拖拽的前提）。"""
+        await self._ensure()
+        if self._bidi is not None:
+            await self._bidi.send(
+                "input.performActions",
+                {
+                    "context": self._ctx,
+                    "actions": [
+                        {
+                            "type": "pointer",
+                            "id": "mouse",
+                            "parameters": {"pointerType": "mouse"},
+                            "actions": [{"type": "pointerMove", "x": int(x), "y": int(y), "origin": "viewport"}],
+                        }
+                    ],
+                },
+            )
+            return
+        assert self._cdp is not None
+        await self._cdp.send(
+            "Input.dispatchMouseEvent",
+            {"type": "mouseMoved", "x": float(x), "y": float(y), "button": "none", "buttons": 0},
+        )
+
+    async def user_click(
+        self, x: float, y: float, button: str = "left", click_count: int = 1
+    ) -> str:
+        """用户在画面上点了一下（坐标已由前端按内容区换算成视口坐标）。"""
         await self._ensure()
         if self._bidi is not None:
             await self._bidi_click_xy(x, y)
@@ -858,17 +980,159 @@ class BrowserSession:
             await self._refresh_meta_bidi()
             return f"用户点击 ({int(x)},{int(y)})，当前页面: {self._last_url}"
         assert self._cdp is not None
-        for etype, btns in (("mousePressed", 0), ("mouseReleased", 2)):
+        # buttons 是"事件发生时按住的键位掩码"：按下=左1/右2/中4，松开=0
+        bits = {"left": (1, 0), "middle": (4, 0), "right": (2, 0)}.get(button, (1, 0))
+        for etype, buttons in (("mousePressed", bits[0]), ("mouseReleased", bits[1])):
             await self._cdp.send(
                 "Input.dispatchMouseEvent",
-                {"type": etype, "x": x, "y": y, "button": "left", "clickCount": 1, "buttons": btns},
+                {
+                    "type": etype,
+                    "x": float(x),
+                    "y": float(y),
+                    "button": button,
+                    "clickCount": int(click_count or 1),
+                    "buttons": buttons,
+                },
             )
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(0.35)
         await self._refresh_meta()
         return f"用户点击 ({int(x)},{int(y)})，当前页面: {self._last_url}"
 
+    async def wheel(self, x: float, y: float, dx: float = 0, dy: float = 0) -> str:
+        """在指针位置滚轮（不是 window.scrollBy —— 页面里的横向容器/地图也要能滚）。"""
+        await self._ensure()
+        if self._bidi is not None:
+            await self._eval(f"window.scrollBy({int(dx)}, {int(dy)}) || 0")
+            await asyncio.sleep(0.2)
+            return f"已滚动 ({int(dx)},{int(dy)})"
+        assert self._cdp is not None
+        await self._cdp.send(
+            "Input.dispatchMouseEvent",
+            {
+                "type": "mouseWheel",
+                "x": float(x),
+                "y": float(y),
+                "deltaX": float(dx),
+                "deltaY": float(dy),
+                "button": "none",
+                "buttons": 0,
+            },
+        )
+        return f"已滚动 ({int(dx)},{int(dy)})"
+
+    async def key_event(self, payload: dict[str, Any]) -> str:
+        """真实键盘事件（Enter/Tab/Esc/方向键/Backspace/Delete/组合键）。
+
+        前端把 ``KeyboardEvent`` 的 key/code/keyCode 原样送来；这里补 CDP 需要的
+        ``windowsVirtualKeyCode``/modifiers/text。可打印字符走 keyDown(text)+keyUp，
+        组合键（Ctrl+A 之类）只发 keyDown/keyUp，不给 text（否则浏览器会当成字符）。
+        """
+        await self._ensure()
+        key = str(payload.get("key") or "")
+        code = str(payload.get("code") or "")
+        if not key and not code:
+            return "没有按键"
+        mods = 0
+        if payload.get("altKey"):
+            mods |= 1
+        if payload.get("ctrlKey"):
+            mods |= 2
+        if payload.get("metaKey"):
+            mods |= 4
+        if payload.get("shiftKey"):
+            mods |= 8
+        vk = int(payload.get("keyCode") or 0) or _VK.get(key, 0)
+        text = ""
+        if len(key) == 1 and not (mods & (2 | 4)):
+            text = key
+        elif key == "Enter":
+            text = "\r"
+        if self._bidi is not None:
+            # BiDi 只有 performActions 的 key 动作：组合键需要逐键 down/up，
+            # 这里按「按下修饰键 → 按主键 → 松开」拼一段（够用，不做长按）。
+            seq: list[dict[str, Any]] = []
+            if payload.get("ctrlKey"):
+                seq += [{"type": "keyDown", "value": "\uE009"}, {"type": "keyUp", "value": "\uE009"}]
+            seq.append({"type": "keyDown", "value": key})
+            seq.append({"type": "keyUp", "value": key})
+            await self._bidi.send(
+                "input.performActions",
+                {"context": self._ctx, "actions": [{"type": "key", "id": "kb", "actions": seq}]},
+            )
+            await asyncio.sleep(0.1)
+            return f"已按键 {describe_key(payload)}"
+        assert self._cdp is not None
+        base: dict[str, Any] = {
+            "key": key,
+            "code": code,
+            "windowsVirtualKeyCode": vk,
+            "nativeVirtualKeyCode": vk,
+            "modifiers": mods,
+            "autoRepeat": bool(payload.get("repeat")),
+            "isKeypad": bool(payload.get("location") == 3),
+            "location": int(payload.get("location") or 0),
+        }
+        await self._cdp.send("Input.dispatchKeyEvent", {"type": "keyDown", **base})
+        if text and len(text) == 1:
+            # 字符只由 char 事件插入。keyDown 也带 text 会插入两次（实测输入
+            # "a" 得到 "aa"），而只发 keyDown 又会让监听 keypress/input 的页面收不到。
+            await self._cdp.send(
+                "Input.dispatchKeyEvent", {"type": "char", **base, "text": text, "unmodifiedText": text}
+            )
+        await self._cdp.send("Input.dispatchKeyEvent", {"type": "keyUp", **{k: v for k, v in base.items() if k not in ("text", "unmodifiedText")}})
+        await asyncio.sleep(0.05)
+        return f"已按键 {describe_key(payload)}"
+
+    async def hit_test(self, x: float, y: float) -> dict[str, Any]:
+        """点击位置到底是什么：给\"有没有点中可交互元素\"一个事实依据。"""
+        expr = (
+            "(() => {const el=document.elementFromPoint(%s,%s); if(!el) return null;"
+            "const hit=el.closest('a,button,input,select,textarea,label,summary,"
+            "[role=\"button\"],[role=\"link\"],[onclick],[tabindex]');"
+            "const t=(el.innerText||el.textContent||'').trim().replace(/\\s+/g,' ').slice(0,40);"
+            "const ph=(el.getAttribute&&(el.getAttribute('placeholder')||el.getAttribute('aria-label')||''))||'';"
+            "const h=hit&&(hit.getAttribute('href')||hit.getAttribute('aria-label')||'');"
+            "return {tag:(el.tagName||'').toLowerCase(), actionable:!!hit,"
+            " hitTag:hit?hit.tagName.toLowerCase():'', label:[(el.tagName||'').toLowerCase(),ph,t].filter(Boolean).join(' '),"
+            " href:h||''};})()" % (float(x), float(y))
+        )
+        try:
+            if self._bidi is not None:
+                val = await self._eval(expr)
+            else:
+                assert self._cdp is not None
+                r = await self._cdp.send(
+                    "Runtime.evaluate", {"expression": "JSON.stringify(" + expr + ")", "returnByValue": True}
+                )
+                raw = (r.get("result") or {}).get("result", {}).get("value")
+                val = json.loads(raw) if raw else None
+        except Exception:  # pragma: no cover
+            return {}
+        return val if isinstance(val, dict) else {}
+
+    async def page_signature(self) -> str:
+        """页面\"看起来变没变\"的廉价指纹（URL/标题/滚动位置/文本长度/焦点）。"""
+        expr = (
+            "(() => {const b=document.body; const ae=document.activeElement;"
+            "return [document.URL, document.title, Math.round(window.scrollY||0),"
+            "(b&&(b.innerText||'').length)||0, ae?(ae.tagName||'')+':'+(ae.id||ae.name||''):''].join('|');})()"
+        )
+        try:
+            if self._bidi is not None:
+                val = await self._eval(expr)
+                return str(val or "")
+            if self._cdp is None:
+                return ""
+            r = await self._cdp.send(
+                "Runtime.evaluate", {"expression": "JSON.stringify(" + expr + ")", "returnByValue": True}
+            )
+            raw = (r.get("result") or {}).get("result", {}).get("value")
+            return str(json.loads(raw) if raw else "")
+        except Exception:  # pragma: no cover
+            return ""
+
     async def user_type(self, text: str) -> str:
-        """用户通过页面输入条打的字（先点聚焦的位置）。"""
+        """用户通过页面输入条打的字（整段插入，兼容中文输入法）。"""
         await self._ensure()
         if self._bidi is not None:
             await self._bidi_type(text)
@@ -888,6 +1152,14 @@ class BrowserSession:
         return f"等了 {wait_s}s（当前: {self._last_url}）"
 
     async def close(self) -> None:
+        self._closing = True
+        if self.session_id:
+            try:
+                from . import browser_webrtc as rtc
+
+                await rtc.close_stream(self.session_id)
+            except Exception:  # pragma: no cover - 收尾不该挡住关浏览器
+                logger.debug("关闭推流失败", exc_info=True)
         if self._frame_task is not None:
             self._frame_task.cancel()
             self._frame_task = None

@@ -344,6 +344,36 @@ export type BrowserControlState = {
   /** 本轮浏览器步数（唯一口径；缩略条/右栏/浮层/刷新前后都读它） */
   step_count?: number;
   step_label?: string;
+  /** 画面推流实测（WebRTC/兼容模式、fps、码率、延迟估算） */
+  stream?: BrowserStreamState;
+};
+
+/**
+ * 画面推流状态 —— 服务端按 2s 一次把实测值推过来（SSE `browser_stream`）。
+ * `mode=webrtc` 才是主链路；`jpeg` 是兼容模式（画面 5fps，但能操作）。
+ */
+export type BrowserStreamState = {
+  mode: "webrtc" | "jpeg";
+  state?: "connecting" | "live" | "failed" | "closed" | "off";
+  reason?: string;
+  fps: number;
+  kbps: number;
+  latency_ms: number;
+  rtt_ms?: number;
+  width?: number;
+  height?: number;
+  level?: number;
+  ice?: string;
+};
+
+export type BrowserRtcConfig = {
+  enabled: boolean;
+  iceServers: RTCIceServer[];
+  turn: boolean;
+  target_fps: number;
+  max_width: number;
+  max_height: number;
+  session_id: string;
 };
 
 export const api = {
@@ -1675,9 +1705,24 @@ export const api = {
     post<BrowserControlState>(`/api/sessions/${sessionId}/browser-ctl/action`, { action }),
   /** 用户在画面里的点击/打字/滚动（非持有者会 409 + 人话原因） */
   browserInput: (sessionId: string, body: Record<string, unknown>) =>
-    post<{ ok: string; state: BrowserControlState }>(
+    post<{ ok: string; note?: string; feedback?: string; changed?: boolean; state: BrowserControlState }>(
       `/api/sessions/${sessionId}/browser-ctl/input`,
       body,
+    ),
+  /** WebRTC 建连参数（TURN 临时凭据） */
+  browserRtcConfig: (sessionId: string) =>
+    get<BrowserRtcConfig>(`/api/sessions/${sessionId}/browser-ctl/webrtc/config`),
+  /** SDP offer → answer */
+  browserRtcOffer: (sessionId: string, body: { sdp: string; type: string }) =>
+    post<{ sdp: string; type: string; stream?: BrowserStreamState }>(
+      `/api/sessions/${sessionId}/browser-ctl/webrtc/offer`,
+      body,
+    ),
+  /** 收摊：恢复 JPEG 推流（关面板/失败回退时调） */
+  browserRtcClose: (sessionId: string) =>
+    post<{ ok: boolean; stream: BrowserStreamState }>(
+      `/api/sessions/${sessionId}/browser-ctl/webrtc/close`,
+      {},
     ),
 
   /** 一次删多个（文件区「管理」用）：路径全部相对会话目录，有一个不合规矩就整体拒 */

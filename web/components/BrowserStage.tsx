@@ -23,11 +23,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { BrowserStep } from "@/lib/types";
 import { withToken } from "@/lib/api";
-import type { BrowserControlState } from "@/lib/api";
+import type { BrowserControlState, BrowserStreamState } from "@/lib/api";
 import { onFrame, latestFrame } from "@/lib/browser-frame";
 import { isImeEvent } from "@/lib/ime";
-
-const VIEW_W = 800;
+import { mapToPage } from "@/lib/video-map";
+import { BrowserRtc, markRtcBad, rtcKnownBad, type RtcStats } from "@/lib/webrtc";
 
 export type BrowserAction = { action: string; summary: string; target?: string; url?: string };
 export type BrowserFrameData = { data: string; url: string; title: string };
@@ -119,6 +119,8 @@ function ControlBar({
   live,
   pulse,
   taking,
+  stream,
+  onRetry,
 }: {
   control?: BrowserControlState | null;
   notice?: string;
@@ -129,6 +131,10 @@ function ControlBar({
   pulse?: number;
   /** 接管请求正在等当前原子动作做完（后端软停）—— 按钮必须说"正在停手" */
   taking?: boolean;
+  /** 画面链路实测（模式 + fps）—— 用户一眼看出现在是不是流畅模式 */
+  stream?: { mode: "webrtc" | "jpeg"; fps: number; latency?: number; connecting?: boolean; reason?: string } | null;
+  /** 兼容模式下的「切回流畅模式」 */
+  onRetry?: () => void;
 }) {
   const known = !!control && control.status !== "none";
   const color = toneColor(control);
@@ -161,6 +167,52 @@ function ControlBar({
           <span className="min-w-0 flex-1 truncate text-[11px]" style={{ color: "var(--color-muted)" }}>
             {hint}
           </span>
+          {/* 画面链路（实测）：流畅模式带 fps/延迟；回退后写「兼容模式」并给一个手动切回 */}
+          {stream ? (
+            stream.mode === "webrtc" ? (
+              <span
+                title="实时视频（WebRTC）实测值：帧率与端到端延迟估算"
+                className="shrink-0 rounded-[6px] px-1.5 py-0.5 text-[10.5px] tabular-nums"
+                style={{
+                  color: "var(--color-ok)",
+                  background: "color-mix(in srgb, var(--color-ok) 12%, transparent)",
+                }}
+              >
+                {stream.connecting
+                  ? "流畅模式 · 连接中…"
+                  : `流畅 · ${Math.round(stream.fps)}fps${stream.latency ? ` · ${Math.round(stream.latency)}ms` : ""}`}
+              </span>
+            ) : (
+              <span className="flex shrink-0 items-center gap-1">
+                <span
+                  title={
+                    stream.reason
+                      ? `实时视频没连上（${stream.reason}），已自动切回兼容画面`
+                      : "实时视频没连上，已自动切回兼容画面 —— 操作不受影响，只是帧率低"
+                  }
+                  className="rounded-[6px] px-1.5 py-0.5 text-[10.5px]"
+                  style={{
+                    color: "var(--color-warn)",
+                    background: "color-mix(in srgb, var(--color-warn) 14%, transparent)",
+                  }}
+                >
+                  兼容模式 · 流畅度较低
+                </span>
+                {onRetry ? (
+                  <button
+                    type="button"
+                    data-tap
+                    onClick={onRetry}
+                    className="rounded-[6px] px-1.5 py-0.5 text-[10.5px] hover:underline"
+                    style={{ color: "var(--color-accent)" }}
+                    title="再试一次实时视频（不影响当前操作）"
+                  >
+                    切回流畅模式
+                  </button>
+                ) : null}
+              </span>
+            )
+          ) : null}
           {label ? (
             <button
               key={`take-${action}-${pulse ?? 0}`}
@@ -267,10 +319,12 @@ export function BrowserStage({
   control,
   notice,
   live,
+  sessionId,
   onControl,
   onUserClick,
   onUserText,
   onUserScroll,
+  onUserInput,
   onOpen,
   onClose,
   steps,
@@ -286,10 +340,14 @@ export function BrowserStage({
   notice?: string;
   /** 这一轮正在跑：状态还没同步过来时也要给出可点的「接管」 */
   live?: boolean;
+  /** 会话号 —— WebRTC 建连与 DataChannel 输入都挂在会话上 */
+  sessionId?: string;
   onControl?: (action: "take" | "release") => void;
   onUserClick?: (x: number, y: number) => void | Promise<void>;
   onUserText?: (text: string) => void | Promise<void>;
   onUserScroll?: (dy: number) => void | Promise<void>;
+  /** 任意输入（键盘/滚轮/移动）—— JPEG 兼容模式下也能走 HTTP */
+  onUserInput?: (body: Record<string, unknown>) => void | Promise<void>;
   onOpen?: () => void;
   onClose?: () => void;
   /** 这次的执行过程（每步一张图）—— 有就出胶片条，能点回看 */
@@ -304,6 +362,14 @@ export function BrowserStage({
   const denyReason =
     control?.denied_hint || "助手正在操作浏览器 —— 先点「接管」，它就停手把画面给你";
   const imgRef = useRef<HTMLImageElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const rtcRef = useRef<BrowserRtc | null>(null);
+  /** 画面链路：off/connecting/live/fallback。fallback 后不自动回跳（用户手动切才重试） */
+  const [rtcMode, setRtcMode] = useState<"off" | "connecting" | "live" | "fallback">("off");
+  const [rtcReason, setRtcReason] = useState("");
+  const [streamStats, setStreamStats] = useState<{ fps: number; latency: number; kbps: number; width: number; height: number } | null>(null);
+  const [retryToken, setRetryToken] = useState(0);
+  const [videoReady, setVideoReady] = useState(false);
   const [hasFrame, setHasFrame] = useState(false);
   const [thumb, setThumb] = useState("");
   const [text, setText] = useState("");
@@ -311,7 +377,7 @@ export function BrowserStage({
   const scrollAt = useRef(0);
   /* 就地反馈：非 user 态下的任何操作都要**当场**说清"现在谁在操作、要先点接管"。
      只在横幅里说一次不够 —— 用户点在画面上，眼睛就在那儿。 */
-  const [feedback, setFeedback] = useState<{ text: string; x: number; y: number; w: number; h: number } | null>(null);
+  const [feedback, setFeedback] = useState<{ text: string; x: number; y: number; w: number; h: number; tone: "err" | "ok" } | null>(null);
   /** 被拒时 +1：按钮闪一下（key 变化让动画重放） */
   const [pulse, setPulse] = useState(0);
   /** 接管已点、后端还在等当前原子动作做完 —— 按钮上说清"正在停手"，不许看起来没反应 */
@@ -331,9 +397,9 @@ export function BrowserStage({
   const lastPoint = useRef<{ x: number; y: number } | null>(null);
   /** 画面区的实时尺寸（反馈气泡要留在可见范围内，不许被 overflow-hidden 裁掉） */
   const stageBox = useRef({ w: 320, h: 240 });
-  const say = useCallback((msg: string, at?: { x: number; y: number } | null) => {
+  const say = useCallback((msg: string, at?: { x: number; y: number } | null, tone: "err" | "ok" = "err") => {
     if (!msg) return;
-    setFeedback({ text: msg, x: at?.x ?? -1, y: at?.y ?? -1, ...stageBox.current });
+    setFeedback({ text: msg, x: at?.x ?? -1, y: at?.y ?? -1, ...stageBox.current, tone });
     if (fbTimer.current) clearTimeout(fbTimer.current);
     fbTimer.current = setTimeout(() => setFeedback(null), 5200);
   }, []);
@@ -389,6 +455,82 @@ export function BrowserStage({
     };
   }, []);
 
+  /* ── WebRTC 主链路 ────────────────────────────────────────────────────
+     面板打开、浏览器还活着就先试实时视频。失败只**报给 UI**（切兼容模式），
+     绝不自动重试；用户点「切回流畅模式」才再来一次（retryToken）。 */
+  const browserLive =
+    !!control && control.status !== "none" && control.status !== "closed" && control.alive !== false;
+  useEffect(() => {
+    if (variant !== "panel" || !sessionId || !browserLive) return;
+    if (!hasFrame && !frame) return;
+    if (rtcKnownBad(sessionId) && retryToken === 0) {
+      setRtcMode("fallback");
+      return;
+    }
+    let dead = false;
+    let rtc: BrowserRtc | null = null;
+    setVideoReady(false);
+    setRtcMode("connecting");
+    setRtcReason("");
+    void (async () => {
+      try {
+        rtc = await BrowserRtc.start(sessionId, {
+          onTrack: (s) => {
+            if (dead) return;
+            const v = videoRef.current;
+            if (!v) return;
+            v.srcObject = s;
+            void v.play().catch(() => {});
+          },
+          onOpen: () => {
+            if (!dead) setRtcMode("live");
+          },
+          onFatal: (reason) => {
+            if (dead) return;
+            setRtcMode("fallback");
+            setRtcReason(reason);
+            setStreamStats(null);
+            markRtcBad(sessionId, true);
+          },
+          onMessage: (m) => {
+            if (dead) return;
+            if (m.type === "denied") denied(m.reason);
+            else say(m.feedback || m.note || "已送达", lastPoint.current, "ok");
+          },
+          onStats: (s) => {
+            if (dead) return;
+            setRtcMode("live");
+            setStreamStats({ fps: s.fps, latency: s.latencyMs, kbps: s.kbps, width: s.width, height: s.height });
+          },
+        });
+        if (dead) {
+          rtc.dispose(true);
+          return;
+        }
+        rtcRef.current = rtc;
+      } catch (e) {
+        if (dead) return;
+        const reason = e instanceof Error ? e.message : String(e);
+        setRtcMode("fallback");
+        setRtcReason(reason);
+        markRtcBad(sessionId, true);
+      }
+    })();
+    return () => {
+      dead = true;
+      rtc?.dispose(true);
+      if (rtcRef.current === rtc) rtcRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [variant, sessionId, browserLive, hasFrame, retryToken]);
+
+  const retryRtc = useCallback(() => {
+    if (!sessionId) return;
+    markRtcBad(sessionId, false);
+    setRtcMode("connecting");
+    setRetryToken((n) => n + 1);
+  }, [sessionId]);
+
   // 缩略条没必要跟满帧率：半秒一张足够看出它在干嘛
   useEffect(() => {
     if (variant !== "inline") return;
@@ -419,12 +561,20 @@ export function BrowserStage({
     }
   };
 
+  /** 当前画面的原始尺寸（视频轨优先；JPEG 用图片自身的 natural 尺寸） */
+  const naturalSize = (): { w: number; h: number } => {
+    const v = videoRef.current;
+    if (rtcMode === "live" && v && v.videoWidth > 0) return { w: v.videoWidth, h: v.videoHeight };
+    const im = imgRef.current;
+    if (im && im.naturalWidth > 0) return { w: im.naturalWidth, h: im.naturalHeight };
+    return { w: 1280, h: 800 };
+  };
+
   /**
    * 点画面。三种情况都要有反应：
-   *  · 能操作（user/waiting/paused）→ 换算坐标发给后端；
+   *  · 能操作（user/waiting/paused）→ 按**实际内容区**换算坐标后发出去；
    *  · 正在回看历史步骤 → 说清"这不是实时画面"，能操作就切回来；
    *  · 非 user 态 → 当场说"谁在操作 + 先点接管"，并把接管按钮闪一下。
-   * 以前非 user 态直接 return，用户看到的是"点了没反应也不解释"。
    */
   const handleStageClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -434,6 +584,12 @@ export function BrowserStage({
     // 反馈气泡留在画面里（贴底/贴边时也可见；渲染时再按容器尺寸夹一次）
     const at = { x: px, y: Math.min(py, Math.max(8, rect.height - 72)) };
     lastPoint.current = at;
+    // 点画面就把键盘焦点收过来（否则方向键/Tab 作用不到网页上）
+    try {
+      e.currentTarget.focus({ preventScroll: true });
+    } catch {
+      /* 老浏览器不支持 focus 选项 */
+    }
     if (shown) {
       if (canClick) {
         setViewStep(null);
@@ -448,19 +604,14 @@ export function BrowserStage({
       }
       return;
     }
-    if (!hasFrame) {
+    if (!hasFrame && rtcMode !== "live") {
       say("画面还没出来 —— 等它打开网页再操作", at);
       return;
     }
-    // 图片按 object-contain 缩放（4:3）：把屏幕点换算成页面坐标，留白不算点击。
-    const iw = VIEW_W;
-    const ih = 600;
-    const scale = Math.min(rect.width / iw, rect.height / ih);
-    const dw = iw * scale;
-    const dh = ih * scale;
-    const ox = (rect.width - dw) / 2;
-    const oy = 0; // object-top：竖向贴顶
-    if (px < ox || px > ox + dw || py < oy || py > oy + dh) {
+    // object-contain：扣除留白，任何宽高比都零偏移（旧实现写死 800×600）
+    const nat = naturalSize();
+    const p = mapToPage(px, py, rect.width, rect.height, nat.w, nat.h);
+    if (!p.inside) {
       say("点到画面外的留白（不是网页内容）", at);
       return;
     }
@@ -468,21 +619,63 @@ export function BrowserStage({
       denied(undefined, at);
       return;
     }
-    if (!onUserClick) return;
-    void onUserClick((px - ox) / scale, (py - oy) / scale);
+    if (!onUserClick && !rtcRef.current?.isOpen) return;
+    // DataChannel 优先；没建连（兼容模式）走原来的 HTTP
+    if (rtcRef.current?.send({ kind: "click", x: p.x, y: p.y, button: "left", clickCount: e.detail || 1 })) {
+      return;
+    }
+    void onUserClick?.(p.x, p.y);
+  };
+
+  const moveAt = useRef(0);
+  /** 鼠标移动只走 DataChannel（HTTP 每秒几十次会打爆服务端）—— 悬停/拖拽需要它 */
+  const handleStageMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!canClick || shown) return;
+    const rtc = rtcRef.current;
+    if (!rtc?.isOpen) return;
+    const now = performance.now();
+    if (now - moveAt.current < 45) return;
+    moveAt.current = now;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const nat = naturalSize();
+    const p = mapToPage(e.clientX - rect.left, e.clientY - rect.top, rect.width, rect.height, nat.w, nat.h);
+    if (!p.inside) return;
+    rtc.send({ kind: "move", x: p.x, y: p.y });
+  };
+
+  /** 键盘：给网页真实按键（Enter 提交、Tab 走焦点、Backspace 删字、Ctrl+A 全选…） */
+  const handleStageKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (isImeEvent(e)) return;
+    if (["Shift", "Control", "Alt", "Meta", "CapsLock"].includes(e.key)) return;
+    if (shown) return;
+    if (!canClick) {
+      denied(undefined, lastPoint.current);
+      e.preventDefault();
+      return;
+    }
+    // 不让浏览器把这些键用去滚动/切焦点（Tab 不能把焦点带出画面）
+    e.preventDefault();
+    const body = {
+      kind: "key",
+      key: e.key,
+      code: e.code,
+      keyCode: e.keyCode,
+      ctrlKey: e.ctrlKey,
+      altKey: e.altKey,
+      metaKey: e.metaKey,
+      shiftKey: e.shiftKey,
+      repeat: e.repeat,
+      location: e.location,
+    };
+    if (!rtcRef.current?.send(body)) void onUserInput?.(body);
   };
 
   const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-    if (!onUserScroll) return;
-    const now = Date.now();
-    if (now - scrollAt.current < 160) return;
-    scrollAt.current = now;
-    // 滚动的反馈也贴在**鼠标所在位置**（以前固定贴底，用户以为没反应）
-    const rect = e.currentTarget.getBoundingClientRect();
-    stageBox.current = { w: rect.width, h: rect.height };
-    const at = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-    lastPoint.current = at;
     if (shown) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      stageBox.current = { w: rect.width, h: rect.height };
+      const at = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      lastPoint.current = at;
       say(
         canClick
           ? "正在回看历史步骤 · 点「回到最新」后滚动才作用于实时画面"
@@ -491,10 +684,23 @@ export function BrowserStage({
       );
       return;
     }
+    const rect = e.currentTarget.getBoundingClientRect();
+    stageBox.current = { w: rect.width, h: rect.height };
+    const at = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    lastPoint.current = at;
     if (control && control.status !== "none" && !canClick) {
       denied(undefined, at);
       return;
     }
+    const now = Date.now();
+    if (now - scrollAt.current < 60) return;
+    scrollAt.current = now;
+    const nat = naturalSize();
+    const p = mapToPage(at.x, at.y, rect.width, rect.height, nat.w, nat.h);
+    if (rtcRef.current?.send({ kind: "wheel", x: p.inside ? p.x : nat.w / 2, y: p.inside ? p.y : nat.h / 2, dx: e.deltaX, dy: e.deltaY })) {
+      return;
+    }
+    if (!onUserScroll) return;
     void onUserScroll(Math.round(e.deltaY));
   };
 
@@ -672,12 +878,37 @@ export function BrowserStage({
 
       {/* 控制权：所有尺寸常驻（徽章 + 一个大按钮），文案全来自后端。
           状态还没到时（第一轮刚起来）也有兜底的「接管」—— 以前这一瞬什么都没有。 */}
-      <ControlBar control={control} notice={notice} onControl={requestControl} live={live} pulse={pulse} taking={taking} />
+      <ControlBar
+        control={control}
+        notice={notice}
+        onControl={requestControl}
+        live={live}
+        pulse={pulse}
+        taking={taking}
+        stream={
+          rtcMode === "fallback"
+            ? { mode: "jpeg", fps: 0, reason: rtcReason }
+            : rtcMode === "live" || rtcMode === "connecting" || streamStats
+              ? {
+                  mode: "webrtc",
+                  fps: streamStats?.fps ?? 0,
+                  latency: streamStats?.latency,
+                  connecting: rtcMode === "connecting",
+                  reason: rtcReason,
+                }
+              : null
+        }
+        onRetry={rtcMode === "fallback" && sessionId ? retryRtc : undefined}
+      />
 
       <div
-        className="relative min-h-0 flex-1 overflow-hidden"
+        className="relative min-h-0 flex-1 overflow-hidden outline-none"
         onWheel={handleWheel}
         onClick={handleStageClick}
+        onMouseMove={handleStageMove}
+        onKeyDown={handleStageKey}
+        tabIndex={canClick ? 0 : -1}
+        aria-label="浏览器画面（点一下可键盘操作）"
         style={{ background: "var(--color-video-bg)" }}
       >
         {shown ? (
@@ -689,13 +920,35 @@ export function BrowserStage({
           />
         ) : (
           <>
+            {/* WebRTC 主链路：<video> 接 SRTP 视频轨。透明期（连接中）先让 JPEG 顶着 */}
+            {rtcMode === "live" || rtcMode === "connecting" ? (
+              <video
+                ref={videoRef}
+                className="pointer-events-none absolute inset-0 h-full w-full object-contain object-top select-none"
+                style={{ opacity: rtcMode === "live" ? 1 : 0 }}
+                autoPlay
+                playsInline
+                muted
+                draggable={false}
+                onLoadedData={() => setVideoReady(true)}
+                onPlaying={() => setVideoReady(true)}
+              />
+            ) : null}
             <img
               ref={imgRef}
               alt={frame?.title || "浏览器画面"}
               className="absolute inset-0 block h-full w-full cursor-crosshair object-contain object-top select-none"
-              style={{ opacity: hasFrame ? 1 : 0 }}
+              style={{ opacity: hasFrame && !(rtcMode === "live" && videoReady) ? 1 : 0 }}
               draggable={false}
             />
+            {rtcMode === "connecting" ? (
+              <div
+                className="pointer-events-none absolute left-1/2 top-2 -translate-x-1/2 rounded-full px-2.5 py-1 text-[11px]"
+                style={{ background: "rgba(15,23,42,0.72)", color: "#fff" }}
+              >
+                正在连接流畅模式…
+              </div>
+            ) : null}
             {waiting && hasFrame ? (
               <span
                 aria-hidden
@@ -703,7 +956,7 @@ export function BrowserStage({
                 style={{ boxShadow: "inset 0 0 0 2px var(--color-warn)" }}
               />
             ) : null}
-            {hasFrame ? null : (
+            {hasFrame || rtcMode === "live" ? null : (
               <div className="flex h-full min-h-[160px] items-center justify-center text-[12px]" style={{ color: "var(--color-text-3)" }}>
                 还未打开网页
               </div>
@@ -721,9 +974,9 @@ export function BrowserStage({
               left: feedback.x >= 0 ? Math.min(Math.max(feedback.x + 8, 8), Math.max(8, feedback.w - 248)) : 12,
               top: feedback.x >= 0 ? Math.min(Math.max(feedback.y + 8, 8), Math.max(8, feedback.h - 92)) : undefined,
               bottom: feedback.x >= 0 ? undefined : 12,
-              color: "var(--color-err)",
+              color: feedback.tone === "ok" ? "var(--color-ok)" : "var(--color-err)",
               background: "var(--color-surface)",
-              border: "1px solid color-mix(in srgb, var(--color-err) 35%, transparent)",
+              border: `1px solid color-mix(in srgb, ${feedback.tone === "ok" ? "var(--color-ok)" : "var(--color-err)"} 35%, transparent)`,
             }}
           >
             {feedback.text}
@@ -833,7 +1086,8 @@ export function BrowserStage({
                 denied();
                 return;
               }
-              void onUserText(text);
+              // 中文输入法整段上屏走 insertText（与键盘直打并存）；DataChannel 通就用它
+              if (!rtcRef.current?.send({ kind: "text", text })) void onUserText(text);
               setText("");
             }}
           />

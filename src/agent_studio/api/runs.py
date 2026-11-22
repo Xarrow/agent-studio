@@ -2321,12 +2321,18 @@ async def browser_input(run_id: str, payload: dict[str, Any]) -> dict[str, Any]:
             status.HTTP_409_CONFLICT, "浏览器已过期（30 分钟没有操作）· 发消息让它重新打开"
         )
     try:
-        ok = await bc.apply_user_input(c, sess, payload)
+        detail = await bc.apply_user_input_detail(c, sess, payload)
     except bc.UserInputDenied as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from None
     except Exception as exc:  # pragma: no cover
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, str(exc)) from None
-    return {"ok": ok, "state": bc.public_state(c.session_id)}
+    return {
+        "ok": detail.get("ok") or "",
+        "note": detail.get("note") or "",
+        "feedback": detail.get("feedback") or "",
+        "changed": bool(detail.get("changed")),
+        "state": bc.public_state(c.session_id),
+    }
 
 
 # --------------------------------------------------------------------------- #

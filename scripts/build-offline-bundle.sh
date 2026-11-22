@@ -98,6 +98,17 @@ if [ ! -d "$SP" ]; then
 fi
 ls "$SP" | wc -l
 
+# 门禁：WebRTC 媒体栈（aiortc/PyAV/pylibsrtp/aioice）是原生扩展，pip 装不上时只 warning，
+# 包照样打得出来 —— 到运行时才表现为"画面永远停在 JPEG 兼容模式"，很难从表面看出来。
+# 这里按 dist-info 直接卡住（跨架构解包同样适用）。
+for pkg in aiortc av pylibsrtp aioice; do
+  if ! ls -d "$SP"/${pkg}-*.dist-info >/dev/null 2>&1; then
+    echo "[!] vendor 缺少 $pkg —— WebRTC 推流会退化成 JPEG 兼容模式"
+    echo "    requirements-lock.txt 是旧的吗？用 uv export 重新生成后再打包。"
+    exit 1
+  fi
+done
+
 echo "[5/6] 启动脚本与说明"
 cp "$REPO/scripts/bundle-start.sh" "$STAGE/start.sh"
 chmod +x "$STAGE/start.sh"

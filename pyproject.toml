@@ -9,7 +9,7 @@ dependencies = [
     "aiomysql>=0.3.2",
     "aiosqlite>=0.22.1",
     "asyncpg>=0.31.0",
-    "cryptography>=50.0.1",
+    "cryptography>=50.0.2",
     "fastapi>=0.141.1",
     "httpx>=0.28.1",
     "openpyxl>=3.1.5",
@@ -30,6 +30,7 @@ dependencies = [
     # macOS（Apple Silicon）上会被判为"不需要"，一查库就报 greenlet is required。
     "sqlalchemy[asyncio]>=2.0.54",
     "uvicorn[standard]>=0.53.0",
+    "aiortc>=1.16",
 ]
 
 [[tool.uv.index]]

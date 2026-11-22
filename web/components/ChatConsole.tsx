@@ -3671,6 +3671,7 @@ export function ChatConsole({
                   (browserFrame || browserActions.length > 0 || browserSteps.length > 0) && (
                   <BrowserStage
                     variant="inline"
+                    sessionId={sessionId || undefined}
                     frame={browserFrame}
                     actions={browserActions}
                     control={browserCtl}
@@ -4743,6 +4744,7 @@ export function ChatConsole({
           onUserClick={async (x, y) => sendBrowser({ kind: "click", x, y })}
           onUserText={async (text) => sendBrowser({ kind: "text", text })}
           onUserScroll={async (dy) => sendBrowser({ kind: "scroll", dy })}
+          onUserInput={async (body) => sendBrowser(body)}
           sessionId={sessionId || undefined}
           files={sessionFiles?.files ?? []}
           workDir={sessionFiles?.work_dir}
@@ -4784,6 +4786,7 @@ export function ChatConsole({
           >
             <BrowserStage
               variant="panel"
+              sessionId={sessionId || undefined}
               frame={browserFrame}
               actions={browserActions}
               control={browserCtl}
@@ -4793,6 +4796,7 @@ export function ChatConsole({
               onUserClick={async (x, y) => sendBrowser({ kind: "click", x, y })}
               onUserText={async (text) => sendBrowser({ kind: "text", text })}
               onUserScroll={async (dy) => sendBrowser({ kind: "scroll", dy })}
+              onUserInput={async (body) => sendBrowser(body)}
               onClose={() => setBrowserOpen(false)}
               steps={browserSteps}
               onLoadSteps={() => void loadBrowserSteps()}

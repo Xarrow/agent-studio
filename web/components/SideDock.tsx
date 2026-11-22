@@ -52,6 +52,7 @@ export function SideDock({
   onUserClick,
   onUserText,
   onUserScroll,
+  onUserInput,
   /* 文件 */
   sessionId,
   files,
@@ -91,6 +92,7 @@ export function SideDock({
   onUserClick?: (x: number, y: number) => void | Promise<void>;
   onUserText?: (t: string) => void | Promise<void>;
   onUserScroll?: (dy: number) => void | Promise<void>;
+  onUserInput?: (body: Record<string, unknown>) => void | Promise<void>;
   sessionId?: string;
   files: {
     path: string;
@@ -508,6 +510,8 @@ export function SideDock({
                 onUserClick={onUserClick}
                 onUserText={onUserText}
                 onUserScroll={onUserScroll}
+                onUserInput={onUserInput}
+                sessionId={sessionId}
               />
             </div>
           ) : panel === "steps" ? (

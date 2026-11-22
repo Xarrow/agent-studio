@@ -8,9 +8,13 @@ aiohappyeyeballs==2.7.1
     # via aiohttp
 aiohttp==3.14.3
     # via dashscope
+aioice==0.13.0
+    # via aiortc
 aioitertools==0.13.0
     # via agentscope
 aiomysql==0.3.2
+    # via agent-studio
+aiortc==1.16.0
     # via agent-studio
 aiosignal==1.4.0
     # via aiohttp
@@ -41,6 +45,8 @@ attrs==26.1.0
     #   aiohttp
     #   jsonschema
     #   referencing
+av==19.0.2
+    # via aiortc
 bidict==0.24.1
     # via python-socketio
 cached-property==2.0.1
@@ -51,23 +57,33 @@ certifi==2026.7.22
     #   httpcore
     #   httpx
     #   requests
-cffi==2.1.1 ; platform_python_implementation != 'PyPy'
-    # via cryptography
+cffi==2.1.1
+    # via
+    #   cryptography
+    #   pylibsrtp
 charset-normalizer==3.5.1
     # via requests
 click==8.5.0
-    # via uvicorn
+    # via
+    #   huggingface-hub
+    #   uvicorn
 colorama==0.4.6 ; sys_platform == 'win32'
     # via
+    #   loguru
     #   pytest
+    #   tqdm
     #   typer
-cryptography==50.0.1
+cryptography==50.0.2
     # via
     #   agent-studio
+    #   aiortc
     #   dashscope
     #   pyjwt
+    #   pyopenssl
 dashscope==1.27.6
     # via agentscope
+dnspython==2.9.2
+    # via aioice
 docstring-parser==0.18.0
     # via
     #   agentscope
@@ -76,12 +92,22 @@ et-xmlfile==2.0.0
     # via openpyxl
 fastapi==0.141.1
     # via agent-studio
+fastembed==0.9.1
+    # via agent-studio
+filelock==4.3.0
+    # via huggingface-hub
 filetype==1.2.0
     # via agentscope
+flatbuffers==25.12.19
+    # via onnxruntime
 frozenlist==1.8.0
     # via
     #   aiohttp
     #   aiosignal
+fsspec==2026.9.0
+    # via huggingface-hub
+google-crc32c==1.9.0
+    # via aiortc
 googleapis-common-protos==1.75.3
     # via
     #   opentelemetry-exporter-otlp-proto-grpc
@@ -96,6 +122,8 @@ h11==0.16.0
     #   httpcore2
     #   uvicorn
     #   wsproto
+hf-xet==1.8.0 ; platform_machine == 'AMD64' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64'
+    # via huggingface-hub
 httpcore==1.0.9
     # via httpx
 httpcore2==2.13.0 ; sys_platform != 'emscripten'
@@ -107,6 +135,7 @@ httpx==0.28.1
     #   agent-studio
     #   agentscope
     #   dashscope
+    #   huggingface-hub
     #   mcp
 httpx-sse==0.4.3
     # via
@@ -118,6 +147,10 @@ httpx2==2.13.0
     #   openai
 httpx2-jsfetch==1.0 ; sys_platform == 'emscripten'
     # via httpx2
+huggingface-hub==1.33.0
+    # via
+    #   fastembed
+    #   tokenizers
 idna==3.20
     # via
     #   anyio
@@ -125,6 +158,8 @@ idna==3.20
     #   httpx2
     #   requests
     #   yarl
+ifaddr==0.2.0
+    # via aioice
 iniconfig==2.3.0
     # via pytest
 jinja2==3.1.6
@@ -144,6 +179,8 @@ jsonschema==4.26.0
     #   mcp
 jsonschema-specifications==2025.9.1
     # via jsonschema
+loguru==0.7.3
+    # via fastembed
 lxml==6.1.3
     # via
     #   python-docx
@@ -156,12 +193,20 @@ mcp==1.30.0
     # via agentscope
 mdurl==0.1.2
     # via markdown-it-py
+mmh3==5.3.1
+    # via fastembed
 multidict==6.9.1
     # via
     #   aiohttp
     #   yarl
 numpy==2.5.3
-    # via agentscope
+    # via
+    #   agentscope
+    #   fastembed
+    #   onnxruntime
+    #   zvec
+onnxruntime==1.32.0
+    # via fastembed
 openai==3.16.2
     # via agentscope
 openpyxl==3.1.5
@@ -198,9 +243,14 @@ opentelemetry-semantic-conventions==0.65b0
     #   agentscope
     #   opentelemetry-sdk
 packaging==26.3
-    # via pytest
+    # via
+    #   huggingface-hub
+    #   onnxruntime
+    #   pytest
 pillow==13.0.0
-    # via python-pptx
+    # via
+    #   fastembed
+    #   python-pptx
 pluggy==1.6.0
     # via pytest
 propcache==0.5.4
@@ -210,10 +260,13 @@ propcache==0.5.4
 protobuf==7.36.2
     # via
     #   googleapis-common-protos
+    #   onnxruntime
     #   opentelemetry-proto
 psycopg==3.3.6
     # via agent-studio
-pycparser==3.0 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'
+py-rust-stemmers==0.1.8
+    # via fastembed
+pycparser==3.0 ; implementation_name != 'PyPy'
     # via cffi
 pydantic==2.13.5
     # via
@@ -229,14 +282,20 @@ pydantic-settings==2.15.0
     # via
     #   agent-studio
     #   mcp
+pyee==16.1.0
+    # via aiortc
 pygments==2.21.0
     # via
     #   pytest
     #   rich
 pyjwt==2.14.0
     # via mcp
+pylibsrtp==1.0.0
+    # via aiortc
 pymysql==1.2.3
     # via aiomysql
+pyopenssl==26.4.0
+    # via aiortc
 pypdf==6.19.0
     # via agentscope
 pytest==9.1.1
@@ -267,6 +326,7 @@ pywin32==312 ; sys_platform == 'win32'
     # via mcp
 pyyaml==6.0.3
     # via
+    #   huggingface-hub
     #   python-frontmatter
     #   uvicorn
 referencing==0.37.0
@@ -278,6 +338,7 @@ regex==2026.9.29
 requests==2.34.2
     # via
     #   dashscope
+    #   fastembed
     #   opentelemetry-exporter-otlp-proto-http
 rich==15.0.0
     # via
@@ -307,6 +368,12 @@ starlette==1.6.0
     #   fastapi
     #   mcp
     #   sse-starlette
+tokenizers==0.23.3
+    # via fastembed
+tqdm==4.70.1
+    # via
+    #   fastembed
+    #   huggingface-hub
 tree-sitter==0.26.0
     # via agentscope
 tree-sitter-bash==0.25.1
@@ -324,6 +391,7 @@ typing-extensions==4.16.0
     #   dashscope
     #   fastapi
     #   grpcio
+    #   huggingface-hub
     #   mcp
     #   openai
     #   opentelemetry-api
@@ -333,6 +401,7 @@ typing-extensions==4.16.0
     #   opentelemetry-semantic-conventions
     #   pydantic
     #   pydantic-core
+    #   pyee
     #   python-datauri
     #   python-docx
     #   python-pptx
@@ -362,9 +431,13 @@ websocket-client==1.9.2
     # via dashscope
 websockets==17.1
     # via uvicorn
+win32-setctime==1.2.1 ; sys_platform == 'win32'
+    # via loguru
 wsproto==1.3.2
     # via simple-websocket
 xlsxwriter==3.3.0
     # via python-pptx
 yarl==1.25.1
     # via aiohttp
+zvec==0.8.1
+    # via agent-studio

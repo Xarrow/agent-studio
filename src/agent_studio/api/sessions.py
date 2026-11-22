@@ -1032,8 +1032,11 @@ async def browser_control_state(
     if await session.get(ChatSession, session_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"会话不存在: {session_id}")
     from .. import browser_control as bc
+    from .. import browser_webrtc as rtc
 
-    return bc.public_state(session_id)
+    st = bc.public_state(session_id)
+    st["stream"] = rtc.metrics(session_id)
+    return st
 
 
 @router.post("/{session_id}/browser-ctl/action")
@@ -1088,12 +1091,79 @@ async def browser_control_input(
             status.HTTP_409_CONFLICT, "浏览器已过期（30 分钟没有操作）· 发消息让它重新打开"
         )
     try:
-        ok = await bc.apply_user_input(c, sess, payload)
+        detail = await bc.apply_user_input_detail(c, sess, payload)
     except bc.UserInputDenied as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from None
     except Exception as exc:  # pragma: no cover
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, str(exc)) from None
-    return {"ok": ok, "state": bc.public_state(session_id)}
+    return {
+        "ok": detail.get("ok") or "",
+        "note": detail.get("note") or "",
+        "feedback": detail.get("feedback") or "",
+        "changed": bool(detail.get("changed")),
+        "state": bc.public_state(session_id),
+    }
+
+
+# --------------------------------------------------------------------------- #
+# WebRTC 推流（主链路）—— 信令走 HTTP，媒体走 ICE
+# --------------------------------------------------------------------------- #
+@router.get("/{session_id}/browser-ctl/webrtc/config")
+async def browser_webrtc_config(
+    session_id: str, session: AsyncSession = Depends(get_session)
+) -> dict:
+    """前端建连前拿 ICE 配置（TURN 临时凭据只在一小时内有效）。"""
+    if await session.get(ChatSession, session_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"会话不存在: {session_id}")
+    from .. import browser_control as bc
+    from .. import browser_webrtc as rtc
+
+    c = bc.get_for_session(session_id)
+    if c is None or not c.alive or c.status == bc.CLOSED:
+        raise HTTPException(status.HTTP_409_CONFLICT, "这个会话现在没有开着的浏览器")
+    cfg = rtc.ice_config()
+    cfg["session_id"] = session_id
+    return cfg
+
+
+@router.post("/{session_id}/browser-ctl/webrtc/offer")
+async def browser_webrtc_offer(
+    session_id: str, payload: dict[str, Any], session: AsyncSession = Depends(get_session)
+) -> dict:
+    """SDP offer → answer（非 trickle：answer 里带齐服务端候选）。"""
+    if await session.get(ChatSession, session_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"会话不存在: {session_id}")
+    from .. import browser_control as bc
+    from .. import browser_webrtc as rtc
+    from ..browser_session import get_existing
+
+    if not rtc.AVAILABLE:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "服务端没装推流依赖（aiortc/PyAV）")
+    c = bc.get_for_session(session_id)
+    if c is None or not c.alive or c.status == bc.CLOSED:
+        raise HTTPException(status.HTTP_409_CONFLICT, "这个会话现在没有开着的浏览器")
+    sess = get_existing(c.key)
+    if sess is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "浏览器已过期 · 发消息让它重新打开")
+    sdp = str(payload.get("sdp") or "")
+    kind = str(payload.get("type") or "offer")
+    if not sdp or kind != "offer":
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "需要 SDP offer")
+    try:
+        answer = await rtc.handle_offer(session_id, sess, sdp, kind)
+    except Exception as exc:  # pragma: no cover - 建连失败就是前端回退的信号
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, f"推流建连失败：{exc}") from None
+    bc.touch(c)
+    return answer
+
+
+@router.post("/{session_id}/browser-ctl/webrtc/close")
+async def browser_webrtc_close(session_id: str) -> dict:
+    """前端主动收摊（关面板/切会话）—— 恢复 JPEG 推流，不关浏览器。"""
+    from .. import browser_webrtc as rtc
+
+    await rtc.close_stream(session_id)
+    return {"ok": True, "stream": rtc.metrics(session_id)}
 
 
 @router.get("/{session_id}/browser-ctl/stream")
