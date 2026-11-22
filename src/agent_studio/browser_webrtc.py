@@ -58,6 +58,12 @@ LEVELS = [
 IDLE_FRAME_INTERVAL_S = 0.5
 #: 服务端等 ICE 收集完的上限（非 trickle；一般 <1s）
 GATHER_TIMEOUT_S = 4.0
+#: connecting 态的看门狗（秒）。客户端自己在 15s 放弃并回退兼容档；正常路径它会
+#: 顺手调 /webrtc/close。但**客户端无声消失**（关标签、崩溃、断网、手机上切走被
+#: 冻结）时那个通知根本发不出来，而 ``_watch`` 只认 failed/closed —— 这条流就会
+#: 永远停在 connecting，浏览器也永远留在视频档（实测一份日志刷了 327 条
+#: state=connecting，持续 11 分钟）。20s 是客户端 15s 超时之后的兜底。
+CONNECT_WATCHDOG_S = float(os.environ.get("STUDIO_RTC_CONNECT_WATCHDOG_S", "20") or 20)
 
 try:  # 依赖缺失时整条链路降级为 JPEG，不影响服务启动
     import av  # noqa: F401
@@ -264,6 +270,9 @@ class BrowserStream:
         # 用 addTransceiver（而不是 addTrack）拿得到 transceiver：必须在
         # setRemoteDescription **之前**设编解码偏好，aiortc 只在那一步过滤。
         self.transceiver = self.pc.addTransceiver(self.track, direction="sendonly")
+        # 看门狗的计时从**这里**算：上面的 enable_video_mode 可能要冷启动一个
+        # Chromium（十几秒），那段耗时不归客户端，不能吃掉它的 20 秒预算。
+        self.created_at = time.monotonic()
         self._task = asyncio.create_task(self._watch())
         self._monitor = asyncio.create_task(self._metrics_loop())
 
@@ -276,7 +285,14 @@ class BrowserStream:
                 asyncio.create_task(self._on_input(message))
 
     async def _watch(self) -> None:
-        """连接状态变化 → 失败就收摊并通知前端切兼容模式。"""
+        """连接状态变化 → 失败就收摊并通知前端切兼容模式。
+
+        除了 pc 自己报的 failed/closed，这里还有一道**超时看门狗**：客户端在
+        15 秒放弃时会调 /webrtc/close，但它无声消失（关标签/崩溃/断网）时什么
+        都发不出来 —— 没有看门狗，这条流就永久 connecting、浏览器永久留在视频
+        档（实测 11 分钟、327 条 state=connecting）。超过 ``CONNECT_WATCHDOG_S``
+        还没到 connected 就回收，并借 ``close()`` 把浏览器切回兼容档。
+        """
         try:
             while not self._closed:
                 await asyncio.sleep(0.5)
@@ -297,6 +313,11 @@ class BrowserStream:
                     if pc.connectionState == "disconnected":
                         await self._fail("WebRTC 连接中断（ICE 不通）")
                         return
+                if self.state != "live" and time.monotonic() - self.created_at > CONNECT_WATCHDOG_S:
+                    await self._fail(
+                        f"{CONNECT_WATCHDOG_S:.0f} 秒内没连上 WebRTC（页面已关或网络断了）"
+                    )
+                    return
         except asyncio.CancelledError:
             raise
         except Exception:  # pragma: no cover

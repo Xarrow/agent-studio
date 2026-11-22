@@ -52,7 +52,13 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 LOCAL_COMMIT="$(git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)"
-echo "[1/6] 本地 commit=$LOCAL_COMMIT"
+# 工作区脏不脏必须记下来：部署同步的是**工作树**，而 commit 号只说明"基于哪一版"。
+# 不标 dirty，/api/version 就会拿一个 commit 号替一份没提交的代码作证（验收失去凭据）。
+LOCAL_DIRTY=0
+if [ -n "$(git status --porcelain -- src web scripts requirements-lock.txt pyproject.toml 2>/dev/null)" ]; then
+  LOCAL_DIRTY=1
+fi
+echo "[1/6] 本地 commit=$LOCAL_COMMIT$( [ "$LOCAL_DIRTY" = 1 ] && echo ' (工作区有未提交改动 → 部署后 commit_dirty=true)' )"
 
 # 静态目录必须由构建产物存在才发；否则不发，避免把空目录同步上去变成白屏
 if [ "$DO_WEB" = 1 ] && [ ! -f web/out/index.html ]; then
@@ -218,10 +224,19 @@ if [ "$DO_WEB" = 1 ]; then
   tar -C web/out -cf - . | ssh "$HOST" "sudo rm -rf $REMOTE_WEB.prev && sudo cp -a $REMOTE_WEB $REMOTE_WEB.prev 2>/dev/null; sudo rm -rf $REMOTE_WEB && sudo mkdir -p $REMOTE_WEB && sudo tar -C $REMOTE_WEB -xf - && sudo chown -R agentstudio:agentstudio $REMOTE_WEB"
 fi
 
-# 部署形态可能没有 .git（离线包）：把 commit 落成文件，/api/version 直接读它
+# 部署形态可能没有 .git（离线包）：把 commit 落成文件，/api/version 直接读它。
+# 顺序必须是「先同步源码 → 再落戳 → 再重启」：戳描述的是**这次放进去的树**，
+# 而新进程启动时只读一次戳（老进程不会替新戳作证，见 main.py version()）。
 if [ "$LOCAL_COMMIT" != "unknown" ]; then
   echo "$LOCAL_COMMIT" | ssh "$HOST" "sudo tee $REMOTE_BASE/app/.build_commit >/dev/null && sudo chown agentstudio:agentstudio $REMOTE_BASE/app/.build_commit"
+  if [ "$LOCAL_DIRTY" = 1 ]; then
+    echo 1 | ssh "$HOST" "sudo tee $REMOTE_BASE/app/.build_dirty >/dev/null && sudo chown agentstudio:agentstudio $REMOTE_BASE/app/.build_dirty"
+  else
+    ssh "$HOST" "sudo rm -f $REMOTE_BASE/app/.build_dirty"
+  fi
 fi
+
+DEPLOY_TS="$(date +%s)"
 
 echo "[6/6] 可控重启并按 /api/version 验收"
 ssh "$HOST" "sudo bash -s -- '$UNIT' '$API_PORT' '$LOCAL_COMMIT'" <<'REMOTE_RESTART' | tee /tmp/deploy-version.json
@@ -270,9 +285,10 @@ exit 1
 REMOTE_RESTART
 echo
 
-python3 - "$LOCAL_COMMIT" <<'PY'
+python3 - "$LOCAL_COMMIT" "$LOCAL_DIRTY" "$DEPLOY_TS" <<'PY'
 import json, sys
-local = sys.argv[1]
+
+local, dirty, deploy_ts = sys.argv[1], sys.argv[2] == "1", int(sys.argv[3])
 try:
     d = json.load(open("/tmp/deploy-version.json"))
 except Exception:
@@ -280,6 +296,14 @@ except Exception:
 ok = True
 if local != "unknown" and d.get("commit") not in (local, "unknown"):
     print(f"[!] commit 不一致：本地 {local} / 远端 {d.get('commit')}"); ok = False
+# 戳必须来自部署文件：回 git/env 说明这个进程不是按这次的包起的（或装错目录）
+if d.get("commit_source") not in ("deploy-stamp",):
+    print(f"[!] 远端 commit 来源是 {d.get('commit_source')}，不是这次部署的戳"); ok = False
+if bool(d.get("commit_dirty")) != dirty:
+    print(f"[!] 脏标记不一致：本地 dirty={dirty} / 远端 {d.get('commit_dirty')}"); ok = False
+# 新进程真的起来了才可能报出部署之后的启动时刻（旧进程会替旧版本作证）
+if int(d.get("started_at") or 0) < deploy_ts - 5:
+    print(f"[!] 服务启动时刻 {d.get('started_at')} 早于本次部署 {deploy_ts} —— 进程没重启"); ok = False
 if d.get("web_files", 0) < 20:
     print(f"[!] 远端静态文件数异常：{d.get('web_files')}（可能是空目录或指错路径）"); ok = False
 print(("✓ 部署验收通过：" if ok else "✗ 部署验收失败：") + json.dumps(d, ensure_ascii=False))

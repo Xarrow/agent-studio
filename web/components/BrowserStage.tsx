@@ -590,7 +590,7 @@ export function BrowserStage({
           },
         });
         if (dead) {
-          rtc.dispose(true);
+          rtc.dispose();
           return;
         }
         rtcRef.current = rtc;
@@ -604,7 +604,7 @@ export function BrowserStage({
     })();
     return () => {
       dead = true;
-      rtc?.dispose(true);
+      rtc?.dispose();
       if (rtcRef.current === rtc) rtcRef.current = null;
       streamRef.current = null;
     };

@@ -563,44 +563,104 @@ async def version() -> dict:
       东京曾经连续几轮"改了没生效"——后端文件是新的，但静态目录指到了另一个
       路径（app/web/out vs web/out），前端一直是旧包。只报 mtime 看不出差别，
       所以这里把 **后端 commit**、**web 产物目录**、**index.html 的指纹** 一起回，
-      部署脚本和页面都能一眼比对。"""
+      部署脚本和页面都能一眼比对。
+
+    commit 的口径（2026-11-22 修）：
+      · 在**进程启动时**读一次就定下来（``_BUILD``），不每次请求去读文件。
+        以前按请求读：部署脚本先把新 commit 写进 .build_commit、再重启，中间那段
+        窗口里**旧进程**会把新版本号报出来；反过来，重启失败时它也会替一份没说
+        出口就换了身的代码作证。实测出现过 /api/version=ba25c07、.build_commit=
+        c89f4ff、真正代码=f2167f3 三处不一致 —— 版本戳说不上"我在跑哪份代码"，
+        验收就没有凭据。
+      · 部署戳（.build_commit）优先于 .git：部署目录里它才是"谁把我放这儿的"，
+        开发机没有它，自然落到 git。
+      · 工作区有未提交改动时额外报 ``commit_dirty``：commit 号只说明"基于哪一版"，
+        不能拿它冒充"跑的就是这一版"。
+    """
+    commit, source, dirty = _BUILD
     return {
         "build": _build_stamp(),
         "version": __version__,
-        "commit": _commit_sha(),
+        "commit": commit,
+        "commit_source": source,
+        "commit_dirty": dirty,
+        "git_commit": _git_sha(),
         "web_dist": str(_WEB_DIST),
         "web_files": _web_file_count(),
+        "started_at": _STARTED_AT,
     }
 
 
-def _commit_sha() -> str:
-    """当前部署的代码版本。没有 .git（离线包）时回 "unknown"，不抛异常。"""
+def _read_build_identity(root: Path | None = None) -> tuple[str, str, bool]:
+    """(commit, 来源, 是否基于未提交改动) —— 部署身份的唯一口径。
+
+    优先级：部署戳 ``.build_commit`` → ``.git`` → 环境变量 → unknown。
+    部署戳排第一是因为：部署目录（离线包）没有 .git，而开发机上同时存在两者时，
+    "谁把我放这儿"比"磁盘上 git 指向哪"更能回答"线上跑的是哪版"。
+    """
+    base = root or Path(__file__).resolve().parents[2]
     try:
-        head = Path(__file__).resolve().parents[2] / ".git" / "HEAD"
+        stamp = base / ".build_commit"
+        if stamp.is_file():
+            sha = stamp.read_text(encoding="utf-8").strip()[:12]
+            if sha:
+                dirty = (base / ".build_dirty").is_file()
+                return sha, "deploy-stamp", dirty
+    except OSError:
+        pass
+    sha = _git_sha(base)
+    if sha:
+        # 开发机（有 .git）同样要标脏：跑的是未提交的代码时，commit 号只能说明
+        # "基于哪一版"。git 不在 PATH 就按"不知道"处理，不因此让服务起不来。
+        return sha, "git", _git_dirty(base)
+    env = os.getenv("STUDIO_BUILD_COMMIT", "").strip()
+    if env:
+        return env[:12], "env", False
+    return "unknown", "unknown", False
+
+
+def _git_dirty(root: Path) -> bool:
+    """工作区有未提交改动吗？（只有 .git 存在时才问 git，失败就当未知=false）"""
+    try:
+        import subprocess
+
+        out = subprocess.run(
+            ["git", "-C", str(root), "status", "--porcelain", "--", "src", "web", "scripts"],
+            capture_output=True,
+            timeout=3,
+            check=False,
+        )
+        return bool(out.stdout.strip())
+    except Exception:  # pragma: no cover - 没有 git 命令/超时
+        return False
+
+
+def _git_sha(root: Path | None = None) -> str:
+    """``.git`` 指向的 commit（12 位）。没有 .git（离线包）就回空串，不抛异常。"""
+    base = root or Path(__file__).resolve().parents[2]
+    try:
+        head = base / ".git" / "HEAD"
         if head.is_file():
             ref = head.read_text(encoding="utf-8").strip()
             if ref.startswith("ref: "):
                 ref_path = head.parent / ref[5:]
                 if ref_path.is_file():
                     return ref_path.read_text(encoding="utf-8").strip()[:12]
+                return ""
             return ref[:12]
-        packed = Path(__file__).resolve().parents[2] / ".git" / "packed-refs"
+        packed = base / ".git" / "packed-refs"
         if packed.is_file():
             for line in packed.read_text(encoding="utf-8", errors="ignore").splitlines():
                 if line.endswith("refs/heads/master"):
                     return line.split()[0][:12]
     except OSError:
         pass
-    # 离线包/裸目录部署没有 .git —— 部署脚本会写一个 .build_commit，
-    # 这样"线上到底是哪一版"在任何布形态下都答得出来。
-    try:
-        stamp = Path(__file__).resolve().parents[2] / ".build_commit"
-        if stamp.is_file():
-            return stamp.read_text(encoding="utf-8").strip()[:12] or "unknown"
-    except OSError:
-        pass
-    env = os.getenv("STUDIO_BUILD_COMMIT", "")
-    return env[:12] if env else "unknown"
+    return ""
+
+
+def _commit_sha() -> str:
+    """兼容旧调用：只回 commit 号（口径同 ``_read_build_identity``）。"""
+    return _read_build_identity()[0]
 
 
 def _web_file_count() -> int:
@@ -609,6 +669,14 @@ def _web_file_count() -> int:
         return sum(1 for _ in _WEB_DIST.rglob("*") if _.is_file()) if _WEB_DIST.is_dir() else 0
     except OSError:
         return 0
+
+
+#: 这个进程的部署身份：(commit, 来源, 是否基于未提交改动)。
+#: 刻意**只在这里读一次** —— "我在跑哪份代码"从进程出生起就不该再变（理由见
+#: version() 的 docstring；按请求读文件那版就是这么把验收变成碰运气的）。
+_BUILD = _read_build_identity()
+#: 进程启动时刻（运维对"这份 commit 是几点起来的"用的）
+_STARTED_AT = int(time.time())
 
 
 # --------------------------------------------------------------------------- #

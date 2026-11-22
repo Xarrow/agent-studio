@@ -7,6 +7,7 @@ H.264 优先这件事必须靠真实的 answer 验证：aiortc 默认把 VP8 排
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -198,3 +199,68 @@ async def test_静止页面不因保活帧的_2fps_降档():
     stream._client = {"fps": 8, "rtt_ms": 30}
     stream._adapt()
     assert stream.level == 1
+
+
+# --------------------------------------------------------------------------- #
+# 僵尸流：客户端无声消失 → 服务端必须自己回收
+# --------------------------------------------------------------------------- #
+class _StuckPc:
+    """永远停在 connecting 的对端（客户端崩溃/关标签后服务端看到的就是这样）。"""
+
+    connectionState = "connecting"
+
+    def __init__(self) -> None:
+        self.closed = False
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+class _LivePc(_StuckPc):
+    connectionState = "connected"
+
+
+async def test_客户端无声消失时看门狗回收流并切回兼容档(monkeypatch):
+    """护栏：客户端 15s 超时后可能一个字节都发不出来（崩溃/断网）。
+
+    旧 ``_watch`` 只认 failed/closed，于是这条流永久 connecting、浏览器永久留在
+    视频档（实测一份日志 327 条 state=connecting、超过 11 分钟）。
+    """
+    monkeypatch.setattr(rtc, "CONNECT_WATCHDOG_S", 0.6)
+    browser = FakeBrowser()
+    browser.video = True  # 开过视频档
+    pc = _StuckPc()
+    stream = rtc.BrowserStream("s1", browser, client="ghost")
+    stream.pc = pc
+    rtc.STREAMS["s1"] = stream
+    # 客户端建连后一声不响地消失了 5 秒（这 5 秒里 pc 一直是 connecting）
+    stream.created_at = time.monotonic() - 5
+
+    await asyncio.wait_for(stream._watch(), timeout=5)
+
+    assert stream.state == "failed", "看门狗必须把僵尸流落成 failed"
+    assert "没连上" in stream.reason
+    assert browser.video is False, "回收时要顺手把浏览器切回兼容档（disable_video_mode）"
+    assert pc.closed is True, "PeerConnection 要关掉，别让 aiortc 留着它"
+    assert rtc.STREAMS.get("s1") is None, "流要从注册表里摘掉，别让它继续被当成活的"
+    assert rtc.metrics("s1")["mode"] == "jpeg", "面板据此回兼容模式"
+    assert rtc.metrics("s1")["state"] == "off"
+
+
+async def test_连上了就不许被看门狗误杀(monkeypatch):
+    monkeypatch.setattr(rtc, "CONNECT_WATCHDOG_S", 0.3)
+    browser = FakeBrowser()
+    pc = _LivePc()
+    stream = rtc.BrowserStream("s1", browser)
+    stream.pc = pc
+    rtc.STREAMS["s1"] = stream
+    stream.created_at = time.monotonic() - 5  # 建连慢，但确实连上了
+
+    task = asyncio.create_task(stream._watch())
+    await asyncio.sleep(0.9)  # 跑过好几轮：看门狗窗口早过了
+    assert stream.state == "live" and not stream._closed
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    await stream.close()
+    assert browser.video is False

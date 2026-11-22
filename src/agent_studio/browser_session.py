@@ -65,6 +65,17 @@ VIEWPORT = {"width": 1280, "height": 800, "deviceScaleFactor": 1}
 #: 视频档的 screencast 参数（CDP 侧编码一张 JPEG 的代价随质量上升）
 VIDEO_FRAME_QUALITY = 68
 VIDEO_MAX_FPS = 24
+#: 视频档下**兼容帧通道**的节奏（1fps 真实页面帧）。
+#:
+#: 为什么视频档还得截：``Page.startScreencast`` 只在页面**有变化**时推帧，
+#: 静止页在视频档下一帧都没有 —— WebRTC 又没连上时，面板能看到的只剩启动那
+#: 一张空白帧（实测 6 秒 3 帧、全是平灰）。兼容帧通道必须独立于视频档工作，
+#: 所以这里按 1fps 主动截真实页面：既喂视频轨（全尺寸），也喂 SSE（面板/缩略）。
+#: 1fps 是折中：能证明"页面还在、内容是真的"，又不跟 24fps 主链路抢 CPU。
+VIDEO_KEEPALIVE_INTERVAL_S = 1.0
+#: 视频档保活帧的体积上限。兼容模式的 400KB 闸门是给 5fps 用的；视频档只有
+#: 1fps、内容必须是真页面，宁可放宽也不许因为体积被丢回"只有空白帧"。
+VIDEO_KEEPALIVE_MAX_BYTES = 1_200_000
 
 #: 键盘：DOM key → Windows 虚拟键码（CDP 要它才能触发默认行为，比如 Enter 提交）
 _VK = {
@@ -706,12 +717,22 @@ class BrowserSession:
             self._idle_task = asyncio.create_task(self._idle_tick())
 
     async def _emit_frame(
-        self, data: str, session_id: Any = None, *, ack: bool = True, throttle: bool = True
+        self,
+        data: str,
+        session_id: Any = None,
+        *,
+        ack: bool = True,
+        throttle: bool = True,
+        cap: int | None = None,
     ) -> bool:
         """一帧的去向：喂视频轨（不等节流）+ 节流后进 SSE。返回这次有没有进 SSE。
 
         ``throttle=False`` 给保活帧用：它自己按 200ms 排好了节奏，再被节流一次
         就会因为几毫秒抖动被丢掉（实测掉到 4fps 以下，面板上看着不像 5fps）。
+
+        ``cap`` 是这一帧的体积上限（默认 ``FRAME_MAX_BYTES``）。视频档的保活帧
+        走 1280 宽全尺寸，比兼容帧大，用独立的宽闸门 —— 被体积拦掉就等于
+        "面板上又只剩空白帧"，那是这次要修的病。
         """
         if not data:
             return False
@@ -728,7 +749,7 @@ class BrowserSession:
                 self._video_sink.push(data)
             except Exception:  # pragma: no cover
                 logger.debug("视频轨喂帧失败", exc_info=True)
-        if len(data) > FRAME_MAX_BYTES:
+        if len(data) > (FRAME_MAX_BYTES if cap is None else cap):
             return False
         now_ms = time.monotonic() * 1000.0
         if throttle:
@@ -750,8 +771,48 @@ class BrowserSession:
             logger.exception("浏览器帧推送失败")
         return True
 
+    async def _keepalive_frame(self, video: bool) -> bool:
+        """主动截一张**真实页面**，喂视频轨 + SSE。返回这张有没有进 SSE。
+
+        为什么不能"视频档就不截"（本次修的 P0）：
+        ``Page.startScreencast`` 只在页面**有变化**时推帧，静止页在视频档下一帧
+        都没有 —— WebRTC 没连上时，面板能看到的只有启动那一张空白帧（实测 6 秒
+        3 帧全是平灰），而 WebRTC 永远连不上的情况下面板就永久黑屏。所以兼容帧
+        通道**独立于视频档**工作：视频档开着也按 ``VIDEO_KEEPALIVE_INTERVAL_S``
+        补真实页面帧；视频档用全尺寸（视频轨不放大糊图），兼容档仍按 800 宽
+        （SSE 负载口径没变，见 test_browser_frame_throttle.py）。
+        """
+        if self._cdp is None:
+            return False
+        try:
+            r = await self._cdp.send(
+                "Page.captureScreenshot",
+                {
+                    "format": "jpeg",
+                    "quality": VIDEO_FRAME_QUALITY if video else FRAME_QUALITY,
+                    "captureBeyondViewport": False,
+                    "clip": {
+                        "x": 0,
+                        "y": 0,
+                        "width": VIEWPORT["width"],
+                        "height": VIEWPORT["height"],
+                        # 视频档要整张（1280×800 → 轨道按档位再缩）；兼容档 0.625 → 800×500
+                        "scale": 1.0 if video else 0.625,
+                    },
+                },
+            )
+            data = (r.get("result") or {}).get("data") or ""
+        except Exception:  # pragma: no cover - 页面正在跳转/正在关
+            return False
+        return await self._emit_frame(
+            str(data),
+            ack=False,
+            throttle=False,
+            cap=VIDEO_KEEPALIVE_MAX_BYTES if video else None,
+        )
+
     async def _idle_tick(self) -> None:
-        """兼容模式的保活帧：页面没变化时按 5fps 主动截一张。
+        """保活帧循环：页面没变化时主动截图，**视频档也照做**（只是降到 1fps）。
 
         为什么需要它：``Page.startScreencast`` 只在**页面有变化**时推帧，静止页面
         的帧率本来就是 0 —— 面板上那个"实时 fps"就会显示 0~1fps，用户读成"卡了/
@@ -759,44 +820,28 @@ class BrowserSession:
         ``Page.captureScreenshot`` 主动补一帧（实测 1280×800 一次 ~43ms，
         缩到 800×500 后 ~35ms），代价只在**真的有人在看且页面不动**时才付。
         页面一动，真帧先到，这里就自动让路（见 0.35s 判断）。
+
+        视频档下这里**不能 continue**（旧代码的写法）：视频档静止页没有真帧，
+        跳过就等于把兼容通道也关了 —— 那是"0fps 黑屏"的直接原因。视频流本身
+        也是观众，所以只要 ``_video_sink`` 在，就不看 SSE 有没有订阅者。
         """
         try:
             while not self._closing and self._cdp is not None:
                 # 节奏按"开始截"到"下一轮开始截"的间隔算：截一张要 35~45ms，
                 # 若只是固定 sleep 200ms，实测会掉到 4.3fps（面板上就不像 5fps）
                 tick_at = time.monotonic()
-                if self._video_sink is not None:
-                    await asyncio.sleep(FRAME_MIN_INTERVAL_MS / 1000.0)
-                    continue  # 视频档自己有帧，别抢
-                if not self._has_watcher():
-                    await asyncio.sleep(FRAME_MIN_INTERVAL_MS / 1000.0)
+                video = self._video_sink is not None
+                interval = VIDEO_KEEPALIVE_INTERVAL_S if video else FRAME_MIN_INTERVAL_MS / 1000.0
+                if not video and not self._has_watcher():
+                    await asyncio.sleep(interval)
                     continue  # 没人在看：一帧都不截（不拿空闲页面的 CPU 开玩笑）
-                if time.monotonic() * 1000.0 - self._last_real_frame_at < 350:
-                    await asyncio.sleep(FRAME_MIN_INTERVAL_MS / 1000.0)
+                # 视频档的真帧来得又密又大，让路窗口放宽一点（1 秒节奏内别抢）
+                if time.monotonic() * 1000.0 - self._last_real_frame_at < (700 if video else 350):
+                    await asyncio.sleep(interval)
                     continue  # 刚有真帧（页面在动）：这一拍让给它
-                try:
-                    r = await self._cdp.send(
-                        "Page.captureScreenshot",
-                        {
-                            "format": "jpeg",
-                            "quality": FRAME_QUALITY,
-                            "captureBeyondViewport": False,
-                            "clip": {
-                                "x": 0,
-                                "y": 0,
-                                "width": VIEWPORT["width"],
-                                "height": VIEWPORT["height"],
-                                "scale": 0.625,  # 1280×800 → 800×500，与兼容模式的帧同尺寸
-                            },
-                        },
-                    )
-                    data = (r.get("result") or {}).get("data") or ""
-                except Exception:  # pragma: no cover - 页面正在跳转/正在关
-                    await asyncio.sleep(FRAME_MIN_INTERVAL_MS / 1000.0)
-                    continue
-                await self._emit_frame(str(data), ack=False, throttle=False)
+                await self._keepalive_frame(video)
                 spent = time.monotonic() - tick_at
-                await asyncio.sleep(max(0.0, FRAME_MIN_INTERVAL_MS / 1000.0 - spent))
+                await asyncio.sleep(max(0.0, interval - spent))
         except asyncio.CancelledError:
             raise
         except Exception:  # pragma: no cover

@@ -78,7 +78,9 @@ export class BrowserRtc {
     try {
       await rtc.connect(handlers);
     } catch (e) {
-      rtc.dispose(false);
+      // 失败也要告诉服务端关流：服务端不关，那条流会永久停在 connecting、
+      // 浏览器也永久留在视频档（服务端还有 20s 看门狗兜底，但不能靠它）。
+      rtc.dispose();
       throw e;
     }
     return rtc;
@@ -264,11 +266,19 @@ export class BrowserRtc {
   private fail(handlers: RtcHandlers, reason: string): void {
     if (this.stopped) return;
     handlers.onFatal(reason);
-    this.dispose(true);
+    this.dispose();
   }
 
-  /** 收摊。notify=true 时告诉服务端恢复 JPEG 推流（关浏览器不归这里管）。 */
-  dispose(notify = true): void {
+  /**
+   * 收摊。**一定会通知服务端关掉这条流**（只关自己这条 —— clientId 门禁）。
+   *
+   * 以前失败/超时会走 `dispose(false)`（不通知），服务端又只认 failed/closed：
+   * 浏览器 15 秒超时后退回兼容档，服务端那条流却永远停在 connecting、浏览器也
+   * 被留在视频档（实测一份日志刷了 327 条 state=connecting、持续 11 分钟）。
+   * 所以这里不再留"悄悄收摊"的口子；客户端崩溃/断网时通知发不出去，由服务端
+   * 的 connecting 看门狗（20s）兜底。
+   */
+  dispose(): void {
     if (this.stopped) return;
     this.stopped = true;
     this.opened = false;
@@ -288,7 +298,7 @@ export class BrowserRtc {
     }
     this.dc = null;
     this.pc = null;
-    if (notify) void api.browserRtcClose(this.sessionId, { client: this.clientId }).catch(() => {});
+    void api.browserRtcClose(this.sessionId, { client: this.clientId }).catch(() => {});
   }
 }
 

@@ -106,7 +106,7 @@ class FakePeerConnection {
     this.listeners[type] = (this.listeners[type] || []).filter((f) => f !== fn);
   }
 
-  private emit(type: string): void {
+  protected emit(type: string): void {
     for (const fn of this.listeners[type] || []) fn();
   }
 
@@ -155,22 +155,34 @@ function fakeFetch(seen: Sent[]): typeof fetch {
   }) as typeof fetch;
 }
 
-test("历史步骤状态下真发 webrtc/config + offer 并连上（回归缺陷 1 的后半句）", async () => {
-  const seen: Sent[] = [];
-  const realFetch = globalThis.fetch;
-  const realPc = (globalThis as { RTCPeerConnection?: unknown }).RTCPeerConnection;
-  const realWindow = (globalThis as { window?: unknown }).window;
+function installFakes(seen: Sent[], pcClass: unknown = FakePeerConnection) {
+  const real = {
+    fetch: globalThis.fetch,
+    pc: (globalThis as { RTCPeerConnection?: unknown }).RTCPeerConnection,
+    window: (globalThis as { window?: unknown }).window,
+    document: (globalThis as { document?: unknown }).document,
+  };
   globalThis.fetch = fakeFetch(seen);
-  (globalThis as { RTCPeerConnection?: unknown }).RTCPeerConnection = FakePeerConnection;
+  (globalThis as { RTCPeerConnection?: unknown }).RTCPeerConnection = pcClass;
   // BrowserRtc 开头会判 typeof window —— node 里没有，先摆一个最小壳（它只用 window.setTimeout；
   // api.ts 取口令时会读 localStorage / document.cookie）
-  const realDocument = (globalThis as { document?: unknown }).document;
   (globalThis as { window?: unknown }).window = {
     setTimeout,
     clearTimeout,
     localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
   };
   (globalThis as { document?: unknown }).document = { cookie: "" };
+  return () => {
+    globalThis.fetch = real.fetch;
+    (globalThis as { RTCPeerConnection?: unknown }).RTCPeerConnection = real.pc;
+    (globalThis as { window?: unknown }).window = real.window;
+    (globalThis as { document?: unknown }).document = real.document;
+  };
+}
+
+test("历史步骤状态下真发 webrtc/config + offer 并连上（回归缺陷 1 的后半句）", async () => {
+  const seen: Sent[] = [];
+  const restore = installFakes(seen);
   markRtcBad("ses_test_hist", false);
 
   const tracks: unknown[] = [];
@@ -209,12 +221,57 @@ test("历史步骤状态下真发 webrtc/config + offer 并连上（回归缺陷
     pc!.ontrack?.({ streams: [{ kind: "video-track-stream" }] });
     assert.equal(tracks.length, 1, "视频轨要交给 <video>");
     assert.equal(stats, 0);
-    rtc.dispose(false);
+    rtc.dispose();
+    // 收摊必须通知服务端关流：以前走 dispose(false)，服务端那条流永久停在 connecting
+    assert.ok(
+      seen.some((s) => s.url.endsWith("/api/sessions/ses_test_hist/browser-ctl/webrtc/close")),
+      `dispose 必须调 webrtc/close（实际请求：${seen.map((s) => s.url).join(", ")}）`,
+    );
   } finally {
-    globalThis.fetch = realFetch;
-    (globalThis as { RTCPeerConnection?: unknown }).RTCPeerConnection = realPc;
-    (globalThis as { window?: unknown }).window = realWindow;
-    (globalThis as { document?: unknown }).document = realDocument;
+    restore();
+  }
+});
+
+/** ICE 打不通的假 PC：信令走完之后才异步报 failed（真实现就是这样）。 */
+class FailingPeerConnection extends FakePeerConnection {
+  async setRemoteDescription(): Promise<void> {
+    // 同步报 failed 会落在 connect 的建连等待之外（那里 rejectConnect 还没挂上），
+    // 所以推到下一拍：模拟"answer 收到了，候选却谁也到不了"。
+    setTimeout(() => {
+      this.connectionState = "failed";
+      this.emit("connectionstatechange");
+      this.emit("iceconnectionstatechange");
+    }, 0);
+  }
+}
+
+test("连不上/超时也必须通知服务端关流（僵尸流的两头：这头是客户端）", async () => {
+  const seen: Sent[] = [];
+  const restore = installFakes(seen, FailingPeerConnection);
+  let fatal = "";
+  try {
+    await assert.rejects(
+      BrowserRtc.start("ses_dead", {
+        onTrack: () => {},
+        onOpen: () => {},
+        onFatal: (r) => {
+          fatal = r;
+        },
+        onMessage: () => {},
+        onStats: () => {},
+      }),
+      /ICE|超时|连不上/,
+      "ICE 失败必须把 rejection 交给调用方（UI 才知道切兼容档）",
+    );
+    const urls = seen.map((s) => s.url);
+    assert.ok(
+      urls.some((u) => u.endsWith("/api/sessions/ses_dead/browser-ctl/webrtc/close")),
+      `失败路径也必须调 webrtc/close —— 否则服务端流永久 connecting（实际请求：${urls.join(", ")}）`,
+    );
+    assert.ok(seen.some((s) => s.body.includes("\"client\"")), "close 要带 client，服务端只关自己那条");
+    assert.equal(fatal, "", "建连阶段失败由 rejection 表达，不该重复报 onFatal");
+  } finally {
+    restore();
   }
 });
 
