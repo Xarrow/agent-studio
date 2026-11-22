@@ -195,6 +195,10 @@ _WRITE_COMMANDS = {
     "curl", "wget", "tar", "unzip", "gzip", "gunzip", "zip", "split", "shred",
 }
 
+#: 删除/新建这类**多目标**命令：每个参数都是一个独立目标（`rm -f a b` 删两个）。
+#: 只取第一个参数会让确认卡与审计少列目标，而命令实际全都执行了。
+_MULTI_TARGET_COMMANDS = {"rm", "rmdir", "unlink", "srm", "trash", "touch", "truncate", "shred"}
+
 #: 写到这些「伪设备」等于没落盘 —— 判据是**实际效果**，不是命令里出现没出现 ``>``。
 #: 现场（2026-11）：``ls /var/lib/... 2>/dev/null`` 被当成「覆盖 /dev/null」弹了
 #: 一张危险写入确认卡，用户被迫去拒一条只是看一眼目录的读命令。
@@ -586,6 +590,19 @@ def _unit_actions(text: str, workspace: str | None) -> list[Action]:
             if dirs and all(os.path.isdir(d) for d in dirs):
                 continue
         if not paths:
+            continue
+        # 删除类命令（rm/rmdir/unlink…）与 touch：**每个参数都是一个目标**。
+        # 只取 paths[0] 会让卡上只列一个文件、审计也只记一条，而命令实际把
+        # 后面几个一并删了（现场：rm -f a.txt b.txt 卡上只有 a）—— 卡、审计、
+        # 实际执行三者必须对得上。
+        if cmd in _MULTI_TARGET_COMMANDS:
+            op_multi = _op_for_command(cmd, tokens)
+            for raw in paths:
+                p_multi = real_path(raw, workspace)
+                if not p_multi or is_pseudo_target(p_multi):
+                    continue
+                act_multi = Action(path=p_multi, op=op_multi, command=seg[:240])
+                out.append(_finish(act_multi, workspace))
             continue
         # cp/mv/ln/install/rsync：落点是最后一个参数（源在前）
         target = paths[-1] if cmd in {"cp", "mv", "ln", "install", "rsync"} else paths[0]

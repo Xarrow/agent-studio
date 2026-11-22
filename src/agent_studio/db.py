@@ -276,6 +276,11 @@ _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("run", "task_fingerprint", "task_fingerprint VARCHAR(40)"),
     ("run", "tree_budget", "tree_budget INTEGER"),
     ("run", "tree_spent", "tree_spent INTEGER NOT NULL DEFAULT 0"),
+    # 会话级模型覆盖（对话页眉换模型）：空 = 跟随助手默认
+    ("session", "model_override", "model_override VARCHAR(200)"),
+    # 里程碑版本：旧的自动快照是 0，用户「记为一版」生成的是 1
+    ("revision", "milestone", "milestone BOOLEAN NOT NULL DEFAULT 0"),
+    ("revision", "note", "note VARCHAR(200) DEFAULT ''"),
 )
 
 

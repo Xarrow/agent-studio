@@ -310,3 +310,41 @@ async def test_run_on_missing_agent_404(client):
 async def test_trace_on_missing_run_404(client):
     r = await client.get("/api/runs/trace/run_nope")
     assert r.status_code == 404
+
+
+# --------------------------------------------------------------------------- #
+# 对话页眉换模型 = 会话级覆盖（不改助手默认，刷新后仍在）
+# --------------------------------------------------------------------------- #
+async def test_session_model_override_persists_and_applies(client):
+    name = uniq("会话换模型")
+    aid = (await client.post("/api/agents", json=agent_payload(name))).json()["id"]
+    sid = (await client.post("/api/sessions", json={"agent_id": aid})).json()["id"]
+
+    # 没有覆盖时：跟随助手默认
+    detail = (await client.get(f"/api/sessions/{sid}")).json()["session"]
+    assert detail["model_override"] in (None, "")
+
+    r = await client.patch(f"/api/sessions/{sid}", json={"model_override": "deepseek-v4-pro"})
+    assert r.status_code == 200 and r.json()["model_override"] == "deepseek-v4-pro"
+
+    # 刷新页面 = 再读一次详情，仍然是所选模型
+    detail = (await client.get(f"/api/sessions/{sid}")).json()["session"]
+    assert detail["model_override"] == "deepseek-v4-pro"
+
+    # 助手默认没被改动（会话级覆盖不该回写助手定义）
+    agent = (await client.get(f"/api/agents/{aid}")).json()
+    assert agent["definition"]["model"]["name"] == "deepseek-v4-flash"
+
+    # 下一条消息用覆盖后的模型：run 的定义快照里就是它
+    run = (await client.post("/api/runs", json={"agent_id": aid, "input": "hi", "session_id": sid})).json()
+    from agent_studio.db import SessionLocal
+    from agent_studio.models import Run
+
+    async with SessionLocal() as db:
+        row = await db.get(Run, run["id"])
+        assert row is not None
+        assert (row.definition_snapshot or {}).get("model", {}).get("name") == "deepseek-v4-pro"
+
+    # 「恢复助手默认」= 空串
+    r = await client.patch(f"/api/sessions/{sid}", json={"model_override": ""})
+    assert r.status_code == 200 and r.json()["model_override"] in (None, "")

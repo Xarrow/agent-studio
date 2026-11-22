@@ -178,6 +178,8 @@ export default function AgentsPage() {
       await api.updateAgent(a.id, {
         name: next,
         definition: { ...(a.definition ?? {}), name: next } as Agent["definition"],
+        // 列表里改名就地落库，不是「记为一版」→ 不推进版本号
+        bump_version: false,
       });
       fb.success("名字改好了", next);
       await load();
@@ -198,6 +200,8 @@ export default function AgentsPage() {
         {
           name: a.name,
           definition: { ...a.definition, model: { ...a.definition.model, name } },
+          // 换模型是就地调整，不是「记为一版」→ 不推进版本号
+          bump_version: false,
         },
         a.version,
       );
@@ -212,7 +216,11 @@ export default function AgentsPage() {
         const def = fresh.definition ?? a.definition;
         const updated = await api.updateAgent(
           a.id,
-          { name: fresh.name, definition: { ...def, model: { ...def.model, name } } },
+          {
+            name: fresh.name,
+            definition: { ...def, model: { ...def.model, name } },
+            bump_version: false,
+          },
           fresh.version,
         );
         setAgents((prev) => prev.map((x) => (x.id === a.id ? { ...x, ...updated } : x)));

@@ -84,6 +84,8 @@ export function ToolPicker({
           // 和配置页一样：留下的一律 enabled（这个字段目前没别的地方在改）
           tools: next.map((r) => ({ ref: r, enabled: true })),
         },
+        // 勾工具是就地调整，不是「记为一版」→ 不推进版本号
+        bump_version: false,
       });
       onChanged();
     } catch {

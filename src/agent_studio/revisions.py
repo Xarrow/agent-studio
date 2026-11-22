@@ -187,9 +187,20 @@ async def _payload_of(session: AsyncSession, kind: str, target_id: str) -> dict[
 
 
 async def snapshot(
-    session: AsyncSession, kind: str, target_id: str, *, label: str = "", force: bool = False
+    session: AsyncSession,
+    kind: str,
+    target_id: str,
+    *,
+    label: str = "",
+    force: bool = False,
+    milestone: bool = False,
+    note: str = "",
 ) -> Revision | None:
-    """给某个对象记一版。**内容没变就不记**（除非 force）—— 历史里全是噪声等于没有历史。"""
+    """给某个对象记一版。**内容没变就不记**（除非 force）—— 历史里全是噪声等于没有历史。
+
+    ``milestone=True`` 只在用户主动「记为一版」/回滚时传：版本号只该由人手一次
+    动作推进，自动保存（停手 800ms 落库）既不 +1 也不新增快照。
+    """
     payload = await _payload_of(session, kind, target_id)
     if payload is None:
         return None
@@ -212,6 +223,8 @@ async def snapshot(
         version=version,
         payload=payload,
         label=label[:200],
+        milestone=bool(milestone),
+        note=(note or "").strip()[:200],
         created_at=now_ms(),
     )
     session.add(row)
@@ -280,6 +293,8 @@ async def restore(session: AsyncSession, revision: Revision) -> dict[str, Any]:
         revision.target_id,
         label=f"回滚到 v{revision.version}",
         force=True,
+        milestone=True,
+        note=f"从 v{revision.version} 回滚",
     )
     return {"version": (new_rev.version if new_rev else revision.version), "restored_from": revision.version}
 

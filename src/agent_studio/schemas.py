@@ -211,6 +211,8 @@ class AgentUpdate(BaseModel):
     expose_remote: bool | None = None
     expose_note: str | None = Field(default=None, max_length=200)
     bump_version: bool = True       # 默认生成新版本（可回滚）
+    #: 这一版的一句话备注（只在 bump_version=True、即用户点「记为一版」时用到，可空）
+    version_note: str | None = Field(default=None, max_length=200)
 
     @field_validator("name")
     @classmethod
@@ -831,6 +833,31 @@ class CredentialTestRequest(BaseModel):
     model: str | None = None
 
 
+class CredentialDetectRequest(BaseModel):
+    """「粘贴即用」：只给 Key，让平台自己认服务商。"""
+
+    api_key: str
+    #: 用户已经选了服务商（或第一次识别失败后改选）—— 给了就只试这一家
+    provider: str | None = None
+    base_url: str | None = None
+
+
+class CredentialDetectResult(BaseModel):
+    ok: bool
+    #: 认出来的服务商（认不出为空串，让前端用下拉让用户选）
+    provider: str = ""
+    display_name: str = ""
+    base_url: str | None = None
+    models: list[str] = Field(default_factory=list)
+    #: 该家拿不到清单时的推荐模型（前端仍用选择器，不给自由文本）
+    suggested: list[str] = Field(default_factory=list)
+    latency_ms: int | None = None
+    #: 给用户看的一句话（失败时说清原因和下一步），不透后端原文
+    reason: str = ""
+    #: 试过哪几家（调试用；界面不展示原文）
+    tried: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class CredentialTestResult(BaseModel):
     ok: bool
     provider: str
@@ -885,6 +912,8 @@ class SessionCreate(BaseModel):
 class SessionUpdate(BaseModel):
     title: str | None = None
     status: Literal["active", "archived"] | None = None
+    #: 本会话临时换的模型（会话级覆盖，不改助手默认）。空串 = 恢复助手默认
+    model_override: str | None = Field(default=None, max_length=200)
 
 
 class SessionRead(BaseModel):
@@ -910,6 +939,8 @@ class SessionRead(BaseModel):
     ticket_title: str | None = None
     #: 派生：这条 worker 会话是哪个会话派出来的（侧栏要挂成树）
     parent_session_id: str | None = None
+    #: 会话级模型覆盖（空 = 跟随助手默认）
+    model_override: str | None = None
     #: 派生：这个会话的工作目录（绝对路径）—— 会话的文件隔离边界
     work_dir: str = ""
 

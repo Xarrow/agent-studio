@@ -67,6 +67,7 @@ def test_summarize_is_never_empty():
 # 2. 端到端：建档有第一版 → 改了记一版 → 回滚真的退回去
 # --------------------------------------------------------------------------- #
 async def test_agent_revision_roundtrip(client):
+    """版本 = 里程碑：自动保存不动版本，点「记为一版」才 +1（可带备注）。"""
     name = uniq("版本助手")
     r = await client.post("/api/agents", json=agent_payload(name, "第一版提示词"))
     aid = r.json()["id"]
@@ -75,18 +76,27 @@ async def test_agent_revision_roundtrip(client):
     items = r.json()["items"]
     assert [i["version"] for i in items] == [1], "建档就该有第一版（不用等第一次改）"
     assert items[0]["label"] == "首次记录" and items[0]["current"] is True
+    assert items[0]["milestone"] is True
     v1_id = items[0]["id"]
 
-    # 改提示词 → 自动记一版，并且说清改了什么
-    await client.put(f"/api/agents/{aid}", json=agent_payload(name, "第二版提示词"))
+    # 自动保存（bump_version=False）：内容照改，**版本号与历史都不动**
+    await client.put(f"/api/agents/{aid}", json={**agent_payload(name, "第二版提示词"), "bump_version": False})
+    detail = (await client.get(f"/api/agents/{aid}")).json()
+    assert detail["definition"]["system_prompt"] == "第二版提示词"
+    assert detail["version"] == 1, "自动保存不该递增版本号"
+    items = (await client.get("/api/revisions", params={"kind": "agent", "target_id": aid})).json()["items"]
+    assert [i["version"] for i in items] == [1], "自动保存不该新增历史快照"
+
+    # 「记为一版」：+1，并且带上备注（备注是用户写给自己的那句话）
+    await client.put(
+        f"/api/agents/{aid}",
+        json={**agent_payload(name, "第二版提示词"), "bump_version": True, "version_note": "改成客服语气"},
+    )
     items = (await client.get("/api/revisions", params={"kind": "agent", "target_id": aid})).json()["items"]
     assert [i["version"] for i in items] == [2, 1]
+    assert items[0]["note"] == "改成客服语气" and items[0]["milestone"] is True, items[0]
     assert "提示词" in items[0]["label"], items[0]["label"]
-
-    # **内容没变不该记新版**（自动保存会重复提交同样的内容）
-    await client.put(f"/api/agents/{aid}", json=agent_payload(name, "第二版提示词"))
-    items = (await client.get("/api/revisions", params={"kind": "agent", "target_id": aid})).json()["items"]
-    assert [i["version"] for i in items] == [2, 1], "内容没变却又记了一版（历史会被噪声刷满）"
+    assert (await client.get(f"/api/agents/{aid}")).json()["version"] == 2
 
     # 回滚到 v1：内容真的退回去，而且**历史只增不改**
     r = await client.post(f"/api/revisions/{v1_id}/restore")

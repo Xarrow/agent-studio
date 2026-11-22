@@ -25,6 +25,10 @@ type Rev = {
   id: string;
   version: number;
   label: string;
+  /** 里程碑 = 用户点「记为一版」生成；false = 旧数据里的自动快照 */
+  milestone?: boolean;
+  /** 「记为一版」时填的备注 */
+  note?: string;
   created_at: number;
   current: boolean;
 };
@@ -184,7 +188,7 @@ export function RevisionHistory({
         </div>
       ) : items.length === 0 ? (
         <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>
-          还没有历史 —— 改一次就会出现在这里。
+          还没有历史 —— 点「记为一版」才会在这里留一条（平时的自动保存不产生版本）。
         </div>
       ) : (
         <div className="divide-y" style={{ borderColor: "var(--color-border)" }}>
@@ -203,6 +207,17 @@ export function RevisionHistory({
                     title="点开看这一版改了什么"
                   >
                     <span className="mono text-[12px] font-medium">v{rev.version}</span>
+                    {/* 里程碑 vs 旧的自动快照：旧数据不清洗，只在这里分开显示 */}
+                    <span
+                      className="shrink-0 rounded px-1.5 py-0.5 text-[11px]"
+                      style={
+                        rev.milestone
+                          ? { background: "color-mix(in srgb, var(--color-accent) 12%, transparent)", color: "var(--color-accent)" }
+                          : { background: "var(--color-surface-2)", color: "var(--color-text-3)" }
+                      }
+                    >
+                      {rev.milestone ? "里程碑" : "自动"}
+                    </span>
                     {rev.current && (
                       <span
                         className="rounded px-1.5 py-0.5 text-[12px]"
@@ -211,7 +226,9 @@ export function RevisionHistory({
                         当前
                       </span>
                     )}
-                    <span className="min-w-0 flex-1 truncate text-[12px]">{rev.label}</span>
+                    <span className="min-w-0 flex-1 truncate text-[12px]" title={rev.note ? `${rev.note} · ${rev.label}` : rev.label}>
+                      {rev.note || rev.label}
+                    </span>
                     <span className="shrink-0 text-[12px]" style={{ color: "var(--color-muted)" }}>
                       {fmt.time(rev.created_at)}
                     </span>

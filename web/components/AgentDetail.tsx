@@ -532,7 +532,8 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
       const base = savedDefRef.current ?? (defRef.current ?? def)!;
       const updated = await api.updateAgent(
         agentId,
-        { name: next, definition: { ...base, name: next } },
+        // 改名是自动落库（失焦即存），不是「记为一版」→ 不推进版本号
+        { name: next, definition: { ...base, name: next }, bump_version: false },
         agent?.version,
       );
       setAgent(updated);
@@ -552,7 +553,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
   };
 
 
-  const save = async (opts: { auto?: boolean } = {}) => {
+  const save = async (opts: { auto?: boolean; note?: string } = {}) => {
     // 有排队中的"改名自动保存"就先取消：两次 PUT 并发会撞版本号，
     // 用户会看到"名称已保存"和"当前版本 3，你编辑的是 2"同时出现（验收报的）
     if (nameTimer.current) {
@@ -576,8 +577,9 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
           definition: def,
           description: desc.trim() || undefined,
           // 自动保存不生成版本：每改一个字就 +1 会把历史刷成噪音（复测 F6）。
-          // 想要一个可回滚的里程碑，用户点「记为一版」。
+          // 想要一个可回滚的里程碑，用户点「记为一版」并可选填一句备注。
           bump_version: !opts.auto,
+          version_note: opts.auto ? undefined : (opts.note ?? ""),
         },
         agent?.version,
       );
@@ -847,7 +849,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
             ) : autoErr ? (
               <>
                 <span style={{ color: "var(--color-err)" }}>保存失败：{autoErr}</span>
-                <button data-tap className="btn btn-sm" onClick={() => void save()}>
+                <button data-tap className="btn btn-sm" onClick={() => void save({ auto: true })}>
                   重试
                 </button>
               </>
@@ -864,7 +866,17 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                   className="btn btn-sm"
                   disabled={saving}
                   title="把当前这一版记进历史（可回滚）；平时自动保存不会产生版本"
-                  onClick={() => void save()}
+                  onClick={async () => {
+                    const note = await fb.prompt({
+                      title: "记为一版",
+                      description: "给这一版起一句备注，方便以后回滚时认出来。",
+                      placeholder: "例如：改成客服语气（可空）",
+                      hint: "只有点这一下才会新增版本号；平时的自动保存不产生版本。",
+                      confirmText: "记为这一版",
+                    });
+                    if (note === null) return; // 取消
+                    await save({ note: note.trim() });
+                  }}
                 >
                   记为一版
                 </button>

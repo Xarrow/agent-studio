@@ -93,6 +93,22 @@ export function ChatConsole({
   const [modelBusy, setModelBusy] = useState(false);
   /** 浮层挂在 body 上，位置按按钮实时算 */
   const [modelAnchor, setModelAnchor] = useState<{ x: number; y: number } | null>(null);
+  /**
+   * 本会话临时换的模型（会话级覆盖，存服务端 session.model_override）。
+   * 空 = 跟随助手默认；换它**不改助手本身**，刷新后仍是所选模型。
+   */
+  const [modelOverride, setModelOverride] = useState<string | null>(null);
+  /**
+   * 换模型后的那一句轻提示：**对话里**一行字，几秒后自己消失。
+   * 不弹窗、不占位（用户换模型时正在说话，不该被一个要点的框挡住）。
+   */
+  const [modelHint, setModelHint] = useState<string | null>(null);
+  const modelHintTimer = useRef<number | null>(null);
+  const showModelHint = (text: string) => {
+    setModelHint(text);
+    if (modelHintTimer.current) window.clearTimeout(modelHintTimer.current);
+    modelHintTimer.current = window.setTimeout(() => setModelHint(null), 4200);
+  };
   /** 页眉「换模型」浮层 */
   /* 页眉浮层的状态在组件顶部声明（hook 顺序必须恒定） */
   /**
@@ -875,6 +891,7 @@ export function ChatConsole({
       const savedScroll = userScrolled ? Number(sessionStorage.getItem(`chat.scroll.${sid}`) || 0) : 0;
       prevSidRef.current = sid;
       setCurKind(detail.session.kind ?? "chat");
+      setModelOverride(detail.session.model_override ?? null);
       setCurTicket(detail.session.ticket_title ?? null);
       setCurParent(detail.session.parent_session_id ?? null);
       setCurAgentId(detail.session.agent_id ?? null);
@@ -1417,12 +1434,15 @@ export function ChatConsole({
       const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
       await api.updateAgent(currentAgent.id, {
         definition: { ...def, skills: next.map((r) => ({ ref: r })) },
+        // 勾技能是就地调整，不是「记为一版」→ 不推进版本号
+        bump_version: false,
       }).catch(() => null);
     } else {
       const cur = (def.tools ?? []).map((x) => x.ref);
       const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
       await api.updateAgent(currentAgent.id, {
         definition: { ...def, tools: next.map((r) => ({ ref: r, enabled: true })) },
+        bump_version: false,
       }).catch(() => null);
     }
     void reloadAgents();
@@ -2418,19 +2438,27 @@ export function ChatConsole({
   const currentAgent = agents.find((a) => a.id === agentId);
 
   /** 换模型：改的是这个助手的定义（下一次发送就生效），改完把列表里那份也换掉 */
-  const quickSwitchModel = async (name: string) => {
+  const quickSwitchModel = async (name: string | null) => {
     const a = currentAgent;
-    if (!a || !name || !a.definition) return;
+    if (!a) return;
     setModelOpen(false);
+    if (!sessionId) {
+      fb.warn("先开始一条对话", "换模型只对当前会话生效");
+      return;
+    }
     setModelBusy(true);
     try {
-      const updated = await api.updateAgent(
-        a.id,
-        { name: a.name, definition: { ...a.definition, model: { ...a.definition.model, name } } },
-        a.version,
-      );
-      setAgents((prev) => prev.map((x) => (x.id === a.id ? { ...x, ...updated } : x)));
-      fb.success("模型已换", `${a.name} 现在用 ${name}，下一条就用它`);
+      // 写的是**这个会话**的模型（session.model_override），不是助手默认 ——
+      // 下一条消息立即生效，不用新开会话；刷新后会话详情里还带着它。
+      await api.updateSession(sessionId, { model_override: name ?? "" });
+      setModelOverride(name || null);
+      const fallback = a.definition.model?.name ?? "助手默认模型";
+      // 一句轻提示（几秒后自己消失）：说清「只影响这个会话、助手默认没改」
+      if (name) {
+        showModelHint(`本会话改用 ${name}，下一条消息就用它（助手默认仍是 ${fallback}）`);
+      } else {
+        showModelHint(`已恢复助手默认：后续消息用 ${fallback}`);
+      }
     } catch (e) {
       fb.error("换模型失败", e instanceof Error ? e.message : String(e));
     } finally {
@@ -2439,7 +2467,85 @@ export function ChatConsole({
   };
 
 
-  /** 顶栏要显示/改名的当前会话 */
+  /**
+   * 页眉「助手名 · 模型名」：手机与桌面共用同一份（以前桌面根本没有页眉，
+   * 模型只在 md~lg 那一段露出来，看起来像没有这个入口）。
+   */
+  const shownModel = modelOverride || currentAgent?.definition.model?.name || "未指定模型";
+  const canSwitchModel =
+    Boolean(currentAgent?.definition) && currentAgent?.definition.runtime !== "a2a";
+  const openModelMenu = (e: { currentTarget: EventTarget & HTMLElement }) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    setModelAnchor({ x: r.left, y: r.bottom + 6 });
+    setModelOpen((v) => !v);
+  };
+  const modelChip = (compact = false) =>
+    canSwitchModel ? (
+      <button
+        data-tap
+        onClick={openModelMenu}
+        disabled={modelBusy}
+        title="换模型（只影响这个会话，刷新后仍然有效）"
+        aria-label="换模型"
+        aria-expanded={modelOpen}
+        className={`inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-[11.5px] hover:bg-[var(--color-surface-2)] ${
+          compact ? "max-w-[124px]" : "max-w-[220px]"
+        }`}
+        style={{ color: "var(--color-text-3)" }}
+      >
+        <span className="mono truncate">{modelBusy ? "保存中…" : shownModel}</span>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+    ) : (
+      <span className="mono shrink-0 truncate text-[11.5px]" style={{ color: "var(--color-text-3)" }}>
+        {shownModel}
+      </span>
+    );
+
+  /** 换模型浮层：只渲染一份（两个断点的页眉共用），portal 到 body 防被页眉裁掉 */
+  const modelMenu =
+    modelOpen && modelAnchor && typeof document !== "undefined" && currentAgent?.definition
+      ? createPortal(
+          <>
+            <div className="fixed inset-0 z-[60]" onClick={() => setModelOpen(false)} aria-hidden="true" />
+            <div
+              className="fixed z-[61] w-[330px] rounded-[10px] p-2 shadow-xl"
+              style={{
+                left: Math.max(8, Math.min(modelAnchor.x, window.innerWidth - 346)),
+                top: modelAnchor.y,
+                background: "var(--color-surface)",
+                border: "1px solid var(--color-border)",
+              }}
+            >
+              <ModelPicker
+                providers={providers}
+                provider={currentAgent.definition.model?.provider ?? ""}
+                credentialId={currentAgent.definition.model?.credential_ref ?? null}
+                value={shownModel}
+                onChange={(v) => void quickSwitchModel(v)}
+              />
+              {/* 恢复助手默认：会话级覆盖才有的动作，放在同一个下拉里 */}
+              {modelOverride && (
+                <button
+                  type="button"
+                  className="mt-1 flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-[12px] hover:bg-[var(--bg-selected)]"
+                  onClick={() => void quickSwitchModel(null)}
+                >
+                  <span>恢复助手默认</span>
+                  <span className="mono truncate text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                    {currentAgent.definition.model?.name || "未指定"}
+                  </span>
+                </button>
+              )}
+            </div>
+          </>,
+          document.body,
+        )
+      : null;
+
+
   const curSes = sessions.find((x) => x.id === sessionId);
   /** 最新一条助手/用户消息：动作条要常驻（更早的靠 hover） */
   const lastAssistantIdx = history.map((x) => x.role).lastIndexOf("assistant");
@@ -2875,65 +2981,13 @@ export function ChatConsole({
               />
             )}
 
-            {/* 页眉直接写「用什么模型」，点一下就换 —— 以前对话中换模型要
-                去配置页、还要新开会话（复测 F3：对话内根本没有入口） */}
-            {currentAgent?.definition && currentAgent.definition.runtime !== "a2a" && (
-              <div className="relative shrink-0">
-                <button
-                  data-tap
-                  onClick={(e) => {
-                    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                    setModelAnchor({ x: r.left, y: r.bottom + 6 });
-                    setModelOpen((v) => !v);
-                  }}
-                  disabled={modelBusy}
-                  title="换模型（改的是这个助手，下一条消息就用新的）"
-                  aria-label="换模型"
-                  aria-expanded={modelOpen}
-                  className="hidden md:inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-[11.5px] hover:bg-[var(--color-surface-2)]"
-                  style={{ color: "var(--color-text-3)" }}
-                >
-                  <span className="mono max-w-[150px] truncate">
-                    {modelBusy ? "保存中…" : currentAgent.definition.model?.name || "未指定模型"}
-                  </span>
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <path d="m6 9 6 6 6-6" />
-                  </svg>
-                </button>
-                {/* 浮层挂在 body 上：header 有 overflow/定位上下文，绝对定位会被裁掉
-                    （实测输入框宽高为 0，等于看不见） */}
-                {modelOpen &&
-                  modelAnchor &&
-                  typeof document !== "undefined" &&
-                  createPortal(
-                    <>
-                      <div
-                        className="fixed inset-0 z-[60]"
-                        onClick={() => setModelOpen(false)}
-                        aria-hidden="true"
-                      />
-                      <div
-                        className="fixed z-[61] w-[330px] rounded-[10px] p-2 shadow-xl"
-                        style={{
-                          left: Math.max(8, Math.min(modelAnchor.x, window.innerWidth - 346)),
-                          top: modelAnchor.y,
-                          background: "var(--color-surface)",
-                          border: "1px solid var(--color-border)",
-                        }}
-                      >
-                        <ModelPicker
-                          providers={providers}
-                          provider={currentAgent.definition.model?.provider ?? ""}
-                          credentialId={currentAgent.definition.model?.credential_ref ?? null}
-                          value={currentAgent.definition.model?.name ?? ""}
-                          onChange={(v) => void quickSwitchModel(v)}
-                        />
-                      </div>
-                    </>,
-                    document.body,
-                  )}
-              </div>
-            )}
+            {/* 页眉「助手名 · 模型名」：模型名点一下就换（只影响本会话）。
+                两个断点同一份 —— 以前桌面整条页眉是 lg:hidden，模型入口实际
+                只在 md~lg 那一段露出来。 */}
+            <span aria-hidden="true" className="shrink-0 text-[13px]" style={{ color: "var(--color-text-3)" }}>
+              ·
+            </span>
+            {modelChip(true)}
 
             <div className="ml-auto flex items-center gap-0.5 shrink-0">
               {/* 每条助手消息自己带「执行过程 / 完整记录」—— 顶栏再放一个
@@ -2958,6 +3012,23 @@ export function ChatConsole({
               )}
             </div>
           </header>
+
+          {/* 桌面页眉：助手名 · 模型名。桌面原来**没有任何页眉**，对话中换模型
+              只能回助手详情页；这里与手机页眉共用同一个按钮与浮层。 */}
+          <header className="hidden lg:flex h-11 shrink-0 items-center gap-2 px-3">
+            <span className="min-w-0 truncate text-[13px] font-medium">{currentAgent?.name ?? ""}</span>
+            <span aria-hidden="true" className="shrink-0 text-[13px]" style={{ color: "var(--color-text-3)" }}>
+              ·
+            </span>
+            {modelChip()}
+            {modelOverride && (
+              <span className="shrink-0 text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                仅本会话
+              </span>
+            )}
+          </header>
+          {/* 换模型浮层（手机/桌面共用一份） */}
+          {modelMenu}
 
           {/* 会话身份条 —— 只在**派活会话**上出现，说的都是事实：这是哪件活的会话、
               能回到 Router。Router 会话本身不再挂一句「它派活你只跟它说话」——
@@ -4040,6 +4111,17 @@ export function ChatConsole({
                   <div className="mt-1 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
                     {routeAsk.reason}
                   </div>
+                </div>
+              )}
+
+              {/* 换了模型：对话里一行轻提示（几秒后自己消失），不弹窗 */}
+              {modelHint && (
+                <div
+                  className="mb-1.5 flex items-center gap-1.5 px-3 text-[11.5px]"
+                  style={{ color: "var(--color-muted)" }}
+                >
+                  <span style={{ color: "var(--color-accent)" }}>↺</span>
+                  <span>{modelHint}</span>
                 </div>
               )}
 

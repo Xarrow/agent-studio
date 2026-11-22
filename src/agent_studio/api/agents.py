@@ -126,7 +126,7 @@ async def create_agent(
     # 第一版快照：这样"从第 1 版开始"就成立（不必等第一次修改才有历史）
     from ..revisions import KIND_AGENT, snapshot
 
-    await snapshot(session, KIND_AGENT, row.id)
+    await snapshot(session, KIND_AGENT, row.id, milestone=True, note="创建")
     await session.commit()
     await session.refresh(row)
     return to_read(row)
@@ -188,11 +188,22 @@ async def update_agent(
 
     row.updated_at = now_ms()
     await session.commit()
-    # 打一版快照（内容没变就不记）—— 有了它，"改坏了"就能退回去
-    from ..revisions import KIND_AGENT, snapshot
+    # 版本 = 里程碑：只有 ``bump_version``（用户点「记为一版」）才留快照。
+    # 自动保存只更新内容与「已自动保存 · 时间」，不再刷版本号 ——
+    # 否则改个模型 v2、改句开场白 v3，历史全是噪音。force：人手点的这一版
+    # 即使内容与上一版相同也要留下（备注本身是信息）。
+    if payload.bump_version:
+        from ..revisions import KIND_AGENT, snapshot
 
-    await snapshot(session, KIND_AGENT, row.id)
-    await session.commit()
+        await snapshot(
+            session,
+            KIND_AGENT,
+            row.id,
+            force=True,
+            milestone=True,
+            note=payload.version_note or "",
+        )
+        await session.commit()
     await session.refresh(row)
     return to_read(row)
 

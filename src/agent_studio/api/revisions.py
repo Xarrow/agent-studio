@@ -42,6 +42,9 @@ def _to_read(row: Revision) -> dict[str, Any]:
         "version": row.version,
         # 「改了什么」—— 界面上直接显示这句人话，用户不用逐字段对比
         "label": row.label,
+        # 里程碑（用户「记为一版」）vs 旧数据里的自动快照 —— 列表要能区分
+        "milestone": bool(getattr(row, "milestone", False)),
+        "note": getattr(row, "note", "") or "",
         "created_at": row.created_at,
     }
 

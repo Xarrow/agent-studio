@@ -792,6 +792,61 @@ test("对话页配置抽屉：右侧抽屉、自动保存不产生版本、挂�
   assert.doesNotMatch(chat, /AgentDetailDialog/, "对话页不该再弹居中配置弹窗");
 });
 
+test("对话页眉换模型：写会话级覆盖，不改助手默认", () => {
+  const src = read("components/ChatConsole.tsx");
+  // 会话级覆盖：model_override 走 updateSession；以前是 updateAgent（会改掉助手默认）
+  assert.match(src, /updateSession\(sessionId, \{ model_override/, "换模型要写 session.model_override");
+  const fn = src.slice(src.indexOf("const quickSwitchModel"), src.indexOf("const quickSwitchModel") + 1400);
+  assert.doesNotMatch(fn, /updateAgent/, "对话里换模型不许改助手默认模型");
+  assert.match(src, /恢复助手默认/, "要有「恢复助手默认」入口（同一个下拉里）");
+  assert.match(src, /hidden lg:flex h-11/, "桌面也要有页眉（以前只有 lg:hidden 的手机页眉）");
+});
+
+test("版本 = 里程碑：「记为一版」才 +1 且可填备注", () => {
+  const src = read("components/AgentDetail.tsx");
+  assert.match(src, /bump_version: !opts\.auto/, "自动保存不递增版本号");
+  assert.match(src, /version_note:/, "「记为一版」要能带一句备注");
+  assert.match(src, /fb\.prompt/, "记为一版时用统一反馈层收备注（不用原生 prompt）");
+});
+
+test("版本号只由「记为一版」推进：其余就地写入一律 bump_version: false", () => {
+  // 改名是失焦自动保存，不是「记为一版」——它一旦推进版本号，
+  // 用户连改三次字段就会看到 v2/v3/v4（B3 验收要的正是「不变」）
+  const detail = read("components/AgentDetail.tsx");
+  const nameOnly = detail.slice(detail.indexOf("const saveNameOnly"), detail.indexOf("const save = async"));
+  assert.match(nameOnly, /bump_version: false/, "改名自动保存不许推进版本号");
+
+  // 勾工具 / 勾技能 / 列表里改名换模型：都是就地调整，不是「记为一版」
+  for (const f of [
+    "components/ToolPicker.tsx",
+    "components/SkillPicker.tsx",
+    "components/SkillsStrip.tsx",
+    "app/agents/page.tsx",
+  ]) {
+    const src = read(f);
+    const blocks = src.split("api.updateAgent(").slice(1);
+    assert.ok(blocks.length > 0, `${f} 应该有定义写入`);
+    for (const b of blocks) {
+      assert.match(b.slice(0, 800), /bump_version: false/, `${f} 里的就地写入不许推进版本号`);
+    }
+  }
+});
+
+test("对话里换模型：轻提示写在对话区，不弹窗", () => {
+  const src = read("components/ChatConsole.tsx");
+  const fn = src.slice(src.indexOf("const quickSwitchModel"), src.indexOf("const quickSwitchModel") + 1800);
+  assert.doesNotMatch(fn, /fb\.(success|confirm|prompt)/, "换模型不许弹窗/弹 toast");
+  assert.match(fn, /showModelHint/, "换完给一句轻提示");
+  assert.match(src, /\{modelHint && \(/, "轻提示要渲染在对话区里");
+});
+
+test("新增 LLM 配置：粘贴即用、模型用选择器、禁用有原因", () => {
+  const src = read("app/credentials/page.tsx");
+  assert.match(src, /api\.detectCredential/, "粘贴 Key 后自动识别服务商");
+  assert.match(src, /allowManual=\{false\}/, "默认模型不许自由文本（只能从选择器里选）");
+  assert.match(src, /saveHint/, "禁用按钮要写明原因");
+});
+
 test("⌘K 命令面板：挂全站、走 portal、有鼠标入口、跳文档能定位", () => {
   const layout = read("app/layout.tsx");
   assert.match(layout, /CommandPalette/, "命令面板要挂在 layout（全站可用）");

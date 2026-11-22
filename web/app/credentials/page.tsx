@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { useFirstLoad } from "@/lib/useFirstLoad";
 import { api, fmt } from "@/lib/api";
-import type { Credential, CredentialTestResult, Provider } from "@/lib/types";
+import type { Credential, CredentialDetectResult, CredentialTestResult, Provider } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
 import { Chip, DLG_BACKDROP, DLG_CARD, Empty, KV, Menu, PageHead, Row, RowList, Section } from "@/components/ui/kit";
 import { DetailPanel } from "@/components/ui/DetailPanel";
@@ -532,272 +532,306 @@ function NewCredentialDialog({
   onClose: () => void;
   onCreated: () => void;
 }) {
-  const [provider, setProvider] = useState(providers[0]?.name ?? "deepseek");
-  const [name, setName] = useState("");
+  /* 第一屏只有一个主动作：粘贴 Key。服务商 / 名称 / 端点 / 测试 / 模型清单
+     都由平台按这个 Key 认出来 —— 「选服务商 → 填名 → 填端点 → 填 Key →
+     手输模型 → 测试 → 保存」那 6 步对一次性动作来说太重了。 */
   const [apiKey, setApiKey] = useState("");
+  /** 空串 = 还没认出来（下拉里让用户选） */
+  const [provider, setProvider] = useState("");
+  const [providerTouched, setProviderTouched] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
-  /** 新增时也可手填默认模型 ✓ */
   const [model, setModel] = useState("");
-  const [tested, setTested] = useState<CredentialTestResult | null>(null);
+  const [models, setModels] = useState<string[]>([]);
+  const [detected, setDetected] = useState<CredentialDetectResult | null>(null);
+  const [phase, setPhase] = useState<"idle" | "detecting" | "ok" | "fail">("idle");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** 同一个（Key + 指定服务商）只自动识别一次 */
+  const detectFor = useRef("");
 
   const meta = providers.find((p) => p.name === provider);
-  const effectiveBase = baseUrl || meta?.default_base_url || "";
-  /** 名称是否被用户手动改过（没改过就跟着服务商自动生成，例如 deepseek-2） */
-  const nameTouched = useRef(false);
-  /** 探测到的可选用模型（去重后） */
-  const [autoModels, setAutoModels] = useState<string[]>([]);
-  /** 自动测试是否已为这个 key 跑过（同一个 key 只自动测一次） */
-  const autoTestedFor = useRef<string>("");
-  /** 探测结果的筛选词（462 个模型不许再平铺成墙） */
-  const [modelFilter, setModelFilter] = useState("");
-
-  /* 自动命名：不预填一个已存在的名字（验收时 deepseek-main 被预填 → 报「请填写配置名称」） */
-  useEffect(() => {
-    if (nameTouched.current) return;
-    const base = provider;
+  /** 这家要不要 Key（Ollama 这类本地服务不用） */
+  const needsKey = meta?.requires_key !== false;
+  /**
+   * 这家能不能自动验证：要 Key、且平台知道它的默认端点。
+   * Gemini（自有协议、没有默认端点）和 Ollama（本地、不需要 Key）拿 OpenAI 兼容
+   * 的探针去试只会把**好 Key 判成坏 Key**（401/404）—— 这类不拦保存，
+   * 但界面上说清「没验证过」，别让人以为已验证。
+   */
+  const canVerify = Boolean(meta?.default_base_url) && needsKey;
+  /** 已验证（或这家本来就验证不了 → 允许保存，只说清事实） */
+  const verified = phase === "ok" || (Boolean(provider) && !canVerify);
+  /** 系统生成的名称：留空就用它，且保证不与现有重名 */
+  const autoName = (p: string) => {
     const taken = new Set(creds.map((c) => c.name));
     let n = 1;
-    while (taken.has(`${base}-${n}`)) n += 1;
-    setName(`${base}-${n}`);
-  }, [provider, creds]);
+    while (taken.has(`${p}-${n}`)) n += 1;
+    return `${p}-${n}`;
+  };
+  const finalName = nameDraft.trim() || (provider ? autoName(provider) : "");
 
-  const doTest = async () => {
-    setBusy(true);
+  const runDetect = async (key: string, prov?: string) => {
+    setPhase("detecting");
     setErr(null);
-    setTested(null);
+    setDetected(null);
+    setModels([]);
     try {
-      const r = await api.probeCredential({
-        name: name || "probe",
-        provider,
-        api_key: apiKey,
-        base_url: effectiveBase || null,
-        default_model: model.trim() || null,
-      });
-      setTested(r);
-      // 探测成功就把可选用模型直接铺出来（去重用跟选择器同一套规则），
-      // 用户不用再点一次「探测」再回填
-      if (r.ok && (r.models?.length ?? 0) > 0) {
-        const list = dedupeModelNames(r.models);
-        setAutoModels(list);
-        if (!model.trim() && list[0]) setModel(list[0]);
+      const r = await api.detectCredential({ api_key: key, provider: prov });
+      setDetected(r);
+      if (!r.ok) {
+        setPhase("fail");
+        setErr(r.reason || "没能识别这个 Key。检查一下，或从下拉里改选服务商。");
+        return;
       }
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
+      setProvider(r.provider);
+      setBaseUrl(r.base_url ?? "");
+      // 真实清单优先；这家不列模型时用推荐清单兜底（仍是选择器，不给自由文本）
+      const list = dedupeModelNames(r.models?.length ? r.models : r.suggested || []);
+      setModels(list);
+      setModel(list[0] ?? "");
+      setPhase("ok");
+    } catch {
+      setPhase("fail");
+      setErr("识别失败：连不上平台服务。检查网络后点「重新识别」。");
     }
   };
 
-  /* 粘贴即测：key 看起来像真的（≥20 字符）就自动跑一次连通性测试，
-     不用用户再点「测试连接」；同一个 key 只自动测一次，失败后手动可重试 */
+  /* 粘贴即测：停手 600ms 自动识别 + 验证（不用再点「测试连接」） */
   useEffect(() => {
     const k = apiKey.trim();
-    if (k.length < 20) return;
-    if (autoTestedFor.current === k) return;
+    // 用户选了一家平台验证不了的服务商（Gemini/Ollama）：不去试，直接给它的静态清单
+    if (provider && !canVerify) {
+      const list = dedupeModelNames(meta?.models ?? []);
+      setModels(list);
+      setModel((m) => m || list[0] || "");
+      setPhase("idle");
+      return;
+    }
+    if (k.length < 12) {
+      setPhase("idle");
+      setDetected(null);
+      setModels([]);
+      return;
+    }
+    const sig = `${k}|${providerTouched ? provider : ""}`;
+    if (detectFor.current === sig) return;
     const t = window.setTimeout(() => {
-      autoTestedFor.current = k;
-      void doTest();
-    }, 800);
+      detectFor.current = sig;
+      void runDetect(k, providerTouched ? provider : undefined);
+    }, 600);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiKey]);
+  }, [apiKey, provider, providerTouched, canVerify]);
 
   const save = async () => {
-    if (!name.trim()) {
-      setErr("先给这条配置起个名字（输入框里那行灰字是示例，不是已填好）");
+    if (!provider) {
+      setErr("还没认出这家服务商：从下面的下拉里选一家，再点完成。");
       return;
     }
-    if (!apiKey.trim()) {
-      setErr(`${meta?.display_name ?? provider} 需要 API Key，粘贴一下再保存`);
+    if (needsKey && !apiKey.trim()) {
+      setErr("先粘贴 API Key。");
       return;
     }
-    if (creds.some((c) => c.name === name.trim())) {
-      setErr(`“${name.trim()}”这个名字已经用过了，换一个`);
+    if (!verified) {
+      setErr("这个 Key 还没验证通过，先修好 Key（或改选服务商）再保存。");
+      return;
+    }
+    if (!finalName) {
+      setErr("先给这条配置起个名字。");
+      return;
+    }
+    if (creds.some((c) => c.name === finalName)) {
+      setErr(`名称「${finalName}」已存在，换一个。`);
+      return;
+    }
+    if (!model) {
+      setErr("先选一个默认模型。");
       return;
     }
     setBusy(true);
     setErr(null);
     try {
       await api.createCredential({
-        name: name.trim(),
+        name: finalName,
         provider,
-        api_key: apiKey,
-        base_url: effectiveBase || null,
-        default_model: model.trim() || null,
+        api_key: apiKey.trim(),
+        base_url: baseUrl.trim() || null,
+        default_model: model,
       });
       onCreated();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      setErr(/409|已存在/.test(msg) ? `名称「${finalName}」已存在，换一个。` : `保存失败：${msg}`);
     } finally {
       setBusy(false);
     }
   };
 
+  const canSave = Boolean(provider) && (!needsKey || apiKey.trim()) && verified && Boolean(model);
+  const saveHint = Boolean(provider) && !canVerify
+    ? needsKey
+      ? "这家没法自动验证：Key 会原样保存，保存后用一次对话确认能通"
+      : "本地服务不需要 Key：选好模型就能保存"
+    : !apiKey.trim()
+      ? "先粘贴 API Key（平台会自动认出服务商并验证）"
+      : phase === "detecting"
+        ? "正在识别这个 Key…"
+        : !verified
+          ? "这个 Key 还没验证通过：修好它，或从下拉里改选服务商"
+          : !model
+            ? "先选一个默认模型"
+            : "";
+
   return (
     <div className={DLG_BACKDROP}>
       <div className={`${DLG_CARD} max-w-lg p-5`}>
         <h2 className="text-[16px] font-medium mb-1">添加 LLM 配置</h2>
-        <p className="text-[12px] text-[var(--color-muted)] mb-4">
-          可以先用「测试连接」验证，通过后再保存。
-        </p>
+        <p className="text-[12px] text-[var(--color-muted)] mb-4">粘贴 Key → 确认模型 → 完成。</p>
 
-        <div className="space-y-3.5">
-          <div>
-            <label className="label">Provider</label>
-            <select
-              className="input"
-              value={provider}
-              onChange={(e) => {
-                setProvider(e.target.value);
-                setTested(null);
-                setBaseUrl("");
-              }}
-            >
-              {providers.map((p) => (
-                <option key={p.name} value={p.name}>
-                  {p.display_name}
-                  {p.requires_key ? "" : "（无需 Key）"}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="label">名称（便于区分，如 deepseek-主号）</label>
-            <input
-              className="input"
-              value={name}
-              onChange={(e) => {
-                nameTouched.current = true;
-                setName(e.target.value);
-              }}
-              placeholder="自动生成，如 deepseek-1"
-            />
-          </div>
-
+        <div className="space-y-3">
+          {/* 第一屏唯一的主动作 */}
           <div>
             <label className="label">
-              API Key {meta?.requires_key === false && "（该 Provider 无需 Key）"}
+              API Key{needsKey ? "" : "（这家不需要 Key，可留空）"}
             </label>
             <input
               className="input mono"
               type="password"
+              autoFocus
               value={apiKey}
               onChange={(e) => {
                 setApiKey(e.target.value);
-                setTested(null);
+                setErr(null);
               }}
-              placeholder="sk-…"
+              placeholder="粘贴 sk-… / 你的服务商 Key"
             />
           </div>
 
-          <div>
-            <label className="label">
-              Base URL{meta?.allows_base_url === false ? "（固定，不可改）" : "（可留空用默认）"}
-            </label>
-            <input
-              className="input mono"
-              value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
-              placeholder={meta?.default_base_url || ""}
-              disabled={meta?.allows_base_url === false}
-            />
-          </div>
-
-          <div>
-            <label className="label">默认模型（可手填）</label>
-            <div className="flex gap-2 items-stretch">
-              <input
-                className="input mono min-w-0 flex-1"
-                placeholder="例如 deepseek-v4-flash —— 服务商没有模型清单时手填 ✓"
-                value={model}
+          {/* 识别结果一行：认出哪家、要不要手动改 */}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px]">
+            {phase === "detecting" && <span style={{ color: "var(--color-text-3)" }}>正在识别服务商并验证…</span>}
+            {phase === "ok" && detected && (
+              <span style={{ color: "var(--color-ok)" }}>
+                ✓ 认出是 {detected.display_name}
+                {detected.latency_ms != null ? ` · ${fmt.ms(detected.latency_ms)}` : ""}
+                {` · ${detected.models.length || models.length} 个模型`}
+              </span>
+            )}
+            {phase === "idle" && !provider && (
+              <span style={{ color: "var(--color-text-3)" }}>粘贴后自动识别服务商；认不出再从下面选。</span>
+            )}
+            {Boolean(provider) && !canVerify && (
+              <span style={{ color: "var(--color-text-3)" }}>
+                这家平台没法自动验证（没有可试的接口），保存后用一次对话确认。
+              </span>
+            )}
+            <label className="ml-auto flex items-center gap-1.5" style={{ color: "var(--color-text-3)" }}>
+              服务商
+              <select
+                className="input !w-auto !py-1 text-[12px]"
+                value={provider}
                 onChange={(e) => {
-                  setModel(e.target.value);
-                  setTested(null);
+                  setProvider(e.target.value);
+                  setProviderTouched(true);
+                  setDetected(null);
+                  setModels([]);
+                  setModel("");
+                  if (!e.target.value) setBaseUrl("");
                 }}
-              />
-              <button
-                className="btn shrink-0"
-                disabled={busy}
-                title="发一次极小调用确认可用"
-                onClick={() => void doTest()}
               >
-                {busy ? "测试中…" : "测试"}
-              </button>
-            </div>
-            {/* 手填也不是不行（方舟的 ep-xxx 清单里没有），但要让人知道自己填的不是清单里的名字 */}
-            {autoModels.length > 0 &&
-              model.trim() &&
-              !autoModels.some((m) => m.toLowerCase() === model.trim().toLowerCase()) && (
-                <p className="mt-1 text-[11.5px]" style={{ color: "var(--color-warn)" }}>
-                  这个名字不在探测到的清单里，确认没打错再用（上面列表里可以直接点）
-                </p>
-              )}
+                <option value="">（未识别 · 从这选）</option>
+                {providers.map((p) => (
+                  <option key={p.name} value={p.name}>
+                    {p.display_name}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
 
-          {tested && (
-            <div
-              className={`text-[12px] ${tested.ok ? "text-[var(--color-ok)]" : "text-[var(--color-err)]"}`}
-            >
-              {tested.ok
-                ? `✓ 连接成功 · 延迟 ${fmt.ms(tested.latency_ms)} · 可用 ${autoModels.length || tested.models.length} 个模型`
-                : `✗ ${tested.error}`}
-            </div>
+          {err && <div className="text-[12px] text-[var(--color-err)]">{err}</div>}
+
+          {/* 验证通过后（或这家本来就验证不了）才出现：名称（可留空）/ 默认模型选择器 */}
+          {verified && (
+            <>
+              <div>
+                <label className="label">名称</label>
+                <input
+                  className="input"
+                  value={nameDraft}
+                  onChange={(e) => setNameDraft(e.target.value)}
+                  placeholder={finalName || "自动生成"}
+                />
+                <p className="mt-1 text-[11.5px]" style={{ color: "var(--color-text-3)" }}>
+                  留空就用「{finalName}」（系统生成，不会与现有重名）
+                </p>
+              </div>
+
+              <div>
+                <label className="label">默认模型</label>
+                <ModelPicker
+                  providers={providers}
+                  provider={provider}
+                  models={models}
+                  allowManual={false}
+                  value={model}
+                  onChange={setModel}
+                />
+                {models.length === 0 && (
+                  <p className="mt-1 text-[11.5px]" style={{ color: "var(--color-warn)" }}>
+                    这家没给出模型清单：先选一个推荐模型（也可以保存后在配置里重新探测）。
+                  </p>
+                )}
+              </div>
+
+              <details className="text-[12px]">
+                <summary className="cursor-pointer select-none py-1" style={{ color: "var(--color-text-3)" }}>
+                  端点（默认已填好，一般不用改）
+                </summary>
+                <input
+                  className="input mono mt-1.5"
+                  value={baseUrl}
+                  onChange={(e) => setBaseUrl(e.target.value)}
+                  placeholder={meta?.default_base_url || ""}
+                  disabled={meta?.allows_base_url === false}
+                />
+              </details>
+            </>
           )}
 
-          {/* 探测到的模型就地可选（带筛选），不用再点一次「探测」 */}
-          {autoModels.length > 0 && (
-            <div>
-              <input
-                className="input"
-                placeholder={`在 ${autoModels.length} 个模型里筛选…`}
-                value={modelFilter}
-                onChange={(e) => setModelFilter(e.target.value)}
-              />
-              <div
-                className="mt-1 max-h-[168px] overflow-y-auto rounded-[10px]"
-                style={{ background: "var(--color-surface-2)" }}
-              >
-                {autoModels
-                  .filter((m) => m.toLowerCase().includes(modelFilter.trim().toLowerCase()))
-                  .slice(0, 60)
-                  .map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => setModel(m)}
-                      className="mono flex min-h-[32px] w-full items-center px-3 text-left text-[12px]"
-                      style={{
-                        color: m === model ? "var(--color-accent)" : "var(--color-text-2)",
-                        background: m === model ? "var(--color-surface-3)" : "transparent",
-                      }}
-                    >
-                      {m}
-                    </button>
-                  ))}
-              </div>
+          {phase === "fail" && detected && detected.tried.length > 0 && (
+            <div className="text-[11.5px]" style={{ color: "var(--color-text-3)" }}>
+              试过：{detected.tried.map((t: { display_name: string }) => t.display_name).join("、")}。识别不出就从上面改选服务商。
             </div>
           )}
-          {err && <div className="text-[12px] text-[var(--color-err)]">{err}</div>}
         </div>
 
-        <div className="flex justify-end gap-2 mt-5">
+        <div className="flex items-center gap-2 mt-5">
+          {/* 禁用原因写在按钮旁边 + title 上，不用「点了没反应」的哑按钮 */}
+          <span className="mr-auto text-[11.5px]" style={{ color: "var(--color-text-3)" }}>
+            {saveHint}
+          </span>
+          {/* 验证不了的服务商没有「重新识别」这一步，别摆一个点了也不动的按钮 */}
+          {(!provider || canVerify) && (
+            <button
+              className="btn"
+              disabled={!apiKey.trim() || busy || phase === "detecting"}
+              title={!apiKey.trim() ? "先粘贴 API Key 才能验证" : "重新识别并验证这个 Key"}
+              onClick={() => {
+                const k = apiKey.trim();
+                detectFor.current = `${k}|${providerTouched ? provider : ""}`;
+                void runDetect(k, providerTouched ? provider : undefined);
+              }}
+            >
+              {phase === "detecting" ? "识别中…" : "重新识别"}
+            </button>
+          )}
           <button className="btn" onClick={onClose}>
             取消
           </button>
-          {/* 按钮禁用时要说明为什么 —— 之前点了没反应，用户以为坏了（复测 F19） */}
-          <button
-            className="btn"
-            disabled={busy || !apiKey.trim()}
-            title={!apiKey.trim() ? "先粘贴 API Key，才能测这条配置通不通" : "用这个 Key 发一次极小调用"}
-            onClick={doTest}
-          >
-            {!apiKey.trim() ? "先填 Key 再测" : "测试连接"}
-          </button>
-          <button className="btn btn-primary" disabled={busy} onClick={save}>
-            {busy ? "处理中…" : "保存"}
+          <button className="btn btn-primary" disabled={busy || !canSave} title={saveHint || undefined} onClick={save}>
+            {busy ? "保存中…" : "完成"}
           </button>
         </div>
       </div>

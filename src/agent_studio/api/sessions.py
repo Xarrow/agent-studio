@@ -151,6 +151,7 @@ def _to_read(row: ChatSession, turn_count: int = 0, agent_name: str | None = Non
         summarized_upto=row.summarized_upto or 0,
         message_count=row.message_count or 0,
         usage=row.usage or {},
+        model_override=row.model_override,
         created_at=row.created_at,
         last_active_at=row.last_active_at,
         turn_count=turn_count,
@@ -1028,6 +1029,9 @@ async def update_session(
         row.title = payload.title.strip()[:200]
     if payload.status is not None:
         row.status = payload.status
+    if payload.model_override is not None:
+        # 会话级换模型：空串 = 恢复助手默认（不写 NULL 以外的特殊值）
+        row.model_override = payload.model_override.strip()[:200] or None
     row.last_active_at = now_ms()
     await session.commit()
     await session.refresh(row)

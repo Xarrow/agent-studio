@@ -66,6 +66,8 @@ export function SkillsStrip({
     try {
       await api.updateAgent(agent.id, {
         definition: { ...agent.definition, skills: next.map((r) => ({ ref: r })) },
+        // 勾技能是就地调整，不是「记为一版」→ 不推进版本号
+        bump_version: false,
       });
       onChanged();
     } catch {

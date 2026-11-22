@@ -228,6 +228,26 @@ async def test_多个新动作共用一张卡_全部目标都进卡():
 
 
 @pytest.mark.asyncio
+async def test_一条_rm_删两个文件_卡上两个目标都在():
+    """现场（2026-11）：`rm -f a.txt b.txt` 卡上只列 a，实际两个都删了。
+
+    命令只有一个目标时按第一段解析是对的；多目标命令要**每个参数一条动作**，
+    才能让确认卡、审计、实际执行三者一致。
+    """
+    from agentscope.permission import PermissionBehavior
+
+    a, b = _tmp("-a.txt"), _tmp("-b.txt")
+    assert [x.path for x in fp.actions_for_command(f"rm -f {a} {b}", WS)] == [a, b]
+
+    sid = _sid()
+    d, _handler, call_id = await _decide(f"rm -f {a} {b}", session_id=sid)
+    assert d.behavior == PermissionBehavior.ASK
+    card = guard_mod.file_actions()[call_id]
+    assert [(x["op"], x["path"]) for x in card["actions"]] == [(fp.OP_DELETE, a), (fp.OP_DELETE, b)]
+    assert "2 个位置" in d.message
+
+
+@pytest.mark.asyncio
 async def test_代码通道不可拆分_含已拒绝动作时整条拦下():
     """python 工具的入参改不了执行内容（不像 bash 能改写 command）→ 不许半拆。"""
     from agentscope.permission import PermissionBehavior

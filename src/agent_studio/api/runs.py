@@ -130,6 +130,15 @@ async def _get_or_404(session: AsyncSession, run_id: str) -> Run:
     return row
 
 
+#: 会话级模型覆盖（对话页眉换的模型）：只改 ``model.name``，
+#: provider/凭据仍跟助手走 —— 对话里换模型不改助手默认，也不需要迁移数据。
+def _apply_session_model(definition: AgentDefinition, session_row: Any) -> None:
+    name = str(getattr(session_row, "model_override", "") or "").strip()
+    if not name:
+        return
+    definition.model = definition.model.model_copy(update={"name": name})
+
+
 # --------------------------------------------------------------------------- #
 # 发起执行
 # --------------------------------------------------------------------------- #
@@ -156,6 +165,11 @@ async def _start_session_turn(
             status.HTTP_400_BAD_REQUEST,
             f"这个助手的定义不完整，无法执行：{str(exc).splitlines()[-1][:200]}",
         ) from exc
+    # 会话里换过模型 → 这一轮就用它（快照里跟着记，运行记录能对上真实模型）
+    from ..models import Session as ChatSessionRow
+
+    _apply_session_model(definition, await db.get(ChatSessionRow, session_id))
+
     from ..context import next_turn_index
 
     turn_index = await next_turn_index(db, session_id)
@@ -205,6 +219,8 @@ async def create_run(payload: RunCreate, session: AsyncSession = Depends(get_ses
                 "会话与 Agent 不匹配：会话属于另一个 Agent，请新建会话",
             )
         session_id = chat.id
+        # 会话级模型覆盖（对话页眉换的模型）—— 下一条消息立即生效，不新开会话
+        _apply_session_model(definition, chat)
         from ..context import next_turn_index
 
         turn_index = await next_turn_index(session, chat.id)

@@ -40,6 +40,20 @@ export interface CredentialTestResult {
   checked_at: number;
 }
 
+/** 「粘贴即用」：只用 Key 认服务商 + 验证 + 拿清单 */
+export interface CredentialDetectResult {
+  ok: boolean;
+  provider: string;
+  display_name: string;
+  base_url: string | null;
+  models: string[];
+  suggested: string[];
+  latency_ms: number | null;
+  /** 人话原因（失败时说清下一步），界面直接显示 */
+  reason: string;
+  tried: { provider: string; display_name: string; ok: boolean; detail: string }[];
+}
+
 export interface ModelSpec {
   provider: string;
   name: string;
@@ -835,6 +849,8 @@ export interface Session {
   ticket_title?: string | null;
   /** worker 会话是哪个会话派出来的（侧栏挂树用） */
   parent_session_id?: string | null;
+  /** 会话级模型覆盖（对话页眉换的模型）；空 = 跟随助手默认 */
+  model_override?: string | null;
 }
 
 /** 后台进程（会话级）。状态：running 在跑 / exited 正常结束 / failed 非零退出 / killed 被停 / unknown 重启后对不上 */

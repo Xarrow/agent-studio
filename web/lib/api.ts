@@ -37,6 +37,7 @@ import type {
   Credential,
   CredentialChatResult,
   CredentialModelsResult,
+  CredentialDetectResult,
   CredentialTestResult,
   DbDriverInfo,
   ExternalMemoryConfig,
@@ -419,6 +420,9 @@ export const api = {
   /** 探测某凭据下可用的模型清单（编辑配置时让用户挑模型） */
   credentialModels: (id: string) =>
     request<CredentialModelsResult>(`/api/credentials/${id}/models`),
+  /** 粘贴即用：只给 Key，让服务端认服务商并验证（未保存） */
+  detectCredential: (body: { api_key: string; provider?: string; base_url?: string | null }) =>
+    post<CredentialDetectResult>("/api/credentials/detect", body),
   probeCredential: (body: {
     default_model?: string | null;
     name: string;
@@ -471,6 +475,8 @@ export const api = {
       expose_note?: string;
       /** 自动保存传 false：只改内容、不生成新版本（版本留给「记为一版」） */
       bump_version?: boolean;
+      /** 「记为一版」时填的一句备注（可空） */
+      version_note?: string;
     },
     /** 我读到的那一版：并发编辑时服务端据此拒绝静默覆盖 */
     version?: number,
@@ -1644,7 +1650,7 @@ export const api = {
         "Idempotency-Key": `new-${agentId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       },
     }),
-  updateSession: (id: string, patch: { title?: string; status?: string }) =>
+  updateSession: (id: string, patch: { title?: string; status?: string; model_override?: string }) =>
     request<Session>(`/api/sessions/${id}`, {
       method: "PATCH",
       body: JSON.stringify(patch),

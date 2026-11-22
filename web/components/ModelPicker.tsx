@@ -109,6 +109,8 @@ export function ModelPicker({
   providers = [],
   provider,
   credentialId,
+  models,
+  allowManual = true,
   value,
   onChange,
 }: {
@@ -116,6 +118,13 @@ export function ModelPicker({
   providers?: Provider[];
   provider: string;
   credentialId?: string | null;
+  /**
+   * 已经拿到的模型清单（还没保存凭据时用：粘贴 Key 后探测结果直接喂进来）。
+   * 传了就不再去探测 —— 「新增 LLM 配置」的 3 步流程靠它复用同一个选择器。
+   */
+  models?: string[];
+  /** 是否允许「手动填写模型名」。新增凭据时关掉：不许自由文本 */
+  allowManual?: boolean;
   value: string;
   onChange: (v: string) => void;
 }) {
@@ -190,8 +199,18 @@ export function ModelPicker({
     [credentialId],
   );
 
+  // 外部直接给了清单（新增凭据时探测结果就在手上）→ 不再打网络
+  useEffect(() => {
+    if (!models || models.length === 0) return;
+    setRawList(models.map((x) => String(x)));
+    setProbed(dedupeModels(models));
+    setProbedIsReal(true);
+    setNote(`✓ 探测到 ${models.length} 个模型`);
+  }, [models]);
+
   // 换服务商 / 换凭据 → 重新探测
   useEffect(() => {
+    if (models && models.length > 0) return;
     if (!credentialId) {
       probedFor.current = null;
       setProbed([]);
@@ -290,9 +309,11 @@ export function ModelPicker({
   // 用户会以为这家没清单（新建助手里就撞上过）
   useEffect(() => {
     if (probing) return;
+    if (!allowManual) return;
+    if (models && models.length > 0) return;
     if (!credentialId || probedFor.current !== credentialId) return;
     if (options.length === 0) setManual(true);
-  }, [probing, options.length, credentialId]);
+  }, [probing, options.length, credentialId, allowManual, models]);
 
   if (manual) {
     return (
@@ -435,18 +456,20 @@ export function ModelPicker({
                 <span>{showAll ? "隐藏重复档（:batch / ~ 别名）" : `显示全部原始档${rawList.length ? `（${rawList.length}）` : ""}`}</span>
                 <span>{showAll ? "已显示" : ""}</span>
               </button>
-              <button
-                type="button"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  setManual(true);
-                  setOpen(false);
-                }}
-                className="flex min-h-[38px] w-full items-center border-t px-3 text-left text-[12.5px]"
-                style={{ borderColor: "var(--color-border)", color: "var(--color-text-2)" }}
-              >
-                ✎ 手动填写…
-              </button>
+              {allowManual && (
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    setManual(true);
+                    setOpen(false);
+                  }}
+                  className="flex min-h-[38px] w-full items-center border-t px-3 text-left text-[12.5px]"
+                  style={{ borderColor: "var(--color-border)", color: "var(--color-text-2)" }}
+                >
+                  ✎ 手动填写…
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -468,7 +491,7 @@ export function ModelPicker({
       {note && (
         <p className="text-[12px] text-[var(--color-muted)] mt-1.5">{note}</p>
       )}
-      {!credentialId && (
+      {!credentialId && !(models && models.length > 0) && (
         <p className="text-[12px] text-[var(--color-muted)] mt-1.5">
           先在下面选好「LLM 配置」，就能自动探测它可用的模型。
         </p>

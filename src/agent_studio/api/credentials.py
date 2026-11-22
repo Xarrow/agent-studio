@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import httpx
 from typing import Any
 import inspect
@@ -25,6 +26,8 @@ from ..schemas import (
     CredentialChatRequest,
     CredentialChatResult,
     CredentialCreate,
+    CredentialDetectRequest,
+    CredentialDetectResult,
     CredentialRead,
     CredentialTestRequest,
     CredentialTestResult,
@@ -319,7 +322,14 @@ async def _probe(
     if not base:
         return False, [], f"{provider} 没有可用的 Base URL，请填写端点地址", None
 
-    headers = {"Authorization": f"Bearer {api_key}"}
+    # Anthropic 的鉴权头与路径都和 OpenAI 兼容接口不同（``x-api-key`` + ``/v1/models``）：
+    # 拿 Bearer 打过去必然 401，会让**有效的** Claude Key 被判成「密钥无效」——
+    # 「粘贴即用」识别不出 Claude 就是这么来的（实测）。
+    if meta is not None and meta.name == "anthropic":
+        base = base if base.endswith("/v1") else f"{base}/v1"
+        headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
+    else:
+        headers = {"Authorization": f"Bearer {api_key}"}
     started = time.perf_counter()
 
     def elapsed() -> int:
@@ -674,6 +684,154 @@ async def list_credential_models(
         "latency_ms": latency,
         "error": error,
     }
+
+
+# --------------------------------------------------------------------------- #
+# 粘贴即用：只给 Key，认出服务商 + 验证 + 拿到模型清单
+# --------------------------------------------------------------------------- #
+#: 探测顺序（并行跑，谁先通过就优先它；前缀只用来决定"同分时信谁"，
+#: 不做硬推断 —— ``sk-`` 在 OpenAI / DeepSeek / 火山之间是重复的）
+_KEY_HINTS: list[tuple[str, str]] = [
+    ("sk-ant-", "anthropic"),
+    ("sk-proj-", "openai"),
+    ("AIza", "gemini"),
+]
+
+_DETECT_ORDER = ["deepseek", "openai", "dashscope", "moonshot", "xai", "anthropic", "volcengine"]
+
+
+def _detect_order(api_key: str, provider: str | None) -> list[str]:
+    if provider:
+        return [normalize_provider(provider)]
+    hinted = [name for prefix, name in _KEY_HINTS if api_key.startswith(prefix)]
+    rest = [name for name in _DETECT_ORDER if name not in hinted]
+    return hinted + rest
+
+
+def _effective_base(meta: Any, override: str | None) -> str | None:
+    """探测/入库用同一个端点：Anthropic 要带 ``/v1``（它的模型清单在 ``/v1/models``）。"""
+    base = (override or meta.default_base_url or "").rstrip("/")
+    if not base:
+        return None
+    if meta.name == "anthropic" and not base.endswith("/v1"):
+        base = f"{base}/v1"
+    return base
+
+
+def _human_reason(display: str, error: str | None) -> str:
+    """把探测失败翻成人话 + 下一步（后端原文只留在 tried[].detail 里）。"""
+    text = (error or "").strip()
+    if re.search(r"HTTP 40[13]", text):
+        return f"这个 Key 没通过 {display} 验证（密钥无效）。检查是否复制完整，或从下拉里改选服务商。"
+    if text.startswith("连不上"):
+        return f"连不上 {display} 的接口（网络或代理问题）。可以稍后重试，或从下拉里改选服务商。"
+    return f"{display} 没有接受这个 Key。检查 Key 是否正确，或从下拉里改选服务商。"
+
+
+@router.post("/credentials/detect", response_model=CredentialDetectResult)
+async def detect_credential(payload: CredentialDetectRequest) -> CredentialDetectResult:
+    """粘贴 API Key → 认出服务商 → 验证 → 给出可选模型。
+
+    为什么不是「从 Key 前缀推断」：``sk-`` 在 OpenAI / DeepSeek / 火山之间
+    完全一样，猜错比让用户点一下更糟。这里**真的逐个试探**（默认端点 + 该家
+    首个模型发一次极小调用），通过的才算认出来；都不通过就把人话原因带回去，
+    并允许用户从下拉改选（``provider`` 参数）。
+    """
+    key = (payload.api_key or "").strip()
+
+    # 用户点名了服务商，而这家根本没有可自动验证的接口（不需要 Key / 没默认端点）：
+    # 硬拿 OpenAI 兼容探针去试只会把好 Key 判成坏 Key。直接说清，让他选模型保存。
+    # 放在「Key 太短」之前：Ollama 这种压根不用 Key 的服务商不该被要求粘贴。
+    if payload.provider:
+        only = get_provider(payload.provider)
+        if only is not None and (not only.requires_key or not (payload.base_url or only.default_base_url)):
+            if only.requires_key and not key:
+                return CredentialDetectResult(
+                    ok=False, provider=only.name, display_name=only.display_name, reason="先粘贴 API Key。"
+                )
+            return CredentialDetectResult(
+                ok=False,
+                provider=only.name,
+                display_name=only.display_name,
+                suggested=list(only.models),
+                reason=(
+                    f"{only.display_name} 不需要 API Key：直接选一个模型保存就行。"
+                    if not only.requires_key
+                    else f"{only.display_name} 没有可自动验证的接口：Key 会原样保存，保存后用一次对话确认能通。"
+                ),
+            )
+
+    if len(key) < 8:
+        return CredentialDetectResult(
+            ok=False, reason="先把 API Key 粘贴完整（太短了，看起来只复制了一半）。"
+        )
+
+    order = _detect_order(key, payload.provider)
+    metas = [p for p in (get_provider(name) for name in order) if p is not None and p.requires_key]
+
+    async def _one(meta):
+        model = meta.models[0] if meta.models else ""
+        try:
+            return meta, await asyncio.wait_for(
+                _probe(meta.name, key, _effective_base(meta, payload.base_url), model), timeout=9
+            )
+        except asyncio.TimeoutError:
+            return meta, (False, [], "连不上（超时）", None)
+        except Exception as exc:  # noqa: BLE001 —— 一家炸了不影响别家
+            return meta, (False, [], f"连不上：{type(exc).__name__}", None)
+
+    # 并行试探，**第一家认出来就返回**：剩下的不用等（用户不该为了一个哈希前缀
+    # 相同的 Key 盯着 9 秒转圈）。返回顺序因此按"谁先认出来"，而不是表格顺序。
+    tasks = [asyncio.create_task(_one(m)) for m in metas]
+    results: list[tuple[Any, tuple]] = []
+    hit: tuple[Any, tuple] | None = None
+    try:
+        for fut in asyncio.as_completed(tasks):
+            meta, res = await fut
+            results.append((meta, res))
+            if res[0]:
+                hit = (meta, res)
+                break
+    finally:
+        for t in tasks:
+            t.cancel()
+
+    tried = [
+        {
+            "provider": meta.name,
+            "display_name": meta.display_name,
+            "ok": bool(ok),
+            "detail": (err or "")[:300],
+        }
+        for meta, (ok, _models, err, _lat) in results
+    ]
+
+    if hit is not None:
+        meta, (ok, models, _err, latency) = hit
+        clean = [str(m) for m in models if str(m).strip()]
+        return CredentialDetectResult(
+            ok=True,
+            provider=meta.name,
+            display_name=meta.display_name,
+            base_url=_effective_base(meta, payload.base_url),
+            models=clean[:200],
+            suggested=[] if clean else list(meta.models),
+            latency_ms=latency,
+            reason=f"✓ 连上了 {meta.display_name}" + (f"，有 {len(clean)} 个模型可选" if clean else "，这家不列模型（下面给推荐清单）"),
+            tried=tried,
+        )
+
+    # 都没通过：优先拿「密钥无效」这类确定性的原因，其次才是网络
+    bad = [r for r in results if not r[1][0] and re.search(r"HTTP 40[13]", r[1][2] or "")]
+    if bad:
+        names = "、".join(m.display_name for m, _ in bad)
+        reason = _human_reason(names, bad[0][1][2])
+    elif results:
+        names = "、".join(m.display_name for m, _ in results[:3]) + ("等" if len(results) > 3 else "")
+        reason = f"试过 {names}，都没连上（网络或代理问题）。可以稍后重试，或从下拉里改选服务商。"
+    else:
+        reason = "没有可试的服务商，请从下拉里选一家。"
+    return CredentialDetectResult(ok=False, reason=reason, tried=tried)
 
 
 @router.post("/credentials/probe", response_model=CredentialTestResult)

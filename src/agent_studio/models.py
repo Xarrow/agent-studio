@@ -428,6 +428,11 @@ class Session(Base):
     #: 会话累计用量（跨多轮的总额，前端显示总量）
     usage: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
+    #: 本会话临时换的模型名（会话级覆盖；空 = 跟随助手默认）。
+    #: 只覆盖 ``definition.model.name``，provider/凭据仍跟助手走 ——
+    #: 对话里换模型不该改动助手本身，也不该被迫新开会话。
+    model_override: Mapped[str | None] = mapped_column(String(200), default=None)
+
     created_at: Mapped[int] = mapped_column(Integer, default=now_ms)
     last_active_at: Mapped[int] = mapped_column(Integer, default=now_ms, index=True)
 
@@ -983,6 +988,11 @@ class Revision(Base):
     payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     #: 一句人话：「改了提示词」「步骤 3 → 4」—— 界面直接显示，用户不用逐字段对比
     label: Mapped[str] = mapped_column(String(200), default="")
+    #: 里程碑（用户点「记为一版」时生成）。旧的自动保存留下的记录是 0 ——
+    #: 列表据此区分「我主动记的版」和「旧数据里的自动快照」，不做数据迁移。
+    milestone: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    #: 用户点「记为一版」时填的一句话备注（可空）
+    note: Mapped[str] = mapped_column(String(200), default="", server_default="")
     created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
 
 
