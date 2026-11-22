@@ -415,7 +415,21 @@ class AgentScopeRuntime(AgentRuntime):
                 async with SessionLocal() as session:
                     for sid in server_ids:
                         row = await session.get(McpServer, sid)
-                        if row is None or not row.enabled:
+                        if row is None:
+                            # 兼容"填的是名字不是 id"：API/脚本直接写定义时很容易这样，
+                            # 静默跳过会让助手少几十个工具，还看不出原因（实测踩到）
+                            from sqlalchemy import select as _select
+
+                            row = (
+                                await session.execute(
+                                    _select(McpServer).where(McpServer.name == str(sid))
+                                )
+                            ).scalars().first()
+                        if row is None:
+                            logger.warning("MCP 引用找不到（既不是 id 也不是名字）：%s", sid)
+                            continue
+                        if not row.enabled:
+                            logger.info("MCP「%s」已停用，跳过", row.name)
                             continue
                         # 凭据在密文列里（env/headers 明文列已废弃），统一走 open_io 解密
                         from ...api.mcp import open_io
