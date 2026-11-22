@@ -234,3 +234,19 @@ async def test_tasks_cancel_requires_id(client_):
         "/a2a", json={"jsonrpc": "2.0", "id": 10, "method": "tasks/cancel", "params": {}}
     )
     assert r.json()["error"]["code"] == a2a.E_INVALID_PARAMS
+
+
+def test_平台级卡片_默认挑已开放远程的助手():
+    """平台级卡片：通用助手没开远程时，要退回"最近更新的已开放助手"，不能 403。
+
+    以前直接取「通用助手」，它没开 expose_remote 就 403 —— 外部填一个 base 地址
+    根本注册不进来，尽管库里明明有开放的助手（实测踩到）。
+    """
+    import inspect
+
+    from agent_studio.api import a2a as mod
+
+    src = inspect.getsource(mod._agent_for_card)
+    # 顺序：通用助手+开放 → 任一开放（最近更新）→ 最近更新
+    assert "expose_remote.is_(True)" in src
+    assert src.index('name == "通用助手"') < src.index("order_by(Agent.updated_at.desc())")
