@@ -47,6 +47,7 @@ export function SideDock({
   browserControl,
   browserNotice,
   browserLive,
+  browserSuspended,
   onBrowserControl,
   onBrowserOpenFull,
   onUserClick,
@@ -87,6 +88,8 @@ export function SideDock({
   browserNotice?: string;
   /** 这一轮正在跑（状态还没同步过来时也要有可点的接管） */
   browserLive?: boolean;
+  /** 全屏窗口正开着：栏里这块先摘掉 —— 两个 BrowserStage 同时建 WebRTC 会互相顶掉对方的流 */
+  browserSuspended?: boolean;
   onBrowserControl?: (action: "take" | "release") => void;
   onBrowserOpenFull?: () => void;
   onUserClick?: (x: number, y: number) => void | Promise<void>;
@@ -498,21 +501,27 @@ export function SideDock({
             </div>
           ) : panel === "browser" ? (
             <div className="flex min-h-0 flex-1 flex-col">
-              <BrowserStage
-                variant="panel"
-                frame={frame}
-                actions={actions}
-                steps={steps}
-                control={browserControl}
-                notice={browserNotice}
-                live={browserLive}
-                onControl={onBrowserControl}
-                onUserClick={onUserClick}
-                onUserText={onUserText}
-                onUserScroll={onUserScroll}
-                onUserInput={onUserInput}
-                sessionId={sessionId}
-              />
+              {browserSuspended ? (
+                <div className="flex flex-1 items-center justify-center px-4 text-center text-[12px]" style={{ color: "var(--color-muted)" }}>
+                  画面在全屏窗口里
+                </div>
+              ) : (
+                <BrowserStage
+                  variant="panel"
+                  frame={frame}
+                  actions={actions}
+                  steps={steps}
+                  control={browserControl}
+                  notice={browserNotice}
+                  live={browserLive}
+                  onControl={onBrowserControl}
+                  onUserClick={onUserClick}
+                  onUserText={onUserText}
+                  onUserScroll={onUserScroll}
+                  onUserInput={onUserInput}
+                  sessionId={sessionId}
+                />
+              )}
             </div>
           ) : panel === "steps" ? (
             <div className="min-h-0 flex-1 overflow-auto p-2">

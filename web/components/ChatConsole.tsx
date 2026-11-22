@@ -4739,6 +4739,7 @@ export function ChatConsole({
           browserControl={browserCtl}
           browserNotice={browserNotice}
           browserLive={busy}
+          browserSuspended={browserOpen}
           onBrowserControl={(a) => void browserControl(a)}
           onBrowserOpenFull={() => setBrowserOpen(true)}
           onUserClick={async (x, y) => sendBrowser({ kind: "click", x, y })}
