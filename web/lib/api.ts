@@ -346,6 +346,8 @@ export type BrowserControlState = {
   step_label?: string;
   /** 画面推流实测（WebRTC/兼容模式、fps、码率、延迟估算） */
   stream?: BrowserStreamState;
+  /** 页面坐标系（永远是 1280×800 这类页面尺寸，不是画面像素）—— 点击换算要用它 */
+  viewport?: { width: number; height: number };
 };
 
 /**

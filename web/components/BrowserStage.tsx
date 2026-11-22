@@ -26,7 +26,7 @@ import { withToken } from "@/lib/api";
 import type { BrowserControlState, BrowserStreamState } from "@/lib/api";
 import { onFrame, latestFrame } from "@/lib/browser-frame";
 import { isImeEvent } from "@/lib/ime";
-import { mapToPage } from "@/lib/video-map";
+import { mapToPage, pageDims } from "@/lib/video-map";
 import { BrowserRtc, markRtcBad, rtcKnownBad, type RtcStats } from "@/lib/webrtc";
 import {
   FpsMeter,
@@ -625,10 +625,10 @@ export function BrowserStage({
   /** 当前画面的原始尺寸（视频轨优先；JPEG 用图片自身的 natural 尺寸） */
   const naturalSize = (): { w: number; h: number } => {
     const v = videoRef.current;
-    if (rtcMode === "live" && v && v.videoWidth > 0) return { w: v.videoWidth, h: v.videoHeight };
+    if (rtcMode === "live" && v && v.videoWidth > 0) return pageDims(v.videoWidth, v.videoHeight, control?.viewport);
     const im = imgRef.current;
-    if (im && im.naturalWidth > 0) return { w: im.naturalWidth, h: im.naturalHeight };
-    return { w: 1280, h: 800 };
+    if (im && im.naturalWidth > 0) return pageDims(im.naturalWidth, im.naturalHeight, control?.viewport);
+    return control?.viewport ? { w: control.viewport.width, h: control.viewport.height } : { w: 1280, h: 800 };
   };
 
   /**

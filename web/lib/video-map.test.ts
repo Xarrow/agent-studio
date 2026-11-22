@@ -8,7 +8,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { contentBox, mapToPage } from "./video-map.ts";
+import { contentBox, mapToPage, pageDims } from "./video-map.ts";
 
 test("16:10 画面放进 16:10 容器：内容铺满、无留白", () => {
   const box = contentBox(640, 400, 1280, 800);
@@ -58,4 +58,21 @@ test("尺寸还没就绪时不炸（返回整块容器）", () => {
   assert.deepEqual(contentBox(0, 0, 0, 0), { ox: 0, oy: 0, dw: 0, dh: 0, scale: 1 });
   const p = mapToPage(10, 10, 100, 100, 0, 0);
   assert.equal(p.inside, true);
+});
+
+test("画面像素 ≠ 页面像素时，点击换算必须用页面坐标", () => {
+  // 实测：Bing 首页静止 → 视频轨从 1280 降到 960、640，页面仍是 1280×800。
+  // 拿画面尺寸当页面尺寸，点 (640,400) 会落到页面 (1280,800) —— 整体偏 2 倍，
+  // 表现就是「点搜索框点到旁边 / 点了空白处」。
+  assert.deepEqual(pageDims(640, 400, { width: 1280, height: 800 }), { w: 1280, h: 800 });
+  assert.deepEqual(pageDims(960, 600, { width: 1280, height: 800 }), { w: 1280, h: 800 });
+  // JPEG 兼容模式按 800 宽推流，页面还是 1280 —— 同样要换回页面坐标
+  assert.deepEqual(pageDims(800, 500, { width: 1280, height: 800 }), { w: 1280, h: 800 });
+  // 比例对不上（异常/裁切）时保留画面尺寸：至少不会比原来更偏
+  assert.deepEqual(pageDims(640, 480, { width: 1280, height: 800 }), { w: 640, h: 480 });
+  // 没有页面尺寸（老后端/还没同步）时保持旧行为
+  assert.deepEqual(pageDims(960, 600, null), { w: 960, h: 600 });
+  // 换成页面尺寸后点内容中心，落在页面中心
+  const d = pageDims(640, 400, { width: 1280, height: 800 });
+  assert.deepEqual(mapToPage(320, 200, 640, 400, d.w, d.h), { x: 640, y: 400, inside: true });
 });

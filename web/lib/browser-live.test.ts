@@ -268,4 +268,5 @@ test("BrowserStage 不再拿实时帧状态当 WebRTC 的门，实时元素常�
   assert.match(stage, /data-key-button/, "常用按键那一排要常驻可见");
   assert.match(stage, /data-stream-stat/, "状态区要有实测数字（fps/延迟）的常驻位置");
   assert.match(stage, /jpegFps/, "兼容模式要数 JPEG 帧，不能用写死的文案");
+  assert.match(stage, /pageDims\(/, "点击换算必须用页面坐标（视频降档/JPEG 800 宽都不等于页面尺寸）");
 });

@@ -297,6 +297,12 @@ def step_count_for(c: Control) -> int:
         return 0
 
 
+def _viewport() -> dict[str, int]:
+    from .browser_session import VIEWPORT
+
+    return {"width": int(VIEWPORT["width"]), "height": int(VIEWPORT["height"])}
+
+
 def public_state(session_id: str) -> dict[str, Any]:
     """给前端的完整状态：**所有文案都在这里定**，前端不做判断。"""
     c = get_for_session(session_id)
@@ -329,6 +335,7 @@ def public_state(session_id: str) -> dict[str, Any]:
             "run_id": "",
             "step_count": 0,
             "step_label": "",
+            "viewport": _viewport(),
         }
     badge, button, action = _badge(c)
     phase, phase_text = _phase(c)
@@ -364,6 +371,10 @@ def public_state(session_id: str) -> dict[str, Any]:
         # 0 步时不给标签：卡片上写「本轮 0 步」既没信息量，又容易被读成"口径坏了"。
         "step_count": steps,
         "step_label": f"本轮 {steps} 步" if steps else "",
+        # 页面坐标系：画面的像素尺寸 ≠ 页面尺寸（视频轨会按带宽降档 1280→960→640，
+        # JPEG 兼容模式按 800 宽推）。前端把点击坐标换算成**页面坐标**必须有这个数，
+        # 否则静态页面一降档，点击就整体偏掉（实测 640 的画面对 1280 的页面 → 偏 2 倍）。
+        "viewport": _viewport(),
     }
 
 

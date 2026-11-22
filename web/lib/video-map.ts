@@ -38,6 +38,27 @@ export function contentBox(
 
 export type MappedPoint = { x: number; y: number; inside: boolean };
 
+/**
+ * 点击要落在**页面坐标**里，而画出来的像素尺寸经常不等于页面尺寸：
+ * 视频轨会按带宽降档（1280→960→640），JPEG 兼容模式按 800 宽推流。
+ * 拿画面尺寸当页面尺寸，静态页面一降档点击就整体偏（640 的画面对 1280 的页面偏 2 倍）。
+ *
+ * 规则：有页面尺寸（后端给的 viewport）且宽高比与画面一致就换成页面尺寸；
+ * 比例对不上（异常）时保留画面尺寸 —— 至少不会比原来更偏。
+ */
+export function pageDims(
+  frameW: number,
+  frameH: number,
+  viewport?: { width: number; height: number } | null,
+): { w: number; h: number } {
+  if (viewport && viewport.width > 0 && viewport.height > 0 && frameW > 0 && frameH > 0) {
+    const a1 = frameW / frameH;
+    const a2 = viewport.width / viewport.height;
+    if (Math.abs(a1 - a2) < 0.02) return { w: viewport.width, h: viewport.height };
+  }
+  return { w: frameW, h: frameH };
+}
+
 /** 容器内坐标 → 页面（视频原始像素）坐标；落在留白上 inside=false。 */
 export function mapToPage(
   px: number,
