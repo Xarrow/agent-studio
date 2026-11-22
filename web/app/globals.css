@@ -1394,3 +1394,13 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .panel-slide-in, .panel-veil-in { animation: none !important; }
 }
+
+/* 对话页右侧配置抽屉：桌面 480、手机整屏（Tailwind 的 sm:max-w-[…] 在当前构建里没落盘） */
+.config-drawer {
+  width: min(480px, 100vw);
+}
+@media (max-width: 639px) {
+  .config-drawer {
+    width: 100vw;
+  }
+}

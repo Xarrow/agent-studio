@@ -35,7 +35,7 @@ import { SlashMenu, type CommandItem } from "@/components/SlashMenu";
 import { useImeGuard, isImeEvent } from "@/lib/ime";
 import Markdown from "@/components/Markdown";
 import { RunDetailById } from "@/components/RunDetailDialog";
-import { AgentDetailDialog } from "./AgentDetailDialog";
+import { AgentConfigDrawer } from "./AgentConfigDrawer";
 import { ICON_PATHS, NAV_GROUPS, SETUP_ITEMS, SYSTEM_ITEMS, USE_ITEMS, itemsOfGroup } from "@/lib/nav-items";
 import { AgentSwitcher } from "./AgentSwitcher";
 import { SkillEntry, ToolEntry, MemoryEntry } from "./ToolEntries";
@@ -2554,9 +2554,22 @@ export function ChatConsole({
             </button>
           </div>
         )}
-        {configAgent && (
-          <AgentDetailDialog agentId={configAgent} onClose={() => setConfigAgent(null)} />
-        )}
+        {/* 配置改成右侧抽屉：改模型/提示词不用离开对话（R1） */}
+        {configAgent && (() => {
+          const a = agents.find((x) => x.id === configAgent);
+          if (!a) return null;
+          return (
+            <AgentConfigDrawer
+              agent={a}
+              providers={providers}
+              creds={creds}
+              onClose={() => setConfigAgent(null)}
+              onSaved={(updated) =>
+                setAgents((prev) => prev.map((x) => (x.id === updated.id ? { ...x, ...updated } : x)))
+              }
+            />
+          );
+        })()}
 
         {/* ── 会话栏（桌面在流内，可收起；窄屏走抽屉）────────────────────
             收起后不留空白 —— 只剩 44px 的把手，点一下回来。 */}

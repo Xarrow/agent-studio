@@ -765,3 +765,13 @@ test("JSX 里不许出现裸注释 —— 它会被原样渲染成界面上的�
   });
   assert.deepEqual(bad, [], `这些注释会被渲染成文字，改成 {/* ... */}：\n${bad.join("\n")}`);
 });
+
+test("对话页配置抽屉：右侧抽屉、自动保存不产生版本、挂到 body", () => {
+  const src = read("components/AgentConfigDrawer.tsx");
+  assert.match(src, /createPortal/, "抽屉要挂到 body（祖先有 transform 时 fixed 会退化成相对定位）");
+  assert.match(src, /bump_version: false/, "抽屉自动保存不该产生版本号");
+  assert.match(src, /updateAgent/, "抽屉要走同一个更新接口");
+  const chat = read("components/ChatConsole.tsx");
+  assert.match(chat, /AgentConfigDrawer/, "对话页应改用配置抽屉");
+  assert.doesNotMatch(chat, /AgentDetailDialog/, "对话页不该再弹居中配置弹窗");
+});
