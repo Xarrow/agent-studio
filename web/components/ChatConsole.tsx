@@ -2728,21 +2728,20 @@ export function ChatConsole({
               style={{ background: "transparent" }}
             />
             <SessionsPane
+              /* 受控进入（URL 带 agent / 外层传 agentId）时也要显示——否则侧栏顶部只剩
+                 「+ 新对话」和「收起」，用户根本看不出这些会话属于哪个助手。
+                 switchAgent 写的是本地 pickedAgent，仍然能覆盖受控值。 */
               agentSlot={
-                controlledAgentId === undefined ? (
-                  <>
-                    <AgentSwitcher
-                      variant="sidebar"
-                      agents={agents}
-                      value={agentId}
-                      onChange={switchAgent}
-                      busy={busy}
-                      open={switcherOpen === "sidebar"}
-                      onOpenChange={(v) => setSwitcherOpen(v ? "sidebar" : null)}
-                      onSettings={agentId ? () => setConfigAgent(agentId) : undefined}
-                    />
-                  </>
-                  ) : null
+                <AgentSwitcher
+                  variant="sidebar"
+                  agents={agents}
+                  value={agentId}
+                  onChange={switchAgent}
+                  busy={busy}
+                  open={switcherOpen === "sidebar"}
+                  onOpenChange={(v) => setSwitcherOpen(v ? "sidebar" : null)}
+                  onSettings={agentId ? () => setConfigAgent(agentId) : undefined}
+                />
               }
               agentId={agentId}
               sessions={navSessions}
