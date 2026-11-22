@@ -2258,56 +2258,75 @@ async def worker_events_of(run_id: str, session: AsyncSession = Depends(get_sess
     return {"root_run_id": root, "total": len(items), "items": items}
 
 
+async def _browser_ctl_for_run(run_id: str):
+    """run → 这个会话的浏览器控制记录（浏览器跟会话走，不再跟 run）。"""
+    from .. import browser_control as bc
+    from ..db import SessionLocal
+    from ..models import Run
+
+    async with SessionLocal() as s:
+        row = await s.get(Run, run_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Run 不存在: {run_id}")
+    c = bc.get_for_session(str(row.session_id or "")) or bc.get(bc.key_of("", run_id))
+    return c
+
+
 @router.post("/{run_id}/browser/pause")
 async def browser_pause(run_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
-    """暂停/继续这个执行的浏览器动作（协作式：等当前动作做完，下一步才停）。
+    """兼容端点：``paused=true`` ≡ 点「接管」，``false`` ≡ 点「交还给 Agent」。
 
-    接管 = 暂停 + 自己点画面。此时 browser-input 仍然可用 —— 用户点的是同一个
-    Chromium，助手只是在下一步之前等着，不会和他抢。
+    控制权的唯一真相在 ``browser_control``（会话级状态机）—— 这里只是把老调用
+    映射过去，别再另留一份"暂停"状态（那正是"暂停了但芯片还显示运行中"的来源）。
     """
-    from ..browser_session import pause_state, set_paused
+    from .. import browser_control as bc
+    from ..browser_session import get_existing
+
+    c = await _browser_ctl_for_run(run_id)
+    if c is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "这个执行没有浏览器会话")
 
     paused = bool((payload or {}).get("paused", True))
-    before = pause_state(run_id)
-    return {"paused": set_paused(run_id, paused), "was_paused": before}
+    if paused:
+        ok, why = await bc.take(c)
+        if not ok:
+            raise HTTPException(status.HTTP_409_CONFLICT, why)
+    else:
+        await bc.hand_back(c, get_existing(c.key))
+    st = bc.public_state(c.session_id)
+    return {"paused": st["status"] != bc.AGENT, "was_paused": False, "state": st}
 
 
 @router.post("/{run_id}/browser-input")
 async def browser_input(run_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-    """把用户在浏览器画面上的操作打进该 run 的 Chromium。
+    """把用户在浏览器画面上的操作打进 Chromium（**必须持有控制权**）。
 
-    两种输入：
     · click：{kind:"click", x, y}（画面坐标 → CDP 鼠标事件；前端按显示尺寸等比换算）
     · text：{kind:"text", text}（配合页面底部的输入条 —— 中文输入法兼容性靠它）
     · scroll：{kind:"scroll", dy}（在想看更多内容时自己滚画面）
 
-    凭证安全：用户打的字（如密码）只进 Chromium，不进模型上下文、不落库。
+    助手正在操作时这里会 **409 + 人话原因**（"先点「接管」"），前端必须显示出来；
+    用户的动作会记进会话事件流（人话），助手交还后能看到。
+    凭证安全：用户打的字只进 Chromium，不进模型上下文、不落库（只记字符数）。
     """
-    from ..browser_session import _SESSIONS
+    from .. import browser_control as bc
+    from ..browser_session import get_existing
 
-    sess = _SESSIONS.get(run_id)
-    if sess is None:
+    c = await _browser_ctl_for_run(run_id)
+    if c is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "这个执行没有在跑的浏览器会话")
-
-    kind = str(payload.get("kind") or "")
+    sess = get_existing(c.key)
+    if sess is None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "浏览器已过期（30 分钟没有操作）· 发消息让它重新打开"
+        )
     try:
-        if kind == "click":
-            x, y = float(payload.get("x", 0)), float(payload.get("y", 0))
-            return {"ok": await sess.user_click(x, y)}
-        if kind == "text":
-            text = str(payload.get("text") or "")
-            return {"ok": await sess.user_type(text)}
-        if kind == "scroll":
-            # 用户在看画面时自己滚（不用等助手动手）—— 以前只能干看着
-            dy = int(float(payload.get("dy", 0)))
-            if dy == 0:
-                return {"ok": "没有滚动量"}
-            return {"ok": await sess.scroll(dy)}
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"未知输入类型: {kind}")
-    except HTTPException:
-        raise
+        ok = await bc.apply_user_input(c, sess, payload)
+    except bc.UserInputDenied as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from None
     except Exception as exc:  # pragma: no cover
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, str(exc))
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, str(exc)) from None
+    return {"ok": ok, "state": bc.public_state(c.session_id)}
 
 
 # --------------------------------------------------------------------------- #

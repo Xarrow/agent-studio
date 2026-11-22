@@ -1093,6 +1093,15 @@ class RunService:
                     interactive=(run.origin != "schedule"),
                 )
                 run_input = _with_work_dir_hint(run_input, work_dir)
+                # 新一轮 = 用户让它接着干：把该会话的浏览器控制权收回给助手。
+                # （被派出来的子执行不算 —— 它们不是"用户在跟这个浏览器对话"）
+                if run.session_id and not getattr(run, "isolated", False):
+                    try:
+                        from ..browser_control import on_run_start as _browser_run_start
+
+                        await _browser_run_start(run_id, str(run.session_id))
+                    except Exception:  # pragma: no cover
+                        logger.debug("浏览器控制权交接失败", exc_info=True)
                 # 组装上下文：短期记忆（会话历史）+ 长期记忆（召回注入）
                 # 注意：这里只产出**平台中立**的 TurnContext，不含任何框架对象
                 policy = await get_policy(session, run.agent_id)
@@ -1492,13 +1501,14 @@ class RunService:
             await self._finalize(run_id, collector, compiled, status, error, clear_output=bool(denied))
             if status != "waiting_hitl":
                 await self._post_run(run_id, definition, context, api_key)
-                # 浏览器会话清理（run 真正结束才清；waiting_hitl 要保住画面和登录态）
+                # 浏览器**不再随 run 收尾**：它跟着会话保活 30 分钟，
+                # 这一轮结束后用户还能继续点/滚/输入（见 browser_control）。
                 try:
-                    from ..browser_session import close_all as _close_browser
+                    from ..browser_control import on_run_end as _browser_run_end
 
-                    await _close_browser(run_id)
+                    await _browser_run_end(run_id)
                 except Exception:  # pragma: no cover
-                    logger.debug("浏览器会话清理失败", exc_info=True)
+                    logger.debug("浏览器控制权收尾失败", exc_info=True)
             self.bus.close(run_id)
 
     # ------------------------------------------------------------------ #
@@ -1777,6 +1787,13 @@ class RunService:
                 # 能走到续跑这一步，说明刚才就有人在点「允许」
                 interactive=True,
             )
+            if _resume_session_id:
+                try:
+                    from ..browser_control import on_run_start as _browser_run_start
+
+                    await _browser_run_start(run_id, str(_resume_session_id))
+                except Exception:  # pragma: no cover
+                    logger.debug("浏览器控制权交接失败", exc_info=True)
             compiled = await runtime.compile(
                 definition, api_key=api_key, tools=tools,
                 agent_id=run.agent_id,
@@ -1976,13 +1993,13 @@ class RunService:
             # （暂停时跳过了 append_turn，这里补上）。context 传 None ——
             # 记忆候选在暂停前的首轮已统计过，不重复记。
             await self._post_run(run_id, definition, None, api_key)
-            # 浏览器会话清理（run 真正结束）：杀 Chromium、删 user-data-dir。
+            # 浏览器跟着会话保活（run 结束不关）；控制权落回用户。
             try:
-                from ..browser_session import close_all as _close_browser
+                from ..browser_control import on_run_end as _browser_run_end
 
-                await _close_browser(run_id)
+                await _browser_run_end(run_id)
             except Exception:  # pragma: no cover
-                logger.debug("浏览器会话清理失败", exc_info=True)
+                logger.debug("浏览器控制权收尾失败", exc_info=True)
             self.bus.close(run_id)
 
     # ------------------------------------------------------------------ #

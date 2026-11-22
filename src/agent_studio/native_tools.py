@@ -1219,11 +1219,12 @@ async def _browser(
     dy: int = 600,
     wait_s: float = 3.0,
 ) -> str:
-    """操作一个真实浏览器（每个 run 独享、有状态的 Chromium 实例）。
+    """操作一个真实浏览器（**跟着会话走**：同一会话多轮复用，登录态/当前页都在）。
 
-    画面会实时显示在对话页上；需要登录时用 wait_login 让用户自己输入 ——
-    凭证不进模型上下文。
+    画面会实时显示在对话页上；需要登录时用 wait_login —— 它是真闸：状态转
+    「等你操作」，这一轮停在那里等你把控制权交还，凭证不进模型上下文。
     """
+    from . import browser_control as bc
     from .browser_session import get_session
     from .runner.ctx import current_run_ctx
 
@@ -1234,13 +1235,16 @@ async def _browser(
     run_id = str(ctx.get("run_id") or "adhoc")
     if not run_id or run_id == "adhoc":
         return "✗ 浏览器工具只能在助手执行中使用（缺少 run 上下文）"
+    session_id = str(ctx.get("session_id") or "")
 
-    # 帧回调：直接发到事件总线（SSE → 前端 <img>；不落库）
+    # 帧回调：直接发到**会话级**直播通道（SSE → 前端 <img>；不落库）
     from .runner.service import bus
+
+    chan = f"sess:{session_id}" if session_id else run_id
 
     def on_frame(rid: str, data: str, page_url: str, title: str) -> None:
         bus.publish(
-            rid,
+            chan,
             {
                 "seq": -1,  # 不占事件序（帧不落库，去重逻辑按 seq<=last_seq 丢掉回放段即可）
                 "type": "browser_frame",
@@ -1249,14 +1253,21 @@ async def _browser(
             },
         )
 
-    sess = get_session(run_id, on_frame, proxy=os.environ.get("STUDIO_BROWSER_PROXY") or None)
+    sess = get_session(
+        run_id,
+        on_frame,
+        proxy=os.environ.get("STUDIO_BROWSER_PROXY") or None,
+        session_id=session_id,
+    )
+    ctl = bc.ensure(bc.key_of(session_id, run_id), session_id, run_id)
+    bc.touch(ctl)
 
     # 动作字幕：前端把它显示成浏览器窗口底部的一行"它正在做什么"。
     # 为什么由后端发而不是解析工具入参：动作人话化要在一个地方定（打开 host / 点击 搜索框），
     # 前端不必认识 action 枚举，也不必猜 selector 是啥。
     def _emit(summary: str, target: str = "") -> None:
         bus.publish(
-            run_id,
+            chan,
             {
                 "seq": -2,  # 与帧一样不占事件序：纯直播，刷新后由工具调用记录还原
                 "type": "browser_action",
@@ -1309,55 +1320,71 @@ async def _browser(
         v = (v or "").replace("\n", " ").strip()
         return v if len(v) <= n else v[: n - 1] + "…"
 
-    # 用户暂停/接管时，下一步动作先等着（已发出的动作不打断，避免打坏页面状态）
-    if action not in ("read", "wait"):
-        from .browser_session import wait_if_paused
-
-        _blocked = await wait_if_paused(run_id)
+    # ── 控制权闸门 ────────────────────────────────────────────────
+    # 会话级单一状态源：只有持有者能发输入事件。用户按了接管就在这里停住
+    # （已发出的那一个原子动作会做完，不会点一半），等交还或以人话停手。
+    # 新一轮第一次用浏览器时自动收回控制权（用户发消息=让它接着干）。
+    if action != "wait_login":
+        _blocked = await bc.gate_agent(ctl, run_id, action)
         if _blocked:
+            bc.sync_page(ctl, sess)
             return _blocked
 
-    if action == "navigate":
-        _emit(f"打开 {_host(url)}")
-        _res = await sess.navigate(url or "about:blank", wait_s)
-        await _record(f"打开 {_host(url)}", _res)
-        return _res
-    if action == "click":
-        if not selector:
-            return "✗ click 需要 selector"
-        _emit(f"点击 {_short(selector)}", selector)
-        _res = await sess.click(selector)
-        await _record(f"点击 {_short(selector)}", _res)
-        return _res
-    if action == "type":
-        if not selector:
-            return "✗ type 需要 selector"
-        _emit(f"输入「{_short(value, 16)}」", selector)
-        _res = await sess.type_text(selector, value)
-        # 输入的内容不进留档（可能是密码/手机号）—— 只记"输入了 16 个字符"
-        await _record(f"输入了 {len(value or '')} 个字符", _res)
-        return _res
-    if action == "read":
-        _emit("读页面内容")
-        return await sess.read(selector or "body")  # 读不产生画面变化，不留档
-    if action == "scroll":
-        _emit("往下滚" if dy >= 0 else "往上滚")
-        _res = await sess.scroll(dy)
-        await _record("往下滚" if dy >= 0 else "往上滚", _res)
-        return _res
-    if action == "wait":
-        _emit(f"等页面 {wait_s:g}s")
-        return await sess.wait(wait_s)
+    async def _with_brief(text: str) -> str:
+        """把"用户在你停手期间动过什么"挂在这次动作的结果前面（只给一次）。"""
+        brief = await bc.consume_brief(ctl, sess)
+        return f"{brief}\n\n{text}" if brief else text
+
     if action == "wait_login":
-        # 暂停执行，等用户在页面的浏览器画面里亲手操作（输入账号密码/验证码）。
-        # 用户点「已登录，继续」后恢复 —— 凭证全程不经模型。
+        _blocked = await bc.gate_agent(ctl, run_id, action)
+        if _blocked:
+            return _blocked
         _emit("等你登录", "login")
-        await sess.navigate(url, wait_s) if url else None
-        return (
-            "PAUSE_FOR_USER_LOGIN：已在页面上显示浏览器画面，等用户亲自完成登录。"
-            "恢复后先用 browser(read) 确认登录态再继续任务。"
-        )
-    return f"✗ 未知动作: {action}"
+        if url:
+            await sess.navigate(url, wait_s)
+        bc.sync_page(ctl, sess)
+        _msg = "请在右侧浏览器里完成登录（账号密码只输入到页面里，不经过模型）。弄好后点「交还给 Agent」。"
+        _res = await bc.wait_login(ctl, run_id, _msg, sess)
+        bc.touch(ctl)
+        return _res
+
+    await bc.begin_action(ctl)
+    try:
+        if action == "navigate":
+            _emit(f"打开 {_host(url)}")
+            _res = await sess.navigate(url or "about:blank", wait_s)
+            await _record(f"打开 {_host(url)}", _res)
+        elif action == "click":
+            if not selector:
+                return "✗ click 需要 selector"
+            _emit(f"点击 {_short(selector)}", selector)
+            _res = await sess.click(selector)
+            await _record(f"点击 {_short(selector)}", _res)
+        elif action == "type":
+            if not selector:
+                return "✗ type 需要 selector"
+            _emit(f"输入「{_short(value, 16)}」", selector)
+            _res = await sess.type_text(selector, value)
+            # 输入的内容不进留档（可能是密码/手机号）—— 只记"输入了 16 个字符"
+            await _record(f"输入了 {len(value or '')} 个字符", _res)
+        elif action == "read":
+            _emit("读页面内容")
+            _res = await sess.read(selector or "body")  # 读不产生画面变化，不留档
+        elif action == "scroll":
+            _emit("往下滚" if dy >= 0 else "往上滚")
+            _res = await sess.scroll(dy)
+            await _record("往下滚" if dy >= 0 else "往上滚", _res)
+        elif action == "wait":
+            _emit(f"等页面 {wait_s:g}s")
+            _res = await sess.wait(wait_s)
+        else:
+            return f"✗ 未知动作: {action}"
+    finally:
+        await bc.end_action(ctl)
+
+    bc.sync_page(ctl, sess)
+    bc.touch(ctl)
+    return await _with_brief(_res)
 
 
 # --------------------------------------------------------------------------- #

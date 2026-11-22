@@ -1018,6 +1018,119 @@ async def browser_steps(session_id: str, run_id: str, session: AsyncSession = De
     return {"session_id": session_id, "run_id": run_id, "steps": steps, "count": len(steps)}
 
 
+# --------------------------------------------------------------------------- #
+# 浏览器控制权（会话级单一状态源）
+#
+# 浏览器跟着**聊天会话**走：run 结束不关，30 分钟没交互才回收。控制权同一时刻
+# 只有一个持有者（agent / user），前端只渲染这里给出的文案，不自己判断。
+# --------------------------------------------------------------------------- #
+@router.get("/{session_id}/browser-ctl/state")
+async def browser_control_state(
+    session_id: str, session: AsyncSession = Depends(get_session)
+) -> dict:
+    """当前浏览器状态 + 徽章/按钮/底部文案（全在后端定，三处永远一致）。"""
+    if await session.get(ChatSession, session_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"会话不存在: {session_id}")
+    from .. import browser_control as bc
+
+    return bc.public_state(session_id)
+
+
+@router.post("/{session_id}/browser-ctl/action")
+async def browser_control_act(
+    session_id: str, payload: dict[str, Any] | None = None, session: AsyncSession = Depends(get_session)
+) -> dict:
+    """接管 / 交还 / 暂停。返回改完之后的状态（前端直接渲染，不用自己猜）。"""
+    if await session.get(ChatSession, session_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"会话不存在: {session_id}")
+    from .. import browser_control as bc
+    from ..browser_session import get_existing
+
+    c = bc.get_for_session(session_id)
+    action = str((payload or {}).get("action") or "")
+    if c is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "这个会话现在没有开着的浏览器")
+    if action == "take":
+        ok, why = await bc.take(c)
+        if not ok:
+            raise HTTPException(status.HTTP_409_CONFLICT, why)
+    elif action == "release":
+        if c.status == bc.CLOSED:
+            raise HTTPException(status.HTTP_409_CONFLICT, "浏览器已过期 · 发消息让它重新打开")
+        await bc.hand_back(c, get_existing(c.key))
+    elif action == "pause":
+        await bc.pause(c)
+    else:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"未知动作: {action}")
+    return bc.public_state(session_id)
+
+
+@router.post("/{session_id}/browser-ctl/input")
+async def browser_control_input(
+    session_id: str, payload: dict[str, Any], session: AsyncSession = Depends(get_session)
+) -> dict:
+    """用户在画面上的点击/输入/滚动 —— **必须持有控制权**（助手在操作就 409 + 人话）。"""
+    if await session.get(ChatSession, session_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"会话不存在: {session_id}")
+    from .. import browser_control as bc
+    from ..browser_session import get_existing
+
+    c = bc.get_for_session(session_id)
+    if c is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "这个会话现在没有开着的浏览器")
+    sess = get_existing(c.key)
+    if sess is None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "浏览器已过期（30 分钟没有操作）· 发消息让它重新打开"
+        )
+    try:
+        ok = await bc.apply_user_input(c, sess, payload)
+    except bc.UserInputDenied as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from None
+    except Exception as exc:  # pragma: no cover
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, str(exc)) from None
+    return {"ok": ok, "state": bc.public_state(session_id)}
+
+
+@router.get("/{session_id}/browser-ctl/stream")
+async def browser_control_stream(session_id: str) -> StreamingResponse:
+    """会话级的浏览器直播：帧 + 动作字幕 + 控制权状态。
+
+    为什么单独一条流：帧原来只走 run 的事件流，run 一结束就没人在听 ——
+    画面还在、点击却静默失效。现在浏览器属于会话，这条流也属于会话：
+    刷新/切走再回来会**先现抓一帧**（不是归档图），再接着收增量。
+    """
+    from .. import browser_control as bc
+    from ..runner.service import bus
+
+    async def gen():
+        queue = bus.subscribe(f"sess:{session_id}")
+        try:
+            c = bc.get_for_session(session_id)
+            yield f"data: {json.dumps({'seq': -3, 'type': 'browser_state', 'ts': 0, 'payload': bc.public_state(session_id)}, ensure_ascii=False)}\n\n"
+            if c is not None and c.alive and c.status != bc.CLOSED:
+                shot = await bc.fresh_frame(c)
+                if shot:
+                    yield f"data: {json.dumps({'seq': -1, 'type': 'browser_frame', 'ts': 0, 'payload': shot}, ensure_ascii=False)}\n\n"
+            while True:
+                try:
+                    item = await asyncio.wait_for(queue.get(), timeout=30)
+                except TimeoutError:
+                    yield ": keep-alive\n\n"
+                    continue
+                if item is None:
+                    break
+                yield f"data: {json.dumps(item, ensure_ascii=False)}\n\n"
+        finally:
+            bus.unsubscribe(f"sess:{session_id}", queue)
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @router.patch("/{session_id}", response_model=SessionRead)
 async def update_session(
     session_id: str, payload: SessionUpdate, session: AsyncSession = Depends(get_session)
@@ -1085,6 +1198,14 @@ async def delete_session(
     )
     await session.delete(row)
     await session.commit()
+    # 浏览器跟着会话走：会话删了，Chromium 和它的 profile 也要一起收 ——
+    # 不收就成了没人认领的进程（用户看不到入口，它还在后台吃内存）。
+    try:
+        from .. import browser_control as _bc
+
+        await _bc.forget(session_id)
+    except Exception:  # pragma: no cover —— 收浏览器失败不该挡住删会话
+        pass
     removed = _remove_session_dir(session_id)
     # 发布出去的产物也要收走：会话没了、链接还活着，等于留了一份没人认领的公开副本
     published = _remove_published(session_id)

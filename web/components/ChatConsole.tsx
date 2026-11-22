@@ -50,6 +50,7 @@ import { FileOpenerProvider, FileRowButton } from "@/components/FileDialog";
 import { copyText } from "@/lib/clipboard";
 import { middleEllipsis, fileTypeKey, shortFilePath } from "@/lib/files";
 import { BrowserStage, type BrowserAction } from "@/components/BrowserStage";
+import type { BrowserControlState } from "@/lib/api";
 import { SideDock, type DockPanel } from "@/components/SideDock";
 import type { BrowserStep } from "@/lib/types";
 import { humanizeAssistantText } from "@/lib/messages";
@@ -424,8 +425,13 @@ export function ChatConsole({
     setBrowserActions((prev) => [...prev, ...batch].slice(-60));
   }, []);
   const [browserOpen, setBrowserOpen] = useState(false);
-  /** 用户暂停了浏览器的助手动作（协作式；换一轮就复位） */
-  const [browserPaused, setBrowserPaused] = useState(false);
+  /**
+   * 浏览器控制权状态 —— **后端是唯一真相**。
+   * 徽章/按钮/底部文案全从它来，前端不自己判（"已暂停但芯片写运行中"就是这么来的）。
+   */
+  const [browserCtl, setBrowserCtl] = useState<BrowserControlState | null>(null);
+  /** 被拒绝的人话原因（409）—— 必须显示在画面上，不许静默吞掉 */
+  const [browserNotice, setBrowserNotice] = useState("");
   /** 会话加载的请求序号（防旧回包覆盖新会话） */
   const loadSeqRef = useRef(0);
   /** 还没加载的更早轮次的上界（0 = 已到顶）；配合 api.sessionTurns 往上翻 */
@@ -519,8 +525,7 @@ export function ChatConsole({
   const lastBrowserRun = useRef<string>("");
   /* 「需要你上手」只在最后一个动作是 wait_login 时为真 —— 不用后端再加标记，
      动作流本身就是真相来源（登录完成后助手会继续 navigate/click，状态自然解除）。 */
-  const browserWaiting =
-    browserActions.length > 0 && browserActions[browserActions.length - 1].action === "wait_login";
+  const browserWaiting = browserCtl?.status === "waiting_user";
   /** 本次发送的内容（作为执行过程的第一段「输入」） */
   const [liveInput, setLiveInput] = useState("");
   /** 正在跑的这一轮的 run id —— 停止时要拿它去 abort 后端 */
@@ -1659,15 +1664,102 @@ export function ChatConsole({
 
   const sendBrowser = useCallback(
     async (body: Record<string, unknown>) => {
-      if (!liveRunId) return;
-      await fetch(`/api/runs/${liveRunId}/browser-input`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      }).catch(() => {});
+      if (!sessionId) return;
+      try {
+        const r = await api.browserInput(sessionId, body);
+        if (r?.state) setBrowserCtl(r.state);
+        setBrowserNotice("");
+      } catch (e) {
+        // 被拒（助手正在操作 / 已过期）→ 把后端那句人话摆出来，不许静默吞掉
+        setBrowserNotice(e instanceof Error ? e.message : String(e));
+      }
     },
-    [liveRunId],
+    [sessionId],
   );
+
+  /** 接管 / 交还 —— 后端改完状态整份回给我们，直接渲染（前端不判断） */
+  const browserControl = useCallback(
+    async (action: "take" | "release") => {
+      if (!sessionId) return;
+      try {
+        const st = await api.browserControl(sessionId, action);
+        setBrowserCtl(st);
+        setBrowserNotice("");
+      } catch (e) {
+        setBrowserNotice(e instanceof Error ? e.message : String(e));
+      }
+    },
+    [sessionId],
+  );
+
+  /**
+   * 会话级浏览器直播 —— **run 结束也不断**。
+   *
+   * 为什么单独一条流：帧原来只走 run 的事件流，run 一结束就没人听了，
+   * 于是"画面还在、点击静默失效"。现在浏览器归会话，这条流也归会话：
+   * 刷新/切走再回来，服务端会先现抓一帧（不是归档图），再接着推增量。
+   */
+  useEffect(() => {
+    clearFrame();
+    setBrowserActions([]);
+    setBrowserSteps([]);
+    setBrowserCtl(null);
+    setBrowserNotice("");
+    if (!sessionId) return;
+    const es = new EventSource(api.browserStreamUrl(sessionId));
+    es.onmessage = (e: MessageEvent) => {
+      try {
+        const ev = JSON.parse(e.data) as RunEvent;
+        const p = ev.payload as Record<string, unknown>;
+        // 控制权状态：徽章 / 按钮 / 底部文案全由它决定
+        if (ev.type === "browser_state") {
+          setBrowserCtl(p as unknown as BrowserControlState);
+          return;
+        }
+        // 用户自己的动作（人话）—— 也进动作字幕，让他看到"系统记住了我做了什么"
+        if (ev.type === "browser_note") {
+          const t = typeof p.text === "string" ? p.text : "";
+          if (t) {
+            pendingActions.current.push({ action: "user", summary: t });
+            if (!actionTimer.current) actionTimer.current = window.setTimeout(flushActions, 120);
+          }
+          return;
+        }
+        if (ev.type === "browser_action") {
+          const summary = typeof p.summary === "string" ? p.summary : "";
+          if (summary) {
+            pendingActions.current.push({
+              action: typeof p.action === "string" ? p.action : "",
+              summary,
+              target: typeof p.target === "string" ? p.target : "",
+              url: typeof p.url === "string" ? p.url : "",
+            });
+            if (!actionTimer.current) actionTimer.current = window.setTimeout(flushActions, 120);
+          }
+        }
+        if (ev.type === "browser_frame" && typeof p.frame === "string") {
+          const u = typeof p.url === "string" ? p.url : "";
+          // 收尾时会吐 about:blank 的白屏帧，丢掉它；url 偶尔为空（后端还没读到
+          // document.URL）—— 那种时候沿用上一次的地址，别把地址栏清空。
+          if (!u.startsWith("about:")) {
+            // 位图走广播通道，直接写进 <img>；state 只在地址/标题变化时更新，
+            // 否则每秒几十帧会把整个对话树重渲染一遍 —— 那就是卡顿的来源。
+            const t = (typeof p.title === "string" && p.title) || "";
+            const nu = u || liveMeta.current.url || "";
+            const nt = t || liveMeta.current.title || "";
+            liveMeta.current = { url: nu, title: nt };
+            pushFrame({ data: p.frame as string, url: nu, title: nt });
+            setBrowserFrame((prev) =>
+              prev && prev.url === nu && prev.title === nt ? prev : { data: "", url: nu, title: nt }
+            );
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+    return () => es.close();
+  }, [sessionId, flushActions]);
 
   const attachStream = (runId: string, sentText: string, reattachments = 0) => {
     const es = new EventSource(api.streamUrl(runId));
@@ -1708,35 +1800,8 @@ export function ChatConsole({
               : { runId, payload: p as Record<string, unknown> },
           );
         }
-        if (ev.type === "browser_action") {
-          const summary = typeof p.summary === "string" ? p.summary : "";
-          if (summary) {
-            pendingActions.current.push({
-              action: typeof p.action === "string" ? p.action : "",
-              summary,
-              target: typeof p.target === "string" ? p.target : "",
-              url: typeof p.url === "string" ? p.url : "",
-            });
-            if (!actionTimer.current) actionTimer.current = window.setTimeout(flushActions, 120);
-          }
-        }
-        if (ev.type === "browser_frame" && typeof p.frame === "string") {
-          const u = typeof p.url === "string" ? p.url : "";
-          // 收尾时会吐 about:blank 的白屏帧，丢掉它；url 偶尔为空（后端还没读到
-          // document.URL）—— 那种时候沿用上一次的地址，别把地址栏清空。
-          if (!u.startsWith("about:")) {
-            // 位图走广播通道，直接写进 <img>；state 只在地址/标题变化时更新，
-            // 否则每秒几十帧会把整个对话树重渲染一遍 —— 那就是卡顿的来源。
-            const t = (typeof p.title === "string" && p.title) || "";
-            const nu = u || liveMeta.current.url || "";
-            const nt = t || liveMeta.current.title || "";
-            liveMeta.current = { url: nu, title: nt };
-            pushFrame({ data: p.frame as string, url: nu, title: nt });
-            setBrowserFrame((prev) =>
-              prev && prev.url === nu && prev.title === nt ? prev : { data: "", url: nu, title: nt }
-            );
-          }
-        }
+        // 浏览器帧/动作/控制权都走会话级那条流（见上面的 useEffect）——
+        // run 流只管对话本身，两边各收一份会双份字幕。
       } catch {
         /* ignore */
       }
@@ -1918,7 +1983,7 @@ export function ChatConsole({
     setRunStart(Date.now());
     runStartRef.current = Date.now();
     resetLiveEvents();
-    setBrowserPaused(false);
+    setBrowserNotice("");
     setLive({ role: "user", text: composed });
     // 直接进入助手流式态（user 消息由 live 显示，完成后由 history 接管）
     // 重试（reuse）：这条用户消息已经在 history 里了，再 push 一次就变成
@@ -3542,15 +3607,17 @@ export function ChatConsole({
                 })}
 
                 {/* 生成中：实时分色显示执行过程（思考 / 工具 / 结果 / 回答） */}
-                {/* 浏览器卡只在**这一轮还在跑**的时候浮在流里；跑完它就收进那一轮的
-                    执行过程（点开过程能看到每一步和当时的画面），不再单独悬在回复后面。 */}
-                {busy && (browserFrame || browserActions.length > 0 || browserSteps.length > 0) && (
+                {/* 浏览器卡：**这一轮跑完但浏览器还开着**时也要留着 ——
+                    以前只在 busy 时出现，一结束入口就消失，用户以为画面也没了。 */}
+                {(busy || !!browserCtl?.alive) &&
+                  (browserFrame || browserActions.length > 0 || browserSteps.length > 0) && (
                   <BrowserStage
                     variant="inline"
                     frame={browserFrame}
                     actions={browserActions}
-                    busy={busy}
-                    waiting={browserWaiting}
+                    control={browserCtl}
+                    notice={browserNotice}
+                    onControl={(a) => void browserControl(a)}
                     onOpen={() => {
                       // 宽屏：右栏就是它的位置（对话不被遮）；窄屏没有右栏，仍用浮层
                       if (typeof window !== "undefined" && window.innerWidth >= 1280) {
@@ -3698,6 +3765,65 @@ export function ChatConsole({
                     agentId ? `/agents/detail?id=${agentId}&focus=permission` : undefined
                   }
                 />
+              </div>
+            )}
+
+            {/* wait_login 是**真闸**：助手停在原地等，这里必须给可点的下一步，
+                否则用户只看到"画面在等"却不知道要干嘛。文案来自后端状态。 */}
+            {browserWaiting && (
+              <div className="mx-auto mb-3 max-w-[760px]">
+                <div
+                  className="rounded-[var(--radius-lg)] px-3.5 py-3"
+                  style={{
+                    background: "color-mix(in srgb, var(--color-warn) 10%, var(--color-surface))",
+                  }}
+                >
+                  <div
+                    className="flex items-center gap-2 text-[13px] font-medium"
+                    style={{ color: "var(--color-text)" }}
+                  >
+                    <span
+                      aria-hidden
+                      className="h-1.5 w-1.5 rounded-full"
+                      style={{ background: "var(--color-warn)" }}
+                    />
+                    需要你在浏览器里操作
+                  </div>
+                  <p className="mt-1 text-[12.5px] leading-relaxed" style={{ color: "var(--color-text-2)" }}>
+                    {browserCtl?.reason ||
+                      browserCtl?.hint ||
+                      "请在浏览器画面里完成操作，好了点「交还给 Agent」。"}
+                  </p>
+                  <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      data-tap
+                      onClick={() => void browserControl("release")}
+                      className="rounded-[8px] px-3 py-1.5 text-[12.5px] font-medium"
+                      style={{
+                        color: "var(--color-accent)",
+                        background: "color-mix(in srgb, var(--color-accent) 12%, transparent)",
+                      }}
+                    >
+                      交还给 Agent
+                    </button>
+                    <button
+                      type="button"
+                      data-tap
+                      onClick={() => {
+                        if (typeof window !== "undefined" && window.innerWidth >= 1280) {
+                          openDock("browser");
+                        } else {
+                          setBrowserOpen(true);
+                        }
+                      }}
+                      className="rounded-[8px] px-3 py-1.5 text-[12.5px]"
+                      style={{ color: "var(--color-text-2)", background: "var(--color-surface-3)" }}
+                    >
+                      打开浏览器画面
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -4542,13 +4668,9 @@ export function ChatConsole({
           frame={browserFrame}
           actions={browserActions}
           steps={browserSteps}
-          browserBusy={busy}
-          browserWaiting={browserWaiting}
-          browserPaused={browserPaused}
-          onBrowserPause={(p) => {
-            setBrowserPaused(p);
-            if (liveRunId) void api.pauseBrowser(liveRunId, p).catch(() => setBrowserPaused(!p));
-          }}
+          browserControl={browserCtl}
+          browserNotice={browserNotice}
+          onBrowserControl={(a) => void browserControl(a)}
           onBrowserOpenFull={() => setBrowserOpen(true)}
           onUserClick={async (x, y) => sendBrowser({ kind: "click", x, y })}
           onUserText={async (text) => sendBrowser({ kind: "text", text })}
@@ -4596,8 +4718,9 @@ export function ChatConsole({
               variant="panel"
               frame={browserFrame}
               actions={browserActions}
-              busy={busy}
-              waiting={browserWaiting}
+              control={browserCtl}
+              notice={browserNotice}
+              onControl={(a) => void browserControl(a)}
               onUserClick={async (x, y) => sendBrowser({ kind: "click", x, y })}
               onUserText={async (text) => sendBrowser({ kind: "text", text })}
               onUserScroll={async (dy) => sendBrowser({ kind: "scroll", dy })}

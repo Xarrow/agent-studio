@@ -23,6 +23,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { BrowserStep } from "@/lib/types";
 import { withToken } from "@/lib/api";
+import type { BrowserControlState } from "@/lib/api";
 import { onFrame, latestFrame } from "@/lib/browser-frame";
 import { isImeEvent } from "@/lib/ime";
 
@@ -47,22 +48,33 @@ function prettyUrl(url: string, max = 46): string {
   return s.length > max ? s.slice(0, max - 1) + "…" : s;
 }
 
-/** 顶部 chrome 条：地址栏（点一下复制）+ 右侧状态。不要 macOS 那三个圆点 —— 这里不是窗口，是画面。 */
+/** 状态 → 颜色（**文字与动作都来自后端**，这里只管视觉） */
+const TONE_COLOR: Record<string, string> = {
+  live: "var(--color-accent)",
+  mine: "var(--color-ok)",
+  warn: "var(--color-warn)",
+  muted: "var(--color-muted)",
+};
+
+function toneColor(control?: BrowserControlState | null): string {
+  return TONE_COLOR[control?.tone ?? "muted"] || "var(--color-muted)";
+}
+
+/** 顶部 chrome 条：地址栏（点一下复制）+ 状态徽章。不要 macOS 那三个圆点 —— 这里不是窗口，是画面。 */
 function ChromeBar({
   url,
   title,
-  busy,
-  waiting,
+  control,
   onCopy,
   right,
 }: {
   url: string;
   title?: string;
-  busy?: boolean;
-  waiting?: boolean;
+  control?: BrowserControlState | null;
   onCopy?: () => void;
   right?: React.ReactNode;
 }) {
+  const waiting = control?.status === "waiting_user";
   return (
     <div
       className="flex items-center gap-2 px-2.5 py-1.5 border-b"
@@ -78,20 +90,93 @@ function ChromeBar({
         {waiting ? "需要你操作" : prettyUrl(url)}
         {title ? <span className="ml-1 opacity-60">· {title.slice(0, 24)}</span> : null}
       </button>
-      <span className="shrink-0">
-        {busy && !waiting ? (
-          <span className="inline-flex items-center gap-1 text-[10.5px]" style={{ color: "var(--color-accent)" }}>
-            <span className="live-dot">●</span> 运行中
-          </span>
-        ) : null}
-      </span>
+      {/* 状态芯片：文字来自后端（和徽章、按钮永远同一句话）—— 别再自己判 busy */}
+      {control && control.badge ? (
+        <span
+          className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10.5px]"
+          style={{ color: toneColor(control), background: `color-mix(in srgb, ${toneColor(control)} 12%, transparent)` }}
+        >
+          <span aria-hidden className="h-[6px] w-[6px] rounded-full" style={{ background: toneColor(control) }} />
+          {control.badge}
+        </span>
+      ) : null}
       {right}
     </div>
   );
 }
 
+/**
+ * 控制权工具栏 —— **所有尺寸都常驻**（桌面右栏、桌面窗口、手机贴底抽屉都是它）。
+ *
+ * 一个徽章 + 一个大按钮：agent 态「接管」，user 态「交还给 Agent」。
+ * 文案全部来自后端 ``control``（单一状态源），前端不判断 ——
+ * 上一版"已暂停但芯片写运行中"就是两处各判各的。
+ */
+function ControlBar({
+  control,
+  notice,
+  onControl,
+}: {
+  control?: BrowserControlState | null;
+  notice?: string;
+  onControl?: (action: "take" | "release") => void;
+}) {
+  const color = toneColor(control);
+  return (
+    <>
+      {control && control.status !== "none" ? (
+        <div
+          className="flex items-center gap-2 px-2.5 py-1.5"
+          style={{ background: "var(--color-surface-2)" }}
+        >
+          <span
+            className="inline-flex shrink-0 items-center gap-1 rounded-[6px] px-1.5 py-0.5 text-[11px]"
+            style={{ color, background: `color-mix(in srgb, ${color} 12%, transparent)` }}
+            title={control.hint}
+          >
+            <span aria-hidden className="h-[6px] w-[6px] rounded-full" style={{ background: color }} />
+            {control.badge}
+          </span>
+          <span className="min-w-0 flex-1 truncate text-[11px]" style={{ color: "var(--color-muted)" }}>
+            {control.hint}
+          </span>
+          {control.button ? (
+            <button
+              type="button"
+              data-tap
+              onClick={() => onControl?.(control.button_action === "take" ? "take" : "release")}
+              className="shrink-0 rounded-[8px] px-3.5 py-2 text-[13px] font-medium"
+              style={{
+                color: control.button_action === "take" ? "var(--color-accent)" : "var(--color-text)",
+                background:
+                  control.button_action === "take"
+                    ? "color-mix(in srgb, var(--color-accent) 12%, transparent)"
+                    : "var(--color-surface-3)",
+              }}
+              title={control.button_action === "take" ? "它做完当前这一步就停，画面归你" : "把控制权交回给助手（它会看到你动过什么）"}
+            >
+              {control.button}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {notice ? (
+        <div
+          className="px-2.5 py-1.5 text-[11.5px]"
+          style={{
+            color: "var(--color-err)",
+            background: "color-mix(in srgb, var(--color-err) 10%, var(--color-surface))",
+          }}
+        >
+          {notice}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 /** 动作字幕：当前动作（亮）+ 之前两条（灰）。一眼看出"它在干什么"。 */
-function ActionLine({ actions }: { actions: BrowserAction[] }) {
+function ActionLine({ actions, control }: { actions: BrowserAction[]; control?: BrowserControlState | null }) {
   const last = actions[actions.length - 1];
   const history = actions.slice(-4, -1).reverse();
   return (
@@ -102,7 +187,9 @@ function ActionLine({ actions }: { actions: BrowserAction[] }) {
           className="inline-block h-[6px] w-[6px] shrink-0 rounded-full"
           style={{ background: "var(--color-accent)" }}
         />
-        <span className="truncate">{last ? last.summary : "启动中…"}</span>
+        <span className="truncate">
+          {last ? last.summary : control?.can_click ? "你可以直接操作画面" : "启动中…"}
+        </span>
       </div>
       {history.length > 0 && (
         <div className="mt-0.5 truncate text-[10.5px]" style={{ color: "var(--color-muted)" }}>
@@ -117,8 +204,9 @@ export function BrowserStage({
   variant,
   frame,
   actions,
-  busy,
-  waiting,
+  control,
+  notice,
+  onControl,
   onUserClick,
   onUserText,
   onUserScroll,
@@ -126,16 +214,16 @@ export function BrowserStage({
   onClose,
   steps,
   onLoadSteps,
-  paused,
-  onPauseChange,
 }: {
   /** inline = 消息流里的缩略条；panel = 完整窗口 */
   variant: "inline" | "panel";
   frame: BrowserFrameData | null;
   actions: BrowserAction[];
-  busy?: boolean;
-  /** 等用户登录 / 点确认 */
-  waiting?: boolean;
+  /** 控制权状态（后端给的唯一真相：徽章/按钮/底部文案都在里面） */
+  control?: BrowserControlState | null;
+  /** 被拒绝的原因（后端 409 的人话）—— 必须显示出来，不许静默吞掉 */
+  notice?: string;
+  onControl?: (action: "take" | "release") => void;
   onUserClick?: (x: number, y: number) => void | Promise<void>;
   onUserText?: (text: string) => void | Promise<void>;
   onUserScroll?: (dy: number) => void | Promise<void>;
@@ -145,10 +233,9 @@ export function BrowserStage({
   steps?: BrowserStep[];
   /** 打开面板时拉一次过程 */
   onLoadSteps?: () => void;
-  /** 用户暂停了助手（协作式：当前动作做完就停，下一步等着） */
-  paused?: boolean;
-  onPauseChange?: (paused: boolean) => void;
 }) {
+  const busy = control?.status === "agent";
+  const waiting = control?.status === "waiting_user";
   const imgRef = useRef<HTMLImageElement>(null);
   const [hasFrame, setHasFrame] = useState(false);
   const [thumb, setThumb] = useState("");
@@ -290,24 +377,18 @@ export function BrowserStage({
               <path d="M3 9h18M9 3c-2 3-2 15 0 18M15 3c2 3 2 15 0 18" />
             </svg>
             <span className="truncate text-[12px]" style={{ color: "var(--color-text)" }}>
-              {waiting ? "需要你在画面里操作" : hostOf(frame?.url || lastStep?.url || "") || "浏览器"}
+              {hostOf(frame?.url || lastStep?.url || "") || "浏览器"}
             </span>
             <span
               className="shrink-0 rounded px-1.5 py-0.5 text-[10.5px]"
               style={{
-                color: waiting
-                  ? "var(--color-warn)"
-                  : busy
-                    ? "var(--color-accent)"
-                    : "var(--color-text-2)",
-                background: waiting
-                  ? "color-mix(in srgb, var(--color-warn) 14%, transparent)"
-                  : busy
-                    ? "color-mix(in srgb, var(--color-accent) 12%, transparent)"
-                    : "var(--color-surface-2)",
+                color: control?.badge ? toneColor(control) : "var(--color-text-3)",
+                background: control?.badge
+                  ? `color-mix(in srgb, ${toneColor(control)} 12%, transparent)`
+                  : "var(--color-surface-2)",
               }}
             >
-              {waiting ? "待你操作" : busy ? "运行中" : "已完成"}
+              {control?.badge || "浏览器"}
             </span>
             {count > 0 ? (
               <span className="shrink-0 text-[10.5px]" style={{ color: "var(--color-muted)" }}>
@@ -318,7 +399,9 @@ export function BrowserStage({
           <span className="mt-0.5 block truncate text-[11px]" style={{ color: "var(--color-muted)" }}>
             {waiting
               ? "需要你登录"
-              : last?.summary ?? lastStep?.summary ?? "准备中…"}
+              : (last?.summary ??
+                lastStep?.summary ??
+                (control?.can_click ? "你可以直接操作画面" : "准备中…"))}
           </span>
         </span>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0" style={{ color: "var(--color-muted)" }}>
@@ -334,29 +417,11 @@ export function BrowserStage({
       <ChromeBar
         url={shown ? shown.url : frame?.url ?? ""}
         title={shown ? shown.title : frame?.title}
-        busy={busy}
-        waiting={waiting}
+        control={control}
         onCopy={copyUrl}
         right={
           <span className="flex shrink-0 items-center gap-2">
             {copied ? <span className="text-[10.5px]" style={{ color: "var(--color-ok)" }}>已复制</span> : null}
-            {onPauseChange && (busy || paused) ? (
-              <button
-                type="button"
-                data-tap
-                onClick={() => onPauseChange(!paused)}
-                className="rounded px-1.5 py-0.5 text-[11px]"
-                style={{
-                  color: paused ? "var(--color-accent)" : "var(--color-muted)",
-                  background: paused
-                    ? "color-mix(in srgb, var(--color-accent) 12%, transparent)"
-                    : "transparent",
-                }}
-                title={paused ? "让助手继续跑下一步" : "助手做完当前动作就停，你可以自己点画面"}
-              >
-                {paused ? "继续" : "暂停"}
-              </button>
-            ) : null}
             {onClose ? (
               <button
                 type="button"
@@ -371,26 +436,8 @@ export function BrowserStage({
         }
       />
 
-      {paused ? (
-        <div
-          className="flex items-center gap-1.5 px-2.5 py-1 text-[11px]"
-          style={{
-            background: "color-mix(in srgb, var(--color-accent) 10%, var(--color-surface))",
-            color: "var(--color-accent)",
-          }}
-        >
-          <span className="live-dot">●</span> 已暂停 · 你可以直接点画面接管，点「继续」把控制权还给它
-        </div>
-      ) : null}
-
-      {waiting ? (
-        <div
-          className="flex items-center gap-1.5 px-2.5 py-1 text-[11px]"
-          style={{ background: "color-mix(in srgb, var(--color-warn) 10%, var(--color-surface))", color: "var(--color-warn)" }}
-        >
-          <span className="live-dot">●</span> 需要你登录，完成后自动继续
-        </div>
-      ) : null}
+      {/* 控制权：所有尺寸常驻（徽章 + 一个大按钮），文案全来自后端 */}
+      <ControlBar control={control} notice={notice} onControl={onControl} />
 
       <div
         className="relative min-h-0 flex-1 overflow-hidden"
@@ -450,7 +497,7 @@ export function BrowserStage({
           ) : null}
         </div>
       ) : (
-        <ActionLine actions={actions} />
+        <ActionLine actions={actions} control={control} />
       )}
 
       {/* 过程胶片：每步一张小图，点一下回看当时那一屏 —— 复盘"哪步走错了"靠它 */}
@@ -493,12 +540,20 @@ export function BrowserStage({
         </div>
       ) : null}
 
-      {onUserText && !busy ? (
-        <div className="px-2.5 py-2 text-[11px]" style={{ background: "var(--color-surface)", color: "var(--color-muted)" }}>
-          本轮已结束 · 仅可查看
+      {/* 底部一行 = **真实状态**（来自后端）：本轮结束后写"浏览器还开着，你可以继续操作"，
+          过期就写"已过期"。以前这里固定写"仅可查看"，可用户明明能看不能点、也没解释。 */}
+      {control && control.status !== "none" && control.footer ? (
+        <div
+          className="px-2.5 py-2 text-[11.5px]"
+          style={{
+            background: "var(--color-surface)",
+            color: control.status === "closed" ? "var(--color-muted)" : "var(--color-text-2)",
+          }}
+        >
+          {control.footer}
         </div>
       ) : null}
-      {onUserText && busy ? (
+      {onUserText && control?.can_click ? (
         <div className="flex gap-1.5 px-2.5 py-2" style={{ background: "var(--color-surface)" }}>
           <input
             className="input flex-1 text-[13px]"

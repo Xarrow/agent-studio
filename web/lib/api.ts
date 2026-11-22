@@ -302,6 +302,36 @@ export type BrowserDriverEngine = {
   note: string;
 };
 
+/**
+ * 浏览器控制权状态 —— **后端给的唯一真相**。
+ *
+ * 徽章文字、按钮文字、底部文案都在服务端定：前端只渲染，不自己判断。
+ * 之前"已暂停但顶部芯片显示运行中"就是因为两处各判各的。
+ */
+export type BrowserControlState = {
+  session_id: string;
+  /** none = 这个会话还没开过浏览器 */
+  status: "none" | "agent" | "user" | "waiting_user" | "paused" | "closed";
+  holder: "agent" | "user" | "none";
+  alive: boolean;
+  badge: string;
+  tone: "live" | "mine" | "warn" | "muted";
+  button: string;
+  button_action: "take" | "release" | "";
+  hint: string;
+  footer: string;
+  url: string;
+  title: string;
+  reason: string;
+  since: number;
+  expires_at: number;
+  round_ended: boolean;
+  /** 现在有没有一轮真的在跑（交还后没人跑时徽章是"助手待命"） */
+  running: boolean;
+  can_click: boolean;
+  run_id: string;
+};
+
 export const api = {
   /* ── 浏览器驱动（环境配置）：装哪个、用哪个 ────────────────────── */
   browserDrivers: () =>
@@ -1388,6 +1418,9 @@ export const api = {
 
   // SSE 事件流地址（单次执行）
   streamUrl: (runId: string) => withToken(`${apiBase()}/api/runs/stream/${runId}`),
+  /** 会话级浏览器直播（帧 + 动作字幕 + 控制权状态）—— run 结束也不断 */
+  browserStreamUrl: (sessionId: string) =>
+    withToken(`${apiBase()}/api/sessions/${sessionId}/browser-ctl/stream`),
 
   /* ----------------------------- 会话（多轮） ----------------------------- */
   sessions: async (agentId?: string, etag?: string | null) => {
@@ -1616,9 +1649,22 @@ export const api = {
     URL.revokeObjectURL(url);
     return { count: paths.length };
   },
-  /** 暂停 / 继续这个执行的浏览器动作（协作式：当前动作做完就停） */
+  /** 暂停 / 继续这个执行的浏览器动作（兼容端点：等价于接管 / 交还） */
   pauseBrowser: (runId: string, paused: boolean) =>
     post<{ paused: boolean; was_paused: boolean }>(`/api/runs/${runId}/browser/pause`, { paused }),
+
+  /** 浏览器控制权状态（徽章/按钮/底部文案全在后端定，前端只渲染） */
+  browserControlState: (sessionId: string) =>
+    get<BrowserControlState>(`/api/sessions/${sessionId}/browser-ctl/state`),
+  /** 接管 / 交还 / 暂停 —— 返回改完后的状态 */
+  browserControl: (sessionId: string, action: "take" | "release" | "pause") =>
+    post<BrowserControlState>(`/api/sessions/${sessionId}/browser-ctl/action`, { action }),
+  /** 用户在画面里的点击/打字/滚动（非持有者会 409 + 人话原因） */
+  browserInput: (sessionId: string, body: Record<string, unknown>) =>
+    post<{ ok: string; state: BrowserControlState }>(
+      `/api/sessions/${sessionId}/browser-ctl/input`,
+      body,
+    ),
 
   /** 一次删多个（文件区「管理」用）：路径全部相对会话目录，有一个不合规矩就整体拒 */
   deleteSessionFiles: (id: string, paths: string[]) =>

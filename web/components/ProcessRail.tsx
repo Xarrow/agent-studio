@@ -75,8 +75,6 @@ export function ProcessRail({
             variant="panel"
             frame={frame}
             actions={actions}
-            busy={busy}
-            waiting={waiting}
             onUserClick={onUserClick}
             onUserText={onUserText}
             onUserScroll={onUserScroll}

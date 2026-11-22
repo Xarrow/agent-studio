@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { BrowserStage, type BrowserAction, type BrowserFrameData } from "@/components/BrowserStage";
+import type { BrowserControlState } from "@/lib/api";
 import { FileRowButton } from "@/components/FileDialog";
 import { FileTypeIcon } from "@/components/ui/icons";
 import { ExecutionTimeline } from "@/components/ExecutionTimeline";
@@ -43,14 +44,13 @@ export function SideDock({
   frame,
   actions,
   steps,
-  browserBusy,
-  browserWaiting,
+  browserControl,
+  browserNotice,
+  onBrowserControl,
   onBrowserOpenFull,
   onUserClick,
   onUserText,
   onUserScroll,
-  browserPaused,
-  onBrowserPause,
   /* 文件 */
   sessionId,
   files,
@@ -79,14 +79,15 @@ export function SideDock({
   frame: BrowserFrameData | null;
   actions: BrowserAction[];
   steps: BrowserStep[];
-  browserBusy?: boolean;
-  browserWaiting?: boolean;
+  /** 控制权状态（后端单一状态源：徽章/按钮/底部文案都在里面） */
+  browserControl?: BrowserControlState | null;
+  /** 被拒绝的人话原因（409）——要显示出来 */
+  browserNotice?: string;
+  onBrowserControl?: (action: "take" | "release") => void;
   onBrowserOpenFull?: () => void;
   onUserClick?: (x: number, y: number) => void | Promise<void>;
   onUserText?: (t: string) => void | Promise<void>;
   onUserScroll?: (dy: number) => void | Promise<void>;
-  browserPaused?: boolean;
-  onBrowserPause?: (paused: boolean) => void;
   sessionId?: string;
   files: {
     path: string;
@@ -497,13 +498,12 @@ export function SideDock({
                 frame={frame}
                 actions={actions}
                 steps={steps}
-                busy={browserBusy}
-                waiting={browserWaiting}
+                control={browserControl}
+                notice={browserNotice}
+                onControl={onBrowserControl}
                 onUserClick={onUserClick}
                 onUserText={onUserText}
                 onUserScroll={onUserScroll}
-                paused={browserPaused}
-                onPauseChange={onBrowserPause}
               />
             </div>
           ) : panel === "steps" ? (

@@ -7,9 +7,10 @@ Playwright/Selenium 在这里只会带来几百 MB 依赖和版本匹配烦恼�
 
 生命周期
 --------
-每个 run 一个 Chromium 子进程（``--user-data-dir`` 落在 run 工作目录下，天然隔离）。
-工具每次调用从 contextvar 拿 run_id 复用同一实例 —— 浏览器有状态（cookie/登录），
-跨动作共享正是"操作浏览器"的意义。run 结束由 runner 收尾 kill（见 close_all）。
+浏览器属于**聊天会话**（``session_id``），不是单次 run：同一个会话里的多轮复用
+同一个 Chromium（``--user-data-dir`` 落在 ``/tmp/agent-studio-browser/ses-<会话号>``），
+登录态/当前页面/填了一半的表单都在。run 结束**不再关**它；30 分钟没有任何交互
+才回收（见 ``browser_control``）。run 只是一个"这一次谁在用"的标签。
 
 画面流（不落盘）
 ----------------
@@ -264,11 +265,18 @@ class _Bidi:
 
 
 class BrowserSession:
-    """一个 run 的浏览器实例：进程 + CDP + screencast 推流。"""
+    """一个浏览器实例：进程 + CDP + screencast 推流。
 
-    def __init__(self, run_id: str, on_frame: Any, proxy: str | None = None) -> None:
+    ``key`` 是**归属键**（``ses:<会话号>``）—— run 只是"这一次在用"，浏览器和
+    登录态都跟着会话走，run 结束不再关（见 ``browser_control``）。
+    """
+
+    def __init__(self, run_id: str, on_frame: Any, proxy: str | None = None, session_id: str = "") -> None:
         self.run_id = run_id
+        self.session_id = session_id
+        self.key = f"ses:{session_id}" if session_id else f"run:{run_id}"
         self._on_frame = on_frame
+
         self._proc: asyncio.subprocess.Process | None = None
         self._cdp: _Cdp | None = None
         self._proxy = proxy
@@ -350,7 +358,7 @@ class BrowserSession:
         if proto != "cdp":
             await self._ensure_bidi(bin_path)
             return
-        user_data = Path(f"/tmp/agent-studio-browser/{self.run_id}")
+        user_data = Path(f"/tmp/agent-studio-browser/{self.key.replace(':', '-')}")
         user_data.mkdir(parents=True, exist_ok=True)
         args = [
             bin_path,
@@ -471,7 +479,7 @@ class BrowserSession:
         port = sock.getsockname()[1]
         sock.close()
 
-        profile = Path(f"/tmp/agent-studio-browser/{self.run_id}/ff-profile")
+        profile = Path(f"/tmp/agent-studio-browser/{self.key.replace(':', '-')}/ff-profile")
         profile.mkdir(parents=True, exist_ok=True)
         args = [
             bin_path,
@@ -761,8 +769,11 @@ class BrowserSession:
             await self._refresh_meta_bidi()
             return f"[{self._last_title}] {self._last_url}\n{body}"
         assert self._cdp is not None
+        # 输入框优先返回 value（innerText 是空的）：用户/助手都靠它确认"刚才打的字进去了"，
+        # 和 BiDi 那条路保持一致。
         js = (
             "(() => { const el = document.querySelector(" + json.dumps(selector) + ") || document.body;"
+            " if ('value' in el && typeof el.value === 'string') return el.value;"
             " return (el.innerText || '').slice(0, %d); })()" % READ_MAX_CHARS
         )
         r = await self._cdp.send("Runtime.evaluate", {"expression": js, "returnByValue": True})
@@ -813,6 +824,30 @@ class BrowserSession:
         except Exception:  # pragma: no cover
             logger.debug("截图失败", exc_info=True)
             return None
+
+    async def element_label(self, x: float, y: float) -> str:
+        """坐标 → 人话（给人看的动作记录用：用户在哪儿点了什么）。
+
+        用户点完要回灌给助手"用户点了搜索框"这类话 —— 只记坐标等于没说。
+        """
+        expr = (
+            "(() => {const el=document.elementFromPoint(%s,%s); if(!el) return '';"
+            "const ph=(el.getAttribute&&(el.getAttribute('placeholder')||el.getAttribute('aria-label')||''))||'';"
+            "const t=(el.innerText||el.textContent||'').trim().replace(/\\s+/g,' ').slice(0,24);"
+            "const tag=(el.tagName||'').toLowerCase();"
+            "return [tag, ph, t].filter(Boolean).join(' ');})()" % (float(x), float(y))
+        )
+        try:
+            if self._bidi is not None:
+                return str(await self._eval(expr) or "")[:40]
+            if self._cdp is None:
+                return ""
+            js = "JSON.stringify(" + expr + ")"
+            r = await self._cdp.send("Runtime.evaluate", {"expression": js, "returnByValue": True})
+            val = (r.get("result") or {}).get("result", {}).get("value")
+            return str(json.loads(val) if val else "")[:40]
+        except Exception:  # pragma: no cover
+            return ""
 
     async def user_click(self, x: float, y: float) -> str:
         """用户在画面上点了一下（坐标已由前端换算成视口坐标）。"""
@@ -877,79 +912,73 @@ class BrowserSession:
             self._proc = None
 
 
-#: run_id → 会话（进程级注册表；run 结束由 runner 收尾调 close_all）
+#: 归属键（ses:<会话号>） → 浏览器实例。run 只是"这一次在用"，不再决定生死。
 _SESSIONS: dict[str, BrowserSession] = {}
 
 
-def get_session(run_id: str, on_frame: Any, proxy: str | None = None) -> BrowserSession:
-    sess = _SESSIONS.get(run_id)
+def get_session(run_id: str, on_frame: Any, proxy: str | None = None, session_id: str = "") -> BrowserSession:
+    """取（或建）这个**会话**的浏览器。
+
+    同一个聊天会话里跨 run 复用同一个 Chromium —— 登录态、当前页面、填了一半
+    的表单都在。切到新的一轮时只把 ``run_id`` 和帧回调换掉（留档按 run 分目录）。
+    """
+    key = f"ses:{session_id}" if session_id else f"run:{run_id}"
+    sess = _SESSIONS.get(key)
     if sess is None:
-        sess = BrowserSession(run_id, on_frame, proxy)
-        _SESSIONS[run_id] = sess
+        sess = BrowserSession(run_id, on_frame, proxy, session_id=session_id)
+        _SESSIONS[key] = sess
+    else:
+        sess.run_id = run_id
+        sess._on_frame = on_frame
+        sess._proxy = proxy or sess._proxy
     return sess
 
 
-async def close_all(run_id: str) -> None:
-    """run 结束时收尾：杀进程 + 删 user-data-dir（不留全局状态）。
+def get_existing(key: str) -> BrowserSession | None:
+    return _SESSIONS.get(key)
 
-    画面留档在**每一步**就已经写进会话目录了（见 browser_trace），
-    所以这里不必再单独存"最后一张"。
-    """
-    sess = _SESSIONS.pop(run_id, None)
+
+async def close_key(key: str) -> None:
+    """收掉某个会话的浏览器 + 它的 profile 目录（过期/删会话时用）。"""
+    sess = _SESSIONS.pop(key, None)
     if sess is not None:
         await sess.close()
+    _cleanup_dir(Path(f"/tmp/agent-studio-browser/{key.replace(':', '-')}"))
+
+
+def _cleanup_dir(ud: Path) -> None:
     import shutil
 
-    ud = Path(f"/tmp/agent-studio-browser/{run_id}")
-    if ud.exists():
-        # 重试几拍：进程刚 kill 时句柄未放，rmtree 会静默失败留下目录（实测 abort 后残留）
-        for _ in range(5):
-            shutil.rmtree(ud, ignore_errors=True)
-            if not ud.exists():
-                break
-            await asyncio.sleep(0.4)
+    if not ud.exists():
+        return
+    # 重试几拍：进程刚 kill 时句柄未放，rmtree 会静默失败留下目录（实测 abort 后残留）
+    for _ in range(5):
+        shutil.rmtree(ud, ignore_errors=True)
+        if not ud.exists():
+            return
+        time.sleep(0.2)
+
+
+async def close_all(run_id: str) -> None:
+    """**硬关**某个 run 的浏览器（只在明确要收掉现场时用）。
+
+    run 正常结束**不再走这里** —— 见 ``browser_control.on_run_end``：
+    浏览器跟着会话保活 30 分钟，run 结束画面仍然可以点。
+    """
+    sess = _SESSIONS.pop(f"run:{run_id}", None)
+    if sess is not None:
+        await sess.close()
+    _cleanup_dir(Path(f"/tmp/agent-studio-browser/run-{run_id}"))
 
 # --------------------------------------------------------------------------- #
-# 暂停闸（协作式）
+# 暂停/接管
 #
-# 用户要「暂停」「接管」：这两件事都不是杀掉浏览器，而是让**助手的下一步**先别落下。
-# 所以做成一个 per-run 的 asyncio.Event：set = 放行，clear = 暂停。
-# 工具在执行每个动作前 await 一次 —— 已经发出去的 CDP 命令不会被中断（那会打坏
-# 页面状态），但下一步一定停得住，用户此刻点画面里的东西不会被覆盖掉。
+# v1 这里是 per-run 的 asyncio.Event（协作式暂停），没有"控制权归属"：
+# 暂停期间用户和助手都能发动作，谁后发谁赢。已整体换成会话级状态机
+# —— 见 ``browser_control.py``（单一状态源 + 持有者闸门）。
+# 这里只留一个兼容别名，避免老调用点 import 失败。
 # --------------------------------------------------------------------------- #
-_PAUSE: dict[str, "asyncio.Event"] = {}
-
-
-def pause_state(run_id: str) -> bool:
-    ev = _PAUSE.get(run_id)
-    return bool(ev and not ev.is_set())
-
-
-def set_paused(run_id: str, paused: bool) -> bool:
-    import asyncio as _a
-
-    ev = _PAUSE.get(run_id)
-    if ev is None:
-        ev = _a.Event()
-        ev.set()
-        _PAUSE[run_id] = ev
-    if paused:
-        ev.clear()
-    else:
-        ev.set()
-    return paused
-
-
-async def wait_if_paused(run_id: str, timeout_s: float = 900.0) -> str:
-    """暂停中就在这里等着；返回空串=可以继续，返回文字=别继续了（给模型看的理由）。"""
-    ev = _PAUSE.get(run_id)
-    if ev is None or ev.is_set():
-        return ""
-    import asyncio as _a
-
-    try:
-        await _a.wait_for(ev.wait(), timeout=timeout_s)
-        return ""
-    except _a.TimeoutError:
-        return "✗ 浏览器被用户暂停了超过 15 分钟，这一轮先停在这里（可以点继续再跑）"
+async def wait_if_paused(run_id: str, timeout_s: float = 900.0) -> str:  # pragma: no cover
+    """已废弃：控制权闸门在 ``browser_control.gate_agent``。"""
+    return ""
 
