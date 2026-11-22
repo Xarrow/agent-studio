@@ -16,9 +16,10 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { api } from "@/lib/api";
+import { isImeEvent } from "@/lib/ime";
 import { useFeedback } from "@/components/ui/feedback";
 import { ModelPicker } from "@/components/ModelPicker";
-import type { Agent, AgentDefinition, Credential, Provider } from "@/lib/types";
+import type { Agent, AgentDefinition, Credential, Memory, Provider, Session } from "@/lib/types";
 
 export function AgentConfigDrawer({
   agent,
@@ -26,6 +27,7 @@ export function AgentConfigDrawer({
   creds,
   onClose,
   onSaved,
+  onPickSession,
 }: {
   agent: Agent;
   providers: Provider[];
@@ -33,6 +35,8 @@ export function AgentConfigDrawer({
   onClose: () => void;
   /** 保存成功后把新的 agent 交回去（页眉的模型名要立刻变） */
   onSaved: (a: Agent) => void;
+  /** 会话页签里点一条就切过去 */
+  onPickSession: (sessionId: string) => void;
 }) {
   const fb = useFeedback();
   const [def, setDef] = useState<AgentDefinition>(agent.definition);
@@ -40,6 +44,49 @@ export function AgentConfigDrawer({
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState("");
   const [err, setErr] = useState<string | null>(null);
+  /** 抽屉三个页签：配置 / 会话 / 记忆 —— 对话页能覆盖日常操作，不用来回跳页（R6 前置） */
+  const [tab, setTab] = useState<"config" | "sessions" | "memory">("config");
+  const [sesList, setSesList] = useState<Session[]>([]);
+  const [memList, setMemList] = useState<Memory[]>([]);
+  const [memDraft, setMemDraft] = useState("");
+  const [busyTab, setBusyTab] = useState(false);
+
+  useEffect(() => {
+    if (tab === "config") return;
+    let alive = true;
+    setBusyTab(true);
+    void (async () => {
+      try {
+        if (tab === "sessions") {
+          const r = await api.sessions(agent.id);
+          if (alive) setSesList(r.list ?? []);
+        } else {
+          const list = await api.memories({ agentId: agent.id });
+          if (alive) setMemList(Array.isArray(list) ? list : []);
+        }
+      } catch (e) {
+        if (alive) setErr(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (alive) setBusyTab(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [tab, agent.id]);
+
+  const addMemory = async () => {
+    const text = memDraft.trim();
+    if (!text) return;
+    try {
+      const m = await api.createMemory({ content: text, agent_id: agent.id, scope: "agent", kind: "fact", active: true });
+      setMemList((l) => [m, ...l]);
+      setMemDraft("");
+      fb.success("已记住这条");
+    } catch (e) {
+      fb.error("没记上", e instanceof Error ? e.message : String(e));
+    }
+  };
   /** 桌面 480、手机整屏（跟着视口走，旋转/缩窗口也跟得上） */
   const [drawerW, setDrawerW] = useState("480px");
   useEffect(() => {
@@ -142,6 +189,110 @@ export function AgentConfigDrawer({
           </button>
         </header>
 
+        {/* 三个页签：配置（高频设置）/ 会话（切换或回看）/ 记忆（这个助手记住的事） */}
+        <div className="flex gap-1 px-3 pb-2">
+          {([
+            { k: "config" as const, t: "配置" },
+            { k: "sessions" as const, t: "会话" },
+            { k: "memory" as const, t: "记忆" },
+          ]).map((o) => (
+            <button
+              key={o.k}
+              type="button"
+              data-tap
+              onClick={() => setTab(o.k)}
+              className="h-8 rounded-md px-2.5 text-[12.5px]"
+              style={{
+                background: tab === o.k ? "var(--color-surface-2)" : "transparent",
+                color: tab === o.k ? "var(--color-text)" : "var(--color-text-3)",
+                fontWeight: tab === o.k ? 600 : 400,
+              }}
+            >
+              {o.t}
+            </button>
+          ))}
+        </div>
+
+        {tab === "sessions" ? (
+          <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
+            {busyTab && (
+              <p className="px-2 py-2 text-[12px]" style={{ color: "var(--color-text-3)" }}>
+                正在读取…
+              </p>
+            )}
+            {!busyTab && sesList.length === 0 && (
+              <p className="px-2 py-2 text-[12px]" style={{ color: "var(--color-text-3)" }}>
+                这个助手还没有会话
+              </p>
+            )}
+            {sesList.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                data-tap
+                onClick={() => onPickSession(s.id)}
+                className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left hover:bg-[var(--color-surface-2)]"
+              >
+                <span className="min-w-0 flex-1 truncate text-[12.5px]">{s.title || "（无标题会话）"}</span>
+                <span className="shrink-0 text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                  {s.turn_count ?? 0} 轮
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : tab === "memory" ? (
+          <div className="flex min-h-0 flex-1 flex-col px-4 pb-4">
+            <div className="flex gap-2 pb-2">
+              <input
+                className="input flex-1"
+                value={memDraft}
+                onChange={(e) => setMemDraft(e.target.value)}
+                placeholder="让它记住一件事…"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !isImeEvent(e)) void addMemory();
+                }}
+              />
+              <button className="btn shrink-0" disabled={!memDraft.trim()} onClick={() => void addMemory()}>
+                记住
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {busyTab && (
+                <p className="py-2 text-[12px]" style={{ color: "var(--color-text-3)" }}>
+                  正在读取…
+                </p>
+              )}
+              {!busyTab && memList.length === 0 && (
+                <p className="py-2 text-[12px]" style={{ color: "var(--color-text-3)" }}>
+                  它还没记住关于你的事
+                </p>
+              )}
+              {memList.map((m) => (
+                <div key={m.id} className="flex items-start gap-2 rounded-md px-2 py-2">
+                  <span className="min-w-0 flex-1 text-[12.5px] leading-relaxed">{m.content}</span>
+                  <button
+                    type="button"
+                    data-tap
+                    aria-label="删掉这条记忆"
+                    title="删掉这条记忆"
+                    className="shrink-0 rounded px-1 text-[11px]"
+                    style={{ color: "var(--color-text-3)" }}
+                    onClick={async () => {
+                      try {
+                        await api.deleteMemory(m.id);
+                        setMemList((l) => l.filter((x) => x.id !== m.id));
+                      } catch (e) {
+                        fb.error("删不掉", e instanceof Error ? e.message : String(e));
+                      }
+                    }}
+                  >
+                    删
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 pb-4">
           <div>
             <label className="label">一句话职责</label>
@@ -281,6 +432,7 @@ export function AgentConfigDrawer({
             改完下一条消息就按新配置走；想留一个可回滚的版本，去完整配置点「记为一版」。
           </p>
         </div>
+        )}
       </aside>
     </>
   );

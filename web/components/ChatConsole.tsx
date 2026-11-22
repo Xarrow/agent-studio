@@ -2567,6 +2567,10 @@ export function ChatConsole({
               onSaved={(updated) =>
                 setAgents((prev) => prev.map((x) => (x.id === updated.id ? { ...x, ...updated } : x)))
               }
+              onPickSession={(sid) => {
+                setConfigAgent(null);
+                setSessionId(sid);
+              }}
             />
           );
         })()}

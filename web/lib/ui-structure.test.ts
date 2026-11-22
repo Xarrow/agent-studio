@@ -786,3 +786,15 @@ test("⌘K 命令面板：挂全站、走 portal、有鼠标入口、跳文档�
   const kn = read("app/knowledge/page.tsx");
   assert.match(kn, /get\("doc"\)/, "知识页要认 ?doc= 才能落到具体文档");
 });
+
+test("对话页配置抽屉：三页签（配置/会话/记忆），会话可切换", () => {
+  const src = read("components/AgentConfigDrawer.tsx");
+  for (const t of ["配置", "会话", "记忆"]) {
+    assert.ok(src.includes(`t: "${t}"`), `缺少页签：${t}`);
+  }
+  assert.match(src, /onPickSession/, "会话页签要能切会话");
+  assert.match(src, /createMemory/, "记忆页签要能直接记一条");
+  assert.match(src, /deleteMemory/, "记忆页签要能删一条");
+  const chat = read("components/ChatConsole.tsx");
+  assert.match(chat, /onPickSession=/, "对话页要把切会话接上");
+});
