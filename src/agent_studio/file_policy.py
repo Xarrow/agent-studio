@@ -195,6 +195,32 @@ _WRITE_COMMANDS = {
     "curl", "wget", "tar", "unzip", "gzip", "gunzip", "zip", "split", "shred",
 }
 
+#: 写到这些「伪设备」等于没落盘 —— 判据是**实际效果**，不是命令里出现没出现 ``>``。
+#: 现场（2026-11）：``ls /var/lib/... 2>/dev/null`` 被当成「覆盖 /dev/null」弹了
+#: 一张危险写入确认卡，用户被迫去拒一条只是看一眼目录的读命令。
+PSEUDO_TARGETS = frozenset(
+    {
+        "/dev/null",
+        "/dev/zero",
+        "/dev/random",
+        "/dev/urandom",
+        "/dev/stdout",
+        "/dev/stderr",
+        "/dev/tty",
+        "/proc/self/fd/1",
+        "/proc/self/fd/2",
+    }
+)
+
+
+def is_pseudo_target(path: str) -> bool:
+    """这个写入目标是不是伪设备/已打开的 fd（= 没有实际落盘）。"""
+    if not path:
+        return False
+    p = os.path.normpath(path)
+    return p in PSEUDO_TARGETS or p.startswith("/dev/fd/")
+
+
 _PREVIEW_CHARS = 600
 _DIFF_LINES = 8
 
@@ -373,16 +399,139 @@ def _op_for_command(cmd: str, tokens: list[str]) -> str:
     return OP_CREATE
 
 
-def actions_for_command(command: str, workspace: str | None) -> list[Action]:
-    """从一条 shell 命令里挑出「它要写到哪个文件」。
+@dataclass
+class CommandUnit:
+    """命令里一段**可以独立保留或丢弃**的单元（顶层 ``;`` / ``&&`` / 换行隔开）。
 
-    只认常见的写命令（cp/mv/tee/mkdir/rm/ln/sed -i/curl -o/tar/dd of=…）。
-    这是**静态**判定，动态展开（``$(...)``、变量拼路径）看不出来 ——
-    真正兜底的是执行完的审计与禁区硬拦，别把这里当沙箱。
+    为什么要切：一条复合命令里可能同时含「已被用户拒绝的动作」和「新的动作」。
+    整条拦下会让新动作失去被确认的机会，整条放过又会把被拒的那个再执行一遍 ——
+    所以按单元裁决：丢掉被拒的单元，剩下的照常走（见 guard.``_decide_writes``）。
     """
-    out: list[Action] = []
+
+    sep: str
+    text: str
+    actions: list["Action"] = field(default_factory=list)
+
+
+#: 单元之间能安全拼接的分隔符。``||`` 不在此列：丢掉左操作数之后 ``a || b``
+#: 还照原样跑 b 就变了语义（b 原本只在 a 失败时执行），所以带 ``||`` 的命令
+#: 一律按「不可拆分」处理。
+_SAFE_SEPS = {";", "&&", "\n"}
+
+
+def _split_units(command: str) -> list[CommandUnit] | None:
+    """按顶层 ``;`` / ``&&`` / 换行切单元；引号、括号、反引号里的不算。
+
+    返回 ``None`` = 不能安全切分（引号/括号不平衡、heredoc、``||`` 连接）。
+    宁可判「不可拆分」，也不要切坏一条命令 —— 那等于执行了别的东西。
+    """
     text = command or ""
-    for seg in [s.strip() for s in _SPLIT.split(text) if s.strip()]:
+    if not text.strip():
+        return []
+    if "<<" in text:  # heredoc：整段是一个整体
+        return None
+    units: list[CommandUnit] = []
+    buf: list[str] = []
+    depth = 0
+    quote = ""
+    sep = ""
+    i, n = 0, len(text)
+    while i < n:
+        ch = text[i]
+        if quote:
+            buf.append(ch)
+            if ch == "\\" and quote != "'" and i + 1 < n:
+                buf.append(text[i + 1])
+                i += 2
+                continue
+            if ch == quote:
+                quote = ""
+            i += 1
+            continue
+        if ch in "'\"`":
+            quote = ch
+            buf.append(ch)
+            i += 1
+            continue
+        if ch == "\\" and i + 1 < n:
+            buf.append(ch)
+            buf.append(text[i + 1])
+            i += 2
+            continue
+        if ch in "([{":
+            depth += 1
+            buf.append(ch)
+            i += 1
+            continue
+        if ch in ")]}":
+            depth -= 1
+            buf.append(ch)
+            i += 1
+            continue
+        if depth == 0 and text.startswith(("&&", "||"), i):
+            if text.startswith("||", i):
+                return None
+            units.append(CommandUnit(sep=sep, text="".join(buf)))
+            buf, sep = [], "&&"
+            i += 2
+            continue
+        if depth == 0 and ch in ";\n":
+            units.append(CommandUnit(sep=sep, text="".join(buf)))
+            buf, sep = [], ("\n" if ch == "\n" else ";")
+            i += 1
+            continue
+        buf.append(ch)
+        i += 1
+    if quote or depth != 0:
+        return None
+    units.append(CommandUnit(sep=sep, text="".join(buf)))
+    return [u for u in units if u.text.strip()]
+
+
+def command_units(command: str, workspace: str | None) -> list[CommandUnit] | None:
+    """把命令切成单元，并解析出**每个单元**要写的文件。
+
+    ``None`` = 不能安全拆分（调用方按「整条命令」处理）。
+    """
+    units = _split_units(command)
+    if units is None:
+        return None
+    for unit in units:
+        unit.actions = _unit_actions(unit.text, workspace)
+    return units
+
+
+def join_units(units: list[CommandUnit], keep: list[int]) -> str:
+    """按原分隔符把保留的单元拼回一条命令（第一个保留单元不带分隔符）。"""
+    out = ""
+    for pos, idx in enumerate(keep):
+        unit = units[idx]
+        body = unit.text.strip()
+        if pos == 0:
+            out = body
+            continue
+        sep = unit.sep if unit.sep in _SAFE_SEPS else ";"
+        out += ("\n" if sep == "\n" else f" {sep} ") + body
+    return out
+
+
+def _dedupe(actions: list[Action]) -> list[Action]:
+    """同一个（操作, 路径）只留一条 —— 卡片与拒绝名单都不该出现两遍。"""
+    seen: set[tuple[str, str]] = set()
+    out: list[Action] = []
+    for act in actions:
+        key = (act.op, act.path)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(act)
+    return out
+
+
+def _unit_actions(text: str, workspace: str | None) -> list[Action]:
+    """一段命令（可以含管道）里它要写到哪个文件。"""
+    out: list[Action] = []
+    for seg in [s.strip() for s in _SPLIT.split(text or "") if s.strip()]:
         tokens = _tokens(seg)
         if not tokens:
             continue
@@ -395,12 +544,13 @@ def actions_for_command(command: str, workspace: str | None) -> list[Action]:
         cmd = os.path.basename(tokens[i])
         args = tokens[i + 1 :]
 
-        # 重定向 > / >> / tee 单独算（它们不依赖命令名）
+        # 重定向 > / >> / tee 单独算（它们不依赖命令名）。伪设备目标不算 ——
+        # `2>/dev/null` 这类降噪重定向没有实际效果，弹卡只会淹没真动作。
         for m in re.finditer(r"(?:^|\s)\d?>{1,2}\s*([^\s;|&]+)", seg):
             target = m.group(1)
             if target.startswith("/") or target.startswith("~") or target.startswith("./"):
                 p = real_path(target, workspace)
-                if p:
+                if p and not is_pseudo_target(p):
                     act = Action(path=p, op=OP_OVERWRITE if os.path.exists(p) else OP_CREATE, command=seg[:240])
                     out.append(_finish(act, workspace))
 
@@ -427,19 +577,46 @@ def actions_for_command(command: str, workspace: str | None) -> list[Action]:
                 elif a.startswith("--output="):
                     outs.append(a.split("=", 1)[1])
             paths = outs
+        if cmd == "mkdir":
+            # `mkdir`（含 `-p`）到**已存在的目录**没有任何实际变更 —— 不弹卡、
+            # 也不进拒绝名单。现场：助手先 `mkdir -p /var/lib/agent-studio`，
+            # 目录本来就在，弹出来的卡却是「覆盖 /var/lib/agent-studio」。
+            dirs = [real_path(a, workspace) for a in paths]
+            dirs = [d for d in dirs if d]
+            if dirs and all(os.path.isdir(d) for d in dirs):
+                continue
         if not paths:
             continue
         # cp/mv/ln/install/rsync：落点是最后一个参数（源在前）
         target = paths[-1] if cmd in {"cp", "mv", "ln", "install", "rsync"} else paths[0]
         p = real_path(target, workspace)
-        if not p:
+        if not p or is_pseudo_target(p):
             continue
         op = _op_for_command(cmd, tokens)
         if op in {OP_CREATE, OP_OVERWRITE}:
             op = OP_OVERWRITE if os.path.exists(p) else OP_CREATE
         act = Action(path=p, op=op, command=seg[:240])
         out.append(_finish(act, workspace))
-    return out
+    return _dedupe(out)
+
+
+def actions_for_command(command: str, workspace: str | None) -> list[Action]:
+    """从一条 shell 命令里挑出「它要写到哪个文件」（全部目标，按出现顺序）。
+
+    只认常见的写命令（cp/mv/tee/mkdir/rm/ln/sed -i/curl -o/tar/dd of=…）。
+    这是**静态**判定，动态展开（``$(...)``、变量拼路径）看不出来 ——
+    真正兜底的是执行完的审计与禁区硬拦，别把这里当沙箱。
+
+    判据是**实际效果**，不是字面量：写到 ``/dev/null`` 的重定向、对已存在目录的
+    ``mkdir``、纯读命令带的无害重定向都不算写入动作（用户 2026-11 指出的噪音）。
+    """
+    units = command_units(command, workspace)
+    if units is None:
+        return _unit_actions(command, workspace)
+    out: list[Action] = []
+    for unit in units:
+        out.extend(unit.actions)
+    return _dedupe(out)
 
 
 # --------------------------------------------------------------------------- #
@@ -708,8 +885,14 @@ _RETRY_VERBS: dict[str, tuple[str, ...]] = {
 }
 
 
+_WORD_RE = re.compile(r"[a-z0-9]+")
+#: 「标识符式」文件名（含数字/连字符/下划线/点）—— 这种名字里的单词元是有意义的
+#: （``b2fix2-a`` 里的 ``a`` 就是用户嘴里的「A」文件），普通英文文件名不放宽。
+_STEM_IDENT_RE = re.compile(r"[0-9_.-]")
+
+
 def names_path(text: str, path: str) -> bool:
-    """消息里是不是点了这个文件的名字（全路径 / 文件名 / 够长的主干）。
+    """消息里是不是点了这个文件的名字（全路径 / 文件名 / 够长的主干 / 标识符词元）。
 
     短于 5 个字符的主干不认 —— 「a」这种会命中任意一句话，那就不叫"明确提到"。
     """
@@ -722,7 +905,26 @@ def names_path(text: str, path: str) -> bool:
     if base and base in raw:
         return True
     stem = os.path.splitext(base)[0]
-    return len(stem) >= 5 and stem in raw
+    if len(stem) >= 5 and stem in raw:
+        return True
+    if len(stem) < 5 or not _STEM_IDENT_RE.search(stem):
+        return False
+    # 标识符式文件名：允许拿其中的**单字母**词元指代它。现场（2026-11）：被拒的是
+    # ``b2fix2-a.txt``，用户说「还是把 A 写了吧」—— 他确实点的是那个文件，
+    # 不该因为没说全名就当成"没重提"而继续拦。
+    #
+    # 刻意**不**拿多字母词元去比（``b2fix2`` 这种前缀在同一个目录里往往好几个文件
+    # 共用，谁提到兄弟文件都会误命中 —— 实测就把"写 B"判成了"重提 A"）。
+    # 判断不准时按否决处理：多字母只认全名/主干/文件名。
+    has_cjk = any("\u4e00" <= ch <= "\u9fff" for ch in raw)
+    for tok in _WORD_RE.findall(stem.lower()):
+        if len(tok) != 1:
+            continue
+        if re.search(rf"(?<![A-Za-z0-9]){tok.upper()}(?![A-Za-z0-9])", raw):
+            return True
+        if has_cjk and re.search(rf"(?<![A-Za-z0-9]){tok}(?![A-Za-z0-9])", raw):
+            return True
+    return False
 
 
 def explicit_retry(text: str, action: Action) -> bool:

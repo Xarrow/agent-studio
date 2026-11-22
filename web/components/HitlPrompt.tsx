@@ -36,7 +36,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { api, ApiError } from "@/lib/api";
-import { highestRisk, summarizeCalls, type FileAction } from "@/lib/hitl";
+import { fileTargets, highestRisk, summarizeCalls, type FileAction } from "@/lib/hitl";
 
 /** 一次文件写入确认卡：写清「哪个助手、完整路径、操作、写什么」。 */
 function FileWriteBlock({ file, compact }: { file: FileAction; compact?: boolean }) {
@@ -49,13 +49,16 @@ function FileWriteBlock({ file, compact }: { file: FileAction; compact?: boolean
   const dir = file.dir || (file.path.includes("/") ? file.path.slice(0, file.path.lastIndexOf("/")) || "/" : "");
   const name = dir && file.path.startsWith(dir) ? file.path.slice(dir.length).replace(/^\//, "") : file.path;
   const kb = Math.max(1, Math.round((file.size || 0) / 1024));
+  /** 这张卡覆盖的全部目标（复合命令会有好几条）—— 别只让用户看见第一条 */
+  const targets = fileTargets(file);
+  const extra = targets.filter((t) => !(t.path === file.path && t.op === file.op));
   return (
     <div className="rounded-[10px] px-2.5 py-2" style={{ background: "var(--color-surface)" }}>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <span className="text-[13px] font-medium">
           {file.agent ? `${file.agent} 要` : "助手要"}
           <span style={{ color: opTone }}>{file.op}</span>
-          一个文件
+          {targets.length > 1 ? ` ${targets.length} 个位置` : "一个文件"}
         </span>
         {file.exists && file.op !== "删除" && (
           <span className="rounded-full px-1.5 py-[1px] text-[10.5px]" style={{ background: "var(--color-surface-2)", color: "var(--color-muted)" }}>
@@ -76,6 +79,34 @@ function FileWriteBlock({ file, compact }: { file: FileAction; compact?: boolean
         <span style={{ color: "var(--color-muted)" }}>{dir}</span>
         <span className="font-medium">{dir ? `/${name}` : name}</span>
       </div>
+
+      {/* 同一张卡上的其它目标：一条命令写好几个位置时，每一个都得看得见 */}
+      {extra.length > 0 && (
+        <div className="mt-1.5">
+          <div className="text-[11px]" style={{ color: "var(--color-muted)" }}>
+            这条命令还会动这些位置
+          </div>
+          <div className="mt-1 space-y-1">
+            {extra.map((t, i) => (
+              <div
+                key={`${t.op}-${t.path}-${i}`}
+                className="mono rounded-md px-2 py-1.5 text-[11.5px] leading-relaxed break-all"
+                style={{ background: "var(--color-surface-2)" }}
+              >
+                <span style={{ color: t.op === "删除" ? "var(--color-err)" : "var(--color-accent)" }}>
+                  {t.op}
+                </span>{" "}
+                <span>{t.path}</span>
+                {t.exists && t.op !== "删除" && (
+                  <span className="ml-1 text-[10.5px]" style={{ color: "var(--color-muted)" }}>
+                    （已有，会覆盖）
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* 内容摘要 / 差异要点 */}
       {file.before && file.before.length > 0 && file.after && file.after.length > 0 ? (
@@ -177,11 +208,30 @@ export function HitlPrompt({
   /** 写文件的确认（后端在判定时算好，带完整路径/操作/内容要点） */
   const fileCalls = calls.filter((c) => c.file);
   const otherCalls = calls.filter((c) => !c.file);
-  /** 这批文件写落在哪些目录里（只有一个才给「本会话内允许该目录」） */
-  const fileDirs = Array.from(new Set(fileCalls.map((c) => c.file?.dir || "").filter(Boolean)));
+  /** 这批文件写落在哪些目录里（只有一个才给「本会话内允许该目录」）。
+   *
+   * 按**每个目标**算，不按"每张卡的第一条"算 —— 一张复合命令的卡可能同时写两个
+   * 目录，只看第一条会让「允许该目录」看起来覆盖了全部、实际只放行一个。 */
+  const fileDirs = Array.from(
+    new Set(
+      fileCalls
+        .flatMap((c) =>
+          fileTargets(c.file as FileAction).map(
+            (t) =>
+              t.dir ||
+              (t.path.includes("/") ? t.path.slice(0, t.path.lastIndexOf("/")) || "/" : ""),
+          ),
+        )
+        .filter(Boolean),
+    ),
+  );
   /** 头部那行小字（提前算好，别在 JSX 里嵌套模板串 —— 小字审计会误判成解释文案） */
+  const fileTargetCount = fileCalls.reduce(
+    (n, c) => n + fileTargets(c.file as FileAction).length,
+    0,
+  );
   const headCount = fileCalls.length
-    ? `${fileCalls.length} 个文件操作`
+    ? `${fileTargetCount} 个文件操作`
     : calls.length
       ? `${calls.length} 个操作`
       : "";

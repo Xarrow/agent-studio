@@ -124,7 +124,28 @@ export type FileAction = {
   agent_id?: string;
   workspace?: string;
   dir?: string;
+  /** 这张卡一共覆盖的目标（复合命令会有好几条；老记录没有这个字段） */
+  actions?: FileAction[];
 };
+
+/** 一张卡覆盖的**全部**目标：卡上那一条 + 后端给的全量（按操作+路径去重）。
+ *
+ * 为什么需要：``mkdir -p X && printf > X/a`` 这种复合命令会解析出两个目标，
+ * 卡上只显示第一条时，用户看到的是"要覆盖 X"—— 真正要写的那个文件被藏起来了。
+ */
+export function fileTargets(file: FileAction): FileAction[] {
+  const seen = new Set<string>();
+  const out: FileAction[] = [];
+  for (const item of [file, ...(file.actions ?? [])]) {
+    const path = String(item?.path ?? "");
+    if (!path) continue;
+    const key = `${item.op}|${path}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
+}
 
 /** 危险命令指纹：命中即标红并二次确认 */
 const DANGER_PATTERNS: { re: RegExp; reason: string }[] = [

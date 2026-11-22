@@ -11,7 +11,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { highestRisk, parseToolInput, summarizeCalls, toolLabel } from "./hitl.ts";
+import { fileTargets, highestRisk, parseToolInput, summarizeCalls, toolLabel } from "./hitl.ts";
 
 test("工具名 → 中文动作；命名空间形式也认", () => {
   assert.equal(toolLabel("Bash"), "执行命令");
@@ -132,4 +132,38 @@ test("没给理由时仍然按前端指纹判（老数据/别的运行时）", (
     tool_calls: [{ id: "tc_1", name: "bash", input: { command: "rm -rf /" } }],
   });
   assert.equal(calls[0].risk?.level, "danger");
+});
+
+test("复合命令的确认卡：卡上每个目标都拿得到（不只第一条）", () => {
+  const calls = summarizeCalls({
+    tool_calls: [
+      {
+        id: "tc_multi",
+        name: "bash",
+        input: { command: "mkdir -p /var/lib/x && printf 1 > /var/lib/x/a.txt" },
+      },
+    ],
+    file_actions: {
+      tc_multi: {
+        path: "/var/lib/x",
+        op: "新建",
+        dir: "/var/lib",
+        actions: [
+          { path: "/var/lib/x", op: "新建" },
+          { path: "/var/lib/x/a.txt", op: "新建" },
+          { path: "/var/lib/x/a.txt", op: "新建" }, // 重复不该显示两遍
+        ],
+      },
+    },
+  });
+  const file = calls[0].file!;
+  assert.deepEqual(
+    fileTargets(file).map((t) => t.path),
+    ["/var/lib/x", "/var/lib/x/a.txt"],
+  );
+  // 老记录没有 actions 字段 → 就是卡上那一条
+  assert.deepEqual(
+    fileTargets({ path: "/root/a.md", op: "新建" }).map((t) => t.path),
+    ["/root/a.md"],
+  );
 });

@@ -126,6 +126,40 @@ def file_actions() -> dict[str, dict]:
     return {**_FILE_ACTIONS_FALLBACK, **_FILE_ACTIONS.get()}
 
 
+#: 「这条命令执行时只跑这些段」——按 tool_call id 记（值 = 改写后的命令原文）。
+#: 用途：一条复合命令里有的动作已被用户拒绝、有的是新的，逐个裁决之后**不能整条
+#: 执行**（会把被拒的那个再做一遍），也不能整条拦下（新动作就没机会了）。
+#: 权限层拿到的入参是深拷贝（AgentScope 明确不让中间件改动执行内容），所以改写
+#: 只能落在真正执行的那一刻 —— ``on_acting``。
+_TRIM: dict[str, str] = {}
+#: 改写时给模型看的一句话（告诉它哪一步被拦下了、没有执行）
+_TRIM_NOTES: dict[str, str] = {}
+
+
+def note_trim(call_id: str, command: str, note: str = "") -> None:
+    if not call_id or not command:
+        return
+    _TRIM[call_id] = command
+    if note:
+        _TRIM_NOTES[call_id] = note
+    if len(_TRIM) > _FALLBACK_MAX:
+        for old in list(_TRIM)[: _FALLBACK_MAX // 5]:
+            _TRIM.pop(old, None)
+            _TRIM_NOTES.pop(old, None)
+
+
+def pop_trim(call_id: str) -> tuple[str, str]:
+    """取出（并消费）这条调用的改写计划：(命令, 给模型的话)。"""
+    if not call_id:
+        return "", ""
+    return _TRIM.pop(call_id, ""), _TRIM_NOTES.pop(call_id, "")
+
+
+def clear_trims() -> None:
+    _TRIM.clear()
+    _TRIM_NOTES.clear()
+
+
 #: 「这次运行里，用户已经点过允许这个工具」——进程内记录，run 结束就清。
 #: 为什么需要它：会话级白名单（SessionAllow）只在**编译期**读一次，用户在同一次
 #: 运行中途点「允许」写进库也不会影响正在跑的这轮 —— 结果就是模型每调一次工具
@@ -344,7 +378,32 @@ class DangerousActionGuard(MiddlewareBase):
             session_id=str(ctx.get("session_id") or ""),
         )
 
-    async def _decide_write(self, act, *, agent, tool_name: str, call_id: str, next_handler, text: str = ""):
+    async def _classify_write(
+        self, act: file_policy.Action, *, agent, tool_name: str, session_id: str, user_text: str
+    ) -> str:
+        """一条写动作归到哪一类（判据顺序与原 ``_decide_write`` 完全一致）。
+
+        返回值：``engine``（交回引擎，尊重只读设置）/ ``workspace``（会话目录内）/
+        ``dir-allow``（本会话允许过这个目录）/ ``danger-mode``（用户打开的危险模式）/
+        ``repeat``（本会话拒绝过，平台拦）/ ``unattended``（没人看着）/ ``confirm``。
+        """
+        if act.inside:
+            if self._mode(agent) == "explore" or self._engine_has_deny(agent, tool_name):
+                return "engine"
+            return "workspace"
+        if self._dir_allowed(act.path):
+            return "dir-allow"
+        if await file_policy.skip_confirm():
+            return "danger-mode"
+        if await file_policy.denial_hit(act, session_id=session_id, user_text=user_text):
+            return "repeat"
+        if not current_run_ctx().get("interactive", True):
+            return "unattended"
+        return "confirm"
+
+    async def _decide_write(
+        self, act: file_policy.Action, *, agent, tool_name: str, call_id: str, next_handler, text: str = ""
+    ):
         """一次「写」的最终裁决 —— 目录内放行 / 目录级允许 / 危险模式 / 弹卡。
 
         所有分支都要留审计（用户第 6 条）：被确认、被拒绝、被跳过、被拦，
@@ -356,12 +415,19 @@ class DangerousActionGuard(MiddlewareBase):
             run_id=str(ctx.get("run_id") or ""),
             session_id=str(ctx.get("session_id") or ""),
         )
+        kind = await self._classify_write(
+            act,
+            agent=agent,
+            tool_name=tool_name,
+            session_id=ids["session_id"],
+            user_text=str(ctx.get("input_text") or ""),
+        )
 
         # ① 当前会话工作目录内：直接放行，不打扰（用户第 3 条上半句）
-        if act.inside:
-            if self._mode(agent) == "explore" or self._engine_has_deny(agent, tool_name):
-                # 助手被设成"只读"：那是更严的选择，尊重它（引擎会拒）
-                return await next_handler()
+        if kind == "engine":
+            # 助手被设成"只读"：那是更严的选择，尊重它（引擎会拒）
+            return await next_handler()
+        if kind == "workspace":
             await file_policy.audit(act, result=file_policy.RESULT_ALLOWED, rule="workspace", **ids)
             return PermissionDecision(
                 behavior=PermissionBehavior.ALLOW,
@@ -370,7 +436,7 @@ class DangerousActionGuard(MiddlewareBase):
             )
 
         # ② 本会话内已经允许过这个目录（进阶项：允许该目录）
-        if self._dir_allowed(act.path):
+        if kind == "dir-allow":
             await file_policy.audit(act, result=file_policy.RESULT_APPROVED, rule="dir-allow", **ids)
             return PermissionDecision(
                 behavior=PermissionBehavior.ALLOW,
@@ -379,7 +445,7 @@ class DangerousActionGuard(MiddlewareBase):
             )
 
         # ③ 危险模式：用户亲手打开过「跳过确认」—— 直接执行，但留痕
-        if await file_policy.skip_confirm():
+        if kind == "danger-mode":
             await file_policy.audit(act, result=file_policy.RESULT_SKIPPED, rule="danger-mode", **ids)
             logger.info("文件权限：危险模式下跳过确认（%s %s）", act.op, act.path)
             return PermissionDecision(
@@ -396,12 +462,7 @@ class DangerousActionGuard(MiddlewareBase):
         #   · 模型收到明确结果：「该动作已被用户在本会话拒绝，不要再试」
         #   · 用户**这条消息**里明确重新要求同一个动作 → 不算命中，照常弹卡确认
         # 放在危险模式之后：危险模式是用户当场打开的「别问我」开关，不该被历史拒绝挡住。
-        _hit = await file_policy.denial_hit(
-            act,
-            session_id=ids["session_id"],
-            user_text=str(ctx.get("input_text") or ""),
-        )
-        if _hit:
+        if kind == "repeat":
             _why = f"这个动作你在本会话里拒绝过：要{act.op} {act.path}"
             await file_policy.audit(
                 act, result=file_policy.RESULT_REPEAT_BLOCKED, rule="denied-repeat", **ids
@@ -420,7 +481,7 @@ class DangerousActionGuard(MiddlewareBase):
             )
 
         # ④ 没人看着（定时/无人值守）：没人点头就是不执行 —— 不能挂到超时
-        if not ctx.get("interactive", True):
+        if kind == "unattended":
             await file_policy.audit(act, result=file_policy.RESULT_REJECTED, rule="file-write-unattended", **ids)
             note_denied(
                 call_id,
@@ -444,6 +505,7 @@ class DangerousActionGuard(MiddlewareBase):
         detail["agent_id"] = ids["agent_id"]
         detail["workspace"] = ctx.get("workspace") or self._workspace or ""
         detail["dir"] = os.path.dirname(act.path)
+        detail["actions"] = [act.as_dict()]
         note_file_action(call_id, detail)
         note_reason(call_id, f"要{act.op} {act.path}")
         logger.info("文件权限：越界写入要确认（%s %s）", act.op, act.path)
@@ -452,6 +514,216 @@ class DangerousActionGuard(MiddlewareBase):
             message=f"要{act.op} {act.path} —— 这个位置在当前会话目录之外，需要你点头",
             decision_reason=guardrails.FILE_WRITE_RULE,
             # 每一次越界写都要人看着：不能被"总是允许"规则静默掉
+            bypass_immune=True,
+        )
+
+    async def _decide_writes(
+        self,
+        acts: list[file_policy.Action],
+        *,
+        agent,
+        tool_name: str,
+        call_id: str,
+        next_handler,
+        text: str = "",
+    ):
+        """一条调用里有**多个**文件动作：逐个裁决，不许整包连坐。
+
+        用户 2026-11 的现场：让助手写新文件 B，它把之前**已被拒绝**的 A 打包进
+        同一条命令 —— 平台一看见 A 就把整包拦下，B 连自己的确认卡都没得到。
+        口径（需求 2）：
+          · 已拒绝的：单独拦下、单独记「重复发起已拦截」、明确告诉模型；
+          · 需确认的：照常单独弹卡（卡上只写这次要动的位置）；
+          · 可放行的：跟着命令一起执行；
+          · 能拆分的：把被拒的**那几段**从命令里去掉再执行（见 ``on_acting``）。
+        返回 ``None`` = 交回引擎（和原来一样由引擎按工作目录判）。
+        """
+        ctx = current_run_ctx()
+        ids = dict(
+            agent_id=str(ctx.get("agent_id") or ""),
+            run_id=str(ctx.get("run_id") or ""),
+            session_id=str(ctx.get("session_id") or ""),
+        )
+        user_text = str(ctx.get("input_text") or "")
+        ws = str(ctx.get("workspace") or self._workspace or "")
+
+        # 单元 → 动作的映射：丢掉被拒的单元后还要拼回一条能执行的命令。
+        # 只有**命令**通道能改写（``on_acting`` 改的是入参里的 command）；
+        # 代码通道（python）改不了执行内容 —— 一律按"不可拆分"处理，
+        # 否则会出现"卡上说只写 B、实际把 A 也写了"。
+        units = (
+            file_policy.command_units(text, ws or None)
+            if text and _norm(tool_name) in file_policy.COMMAND_TOOLS
+            else None
+        )
+        pairs: list[tuple[int, file_policy.Action]] = []
+        if units:
+            for ui, unit in enumerate(units):
+                for act in unit.actions:
+                    pairs.append((ui, act))
+        if not pairs:
+            units = None
+            pairs = [(0, a) for a in acts]
+
+        kinds: list[str] = []
+        for _ui, act in pairs:
+            kinds.append(
+                await self._classify_write(
+                    act, agent=agent, tool_name=tool_name, session_id=ids["session_id"], user_text=user_text
+                )
+            )
+
+        # ── 自动放行/自动拦截的那几类：逐条留审计（结果分类沿用原来的四种）────
+        for (_ui, act), kind in zip(pairs, kinds):
+            if kind == "workspace":
+                await file_policy.audit(act, result=file_policy.RESULT_ALLOWED, rule="workspace", **ids)
+            elif kind == "dir-allow":
+                await file_policy.audit(act, result=file_policy.RESULT_APPROVED, rule="dir-allow", **ids)
+            elif kind == "danger-mode":
+                await file_policy.audit(act, result=file_policy.RESULT_SKIPPED, rule="danger-mode", **ids)
+            elif kind == "repeat":
+                await file_policy.audit(
+                    act, result=file_policy.RESULT_REPEAT_BLOCKED, rule="denied-repeat", **ids
+                )
+
+        repeat_at = [i for i, k in enumerate(kinds) if k == "repeat"]
+        confirm_at = [i for i, k in enumerate(kinds) if k == "confirm"]
+        unattended_at = [i for i, k in enumerate(kinds) if k == "unattended"]
+        engine_at = [i for i, k in enumerate(kinds) if k == "engine"]
+        # 同一段里既有被拒的、又有该问的（`cat f | tee A | tee B`）—— 丢掉整段会把
+        # 该问的也一起丢掉（卡上写了 B、结果没执行）。这种按不可拆分处理。
+        # 另外：只要有交给引擎判的动作，就没法只跑"可执行的那几段"（引擎判的是整条
+        # 命令）—— 同时还有被拒动作时也按不可拆分处理。
+        if repeat_at and engine_at:
+            units = None
+        for ui in {pairs[i][0] for i in repeat_at}:
+            if any(pairs[i][0] == ui for i in confirm_at + engine_at):
+                units = None
+                break
+
+        if unattended_at:
+            # 没人能点头：这一次里还有没人确认的动作 → 整条不执行（不挂到超时）
+            for i in unattended_at:
+                act = pairs[i][1]
+                await file_policy.audit(
+                    act, result=file_policy.RESULT_REJECTED, rule="file-write-unattended", **ids
+                )
+            note_denied(
+                call_id,
+                reason="这一轮没有人在看着（定时/无人值守），所以没有执行这条命令里的写入",
+                rule="file-write-unattended",
+            )
+            return PermissionDecision(
+                behavior=PermissionBehavior.DENY,
+                message=(
+                    "这一轮没有人在看着（定时/无人值守），所以没有执行这条命令里的写入。"
+                    "需要它这么做的话，让用户手动跑一次并在确认卡上点头，或者在设置里打开危险模式。"
+                ),
+                decision_reason="file-write-unattended",
+            )
+
+        # 被拒的那几段：先去重（同一条命令里可能重复写同一个文件）
+        drop_units: set[int] = set()
+        blocked_acts: list[file_policy.Action] = []
+        for i in repeat_at:
+            ui, act = pairs[i]
+            drop_units.add(ui)
+            if all(getattr(act, "path", "") != getattr(b, "path", "") for b in blocked_acts):
+                blocked_acts.append(act)
+        blocked_text = "、".join(f"要{a.op} {a.path}" for a in blocked_acts)
+
+        # 不能安全拆分（heredoc / `||` / 括号不平衡）又同时含「已拒绝 + 新动作」：
+        # 整条执行会把被拒的那个再做一遍 → 只能整条拦下，并让模型把新动作单独发起
+        # （下一次调用会得到它自己的确认卡）。半拆半执行比不执行更糟。
+        if repeat_at and (confirm_at or engine_at) and units is None:
+            _why = (
+                f"这条命令里有你在本会话里拒绝过的动作（{blocked_text}），"
+                "而它和新动作连在同一条命令里、没法只跑后半段，所以整条没有执行"
+            )
+            note_reason(call_id, _why)
+            note_denied(call_id, reason=_why, rule="denied-repeat", source="repeat")
+            logger.warning("文件权限：命令不可拆分且含已拒绝动作，整条拦下（%s）", blocked_text)
+            return PermissionDecision(
+                behavior=PermissionBehavior.DENY,
+                message=(
+                    f"{_why}。平台没有弹卡、也没有再记一条「用户拒绝」。"
+                    "要做的那个新动作请**单独发起一次**（不要和被拒的那步连在一起），"
+                    "它会得到自己的确认卡；被拒的那个不要再试。"
+                ),
+                decision_reason="file-write-denied-repeat",
+            )
+
+        trimmed = ""
+        if repeat_at and units:
+            trimmed = file_policy.join_units(
+                units, [i for i in range(len(units)) if i not in drop_units]
+            )
+
+        # ── 没有需要确认的：能跑的跑，被拒的跳过，模型收到说明 ────────────
+        if not confirm_at:
+            if engine_at and not repeat_at:
+                return None  # 全交给引擎（只读助手的情况）
+            if repeat_at:
+                notice = (
+                    f"【平台】这条命令里有你在本会话拒绝过的动作，已拦下没有执行：{blocked_text}。"
+                    "其余部分正常执行了。不要再试这一步，除非用户明确要求重做。"
+                )
+                note_reason(call_id, notice)
+                note_denied(call_id, reason=blocked_text, rule="denied-repeat", source="repeat")
+                if not trimmed:
+                    # 拆不出一段可执行的（整条都落在被拒的动作上）→ 整条不执行
+                    logger.warning("文件权限：整条命令都落在已拒绝的动作上，不执行（%s）", blocked_text)
+                    return PermissionDecision(
+                        behavior=PermissionBehavior.DENY,
+                        message=(
+                            f"这个动作你在本会话里拒绝过：{blocked_text}。"
+                            "平台按拒绝名单拦下了，没有执行、也没有再弹卡。"
+                            "除非用户在新消息里明确要求重做这个动作，否则不要再试。"
+                        ),
+                        decision_reason="file-write-denied-repeat",
+                    )
+                # 命令里还有可执行的部分 → 改写后执行（不能整条跑，会把被拒的再做一遍）
+                note_trim(call_id, trimmed, notice)
+                logger.warning("文件权限：按拒绝名单跳过一段后执行剩余部分（%s）", blocked_text)
+                return PermissionDecision(
+                    behavior=PermissionBehavior.ALLOW,
+                    message="其余部分可以执行；被拒绝的动作已拦下。",
+                    decision_reason="file-write-partial-allow",
+                )
+            return None
+
+        # ── 有需要确认的：卡上只写这次要动的位置（被拒的不再出现在卡上）────
+        first = pairs[confirm_at[0]][1]
+        confirm_acts = [pairs[i][1] for i in confirm_at]
+        detail = first.as_dict()
+        detail["agent"] = await file_policy.agent_name(ids["agent_id"])
+        detail["agent_id"] = ids["agent_id"]
+        detail["workspace"] = ctx.get("workspace") or self._workspace or ""
+        detail["dir"] = os.path.dirname(str(detail.get("path") or ""))
+        # 这张卡一共覆盖哪些目标：拒绝时要把**每一个**都记进拒绝名单，
+        # 免得下一轮模型换个写法再拿同一个文件来问一遍（需求 1）。
+        detail["actions"] = [
+            a.as_dict() for a in [*confirm_acts, *[pairs[i][1] for i in range(len(pairs)) if kinds[i] == "workspace"]]
+        ]
+        note_file_action(call_id, detail)
+
+        targets = "、".join(f"{a.op} {a.path}" for a in confirm_acts)
+        why = f"要{first.op} {first.path}" if len(confirm_acts) == 1 else f"这条命令要动 {len(confirm_acts)} 个位置：{targets}"
+        if repeat_at:
+            why += f"（另外一部分已按本会话的拒绝名单拦下，不会执行：{blocked_text}）"
+        note_reason(call_id, why)
+        if trimmed:
+            note_trim(
+                call_id,
+                trimmed,
+                f"【平台】这条命令里有你在本会话拒绝过的动作，已拦下没有执行：{blocked_text}。"
+                "其余部分按用户确认执行了。不要再试这一步，除非用户明确要求重做。",
+            )
+        logger.info("文件权限：多目标写入要确认（%s）", targets)
+        return PermissionDecision(
+            behavior=PermissionBehavior.ASK,
+            message=f"{why} —— 这个位置在当前会话目录之外，需要你点头",
+            decision_reason=guardrails.FILE_WRITE_RULE,
             bypass_immune=True,
         )
 
@@ -553,12 +825,44 @@ class DangerousActionGuard(MiddlewareBase):
             return await next_handler()
 
         verdict = guardrails.classify_tool_call(name, tool_input, engine_scope, read_scope)
+
+        # ── 1.5) 一条命令里有多个文件动作：逐个裁决（需求 2：不许整包连坐）────
+        # 现场（2026-11）：让助手写新文件 B，它把**已被拒绝**的 A 打包进同一条命令，
+        # 平台一看见 A 就整包拦下 —— B 连自己的确认卡都没得到。这里按动作分类：
+        # 被拒的单独拦、新的照常弹卡（能拆分的把被拒那几段剔掉再执行）。
+        # DENY 除外：`rm -rf / && printf > B` 里的 rm 是规则级一票否决，绝不能
+        # 因为"顺手把 B 写了"被放过（DENY 照旧走下面的原有分支）。
+        if not (verdict is not None and verdict.risk == guardrails.RISK_DENY):
+            if short_name in file_policy.COMMAND_TOOLS or short_name in file_policy.CODE_TOOLS:
+                _acts = guardrails.file_actions_for(name, tool_input, ws or None)
+                if len(_acts) >= 2:
+                    _multi = await self._decide_writes(
+                        _acts,
+                        agent=agent,
+                        tool_name=name,
+                        call_id=call_id,
+                        next_handler=next_handler,
+                        text=self._command_text(tool_input),
+                    )
+                    if _multi is not None:
+                        return _multi
+
         if verdict is None or verdict.risk == guardrails.RISK_ALLOW:
             # 只读命令（cat/ls/grep…）同样要留痕 —— 判类型用的是"读"
             await self._audit_read(name, tool_input, ws)
             return await next_handler()
         if verdict.risk == guardrails.RISK_ASK and verdict.rule == guardrails.FILE_WRITE_RULE:
-            act = guardrails.file_action_for(name, tool_input, ws or None)
+            _acts = guardrails.file_actions_for(name, tool_input, ws or None)
+            if len(_acts) >= 2:
+                return await self._decide_writes(
+                    _acts,
+                    agent=agent,
+                    tool_name=name,
+                    call_id=call_id,
+                    next_handler=next_handler,
+                    text=verdict.snippet or self._command_text(tool_input),
+                )
+            act = _acts[0] if _acts else None
             if act is not None:
                 return await self._decide_write(
                     act,
@@ -658,3 +962,58 @@ class DangerousActionGuard(MiddlewareBase):
             # 安全类 ASK 不被"总是允许"规则静默掉：破坏性命令每次都要人看着
             bypass_immune=True,
         )
+
+    # ------------------------------------------------------------------ #
+    # 执行前改写入参：把「已被用户拒绝的那几段」从命令里去掉
+    # ------------------------------------------------------------------ #
+    async def on_acting(self, agent, input_kwargs: dict, next_handler):
+        """执行阶段的小手术：只跑**可执行的那几段**，并把被拦的告诉模型。
+
+        为什么不能在权限层改：AgentScope 给中间件的 ``tool_call``/``tool_input``
+        是深拷贝（源码注释写明"middleware cannot mutate what the agent consumes
+        later"），改了执行时也看不到。真正执行前（``on_acting``）拿到的才是
+        ``toolkit.call_tool`` 会用的那一份。
+
+        没有改写计划时原样透传（绝大多数调用走这条）。
+        """
+        tool_call = input_kwargs.get("tool_call")
+        call_id = str(getattr(tool_call, "id", "") or "")
+        command, note = pop_trim(call_id)
+        if not command:
+            async for item in next_handler():
+                yield item
+            return
+
+        raw = getattr(tool_call, "input", "")
+        try:
+            import json
+
+            data = json.loads(raw) if isinstance(raw, str) else dict(raw or {})
+            data["command"] = command
+            tool_call.input = json.dumps(data, ensure_ascii=False)
+            logger.warning("文件权限：执行前改写命令（去掉已拒绝的那一段）：%s", command[:200])
+        except Exception:  # noqa: BLE001 —— 改不动就按原命令跑（拒绝名单在权限层已拦过）
+            logger.warning("文件权限：改写命令失败，按原样执行", exc_info=True)
+            note = ""
+
+        if not note:
+            async for item in next_handler():
+                yield item
+            return
+
+        # 给模型留一句说明：哪一步被拦下了、没有执行（否则它以为整条都跑成功了）
+        from agentscope.message import TextBlock
+        from agentscope.tool import ToolResponse
+
+        async for item in next_handler():
+            if isinstance(item, ToolResponse):
+                try:
+                    item = ToolResponse(
+                        content=[*item.content, TextBlock(type="text", text=note)],
+                        state=item.state,
+                        metadata=item.metadata,
+                        id=item.id,
+                    )
+                except Exception:  # noqa: BLE001 —— 拼不上就少一句说明，别毁了工具结果
+                    logger.warning("文件权限：给工具结果补说明失败", exc_info=True)
+            yield item

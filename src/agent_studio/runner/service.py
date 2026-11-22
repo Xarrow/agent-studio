@@ -106,17 +106,29 @@ def _denial_entry(
 
 
 def _action_summary(hitl: HitlResponse, call_id: str) -> str:
-    """确认卡上那条「要新建 /var/…」的摘要（拒绝之后要点名，别只说"这一步"）。"""
+    """确认卡上那条「要新建 /var/…」的摘要（拒绝之后要点名，别只说"这一步"）。
+
+    一张卡可能覆盖**多个**目标（复合命令 ``mkdir -p X && printf > X/a``）——
+    逐个点名，否则用户只会看到第一个，还以为被拒的是那个目录。
+    """
     try:
         actions = (hitl.payload or {}).get("file_actions") or {}
         data = actions.get(call_id) if isinstance(actions, dict) else None
         if not isinstance(data, dict):
             return ""
-        op = str(data.get("op") or "").strip()
-        path = str(data.get("shown") or data.get("path") or "").strip()
-        if not path:
-            return ""
-        return f"要{op} {path}".strip() if op else path
+        items = data.get("actions") if isinstance(data.get("actions"), list) else None
+        out: list[str] = []
+        seen: set[tuple[str, str]] = set()
+        for item in items or [data]:
+            if not isinstance(item, dict):
+                continue
+            op = str(item.get("op") or "").strip()
+            path = str(item.get("shown") or item.get("path") or "").strip()
+            if not path or (op, path) in seen:
+                continue
+            seen.add((op, path))
+            out.append(f"要{op} {path}".strip() if op else path)
+        return "、".join(out)[:400]
     except Exception:  # noqa: BLE001
         return ""
 

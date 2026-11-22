@@ -174,13 +174,23 @@ def _out_of_workspace_paths(tokens: list[str], workspace: str | Sequence[str] | 
 
 
 def _redirect_targets(segment: str) -> list[str]:
-    """``> /etc/x`` / ``>> file`` / ``tee -a /etc/x`` 的目标。"""
+    """``> /etc/x`` / ``>> file`` / ``tee -a /etc/x`` 的目标。
+
+    写到 ``/dev/null`` 这类伪设备的重定向**不算目标**：它没有实际落盘，
+    算进来就会把 ``ls … 2>/dev/null`` 这种纯读命令判成「要写工作目录外的文件」。
+    """
     targets: list[str] = []
     for m in re.finditer(r"(?:^|\s)\d?>{1,2}\s*([^\s;|&]+)", segment):
+        if file_policy.is_pseudo_target(os.path.normpath(m.group(1))):
+            continue
         targets.append(m.group(1))
     m = re.search(r"\btee\b([^;|&]*)", segment)
     if m:
-        targets += [t for t in _tokens(m.group(0))[1:] if not t.startswith("-")]
+        targets += [
+            t
+            for t in _tokens(m.group(0))[1:]
+            if not t.startswith("-") and not file_policy.is_pseudo_target(os.path.normpath(t))
+        ]
     return targets
 
 
@@ -874,6 +884,33 @@ def classify_protected(
     )
 
 
+def file_actions_for(
+    name: str,
+    tool_input: dict | None,
+    workspace: str | Sequence[str] | None = None,
+):
+    """这次调用涉及的**全部**文件动作（命令/代码通道可能解析出好几条）。
+
+    ``file_action_for`` 只给第一条 —— 那适合"一张卡一个目标"，但一条复合命令
+    （``mkdir -p X && printf > X/a``）里有好几个目标，逐条裁决要用这份。
+    """
+    short = (name or "").split("/")[-1].split(".")[-1].lower()
+    if "__" in short:
+        short = short.split("__")[-1]
+    data = tool_input if isinstance(tool_input, dict) else {}
+    ws = _first_root(workspace) or None
+    if short in file_policy.FILE_WRITE_TOOLS:
+        act = file_policy.action_for_tool(short, data, ws)
+        return [act] if act is not None else []
+    if short in file_policy.COMMAND_TOOLS:
+        text = next((data[k] for k in _COMMAND_KEYS if isinstance(data.get(k), str) and data[k].strip()), "")
+        return file_policy.actions_for_command(text, ws) if text else []
+    if short in file_policy.CODE_TOOLS:
+        text = next((data[k] for k in _CODE_KEYS if isinstance(data.get(k), str) and data[k].strip()), "")
+        return file_policy.actions_for_code(text, ws) if text else []
+    return []
+
+
 def file_action_for(
     name: str,
     tool_input: dict | None,
@@ -884,22 +921,8 @@ def file_action_for(
     ``workspace`` 只取**当前会话的工作目录**（用户第 3 条：只有这里直接放行）。
     助手自己申请的额外根目录不算 —— 那是"允许它去那儿"，不是"不用问"。
     """
-    short = (name or "").split("/")[-1].split(".")[-1].lower()
-    if "__" in short:
-        short = short.split("__")[-1]
-    data = tool_input if isinstance(tool_input, dict) else {}
-    ws = _first_root(workspace) or None
-    if short in file_policy.FILE_WRITE_TOOLS:
-        return file_policy.action_for_tool(short, data, ws)
-    if short in file_policy.COMMAND_TOOLS:
-        text = next((data[k] for k in _COMMAND_KEYS if isinstance(data.get(k), str) and data[k].strip()), "")
-        acts = file_policy.actions_for_command(text, ws) if text else []
-        return acts[0] if acts else None
-    if short in file_policy.CODE_TOOLS:
-        text = next((data[k] for k in _CODE_KEYS if isinstance(data.get(k), str) and data[k].strip()), "")
-        acts = file_policy.actions_for_code(text, ws) if text else []
-        return acts[0] if acts else None
-    return None
+    acts = file_actions_for(name, tool_input, workspace)
+    return acts[0] if acts else None
 
 
 def file_action_for_read(
@@ -931,13 +954,21 @@ def classify_file_write(
     tool_input: dict | None,
     workspace: str | Sequence[str] | None = None,
 ) -> Verdict | None:
-    """工作目录之外的写入 → ASK（用户第 3 条）。目录内直接放行，不在这里表态。"""
-    act = file_action_for(name, tool_input, workspace)
-    if act is None or act.inside:
+    """工作目录之外的写入 → ASK（用户第 3 条）。目录内直接放行，不在这里表态。
+
+    看**全部**目标：一条命令的第一个目标在目录里、第二个在目录外时，也必须是 ASK
+    （只看第一条会把"顺手往家目录写一个"漏过去）。
+    """
+    acts = file_actions_for(name, tool_input, workspace)
+    outside = [a for a in acts if not a.inside]
+    if not outside:
         return None
+    act = outside[0]
+    more = len(outside) - 1
+    suffix = f"（这条命令还会动另外 {more} 个位置）" if more > 0 else ""
     return Verdict(
         RISK_ASK,
-        f"要{act.op} {act.path} —— 这个位置在当前会话目录之外，需要你点头",
+        f"要{act.op} {act.path} —— 这个位置在当前会话目录之外，需要你点头{suffix}",
         FILE_WRITE_RULE,
         _short(act.path),
     )

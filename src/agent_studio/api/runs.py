@@ -750,6 +750,32 @@ async def rerun_run(run_id: str, session: AsyncSession = Depends(get_session)) -
     return to_read(run)
 
 
+def _card_actions_of(file_acts: dict[str, dict]) -> list[dict]:
+    """这张确认卡一共覆盖哪些文件动作（一张卡可能对应好几个目标）。
+
+    新卡在 ``file_actions[call_id]["actions"]`` 里带全量目标（复合命令
+    ``mkdir -p X && printf > X/a`` 就两条）；老记录没有这个字段，退回卡上那一条。
+    去重按（操作, 路径）—— 同一条命令里重复写同一个文件不该记两遍。
+    """
+    out: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    for data in file_acts.values():
+        items = data.get("actions") if isinstance(data.get("actions"), list) else None
+        for item in items or [data]:
+            if not isinstance(item, dict):
+                continue
+            path = str(item.get("path") or "")
+            op = str(item.get("op") or "")
+            if not path:
+                continue
+            key = (op, path)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(item)
+    return out
+
+
 @router.post("/resume/{run_id}")
 async def resume_run(
     run_id: str, payload: HitlResumeRequest, session: AsyncSession = Depends(get_session)
@@ -854,7 +880,22 @@ async def resume_run(
     # 审计：用户点了允许还是拒绝，都要能查到（路径/操作/谁）。
     # **写在续跑确认成功之后**：续跑没接上就不算"用户拒绝"，不能留一条假记录
     # （现场：同一张卡被点三次，审计里三条同一文件的"用户拒绝"）。
-    if _file_act is not None:
+    # 一张卡可能覆盖**多个**文件目标（复合命令 / 一条命令写好几个地方）——
+    # 逐个记，"用户拒绝"才对得上真正被拒的那些文件（需求 1）。
+    _card_actions = _card_actions_of(_file_acts)
+    if _card_actions:
+        from .. import file_policy
+
+        for _act in _card_actions:
+            await file_policy.audit(
+                _act,
+                result=file_policy.RESULT_APPROVED if payload.confirm else file_policy.RESULT_REJECTED,
+                rule=str(_hitl.get("rule") or "file-write"),
+                agent_id=str(run.agent_id or ""),
+                run_id=str(run.id or ""),
+                session_id=str(run.session_id or ""),
+            )
+    elif _file_act is not None:
         from .. import file_policy
 
         await file_policy.audit(
@@ -868,10 +909,12 @@ async def resume_run(
     # 会话级「已拒绝动作」名单：拒绝 → 记下（本会话内同一个动作不再弹卡）；
     # 允许 → 划掉（用户改主意了，同一个动作后面还写也不算"重复发起"）。
     # 按这张卡上的**每一条**文件动作记，不只第一条：用户点的是这一次确认。
-    if _file_acts and run.session_id:
+    # （卡上的 ``actions`` 已经排除了"这张卡之外就被拦下"的那些 —— 点允许不该
+    #  顺手把被拒动作从名单里划掉。）
+    if _card_actions and run.session_id:
         from .. import file_policy
 
-        for _act in _file_acts.values():
+        for _act in _card_actions:
             if payload.confirm:
                 await file_policy.forget_denial(_act, session_id=str(run.session_id))
             else:
