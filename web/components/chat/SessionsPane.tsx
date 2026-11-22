@@ -284,22 +284,6 @@ export function SessionsPane({
           + 新对话
         </button>
         <button
-          type="button"
-          data-tap
-          onClick={() => {
-            setManaging((v) => !v);
-            setSelected(new Set());
-          }}
-          className="h-9 shrink-0 rounded-[var(--radius-sm)] px-2 text-[length:var(--fs-sm)]"
-          style={{
-            color: managing ? "var(--color-text)" : "var(--color-text-2)",
-            background: managing ? "var(--bg-selected)" : "transparent",
-          }}
-          title={managing ? "退出管理" : "批量管理会话"}
-        >
-          {managing ? "完成" : "管理"}
-        </button>
-        <button
           data-tap
           title="收起会话栏"
           onClick={onCollapse}
@@ -336,6 +320,30 @@ export function SessionsPane({
             style={{ paddingLeft: 36 }}
             data-tap
           />
+          {/* 批量选择收进这里：顶部只留「+ 新对话」，位置让给助手名 */}
+          <button
+            type="button"
+            data-tap
+            aria-label={managing ? "退出批量选择" : "更多会话操作"}
+            aria-haspopup="menu"
+            onClick={() => {
+              setManaging((v) => !v);
+              setSelected(new Set());
+            }}
+            className="absolute right-1 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-[var(--radius-sm)] hover:bg-[var(--bg-selected)]"
+            style={{ color: managing ? "var(--color-accent)" : "var(--color-text-3)" }}
+            title={managing ? "退出批量选择" : "批量选择会话"}
+          >
+            {managing ? (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+                <path d="m5 12 5 5L20 7" />
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" aria-hidden="true">
+                <path d="M4 7h16M4 12h16M4 17h10" />
+              </svg>
+            )}
+          </button>
         </div>
         <div className="mt-1.5 flex items-center gap-1.5">
           <button
@@ -556,6 +564,11 @@ export function SessionsPane({
                                   </div>
                                 )}
                                 <div className="mt-0.5 truncate text-[length:var(--fs-xs)] max-md:text-[length:var(--fs-sm)] tabular-nums" style={{ color: "var(--color-text-3)" }}>
+                                  {/* 不是当前助手的会话（派出去的 worker / 别的助手）要标出来，
+                                      否则一列标题看不出这条是谁在聊 */}
+                                  {s.agent_id && agentId && s.agent_id !== agentId && s.agent_name
+                                    ? `${s.agent_name} · `
+                                    : ""}
                                   {s.turn_count} 轮 · {fmt.relative(s.last_active_at)}
                                 </div>
                               </div>
