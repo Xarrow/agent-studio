@@ -545,6 +545,7 @@ class AgentScopeRuntime(AgentRuntime):
             session_allow=session_allow,
             run_id=str(_run_ctx.get("run_id") or "") or None,
             turn_note=context.turn_note if context else None,
+            denied_actions=context.denied_actions if context else None,
         )
 
         # 多轮会话：把历史消息预置进 Agent。

@@ -77,11 +77,16 @@ def clear_reasons() -> None:
 _DENY_NOTES: dict[str, dict[str, str]] = {}
 
 
-def note_denied(call_id: str, *, reason: str, rule: str = "") -> None:
-    """记一条「平台/护栏拦下」的事实（不是用户点的拒绝）。"""
+def note_denied(call_id: str, *, reason: str, rule: str = "", source: str = "guard") -> None:
+    """记一条「平台/护栏拦下」的事实（不是用户点的拒绝）。
+
+    ``source`` 默认 ``guard``（禁区、黑名单、护栏）；**重复发起被拒绝名单拦下**时
+    传 ``repeat`` —— 收尾文案与是否中止这一轮都要按它分开（见 runner.service）。
+    """
     if not call_id:
         return
-    _DENY_NOTES[call_id] = {"source": "guard", "rule": rule or "", "reason": reason or ""}
+    _DENY_NOTES[call_id] = {"source": source or "guard", "rule": rule or "", "reason": reason or ""}
+
     if len(_DENY_NOTES) > _FALLBACK_MAX:
         for old in list(_DENY_NOTES)[: _FALLBACK_MAX // 5]:
             _DENY_NOTES.pop(old, None)
@@ -381,6 +386,37 @@ class DangerousActionGuard(MiddlewareBase):
                 behavior=PermissionBehavior.ALLOW,
                 message="危险模式已开启：跳过确认直接执行。",
                 decision_reason="file-write-danger-mode",
+            )
+
+        # ③.5 本会话里用户已经拒绝过这个动作：平台直接拦，**不再弹卡**
+        # 现场（2026-11 公网真人路径）：拒绝一次之后，下一轮只说一句「回个收到」，
+        # 模型又把同一个写入发了一遍 —— 同一张卡又弹出来，用户被迫点第二次、
+        # 第三次。提示词劝不住，所以这里用**会话级拒绝名单**兜底：
+        #   · 命中的这一条不记「用户拒绝」（那是上一次的事实，重复记就是假审计）
+        #   · 模型收到明确结果：「该动作已被用户在本会话拒绝，不要再试」
+        #   · 用户**这条消息**里明确重新要求同一个动作 → 不算命中，照常弹卡确认
+        # 放在危险模式之后：危险模式是用户当场打开的「别问我」开关，不该被历史拒绝挡住。
+        _hit = await file_policy.denial_hit(
+            act,
+            session_id=ids["session_id"],
+            user_text=str(ctx.get("input_text") or ""),
+        )
+        if _hit:
+            _why = f"这个动作你在本会话里拒绝过：要{act.op} {act.path}"
+            await file_policy.audit(
+                act, result=file_policy.RESULT_REPEAT_BLOCKED, rule="denied-repeat", **ids
+            )
+            note_reason(call_id, _why)
+            note_denied(call_id, reason=_why, rule="denied-repeat", source="repeat")
+            logger.warning("文件权限：重复发起已拦截（%s %s）", act.op, act.path)
+            return PermissionDecision(
+                behavior=PermissionBehavior.DENY,
+                message=(
+                    f"{_why}。平台按这个会话的拒绝名单拦下了这次的重复发起："
+                    "没有再次弹卡，也不再执行。除非用户在新消息里明确要求重做这个动作，"
+                    "否则不要再试 —— 换个做法之前先问用户。"
+                ),
+                decision_reason="file-write-denied-repeat",
             )
 
         # ④ 没人看着（定时/无人值守）：没人点头就是不执行 —— 不能挂到超时

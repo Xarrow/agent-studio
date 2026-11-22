@@ -125,13 +125,22 @@ def denial_error(items: list[dict[str, Any]], *, origin: str = "") -> str:
     """把「这一轮为什么停」写成一句和事实相符的人话。"""
     names = "、".join(dict.fromkeys(str(i.get("name") or "") for i in items if i.get("name")))
     who = f" {names} " if names else "这一步"
-    blocked = [i for i in items if i.get("source") != "user"]
+    # 「重复发起被拒绝名单拦下」单独一类：这不是用户此刻点了拒绝，也不该收尾
+    # （在会话里发一句「回个收到」不该因为平台拦了一次重试就变成 aborted）。
+    repeats = [i for i in items if i.get("source") == "repeat"]
+    blocked = [i for i in items if i.get("source") not in ("user", "repeat")]
     users = [i for i in items if i.get("source") == "user"]
     if origin == "schedule":
         why = str((blocked[0] if blocked else {}).get("reason") or names or "工具调用")
         return (
             f"这条活需要人点头才能做（{why}），定时任务里没人能点，本轮停下了。"
             "要跑就自己在对话里发一次。"
+        )
+    if repeats and not users and not blocked:
+        why = str(repeats[0].get("reason") or "这个动作你在本会话里拒绝过")
+        return (
+            f"{why}。平台按本会话的拒绝名单拦下了这次的重复发起：没有再次弹卡，"
+            "也没有记成「你拒绝」。要真做这件事，明确说一句「还是把那个文件写了吧」就行。"
         )
     if blocked and not users:
         why = str(blocked[0].get("reason") or "平台安全规则不允许这一步")
@@ -141,8 +150,9 @@ def denial_error(items: list[dict[str, Any]], *, origin: str = "") -> str:
             "不是你点的拒绝，不会换个工具再试。"
         )
     tail = ""
-    if blocked:
-        tail = f"（另有一步被平台拦下：{str(blocked[0].get('reason') or '见运行记录')}）"
+    if blocked or repeats:
+        _first = (blocked or repeats)[0]
+        tail = f"（另有一步被平台拦下：{str(_first.get('reason') or '见运行记录')}）"
     detail = ""
     if users:
         reason = str(users[0].get("reason") or "").strip()
@@ -150,7 +160,8 @@ def denial_error(items: list[dict[str, Any]], *, origin: str = "") -> str:
             detail = f"（{reason}）"
     return (
         f"你拒绝了{who}{detail}，本轮就停在这里"
-        "（不会换个工具再试一遍；要继续就再发一条消息，把做法说清楚）" + tail
+        "（不会换个工具再试一遍；这个动作也记进了本会话的拒绝名单，"
+        "除非你明确要求重做，否则不会再拿同一件事来问你）" + tail
     )
 
 
@@ -1049,6 +1060,9 @@ class RunService:
                 # 带上会话号：默认按会话隔离（sessions/<会话号>/），没有会话才算
                 # 「这一跑一份」的独立目录 —— 会话之间不共用文件
                 work_dir = run_work_dir(definition, run)
+                # 用户**这条消息**的原文：重复发起被拒绝动作时靠它判「是不是明确重新要求」
+                # （必须在拼工作目录提示之前取，别把平台补的那段当用户的话）。
+                _user_text = str(query_text(run_input) or "")
                 # 工具靠 contextvar 拿"我在哪个目录干活"（python/proc_* 都读它）。
                 # 这里必须补一次：work_dir 是上面才算出来的，而 set_run_ctx 是**整体覆盖**。
                 set_run_ctx(
@@ -1060,6 +1074,7 @@ class RunService:
                     workspace=str(work_dir),
                     session_id=str(run.session_id or ""),
                     origin=run.origin,
+                    input_text=_user_text,
                     # 整体覆盖所以再补一次：worker_report 的收件人（见上面第一处）
                     parent_run_id=str(run.parent_run_id or ""),
                     root_run_id=str(run.root_run_id or run.id),
@@ -1198,13 +1213,20 @@ class RunService:
                                         ) == "denied":
                                             _p = ev.payload or {}
                                             _cid = str(_p.get("tool_call_id") or "")
-                                            denied.append(
-                                                _denial_entry(
-                                                    name=str(_p.get("tool_call_name") or ""),
-                                                    call_id=_cid,
-                                                    result_text=_result_text.pop(_cid, ""),
-                                                )
+                                            _entry = _denial_entry(
+                                                name=str(_p.get("tool_call_name") or ""),
+                                                call_id=_cid,
+                                                result_text=_result_text.pop(_cid, ""),
                                             )
+                                            # 「重复发起被拒绝名单拦下」不是收尾的理由：平台挡住了
+                                            # 一次重试，模型拿到结果继续回话 —— 用户在会话里问
+                                            # 「回个收到」就该得到一句正常回复，不该整轮变成 aborted。
+                                            if _entry.get("source") == "repeat":
+                                                logger.info(
+                                                    "重复发起已拦截，本轮继续：%s", _entry.get("reason")
+                                                )
+                                                continue
+                                            denied.append(_entry)
                                             # 用「取消自己」收尾，不要 break + aclose：
                                             # 半路关掉 AgentScope 的异步生成器会把这一轮吊住
                                             # （实测：同一会话随后再发一条，永远停在 running、零事件）。
@@ -1736,6 +1758,8 @@ class RunService:
                 workspace=str(_resume_work_dir),
                 session_id=str(_resume_session_id or ""),
                 origin=run.origin,
+                # 续跑的这一轮用户消息还是原来那句：拒绝名单的「例外放行」判定要用它
+                input_text=str(query_text(run.input) or ""),
                 parent_run_id=str(run.parent_run_id or ""),
                 root_run_id=str(run.root_run_id or run.id),
                 # 能走到续跑这一步，说明刚才就有人在点「允许」
@@ -1808,17 +1832,20 @@ class RunService:
                         ) == "denied":
                             _p = ev.payload or {}
                             _cid = str(_p.get("tool_call_id") or "")
-                            denied.append(
-                                _denial_entry(
-                                    name=str(_p.get("tool_call_name") or ""),
-                                    call_id=_cid,
-                                    result_text=_result_text.pop(_cid, ""),
-                                    # 续跑只有在「用户刚点过卡」时发生：
-                                    # 点了拒绝 → 这次 denied 是他点的；点了允许 → 是平台拦的
-                                    assume_user=not bool(hitl.confirm),
-                                    action=_action_summary(hitl, _cid),
-                                )
+                            _entry = _denial_entry(
+                                name=str(_p.get("tool_call_name") or ""),
+                                call_id=_cid,
+                                result_text=_result_text.pop(_cid, ""),
+                                # 续跑只有在「用户刚点过卡」时发生：
+                                # 点了拒绝 → 这次 denied 是他点的；点了允许 → 是平台拦的
+                                assume_user=not bool(hitl.confirm),
+                                action=_action_summary(hitl, _cid),
                             )
+                            # 同主路径：重复发起被拒绝名单拦下时不收尾（让模型继续回话）
+                            if _entry.get("source") == "repeat":
+                                logger.info("重复发起已拦截，本轮继续：%s", _entry.get("reason"))
+                                continue
+                            denied.append(_entry)
                             # 同主路径：取消自己，别 break + aclose（会把会话吊住）
                             if _me is not None:
                                 asyncio.get_running_loop().call_soon(_me.cancel)

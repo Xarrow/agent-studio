@@ -33,6 +33,8 @@ const RESULT_TONE: Record<string, { color: string; bg: string }> = {
   rejected: { color: "var(--color-err)", bg: "color-mix(in srgb, var(--color-err) 12%, transparent)" },
   skipped: { color: "var(--color-warn)", bg: "color-mix(in srgb, var(--color-warn) 14%, transparent)" },
   blocked: { color: "var(--color-err)", bg: "color-mix(in srgb, var(--color-err) 16%, transparent)" },
+  // 重复发起被拒绝名单拦下：不是用户这次又拒了一次，用告警色区分开
+  repeat_blocked: { color: "var(--color-warn)", bg: "color-mix(in srgb, var(--color-warn) 14%, transparent)" },
 };
 
 /** 把开关状态广播出去 —— 顶栏那条常驻提示靠它即时更新（不用刷新页面） */

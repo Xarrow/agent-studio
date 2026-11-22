@@ -865,6 +865,22 @@ async def resume_run(
             run_id=str(run.id or ""),
             session_id=str(run.session_id or ""),
         )
+    # 会话级「已拒绝动作」名单：拒绝 → 记下（本会话内同一个动作不再弹卡）；
+    # 允许 → 划掉（用户改主意了，同一个动作后面还写也不算"重复发起"）。
+    # 按这张卡上的**每一条**文件动作记，不只第一条：用户点的是这一次确认。
+    if _file_acts and run.session_id:
+        from .. import file_policy
+
+        for _act in _file_acts.values():
+            if payload.confirm:
+                await file_policy.forget_denial(_act, session_id=str(run.session_id))
+            else:
+                await file_policy.remember_denial(
+                    _act,
+                    session_id=str(run.session_id),
+                    agent_id=str(run.agent_id or ""),
+                    run_id=str(run.id or ""),
+                )
     return {"resumed": True}
 
 

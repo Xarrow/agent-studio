@@ -146,6 +146,15 @@ async def build_turn_context(
                 and str(last.content or "").startswith(TURN_NOTE_PREFIX)
             ):
                 ctx.turn_note = str(last.content)
+            # 本会话用户拒绝过的文件动作（平台层的兜底名单）。每一轮都注入：
+            # 「上一轮未完成」只讲最近一轮，而拒绝是这个会话累积的事实 ——
+            # 现场就是隔了一轮（用户只说了句「回个收到」）模型又把同一个写入发了一遍。
+            try:
+                from . import file_policy
+
+                ctx.denied_actions = await file_policy.denied_in_session(session_id)
+            except Exception:  # noqa: BLE001 —— 读不到就不注入，最坏是模型靠提示词自律
+                logger.warning("读取会话拒绝名单失败 session=%s", session_id, exc_info=True)
 
     # 常驻层：pinned 的记忆每轮整段注入，**不参与相似度排序**，也不受 recall_enabled 影响
     # （关掉检索是不想塞不相关的细节，不是不想知道用户是谁）

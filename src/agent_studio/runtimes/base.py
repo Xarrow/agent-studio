@@ -166,6 +166,10 @@ class TurnContext(BaseModel):
     #: 上一轮没做完的原因（「〔本轮未完成〕…」那条）—— 拼进 system prompt，
     #: 让模型知道"那个请求已经结束了"，别下一轮又自动重试同一个操作。
     turn_note: str | None = None
+    #: 本会话里用户**拒绝过**的文件动作（``file_policy.denied_in_session`` 那份）。
+    #: 渲染进 system prompt：这些动作本会话内不要重新发起（平台另有拦截兜底）。
+    #: 只讲最近一轮的 ``turn_note`` 不够 —— 拒绝名单是这个会话的累积约束。
+    denied_actions: list[dict[str, Any]] = Field(default_factory=list)
 
     #: 长期记忆：平台召回的条目（已渲染成可注入文本）
     memory_text: str | None = None

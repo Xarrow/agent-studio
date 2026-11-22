@@ -1049,6 +1049,14 @@ async def delete_session(
     row = await session.get(ChatSession, session_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"会话不存在: {session_id}")
+    # 会话级的「已拒绝动作」名单跟着会话一起消失（它只在这个会话内有效）
+    from sqlalchemy import delete as _delete
+
+    from ..models import SessionDeniedAction
+
+    await session.execute(
+        _delete(SessionDeniedAction).where(SessionDeniedAction.session_id == session_id)
+    )
     await session.delete(row)
     await session.commit()
     removed = _remove_session_dir(session_id)

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import importlib
 import logging
+import time
 from pathlib import Path
 from typing import Any
 
@@ -897,6 +898,42 @@ def build_mcp_client(server: dict[str, Any]) -> Any:
     )
 
 
+def render_denied_actions(items: list[dict[str, Any]] | None) -> str:
+    """把「本会话被用户拒绝过的动作」渲染成 system prompt 里的一段。
+
+    为什么要单独一段（而不是只靠「上一轮未完成」）：那条只讲**最近一轮**，
+    而拒绝是这个会话累积的事实。模型看不到这行，下一轮就会把同一个写入再发一遍
+    —— 现场（2026-11）就是这样把同一张确认卡连弹了三次。
+
+    写法上刻意**不复述原始任务**：只列「什么操作 + 哪个路径 + 什么时候」，
+    并说死"这些不是还没做的任务"，不给模型重试的由头。
+    """
+    rows = [r for r in (items or []) if isinstance(r, dict) and r.get("path")]
+    if not rows:
+        return ""
+    lines = [
+        "## 已被用户拒绝的动作（平台事实，不是新任务）",
+        "以下动作已被用户拒绝，本会话内不要重新发起：",
+    ]
+    for row in rows[:20]:
+        op = str(row.get("op") or "写")
+        path = str(row.get("path") or "")
+        when = ""
+        try:
+            ts = int(row.get("ts") or 0)
+            if ts > 0:
+                when = time.strftime("，%H:%M", time.localtime(ts / 1000))
+        except Exception:  # noqa: BLE001 —— 时间只是补充信息，取不到就不写
+            when = ""
+        lines.append(f"- {op} {path}{when}")
+    lines.append(
+        "其中任何一条都**不是**还没做的任务：不要再试、也不要换个工具绕过。"
+        "只有用户在**新消息里明确要求重做**同一个动作（提到这个文件并要求写）时，"
+        "才可以再发起一次（那时平台会照常请他确认）。"
+    )
+    return "\n".join(lines)
+
+
 def build_agent(
     defn: AgentDefinition,
     api_key: str | None,
@@ -909,6 +946,7 @@ def build_agent(
     session_allow: list[str] | tuple[str, ...] = (),
     run_id: str | None = None,
     turn_note: str | None = None,
+    denied_actions: list[dict[str, Any]] | None = None,
 ):
     """编译出 ``(agent, model)`` —— 二者都需在 dispose 时收尾。
 
@@ -990,18 +1028,33 @@ def build_agent(
         if tool_list:
             system_prompt = f"{system_prompt.rstrip()}\n\n{tool_list}".strip()
 
+        # 本会话用户**拒绝过**的文件动作 —— 这是平台事实，每轮都要给模型看。
+        # 只靠下面那条「上一轮未完成」不够：它只讲最近一轮，而拒绝名单是整个会话的
+        # 累积约束（现场：拒绝一次越界写后，下一轮只说「回个收到」，模型又把同一个
+        # 写入发了一遍）。平台另有拦截兜底（guard 命中拒绝名单直接挡），
+        # 这里是把原因说清楚，让模型别绕路重试。
+        _denied_text = render_denied_actions(denied_actions)
+        if _denied_text:
+            system_prompt = f"{system_prompt.rstrip()}\n\n{_denied_text}".strip()
+
         # 上一轮为什么没做完（被用户拒绝 / 被平台拦下）。**必须给模型看**：
         # 它看不到"〔本轮未完成〕"那条平台提示，下一轮会把同一个操作再发一遍
         # （现场：拒绝一次越界写，新消息又弹同一张卡，用户连点三次拒绝）。
-        # 同时把范围说死：这只说明那一个动作没做成，不是"这类操作以后都不许做"。
+        # 同时把范围说死：那只说明那一个动作没做成，不是"这类操作以后都不许做"。
         if turn_note:
+            _tail = (
+                "用户拒绝过的动作见上面那份「已被用户拒绝的动作」名单：本会话内不要重新发起，"
+                "除非用户在新消息里明确重新要求同一个动作。"
+                if _denied_text
+                else "用户在后面的消息里明确要求时再照常发起"
+                "（写到会话目录之外会照例弹确认卡，由用户自己决定）。"
+            )
             system_prompt = (
                 f"{system_prompt.rstrip()}\n\n"
                 "## 上一轮为什么没做完（平台事实，不是用户的新要求）\n"
                 f"{turn_note}\n\n"
-                "那次请求**已经结束**：不要把它当成还没做的任务，也不要自动重试同一个操作。"
-                "用户在后面的消息里明确要求时再照常发起"
-                "（写到会话目录之外会照例弹确认卡，由用户自己决定）。"
+                "那次请求**已经结束**：它不是还没做的任务，不要自动重试同一个操作。"
+                f"{_tail}"
             ).strip()
 
     # 记录器：把每次模型调用的**完整请求与响应**落库（llm_call.request_blob/

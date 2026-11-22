@@ -1085,6 +1085,42 @@ class SessionAllow(Base):
     created_at: Mapped[int] = mapped_column(Integer, default=now_ms)
 
 
+class SessionDeniedAction(Base):
+    """「本会话里用户拒绝过的文件动作」名单 —— 平台层兜底，防模型重发同一个动作。
+
+    为什么必须落库（而不是只在提示词里劝模型）
+    ----------------------------------------
+    现场（2026-11，公网真人路径）：让助手写一个会话目录外的文件 → 用户点拒绝，
+    下一轮只说一句「回个收到」，模型又把**同一个写入**发了一遍，同一张卡再弹；
+    再说「写另一个文件」，它把被拒的那个一起带上，卡第三次弹出。
+    提示词里写「不要重试」模型有时不认，而「用户拒绝过」是事实，平台该自己记住。
+
+    键是（会话, 操作类型, 规范化后的绝对路径）：
+      · 换路径 / 换操作（新建 → 删除）= 另一件事，照常弹卡
+      · 别的会话完全不受影响（所以按会话存，不做全局）
+
+    用户在新消息里明确重新要求同一个动作时，名单不拦（仍弹卡确认）——
+    判定见 ``file_policy.explicit_retry``；用户点了允许就把这条删掉。
+    """
+
+    __tablename__ = "session_denied_action"
+    __table_args__ = (
+        UniqueConstraint("session_id", "op", "path", name="uq_session_denied_action"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[str] = mapped_column(String(32), index=True)
+    #: 新建 / 覆盖 / 删除 / 移动（``file_policy.OP_*``）
+    op: Mapped[str] = mapped_column(String(16), default="")
+    #: 规范化（realpath）后的目标绝对路径
+    path: Mapped[str] = mapped_column(String(1024))
+    agent_id: Mapped[str] = mapped_column(String(32), default="")
+    #: 哪一轮拒绝的（排障时能对回那次执行）
+    run_id: Mapped[str] = mapped_column(String(32), default="")
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+
+
+
 class Event(Base):
     """平台内部「发生了什么事」的账本（事件层的地基）。
 

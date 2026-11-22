@@ -668,6 +668,8 @@ RESULT_APPROVED = "approved"    # 用户点了允许
 RESULT_REJECTED = "rejected"    # 用户点了拒绝
 RESULT_SKIPPED = "skipped"      # 危险模式跳过确认
 RESULT_BLOCKED = "blocked"      # 禁区/敏感位置拦截
+#: 重复发起已被拦下（不是用户这次又拒绝了一次 —— 绝不能记成「用户拒绝」）
+RESULT_REPEAT_BLOCKED = "repeat_blocked"
 
 RESULT_LABELS = {
     RESULT_ALLOWED: "直接放行",
@@ -675,7 +677,212 @@ RESULT_LABELS = {
     RESULT_REJECTED: "用户拒绝",
     RESULT_SKIPPED: "危险模式跳过",
     RESULT_BLOCKED: "拦截（禁区）",
+    RESULT_REPEAT_BLOCKED: "重复发起已拦截",
 }
+
+
+# --------------------------------------------------------------------------- #
+# 会话级「已拒绝动作」名单
+# --------------------------------------------------------------------------- #
+#: 名单里一条最多 1024 字符（与 models.SessionDeniedAction.path 对齐）
+_MAX_PATH = 1024
+
+#: 说「别做」的词 —— 出现这些就**不**算重新要求（宁可按拦截处理）
+_RETRY_STOP = (
+    "不要写", "别写", "不用写", "不想写", "不写了", "不要动", "别动", "不要删", "别删",
+    "不要再", "别再来", "算了", "取消", "不用了", "不要做", "别做", "先别",
+)
+
+#: 「明确要求做这个动作」的动词（按操作类型分开：拒绝的是新建，说「删了它」不算重提）
+_RETRY_VERBS: dict[str, tuple[str, ...]] = {
+    OP_CREATE: (
+        "写", "新建", "创建", "生成", "保存", "落盘", "存到", "存成", "覆盖", "重写",
+        "再试", "重试", "重做", "重来", "继续写", "再写", "试试", "write", "create", "save", "overwrite",
+    ),
+    OP_OVERWRITE: (
+        "写", "覆盖", "改", "更新", "重写", "保存", "落盘", "再试", "重试", "重做", "重来",
+        "试试", "write", "overwrite", "save", "update",
+    ),
+    OP_DELETE: ("删", "删除", "移除", "清掉", "delete", "remove"),
+    OP_MOVE: ("移动", "挪", "改名", "重命名", "move", "rename"),
+}
+
+
+def names_path(text: str, path: str) -> bool:
+    """消息里是不是点了这个文件的名字（全路径 / 文件名 / 够长的主干）。
+
+    短于 5 个字符的主干不认 —— 「a」这种会命中任意一句话，那就不叫"明确提到"。
+    """
+    raw = (text or "").strip()
+    if not raw or not path:
+        return False
+    if path in raw:
+        return True
+    base = os.path.basename(path)
+    if base and base in raw:
+        return True
+    stem = os.path.splitext(base)[0]
+    return len(stem) >= 5 and stem in raw
+
+
+def explicit_retry(text: str, action: Action) -> bool:
+    """用户**这条消息**是不是在明确要求重做那个被拒绝的动作。
+
+    判断不准时按**否决**处理（宁可按拦截，也不替用户放行一个他拒绝过的写入）：
+    必须同时满足「提到这个文件」+「有该操作的动词」+「没有否定词」。
+    """
+    raw = (text or "").strip()
+    if not raw or action is None:
+        return False
+    if any(stop in raw for stop in _RETRY_STOP):
+        return False
+    if not names_path(raw, action.path):
+        return False
+    verbs = _RETRY_VERBS.get(action.op) or _RETRY_VERBS[OP_CREATE]
+    return any(verb in raw for verb in verbs)
+
+
+def _as_action(action: Action | dict | None) -> Action | None:
+    """``Action`` / 确认卡上那份 dict（``file_actions``）都收，免得两处各写一套。"""
+    if isinstance(action, Action):
+        return action
+    if isinstance(action, dict):
+        path = real_path(str(action.get("path") or ""))
+        if not path:
+            return None
+        return Action(path=path, op=str(action.get("op") or ""))
+    return None
+
+
+async def remember_denial(
+    action: Action | dict,
+    *,
+    session_id: str = "",
+    agent_id: str = "",
+    run_id: str = "",
+) -> None:
+    """用户拒绝了这个动作 → 记进该会话的拒绝名单。**写失败不影响主流程**。"""
+    act = _as_action(action)
+    if act is None or not session_id:
+        return
+    try:
+        from sqlalchemy import select
+
+        from .db import SessionLocal
+        from .models import SessionDeniedAction, now_ms
+
+        async with SessionLocal() as session:
+            row = (
+                await session.execute(
+                    select(SessionDeniedAction).where(
+                        SessionDeniedAction.session_id == session_id,
+                        SessionDeniedAction.op == act.op,
+                        SessionDeniedAction.path == act.path[:_MAX_PATH],
+                    )
+                )
+            ).scalar_one_or_none()
+            if row is None:
+                session.add(
+                    SessionDeniedAction(
+                        session_id=session_id,
+                        op=act.op,
+                        path=act.path[:_MAX_PATH],
+                        agent_id=agent_id or "",
+                        run_id=run_id or "",
+                        created_at=now_ms(),
+                    )
+                )
+            else:
+                row.created_at = now_ms()
+                row.run_id = run_id or row.run_id
+            await session.commit()
+    except Exception:  # noqa: BLE001 —— 记不住名单最坏是"再问一次"，不能拖垮这一轮
+        import logging
+
+        logging.getLogger(__name__).warning("记录会话拒绝名单失败", exc_info=True)
+
+
+async def forget_denial(action: Action | dict, *, session_id: str = "") -> None:
+    """用户改主意点了允许（或明确重新要求并允许）→ 从名单里划掉。"""
+    act = _as_action(action)
+    if act is None or not session_id:
+        return
+    try:
+        from sqlalchemy import delete
+
+        from .db import SessionLocal
+        from .models import SessionDeniedAction
+
+        async with SessionLocal() as session:
+            await session.execute(
+                delete(SessionDeniedAction).where(
+                    SessionDeniedAction.session_id == session_id,
+                    SessionDeniedAction.op == act.op,
+                    SessionDeniedAction.path == act.path[:_MAX_PATH],
+                )
+            )
+            await session.commit()
+    except Exception:  # noqa: BLE001
+        import logging
+
+        logging.getLogger(__name__).warning("清理会话拒绝名单失败", exc_info=True)
+
+
+async def denied_in_session(session_id: str, *, limit: int = 20) -> list[dict[str, Any]]:
+    """这个会话里被拒绝过的动作（渲染进 system prompt 那份，时间正序）。"""
+    if not session_id:
+        return []
+    try:
+        from sqlalchemy import select
+
+        from .db import SessionLocal
+        from .models import SessionDeniedAction
+
+        async with SessionLocal() as session:
+            rows = (
+                await session.execute(
+                    select(SessionDeniedAction)
+                    .where(SessionDeniedAction.session_id == session_id)
+                    .order_by(SessionDeniedAction.created_at.asc(), SessionDeniedAction.id.asc())
+                    .limit(limit)
+                )
+            ).scalars().all()
+        return [
+            {
+                "op": str(r.op or ""),
+                "path": str(r.path or ""),
+                "ts": int(r.created_at or 0),
+                "run_id": str(r.run_id or ""),
+            }
+            for r in rows
+        ]
+    except Exception:  # noqa: BLE001 —— 读不到就当没拒绝过（最坏是再问一次）
+        import logging
+
+        logging.getLogger(__name__).warning("读取会话拒绝名单失败", exc_info=True)
+        return []
+
+
+async def denial_hit(
+    action: Action | dict,
+    *,
+    session_id: str = "",
+    user_text: str = "",
+) -> dict[str, Any] | None:
+    """这条动作要不要按「用户在本会话拒绝过」拦下（返回那条事实）。
+
+    例外：用户**这条消息**里明确重新要求同一个动作 → 返回 None（照常弹卡确认）。
+    """
+    act = _as_action(action)
+    if act is None or not session_id:
+        return None
+    for item in await denied_in_session(session_id):
+        if item.get("op") == act.op and item.get("path") == act.path[:_MAX_PATH]:
+            if explicit_retry(user_text, act):
+                return None
+            return item
+    return None
+
 
 
 async def audit(
