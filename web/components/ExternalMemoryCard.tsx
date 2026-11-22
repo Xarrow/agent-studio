@@ -195,8 +195,9 @@ export function ExternalMemoryCard() {
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="sm:col-span-2">
-              <label className="label">服务地址</label>
+              <label className="label" htmlFor="em-base">服务地址</label>
               <input
+                id="em-base"
                 className="input"
                 placeholder="http://192.168.2.11:9000"
                 value={draft.base_url}
@@ -232,24 +233,27 @@ export function ExternalMemoryCard() {
               />
             </div>
             <div>
-              <label className="label">搜索路径</label>
+              <label className="label" htmlFor="em-search">搜索路径</label>
               <input
+                id="em-search"
                 className="input mono"
                 value={draft.search_path}
                 onChange={(e) => setDraft((d) => ({ ...d, search_path: e.target.value }))}
               />
             </div>
             <div>
-              <label className="label">写入路径</label>
+              <label className="label" htmlFor="em-add">写入路径</label>
               <input
+                id="em-add"
                 className="input mono"
                 value={draft.add_path}
                 onChange={(e) => setDraft((d) => ({ ...d, add_path: e.target.value }))}
               />
             </div>
             <div>
-              <label className="label">超时（秒）</label>
+              <label className="label" htmlFor="em-timeout">超时（秒）</label>
               <input
+                id="em-timeout"
                 className="input"
                 type="number"
                 min={1}

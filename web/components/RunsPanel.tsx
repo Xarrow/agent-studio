@@ -1282,6 +1282,7 @@ export function RunsPanel() {
                 checked={allSelected}
                 onChange={toggleAll}
                 className="h-4 w-4 accent-[var(--color-accent)]"
+                aria-label="全选（不含运行中的记录）"
                 title="全选（不含运行中的记录）"
               />
               <span className="w-[68px] shrink-0">状态</span>
@@ -1330,6 +1331,7 @@ export function RunsPanel() {
                           checked={selected.has(it.id)}
                           onChange={() => toggle(it.id)}
                           className="h-[17px] w-[17px] accent-[var(--color-accent)]"
+                          aria-label="选择这条运行（勾选后可批量删除）"
                           title="勾选后可批量删除"
                         />
                       </label>

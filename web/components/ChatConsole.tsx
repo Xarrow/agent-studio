@@ -3176,6 +3176,13 @@ export function ChatConsole({
             onKeyDown={() => { userScrolledRef.current = true; }}
             style={{ paddingBottom: dockH + 14, scrollbarGutter: "stable" }}
             data-msg-scroll
+            /* 读屏：新消息要播报（polite 不打断当前朗读）。
+               流式期间整条消息带 aria-busy，读屏只在这一条完成时读一次 */
+            role="log"
+            /* 流式时不播报（逐字念会吵），一条答完再读 */
+            aria-live={busy ? "off" : "polite"}
+            aria-relevant="additions text"
+            aria-label="对话消息"
           >
             {beforeTurn > 0 && (
               <div className="mx-auto mb-2 w-full max-w-[760px] px-2">
@@ -4257,6 +4264,7 @@ export function ChatConsole({
                             /* 存不了就算了，下次默认关 */
                           }
                         }}
+                        aria-label="这一轮交给谁执行"
                         className="h-7 rounded-[var(--radius-xs)] border-0 bg-transparent pr-1 text-[length:var(--fs-sm)] outline-none"
                         style={{ color: "var(--color-text)" }}
                       >
