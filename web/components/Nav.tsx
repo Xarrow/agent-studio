@@ -328,6 +328,17 @@ export function Nav() {
                             : "var(--color-warn)"
                           : undefined
                     }
+                    dotLabel={
+                      l.href === "/environment"
+                        ? envReady
+                          ? "正常"
+                          : "连不上"
+                        : l.href === "/tools"
+                          ? envReady === false
+                            ? "不可用"
+                            : undefined
+                          : undefined
+                    }
                   />
                 );
               })}
@@ -368,12 +379,15 @@ function RailLink({
   active,
   badge,
   dot,
+  dotLabel,
   expanded = false,
 }: {
   item: NavItem;
   active: boolean;
   badge?: string;
   dot?: string;
+  /** 圆点的含义（展开态直接显示成文字：一个没有说明的圆点等于没画） */
+  dotLabel?: string;
   expanded?: boolean;
 }) {
   return (
@@ -407,9 +421,18 @@ function RailLink({
               {badge}
             </span>
           )}
-          <span className="shrink-0 text-[10px] tabular-nums" style={{ color: "var(--color-text-3)" }}>
-            {item.short?.replace("Alt+", "⌥") ?? ""}
-          </span>
+          {dotLabel ? (
+            <span
+              className="shrink-0 text-[10.5px]"
+              style={{ color: dot === "var(--color-ok)" ? "var(--color-text-3)" : "var(--color-err)" }}
+            >
+              {dotLabel}
+            </span>
+          ) : (
+            <span className="shrink-0 text-[10px] tabular-nums" style={{ color: "var(--color-text-3)" }}>
+              {item.short?.replace("Alt+", "⌥") ?? ""}
+            </span>
+          )}
         </>
       )}
       {badge && !expanded && (
@@ -424,7 +447,8 @@ function RailLink({
         <span
           className="pointer-events-none absolute right-1 bottom-1 h-[6px] w-[6px] rounded-full"
           style={{ background: dot }}
-          aria-hidden="true"
+          title={dotLabel}
+          aria-label={dotLabel}
         />
       )}
     </Link>

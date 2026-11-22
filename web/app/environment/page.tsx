@@ -52,6 +52,19 @@ const EMPTY: Form = {
 export default function EnvironmentPage() {
   const fb = useFeedback();
 
+  /** 服务是否正常：侧栏那个绿/红点的含义，写在这里（用户看不懂点） */
+  const [health, setHealth] = useState<{ ok: boolean } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void api
+      .health()
+      .then((h) => alive && setHealth({ ok: String(h?.status ?? "") === "ok" }))
+      .catch(() => alive && setHealth({ ok: false }));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const [status, setStatus] = useState<DbStatus | null>(null);
   const [drivers, setDrivers] = useState<DbDriverInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -255,10 +268,19 @@ export default function EnvironmentPage() {
     !busy && !switching && !!test?.ok && passwordReady && (isFile || (!!form.host && !!form.user && !!form.database));
 
   return (
-    <div className="flex max-w-3xl flex-col gap-4 p-4 md:p-6 lg:p-7">
+    <div className="flex max-w-[1100px] flex-col gap-4 p-4 md:p-6 lg:p-7">
       <PageHead
-        title="环境配置"
-        desc="数据存哪：默认 SQLite，多人共用可换 MySQL / PostgreSQL"
+        title="系统设置"
+        desc={
+          <>
+            数据存哪：默认 SQLite，多人共用可换 MySQL / PostgreSQL
+            {health === null ? null : health.ok ? (
+              <span style={{ color: "var(--color-text-3)" }}> · 服务正常</span>
+            ) : (
+              <span style={{ color: "var(--color-err)" }}> · 服务连不上，配置改了也不会生效</span>
+            )}
+          </>
+        }
       />
 
       {/* ── 运行环境：这台机器有什么、缺了能装 ─────────────── */}
