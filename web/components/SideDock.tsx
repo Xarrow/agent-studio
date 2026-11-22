@@ -92,10 +92,10 @@ export function SideDock({
   browserSuspended?: boolean;
   onBrowserControl?: (action: "take" | "release") => void;
   onBrowserOpenFull?: () => void;
-  onUserClick?: (x: number, y: number) => void | Promise<void>;
-  onUserText?: (t: string) => void | Promise<void>;
-  onUserScroll?: (dy: number) => void | Promise<void>;
-  onUserInput?: (body: Record<string, unknown>) => void | Promise<void>;
+  onUserClick?: (x: number, y: number) => void | Promise<unknown>;
+  onUserText?: (t: string) => void | Promise<unknown>;
+  onUserScroll?: (dy: number) => void | Promise<unknown>;
+  onUserInput?: (body: Record<string, unknown>) => void | Promise<unknown>;
   sessionId?: string;
   files: {
     path: string;

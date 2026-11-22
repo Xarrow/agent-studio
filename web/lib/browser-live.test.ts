@@ -20,7 +20,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { FpsMeter, KEY_BUTTONS, keyBody, shouldStartRtc, streamStatusText } from "./browser-live.ts";
+import { FpsMeter, KEY_BUTTONS, keyBody, receiptTone, shouldStartRtc, streamStatusText } from "./browser-live.ts";
 import { BrowserRtc, markRtcBad } from "./webrtc.ts";
 
 const WEB = join(import.meta.dirname, "..");
@@ -269,4 +269,34 @@ test("BrowserStage 不再拿实时帧状态当 WebRTC 的门，实时元素常�
   assert.match(stage, /data-stream-stat/, "状态区要有实测数字（fps/延迟）的常驻位置");
   assert.match(stage, /jpegFps/, "兼容模式要数 JPEG 帧，不能用写死的文案");
   assert.match(stage, /pageDims\(/, "点击换算必须用页面坐标（视频降档/JPEG 800 宽都不等于页面尺寸）");
+});
+
+/* ── ⑥ 回执：全屏点击/打字都得有可见回执（2026-11-22 三缺陷之③） ────── */
+
+test("后端回执按内容分语气：成了绿、没成红", () => {
+  // 点击有回执：成功/没变化都是"送到了"，绿色（用户看的是"这一下有没有被收到"）
+  assert.equal(receiptTone("已点击 搜索框 · 页面有变化"), "ok");
+  assert.equal(receiptTone("已点击 这里 · 页面没有可见变化"), "ok");
+  assert.equal(receiptTone("已按 回车"), "ok");
+  assert.equal(receiptTone("已进页面输入框（5 个字符）"), "ok");
+  assert.equal(receiptTone("已用键盘事件输入 12 个字符（回读一致）"), "ok");
+  // 失败必须是红的，不能被当成成功糊过去
+  assert.equal(receiptTone("✗ 文字没进页面输入框：先点页面里的输入框（看到光标）再在面板里打字"), "err");
+  assert.equal(receiptTone("这里没有可点的元素（点到空白处了）"), "err");
+  assert.equal(receiptTone("浏览器正在被助手使用"), "err");
+});
+
+test("兼容模式（HTTP）那条路的回执不许被丢掉", () => {
+  const console_ = read("components/ChatConsole.tsx");
+  // sendBrowser 必须把后端 feedback 交回去，否则 BrowserStage 的 withFeedback 拿到 undefined
+  assert.match(
+    console_,
+    /return r\?\.feedback \|\| ""/,
+    "sendBrowser 不返回 feedback → 兼容模式点击/打字没有任何回执（旧实现就是这样）",
+  );
+  const stage = read("components/BrowserStage.tsx");
+  assert.match(stage, /withFeedback\(onUserClick/, "HTTP 点击必须带回调执");
+  assert.match(stage, /withFeedback\(onUserText/, "HTTP 打字必须带回调执");
+  assert.match(stage, /withFeedback\(onUserScroll/, "HTTP 滚动必须带回调执");
+  assert.match(stage, /coords: "page"/, "DataChannel 输入要标页面坐标口径");
 });

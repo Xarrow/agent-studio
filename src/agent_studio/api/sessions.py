@@ -1147,10 +1147,11 @@ async def browser_webrtc_offer(
         raise HTTPException(status.HTTP_409_CONFLICT, "浏览器已过期 · 发消息让它重新打开")
     sdp = str(payload.get("sdp") or "")
     kind = str(payload.get("type") or "offer")
+    client = str(payload.get("client") or "")[:64]
     if not sdp or kind != "offer":
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "需要 SDP offer")
     try:
-        answer = await rtc.handle_offer(session_id, sess, sdp, kind)
+        answer = await rtc.handle_offer(session_id, sess, sdp, kind, client)
     except Exception as exc:  # pragma: no cover - 建连失败就是前端回退的信号
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, f"推流建连失败：{exc}") from None
     bc.touch(c)
@@ -1158,11 +1159,15 @@ async def browser_webrtc_offer(
 
 
 @router.post("/{session_id}/browser-ctl/webrtc/close")
-async def browser_webrtc_close(session_id: str) -> dict:
-    """前端主动收摊（关面板/切会话）—— 恢复 JPEG 推流，不关浏览器。"""
+async def browser_webrtc_close(session_id: str, payload: dict[str, Any] | None = None) -> dict:
+    """前端主动收摊（关面板/切会话）—— 恢复 JPEG 推流，不关浏览器。
+
+    ``client`` 是这个面板自己的标识：只关自己建的那条流。右栏和全屏两个面板
+    共存时，先关的那个不会再把对方的流顶掉（复测现场就是互相顶）。
+    """
     from .. import browser_webrtc as rtc
 
-    await rtc.close_stream(session_id)
+    await rtc.close_stream(session_id, str((payload or {}).get("client") or "")[:64])
     return {"ok": True, "stream": rtc.metrics(session_id)}
 
 

@@ -59,9 +59,15 @@ export class BrowserRtc {
   private opened = false;
 
   private readonly sessionId: string;
+  /** 这条流是"我"建的：关的时候带上，服务端只关自己那条（别顶掉别的面板） */
+  private readonly clientId: string;
 
   private constructor(sessionId: string) {
     this.sessionId = sessionId;
+    this.clientId =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `c-${Math.random().toString(36).slice(2)}-${Date.now()}`;
   }
 
   static async start(sessionId: string, handlers: RtcHandlers): Promise<BrowserRtc> {
@@ -158,6 +164,7 @@ export class BrowserRtc {
     const answer = await api.browserRtcOffer(this.sessionId, {
       sdp: pc.localDescription?.sdp || offer.sdp || "",
       type: "offer",
+      client: this.clientId,
     });
     await pc.setRemoteDescription({ type: "answer", sdp: answer.sdp });
 
@@ -281,7 +288,7 @@ export class BrowserRtc {
     }
     this.dc = null;
     this.pc = null;
-    if (notify) void api.browserRtcClose(this.sessionId).catch(() => {});
+    if (notify) void api.browserRtcClose(this.sessionId, { client: this.clientId }).catch(() => {});
   }
 }
 

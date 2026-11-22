@@ -97,10 +97,19 @@ test("浏览器窗口直接写 img.src，不经过 setState", () => {
   assert.match(src, /\}, 400\);/, "缩略条应 400ms 才换一张，别跟满帧率");
 });
 
-test("后端给 Chromium 限帧：everyNthFrame + quality 都传下去", () => {
+test("后端给 Chromium 限帧：screencast 参数 + 后端 200ms 节流", () => {
   const py = readFileSync(join(WEB, "..", "src/agent_studio/browser_session.py"), "utf8");
-  assert.match(py, /"everyNthFrame": FRAME_EVERY_NTH/, "startScreencast 必须带 everyNthFrame");
+  // 2026-11-22：限帧统一到后端一处。Chromium 侧取满帧（画得慢的页面先被除以 4
+  // 会掉到 2~3fps），节流只由 FRAME_MIN_INTERVAL_MS 决定；静止页面的 0 帧由
+  // _idle_tick 补到 5fps 量级。
+  assert.match(py, /"everyNthFrame": 1/, "startScreencast 要取满帧，节流交给后端一处");
   assert.match(py, /"quality": FRAME_QUALITY/, "startScreencast 必须带 quality");
   assert.match(py, /FRAME_MIN_INTERVAL_MS = \d+/, "后端要有最小间隔，不能只靠 Chromium");
-  assert.match(py, /if now_ms - self\._last_frame_at < FRAME_MIN_INTERVAL_MS:\s*\n\s*return/, "帧到达要按间隔丢帧");
+  assert.match(py, /FRAME_MIN_INTERVAL_MS = 200\b/, "5fps 口径别被悄悄放宽");
+  assert.match(
+    py,
+    /if now_ms - self\._last_frame_at < FRAME_MIN_INTERVAL_MS:\s*\n\s*return False/,
+    "帧到达要按间隔丢帧",
+  );
+  assert.match(py, /async def _idle_tick/, "静止页面要有保活帧（否则实测 0~1fps）");
 });

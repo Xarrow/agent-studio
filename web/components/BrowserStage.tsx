@@ -32,13 +32,14 @@ import {
   FpsMeter,
   KEY_BUTTONS,
   keyBody,
+  receiptTone,
   shouldStartRtc,
   streamStatusText,
   type KeySpec,
   type StreamFacts,
 } from "@/lib/browser-live";
 
-export type BrowserAction = { action: string; summary: string; target?: string; url?: string };
+export type BrowserAction = { action: string; summary: string; target?: string; url?: string; at?: number };
 export type BrowserFrameData = { data: string; url: string; title: string };
 
 export function hostOf(url: string): string {
@@ -292,14 +293,21 @@ function ControlBar({
 /** 动作字幕：当前动作（亮）+ 之前两条（灰）。一眼看出"它在干什么"。 */
 function ActionLine({ actions, control }: { actions: BrowserAction[]; control?: BrowserControlState | null }) {
   const running = control?.status === "agent" && control?.running;
+  /** 控制权在用户手上：这时候"最新一行"必须是他刚做的事 —— 点完就有回执。
+   *  以前这里被后端状态行（"本轮已结束 · 浏览器还开着…"）压着，用户点了画面
+   *  看不到任何新增记录，以为点击没生效（复测现场：全屏点两个元素"无任何回执"）。 */
+  const userDriving =
+    control?.status === "user" || control?.status === "waiting_user" || control?.status === "paused";
   // 「等你登录」是**状态**，不是一步动作。它留在最新一条时，交还后底部就会和
   // 「助手操作中」并存 —— 复测里那条残留就是这么来的。状态类动作不参与当前行。
   const real = actions.filter((a) => a.action !== "wait_login");
   const last = real[real.length - 1];
   const history = real.slice(-4, -1).reverse();
-  // 当前行优先级：实时动作（只在助手真的在跑时）→ 后端给的状态行 → 动作兜底。
-  // 后端的 action_line 在 agent_running 时是空串（让实时动作说话），其余状态一定有值。
+  const userLast = last && last.action === "user" ? last : null;
+  // 当前行优先级：用户在操作 → 他自己刚做的那步；助手在跑 → 实时动作；
+  // 其余 → 后端给的状态行（单一真相）→ 动作兜底。
   const current =
+    (userDriving && userLast?.summary) ||
     (running && last?.summary) ||
     control?.action_line ||
     last?.summary ||
@@ -355,11 +363,12 @@ export function BrowserStage({
   /** 会话号 —— WebRTC 建连与 DataChannel 输入都挂在会话上 */
   sessionId?: string;
   onControl?: (action: "take" | "release") => void;
-  onUserClick?: (x: number, y: number) => void | Promise<void>;
-  onUserText?: (text: string) => void | Promise<void>;
-  onUserScroll?: (dy: number) => void | Promise<void>;
+  /** 返回值 = 后端那句回执（"已点击 …· 页面没有可见变化"）—— 就地显示 */
+  onUserClick?: (x: number, y: number) => void | Promise<unknown>;
+  onUserText?: (text: string) => void | Promise<unknown>;
+  onUserScroll?: (dy: number) => void | Promise<unknown>;
   /** 任意输入（键盘/滚轮/移动）—— JPEG 兼容模式下也能走 HTTP */
-  onUserInput?: (body: Record<string, unknown>) => void | Promise<void>;
+  onUserInput?: (body: Record<string, unknown>) => void | Promise<unknown>;
   onOpen?: () => void;
   onClose?: () => void;
   /** 这次的执行过程（每步一张图）—— 有就出胶片条，能点回看 */
@@ -432,6 +441,26 @@ export function BrowserStage({
     if (notice) denied(notice);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [notice]);
+  /**
+   * HTTP 回退路径的回执 —— 兼容模式（JPEG）下点击/输入都走 HTTP，后端 200 里带的
+   * `feedback` 就是"这一步到底成没成"。以前这条回执被丢掉，用户只能看画面猜；
+   * 现在一律摆到操作发生的位置上（成功绿、失败红）。
+   */
+  const withFeedback = useCallback(
+    (ret: unknown, at?: { x: number; y: number } | null) => {
+      if (!ret || typeof (ret as Promise<unknown>).then !== "function") return;
+      (ret as Promise<unknown>)
+        .then((fb) => {
+          const msg = typeof fb === "string" ? fb.trim() : "";
+          if (!msg) return;
+          say(msg, at ?? lastPoint.current, receiptTone(msg));
+        })
+        .catch(() => {
+          /* 网络失败已在调用方 setNotice */
+        });
+    },
+    [say],
+  );
   useEffect(() => {
     return () => {
       if (fbTimer.current) clearTimeout(fbTimer.current);
@@ -538,6 +567,8 @@ export function BrowserStage({
             if (dead) return;
             setRtcMode("fallback");
             setRtcReason(reason);
+            // 画面链路的失败要**当场**说一句人话：只改徽章的话，用户以为画面卡了
+            say(`推流启动失败，已切回兼容画面${reason ? `（${reason}）` : ""}`, null);
             setStreamStats(null);
             streamRef.current = null;
             markRtcBad(sessionId, true);
@@ -545,7 +576,12 @@ export function BrowserStage({
           onMessage: (m) => {
             if (dead) return;
             if (m.type === "denied") denied(m.reason);
-            else say(m.feedback || m.note || "已送达", lastPoint.current, "ok");
+            else {
+              // ack 里的 feedback 可能是失败（"✗ 文字没进页面输入框…"）—— 语气按内容判，
+              // 不能一律绿色，否则"没打进去"看着像成功
+              const text = String(m.feedback || m.note || "已送达");
+              say(text, lastPoint.current, receiptTone(text));
+            }
           },
           onStats: (s) => {
             if (dead) return;
@@ -681,11 +717,22 @@ export function BrowserStage({
       return;
     }
     if (!onUserClick && !rtcRef.current?.isOpen) return;
-    // DataChannel 优先；没建连（兼容模式）走原来的 HTTP
-    if (rtcRef.current?.send({ kind: "click", x: p.x, y: p.y, button: "left", clickCount: e.detail || 1 })) {
+    // DataChannel 优先；没建连（兼容模式）走 HTTP。
+    // coords:"page" = 这是**页面坐标**（已按 viewport 折算），服务端别再按档位换算。
+    if (
+      rtcRef.current?.send({
+        kind: "click",
+        x: p.x,
+        y: p.y,
+        button: "left",
+        clickCount: e.detail || 1,
+        coords: "page",
+      })
+    ) {
       return;
     }
-    void onUserClick?.(p.x, p.y);
+    // HTTP 那条路也要有回执：后端 200 里带 feedback（"已点击 …· 页面没有可见变化"）
+    void withFeedback(onUserClick?.(p.x, p.y), at);
   };
 
   const moveAt = useRef(0);
@@ -701,7 +748,7 @@ export function BrowserStage({
     const nat = naturalSize();
     const p = mapToPage(e.clientX - rect.left, e.clientY - rect.top, rect.width, rect.height, nat.w, nat.h);
     if (!p.inside) return;
-    rtc.send({ kind: "move", x: p.x, y: p.y });
+    rtc.send({ kind: "move", x: p.x, y: p.y, coords: "page" });
   };
 
   /** 键盘：给网页真实按键（Enter 提交、Tab 走焦点、Backspace 删字、Ctrl+A 全选…） */
@@ -772,11 +819,20 @@ export function BrowserStage({
     scrollAt.current = now;
     const nat = naturalSize();
     const p = mapToPage(at.x, at.y, rect.width, rect.height, nat.w, nat.h);
-    if (rtcRef.current?.send({ kind: "wheel", x: p.inside ? p.x : nat.w / 2, y: p.inside ? p.y : nat.h / 2, dx: e.deltaX, dy: e.deltaY })) {
+    if (
+      rtcRef.current?.send({
+        kind: "wheel",
+        x: p.inside ? p.x : nat.w / 2,
+        y: p.inside ? p.y : nat.h / 2,
+        dx: e.deltaX,
+        dy: e.deltaY,
+        coords: "page",
+      })
+    ) {
       return;
     }
     if (!onUserScroll) return;
-    void onUserScroll(Math.round(e.deltaY));
+    void withFeedback(onUserScroll(Math.round(e.deltaY)), at);
   };
 
   const requestControl = (a: "take" | "release") => {
@@ -1184,8 +1240,12 @@ export function BrowserStage({
                 denied();
                 return;
               }
-              // 中文输入法整段上屏走 insertText（与键盘直打并存）；DataChannel 通就用它
-              if (!rtcRef.current?.send({ kind: "text", text })) void onUserText(text);
+              // 中文输入法整段上屏走 insertText（与键盘直打并存）；DataChannel 通就用它。
+              // 后端会回读页面输入框的 value —— 没进去就回一句人话（"✗ 文字没进页面输入框…"），
+              // 这里必须把它摆到画面上，不能让用户以为打进去了。
+              if (!rtcRef.current?.send({ kind: "text", text })) {
+                void withFeedback(onUserText(text), lastPoint.current);
+              }
               setText("");
             }}
           />

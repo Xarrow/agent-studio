@@ -408,6 +408,10 @@ class EventBus:
             except asyncio.QueueFull:  # pragma: no cover
                 logger.warning("SSE 队列满，丢弃事件 run=%s", run_id)
 
+    def watchers(self, channel: str) -> int:
+        """这条通道上有几个活着的订阅者（浏览器保活帧靠它判断"有没有人在看"）。"""
+        return len(self._subs.get(channel, ()))
+
     def close(self, run_id: str) -> None:
         for queue in list(self._subs.get(run_id, ())):
             try:

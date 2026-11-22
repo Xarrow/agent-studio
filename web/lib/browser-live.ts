@@ -98,6 +98,18 @@ export function streamStatusText(s: StreamFacts): string {
   return s.latency && s.latency > 0 ? `流畅 · ${fps}fps · ${Math.round(s.latency)}ms` : `流畅 · ${fps}fps`;
 }
 
+/**
+ * 后端那条回执是「成了」还是「没成」—— 决定它显示成绿色还是红色。
+ *
+ * 后端文案是给人看的（"已点击 搜索框 · 页面有变化" / "✗ 文字没进页面输入框…" /
+ * "这里没有可点的元素"），这里只做一次归类，别在组件里各写一遍正则。
+ */
+export function receiptTone(msg: string): "ok" | "err" {
+  const m = (msg || "").trim();
+  if (!m || m.startsWith("✗")) return "err";
+  return /已(经|点击|进|按|滚动|输入|用键盘)|有变化|回读一致/.test(m) ? "ok" : "err";
+}
+
 export type KeySpec = {
   key: string;
   code: string;

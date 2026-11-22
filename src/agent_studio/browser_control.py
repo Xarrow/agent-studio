@@ -733,10 +733,18 @@ async def apply_user_input_detail(c: Control, sess: Any, payload: dict[str, Any]
     elif kind == "text":
         raw = str(payload.get("text") or "")
         text = await sess.user_type(raw)
+        # user_type 会**回读验证**：文字没进页面就带 ✗ 前缀返回，这里必须把
+        # 失败原样说给用户（以前不管有没有进去都回"已送入输入框"，等于骗人）。
+        ok = not str(text).startswith("✗")
+        plain = str(text).lstrip("✗").strip()
+        if ok:
+            note = f"用户在页面输入框里输入了 {len(raw)} 个字符（已回读确认）"
+            feedback = f"已进页面输入框（{len(raw)} 个字符）"
+        else:
+            note = f"用户在面板里打了 {len(raw)} 个字符，但没进页面输入框：{plain}"
+            feedback = plain or "文字没进页面输入框"
         # 内容不进事件流（可能就是密码/手机号）—— 只记字符数
-        note = f"用户在页面输入框里输入了 {len(raw)} 个字符"
-        feedback = f"已送入输入框（{len(raw)} 个字符）"
-        changed = True
+        changed = ok
     elif kind in ("key", "keydown"):
         from .browser_session import describe_key
 

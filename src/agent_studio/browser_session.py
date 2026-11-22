@@ -100,6 +100,94 @@ def describe_key(payload: dict[str, Any]) -> str:
     return "+".join(mods + [label]) if mods else label
 
 
+# --------------------------------------------------------------------------- #
+# profile 自清理（残留进程 / 残留锁）
+#
+# 现场（2026-11-22 复测）：同一个会话上一次的 Chromium 没退干净，下一次启动就读不到
+# DevTools 行，面板上糊着一句 Chromium 原文
+#   Failed to create SingletonLock: File exists … ProcessSingleton …
+# 用户既看不懂，也没法自己修。Chromium 的判断很简单：``SingletonLock`` 是个指向
+# ``<主机名>-<pid>`` 的软链，那个 pid 还活着就认为 profile 正在被用，直接退出。
+# 所以起之前必须先把「占着这个目录的进程」和「锁文件」一起收掉，起不来再收一次重试。
+# --------------------------------------------------------------------------- #
+#: 这些文件都属于"这个 profile 现在归谁"的标记，残留一律清掉
+_PROFILE_LOCK_FILES = ("SingletonLock", "SingletonCookie", "SingletonSocket", "DevToolsActivePort")
+
+
+def profile_dir_for(key: str) -> Path:
+    """会话/run 归属键 → profile 目录（``ses:<会话号>`` → ``ses-ses_xxx``）。"""
+    return Path(f"/tmp/agent-studio-browser/{key.replace(':', '-')}")
+
+
+def _pids_using(profile: Path) -> list[int]:
+    """扫描 /proc，找出命令行里带着这个 profile 目录的进程（=上一个实例的残留）。"""
+    needle = str(profile).encode()
+    hits: list[int] = []
+    me = os.getpid()
+    try:
+        entries = list(Path("/proc").iterdir())
+    except Exception:  # pragma: no cover - 没有 /proc 的平台
+        return hits
+    for entry in entries:
+        if not entry.name.isdigit():
+            continue
+        pid = int(entry.name)
+        if pid == me:
+            continue
+        try:
+            raw = (entry / "cmdline").read_bytes()
+        except Exception:
+            continue
+        if needle in raw:
+            hits.append(pid)
+    return hits
+
+
+def reap_profile(key: str) -> dict[str, Any]:
+    """把某个会话的 profile 收回干净：先停掉残留进程，再删锁。
+
+    幂等且便宜（没有残留时只读几个目录项），所以**每次启动前都调**，不只在失败后调：
+    服务器重启过、上一轮 abort 过、janitor 还没来得及收，都会留下活着的 Chromium。
+    """
+    import signal
+
+    profile = profile_dir_for(key)
+    killed: list[int] = []
+    for pid in _pids_using(profile):
+        try:
+            os.kill(pid, signal.SIGTERM)
+            killed.append(pid)
+        except Exception:
+            continue
+    if killed:
+        # 给它们 1.5s 自己退；还活着就 SIGKILL（ziegote/renderer 由主进程带下去）
+        deadline = time.monotonic() + 1.5
+        while time.monotonic() < deadline:
+            alive = [p for p in killed if Path(f"/proc/{p}").exists()]
+            if not alive:
+                break
+            time.sleep(0.1)
+        for pid in killed:
+            if Path(f"/proc/{pid}").exists():
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except Exception:
+                    pass
+        time.sleep(0.1)
+    removed: list[str] = []
+    for name in _PROFILE_LOCK_FILES:
+        f = profile / name
+        try:
+            if f.is_symlink() or f.exists():
+                f.unlink()
+                removed.append(name)
+        except Exception:  # pragma: no cover - 正在被删/权限问题，交给下一次重试
+            continue
+    if killed or removed:
+        logger.info("浏览器 profile 自清理 %s：停掉 %s，删锁 %s", profile, killed, removed)
+    return {"killed": killed, "locks": removed}
+
+
 def _private_host_check(host: str) -> bool:
     """与 native_tools._is_private_host 同规则（这里独立实现避免运行期 import 环）。"""
     import ipaddress
@@ -301,6 +389,15 @@ class _Bidi:
                 pass
 
 
+class _StartFailed(Exception):
+    """一次启动没成 —— 带上原始输出尾巴，交给 ``_startup_error`` 翻人话。"""
+
+    def __init__(self, headline: str, tail: list[str]) -> None:
+        super().__init__(headline)
+        self.headline = headline
+        self.tail = list(tail)
+
+
 class BrowserSession:
     """一个浏览器实例：进程 + CDP + screencast 推流。
 
@@ -321,6 +418,8 @@ class BrowserSession:
         self._last_url = ""
         self._last_frame = ""
         self._last_frame_at = 0.0
+        #: 最后一次**真帧**（screencast 推来的）的时刻；保活帧不刷新它
+        self._last_real_frame_at = 0.0
         self._last_title = ""
         #: 非 CDP 引擎（Firefox/BiDi）时用这一套；两套共用一个对外的动作接口
         self._bidi: _Bidi | None = None
@@ -333,6 +432,13 @@ class BrowserSession:
         self._screencast_mode: str = "jpeg"
         self._screencast_on: bool = False
         self._closing: bool = False
+        #: 最后一次"点在哪里"（页面坐标）。打字进不去时用它把焦点拿回来。
+        self._last_click: tuple[float, float] | None = None
+        #: 上一次点中的是不是输入控件 —— 只有它才允许"再点一次拿焦点"，
+        #: 否则一点链接再打字就会把同一个链接点开第二遍（真机踩过同类）。
+        self._last_click_editable = False
+        #: 兼容模式的保活帧循环（页面静止时补帧，见 _idle_tick）
+        self._idle_task: asyncio.Task[None] | None = None
 
     # -- 生命周期 ----------------------------------------------------------- #
     def _child_env(self) -> dict[str, str]:
@@ -350,14 +456,28 @@ class BrowserSession:
             logger.exception("读取浏览器运行库目录失败（按系统库启动）")
         return env
 
-    def _startup_error(self, tail: list[str], bin_path: str, headline: str) -> str:
+    def _startup_error(self, tail: list[str], bin_path: str, headline: str, *, retried: bool = False) -> str:
         """把"启动失败"翻译成**用户能动手**的一句话。
 
         现场踩到的坑：Chrome for Testing 装好了、也选中了，但它启动时缺
         ``libnspr4.so`` 之类的系统库 —— 用户看到的只是"没有 DevTools 行"，
         完全不知道要去装依赖，最后只能认为"驱动没装上"。
+
+        另一类（2026-11-22）：上一个实例还占着 profile，
+        ``Failed to create SingletonLock: File exists`` —— 这是**平台自己的
+        收尾问题**，不该让用户看见 Chromium 原文，也不该让他自己去删 /tmp。
         """
         blob = "\n".join(tail)
+        if any(
+            s in blob
+            for s in ("SingletonLock", "ProcessSingleton", "profile appears to be in use", "SingletonSocket")
+        ):
+            if retried:
+                return (
+                    "浏览器启动失败：这个会话的配置还被上一个浏览器进程占着，"
+                    "已自动清掉并重试过一次仍没起来。稍等几秒再点一次「接管」，或发消息让我重开。"
+                )
+            return "浏览器启动失败：这个会话的配置被上一个进程占着（已自动清理）"
         if "error while loading shared libraries" in blob:
             try:
                 from .browser_drivers import _missing_libs
@@ -373,13 +493,69 @@ class BrowserSession:
                 f"libcups2t64 libgbm1 libpango-1.0-0 libxcomposite1 libxdamage1 "
                 f"libxfixes3 libxkbcommon0 libxrandr2 libdrm2 fonts-liberation"
             )
-        detail = " / ".join(tail[-3:])[:400] if tail else "（没有任何输出）"
-        return f"{headline}：{bin_path} —— {detail}"
+        if retried:
+            return f"{headline}：这个浏览器起不来（已自动清理配置重试一次），换一个驱动或看服务端日志"
+        # 原始输出只进日志，面板上不糊 Chromium 原文（用户看不懂也没法动手）
+        logger.warning("浏览器启动失败（%s）：%s", headline, " / ".join(tail[-6:])[:800])
+        return f"{headline}：浏览器没起来，正在自动重试一次"
+
+    async def _kill_proc(self) -> None:
+        """收掉这一个 Chromium（整组）。不碰 CDP/推流状态 —— 只用于启动失败重试。"""
+        import signal
+
+        if self._proc is None:
+            return
+        try:
+            os.killpg(os.getpgid(self._proc.pid), signal.SIGKILL)
+        except Exception:  # pragma: no cover - 已经退出了
+            try:
+                self._proc.kill()
+            except Exception:
+                pass
+        try:
+            await self._proc.wait()
+        except Exception:  # pragma: no cover
+            pass
+        self._proc = None
+
+    async def _launch(self, args: list[str]) -> str:
+        """起一次 Chromium 并等 DevTools 行；失败抛 ``_StartFailed``（带原始尾巴）。"""
+        self._proc = await asyncio.create_subprocess_exec(
+            *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            # 独立进程组：收尾时整组 SIGKILL，别把 renderer/zygote 留下来继续占 profile
+            start_new_session=True,
+        )
+        # remote-debugging-port=0：Chromium 会把实际端口写进 stderr 的 DevTools 行
+        ws_url = None
+        assert self._proc.stdout is not None
+        tail: list[str] = []  # 启动期最后几行 stderr —— 起不来时它就是唯一的线索
+        try:
+            while True:
+                line = await asyncio.wait_for(self._proc.stdout.readline(), timeout=15)
+                text = line.decode("utf-8", errors="replace")
+                if "DevTools listening on ws://" in text:
+                    ws_url = text.split("DevTools listening on ", 1)[1].strip()
+                    break
+                if text.strip():
+                    tail.append(text.rstrip())
+                    del tail[:-12]
+                if not line:
+                    break
+        except TimeoutError:
+            await self._kill_proc()
+            raise _StartFailed("启动后 15s 内没报 DevTools 端口", tail) from None
+        if not ws_url:
+            await self._kill_proc()
+            raise _StartFailed("启动失败（没有 DevTools 行）", tail)
+        return ws_url
 
     async def _ensure(self) -> None:
         """惰性启动：第一次动作才拉起 Chromium（不操作就零成本）。"""
         if self._cdp is not None:
             return
+        self._closing = False  # 上一次失败重试时可能被 close() 置过
         # 用哪个内核由设置决定（环境配置页可换、可装新版本）；取不到就退回默认
         bin_path, proto = CHROME_BIN, "cdp"
         try:
@@ -401,8 +577,11 @@ class BrowserSession:
         if proto != "cdp":
             await self._ensure_bidi(bin_path)
             return
-        user_data = Path(f"/tmp/agent-studio-browser/{self.key.replace(':', '-')}")
+        user_data = profile_dir_for(self.key)
         user_data.mkdir(parents=True, exist_ok=True)
+        # 起之前先把这个会话的 profile 收回干净：残留的 Chromium 会让新实例
+        # 直接 Failed to create SingletonLock 退出（复测现场就是这个）
+        reap_profile(self.key)
         args = [
             bin_path,
             "--headless=new",
@@ -417,33 +596,19 @@ class BrowserSession:
         ]
         if self._proxy:
             args.append(f"--proxy-server={self._proxy}")
-        self._proc = await asyncio.create_subprocess_exec(
-            *args,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-        )
-        # remote-debugging-port=0：Chromium 会把实际端口写进 stderr 的 DevTools 行
-        ws_url = None
-        assert self._proc.stdout is not None
-        tail: list[str] = []  # 启动期最后几行 stderr —— 起不来时它就是唯一的线索
         try:
-            while True:
-                line = await asyncio.wait_for(self._proc.stdout.readline(), timeout=15)
-                text = line.decode("utf-8", errors="replace")
-                if "DevTools listening on ws://" in text:
-                    ws_url = text.split("DevTools listening on ", 1)[1].strip()
-                    break
-                if text.strip():
-                    tail.append(text.rstrip())
-                    del tail[:-12]
-                if not line:
-                    break
-        except TimeoutError:
-            await self.close()
-            raise RuntimeError(self._startup_error(tail, bin_path, "启动后 15s 内没报 DevTools 端口"))
-        if not ws_url:
-            await self.close()
-            raise RuntimeError(self._startup_error(tail, bin_path, "启动失败（没有 DevTools 行）"))
+            ws_url = await self._launch(args)
+        except _StartFailed as first:
+            # 一次自动重试：清锁+清残留后再起（用户不该为"上一次没退干净"付费）
+            logger.warning("浏览器第一次启动失败，清理 profile 后重试：%s", first.headline)
+            reap_profile(self.key)
+            user_data.mkdir(parents=True, exist_ok=True)
+            try:
+                ws_url = await self._launch(args)
+            except _StartFailed as second:
+                raise RuntimeError(
+                    self._startup_error(second.tail or first.tail, bin_path, second.headline, retried=True)
+                ) from None
         self._ws_url = ws_url
         self._cdp = await _Cdp.connect(ws_url)
         await self._cdp.attach_page()
@@ -468,6 +633,8 @@ class BrowserSession:
         # 画面流：Chromium 主动推帧（每有变化才推）
         self._cdp.on("Page.screencastFrame", self._handle_frame)
         await self._start_screencast("jpeg")
+        if self._idle_task is None:
+            self._idle_task = asyncio.create_task(self._idle_tick())
 
     async def _start_screencast(self, mode: str) -> None:
         """按模式（重）启 screencast。
@@ -491,7 +658,11 @@ class BrowserSession:
             "quality": FRAME_QUALITY if mode == "jpeg" else VIDEO_FRAME_QUALITY,
             "maxWidth": 800 if mode == "jpeg" else VIEWPORT["width"],
             "maxHeight": 500 if mode == "jpeg" else VIEWPORT["height"],
-            "everyNthFrame": FRAME_EVERY_NTH if mode == "jpeg" else 1,
+            # 兼容模式也取满帧（不再每 4 帧才给 1 帧）。两个限流叠在一起时，
+            # 画得慢的页面（合成器只以 10~15Hz 出图）会先被除以 4 掉到 2~3fps。
+            # 帧率口径现在统一在后端那个 200ms 节流上（见 _emit_frame/FRAME_MIN_INTERVAL_MS）；
+            # 静止页面的 0 帧由 _idle_tick 的保活帧补上。
+            "everyNthFrame": 1,
         }
         if mode == "video":
             params["maxFrameRate"] = VIDEO_MAX_FPS
@@ -528,26 +699,46 @@ class BrowserSession:
         """帧到达：回 ack（不 ack Chromium 会暂停推流），然后推给 EventBus。"""
         if self._cdp is None:
             return
-        try:
-            await self._cdp.send("Page.screencastFrameAck", {"sessionId": params.get("sessionId")})
-        except Exception:  # pragma: no cover
-            pass
-        data = params.get("data", "")
+        await self._emit_frame(str(params.get("data", "")), params.get("sessionId"))
+        if self._idle_task is None and self._screencast_on:
+            # 页面静止时 Chromium 不再推帧，5fps 的数字会掉到 0（复测现场被读成"卡死"）。
+            # 有变化就由真帧说话，没变化由保活补上 —— 见 _idle_tick。
+            self._idle_task = asyncio.create_task(self._idle_tick())
+
+    async def _emit_frame(
+        self, data: str, session_id: Any = None, *, ack: bool = True, throttle: bool = True
+    ) -> bool:
+        """一帧的去向：喂视频轨（不等节流）+ 节流后进 SSE。返回这次有没有进 SSE。
+
+        ``throttle=False`` 给保活帧用：它自己按 200ms 排好了节奏，再被节流一次
+        就会因为几毫秒抖动被丢掉（实测掉到 4fps 以下，面板上看着不像 5fps）。
+        """
+        if not data:
+            return False
+        if ack and self._cdp is not None:
+            try:
+                await self._cdp.send("Page.screencastFrameAck", {"sessionId": session_id})
+            except Exception:  # pragma: no cover
+                pass
         # WebRTC 主链路：视频档的帧（1280 宽、24fps）**不等 SSE 节流**，每帧都进
         # 视频轨。体积上限也放宽（高质量 JPEG 在复杂页面上会超过 400KB，但视频轨
         # 是一帧一帧解码的，不存在把 SSE 堵住的问题）。
-        if self._video_sink is not None and data:
+        if self._video_sink is not None:
             try:
                 self._video_sink.push(data)
             except Exception:  # pragma: no cover
                 logger.debug("视频轨喂帧失败", exc_info=True)
         if len(data) > FRAME_MAX_BYTES:
-            return
-        # 节流：Chromium 在页面有动画/滚动时会猛推帧，按最小间隔丢掉多余的
+            return False
         now_ms = time.monotonic() * 1000.0
-        if now_ms - self._last_frame_at < FRAME_MIN_INTERVAL_MS:
-            return
-        self._last_frame_at = now_ms
+        if throttle:
+            if ack:
+                # 真帧的时间戳单独记：保活帧靠它判断"页面刚刚动过，我先让路"
+                self._last_real_frame_at = now_ms
+            # 节流：Chromium 在页面有动画/滚动时会猛推帧，按最小间隔丢掉多余的
+            if now_ms - self._last_frame_at < FRAME_MIN_INTERVAL_MS:
+                return False
+            self._last_frame_at = now_ms
         # 留最后一张：run 结束存成会话文件，刷新页面后还能看到"它最后停在哪儿"。
         # 只收 http(s) 的帧 —— Chromium 被收尾时会吐 about:blank 的白屏帧，
         # 收下它就等于把"最后一屏"存成一张空白图。
@@ -557,6 +748,69 @@ class BrowserSession:
             self._on_frame(self.run_id, data, self._last_url, self._last_title)
         except Exception:  # pragma: no cover
             logger.exception("浏览器帧推送失败")
+        return True
+
+    async def _idle_tick(self) -> None:
+        """兼容模式的保活帧：页面没变化时按 5fps 主动截一张。
+
+        为什么需要它：``Page.startScreencast`` 只在**页面有变化**时推帧，静止页面
+        的帧率本来就是 0 —— 面板上那个"实时 fps"就会显示 0~1fps，用户读成"卡了/
+        坏了"（复测现场就是这句）。这里在"没帧 + 有人在看"时用
+        ``Page.captureScreenshot`` 主动补一帧（实测 1280×800 一次 ~43ms，
+        缩到 800×500 后 ~35ms），代价只在**真的有人在看且页面不动**时才付。
+        页面一动，真帧先到，这里就自动让路（见 0.35s 判断）。
+        """
+        try:
+            while not self._closing and self._cdp is not None:
+                # 节奏按"开始截"到"下一轮开始截"的间隔算：截一张要 35~45ms，
+                # 若只是固定 sleep 200ms，实测会掉到 4.3fps（面板上就不像 5fps）
+                tick_at = time.monotonic()
+                if self._video_sink is not None:
+                    await asyncio.sleep(FRAME_MIN_INTERVAL_MS / 1000.0)
+                    continue  # 视频档自己有帧，别抢
+                if not self._has_watcher():
+                    await asyncio.sleep(FRAME_MIN_INTERVAL_MS / 1000.0)
+                    continue  # 没人在看：一帧都不截（不拿空闲页面的 CPU 开玩笑）
+                if time.monotonic() * 1000.0 - self._last_real_frame_at < 350:
+                    await asyncio.sleep(FRAME_MIN_INTERVAL_MS / 1000.0)
+                    continue  # 刚有真帧（页面在动）：这一拍让给它
+                try:
+                    r = await self._cdp.send(
+                        "Page.captureScreenshot",
+                        {
+                            "format": "jpeg",
+                            "quality": FRAME_QUALITY,
+                            "captureBeyondViewport": False,
+                            "clip": {
+                                "x": 0,
+                                "y": 0,
+                                "width": VIEWPORT["width"],
+                                "height": VIEWPORT["height"],
+                                "scale": 0.625,  # 1280×800 → 800×500，与兼容模式的帧同尺寸
+                            },
+                        },
+                    )
+                    data = (r.get("result") or {}).get("data") or ""
+                except Exception:  # pragma: no cover - 页面正在跳转/正在关
+                    await asyncio.sleep(FRAME_MIN_INTERVAL_MS / 1000.0)
+                    continue
+                await self._emit_frame(str(data), ack=False, throttle=False)
+                spent = time.monotonic() - tick_at
+                await asyncio.sleep(max(0.0, FRAME_MIN_INTERVAL_MS / 1000.0 - spent))
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # pragma: no cover
+            logger.debug("保活帧循环退出", exc_info=True)
+
+    def _has_watcher(self) -> bool:
+        """这个会话的画面上有没有活的订阅者（SSE 连着面板/缩略条）。"""
+        try:
+            from .runner.service import bus
+
+            chan = f"sess:{self.session_id}" if self.session_id else f"run:{self.run_id}"
+            return bus.watchers(chan) > 0
+        except Exception:  # pragma: no cover
+            return False
 
     # -- BiDi（Firefox）----------------------------------------------------- #
     async def _ensure_bidi(self, bin_path: str) -> None:
@@ -817,6 +1071,7 @@ class BrowserSession:
             return f"✗ 元素不可见（可能被遮挡或 display:none）: {selector}"
         assert self._cdp is not None
         x, y = box["x"], box["y"]
+        self._last_click = (float(x), float(y))
         for etype, btns in (
             ("mousePressed", 0),
             ("mouseReleased", 2),
@@ -969,18 +1224,9 @@ class BrowserSession:
             {"type": "mouseMoved", "x": float(x), "y": float(y), "button": "none", "buttons": 0},
         )
 
-    async def user_click(
-        self, x: float, y: float, button: str = "left", click_count: int = 1
-    ) -> str:
-        """用户在画面上点了一下（坐标已由前端按内容区换算成视口坐标）。"""
-        await self._ensure()
-        if self._bidi is not None:
-            await self._bidi_click_xy(x, y)
-            await asyncio.sleep(0.5)
-            await self._refresh_meta_bidi()
-            return f"用户点击 ({int(x)},{int(y)})，当前页面: {self._last_url}"
+    async def _dispatch_click(self, x: float, y: float, button: str, click_count: int) -> None:
+        """派发一次真实的按下+松开（按下=左1/右2/中4，松开=0）。"""
         assert self._cdp is not None
-        # buttons 是"事件发生时按住的键位掩码"：按下=左1/右2/中4，松开=0
         bits = {"left": (1, 0), "middle": (4, 0), "right": (2, 0)}.get(button, (1, 0))
         for etype, buttons in (("mousePressed", bits[0]), ("mouseReleased", bits[1])):
             await self._cdp.send(
@@ -994,7 +1240,49 @@ class BrowserSession:
                     "buttons": buttons,
                 },
             )
+
+    async def _focus_state_at(self, x: float, y: float) -> dict[str, Any]:
+        """这个点上是什么、它是不是输入控件、焦点是不是已经在它上面。"""
+        expr = (
+            "(() => {const el=document.elementFromPoint(%s,%s); if(!el) return {kind:'none'};"
+            "const t=(el.tagName||'').toUpperCase();"
+            "const editable = t==='INPUT'||t==='TEXTAREA'||el.isContentEditable===true;"
+            "return {kind:t, editable:editable, focused: !!editable && document.activeElement===el,"
+            " ph:(el.getAttribute&&(el.getAttribute('placeholder')||el.getAttribute('aria-label')))||''};"
+            "})()" % (float(x), float(y))
+        )
+        return await self._js(expr) or {}
+
+    async def user_click(
+        self, x: float, y: float, button: str = "left", click_count: int = 1
+    ) -> str:
+        """用户在画面上点了一下（坐标已由前端按内容区换算成视口坐标）。"""
+        await self._ensure()
+        if self._bidi is not None:
+            await self._bidi_click_xy(x, y)
+            await asyncio.sleep(0.5)
+            await self._refresh_meta_bidi()
+            return f"用户点击 ({int(x)},{int(y)})，当前页面: {self._last_url}"
+        assert self._cdp is not None
+        self._last_click = (float(x), float(y))
+        await self._dispatch_click(x, y, button, click_count)
         await asyncio.sleep(0.35)
+        # 点在**输入控件**上就必须确认焦点真的落在它上面。
+        # 页面（Bing 这类）点完会把控件重新渲染一遍，焦点掉到 body ——
+        # 那时面板里打的字会全部丢掉（复测现场："点了搜索框，打字进不去"）。
+        focus = await self._focus_state_at(x, y)
+        self._last_click_editable = bool(focus.get("editable"))
+        if focus.get("editable") and not focus.get("focused"):
+            await self._dispatch_click(x, y, button, click_count)  # 再点一次（页面刚重渲染）
+            await asyncio.sleep(0.2)
+            focus = await self._focus_state_at(x, y)
+            if not focus.get("focused"):
+                # 点击被页面吞掉：直接让 DOM 聚焦同一个点上的控件
+                await self._js(
+                    "(() => {const el=document.elementFromPoint(%s,%s);"
+                    " if(el && el.focus) el.focus(); return true;})()" % (float(x), float(y))
+                )
+                await asyncio.sleep(0.1)
         await self._refresh_meta()
         return f"用户点击 ({int(x)},{int(y)})，当前页面: {self._last_url}"
 
@@ -1131,17 +1419,114 @@ class BrowserSession:
         except Exception:  # pragma: no cover
             return ""
 
+    async def _js(self, expr: str) -> Any:
+        """Runtime.evaluate + JSON.stringify 的小工具（CDP 通路通用）。"""
+        assert self._cdp is not None
+        r = await self._cdp.send(
+            "Runtime.evaluate", {"expression": "JSON.stringify(" + expr + ")", "returnByValue": True}
+        )
+        raw = (r.get("result") or {}).get("result", {}).get("value")
+        if not raw:
+            return None
+        try:
+            return json.loads(raw)
+        except Exception:  # pragma: no cover
+            return None
+
+    async def _focus_probe(self) -> dict[str, Any]:
+        """当前焦点是不是可输入元素 + 它的当前值（打字回读的唯一依据）。"""
+        expr = (
+            "(() => {const a=document.activeElement; if(!a) return {editable:false};"
+            "const t=(a.tagName||'').toUpperCase();"
+            "const editable = t==='INPUT'||t==='TEXTAREA'||a.isContentEditable===true;"
+            "let v=''; if('value' in a && typeof a.value==='string') v=a.value;"
+            "else if(a.isContentEditable) v=a.innerText||'';"
+            "return {editable: editable, tag: t, value: v,"
+            " ph:(a.getAttribute&&(a.getAttribute('placeholder')||a.getAttribute('aria-label')))||''};})()"
+        )
+        return await self._js(expr) or {}
+
+    async def _refocus(self) -> bool:
+        """把焦点放回**上一次点过的输入框**。
+
+        为什么要这一步：页面（Bing 这类）在点击后会把输入控件重新渲染一遍，
+        焦点掉到 body，``Input.insertText`` 就打进空气里 —— 面板上看着"打了字"，
+        页面却是空的（复测现场）。用同一个坐标再点一次能把焦点拿回来。
+
+        只在"上一次点中的确实是输入控件"时才重放这次点击：否则用户点了个链接
+        又打字，这里会把链接点开第二遍（页面被带走）。
+        """
+        if not self._last_click or not self._last_click_editable:
+            return False
+        x, y = self._last_click
+        try:
+            await self.user_click(x, y)
+        except Exception:  # pragma: no cover
+            return False
+        info = await self._focus_probe()
+        return bool(info.get("editable"))
+
+    async def _type_chars(self, text: str) -> None:
+        """逐字符兜底：真键盘事件（只监听 keydown/keypress 的页面吃 insertText 不吃）。"""
+        assert self._cdp is not None
+        for ch in text:
+            await self._cdp.send(
+                "Input.dispatchKeyEvent",
+                {"type": "keyDown", "key": ch, "text": ch, "unmodifiedText": ch},
+            )
+            await self._cdp.send("Input.dispatchKeyEvent", {"type": "keyUp", "key": ch})
+            await asyncio.sleep(0.01)
+
+    @staticmethod
+    def _typed_ok(before: str, after: str, text: str) -> bool:
+        """回读判定：新值里能看见这段文字（或至少变长了）。"""
+        if after == before:
+            return False
+        return text in after or len(after) > len(before)
+
     async def user_type(self, text: str) -> str:
-        """用户通过页面输入条打的字（整段插入，兼容中文输入法）。"""
+        """用户通过页面输入条打的字（整段插入，兼容中文输入法）。
+
+        **必须回读验证**：插入成功 ≠ 文字进了页面。焦点不在输入框时
+        ``Input.insertText`` 静默丢弃，用户看到的是"打了但框里是空的"。
+        所以这里三步：① 插入后回读；② 没进去就重新聚焦 + 逐字符键盘事件再来一次；
+        ③ 还不行就把原因**原样返回**（面板会立刻显示，而不是假装成功）。
+        """
         await self._ensure()
         if self._bidi is not None:
             await self._bidi_type(text)
             await asyncio.sleep(0.3)
             return f"已输入 {len(text)} 个字符"
         assert self._cdp is not None
+        if not text:
+            return "没有要输入的内容"
+        info = await self._focus_probe()
+        if not info.get("editable"):
+            # 焦点掉在 body 上（页面刚重渲染过）→ 先用上次点过的地方把焦点拿回来
+            await self._refocus()
+            info = await self._focus_probe()
+        if not info.get("editable"):
+            return "✗ 页面里没有输入焦点：先点一下页面里的输入框，再在这里打字"
+        base = str(info.get("value") or "")
         await self._cdp.send("Input.insertText", {"text": text})
-        await asyncio.sleep(0.3)
-        return f"已输入 {len(text)} 个字符"
+        await asyncio.sleep(0.25)
+        after = str((await self._focus_probe()).get("value") or "")
+        if self._typed_ok(base, after, text):
+            return f"已在页面输入框输入 {len(text)} 个字符（回读一致）"
+
+        # ② 换一条路：重新聚焦（点击）→ 逐字符真键盘事件
+        await self._refocus()
+        info2 = await self._focus_probe()
+        if info2.get("editable"):
+            base2 = str(info2.get("value") or "")
+            await self._type_chars(text)
+            await asyncio.sleep(0.3)
+            after2 = str((await self._focus_probe()).get("value") or "")
+            if self._typed_ok(base2, after2, text):
+                return f"已用键盘事件输入 {len(text)} 个字符（回读一致）"
+
+        # ③ 真进不去 —— 说清楚，别让用户以为打进去了
+        return "✗ 文字没进页面输入框：先点页面里的输入框（看到光标）再在面板里打字"
 
     async def wait(self, wait_s: float = 1.0) -> str:
         await asyncio.sleep(min(max(wait_s, 0.1), 15))
@@ -1163,6 +1548,9 @@ class BrowserSession:
         if self._frame_task is not None:
             self._frame_task.cancel()
             self._frame_task = None
+        if self._idle_task is not None:
+            self._idle_task.cancel()
+            self._idle_task = None
         if self._bidi is not None:
             try:
                 await self._bidi.close()
@@ -1176,8 +1564,18 @@ class BrowserSession:
                 pass
             self._cdp = None
         if self._proc is not None:
+            # 独立进程组（start_new_session）→ 整组收掉。只 kill 主进程会留下
+            # zygote/renderer，它们还占着 profile 目录（下次启动就是 SingletonLock 报错）。
+            import signal
+
             try:
-                self._proc.kill()
+                os.killpg(os.getpgid(self._proc.pid), signal.SIGKILL)
+            except Exception:  # pragma: no cover - 进程已经走了/没有权限
+                try:
+                    self._proc.kill()
+                except Exception:
+                    pass
+            try:
                 await self._proc.wait()
             except Exception:  # pragma: no cover
                 pass

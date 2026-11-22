@@ -226,9 +226,13 @@ def ice_config() -> dict[str, Any]:
 # 一条会话的推流
 # --------------------------------------------------------------------------- #
 class BrowserStream:
-    def __init__(self, session_id: str, browser: Any) -> None:
+    def __init__(self, session_id: str, browser: Any, client: str = "") -> None:
         self.session_id = session_id
         self.browser = browser
+        #: 建这条流的前端实例标识。同一个会话可能同时挂着两个面板（右栏 + 全屏），
+        #: 谁先关就把对方顶掉过（"两个 BrowserStage 互相顶掉"就是这么来的）——
+        #: 带上它之后，只有**建这条流的那个人**能关它。
+        self.client = client
         self.sink = FrameSink()
         self.pc: Any = None
         self.track: Any = None
@@ -460,21 +464,33 @@ class BrowserStream:
             self._client = payload
             self._last_client_at = time.monotonic()
             return
-        # 前端坐标是按**它收到的画面像素**算的（video.videoWidth 就是轨道当前尺寸）。
-        # 轨道会随档位缩放，这里统一折回页面坐标再交给 CDP —— 否则降档后点哪儿都偏，
-        # 640×400 档实测偏一半（真实鼠标点 (640,400) 落到页面 (320,200)）。
+        # 坐标口径：前端从 701ad49 起发的就是**页面坐标**（它按 public_state.viewport
+        # 把画面像素换算回 1280×800 的页面坐标），所以这里**不能再按档位乘一次** ——
+        # 那会把点击整体放大 1280/档宽倍（实测 640 档点搜索框 → 落到空白处，
+        # 焦点没进输入框，随后打的字全丢）。payload 里带 coords="page" 就是新口径；
+        # 老前端（缓存的旧包）不带，才沿用档位换算。
         if kind in ("click", "move", "wheel"):
             lv = LEVELS[self.level]
-            fx = VIDEO_WIDTH / float(lv["width"])
-            fy = VIDEO_HEIGHT / float(lv["height"])
-            if (fx, fy) != (1.0, 1.0):
+            page_based = str(payload.get("coords") or "") == "page"
+            if not page_based:
+                fx = VIDEO_WIDTH / float(lv["width"])
+                fy = VIDEO_HEIGHT / float(lv["height"])
+                if (fx, fy) != (1.0, 1.0):
+                    payload = dict(payload)
+                    for key, factor in (("x", fx), ("y", fy)):
+                        if key in payload:
+                            try:
+                                payload[key] = float(payload[key]) * factor
+                            except (TypeError, ValueError):
+                                pass
+            else:
+                # 页面坐标也别越界（留白处点空了会打到奇怪的地方）
                 payload = dict(payload)
-                for key, factor in (("x", fx), ("y", fy)):
-                    if key in payload:
-                        try:
-                            payload[key] = float(payload[key]) * factor
-                        except (TypeError, ValueError):
-                            pass
+                try:
+                    payload["x"] = max(0.0, min(float(payload.get("x", 0)), float(VIDEO_WIDTH) - 1))
+                    payload["y"] = max(0.0, min(float(payload.get("y", 0)), float(VIDEO_HEIGHT) - 1))
+                except (TypeError, ValueError):
+                    pass
         from . import browser_control as bc
 
         c = bc.get_for_session(self.session_id)
@@ -514,19 +530,21 @@ def existing(session_id: str) -> BrowserStream | None:
     return STREAMS.get(session_id)
 
 
-async def ensure_stream(session_id: str, browser: Any) -> BrowserStream:
+async def ensure_stream(session_id: str, browser: Any, client: str = "") -> BrowserStream:
     old = STREAMS.get(session_id)
     if old is not None:
         await old.close()
-    stream = BrowserStream(session_id, browser)
+    stream = BrowserStream(session_id, browser, client)
     await stream.start()
     STREAMS[session_id] = stream
     return stream
 
 
-async def handle_offer(session_id: str, browser: Any, offer_sdp: str, offer_type: str) -> dict[str, Any]:
+async def handle_offer(
+    session_id: str, browser: Any, offer_sdp: str, offer_type: str, client: str = ""
+) -> dict[str, Any]:
     """浏览器 offer → 服务端 answer（非 trickle：answer 里带齐候选）。"""
-    stream = await ensure_stream(session_id, browser)
+    stream = await ensure_stream(session_id, browser, client)
     pc = stream.pc
     # 编解码偏好必须在 setRemoteDescription **之前**设（aiortc 在这一步算
     # transceiver._codecs；之后再设，answer 里 VP8 还在，浏览器就可能选它）。
@@ -576,7 +594,12 @@ def metrics(session_id: str) -> dict[str, Any]:
     }
 
 
-async def close_stream(session_id: str) -> None:
+async def close_stream(session_id: str, client: str = "") -> None:
+    """收掉这个会话的推流。带 client 时**只关自己建的那条**（别顶掉对方的面板）。"""
     s = STREAMS.get(session_id)
-    if s is not None:
-        await s.close()
+    if s is None:
+        return
+    if client and s.client and s.client != client:
+        logger.info("忽略别的面板的关闭请求 ses=%s（流属于 %s，请求来自 %s）", session_id, s.client, client)
+        return
+    await s.close()

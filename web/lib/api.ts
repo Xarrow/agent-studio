@@ -1715,16 +1715,16 @@ export const api = {
   browserRtcConfig: (sessionId: string) =>
     get<BrowserRtcConfig>(`/api/sessions/${sessionId}/browser-ctl/webrtc/config`),
   /** SDP offer → answer */
-  browserRtcOffer: (sessionId: string, body: { sdp: string; type: string }) =>
+  browserRtcOffer: (sessionId: string, body: { sdp: string; type: string; client?: string }) =>
     post<{ sdp: string; type: string; stream?: BrowserStreamState }>(
       `/api/sessions/${sessionId}/browser-ctl/webrtc/offer`,
       body,
     ),
   /** 收摊：恢复 JPEG 推流（关面板/失败回退时调） */
-  browserRtcClose: (sessionId: string) =>
+  browserRtcClose: (sessionId: string, body: { client?: string } = {}) =>
     post<{ ok: boolean; stream: BrowserStreamState }>(
       `/api/sessions/${sessionId}/browser-ctl/webrtc/close`,
-      {},
+      body,
     ),
 
   /** 一次删多个（文件区「管理」用）：路径全部相对会话目录，有一个不合规矩就整体拒 */

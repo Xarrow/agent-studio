@@ -1705,18 +1705,28 @@ export function ChatConsole({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [browserCtl?.run_id, browserCtl?.step_count]);
 
+  /**
+   * 面板里的一步用户输入（点击/打字/按键/滚动）。
+   *
+   * **必须把后端那句回执 return 出去**：兼容模式（JPEG）下没有 DataChannel，
+   * BrowserStage 的 withFeedback 就靠这个返回值在点击处显示"成了/没成"。
+   * 以前这里 return undefined，回执被整条丢掉 —— 用户点了画面什么反馈都没有。
+   */
   const sendBrowser = useCallback(
-    async (body: Record<string, unknown>) => {
-      if (!sessionId) return;
+    async (body: Record<string, unknown>): Promise<string> => {
+      if (!sessionId) return "";
       try {
         const r = await api.browserInput(sessionId, body);
         if (r?.state) setBrowserCtl(r.state);
         setBrowserNotice("");
+        return r?.feedback || "";
       } catch (e) {
         // 被拒（助手正在操作 / 已过期）→ 把后端那句人话摆出来，不许静默吞掉。
         // 同时补一次状态：面板上的徽章/按钮必须立刻和这句话一致。
-        setBrowserNotice(e instanceof Error ? e.message : String(e));
+        const msg = e instanceof Error ? e.message : String(e);
+        setBrowserNotice(msg);
         void syncBrowserCtl();
+        return msg; // 回执也要显示在操作处（红色），别只挂一条顶部横幅
       }
     },
     [sessionId, syncBrowserCtl],
