@@ -40,7 +40,8 @@ async def _seed() -> tuple[str, str]:
                 description=f"{name} 的说明",
                 runtime="agentscope",
                 version=3,
-                definition={"name": name, "role": f"{name} 的说明", "skills": [{"name": "web-search"}]},
+                # skills 必须是 {ref} 形状（早期的 {"name": …} 过不了 AgentDefinition 校验）
+                definition={"name": name, "role": f"{name} 的说明", "skills": [{"ref": "sk_fake0001"}]},
                 expose_remote=expose,
                 expose_note="仅限文档解析" if expose else "",
             )
