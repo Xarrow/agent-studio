@@ -474,7 +474,7 @@ export function RunsPanel() {
     const ok = await fb.confirm({
       title: `删除选中的 ${ids.length} 条记录？`,
       description:
-        "执行记录连同事件流与调用明细一起清；LLM 测试直接删",
+        "只清执行记录（事件流与调用明细）：对话里那些消息还在，要删对话请到对话页的会话菜单里删",
       details: [...ids.slice(0, 6), ...(ids.length > 6 ? [`…另有 ${ids.length - 6} 条`] : [])],
       danger: true,
       confirmText: `删除 ${ids.length} 条`,
@@ -524,7 +524,10 @@ export function RunsPanel() {
         description: agentId ? "范围：当前选中的 Agent" : "范围：全部 Agent",
         details:
           n > 0
-            ? [`将删除 ${n} 条已结束的助手执行记录`, "含其事件流、模型调用与工具调用明细"]
+            ? [
+                `将删除 ${n} 条已结束的助手执行记录`,
+                "含其事件流、模型调用与工具调用明细；对话里的消息不受影响",
+              ]
             : ["没有符合条件的记录"],
         danger: n > 0,
         confirmText: n > 0 ? `删除 ${n} 条` : "关闭",
