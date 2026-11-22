@@ -270,6 +270,29 @@ export function Nav() {
           {expanded && <span className="text-[12px]">收起</span>}
         </button>
 
+        {/* 打开命令面板：手机与鼠标也要有入口（⌘K 只对键盘有效） */}
+        <button
+          data-tap
+          onClick={() => window.dispatchEvent(new CustomEvent("as:cmd"))}
+          title="搜索（⌘K）"
+          aria-label="搜索"
+          className={`mb-1 flex items-center rounded-[var(--radius-md)] transition-colors hover:bg-[var(--color-surface-2)] ${
+            expanded ? "w-full gap-2 px-2 h-9" : "w-10 h-10 justify-center"
+          }`}
+          style={{ color: "var(--color-muted)" }}
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.6-3.6" />
+          </svg>
+          {expanded && <span className="text-[12.5px]">搜索</span>}
+          {expanded && (
+            <span className="ml-auto text-[11px]" style={{ color: "var(--color-text-3)" }}>
+              ⌘K
+            </span>
+          )}
+        </button>
+
         {/* 四段分组（对话 / 助手 / 资源 / 系统）—— 9 个入口平铺时找不到东西，
             分组只改摆法，路由一条没动；未展开时用间距区分同一组 */}
         {NAV_GROUPS.map((g, gi) => {

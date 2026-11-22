@@ -775,3 +775,14 @@ test("对话页配置抽屉：右侧抽屉、自动保存不产生版本、挂�
   assert.match(chat, /AgentConfigDrawer/, "对话页应改用配置抽屉");
   assert.doesNotMatch(chat, /AgentDetailDialog/, "对话页不该再弹居中配置弹窗");
 });
+
+test("⌘K 命令面板：挂全站、走 portal、有鼠标入口、跳文档能定位", () => {
+  const layout = read("app/layout.tsx");
+  assert.match(layout, /CommandPalette/, "命令面板要挂在 layout（全站可用）");
+  const pal = read("components/CommandPalette.tsx");
+  assert.match(pal, /createPortal/, "面板要挂 body（避免祖先 transform 影响定位）");
+  assert.match(pal, /as:cmd/, "要有非键盘入口（手机/鼠标点搜索）");
+  assert.match(pal, /isImeEvent/, "Enter 要有输入法守卫");
+  const kn = read("app/knowledge/page.tsx");
+  assert.match(kn, /get\("doc"\)/, "知识页要认 ?doc= 才能落到具体文档");
+});

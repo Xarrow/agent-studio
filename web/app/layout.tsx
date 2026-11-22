@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { CommandPalette } from "@/components/CommandPalette";
 import { Nav } from "@/components/Nav";
 import { FeedbackProvider } from "@/components/ui/feedback";
 import { AccessGate } from "@/components/AccessGate";
@@ -55,7 +56,8 @@ export default function RootLayout({
             <main className="flex-1 overflow-auto pt-[44px] md:pt-0">{children}</main>
           </div>
         </FeedbackProvider>
-      </body>
+            <CommandPalette />
+    </body>
     </html>
   );
 }

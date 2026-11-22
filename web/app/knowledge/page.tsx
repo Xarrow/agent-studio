@@ -2063,6 +2063,13 @@ function DocumentFlow({
   const fb = useFeedback();
   const [flow, setFlow] = useState<Record<string, { steps: FlowStep; next: string }>>({});
   const [openId, setOpenId] = useState<string | null>(null);
+
+  /* 从命令面板过来（?doc=xxx）：直接展开那一份，不然跳到列表还得自己找 */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const id = new URLSearchParams(window.location.search).get("doc");
+    if (id) setOpenId(id);
+  }, []);
   const [busy, setBusy] = useState<string | null>(null);
 
   const loadFlow = useCallback(async () => {
