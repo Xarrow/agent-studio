@@ -167,9 +167,25 @@ def task_of(run: Run, agent_name: str | None = None) -> dict[str, Any]:
 async def _agent_for_card(session: AsyncSession, agent_id: str | None) -> Agent | None:
     if agent_id:
         return await session.get(Agent, agent_id)
-    # 没指定就用「通用助手」（平台默认干活的那个），退回最近更新的一个
+    # 没指定时的挑选顺序：
+    #   ① 「通用助手」且开了远程调用（平台默认干活的那个）
+    #   ② 任一开了远程调用的助手（最近更新）—— 以前直接取「通用助手」，它没开就 403，
+    #      外部填个 base 地址根本注册不了，明明库里有助手是开放的（实测踩到）
+    #   ③ 都没有 → 退回最近更新的一条（照旧报"没开放远程调用"）
     row = (
-        await session.execute(select(Agent).where(Agent.name == "通用助手").limit(1))
+        await session.execute(
+            select(Agent).where(Agent.name == "通用助手", Agent.expose_remote.is_(True)).limit(1)
+        )
+    ).scalars().first()
+    if row is not None:
+        return row
+    row = (
+        await session.execute(
+            select(Agent)
+            .where(Agent.expose_remote.is_(True))
+            .order_by(Agent.updated_at.desc())
+            .limit(1)
+        )
     ).scalars().first()
     if row is not None:
         return row

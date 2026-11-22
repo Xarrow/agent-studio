@@ -53,6 +53,8 @@ def test_地址规整三种写法同一个远端():
         "http://host:8848/",
         "http://host:8848/a2a",
         "http://host:8848/.well-known/agent-card.json",
+        # 平台自己暴露的卡片地址（带 agent id）—— 粘贴回来也必须认
+        "http://host:8848/.well-known/agents/ag_abc123/agent-card.json",
     ):
         assert remote_agents.normalize_base(raw) == "http://host:8848", raw
     assert remote_agents.normalize_base("  ") == ""

@@ -20,6 +20,8 @@
 
 from __future__ import annotations
 
+import re
+
 import logging
 from typing import Any
 
@@ -44,8 +46,9 @@ def normalize_base(url: str) -> str:
     u = (url or "").strip().rstrip("/")
     if not u:
         return ""
-    if u.endswith("/.well-known/agent-card.json"):
-        u = u[: -len("/.well-known/agent-card.json")]
+    # 两种卡片地址都要认：通用 / 平台的 /.well-known/agents/<id>/agent-card.json
+    # —— 后者正是我们自己暴露出去的地址，粘回来却不认，调用就会拼错路径（实测踩到）
+    u = re.sub(r"/\.well-known/(?:agents/[^/]+/)?agent-card\.json$", "", u)
     if u.endswith("/a2a"):
         u = u[:-4]
     return u.rstrip("/")
@@ -182,10 +185,14 @@ def auth_headers(remote: RemoteAgent) -> dict[str, str]:
 # --------------------------------------------------------------------------- #
 async def resolve(url: str, *, timeout: float = 15.0, headers: dict[str, str] | None = None) -> dict[str, Any]:
     """解析一个地址背后的远程 agent（不落库）—— 注册前的"看一眼"。"""
-    base = normalize_base(url)
+    raw = (url or "").strip().rstrip("/")
+    base = normalize_base(raw)
     if not base:
         raise a2a_client.A2AError("地址为空")
-    card = await a2a_client.discover(base, timeout=timeout, headers=headers)
+    # 用户粘的如果就是卡片地址（含 /agents/<id>/ 那种），按原样去取卡；
+    # 归一化成 base 之后再去拼通用卡片路径会拼错（实测：403/404，注册不了自己的助手）
+    target = raw if raw.endswith("agent-card.json") else base
+    card = await a2a_client.discover(target, timeout=timeout, headers=headers)
     parsed = parse_card(card)
     if not parsed["name"]:
         raise a2a_client.A2AError("卡片里没有 name —— 这地址可能不是 A2A agent card")
