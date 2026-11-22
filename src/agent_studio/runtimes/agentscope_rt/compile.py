@@ -908,6 +908,7 @@ def build_agent(
     cwd: str | None = None,
     session_allow: list[str] | tuple[str, ...] = (),
     run_id: str | None = None,
+    turn_note: str | None = None,
 ):
     """编译出 ``(agent, model)`` —— 二者都需在 dispose 时收尾。
 
@@ -988,6 +989,20 @@ def build_agent(
         tool_list = tool_catalog(deferred)
         if tool_list:
             system_prompt = f"{system_prompt.rstrip()}\n\n{tool_list}".strip()
+
+        # 上一轮为什么没做完（被用户拒绝 / 被平台拦下）。**必须给模型看**：
+        # 它看不到"〔本轮未完成〕"那条平台提示，下一轮会把同一个操作再发一遍
+        # （现场：拒绝一次越界写，新消息又弹同一张卡，用户连点三次拒绝）。
+        # 同时把范围说死：这只说明那一个动作没做成，不是"这类操作以后都不许做"。
+        if turn_note:
+            system_prompt = (
+                f"{system_prompt.rstrip()}\n\n"
+                "## 上一轮为什么没做完（平台事实，不是用户的新要求）\n"
+                f"{turn_note}\n\n"
+                "那次请求**已经结束**：不要把它当成还没做的任务，也不要自动重试同一个操作。"
+                "用户在后面的消息里明确要求时再照常发起"
+                "（写到会话目录之外会照例弹确认卡，由用户自己决定）。"
+            ).strip()
 
     # 记录器：把每次模型调用的**完整请求与响应**落库（llm_call.request_blob/
     # response_blob）。以前这两列一直是空的 —— 只能看到"花了多少 token"，

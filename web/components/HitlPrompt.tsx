@@ -35,7 +35,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { highestRisk, summarizeCalls, type FileAction } from "@/lib/hitl";
 
 /** 一次文件写入确认卡：写清「哪个助手、完整路径、操作、写什么」。 */
@@ -139,6 +139,12 @@ export function HitlPrompt({
   onResumed,
   /** 恢复请求失败 */
   onError,
+  /**
+   * 这张卡其实已经被处理过了（后端 409：另一次点击/另一个页面先结清了）。
+   * 调用方应据此收起卡片、重新读一次运行状态 —— 把它当"恢复失败"会让人对着
+   * 一张已经死掉的卡反复点。
+   */
+  onStale,
   /** 「总是允许去哪配」的链接（助手配置页的权限段）。不给就不显示这句 */
   permissionHref,
   /** 紧凑模式：内嵌在时间线/详情里时用（少些留白） */
@@ -149,6 +155,7 @@ export function HitlPrompt({
   onBeforeResume?: () => void;
   onResumed?: (confirm: boolean) => void;
   onError?: (message: string) => void;
+  onStale?: (message: string) => void;
   permissionHref?: string;
   compact?: boolean;
 }) {
@@ -156,6 +163,8 @@ export function HitlPrompt({
   /** 已提交过的那次决定 —— 提交后整块收成状态行，不能再点第二次（见文件头第 3 条） */
   const [sent, setSent] = useState<null | boolean>(null);
   const [err, setErr] = useState<string | null>(null);
+  /** 这张卡已经被别处结清了（409）—— 只剩一行事实，不再给按钮 */
+  const [stale, setStale] = useState<string | null>(null);
   /** 危险操作走到第二步了（第一下是意愿，第二下才是确认） */
   const [confirming, setConfirming] = useState(false);
   /** 展开看完整参数的那一条 */
@@ -198,6 +207,7 @@ export function HitlPrompt({
     sigRef.current = sig;
     setSent(null);
     setErr(null);
+    setStale(null);
     setConfirming(false);
     setShowFull(null);
     setRemember(false);
@@ -219,6 +229,14 @@ export function HitlPrompt({
       onResumed?.(confirm);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
+      if (e instanceof ApiError && e.status === 409) {
+        // 已经结清了：不给按钮、也不说"恢复失败"（用户没做错什么）。
+        // 交给调用方收起卡片并重读一次运行状态。
+        setSent(null);
+        setStale(msg);
+        onStale?.(msg);
+        return;
+      }
       setErr(msg);
       setSent(null); // 没发成功，允许重试
       setConfirming(false);
@@ -227,6 +245,19 @@ export function HitlPrompt({
       setBusy(false);
     }
   };
+
+  /* ── 已结清：只留一行事实，不再给按钮 ─────────────────────── */
+  if (stale) {
+    return (
+      <div
+        className="flex items-center gap-2 rounded-xl px-3 py-2 text-[12.5px] flex-wrap"
+        style={{ background: "var(--color-surface-2)", color: "var(--color-muted)" }}
+      >
+        <span>这次的待确认已经处理过了，卡片已收起。</span>
+        <span className="truncate">{stale}</span>
+      </div>
+    );
+  }
 
   /* ── 已提交：收成一行状态，不再可点 ───────────────────────── */
   if (sent !== null) {

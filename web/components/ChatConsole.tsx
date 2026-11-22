@@ -3614,6 +3614,14 @@ export function ChatConsole({
                   }}
                   onResumed={() => setBusy(true)}
                   onError={(m) => fb.error("恢复失败", m)}
+                  onStale={() => {
+                    // 这张卡已经结清了（另一次点击先到）：收起它，挂上事件流
+                    // 看这一轮的真实结局 —— 不刷新的话用户会对着死卡再点。
+                    setHitl(null);
+                    setBusy(true);
+                    attachStream(hitl.runId, liveInput);
+                    void loadMessages(sessionId);
+                  }}
                   permissionHref={
                     agentId ? `/agents/detail?id=${agentId}&focus=permission` : undefined
                   }
@@ -3631,12 +3639,19 @@ export function ChatConsole({
               >
                 <span className="flex-1 min-w-[200px] break-words">
                   {/* 超时不是「模型答错了」：话已经说全了（"执行超时：这一轮超过 8 秒…"），
-                      别再套一层"这一轮没跑完"，不然一句话里两个"这一轮" */}
-                  {/超时/.test(failed.message) ? failed.message : `这一轮失败了：${failed.message}`}
+                      别再套一层"这一轮没跑完"，不然一句话里两个"这一轮"。
+                      被平台拦下 / 用户拒绝同理：后端给的已经是完整人话，
+                      再套一层就变成「这一轮失败了：已拦截：…」 */}
+                  {/^(超时|已拦截|你拒绝了)/.test(failed.message)
+                    ? failed.message
+                    : `这一轮失败了：${failed.message}`}
                 </span>
-                <button className="btn btn-sm shrink-0" disabled={busy} onClick={() => void send(failed.text)}>
-                  {/超时/.test(failed.message) ? "继续" : "重试"}
-                </button>
+                {/* 平台拦截不是"运气不好"，重试只会再被拦一次 —— 不给这个按钮 */}
+                {!/^已拦截/.test(failed.message) && (
+                  <button className="btn btn-sm shrink-0" disabled={busy} onClick={() => void send(failed.text)}>
+                    {/超时/.test(failed.message) ? "继续" : "重试"}
+                  </button>
+                )}
                 <button
                   className="shrink-0 rounded px-1 text-[12px] hover:underline max-md:min-h-[32px] max-md:px-2"
                   onClick={() => setFailed(null)}

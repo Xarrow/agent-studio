@@ -70,6 +70,33 @@ def clear_reasons() -> None:
     _REASONS.set({})
 
 
+#: 「这一步是平台拦下的」——按 tool_call id 记。和 ``reasons`` 分开：
+#: 那条是给授权条看的（为什么要你点头），这条是给**收尾归因**用的
+#: （被拦 ≠ 用户点了拒绝；把两者写成一句话会让用户以为是自己点错了）。
+#: 值：``{"source": "guard", "rule": ..., "reason": ...}``
+_DENY_NOTES: dict[str, dict[str, str]] = {}
+
+
+def note_denied(call_id: str, *, reason: str, rule: str = "") -> None:
+    """记一条「平台/护栏拦下」的事实（不是用户点的拒绝）。"""
+    if not call_id:
+        return
+    _DENY_NOTES[call_id] = {"source": "guard", "rule": rule or "", "reason": reason or ""}
+    if len(_DENY_NOTES) > _FALLBACK_MAX:
+        for old in list(_DENY_NOTES)[: _FALLBACK_MAX // 5]:
+            _DENY_NOTES.pop(old, None)
+
+
+def denied_note(call_id: str) -> dict[str, str] | None:
+    if not call_id:
+        return None
+    return _DENY_NOTES.get(call_id)
+
+
+def clear_denied_notes() -> None:
+    _DENY_NOTES.clear()
+
+
 #: 「这次调用要动哪个文件」的结构化细节，按 tool_call id 存。
 #: 授权条上要写清：哪个助手、完整路径、操作类型、内容摘要/差异 ——
 #: AgentScope 的确认事件只带工具名和参数，这些得我们从判定那一层带出来。
@@ -252,9 +279,15 @@ class DangerousActionGuard(MiddlewareBase):
         ``file_action_for`` 返回 None，不能退成 ``verdict.snippet``（那只是命中项的
         最后一段，比如 ``.hermes``）—— 那样用户看到"被拦了 .hermes"，却不知道它想
         读的是 ``/root/.hermes/config.yaml``。
+
+        操作类型按**真实意图**记：``ls``/``cat`` 这类是「读」，写命令才是「写」。
+        以前一律空着，界面回退成"写"，读尝试被记成写（用户 2026-11 指出）。
         """
         ctx = current_run_ctx()
         act = guardrails.file_action_for(tool_name, tool_input, ws or None)
+        if act is None:
+            # 写动作解析不出来 → 按读的那条解析（禁区里的 ls/cat 走这里）
+            act = guardrails.file_action_for_read(tool_name, tool_input, ws or None)
         if act is not None:
             data = act.as_dict()
         else:
@@ -264,15 +297,43 @@ class DangerousActionGuard(MiddlewareBase):
                 if isinstance(val, str) and val.strip():
                     raw = val
                     break
+            command = self._command_text(tool_input)
+            if not raw and command:
+                # 命令通道：把命中的那个路径找出来（`cat /root/.hermes/x` → 那个文件）
+                raw = file_policy.first_path_in(command, ws or None)
             data = {
                 "path": raw or verdict.snippet or "",
-                "op": "",
-                "command": self._command_text(tool_input),
+                # 只有确实是只读命令才记「读」；`shutdown` 这类认不出的一律留空
+                # （界面显示「—」）—— 谎报成读会把审计的可信度毁掉
+                "op": file_policy.OP_READ if command and file_policy.is_read_command(command) else "",
+                "command": command,
             }
         await file_policy.audit(
             data,
             result=file_policy.RESULT_BLOCKED,
             rule=verdict.rule,
+            agent_id=str(ctx.get("agent_id") or ""),
+            run_id=str(ctx.get("run_id") or ""),
+            session_id=str(ctx.get("session_id") or ""),
+        )
+
+    async def _audit_read(self, tool_name: str, tool_input: dict, ws: str) -> None:
+        """工作区**之外**的成功读记一条（工作区内的读不记 —— 太频繁）。
+
+        读是放开策略（禁区除外），所以这里只留痕、不影响放行；
+        与写分开：写有自己的四类结果，这条是「读 + 放行」。
+        """
+        # 这一条命令里要是有写动作，就归写那条去记（别把 `echo > f && cat f` 记两条）
+        if guardrails.file_action_for(tool_name, tool_input, ws or None) is not None:
+            return
+        act = guardrails.file_action_for_read(tool_name, tool_input, ws or None)
+        if act is None or act.inside:
+            return
+        ctx = current_run_ctx()
+        await file_policy.audit(
+            act,
+            result=file_policy.RESULT_ALLOWED,
+            rule="read-outside",
             agent_id=str(ctx.get("agent_id") or ""),
             run_id=str(ctx.get("run_id") or ""),
             session_id=str(ctx.get("session_id") or ""),
@@ -325,6 +386,13 @@ class DangerousActionGuard(MiddlewareBase):
         # ④ 没人看着（定时/无人值守）：没人点头就是不执行 —— 不能挂到超时
         if not ctx.get("interactive", True):
             await file_policy.audit(act, result=file_policy.RESULT_REJECTED, rule="file-write-unattended", **ids)
+            note_denied(
+                call_id,
+                reason=(
+                    f"这一轮没有人在看着（定时/无人值守），所以没有执行：要{act.op} {act.path}"
+                ),
+                rule="file-write-unattended",
+            )
             return PermissionDecision(
                 behavior=PermissionBehavior.DENY,
                 message=(
@@ -379,10 +447,12 @@ class DangerousActionGuard(MiddlewareBase):
         if blocked is not None:
             await self._audit_blocked(name, tool_input, blocked, ws)
             note_reason(call_id, blocked.reason)
+            # 归因要记牢：这是**平台拦的**，不是用户点的拒绝（收尾文案靠它）
+            note_denied(call_id, reason=blocked.reason, rule=blocked.rule)
             logger.warning("安全闸门：触碰禁区（%s）：%s", name, blocked.snippet)
             return PermissionDecision(
                 behavior=PermissionBehavior.DENY,
-                message=f"已拒绝：{blocked.reason}。要里面的内容请让用户贴给你。",
+                message=f"已拦截：{blocked.reason}。要里面的内容请让用户贴给你。",
                 decision_reason=blocked.rule,
             )
 
@@ -394,6 +464,11 @@ class DangerousActionGuard(MiddlewareBase):
             if hit:
                 logger.warning("安全闸门：命中平台黑名单 %r，拒绝（%s）", hit, early_text[:120])
                 note_reason(call_id, f"命中平台黑名单：{hit}")
+                note_denied(
+                    call_id,
+                    reason=f"命令命中平台黑名单「{hit}」（平台统一配置，助手无法绕过）",
+                    rule=f"platform-deny:{hit}",
+                )
                 return PermissionDecision(
                     behavior=PermissionBehavior.DENY,
                     message=f"已拦截：命令命中平台黑名单「{hit}」。这条由平台统一配置，助手无法绕过。",
@@ -416,6 +491,8 @@ class DangerousActionGuard(MiddlewareBase):
         short_name = _norm(name)
         if name in _READ_ONLY_NATIVE or short_name in file_policy.FILE_READ_TOOLS:
             if not self._engine_has_deny(agent, name):
+                # 读也要留痕：工作区之外的成功读记一条（工作区内的不记）
+                await self._audit_read(name, tool_input, ws)
                 return PermissionDecision(
                     behavior=PermissionBehavior.ALLOW,
                     message="读文件不限制（禁区除外），直接执行。",
@@ -441,6 +518,8 @@ class DangerousActionGuard(MiddlewareBase):
 
         verdict = guardrails.classify_tool_call(name, tool_input, engine_scope, read_scope)
         if verdict is None or verdict.risk == guardrails.RISK_ALLOW:
+            # 只读命令（cat/ls/grep…）同样要留痕 —— 判类型用的是"读"
+            await self._audit_read(name, tool_input, ws)
             return await next_handler()
         if verdict.risk == guardrails.RISK_ASK and verdict.rule == guardrails.FILE_WRITE_RULE:
             act = guardrails.file_action_for(name, tool_input, ws or None)
@@ -528,6 +607,7 @@ class DangerousActionGuard(MiddlewareBase):
         if verdict.risk == guardrails.RISK_DENY:
             logger.warning("安全闸门拒绝执行（%s）：%s", verdict.rule, text[:200])
             await self._audit_blocked(name, tool_input, verdict, ws)
+            note_denied(call_id, reason=verdict.reason, rule=verdict.rule)
             return PermissionDecision(
                 behavior=PermissionBehavior.DENY,
                 message=f"已拦截：{verdict.reason}。换一种不破坏数据的方式，或者先问用户能不能由他来做。",

@@ -227,6 +227,15 @@ test("授权条：判定走 lib/hitl，危险操作要两步，参数可展开�
   assert.doesNotMatch(src, /它想执行需要你授权的操作，等你点头才继续/, "旧的整句标题应当被说人话的版本取代");
 });
 
+test("授权条：已经结清的卡不再给按钮（『已处理过』不许当恢复失败反复点）", () => {
+  const src = read("components/HitlPrompt.tsx");
+  assert.match(src, /e instanceof ApiError && e\.status === 409/, "续跑没接上（409）要单独处理");
+  assert.match(src, /onStale/, "要能通知调用方收起卡片、重读状态");
+  assert.match(src, /if \(stale\)/, "结清之后只留一行事实，不再渲染按钮");
+  const chat = readChat();
+  assert.match(chat, /onStale=\{/, "对话页要把「已处理过」接上：收卡 + 重挂事件流");
+});
+
 test("对话页把「总是允许」链接指到配置页权限段，并有滚动定位", () => {
   const chat = readChat();
   assert.match(chat, /permissionHref=\{/, "对话页要传 permissionHref");

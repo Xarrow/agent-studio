@@ -544,6 +544,7 @@ class AgentScopeRuntime(AgentRuntime):
             cwd=str(work_dir) if work_dir else None,
             session_allow=session_allow,
             run_id=str(_run_ctx.get("run_id") or "") or None,
+            turn_note=context.turn_note if context else None,
         )
 
         # 多轮会话：把历史消息预置进 Agent。

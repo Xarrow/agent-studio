@@ -53,6 +53,107 @@ from .metrics import MetricsCollector
 
 logger = logging.getLogger(__name__)
 
+# --------------------------------------------------------------------------- #
+# 「这一轮为什么停下」——被谁拒的要说准
+# --------------------------------------------------------------------------- #
+#: 用户 2026-11 的现场：助手用 Bash 读 ``~/.hermes`` 被平台拦下，对话页却写
+#: 「你拒绝了这一步」—— 用户根本没点过拒绝。归因错了，人就会去查自己的手。
+#: 三类要分开：**用户拒绝**（点过卡） / **平台拦截**（禁区、黑名单、护栏） /
+#: **无人值守**（没人能点）。判定靠两条事实：守卫在判 DENY 时记下的原因
+#: （``guard.note_denied``），以及"这次是不是用户点了拒绝后的续跑"。
+def _denial_entry(
+    *,
+    name: str,
+    call_id: str,
+    result_text: str = "",
+    assume_user: bool = False,
+    action: str = "",
+) -> dict[str, Any]:
+    """一次被拒绝/被拦截的调用 → 收尾文案要的事实。
+
+    ``action`` 是「要新建 /var/…」这种动作摘要（来自确认卡的 file_actions）——
+    用户的拒绝必须点出**被拒的是哪个动作**，否则收尾那句"你拒绝了这一步"太含糊，
+    模型下一轮还会照着原来那句请求再试一次（现场缺陷 2 的根因之一）。
+    """
+    note: dict[str, str] = {}
+    try:
+        from ..runtimes.agentscope_rt import guard as _guard
+
+        note = _guard.denied_note(call_id) or {}
+    except Exception:  # noqa: BLE001 —— 归因拿不到也不能影响收尾
+        note = {}
+    text = (result_text or "").strip()
+    source = str(note.get("source") or "")
+    reason = str(note.get("reason") or "")
+    if not source:
+        # 没有守卫记录：用户点了拒绝之后的续跑里出现 denied = 用户拒绝；
+        # 主执行路径里出现 denied = 平台/权限引擎拦的（那时没人点过卡）。
+        source = "user" if assume_user else "guard"
+    if source == "user":
+        # 用户拒绝：原因就是"他点的这个动作"，别把 AgentScope 那句英文
+        # "denied by user" 当翻译贴出来
+        reason = action or ""
+    elif not reason and text:
+        # 工具结果原文就是给人看的原因（守卫写的是「已拦截：…」）
+        m = re.match(r"^(?:已拦截|已拒绝)[：:]\s*(.+?)(?:。要|。$|$)", text, re.S)
+        reason = m.group(1) if m else text
+    return {
+        "name": (name or "").strip(),
+        "call_id": call_id,
+        "source": source,
+        "reason": " ".join(reason.split())[:400],
+    }
+
+
+def _action_summary(hitl: HitlResponse, call_id: str) -> str:
+    """确认卡上那条「要新建 /var/…」的摘要（拒绝之后要点名，别只说"这一步"）。"""
+    try:
+        actions = (hitl.payload or {}).get("file_actions") or {}
+        data = actions.get(call_id) if isinstance(actions, dict) else None
+        if not isinstance(data, dict):
+            return ""
+        op = str(data.get("op") or "").strip()
+        path = str(data.get("shown") or data.get("path") or "").strip()
+        if not path:
+            return ""
+        return f"要{op} {path}".strip() if op else path
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def denial_error(items: list[dict[str, Any]], *, origin: str = "") -> str:
+    """把「这一轮为什么停」写成一句和事实相符的人话。"""
+    names = "、".join(dict.fromkeys(str(i.get("name") or "") for i in items if i.get("name")))
+    who = f" {names} " if names else "这一步"
+    blocked = [i for i in items if i.get("source") != "user"]
+    users = [i for i in items if i.get("source") == "user"]
+    if origin == "schedule":
+        why = str((blocked[0] if blocked else {}).get("reason") or names or "工具调用")
+        return (
+            f"这条活需要人点头才能做（{why}），定时任务里没人能点，本轮停下了。"
+            "要跑就自己在对话里发一次。"
+        )
+    if blocked and not users:
+        why = str(blocked[0].get("reason") or "平台安全规则不允许这一步")
+        tail_who = f"（工具 {names}）" if names else ""
+        return (
+            f"已拦截：{why}{tail_who}。本轮停在这里 —— 这是平台安全规则拦下的，"
+            "不是你点的拒绝，不会换个工具再试。"
+        )
+    tail = ""
+    if blocked:
+        tail = f"（另有一步被平台拦下：{str(blocked[0].get('reason') or '见运行记录')}）"
+    detail = ""
+    if users:
+        reason = str(users[0].get("reason") or "").strip()
+        if reason:
+            detail = f"（{reason}）"
+    return (
+        f"你拒绝了{who}{detail}，本轮就停在这里"
+        "（不会换个工具再试一遍；要继续就再发一条消息，把做法说清楚）" + tail
+    )
+
+
 #: Run 的终态（与 api/runs.py 的 TERMINAL_STATUSES 保持同义；
 #: 这里单独定义是为了不让 runner 反向依赖 api 层）
 RUN_TERMINAL: frozenset[str] = frozenset({"ok", "error", "aborted"})
@@ -882,8 +983,8 @@ class RunService:
         _gated = False
         #: 这一轮的执行超时（超时分支的提示文案要用；异常可能发生在它算出来之前）
         timeout: int = 0
-        #: 被拒绝的工具调用（收尾文案要用；先声明避免 unbound）
-        denied: list[str] = []
+        #: 被拒绝/被拦截的工具调用（收尾文案要用；先声明避免 unbound）
+        denied: list[dict[str, Any]] = []
         try:
             async with SessionLocal() as session:
                 run = await session.get(Run, run_id)
@@ -1033,8 +1134,10 @@ class RunService:
                                 int((run.input or {}).get("fanout_wait_s") or 0),
                             )
 
-                            #: 本轮被拒绝的工具调用（用户点了拒绝，或权限引擎不放行）
-                            denied: list[str] = []
+                            #: 本轮被拒绝/被拦截的工具调用（用户点了拒绝，或平台拦下）
+                            denied: list[dict[str, Any]] = []
+                            #: 工具结果原文（按 tool_call id）—— 归因时用它的原因
+                            _result_text: dict[str, str] = {}
 
                             async def consume() -> None:
                                 nonlocal seq, status, hitl_payload, finished_reason, denied
@@ -1083,11 +1186,24 @@ class RunService:
                                         # 被拒绝就**停在这里**：不拦的话模型会换个工具再试一遍
                                         # （实测：拒绝 proc_start 之后它改用 python 删同一个目录），
                                         # 用户得连点两次拒绝 —— 拒绝的意思本来就是"这条别做"。
+                                        if ev.type == "tool_result_delta":
+                                            _cid = str((ev.payload or {}).get("tool_call_id") or "")
+                                            if _cid:
+                                                _result_text[_cid] = (
+                                                    _result_text.get(_cid, "")
+                                                    + str((ev.payload or {}).get("delta") or "")
+                                                )[-800:]
                                         if ev.type == "tool_exec_end" and str(
                                             (ev.payload or {}).get("state") or ""
                                         ) == "denied":
+                                            _p = ev.payload or {}
+                                            _cid = str(_p.get("tool_call_id") or "")
                                             denied.append(
-                                                str((ev.payload or {}).get("tool_call_name") or "")
+                                                _denial_entry(
+                                                    name=str(_p.get("tool_call_name") or ""),
+                                                    call_id=_cid,
+                                                    result_text=_result_text.pop(_cid, ""),
+                                                )
                                             )
                                             # 用「取消自己」收尾，不要 break + aclose：
                                             # 半路关掉 AgentScope 的异步生成器会把这一轮吊住
@@ -1137,23 +1253,11 @@ class RunService:
                             #   · 撞满上限 → 执行超时（错误，明确告诉用户可以调大）
                             #   · 没撞满   → 用户主动停止
                             if denied:
-                                _what = "、".join(dict.fromkeys(denied))
-                                _who = f" {_what} " if _what else "这一步"
                                 status, finished_reason = "aborted", "denied"
+                                # 文案必须和事实一致：平台拦下 ≠ 用户点了拒绝
+                                error = denial_error(denied, origin=str(run.origin or ""))
                                 if run.origin == "schedule":
-                                    # 没人看着的时候，危险动作是被安全规则挡下的 ——
-                                    # 说"你拒绝了"会让人摸不着头脑（他当时不在）。
                                     status = "error"
-                                    error = (
-                                        f"这条活需要人点头才能做（{_what or '工具调用'}），"
-                                        "定时任务里没人能点，本轮停下了。"
-                                        "要跑就自己在对话里发一次。"
-                                    )
-                                else:
-                                    error = (
-                                        f"你拒绝了{_who}，本轮就停在这里"
-                                        "（不会换个工具再试一遍；要继续就再发一条消息，把做法说清楚）"
-                                    )
                                 if compiled is not None:
                                     setattr(compiled, "last_output", None)
                             elif run_id in _BUDGET_HIT:
@@ -1268,19 +1372,9 @@ class RunService:
             except Exception:  # noqa: BLE001
                 logger.debug("硬停 partial 回收调度失败 run=%s", run_id, exc_info=True)
             if denied:
-                _what = "、".join(dict.fromkeys(denied))
-                _who = f" {_what} " if _what else "这一步"
+                error = denial_error(denied, origin=str(run.origin or ""))
                 if run.origin == "schedule":
                     status = "error"
-                    error = (
-                        f"这条活需要人点头才能做（{_what or '工具调用'}），"
-                        "定时任务里没人能点，本轮停下了。要跑就自己在对话里发一次。"
-                    )
-                else:
-                    error = (
-                        f"你拒绝了{_who}，本轮就停在这里"
-                        "（不会换个工具再试一遍；要继续就再发一条消息，把做法说清楚）"
-                    )
             else:
                 # 取消有两个来源：用户点停止 / 硬停护栏。文案要说清是哪个 ——
                 # 护栏触发时说「用户中断」是错的（用户没点任何东西，是平台掐的）。
@@ -1682,7 +1776,9 @@ class RunService:
             )
 
             hitl_payload: dict[str, Any] = {}
-            denied: list[str] = []
+            denied: list[dict[str, Any]] = []
+            #: 工具结果原文（按 tool_call id）—— 归因时用它的原因
+            _result_text: dict[str, str] = {}
 
             async def consume() -> None:
                 nonlocal seq, status, hitl_payload, denied
@@ -1699,11 +1795,30 @@ class RunService:
                         if ev.type == "hitl_request":
                             status = "waiting_hitl"
                             hitl_payload = dict(ev.payload)
+                        if ev.type == "tool_result_delta":
+                            _cid = str((ev.payload or {}).get("tool_call_id") or "")
+                            if _cid:
+                                _result_text[_cid] = (
+                                    _result_text.get(_cid, "")
+                                    + str((ev.payload or {}).get("delta") or "")
+                                )[-800:]
                         # 续跑时被拒绝 → 同样停住（否则它会换个工具再试一遍）
                         if ev.type == "tool_exec_end" and str(
                             (ev.payload or {}).get("state") or ""
                         ) == "denied":
-                            denied.append(str((ev.payload or {}).get("tool_call_name") or ""))
+                            _p = ev.payload or {}
+                            _cid = str(_p.get("tool_call_id") or "")
+                            denied.append(
+                                _denial_entry(
+                                    name=str(_p.get("tool_call_name") or ""),
+                                    call_id=_cid,
+                                    result_text=_result_text.pop(_cid, ""),
+                                    # 续跑只有在「用户刚点过卡」时发生：
+                                    # 点了拒绝 → 这次 denied 是他点的；点了允许 → 是平台拦的
+                                    assume_user=not bool(hitl.confirm),
+                                    action=_action_summary(hitl, _cid),
+                                )
+                            )
                             # 同主路径：取消自己，别 break + aclose（会把会话吊住）
                             if _me is not None:
                                 asyncio.get_running_loop().call_soon(_me.cancel)
@@ -1738,13 +1853,8 @@ class RunService:
                 )
 
             if denied and status != "waiting_hitl":
-                _what = "、".join(dict.fromkeys(denied))
-                _who = f" {_what} " if _what else "这一步"
-                status, error = (
-                    "aborted",
-                    f"你拒绝了{_who}，本轮就停在这里"
-                    "（不会换个工具再试一遍；要继续就再发一条消息，把做法说清楚）",
-                )
+                status = "aborted"
+                error = denial_error(denied, origin=str(run.origin or ""))
                 if compiled is not None:
                     setattr(compiled, "last_output", None)
 
@@ -1766,12 +1876,7 @@ class RunService:
         except asyncio.CancelledError:
             status = "aborted"
             if denied:
-                _what = "、".join(dict.fromkeys(denied))
-                _who = f" {_what} " if _what else "这一步"
-                error = (
-                    f"你拒绝了{_who}，本轮就停在这里"
-                    "（不会换个工具再试一遍；要继续就再发一条消息，把做法说清楚）"
-                )
+                error = denial_error(denied, origin=str(run.origin or ""))
             else:
                 # 取消有两个来源：用户点停止 / 硬停护栏。文案要说清是哪个 ——
                 # 护栏触发时说「用户中断」是错的（用户没点任何东西，是平台掐的）。

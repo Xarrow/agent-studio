@@ -21,6 +21,9 @@
 审计
 ----
 被确认 / 被拒绝 / 被危险模式跳过 / 被禁区拦截，四类都要留一条（``audit``）。
+读也要留痕：**禁区里的读尝试**（结果是拦截）与**工作区之外的读**（结果是放行）
+都记，``op`` 写「读」；工作区内的读不记（读是放开策略里最频繁的动作，
+全记会把审计淹掉 —— 设置页的文案必须写明这个范围）。
 写在文件类操作这一层而不是工具内部：工具内部只知道"写成功了"，不知道
 "是谁点头的"。
 """
@@ -157,6 +160,9 @@ OP_CREATE = "新建"
 OP_OVERWRITE = "覆盖"
 OP_DELETE = "删除"
 OP_MOVE = "移动"
+#: 读（审计里要和写分开记 —— 禁区里的 ``ls`` 曾经被记成"写"，
+#: 用户看不出那是「读被拦」还是「写被拦」）
+OP_READ = "读"
 
 #: 直接点名文件的工具
 FILE_READ_TOOLS = {
@@ -436,6 +442,114 @@ def actions_for_command(command: str, workspace: str | None) -> list[Action]:
     return out
 
 
+# --------------------------------------------------------------------------- #
+# 读：审计也要分得清「读」和「写」
+# --------------------------------------------------------------------------- #
+#: 只读性质的 shell 命令。``ls ~/.hermes`` 被拦时审计要记「读」，
+#: 不是记成「写」（用户 2026-11 指出的缺陷）。
+_READ_COMMANDS = {
+    "ls", "ll", "la", "dir", "cat", "head", "tail", "less", "more", "bat",
+    "wc", "stat", "file", "du", "df", "tree", "find", "grep", "egrep", "sed",
+    "fgrep", "rg", "ag", "awk", "cut", "sort", "uniq", "diff", "cmp",
+    "md5sum", "sha1sum", "sha256sum", "sha512sum", "strings", "readlink",
+    "realpath", "jq", "yq", "xxd", "od", "tac", "nl", "locate", "hexdump",
+}
+
+#: 这些命令的第一个非选项参数是「模式」不是路径（``grep a /path``）
+_PATTERN_FIRST = {"grep", "egrep", "fgrep", "rg", "ag"}
+
+
+def action_for_read_tool(name: str, data: dict | None, workspace: str | None) -> Action | None:
+    """读类工具 → 一条「读」动作（只给审计用，不参与「要不要问」的判定）。"""
+    short = _short(name)
+    d = data if isinstance(data, dict) else {}
+    raw = ""
+    for key in ("file_path", "filePath", "path", "notebook_path", "dir", "directory", "target_file", "file"):
+        val = d.get(key)
+        if isinstance(val, str) and val.strip():
+            raw = val.strip()
+            break
+    if not raw and short in {"glob", "grep", "rg"}:
+        for key in ("pattern", "glob", "file_pattern"):
+            val = d.get(key)
+            if isinstance(val, str) and val.strip() and val.strip()[:1] in ("/", "~"):
+                # `/root/.hermes/**` → 静态前缀 `/root/.hermes`
+                raw = re.split(r"[*?\[]", val.strip(), maxsplit=1)[0].rstrip("/") or "/"
+                break
+    if not raw:
+        return None
+    path = real_path(raw, workspace)
+    if not path:
+        return None
+    return _finish(Action(path=path, op=OP_READ), workspace)
+
+
+def read_actions_for_command(command: str, workspace: str | None) -> list[Action]:
+    """一条 shell 命令里「它要读哪些文件」（静态解析，和写那条同源同局限）。
+
+    只认常见的只读命令；``cat a | grep b`` 这种拆段后逐段判。
+    判定不出来（``ls`` 不带路径 = 读工作目录）就返回空 —— 工作目录内的读不记。
+    """
+    out: list[Action] = []
+    for seg in [s.strip() for s in _SPLIT.split(command or "") if s.strip()]:
+        tokens = _tokens(seg)
+        if not tokens:
+            continue
+        i = 0
+        while i < len(tokens) and (
+            tokens[i].startswith("-") or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", tokens[i])
+        ):
+            i += 1
+        if i >= len(tokens):
+            continue
+        cmd = os.path.basename(tokens[i])
+        args = tokens[i + 1 :]
+        # 重定向的**源**也算读（`echo x > f` 里的 f 不是读；`cmd < f` 是）
+        if cmd not in _READ_COMMANDS:
+            continue
+        if cmd == "sed" and any(a.startswith("-i") or a == "--in-place" for a in args):
+            continue  # sed -i 是写，归写那条
+        paths = [a for a in args if _looks_like_path(a)]
+        if cmd in _PATTERN_FIRST:
+            # 第一个非选项参数是模式（`grep foo /path`）—— 但它也可能是路径写法；
+            # 模式里带 `/` 的例子（`grep a/b f`）在这种静态解析里分不清，故取最后一个。
+            paths = paths[-1:] or []
+        if not paths:
+            continue
+        for target in paths[:3]:
+            p = real_path(target, workspace)
+            if p:
+                out.append(_finish(Action(path=p, op=OP_READ, command=seg[:240]), workspace))
+    return out
+
+
+def first_path_in(text: str, workspace: str | None = None) -> str:
+    """命令文本里第一个像路径的词元（审计兜底：判定不出动作类型时给个能认的路径）。"""
+    for raw in re.findall(r"(?:^|[\s'\"=<>|;])((?:/|~/|\./)[^\s'\"`;|&()]{0,300})", text or ""):
+        real = real_path(raw, workspace)
+        if real:
+            return real
+    return ""
+
+
+def is_read_command(command: str) -> bool:
+    """这条命令是不是只读性质（只看每段的首个词）。
+
+    审计分类用：解析不出具体路径时，``ls``/``cat`` 仍要记「读」，
+    而 ``shutdown``/``mkfs`` 这类被拦下时不能顺手记成「读」（那是谎报操作类型）。
+    """
+    for seg in [s.strip() for s in _SPLIT.split(command or "") if s.strip()]:
+        tokens = _tokens(seg)
+        i = 0
+        while i < len(tokens) and (
+            tokens[i].startswith("-") or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", tokens[i])
+        ):
+            i += 1
+        if i < len(tokens) and os.path.basename(tokens[i]) in _READ_COMMANDS:
+            return True
+    return False
+
+
 _PY_WRITE_RE = re.compile(
     r"(?:open|io\.open)\s*\(\s*[f]?['\"]([^'\"\n]{1,400})['\"]\s*,\s*[^)]*['\"][wax+][bta+]*['\"]"
     r"|Path\s*\(\s*[f]?['\"]([^'\"\n]{1,400})['\"]\s*\)\s*\.\s*(write_text|write_bytes|touch|mkdir)"
@@ -556,7 +670,7 @@ RESULT_SKIPPED = "skipped"      # 危险模式跳过确认
 RESULT_BLOCKED = "blocked"      # 禁区/敏感位置拦截
 
 RESULT_LABELS = {
-    RESULT_ALLOWED: "直接放行（工作目录内）",
+    RESULT_ALLOWED: "直接放行",
     RESULT_APPROVED: "用户允许",
     RESULT_REJECTED: "用户拒绝",
     RESULT_SKIPPED: "危险模式跳过",

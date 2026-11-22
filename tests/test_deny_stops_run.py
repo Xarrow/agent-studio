@@ -105,7 +105,10 @@ async def test_拒绝之后这一轮当场收尾_不再换工具重试(client, m
     final = await _pump(client, r.json()["id"])
 
     assert final["status"] == "aborted", final
-    assert "拒绝了" in (final.get("error") or ""), final.get("error")
+    # 归因：这个桩既没有守卫记录，也不是「用户点了卡之后续跑」——属于平台拦下，
+    # 不能说成「你拒绝了」（用户根本没有点过拒绝，2026-11 指出的缺陷 1）
+    assert "已拦截" in (final.get("error") or ""), final.get("error")
+    assert "不是你点的拒绝" in (final.get("error") or ""), final.get("error")
     assert "proc_start" in (final.get("error") or "")
 
     ev = await client.get(f"/api/runs/events/{r.json()['id']}")
@@ -153,7 +156,7 @@ async def test_拒绝信息写进会话的是一条人话(client, monkeypatch):
         if "本轮未完成" in text:
             break
         await asyncio.sleep(0.1)
-    assert "拒绝了" in text, text[-300:]
+    assert "已拦截" in text, text[-300:]
     assert any(m["role"] == "system" and "本轮未完成" in m["content"] for m in detail.json()["messages"]), (
         "刷新页面时这一轮不该凭空消失"
     )

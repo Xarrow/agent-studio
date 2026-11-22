@@ -902,6 +902,30 @@ def file_action_for(
     return None
 
 
+def file_action_for_read(
+    name: str,
+    tool_input: dict | None,
+    workspace: str | Sequence[str] | None = None,
+):
+    """这次调用要**读**哪个文件（只给审计用，不参与「要不要问」的判定）。
+
+    读类工具（Read/Glob/Grep/Ls…）没有"写动作"，``file_action_for`` 对它们返回
+    ``None``；审计要按真实操作类型记（读就是读），所以单独一条。
+    """
+    short = (name or "").split("/")[-1].split(".")[-1].lower()
+    if "__" in short:
+        short = short.split("__")[-1]
+    data = tool_input if isinstance(tool_input, dict) else {}
+    ws = _first_root(workspace) or None
+    if short in file_policy.FILE_READ_TOOLS:
+        return file_policy.action_for_read_tool(short, data, ws)
+    if short in file_policy.COMMAND_TOOLS:
+        text = next((data[k] for k in _COMMAND_KEYS if isinstance(data.get(k), str) and data[k].strip()), "")
+        acts = file_policy.read_actions_for_command(text, ws) if text else []
+        return acts[0] if acts else None
+    return None
+
+
 def classify_file_write(
     name: str,
     tool_input: dict | None,

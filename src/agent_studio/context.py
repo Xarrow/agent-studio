@@ -58,6 +58,15 @@ async def next_turn_index(session: AsyncSession, session_id: str) -> int:
     return (last or 0) + 1
 
 
+#: 平台给"没跑完的轮次"留的那行说明（见 service._post_run）。
+#: 它必须让**模型**也看见 —— 只给人看的话，模型下一轮会以为上一个请求还没做：
+#: 实测（2026-11）拒绝一次越界写之后再发一句「回个收到」，它又把同一个文件写一遍，
+#: 用户得连点三次拒绝。做法是把它当"上一轮的平台事实"拼进 system prompt
+#: （见 ``build_turn_context`` 的 ``turn_note``），**不**混进对话历史 ——
+#: 混进去模型会当成"自己说过的话"，进而以为这类操作整轮都不许做。
+TURN_NOTE_PREFIX = "〔本轮未完成〕"
+
+
 async def load_history(
     session: AsyncSession,
     session_id: str,
@@ -86,6 +95,7 @@ async def load_history(
     # 只把用户说的和助手说的喂给模型。`system` 是平台自己写的话
     # （心跳、「本轮未完成」这类提示）—— 拼进上下文会被模型当成"我说的"，
     # 而且中间插一条 system 消息有些运行时会直接拒（实测 AgentScope：Invalid message）。
+    #
     return [TurnMessage(role=r.role, content=_clip(r.content)) for r in picked if r.role in ("user", "assistant")]
 
 
@@ -115,6 +125,27 @@ async def build_turn_context(
             ctx.turn_index = await next_turn_index(session, session_id)
             ctx.summary = sess.summary
             ctx.history = await load_history(session, session_id)
+            # 上一轮没做完的原因（被拒/被拦/超时）要进 system prompt：
+            # 不然模型下一轮会以为那个请求还没做，把同一个操作再发一遍
+            # （现场：拒绝越界写之后，新消息又弹同一张卡，用户连点三次）。
+            #
+            # 只认**紧挨着的那一轮**：取会话最后一条消息，它是不是「〔本轮未完成〕…」。
+            # 不按"最近一条这类提示"取 —— 那样一次失败会永远挂在后面每一轮的
+            # system prompt 里（"上一轮"其实是十轮前），模型反而更糊涂。
+            last = (
+                await session.execute(
+                    select(SessionMessage)
+                    .where(SessionMessage.session_id == session_id)
+                    .order_by(SessionMessage.turn_index.desc(), SessionMessage.id.desc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            if (
+                last is not None
+                and last.role == "system"
+                and str(last.content or "").startswith(TURN_NOTE_PREFIX)
+            ):
+                ctx.turn_note = str(last.content)
 
     # 常驻层：pinned 的记忆每轮整段注入，**不参与相似度排序**，也不受 recall_enabled 影响
     # （关掉检索是不想塞不相关的细节，不是不想知道用户是谁）

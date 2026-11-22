@@ -195,14 +195,14 @@ export function FilePolicySettings() {
         <div className="flex flex-wrap items-center gap-2 mb-1.5">
           <span className="text-[12.5px] font-medium">文件操作记录</span>
           <span className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
-            最近 30 条 · 共 {total} 条（被允许 / 被拒绝 / 危险模式跳过 / 禁区拦截都记）
+            最近 30 条 · 共 {total} 条（读、写都记：被允许 / 被拒绝 / 危险模式跳过 / 禁区拦截；工作区内的读不记）
           </span>
           <button data-tap className="btn btn-sm ml-auto" disabled={loading} onClick={() => void load()}>
             刷新
           </button>
         </div>
         {rows.length === 0 ? (
-          <Empty title="还没有文件操作记录" hint="助手写文件（含被拒绝、被拦下的）之后，这里会出现一条" />
+          <Empty title="还没有文件操作记录" hint="助手读写工作区之外的文件（含被拒绝、被拦下的）之后，这里会出现一条" />
         ) : (
           /* 一行一条：时间 · 助手 · 操作 · 路径 · 结果。分隔用底色差，不用 1px 线 */
           <div className="rounded-[10px] overflow-hidden" style={{ background: "var(--color-surface-2)" }}>
@@ -218,7 +218,7 @@ export function FilePolicySettings() {
                     {fmtTs(r.ts)}
                   </span>
                   <span className="font-medium">{r.agent_name || r.agent_id || "（未知助手）"}</span>
-                  <span style={{ color: "var(--color-muted)" }}>{r.op || "写"}</span>
+                  <span style={{ color: "var(--color-muted)" }}>{r.op || "—"}</span>
                   <span className="mono break-all" style={{ color: "var(--color-text)" }}>
                     {r.path}
                   </span>

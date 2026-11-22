@@ -163,6 +163,9 @@ class TurnContext(BaseModel):
     history: list[TurnMessage] = Field(default_factory=list)
     #: 更早轮次的压缩摘要（history 被裁剪时用它补位）
     summary: str | None = None
+    #: 上一轮没做完的原因（「〔本轮未完成〕…」那条）—— 拼进 system prompt，
+    #: 让模型知道"那个请求已经结束了"，别下一轮又自动重试同一个操作。
+    turn_note: str | None = None
 
     #: 长期记忆：平台召回的条目（已渲染成可注入文本）
     memory_text: str | None = None

@@ -795,18 +795,7 @@ async def resume_run(
         _rule = str(_hitl.get("rule") or _hitl.get("guard_rule") or "")
         allow_for_run(run_id, _tool_name, rule=_rule)
 
-    # 审计：用户点了允许还是拒绝，都要能查到（路径/操作/谁）
     if _file_act is not None:
-        from .. import file_policy
-
-        await file_policy.audit(
-            _file_act,
-            result=file_policy.RESULT_APPROVED if payload.confirm else file_policy.RESULT_REJECTED,
-            rule=str(_hitl.get("rule") or "file-write"),
-            agent_id=str(run.agent_id or ""),
-            run_id=str(run.id or ""),
-            session_id=str(run.session_id or ""),
-        )
         # 「本会话内允许该目录」：目录由**服务端**从待确认内容里取（客户端传的
         # 目录不认，免得被改成一个更宽的路径）。存成 dir:<realpath>，编译期读进
         # session_allow，守卫按「目标是否在这个目录下」判。
@@ -854,7 +843,29 @@ async def resume_run(
             confirm=payload.confirm, reason=payload.reason, payload=payload.payload or {}
         ),
     )
-    return {"resumed": ok}
+    # 续跑没接上（并发的另一次点击已经处理掉了）→ 必须回错，不能回 200 让前端
+    # 以为卡片已经结清：那样界面上卡没了、后端还停在 waiting_hitl，下次刷新又冒出来。
+    if not ok:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "这次的待确认已经处理过了（或运行已结束），刷新一下就能看到最新状态",
+        )
+
+    # 审计：用户点了允许还是拒绝，都要能查到（路径/操作/谁）。
+    # **写在续跑确认成功之后**：续跑没接上就不算"用户拒绝"，不能留一条假记录
+    # （现场：同一张卡被点三次，审计里三条同一文件的"用户拒绝"）。
+    if _file_act is not None:
+        from .. import file_policy
+
+        await file_policy.audit(
+            _file_act,
+            result=file_policy.RESULT_APPROVED if payload.confirm else file_policy.RESULT_REJECTED,
+            rule=str(_hitl.get("rule") or "file-write"),
+            agent_id=str(run.agent_id or ""),
+            run_id=str(run.id or ""),
+            session_id=str(run.session_id or ""),
+        )
+    return {"resumed": True}
 
 
 # --------------------------------------------------------------------------- #
