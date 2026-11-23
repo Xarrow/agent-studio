@@ -2318,7 +2318,7 @@ async def browser_input(run_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     sess = get_existing(c.key)
     if sess is None:
         raise HTTPException(
-            status.HTTP_409_CONFLICT, "浏览器已过期（30 分钟没有操作）· 发消息让它重新打开"
+            status.HTTP_409_CONFLICT, "浏览器已过期（5 分钟没有操作）· 发消息让它重新打开"
         )
     try:
         detail = await bc.apply_user_input_detail(c, sess, payload)

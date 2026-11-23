@@ -96,7 +96,7 @@ test("后端：控制权是会话级单一状态源", () => {
   const ctl = py("browser_control.py");
   assert.match(ctl, /def key_of/, "归属键要区分会话与 run");
   assert.match(ctl, /f"ses:\{session_id\}"/, "有会话就跟会话（run 只是这一次在用）");
-  assert.match(ctl, /IDLE_TTL_S = 30 \* 60/, "浏览器保活 30 分钟");
+  assert.match(ctl, /IDLE_TTL_S = 5 \* 60/, "浏览器保活 5 分钟");
   assert.match(ctl, /def user_gate/, "用户输入要过持有者闸");
   assert.match(ctl, /async def gate_agent/, "助手的动作要过同一道闸");
   assert.match(ctl, /def public_state/, "所有文案由后端一处给出");

@@ -12,7 +12,7 @@ v1 的浏览器有两个实证病根：
 所以这里做两件事，且只做这两件：
 
 * **归属**：浏览器会话属于**聊天会话**（``session_id``），run 只是"谁在用"。
-  run 结束不再关浏览器；30 分钟没有任何交互才收（``IDLE_TTL_S``）。
+  run 结束不再关浏览器；5 分钟没有任何交互才收（``IDLE_TTL_S``）。
 * **控制权状态机**：``agent / user / waiting_user / paused / closed``，同一时刻
   只有一个持有者能发输入事件。前端只渲染 ``public_state()`` 给出的文案，不自己判断。
 
@@ -44,8 +44,11 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-#: 浏览器会话保活时长（没有任何交互就收回）。用户口径：30 分钟。
-IDLE_TTL_S = 30 * 60
+#: 浏览器会话保活时长（没有任何交互就收回）。用户口径：5 分钟。
+IDLE_TTL_S = 5 * 60
+#: 同时最多保留几个浏览器（超了收最久没用到的那个）——
+#: 每个 Chromium 空闲也是 120MB 上下，多开几个就把 CPU/内存抢死了（实测堆到 12 个）。
+MAX_LIVE_BROWSERS = 3
 #: 用户接管期间，助手的一步最多等多久（等不到就以人话停手，不硬抢）
 HANDOFF_WAIT_S = 120.0
 #: wait_login 最多等多久
@@ -218,7 +221,7 @@ def _hint(c: Control) -> str:
         return c.reason or "现在是你在操作。交还后助手会知道你动过什么，接着往下做。"
     if phase == "paused":
         return c.reason or "已暂停。交还给 Agent 之后它才继续。"
-    return c.reason or "浏览器会话已过期（30 分钟没有操作）。"
+    return c.reason or "浏览器会话已过期（5 分钟没有操作）。"
 
 
 def _run_bar(c: Control) -> str:
@@ -276,7 +279,7 @@ def _denied_hint(c: Control) -> str:
     if phase == "paused":
         return "助手已暂停 —— 先点「交还给 Agent」让它继续"
     if phase == "expired":
-        return "浏览器已过期（30 分钟没有操作）· 发消息让它重新打开"
+        return "浏览器已过期（5 分钟没有操作）· 发消息让它重新打开"
     return ""
 
 
@@ -447,7 +450,7 @@ async def _wait_status(c: Control, status: str, timeout: float) -> bool:
 async def take(c: Control) -> tuple[bool, str]:
     """用户点「接管」：等当前原子动作做完，再把控制权交出去。"""
     if c.status == CLOSED or not c.alive:
-        return False, "浏览器已过期（30 分钟没有操作）· 发消息让它重新打开"
+        return False, "浏览器已过期（5 分钟没有操作）· 发消息让它重新打开"
     # 已经在你手里就别再翻状态（连点两下不该改时间线）
     if c.status in (USER, WAITING):
         return True, ""
@@ -473,7 +476,7 @@ async def pause(c: Control) -> None:
         await set_status(c, PAUSED, "你暂停了助手")
 
 
-async def close(c: Control, reason: str = "浏览器已过期（30 分钟没有操作）") -> None:
+async def close(c: Control, reason: str = "浏览器已过期（5 分钟没有操作）") -> None:
     """收掉浏览器（TTL 到期 / 会话删除）—— 状态留 ``closed``，界面要能说"已过期"。"""
     from . import browser_session as bs
 
@@ -504,7 +507,7 @@ async def gate_agent(c: Control, run_id: str, what: str = "操作") -> str:
     """
     if not c.alive or c.status == CLOSED:
         return (
-            "✗ 浏览器已过期（30 分钟没有操作）。现在没有活着的浏览器，"
+            "✗ 浏览器已过期（5 分钟没有操作）。现在没有活着的浏览器，"
             "重新 browser(navigate) 打开会是一个新的（登录态不再保留）。"
         )
     # 新一轮：用户发消息就是"接着干"的信号 —— 收回控制权（上一轮的接管到此结束）
@@ -539,7 +542,7 @@ async def gate_agent(c: Control, run_id: str, what: str = "操作") -> str:
     if ok:
         return ""
     if c.status == CLOSED:
-        return "✗ 浏览器已过期（30 分钟没有操作），这一步没有执行。"
+        return "✗ 浏览器已过期（5 分钟没有操作），这一步没有执行。"
     return (
         f"✗ {c.reason or '用户正在操作浏览器'} —— 这一步我没有执行（不会和用户抢页面）。"
         f"你交还给我之后，再发一句让我接着做就行。"
@@ -812,7 +815,7 @@ async def wait_login(c: Control, run_id: str, message: str, sess: Any) -> str:
     ok = await _wait_status(c, AGENT, LOGIN_WAIT_S)
     if not ok:
         return (
-            "✗ 等你在浏览器里完成操作超过 10 分钟，这一步先停在这里（浏览器还开着 30 分钟）。"
+            "✗ 等你在浏览器里完成操作超过 10 分钟，这一步先停在这里（浏览器还开着 5 分钟）。"
             "弄好之后点「交还给 Agent」，或者直接发消息让我接着做。"
         )
     summary = await page_summary(sess)
@@ -906,15 +909,35 @@ def _ensure_janitor() -> None:
         _JANITOR = None
 
 
+#: 公开别名：服务启动时就要把巡检挂上（不能等第一个浏览器 ensure 才起）
+ensure_janitor = _ensure_janitor
+
+
+async def _reclaim_once() -> list[str]:
+    """扫描一轮：空闲超时的、超出数量上限的都收掉，返回被收的 key（可单测）。"""
+    reclaimed: list[str] = []
+    cutoff = now_ms() - IDLE_TTL_S * 1000
+    for c in list(_CONTROLS.values()):
+        if c.alive and c.status != CLOSED and c.last_active < cutoff:
+            logger.info("浏览器会话过期回收 session=%s（空闲超过 5 分钟）", c.session_id)
+            await close(c)
+            reclaimed.append(c.key)
+    # 数量上限：多开几个会话不等于多开几个 Chromium 常驻
+    live = [c for c in _CONTROLS.values() if c.alive and c.status != CLOSED]
+    if len(live) > MAX_LIVE_BROWSERS:
+        excess = sorted(live, key=lambda c: c.last_active)[: len(live) - MAX_LIVE_BROWSERS]
+        for c in excess:
+            logger.info("浏览器数量超限回收 session=%s", c.session_id)
+            await close(c, "同时最多保留 3 个浏览器，最久没用到的先收掉")
+            reclaimed.append(c.key)
+    return reclaimed
+
+
 async def _janitor() -> None:
     while True:
         await asyncio.sleep(20)
         try:
-            cutoff = now_ms() - IDLE_TTL_S * 1000
-            for c in list(_CONTROLS.values()):
-                if c.alive and c.status != CLOSED and c.last_active < cutoff:
-                    logger.info("浏览器会话过期回收 session=%s", c.session_id)
-                    await close(c)
+            await _reclaim_once()
         except Exception:  # pragma: no cover
             logger.debug("浏览器保活检查失败", exc_info=True)
 
@@ -934,3 +957,95 @@ async def fresh_frame(c: Control) -> dict[str, Any] | None:
         return None
     sync_page(c, sess)
     return {"frame": data, "url": c.url, "title": c.title}
+
+def _proc_ppid(pid: int) -> int:
+    """读 /proc 拿父进程号（不依赖 ps 的列对齐）。"""
+    try:
+        with open(f"/proc/{pid}/stat", "rb") as f:
+            data = f.read().decode("utf-8", "replace")
+    except OSError:
+        return 0
+    rest = data[data.rfind(")") + 2 :].split()
+    try:
+        return int(rest[1])
+    except (IndexError, ValueError):
+        return 0
+
+
+def _proc_cmdline(pid: int) -> str:
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            return f.read().decode("utf-8", "replace").replace("\x00", " ")
+    except OSError:
+        return ""
+
+
+def _owned_by_service(pid: int) -> bool:
+    """这个 Chromium 的祖先里还有没有 agent-studio 服务进程。
+
+    服务退出后 Chromium 会被 systemd（subreaper）或 init 收养，ppid 不再等于 1，
+    所以不能只看 ppid == 1 —— 要沿父链上溯，看有没有 agent_studio.main / uvicorn。
+    """
+    cur = _proc_ppid(pid)
+    for _ in range(12):
+        if cur <= 1:
+            return False
+        cmd = _proc_cmdline(cur)
+        if "agent_studio.main" in cmd or "uvicorn" in cmd or "start.sh" in cmd:
+            return True
+        nxt = _proc_ppid(cur)
+        if nxt == cur:
+            return False
+        cur = nxt
+    return False
+
+
+def sweep_orphan_browsers() -> int:
+    """服务启动时清掉上一轮留下的 Chromium（返回清掉的进程数）。
+
+    进程内 ``_CONTROLS`` 此刻必然是空的，但上一轮 spawn 的 Chromium 子进程不会
+    跟着死：实测一天下来堆到 12 个、1.5GB 内存、16% CPU，全是没人看的页面。
+
+    判定用"祖先里还有没有服务进程"，而不是 ppid == 1：服务被 systemd 拉起时
+    Chromium 会被 systemd 收养，ppid 不是 1，但已经没有服务在管它了。
+    """
+    import os
+    import shutil
+    import signal
+
+    root = "/tmp/agent-studio-browser"
+    try:
+        pids = [int(x) for x in os.listdir("/proc") if x.isdigit()]
+    except OSError:  # pragma: no cover —— 非 Linux
+        return 0
+
+    killed = 0
+    live_dirs: set[str] = set()
+    for pid in pids:
+        cmd = _proc_cmdline(pid)
+        if "chrome" not in cmd or root not in cmd:
+            continue
+        dirs = [
+            tok.split("=", 1)[1]
+            for tok in cmd.split()
+            if tok.startswith(f"--user-data-dir={root}")
+        ]
+        if not dirs:
+            continue
+        if _owned_by_service(pid):
+            live_dirs.update(dirs)
+            continue
+        try:
+            os.kill(pid, signal.SIGKILL)
+            killed += 1
+        except OSError:
+            pass
+
+    for name in os.listdir(root) if os.path.isdir(root) else []:
+        path = os.path.join(root, name)
+        if os.path.isdir(path) and path not in live_dirs:
+            shutil.rmtree(path, ignore_errors=True)
+
+    if killed:
+        logger.info("启动清扫：清掉 %d 个上一轮留下的浏览器进程", killed)
+    return killed

@@ -9,7 +9,7 @@ Playwright/Selenium 在这里只会带来几百 MB 依赖和版本匹配烦恼�
 --------
 浏览器属于**聊天会话**（``session_id``），不是单次 run：同一个会话里的多轮复用
 同一个 Chromium（``--user-data-dir`` 落在 ``/tmp/agent-studio-browser/ses-<会话号>``），
-登录态/当前页面/填了一半的表单都在。run 结束**不再关**它；30 分钟没有任何交互
+登录态/当前页面/填了一半的表单都在。run 结束**不再关**它；5 分钟没有任何交互
 才回收（见 ``browser_control``）。run 只是一个"这一次谁在用"的标签。
 
 画面流（不落盘）
@@ -1678,7 +1678,7 @@ async def close_all(run_id: str) -> None:
     """**硬关**某个 run 的浏览器（只在明确要收掉现场时用）。
 
     run 正常结束**不再走这里** —— 见 ``browser_control.on_run_end``：
-    浏览器跟着会话保活 30 分钟，run 结束画面仍然可以点。
+    浏览器跟着会话保活 5 分钟，run 结束画面仍然可以点。
     """
     sess = _SESSIONS.pop(f"run:{run_id}", None)
     if sess is not None:

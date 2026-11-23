@@ -1021,7 +1021,7 @@ async def browser_steps(session_id: str, run_id: str, session: AsyncSession = De
 # --------------------------------------------------------------------------- #
 # 浏览器控制权（会话级单一状态源）
 #
-# 浏览器跟着**聊天会话**走：run 结束不关，30 分钟没交互才回收。控制权同一时刻
+# 浏览器跟着**聊天会话**走：run 结束不关，5 分钟没交互才回收。控制权同一时刻
 # 只有一个持有者（agent / user），前端只渲染这里给出的文案，不自己判断。
 # --------------------------------------------------------------------------- #
 @router.get("/{session_id}/browser-ctl/state")
@@ -1055,7 +1055,7 @@ async def browser_control_act(
         # 助手还没打开浏览器 / 已过期：说清是哪一种，别只给一句"没有浏览器"
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            "这个会话现在没有开着的浏览器（助手还没打开，或者已过期 30 分钟）· 它一打开这里就能点「接管」",
+            "这个会话现在没有开着的浏览器（助手还没打开，或者已过期 5 分钟）· 它一打开这里就能点「接管」",
         )
     if action == "take":
         ok, why = await bc.take(c)
@@ -1088,7 +1088,7 @@ async def browser_control_input(
     sess = get_existing(c.key)
     if sess is None:
         raise HTTPException(
-            status.HTTP_409_CONFLICT, "浏览器已过期（30 分钟没有操作）· 发消息让它重新打开"
+            status.HTTP_409_CONFLICT, "浏览器已过期（5 分钟没有操作）· 发消息让它重新打开"
         )
     try:
         detail = await bc.apply_user_input_detail(c, sess, payload)

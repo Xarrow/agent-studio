@@ -46,6 +46,15 @@ async def lifespan(_app: FastAPI):
     await reap_orphan_runs(boot_ms)
     # 后台进程对账：标着 running 但进程已不在的（服务重启过）改成 unknown，
     # 否则界面永远挂一个"正在运行"，点停止还告诉你"它已经结束了"。
+    # 上一轮进程留下的 Chromium：不认领就会一直占内存/CPU（实测堆到 12 个）
+    from . import browser_control as _bc
+
+    _swept = _bc.sweep_orphan_browsers()
+    if _swept:
+        logger.info("浏览器：启动清扫清掉 %s 个残留进程", _swept)
+    # 保活巡检常驻启动：以前只在第一个 ensure 时才起，没开过浏览器的实例永远不会回收
+    _bc.ensure_janitor()
+
     from . import procs as _procs
 
     _fixed = await _procs.reconcile()
