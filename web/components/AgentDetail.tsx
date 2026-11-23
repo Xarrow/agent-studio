@@ -888,6 +888,35 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
         </div>
       </header>
 
+      {/* 有改动就出现一条固定的保存条（手机/桌面都有）。
+          自动保存还在，但手机上原来的「改动待保存…」是 12.5px 灰字，改完看不出有没有存 ——
+          用户口径：要一个能点的保存按钮，而不是猜。点它立刻写库、不当里程碑版本。 */}
+      {dirty && !inDialog && (
+        <div
+          className="fixed inset-x-0 bottom-0 z-40 flex items-center gap-3 px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
+          style={{
+            background: "color-mix(in srgb, var(--color-bg) 94%, transparent)",
+            backdropFilter: "blur(10px)",
+            boxShadow: "0 -6px 20px -12px color-mix(in srgb, var(--color-text) 28%, transparent)",
+          }}
+        >
+          <div className="mx-auto flex w-full max-w-[760px] items-center gap-3">
+            <span className="min-w-0 flex-1 truncate text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-2)" }}>
+              {saving ? "保存中…" : "有未保存的改动"}
+            </span>
+            <button
+              data-tap
+              className="btn btn-sm h-9 shrink-0"
+              disabled={saving}
+              onClick={() => void save({ auto: true })}
+              title="立刻写入（不生成新版本）"
+            >
+              保存
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 锚点导航：五节一屏内可跳；滚动联动高亮由 IntersectionObserver 给 */}
       <nav
         className="sticky top-[52px] z-20 -mx-1 mb-4 flex gap-1 overflow-x-auto px-1 py-1"

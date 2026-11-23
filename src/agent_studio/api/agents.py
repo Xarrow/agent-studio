@@ -105,8 +105,13 @@ async def create_agent(
     if exists is not None:
         slug = f"{slug}-{int(now_ms() % 100000)}"
 
+    # 远端 A2A 的影子条目（slug 以 a2a- 开头）不算重名：
+    # 它只是对面那台机器上同名助手的镜像，真名归本地这个助手用。
+    # 否则本地助手改回原名会被影子挡住 → 保存直接 409，任何改动都存不进去。
     dup = (
-        await session.execute(select(Agent).where(Agent.name == payload.name.strip()))
+        await session.execute(
+            select(Agent).where(Agent.name == payload.name.strip(), ~Agent.slug.like("a2a-%"))
+        )
     ).scalar_one_or_none()
     if dup is not None:
         raise HTTPException(status_code=409, detail=f"已存在同名助手「{payload.name.strip()}」")
@@ -165,7 +170,11 @@ async def update_agent(
         if new_name and new_name != row.name:
             dup = (
                 await session.execute(
-                    select(Agent).where(Agent.name == new_name, Agent.id != agent_id)
+                    select(Agent).where(
+                        Agent.name == new_name,
+                        Agent.id != agent_id,
+                        ~Agent.slug.like("a2a-%"),
+                    )
                 )
             ).scalar_one_or_none()
             if dup is not None:
