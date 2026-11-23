@@ -81,6 +81,7 @@ async def list_provider_meta() -> list[ProviderRead]:
             allows_base_url=p.allows_base_url,
             docs_url=p.docs_url,
             note=p.note,
+            kind=getattr(p, "kind", "model") or "model",
         )
         for p in list_providers()
     ]

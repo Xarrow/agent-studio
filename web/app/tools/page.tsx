@@ -2,9 +2,10 @@
 
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { api, fmt } from "@/lib/api";
+import { isImeEvent } from "@/lib/ime";
 import { useFirstLoad } from "@/lib/useFirstLoad";
 import Markdown from "@/components/Markdown";
-import type { Agent, Tool } from "@/lib/types";
+import type { Agent, Credential, Provider, Tool } from "@/lib/types";
 import {
   Chip,
   DLG_BACKDROP,
@@ -30,6 +31,144 @@ import { useFeedback } from "@/components/ui/feedback";
 
 /** 平台/运行时提供的工具：可绑定可试跑，但不给删（与后端 PROTECTED_KINDS 一致） */
 const PROTECTED_KINDS = new Set(["builtin", "native", "fork"]);
+
+/** 工具密钥：搜索 / 抓取 / OCR / 语音这些内置能力要一把外部 key。
+    它不是对话模型，所以不在「LLM 配置」里 —— 就在这里配，跟它服务的工具放一起。 */
+function ToolKeysRow() {
+  const fb = useFeedback();
+  const [providers, setProviders] = useState<Provider[]>([]);
+  const [creds, setCreds] = useState<Credential[]>([]);
+  const [open, setOpen] = useState(false);
+  const [key, setKey] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const tools = providers.filter((p) => (p.kind ?? "llm") === "tools");
+
+  const load = useCallback(async () => {
+    try {
+      const [ps, cs] = await Promise.all([api.providers(), api.credentials()]);
+      setProviders(ps);
+      setCreds(cs);
+    } catch {
+      /* 读不到就不显示这一行，不影响工具列表本身 */
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (tools.length === 0) return null;
+
+  const credOf = (p: Provider) => creds.find((c) => c.provider === p.name) ?? null;
+  const missing = tools.filter((p) => !credOf(p));
+
+  const save = async () => {
+    const p = tools[0];
+    if (!key.trim()) {
+      fb.error("还没填 Key", "把 DeepSeek 的 API Key 粘进来");
+      return;
+    }
+    setBusy(true);
+    try {
+      const existing = credOf(p);
+      if (existing) {
+        await api.updateCredential(existing.id, { api_key: key.trim() });
+      } else {
+        await api.createCredential({
+          name: p.name,
+          provider: p.name,
+          api_key: key.trim(),
+          base_url: p.default_base_url,
+        });
+      }
+      fb.success("工具密钥已保存", "搜索、抓取、OCR、语音现在可以用");
+      setOpen(false);
+      setKey("");
+      await load();
+    } catch (e) {
+      fb.error("保存失败", e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <div
+        className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[var(--radius-md)] px-3 py-2.5"
+        style={{ background: "var(--color-surface-2)" }}
+      >
+        <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-2)" }}>
+          工具密钥
+        </span>
+        {tools.map((p) => {
+          const c = credOf(p);
+          return (
+            <span key={p.name} className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-text)" }}>
+              {p.display_name.replace(/（.*）/, "").replace(/ 工具$/, "")}
+              <span style={{ color: c ? "var(--color-ok)" : "var(--color-text-3)" }}>
+                {c ? ` · 已配置 ${c.masked_key}` : " · 未配置"}
+              </span>
+            </span>
+          );
+        })}
+        <button
+          type="button"
+          data-tap
+          onClick={() => setOpen(true)}
+          className="ml-auto h-8 rounded-[var(--radius-xs)] px-2.5 text-[length:var(--fs-sm)]"
+          style={{
+            color: missing.length ? "var(--color-accent)" : "var(--color-text-2)",
+            background: missing.length ? "color-mix(in srgb, var(--color-accent) 10%, transparent)" : "transparent",
+          }}
+        >
+          {missing.length ? "填 Key" : "换 Key"}
+        </button>
+      </div>
+
+      {open && (
+        <div className={DLG_BACKDROP} onClick={() => !busy && setOpen(false)}>
+          <div className={DLG_CARD} onClick={(e) => e.stopPropagation()}>
+            <div className="mb-1 text-[length:var(--fs-lg)] font-medium">工具密钥</div>
+            <div className="mb-3 text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-2)" }}>
+              给网页搜索、网页抓取、OCR、语音识别与合成用。填 DeepSeek 的 API Key。
+            </div>
+            <label className="mb-1 block text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-2)" }}>
+              API Key
+            </label>
+            <input
+              type="password"
+              value={key}
+              autoFocus
+              onChange={(e) => setKey(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key !== "Enter" || isImeEvent(e)) return;
+                void save();
+              }}
+              placeholder="sk-…"
+              className="mb-4 h-10 w-full rounded-[var(--radius-sm)] px-3 text-[length:var(--fs-md)]"
+              style={{ background: "var(--color-surface-2)", color: "var(--color-text)" }}
+            />
+            <div className="flex items-center justify-end gap-2">
+              <button type="button" className="h-9 px-3 text-[length:var(--fs-sm)]" onClick={() => setOpen(false)}>
+                取消
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary h-9"
+                disabled={busy}
+                onClick={() => void save()}
+              >
+                {busy ? "保存中…" : "保存"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
 
 export default function ToolsPage() {
   const fb = useFeedback();
@@ -332,6 +471,7 @@ export default function ToolsPage() {
 
       {tab === "tools" && (
         <>
+          <ToolKeysRow />
           {editing && (
             <EditToolDialog
               key={editing.id}

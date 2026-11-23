@@ -7,6 +7,9 @@ import type { Credential, CredentialDetectResult, CredentialTestResult, Provider
 import { useFeedback } from "@/components/ui/feedback";
 import { Chip, DLG_BACKDROP, DLG_CARD, Empty, KV, Menu, PageHead, Row, RowList, Section } from "@/components/ui/kit";
 import { DetailPanel } from "@/components/ui/DetailPanel";
+
+/** 对话模型服务商：kind="tools" 的是工具密钥（搜索/抓取/OCR/语音），不该进 LLM 配置 */
+const isLlmProvider = (p: Provider) => (p.kind ?? "llm") !== "tools";
 import { ModelPicker, dedupeModelNames } from "@/components/ModelPicker";
 import {
   IconChat,
@@ -215,7 +218,11 @@ export default function CredentialsPage() {
     }
   };
 
-  const byProvider = providers.map((p) => ({
+  // 工具密钥（kind="tools"：搜索/抓取/OCR/语音）不是对话模型：
+  // 只在「能力」页配，不进这里的服务商下拉，也不按服务商分组列出来。
+  const llmProviders = providers.filter((p) => (p.kind ?? "llm") !== "tools");
+
+  const byProvider = llmProviders.map((p) => ({
     meta: p,
     items: creds.filter((c) => c.provider === p.name),
   }));
@@ -229,8 +236,8 @@ export default function CredentialsPage() {
             让 AI 能工作的「钥匙」。在这里填一次，所有助手都能用；存进来会加密，不会再明文显示。
             {!loaded
               ? "正在读取…"
-              : providers.length
-                ? `支持 ${providers.length} 家服务商`
+              : llmProviders.length
+                ? `支持 ${llmProviders.length} 家服务商`
                 : "支持多家服务商"}
             ，同一家可以配多套。
           </>
@@ -741,7 +748,7 @@ function NewCredentialDialog({
                 }}
               >
                 <option value="">（未识别 · 从这选）</option>
-                {providers.map((p) => (
+                {providers.filter(isLlmProvider).map((p) => (
                   <option key={p.name} value={p.name}>
                     {p.display_name}
                   </option>
@@ -1012,7 +1019,7 @@ function EditCredentialDialog({
                 if (nextMeta?.allows_base_url === false) setBaseUrl("");
               }}
             >
-              {providers.map((p) => (
+              {providers.filter(isLlmProvider).map((p) => (
                 <option key={p.name} value={p.name}>
                   {p.display_name}
                   {p.requires_key ? "" : "（无需 Key）"}

@@ -546,7 +546,7 @@ async def _read_document(path: str, purpose: str = "text", max_pages: int = 0) -
     if cred is None:
         return (
             "✗ 未配置 DeepSeek 工具密钥，OCR 不可用。\n"
-            "请让用户在「API 密钥」里添加 provider=deepseek-tools 的凭据。"
+            "请让用户到「能力 → 工具」页顶部的「工具密钥」里填 DeepSeek 的 Key。"
         )
     try:
         target = _safe_file(path)
@@ -614,7 +614,7 @@ async def _transcribe(path: str) -> str:
     if cred is None:
         return (
             "✗ 未配置 DeepSeek 工具密钥，语音识别不可用。\n"
-            "请让用户在「API 密钥」里添加 provider=deepseek-tools 的凭据。"
+            "请让用户到「能力 → 工具」页顶部的「工具密钥」里填 DeepSeek 的 Key。"
         )
     try:
         target = _safe_file(path)

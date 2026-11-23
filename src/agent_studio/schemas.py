@@ -899,6 +899,9 @@ class ProviderRead(BaseModel):
     allows_base_url: bool
     docs_url: str | None
     note: str = ""
+    #: "llm"（对话模型，默认）或 "tools"（工具密钥：搜索/抓取/OCR/语音）。
+    #: 前端据此把工具密钥挡在 LLM 配置之外 —— 它不是模型，不该出现在服务商下拉里。
+    kind: str = "llm"
 
 
 # --------------------------------------------------------------------------- #

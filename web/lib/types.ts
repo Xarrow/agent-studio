@@ -9,6 +9,8 @@ export interface Provider {
   allows_base_url: boolean;
   docs_url: string | null;
   note: string;
+  /** "llm" = 对话模型；"tools" = 工具密钥（搜索/抓取/OCR/语音），不进 LLM 配置 */
+  kind?: string;
 }
 
 export interface Credential {
