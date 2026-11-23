@@ -49,6 +49,10 @@ logger = logging.getLogger(__name__)
 CHROME_BIN = "/usr/bin/chromium"
 #: 一帧的最大体积（CDP 返回 base64；超限丢帧而不是断流）
 FRAME_MAX_BYTES = 400_000
+#: 是否共享一个 Chromium 进程（每会话一个 BrowserContext）。
+#: 出问题时可一键回退：环境变量 STUDIO_BROWSER_SHARE=0
+_SHARE_ENABLED = os.environ.get("STUDIO_BROWSER_SHARE", "1") != "0"
+
 #: 帧参数。画面是"让人看得见它在干嘛"，不是录屏：quality 55 一帧 ~30-50KB，
 #: everyNthFrame 4 + 后端最小间隔 200ms，约 5 帧/秒 —— 看得清操作，又不把
 #: SSE 和前端拖垮。之前不给限速，页面一动就把 30 帧/秒全推过来，整页卡死。
@@ -258,6 +262,25 @@ class _Cdp:
         r = await self.send("Target.attachToTarget", {"targetId": page["targetId"], "flatten": True})
         self.session_id = r.get("result", {}).get("sessionId")
 
+    # --- 共享浏览器（browser_pool）：每会话一个隔离上下文 ---------------------
+    async def create_context(self) -> str:
+        """新建一个 BrowserContext —— 等于开一个无痕窗口（cookie/storage 独立）。"""
+        r = await self.send("Target.createBrowserContext", {"disposeOnDetach": False})
+        return str((r.get("result") or {}).get("browserContextId") or "")
+
+    async def create_target(self, context_id: str) -> str:
+        r = await self.send(
+            "Target.createTarget", {"url": "about:blank", "browserContextId": context_id}
+        )
+        return str((r.get("result") or {}).get("targetId") or "")
+
+    async def attach_target(self, target_id: str) -> None:
+        r = await self.send("Target.attachToTarget", {"targetId": target_id, "flatten": True})
+        self.session_id = r.get("result", {}).get("sessionId")
+
+    async def dispose_context(self, context_id: str) -> None:
+        await self.send("Target.disposeBrowserContext", {"browserContextId": context_id})
+
     def on(self, method: str, fn: Any) -> None:
         self._listeners.setdefault(method, []).append(fn)
 
@@ -426,6 +449,9 @@ class BrowserSession:
         self._cdp: _Cdp | None = None
         self._proxy = proxy
         self._ws_url: str | None = None
+        #: 共享浏览器模式：这个会话独占一个 BrowserContext（不是独占进程）
+        self._shared = False
+        self._browser_ctx = ""
         self._last_url = ""
         self._last_frame = ""
         self._last_frame_at = 0.0
@@ -588,6 +614,51 @@ class BrowserSession:
         if proto != "cdp":
             await self._ensure_bidi(bin_path)
             return
+        # 共享一个 Chromium：每个会话一个 BrowserContext（无痕窗口那套隔离）
+        # 有代理的会话不走共享 —— --proxy-server 是进程级参数，只有各自 spawn 才能各用一套
+        if not self._proxy and _SHARE_ENABLED:
+            try:
+                from . import browser_pool
+
+                ws_url = await browser_pool.ensure(
+                    bin_path, VIEWPORT["width"], VIEWPORT["height"]
+                )
+                self._shared = True
+                self._ws_url = ws_url
+                self._cdp = await _Cdp.connect(ws_url)
+                self._browser_ctx = await self._cdp.create_context()
+                tid = await self._cdp.create_target(self._browser_ctx)
+                await self._cdp.attach_target(tid)
+                logger.info(
+                    "浏览器走共享实例 session=%s ctx=%s", self.session_id, self._browser_ctx
+                )
+            except Exception:
+                logger.warning("共享浏览器不可用，退回每会话一个实例", exc_info=True)
+                self._shared = False
+                self._browser_ctx = ""
+                self._cdp = None
+                self._ws_url = None
+        if self._shared:
+            await self._cdp.send("Page.enable")
+            await self._cdp.send("Runtime.enable")
+            try:
+                await self._cdp.send(
+                    "Emulation.setDeviceMetricsOverride",
+                    {
+                        "width": VIEWPORT["width"],
+                        "height": VIEWPORT["height"],
+                        "deviceScaleFactor": VIEWPORT["deviceScaleFactor"],
+                        "mobile": False,
+                    },
+                )
+            except Exception:  # pragma: no cover —— 老内核没有这个方法就退回窗口尺寸
+                logger.debug("设定视口失败，沿用窗口尺寸", exc_info=True)
+            self._cdp.on("Page.screencastFrame", self._handle_frame)
+            await self._start_screencast("jpeg")
+            if self._idle_task is None:
+                self._idle_task = asyncio.create_task(self._idle_tick())
+            return
+
         user_data = profile_dir_for(self.key)
         user_data.mkdir(parents=True, exist_ok=True)
         # 起之前先把这个会话的 profile 收回干净：残留的 Chromium 会让新实例
@@ -1603,6 +1674,13 @@ class BrowserSession:
                 pass
             self._bidi = None
         if self._cdp is not None:
+            if self._shared and self._browser_ctx:
+                # 只扔掉自己那个 BrowserContext（等于关掉这个无痕窗口），进程留着给别的会话用
+                try:
+                    await self._cdp.dispose_context(self._browser_ctx)
+                except Exception:  # pragma: no cover
+                    logger.debug("释放 BrowserContext 失败", exc_info=True)
+                self._browser_ctx = ""
             try:
                 await self._cdp.close()
             except Exception:  # pragma: no cover

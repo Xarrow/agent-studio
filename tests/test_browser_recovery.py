@@ -152,6 +152,7 @@ def _install_driver(tmp_path: Path, monkeypatch, bin_path: Path) -> None:
 
 
 def test_SingletonLock_失败后自清理重试一次就起来(tmp_path, monkeypatch, fresh_profile):
+    monkeypatch.setattr(bs, "_SHARE_ENABLED", False)  # 这条测的是每会话自起实例的清理重试
     binary = _fake_chrome(tmp_path, "fail_once")
     _install_driver(tmp_path, monkeypatch, binary)
     sess = bs.BrowserSession(run_id="r-retry", on_frame=lambda *a: None, session_id="ses_start")
@@ -169,6 +170,7 @@ def test_SingletonLock_失败后自清理重试一次就起来(tmp_path, monkeyp
 
 
 def test_两次都失败时报人话_不糊_Chromium_原文(tmp_path, monkeypatch, fresh_profile):
+    monkeypatch.setattr(bs, "_SHARE_ENABLED", False)  # 这条测的是每会话自起实例的重试语义
     binary = _fake_chrome(tmp_path, "always_fail")
     _install_driver(tmp_path, monkeypatch, binary)
     sess = bs.BrowserSession(run_id="r-dead", on_frame=lambda *a: None, session_id="ses_start")
