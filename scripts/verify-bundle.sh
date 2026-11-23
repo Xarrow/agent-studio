@@ -85,9 +85,20 @@ echo "  title    : $T"
 A=$(curl -s -m 8 "http://127.0.0.1:$PORT/api/agents")
 echo "  agents   : ${A:0:110}"
 echo "$A" | grep -q '"id"' && ok "API 返回真实数据" || bad "API 无数据"
-CARD=$(curl -s -o /dev/null -w '%{http_code}' -m 8 "http://127.0.0.1:$PORT/.well-known/agent-card.json")
+# A2A 入口：200 = 有开放远程调用的助手；403「没有开放远程调用」也是**正常**——
+# 全新库里还没人在「远程调用」里打开，路由本身是活的。判据改成"路由在工作"，
+# 不再要求必须 200（否则空库一定会被误判成失败）。
+CARD_BODY=$(mktemp)
+CARD=$(curl -s -o "$CARD_BODY" -w '%{http_code}' -m 8 "http://127.0.0.1:$PORT/.well-known/agent-card.json")
 echo "  A2A card : $CARD"
-[ "$CARD" = "200" ] && ok "A2A 入口可用" || bad "A2A 入口异常"
+if [ "$CARD" = "200" ]; then
+  ok "A2A 入口可用（有开放远程调用的助手）"
+elif [ "$CARD" = "403" ] && grep -q "开放远程调用" "$CARD_BODY"; then
+  ok "A2A 入口可用（暂无开放远程调用的助手）"
+else
+  bad "A2A 入口异常（$CARD）"
+fi
+rm -f "$CARD_BODY"
 
 echo "  数据目录："
 ls -la data | sed 's/^/    /'
