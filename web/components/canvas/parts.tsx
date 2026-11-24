@@ -106,7 +106,7 @@ export function ResizeGrip({ id, active, onDown }: { id: string; active: boolean
 export function DetailSection({ kind, label, children }: { kind: StepKind; label: string; children: React.ReactNode }) {
   const st = STEP_STYLE[kind];
   return (
-    <div className="rounded-[8px] border" style={{ borderColor: st.border, background: st.bg }}>
+    <div className="rounded-[var(--radius-sm)] border" style={{ borderColor: st.border, background: st.bg }}>
       <div className="flex items-center gap-1.5 px-2 py-[3px] text-[length:var(--fs-sm)] font-semibold" style={{ color: st.color }}>
         <span className="text-[10px] leading-none">{st.icon}</span>
         {label}

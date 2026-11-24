@@ -2657,7 +2657,7 @@ export function ChatConsole({
           <>
             <div className="fixed inset-0 z-[60]" onClick={() => setModelOpen(false)} aria-hidden="true" />
             <div
-              className="fixed z-[61] w-[330px] rounded-[10px] p-2 shadow-xl"
+              className="fixed z-[61] w-[330px] rounded-[var(--radius-md)] p-2 shadow-xl"
               style={{
                 left: Math.max(8, Math.min(modelAnchor.x, window.innerWidth - 346)),
                 top: modelAnchor.y,
@@ -3505,7 +3505,7 @@ export function ChatConsole({
                           侧栏收起时那个入口不在视口里，点了像没反应（复测 F2） */}
                       {emptySwitchOpen && (
                         <div
-                          className="mx-auto mt-2 max-h-[220px] w-full max-w-[360px] overflow-y-auto rounded-[10px] p-1 text-left"
+                          className="mx-auto mt-2 max-h-[220px] w-full max-w-[360px] overflow-y-auto rounded-[var(--radius-md)] p-1 text-left"
                           style={{ background: "var(--color-surface-2)" }}
                         >
                           {agents.map((a) => (
@@ -3918,7 +3918,7 @@ export function ChatConsole({
                       type="button"
                       data-tap
                       onClick={() => void browserControl("release")}
-                      className="rounded-[8px] px-3 py-1.5 text-[length:var(--fs-base)] font-medium"
+                      className="rounded-[var(--radius-sm)] px-3 py-1.5 text-[length:var(--fs-base)] font-medium"
                       style={{
                         color: "var(--color-accent)",
                         background: "color-mix(in srgb, var(--color-accent) 12%, transparent)",
@@ -3936,7 +3936,7 @@ export function ChatConsole({
                           setBrowserOpen(true);
                         }
                       }}
-                      className="rounded-[8px] px-3 py-1.5 text-[length:var(--fs-base)]"
+                      className="rounded-[var(--radius-sm)] px-3 py-1.5 text-[length:var(--fs-base)]"
                       style={{ color: "var(--color-text-2)", background: "var(--color-surface-3)" }}
                     >
                       打开浏览器画面
@@ -4256,7 +4256,7 @@ export function ChatConsole({
                         >
                           <span
                             aria-hidden
-                            className="inline-flex h-[13px] w-[13px] shrink-0 items-center justify-center rounded-[3px] border"
+                            className="inline-flex h-[13px] w-[13px] shrink-0 items-center justify-center rounded-[var(--radius-xs)] border"
                             style={{
                               borderColor: picked.includes(f.path) ? "var(--color-accent)" : "var(--color-border)",
                               background: picked.includes(f.path) ? "var(--color-accent)" : "transparent",
@@ -4311,7 +4311,7 @@ export function ChatConsole({
               {/* 认不出来时的候选条：这句话留在手里，点谁就用谁发（不再猜第二遍） */}
               {routeAsk && (
                 <div
-                  className="mb-2 rounded-[14px] border px-3 py-2"
+                  className="mb-2 rounded-[var(--radius-lg)] border px-3 py-2"
                   style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
                 >
                   <div className="flex flex-wrap items-center gap-2">
@@ -4828,7 +4828,7 @@ export function ChatConsole({
         <div className="dialog-free fixed inset-0 z-[70] flex items-end justify-center md:items-center" role="dialog" aria-modal="true" aria-label="浏览器画面">
           <div className="absolute inset-0" style={{ background: "rgba(15,23,42,0.4)" }} onClick={() => setBrowserOpen(false)} />
           <div
-            className="relative flex w-full flex-col overflow-hidden rounded-t-[16px] md:max-w-[760px] md:rounded-[14px]"
+            className="relative flex w-full flex-col overflow-hidden rounded-t-[16px] md:max-w-[760px] md:rounded-[var(--radius-lg)]"
             style={{
               height: "72vh",
               maxHeight: "72vh",

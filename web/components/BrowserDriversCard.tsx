@@ -261,7 +261,7 @@ export function BrowserDriversCard() {
           {active?.custom ? (
             <button
               type="button"
-              className="ml-auto rounded-[5px] px-2 py-1 text-[length:var(--fs-sm)]"
+              className="ml-auto rounded-[var(--radius-xs)] px-2 py-1 text-[length:var(--fs-sm)]"
               style={{ color: "var(--color-accent)", border: "1px solid color-mix(in srgb, var(--color-accent) 34%, transparent)" }}
               onClick={() => void reset()}
               disabled={busy}
@@ -299,7 +299,7 @@ export function BrowserDriversCard() {
           })()}
           <button
             type="button"
-            className="ml-auto rounded-[5px] px-2 py-0.5 text-[length:var(--fs-sm)]"
+            className="ml-auto rounded-[var(--radius-xs)] px-2 py-0.5 text-[length:var(--fs-sm)]"
             style={{ color: "var(--color-accent)", border: "1px solid color-mix(in srgb, var(--color-accent) 34%, transparent)" }}
             onClick={() => void checkActive()}
             disabled={checking || !active?.path}
@@ -323,7 +323,7 @@ export function BrowserDriversCard() {
                   <span>缺的是系统运行库，不是驱动本身：</span>
                   <button
                     type="button"
-                    className="rounded-[5px] px-2 py-0.5"
+                    className="rounded-[var(--radius-xs)] px-2 py-0.5"
                     style={{ color: "var(--color-accent)", border: "1px solid color-mix(in srgb, var(--color-accent) 34%, transparent)" }}
                     onClick={() => void fixDeps()}
                     disabled={depsBusy}
@@ -345,7 +345,7 @@ export function BrowserDriversCard() {
         {rows.map((r) => (
           <div
             key={`${r.kind}-${r.version}-${r.source}`}
-            className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[6px] border px-2 py-1.5 text-[length:var(--fs-sm)]"
+            className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[var(--radius-xs)] border px-2 py-1.5 text-[length:var(--fs-sm)]"
             style={{
               borderColor: "var(--color-border)",
               background: r.active ? "color-mix(in srgb, var(--color-accent) 5%, transparent)" : undefined,
@@ -366,7 +366,7 @@ export function BrowserDriversCard() {
               <span className="ml-auto flex items-center gap-2">
                 <button
                   type="button"
-                  className="rounded-[5px] px-2 py-0.5"
+                  className="rounded-[var(--radius-xs)] px-2 py-0.5"
                   style={{ color: "var(--color-accent)" }}
                   onClick={() => void activate(r)}
                   disabled={busy}
@@ -376,7 +376,7 @@ export function BrowserDriversCard() {
                 {r.source === "managed" && (
                   <button
                     type="button"
-                    className="rounded-[5px] px-2 py-0.5"
+                    className="rounded-[var(--radius-xs)] px-2 py-0.5"
                     style={{ color: "var(--color-err)" }}
                     onClick={() => void remove(r)}
                     disabled={busy}
@@ -427,7 +427,7 @@ export function BrowserDriversCard() {
           />
           <button
             type="button"
-            className="rounded-[5px] px-2.5 py-1 text-[length:var(--fs-base)]"
+            className="rounded-[var(--radius-xs)] px-2.5 py-1 text-[length:var(--fs-base)]"
             style={{
               background: "var(--color-accent)",
               color: "var(--color-accent-contrast)",

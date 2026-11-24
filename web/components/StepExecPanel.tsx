@@ -256,7 +256,7 @@ export function StepExecPanel({
 
   return (
     <div
-      className="rounded-[10px] border"
+      className="rounded-[var(--radius-md)] border"
       style={{ borderColor: live ? "var(--color-accent)" : "var(--color-border)" }}
     >
       {/* 块头：这一格的结论 */}
@@ -320,7 +320,7 @@ export function StepExecPanel({
           <Section label="思考" hint="模型在动手前/动手时想到的内容">
             {thinking ? (
               <div
-                className="whitespace-pre-wrap rounded-[6px] px-2 py-1.5 text-[length:var(--fs-sm)] leading-[1.65]"
+                className="whitespace-pre-wrap rounded-[var(--radius-xs)] px-2 py-1.5 text-[length:var(--fs-sm)] leading-[1.65]"
                 style={{ background: "color-mix(in srgb, var(--color-accent) 5%, transparent)" }}
               >
                 {thinking}
@@ -337,7 +337,7 @@ export function StepExecPanel({
             ) : (
               <div className="flex flex-col gap-1.5">
                 {tools.map((t, i) => (
-                  <div key={i} className="rounded-[6px] border px-2 py-1.5" style={{ borderColor: "var(--color-border)" }}>
+                  <div key={i} className="rounded-[var(--radius-xs)] border px-2 py-1.5" style={{ borderColor: "var(--color-border)" }}>
                     <div className="flex flex-wrap items-baseline gap-2 text-[length:var(--fs-sm)]">
                       <code className="mono font-semibold">{t.name}</code>
                       <span
@@ -355,7 +355,7 @@ export function StepExecPanel({
                       </div>
                     )}
                     {t.result.trim() && (
-                      <div className="mono mt-1 max-h-[120px] overflow-auto whitespace-pre-wrap break-all rounded-[4px] px-1.5 py-1 text-[length:var(--fs-sm)]" style={{ background: "var(--color-surface-2)" }}>
+                      <div className="mono mt-1 max-h-[120px] overflow-auto whitespace-pre-wrap break-all rounded-[var(--radius-xs)] px-1.5 py-1 text-[length:var(--fs-sm)]" style={{ background: "var(--color-surface-2)" }}>
                         {t.result.trim().slice(0, 800)}
                       </div>
                     )}

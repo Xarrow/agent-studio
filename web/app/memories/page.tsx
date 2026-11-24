@@ -611,7 +611,7 @@ export default function MemoriesPage() {
                       )}
                       <button
                         type="button"
-                        className="min-h-[36px] rounded px-2 text-[length:var(--fs-sm)] hover:bg-[var(--color-surface-2)]"
+                        className="min-h-[36px] rounded-[var(--radius-sm)] px-2 text-[length:var(--fs-sm)] hover:bg-[var(--color-surface-2)]"
                         style={{ color: "var(--color-err)" }}
                         onClick={() => void remove(m)}
                       >
@@ -742,7 +742,7 @@ export default function MemoriesPage() {
                   >
                     {/* 正文：记忆的全部内容，不改一个字 */}
                     <div
-                      className="whitespace-pre-wrap break-words rounded-[10px] border p-4 text-[length:var(--fs-md)] leading-relaxed"
+                      className="whitespace-pre-wrap break-words rounded-[var(--radius-md)] border p-4 text-[length:var(--fs-md)] leading-relaxed"
                       style={{ borderColor: "var(--color-border)", background: "var(--color-bg)" }}
                     >
                       {m.content}

@@ -94,7 +94,7 @@ export function SlashMenu({
 
   return (
     <div
-      className="absolute bottom-full left-0 right-0 mb-2 rounded-[10px] border overflow-y-auto overscroll-contain shadow-lg z-20"
+      className="absolute bottom-full left-0 right-0 mb-2 rounded-[var(--radius-md)] border overflow-y-auto overscroll-contain shadow-lg z-20"
 
       style={{
         background: "var(--color-surface)",

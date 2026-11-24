@@ -20,7 +20,7 @@ import { useEffect, useMemo, useState } from "react";
 function Note({ children }: { children: React.ReactNode }) {
   return (
     <p
-      className="mt-2 rounded-[8px] px-2.5 py-1.5 text-[length:var(--fs-sm)] leading-relaxed"
+      className="mt-2 rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[length:var(--fs-sm)] leading-relaxed"
       style={{ background: "var(--color-surface-2)", color: "var(--color-muted)" }}
     >
       {children}
@@ -48,7 +48,7 @@ function Grid({
   const cols = Math.max(...rows.map((r) => r.length));
   return (
     <div
-      className="max-h-[52dvh] overflow-auto rounded-[10px] border"
+      className="max-h-[52dvh] overflow-auto rounded-[var(--radius-md)] border"
       style={{ borderColor: "var(--color-border)" }}
     >
       <table className="w-max min-w-full border-collapse text-[length:var(--fs-base)]">
@@ -209,7 +209,7 @@ export function SlidesView({ slides }: { slides: SlideData[] }) {
   return (
     <div>
       <div
-        className="rounded-[12px] border p-3.5 max-md:p-3"
+        className="rounded-[var(--radius-lg)] border p-3.5 max-md:p-3"
         style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
       >
         <p className="text-[length:var(--fs-xs)] tabular-nums" style={{ color: "var(--color-muted)" }}>
@@ -419,7 +419,7 @@ export function JsonView({ text }: { text: string }) {
   }
   const budget = { n: JSON_NODE_LIMIT };
   return (
-    <div className="max-h-[56dvh] overflow-auto rounded-[10px] border p-2.5" style={{ borderColor: "var(--color-border)" }}>
+    <div className="max-h-[56dvh] overflow-auto rounded-[var(--radius-md)] border p-2.5" style={{ borderColor: "var(--color-border)" }}>
       <JsonBranch k={null} v={parsed.value} depth={0} budget={budget} />
     </div>
   );
@@ -448,7 +448,7 @@ export function XmlFetch({ url, path }: { url: string | null; path: string }) {
   }, [url]);
   if (err)
     return (
-      <p className="rounded-[10px] border p-3 text-[length:var(--fs-base)]" style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}>
+      <p className="rounded-[var(--radius-md)] border p-3 text-[length:var(--fs-base)]" style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}>
         读不出内容（{err}），可以直接下载试试。
       </p>
     );
@@ -526,7 +526,7 @@ export function XmlView({ text }: { text: string }) {
   return (
     <div>
       <pre
-        className="max-h-[56dvh] overflow-auto rounded-[10px] border p-2.5 text-[length:var(--fs-sm)] leading-[1.6] whitespace-pre"
+        className="max-h-[56dvh] overflow-auto rounded-[var(--radius-md)] border p-2.5 text-[length:var(--fs-sm)] leading-[1.6] whitespace-pre"
         style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
       >
         {shown}

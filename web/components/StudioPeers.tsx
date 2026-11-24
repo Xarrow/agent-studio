@@ -533,7 +533,7 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
                 {editPeer === cur.id ? (
                   <span className="flex flex-wrap items-center gap-1.5">
                     <input
-                      className="input h-7 flex-1 py-0 text-[length:var(--fs-xs)]"
+                      className="input flex-1 py-0 text-[length:var(--fs-xs)]"
                       placeholder="nd_ 开头"
                       value={peerTokenDraft}
                       onChange={(e) => setPeerTokenDraft(e.target.value)}

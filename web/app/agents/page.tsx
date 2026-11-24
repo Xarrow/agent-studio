@@ -558,7 +558,7 @@ export default function AgentsPage() {
                         不用点进详情页改完再回来（验收 UX-014） */}
                     {a.definition && a.definition.runtime !== "a2a" && (
                       <div
-                        className="mb-3 rounded-[10px] px-3 py-2.5"
+                        className="mb-3 rounded-[var(--radius-md)] px-3 py-2.5"
                         style={{ background: "var(--color-surface-2)" }}
                       >
                         <div
@@ -579,7 +579,7 @@ export default function AgentsPage() {
 
                     {/* 血缘：派生自谁 / 派生出哪些 —— 有血缘才显示，没有就不占一行 */}
                     {(a.parent_id || childrenOf(a.id).length > 0) && (
-                      <div className="mb-3 rounded-[10px] px-3 py-2.5" style={{ background: "var(--color-surface-2)" }}>
+                      <div className="mb-3 rounded-[var(--radius-md)] px-3 py-2.5" style={{ background: "var(--color-surface-2)" }}>
                         <div className="mb-1.5 inline-flex items-center gap-1.5 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                           <IconGitBranch size={12} />
                           fork 血缘（助手之间的派生关系）
@@ -814,7 +814,7 @@ function NewAgentDialog({
   /** 预览区：右栏就是它建成后的样子（开场白、模型、密钥随输入实时变） */
   const preview = (
     <div className="space-y-3">
-      <div className="rounded-[14px] p-4" style={{ background: "var(--color-surface-2)" }}>
+      <div className="rounded-[var(--radius-lg)] p-4" style={{ background: "var(--color-surface-2)" }}>
         <div className="text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
           新会话第一屏
         </div>
@@ -831,7 +831,7 @@ function NewAgentDialog({
           {opening.trim() || desc.trim() || "（还没有开场白，第一屏会是空的）"}
         </p>
         <div
-          className="mt-4 flex items-center rounded-[10px] px-3 py-2.5 text-[length:var(--fs-base)]"
+          className="mt-4 flex items-center rounded-[var(--radius-md)] px-3 py-2.5 text-[length:var(--fs-base)]"
           style={{ background: "var(--color-surface)", color: "var(--color-text-3)" }}
         >
           说点什么…
@@ -854,7 +854,7 @@ function NewAgentDialog({
   return (
     <div className={DLG_BACKDROP} onClick={requestClose}>
       <div
-        className="card flex max-h-[92dvh] w-full max-w-[880px] flex-col overflow-hidden rounded-b-none rounded-t-[14px] p-5 sm:my-auto sm:max-h-[88dvh] sm:rounded-[12px]"
+        className="card flex max-h-[92dvh] w-full max-w-[880px] flex-col overflow-hidden rounded-b-none rounded-t-[14px] p-5 sm:my-auto sm:max-h-[88dvh] sm:rounded-[var(--radius-lg)]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-start gap-3">
@@ -867,7 +867,7 @@ function NewAgentDialog({
               onClick={requestClose}
               title="关闭（Esc）"
               aria-label="关闭"
-              className="flex h-10 w-10 items-center justify-center rounded-[10px] text-[length:var(--fs-lg)] leading-none hover:bg-[var(--color-surface-2)]"
+              className="flex h-10 w-10 items-center justify-center rounded-[var(--radius-md)] text-[length:var(--fs-lg)] leading-none hover:bg-[var(--color-surface-2)]"
               style={{ color: confirmClose ? "var(--color-err)" : "var(--color-muted)" }}
             >
               ✕
@@ -994,7 +994,7 @@ function NewAgentDialog({
                       key={o.v}
                       type="button"
                       onClick={() => setNewRole(o.v)}
-                      className="rounded-[10px] px-3 py-2 text-left"
+                      className="rounded-[var(--radius-md)] px-3 py-2 text-left"
                       style={{
                         background: on ? "color-mix(in srgb, var(--color-accent) 8%, transparent)" : "var(--color-surface-2)",
                         outline: on ? "1.5px solid var(--color-accent)" : "none",

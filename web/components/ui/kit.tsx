@@ -137,7 +137,7 @@ export function Chip({
 export function RowList({ children }: { children: ReactNode }) {
   return (
     <div
-      className="overflow-hidden rounded-[12px] p-1"
+      className="overflow-hidden rounded-[var(--radius-lg)] p-1"
       style={{ background: "var(--color-surface)" }}
     >
       {children}
@@ -168,7 +168,7 @@ export function Row({
     <div
       /* 不用 border-b 分隔：行与行靠 2px 空隙 + 圆角 + 点击底色分（用户铁律：
          不要 1px 线条，分层靠底色差/间距/圆角）。RowList 给了 p-1，缝隙就是它的底色。 */
-      className="flex flex-wrap items-center gap-x-2.5 gap-y-2 rounded-[9px] px-2.5 py-2.5 transition-colors hover:bg-[var(--bg-hover)] max-md:gap-y-2"
+      className="flex flex-wrap items-center gap-x-2.5 gap-y-2 rounded-[var(--radius-sm)] px-2.5 py-2.5 transition-colors hover:bg-[var(--bg-hover)] max-md:gap-y-2"
       style={{
         background: expanded ? "color-mix(in srgb, var(--color-accent) 5%, transparent)" : undefined,
       }}
@@ -231,7 +231,7 @@ export function RowDetail({ children }: { children: ReactNode }) {
   return (
     <div
       /* 展开区不用 border-b：浅底 + 圆角已经把它和行分开（同一条 UI 铁律） */
-      className="mb-0.5 rounded-[9px] px-3 pb-3 pt-2.5"
+      className="mb-0.5 rounded-[var(--radius-sm)] px-3 pb-3 pt-2.5"
       style={{ background: "var(--color-surface-2)" }}
     >
       {children}
@@ -332,7 +332,7 @@ export function SelectionBar({
 }) {
   return (
     <div
-      className="mb-2 flex flex-wrap items-center gap-2 rounded-[10px] px-3 py-2"
+      className="mb-2 flex flex-wrap items-center gap-2 rounded-[var(--radius-md)] px-3 py-2"
       style={{ background: "color-mix(in srgb, var(--color-accent) 8%, transparent)" }}
     >
       <span className="text-[length:var(--fs-sm)]">已选 {count} 条</span>
@@ -454,7 +454,7 @@ export function Menu({
       {open ? (
         <div
           role="menu"
-          className={`absolute z-30 mt-1 w-[200px] overflow-hidden rounded-[10px] border shadow-lg ${
+          className={`absolute z-30 mt-1 w-[200px] overflow-hidden rounded-[var(--radius-md)] border shadow-lg ${
             align === "right" ? "right-0" : "left-0"
           }`}
           style={{ background: "var(--color-surface)", borderColor: "var(--color-border)" }}
@@ -579,4 +579,4 @@ export function Section({
 export const DLG_BACKDROP =
   "fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-[var(--color-overlay)] p-0 sm:items-center sm:p-4";
 export const DLG_CARD =
-  "card w-full max-h-[92dvh] overflow-y-auto rounded-b-none rounded-t-[14px] sm:my-auto sm:max-h-[88dvh] sm:rounded-[12px]";
+  "card w-full max-h-[92dvh] overflow-y-auto rounded-b-none rounded-t-[14px] sm:my-auto sm:max-h-[88dvh] sm:rounded-[var(--radius-lg)]";

@@ -87,7 +87,7 @@ function ChromeBar({
   const waiting = control?.status === "waiting_user";
   return (
     <div
-      className="flex items-center gap-2 rounded-[8px] bg-[var(--color-surface-2)] px-2.5 py-1.5"
+      className="flex items-center gap-2 rounded-[var(--radius-sm)] bg-[var(--color-surface-2)] px-2.5 py-1.5"
       style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
     >
       <button
@@ -167,7 +167,7 @@ function ControlBar({
           style={{ background: "var(--color-surface-2)" }}
         >
           <span
-            className="inline-flex shrink-0 items-center gap-1 rounded-[6px] px-1.5 py-0.5 text-[length:var(--fs-xs)]"
+            className="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius-xs)] px-1.5 py-0.5 text-[length:var(--fs-xs)]"
             style={{ color, background: `color-mix(in srgb, ${color} 12%, transparent)` }}
             title={control?.hint}
           >
@@ -188,7 +188,7 @@ function ControlBar({
                       ? `实时视频没连上（${stream.reason}），已自动切回兼容画面 · 数字是这一秒实际收到的 JPEG 帧数`
                       : "兼容画面 · 数字是这一秒实际收到的 JPEG 帧数"
                   }
-                  className="rounded-[6px] px-1.5 py-0.5 text-[length:var(--fs-xs)] tabular-nums"
+                  className="rounded-[var(--radius-xs)] px-1.5 py-0.5 text-[length:var(--fs-xs)] tabular-nums"
                   style={{
                     color: "var(--color-warn)",
                     background: "color-mix(in srgb, var(--color-warn) 14%, transparent)",
@@ -201,7 +201,7 @@ function ControlBar({
                     type="button"
                     data-tap
                     onClick={onRetry}
-                    className="rounded-[6px] px-1.5 py-0.5 text-[length:var(--fs-xs)] hover:underline"
+                    className="rounded-[var(--radius-xs)] px-1.5 py-0.5 text-[length:var(--fs-xs)] hover:underline"
                     style={{ color: "var(--color-accent)" }}
                     title="再试一次实时视频（不影响当前操作）"
                   >
@@ -213,7 +213,7 @@ function ControlBar({
               <span
                 data-stream-stat
                 title="实时视频（WebRTC）实测值：帧率来自 getStats 的 framesDecoded；延迟 = 抖动缓冲 + RTT/2（估算）"
-                className="shrink-0 rounded-[6px] px-1.5 py-0.5 text-[length:var(--fs-xs)] tabular-nums"
+                className="shrink-0 rounded-[var(--radius-xs)] px-1.5 py-0.5 text-[length:var(--fs-xs)] tabular-nums"
                 style={{
                   color: stream.mode === "webrtc" ? "var(--color-ok)" : "var(--color-muted)",
                   background:
@@ -234,7 +234,7 @@ function ControlBar({
               data-browser-take={canTake ? "1" : undefined}
               disabled={canTake && taking}
               onClick={() => onControl?.(action === "take" ? "take" : "release")}
-              className={`shrink-0 rounded-[8px] px-3.5 py-2 text-[length:var(--fs-base)] font-medium ${
+              className={`shrink-0 rounded-[var(--radius-sm)] px-3.5 py-2 text-[length:var(--fs-base)] font-medium ${
                 canTake && pulse ? "browser-take-pulse" : ""
               }`}
               style={{
@@ -960,7 +960,7 @@ export function BrowserStage({
             data-browser-take={takeAction === "take" ? "1" : undefined}
             disabled={takeAction === "take" && taking}
             onClick={() => requestControl(takeAction)}
-            className={`shrink-0 rounded-[8px] px-2.5 py-1.5 text-[length:var(--fs-sm)] font-medium ${
+            className={`shrink-0 rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[length:var(--fs-sm)] font-medium ${
               takeAction === "take" && pulse ? "browser-take-pulse" : ""
             }`}
             style={{
@@ -1097,7 +1097,7 @@ export function BrowserStage({
             role="status"
             aria-live="polite"
             data-surface="browser-inline-feedback"
-            className="pointer-events-none absolute z-10 max-w-[88%] rounded-[8px] px-2.5 py-1.5 text-[length:var(--fs-sm)] leading-snug shadow-lg"
+            className="pointer-events-none absolute z-10 max-w-[88%] rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[length:var(--fs-sm)] leading-snug shadow-lg"
             style={{
               left: feedback.x >= 0 ? Math.min(Math.max(feedback.x + 8, 8), Math.max(8, feedback.w - 248)) : 12,
               top: feedback.x >= 0 ? Math.min(Math.max(feedback.y + 8, 8), Math.max(8, feedback.h - 92)) : undefined,

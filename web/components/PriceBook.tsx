@@ -90,7 +90,7 @@ export function PriceBook() {
   const renderRow = (r: Row) => (
     <div
       key={r.model}
-      className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-[9px] px-2.5 py-2.5 hover:bg-[var(--bg-hover)]"
+      className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-[var(--radius-sm)] px-2.5 py-2.5 hover:bg-[var(--bg-hover)]"
       style={{ borderColor: "var(--color-border)" }}
     >
       <div className="min-w-0 flex-1 basis-[170px]">
@@ -183,7 +183,7 @@ export function PriceBook() {
                   <button
                     type="button"
                     onClick={() => setShowIdle((v) => !v)}
-                    className="mb-0.5 flex w-full items-center gap-2 rounded-[9px] px-2.5 py-2.5 text-left text-[length:var(--fs-base)] hover:bg-[var(--bg-hover)]"
+                    className="mb-0.5 flex w-full items-center gap-2 rounded-[var(--radius-sm)] px-2.5 py-2.5 text-left text-[length:var(--fs-base)] hover:bg-[var(--bg-hover)]"
                     style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
                   >
                     <span aria-hidden>{showIdle ? "▾" : "▸"}</span>

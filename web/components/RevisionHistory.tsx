@@ -173,7 +173,7 @@ export function RevisionHistory({
         </span>
         <button
           type="button"
-          className="ml-auto rounded-[6px] border px-2 py-0.5 text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--color-surface-2)]"
+          className="ml-auto rounded-[var(--radius-xs)] border px-2 py-0.5 text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--color-surface-2)]"
           style={{ borderColor: "var(--color-border)" }}
           onClick={() => void load()}
           title="重新读一遍历史"
@@ -236,7 +236,7 @@ export function RevisionHistory({
                   <div className="flex shrink-0 items-center gap-1.5">
                     <button
                       type="button"
-                      className="rounded-[6px] border px-2 py-0.5 text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--color-surface-2)]"
+                      className="rounded-[var(--radius-xs)] border px-2 py-0.5 text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--color-surface-2)]"
                       style={{ borderColor: "var(--color-border)" }}
                       onClick={() => toggle(rev)}
                     >
@@ -247,7 +247,7 @@ export function RevisionHistory({
                         type="button"
                         disabled={busy === rev.id}
                         onClick={() => void restore(rev)}
-                        className="rounded-[6px] border px-2 py-0.5 text-[length:var(--fs-sm)] disabled:opacity-50"
+                        className="rounded-[var(--radius-xs)] border px-2 py-0.5 text-[length:var(--fs-sm)] disabled:opacity-50"
                         style={{
                           borderColor: armRestore === rev.id ? "var(--color-err)" : "var(--color-border)",
                           color: armRestore === rev.id ? "var(--color-err)" : undefined,
@@ -261,7 +261,7 @@ export function RevisionHistory({
                       type="button"
                       disabled={busy === rev.id}
                       onClick={() => void remove(rev)}
-                      className="rounded-[6px] border px-2 py-0.5 text-[length:var(--fs-sm)] disabled:opacity-50"
+                      className="rounded-[var(--radius-xs)] border px-2 py-0.5 text-[length:var(--fs-sm)] disabled:opacity-50"
                       style={{
                         borderColor: armDelete === rev.id ? "var(--color-err)" : "var(--color-border)",
                         color: "var(--color-err)",
@@ -275,7 +275,7 @@ export function RevisionHistory({
 
                 {/* ── 展开：差异 ── */}
                 {expanded && (
-                  <div className="mt-2 rounded-[8px] p-2.5" style={{ background: "var(--color-surface-2)" }}>
+                  <div className="mt-2 rounded-[var(--radius-sm)] p-2.5" style={{ background: "var(--color-surface-2)" }}>
                     <div className="mb-2 flex flex-wrap items-center gap-1.5">
                       <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                         对比
@@ -352,7 +352,7 @@ function Seg({ active, onClick, label, title }: { active: boolean; onClick: () =
       type="button"
       onClick={onClick}
       title={title}
-      className="rounded-[6px] border px-2 py-0.5 text-[length:var(--fs-sm)] transition-colors"
+      className="rounded-[var(--radius-xs)] border px-2 py-0.5 text-[length:var(--fs-sm)] transition-colors"
       style={{
         borderColor: active ? "var(--color-accent)" : "var(--color-border)",
         color: active ? "var(--color-accent)" : "var(--color-muted)",
@@ -371,7 +371,7 @@ function Value({ label, text, muted }: { label: string; text: string; muted?: bo
         {label}
       </div>
       <div
-        className="mono whitespace-pre-wrap break-words rounded-[6px] px-1.5 py-1 text-[length:var(--fs-sm)]"
+        className="mono whitespace-pre-wrap break-words rounded-[var(--radius-xs)] px-1.5 py-1 text-[length:var(--fs-sm)]"
         style={{ background: "var(--color-surface)", color: muted ? "var(--color-muted)" : "var(--color-text)" }}
       >
         {text}

@@ -45,7 +45,7 @@ function Shell({
   const [copied, setCopied] = useState(false);
   return (
     <div className="my-2 overflow-hidden rounded-lg border border-[var(--color-border)]">
-      <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[8px] bg-[var(--color-surface-2)] px-2.5 py-1.5">
+      <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[var(--radius-sm)] bg-[var(--color-surface-2)] px-2.5 py-1.5">
         <span className="text-[length:var(--fs-sm)] font-medium text-[var(--color-text)]">{title}</span>
         {hint ? <span className="text-[length:var(--fs-sm)] text-[var(--color-muted)]">{hint}</span> : null}
         <div className="ml-auto flex items-center gap-1">

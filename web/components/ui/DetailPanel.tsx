@@ -84,7 +84,7 @@ export function DetailPanel({
         >
           <div className="flex items-start gap-3">
             <span
-              className="grid h-11 w-11 shrink-0 place-items-center rounded-[12px]"
+              className="grid h-11 w-11 shrink-0 place-items-center rounded-[var(--radius-lg)]"
               style={{
                 background: iconBg ?? "color-mix(in srgb, var(--color-accent) 12%, transparent)",
                 color: iconFg ?? "var(--color-accent)",

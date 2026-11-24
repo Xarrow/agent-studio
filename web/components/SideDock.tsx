@@ -327,8 +327,8 @@ export function SideDock({
         }}
         className={
           isSheet
-            ? "relative grid h-[34px] w-[34px] place-items-center rounded-[9px] transition-colors"
-            : "relative grid h-10 w-10 place-items-center rounded-[10px] transition-colors"
+            ? "relative grid h-[34px] w-[34px] place-items-center rounded-[var(--radius-sm)] transition-colors"
+            : "relative grid h-10 w-10 place-items-center rounded-[var(--radius-md)] transition-colors"
         }
         style={{
           color: active ? "var(--color-accent)" : "var(--color-muted)",
@@ -505,7 +505,7 @@ export function SideDock({
               {(outline?.length ?? 0) > 10 && (
                 <div className="shrink-0 px-2 pb-1 pt-2">
                   <input
-                    className="input h-8 w-full text-[length:var(--fs-sm)]"
+                    className="input w-full text-[length:var(--fs-sm)]"
                     placeholder="过滤这一会话的问题"
                     value={outlineQ}
                     onChange={(e) => setOutlineQ(e.target.value)}
@@ -666,7 +666,7 @@ export function SideDock({
 
               <div className="flex items-center gap-1.5 px-2 py-2">
                 <input
-                  className="input h-8 flex-1 text-[length:var(--fs-sm)]"
+                  className="input flex-1 text-[length:var(--fs-sm)]"
                   placeholder="筛文件名"
                   value={q}
                   onChange={(e) => setQ(e.target.value)}

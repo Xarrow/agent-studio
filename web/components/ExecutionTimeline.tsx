@@ -129,7 +129,7 @@ export function ExecutionTimeline({
           </span>
           <button
             type="button"
-            className="ml-auto rounded-[6px] border px-2 py-0.5 text-[length:var(--fs-sm)]"
+            className="ml-auto rounded-[var(--radius-xs)] border px-2 py-0.5 text-[length:var(--fs-sm)]"
             style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
             onClick={() => void load()}
             title="重新读一遍（执行还在跑就刷新到最新）"
@@ -187,9 +187,9 @@ export function ExecutionTimeline({
                 </span>
 
                 {/* 真实时间轴：条的左偏移与宽度就是它在这段执行里的位置 */}
-                <span className="relative h-[10px] flex-1 rounded-[3px]" style={{ background: "var(--color-surface-2)" }}>
+                <span className="relative h-[10px] flex-1 rounded-[var(--radius-xs)]" style={{ background: "var(--color-surface-2)" }}>
                   <span
-                    className="absolute top-0 h-full rounded-[3px]"
+                    className="absolute top-0 h-full rounded-[var(--radius-xs)]"
                     style={{
                       left: `${left}%`,
                       width: `${width}%`,
@@ -227,7 +227,7 @@ export function ExecutionTimeline({
 
               {expanded && (
                 <div
-                  className="mb-2 rounded-[8px] p-2.5"
+                  className="mb-2 rounded-[var(--radius-sm)] p-2.5"
                   style={{ background: "var(--color-surface-2)", marginLeft: depth * 12 }}
                 >
                   <ItemDetail runId={runId} item={item} text={texts[item.id]} busy={busy === item.id} />
@@ -270,7 +270,7 @@ function ItemDetail({
           ]}
         />
         {callId ? (
-          <div className="rounded-[6px] p-2" style={{ background: "var(--color-surface)" }}>
+          <div className="rounded-[var(--radius-xs)] p-2" style={{ background: "var(--color-surface)" }}>
             <div className="mb-1 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
               这次请求发了什么、回了什么
             </div>
@@ -296,13 +296,13 @@ function ItemDetail({
             读取全文…
           </div>
         ) : text?.text ? (
-          <pre className="mono max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-[6px] p-2 text-[length:var(--fs-sm)]"
+          <pre className="mono max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-[var(--radius-xs)] p-2 text-[length:var(--fs-sm)]"
                style={{ background: "var(--color-surface)" }}>
             {text.text}
             {text.truncated && "\n…（已截断）"}
           </pre>
         ) : (
-          <pre className="mono max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-[6px] p-2 text-[length:var(--fs-sm)]"
+          <pre className="mono max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-[var(--radius-xs)] p-2 text-[length:var(--fs-sm)]"
                style={{ background: "var(--color-surface)" }}>
             {String(a.preview || "（没有留下思考内容）")}
           </pre>
@@ -336,7 +336,7 @@ function ItemDetail({
               读取完整结果…
             </div>
           ) : (
-            <pre className="mono max-h-60 overflow-auto whitespace-pre-wrap break-words rounded-[6px] p-2 text-[length:var(--fs-sm)]"
+            <pre className="mono max-h-60 overflow-auto whitespace-pre-wrap break-words rounded-[var(--radius-xs)] p-2 text-[length:var(--fs-sm)]"
                  style={{ background: "var(--color-surface)" }}>
               {text?.text || String(a.result_preview || "（没有留下结果）")}
               {text?.truncated && "\n…（已截断）"}
@@ -408,7 +408,7 @@ function Block({ label, text, error }: { label: string; text: string; error?: bo
         {label}
       </div>
       <pre
-        className="mono max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-[6px] p-2 text-[length:var(--fs-sm)]"
+        className="mono max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-[var(--radius-xs)] p-2 text-[length:var(--fs-sm)]"
         style={{ background: "var(--color-surface)", color: error ? "var(--color-err)" : undefined }}
       >
         {text}

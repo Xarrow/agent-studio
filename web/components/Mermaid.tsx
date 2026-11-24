@@ -38,7 +38,7 @@ export function Mermaid({ code }: { code: string }) {
   const markerId = `m-arrow-${uid}`;
 
   return (
-    <div className="my-2 overflow-x-auto rounded-[10px] border p-2" style={{ borderColor: "var(--color-border)" }}>
+    <div className="my-2 overflow-x-auto rounded-[var(--radius-md)] border p-2" style={{ borderColor: "var(--color-border)" }}>
       <svg
         viewBox={`0 0 ${width} ${height}`}
         width="100%"

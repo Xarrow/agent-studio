@@ -53,7 +53,7 @@ function FileWriteBlock({ file, compact }: { file: FileAction; compact?: boolean
   const targets = fileTargets(file);
   const extra = targets.filter((t) => !(t.path === file.path && t.op === file.op));
   return (
-    <div className="rounded-[10px] px-2.5 py-2" style={{ background: "var(--color-surface)" }}>
+    <div className="rounded-[var(--radius-md)] px-2.5 py-2" style={{ background: "var(--color-surface)" }}>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <span className="text-[length:var(--fs-base)] font-medium">
           {file.agent ? `${file.agent} 要` : "助手要"}

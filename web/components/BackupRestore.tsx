@@ -231,7 +231,7 @@ export function BackupRestore() {
       {/* 一行一个功能：数量 + 说明 + 单独导出（导入走上面那个"导入"按钮，包里的分区自动识别） */}
       {sections?.length ? (
         <div
-          className="divide-y rounded-[8px] border"
+          className="divide-y rounded-[var(--radius-sm)] border"
           style={{ borderColor: "var(--color-border)" }}
         >
           {sections.map((s) => (
@@ -282,7 +282,7 @@ export function BackupRestore() {
 
       {result ? (
         <div
-          className="rounded-[8px] border px-3 py-2 text-[length:var(--fs-sm)]"
+          className="rounded-[var(--radius-sm)] border px-3 py-2 text-[length:var(--fs-sm)]"
           style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
         >
           <div>

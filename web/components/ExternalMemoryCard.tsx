@@ -278,7 +278,7 @@ export function ExternalMemoryCard() {
           </details>
 
           {/* 接口字段映射（高级）——默认收起：标准契约开箱可用，只有对方字段名不一样才需要 */}
-          <details className="rounded-[8px] border border-[var(--color-border)]">
+          <details className="rounded-[var(--radius-sm)] border border-[var(--color-border)]">
             <summary data-tap-lg className="min-h-[36px] cursor-pointer px-3 py-2 text-[length:var(--fs-sm)]">
               接口字段映射（高级）
             </summary>

@@ -176,7 +176,7 @@ export function SkillsStrip({
           {all.length > 8 && (
             <div className="px-2 pt-2 shrink-0">
               <input
-                className="input h-8 text-[length:var(--fs-base)]"
+                className="input text-[length:var(--fs-base)]"
                 placeholder="搜索技能"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
@@ -201,7 +201,7 @@ export function SkillsStrip({
                   style={{ opacity: busyId === s.id ? 0.5 : 1 }}
                 >
                   <span
-                    className="shrink-0 mt-[3px] w-[15px] h-[15px] rounded-[4px] grid place-items-center border"
+                    className="shrink-0 mt-[3px] w-[15px] h-[15px] rounded-[var(--radius-xs)] grid place-items-center border"
                     style={{
                       borderColor: on ? "var(--color-accent)" : "var(--color-border-strong, var(--color-border))",
                       background: on ? "var(--color-accent)" : "transparent",

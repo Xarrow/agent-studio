@@ -147,7 +147,7 @@ export function FileChip({
           src={url}
           alt=""
           draggable={false}
-          className="h-5 w-5 shrink-0 rounded-[3px] object-cover"
+          className="h-5 w-5 shrink-0 rounded-[var(--radius-xs)] object-cover"
           style={{ border: "1px solid var(--color-border)" }}
         />
       ) : (
@@ -278,13 +278,13 @@ function TablePreview({ text, path }: { text: string; path: string }) {
   const body = rows.slice(1);
   if (rows.length === 0) {
     return (
-      <p className="rounded-[10px] border p-3 text-[length:var(--fs-base)]" style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}>
+      <p className="rounded-[var(--radius-md)] border p-3 text-[length:var(--fs-base)]" style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}>
         这个表是空的。
       </p>
     );
   }
   return (
-    <div className="max-h-[52dvh] overflow-auto rounded-[10px] border" style={{ borderColor: "var(--color-border)" }}>
+    <div className="max-h-[52dvh] overflow-auto rounded-[var(--radius-md)] border" style={{ borderColor: "var(--color-border)" }}>
       <table className="w-full border-collapse text-[length:var(--fs-base)]">
         <thead className="sticky top-0" style={{ background: "var(--color-surface-2)" }}>
           <tr>
@@ -576,7 +576,7 @@ export function FileDialog({
         {/* 预览 */}
         <div className="mt-3">
           {!url ? (
-            <p className="rounded-[10px] border p-3 text-[length:var(--fs-base)]" style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}>
+            <p className="rounded-[var(--radius-md)] border p-3 text-[length:var(--fs-base)]" style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}>
               这个文件不在本会话的工作目录里，页面里不能预览或下载 —— 可以复制路径去别处用。
             </p>
           ) : kind === "image" ? (
@@ -584,7 +584,7 @@ export function FileDialog({
             <img
               src={url}
               alt={file.name ?? baseName(file.path)}
-              className="max-h-[52dvh] w-full rounded-[10px] border object-contain"
+              className="max-h-[52dvh] w-full rounded-[var(--radius-md)] border object-contain"
               style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
             />
           ) : kind === "pdf" ? (
@@ -592,12 +592,12 @@ export function FileDialog({
             <iframe
               src={url}
               title={file.name ?? baseName(file.path)}
-              className="h-[62dvh] w-full rounded-[10px] border"
+              className="h-[62dvh] w-full rounded-[var(--radius-md)] border"
               style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
             />
           ) : kind === "audio" ? (
             <div
-              className="rounded-[10px] border p-4"
+              className="rounded-[var(--radius-md)] border p-4"
               style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
             >
               <audio src={url} controls className="w-full" />
@@ -627,12 +627,12 @@ export function FileDialog({
                     playsInline
                     preload="metadata"
                     onError={() => setVideoFailed(true)}
-                    className="max-h-[62dvh] w-full rounded-[10px] border"
+                    className="max-h-[62dvh] w-full rounded-[var(--radius-md)] border"
                     style={{ borderColor: "var(--color-border)", background: "var(--color-text)" }}
                   />
                   {(warn || converting || convErr) && (
                     <div
-                      className="mt-2 rounded-[10px] border p-2.5 text-[length:var(--fs-base)]"
+                      className="mt-2 rounded-[var(--radius-md)] border p-2.5 text-[length:var(--fs-base)]"
                       style={{ borderColor: warn ? "var(--color-warn)" : "var(--color-border)" }}
                     >
                       {warn ? (
@@ -666,7 +666,7 @@ export function FileDialog({
             })()
           ) : isServerParsedKind(kind) ? (
             parsing ? (
-              <div className="rounded-[10px] border p-3" style={{ borderColor: "var(--color-border)" }}>
+              <div className="rounded-[var(--radius-md)] border p-3" style={{ borderColor: "var(--color-border)" }}>
                 {[88, 70, 44].map((w) => (
                   <div
                     key={w}
@@ -677,7 +677,7 @@ export function FileDialog({
               </div>
             ) : parseErr ? (
               <p
-                className="rounded-[10px] border p-3 text-[length:var(--fs-base)] leading-relaxed"
+                className="rounded-[var(--radius-md)] border p-3 text-[length:var(--fs-base)] leading-relaxed"
                 style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
               >
                 {parseErr}
@@ -701,7 +701,7 @@ export function FileDialog({
               src={url}
               sandbox=""
               title={file.name ?? baseName(file.path)}
-              className="h-[52dvh] w-full rounded-[10px] border"
+              className="h-[52dvh] w-full rounded-[var(--radius-md)] border"
               style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
             />
           ) : kind === "xml" ? (
@@ -709,7 +709,7 @@ export function FileDialog({
           ) : isTextishKind(kind) ? (
             state === "loading" ? (
               /* 骨架：三条灰条，比一句"读取中…"更像在加载（也避免文字跳一下） */
-              <div className="rounded-[10px] border p-3" style={{ borderColor: "var(--color-border)" }}>
+              <div className="rounded-[var(--radius-md)] border p-3" style={{ borderColor: "var(--color-border)" }}>
                 {[92, 74, 48].map((w) => (
                   <div
                     key={w}
@@ -719,7 +719,7 @@ export function FileDialog({
                 ))}
               </div>
             ) : state === "fail" ? (
-              <p className="rounded-[10px] border p-3 text-[length:var(--fs-base)]" style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}>
+              <p className="rounded-[var(--radius-md)] border p-3 text-[length:var(--fs-base)]" style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}>
                 读不出内容（文件可能已被删掉或移走），可以直接下载试试。
               </p>
             ) : (
@@ -727,7 +727,7 @@ export function FileDialog({
                 {/* Markdown：默认渲染成排版（看文档就该像文档），可一键切源码 */}
                 {kind === "markdown" && !rawView ? (
                   <div
-                    className="max-h-[52dvh] overflow-auto rounded-[10px] border p-4"
+                    className="max-h-[52dvh] overflow-auto rounded-[var(--radius-md)] border p-4"
                     style={{ borderColor: "var(--color-border)" }}
                   >
                     <Markdown text={text || ""} />
@@ -777,7 +777,7 @@ export function FileDialog({
               </div>
             )
           ) : (
-            <p className="rounded-[10px] border p-3 text-[length:var(--fs-base)]" style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}>
+            <p className="rounded-[var(--radius-md)] border p-3 text-[length:var(--fs-base)]" style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}>
               这类文件（{extOf(file.path) || "无扩展名"}）不能在页面里预览 —— 下载后用本机程序打开。
               能直接看的有：图片、PDF、音频、视频、Word/Excel/PPT（含 xlsx/docx/pptx）、思维导图（xmind）、
               Markdown、CSV/TSV、JSON/XML、代码与纯文本。

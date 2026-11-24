@@ -48,7 +48,7 @@ export function SourceBadge({ runId, count }: { runId: string; count: number }) 
         data-tap
         onClick={() => void toggle()}
         aria-expanded={open}
-        className="flex min-h-[28px] items-center gap-1.5 rounded-[8px] px-1.5 text-[length:var(--fs-sm)] max-md:h-[44px]"
+        className="flex min-h-[28px] items-center gap-1.5 rounded-[var(--radius-sm)] px-1.5 text-[length:var(--fs-sm)] max-md:h-[44px]"
         style={{ color: "var(--color-muted)" }}
       >
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -72,7 +72,7 @@ export function SourceBadge({ runId, count }: { runId: string; count: number }) 
 
       {open && (
         <div
-          className="mt-1 overflow-y-auto rounded-[10px] border"
+          className="mt-1 overflow-y-auto rounded-[var(--radius-md)] border"
           style={{
             borderColor: "var(--color-border)",
             background: "var(--color-surface)",
@@ -97,7 +97,7 @@ export function SourceBadge({ runId, count }: { runId: string; count: number }) 
               target="_blank"
               rel="noreferrer noopener"
               data-tap
-              className="flex min-h-[36px] items-baseline gap-2 rounded-[8px] px-2.5 py-1.5 hover:bg-[var(--bg-hover)] max-md:min-h-[44px]"
+              className="flex min-h-[36px] items-baseline gap-2 rounded-[var(--radius-sm)] px-2.5 py-1.5 hover:bg-[var(--bg-hover)] max-md:min-h-[44px]"
               style={{ borderColor: "var(--color-border)" }}
               title={it.snippet || it.url}
             >

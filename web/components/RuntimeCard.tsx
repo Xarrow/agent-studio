@@ -49,7 +49,7 @@ function Row({
 }) {
   return (
     <div
-      className="rounded-[8px] border px-3 py-2.5"
+      className="rounded-[var(--radius-sm)] border px-3 py-2.5"
       style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
     >
       <div className="flex flex-wrap items-center gap-2">
@@ -204,7 +204,7 @@ export function RuntimeCard() {
 
       {job ? (
         <div
-          className="rounded-[8px] border px-3 py-2"
+          className="rounded-[var(--radius-sm)] border px-3 py-2"
           style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
         >
           <div className="flex items-center gap-2">

@@ -393,7 +393,7 @@ export function ModelPicker({
             <div
               id="model-options"
               role="listbox"
-              className="absolute left-0 right-0 z-30 mt-1 max-h-[240px] overflow-y-auto rounded-[10px] border shadow-lg"
+              className="absolute left-0 right-0 z-30 mt-1 max-h-[240px] overflow-y-auto rounded-[var(--radius-md)] border shadow-lg"
               style={{ background: "var(--color-surface)", borderColor: "var(--color-border)" }}
             >
               {filtered.length === 0 ? (

@@ -183,7 +183,7 @@ export function AgentConfigDrawer({
             data-tap
             onClick={onClose}
             aria-label="关闭配置"
-            className="flex h-10 w-10 items-center justify-center rounded-[10px] hover:bg-[var(--color-surface-2)]"
+            className="flex h-10 w-10 items-center justify-center rounded-[var(--radius-md)] hover:bg-[var(--color-surface-2)]"
             style={{ color: "var(--color-muted)" }}
           >
             ✕
@@ -357,7 +357,7 @@ export function AgentConfigDrawer({
             </div>
           )}
 
-          <details className="rounded-[10px]" style={{ background: "var(--color-surface-2)" }}>
+          <details className="rounded-[var(--radius-md)]" style={{ background: "var(--color-surface-2)" }}>
             <summary
               data-tap
               className="flex min-h-[40px] cursor-pointer items-center gap-2 px-3 text-[length:var(--fs-base)]"

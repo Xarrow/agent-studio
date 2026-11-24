@@ -565,7 +565,7 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
                 actions={<IconChevronRight size={16} className="text-[var(--color-muted)]" />}
               >
                 <span
-                  className="grid h-8 w-8 shrink-0 place-items-center rounded-[9px]"
+                  className="grid h-8 w-8 shrink-0 place-items-center rounded-[var(--radius-sm)]"
                   style={{ background: g.bg, color: g.fg }}
                 >
                   <g.Ico size={16} />
@@ -726,21 +726,21 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
               {/* 真正的 Markdown 渲染 —— 之前是 <pre> 裸文本，最丑的一点 */}
               {!String(detail.content ?? "").trim() ? (
                 <div
-                  className="rounded-[10px] border p-6 text-center text-[length:var(--fs-base)]"
+                  className="rounded-[var(--radius-md)] border p-6 text-center text-[length:var(--fs-base)]"
                   style={{ borderColor: "var(--color-border)", color: "var(--color-text-3)" }}
                 >
                   暂无详情文档（这个技能的 SKILL.md 读不到或为空）
                 </div>
               ) : detailMode === "src" ? (
                 <pre
-                  className="mono max-h-[60vh] overflow-auto rounded-[10px] border p-4 text-[length:var(--fs-sm)] leading-relaxed"
+                  className="mono max-h-[60vh] overflow-auto rounded-[var(--radius-md)] border p-4 text-[length:var(--fs-sm)] leading-relaxed"
                   style={{ borderColor: "var(--color-border)", background: "var(--color-bg)", whiteSpace: "pre-wrap" }}
                 >
                   {detail.content}
                 </pre>
               ) : (
                 <div
-                  className="max-h-[60vh] overflow-auto rounded-[10px] border p-4"
+                  className="max-h-[60vh] overflow-auto rounded-[var(--radius-md)] border p-4"
                   style={{ borderColor: "var(--color-border)", background: "var(--color-bg)" }}
                 >
                   <Markdown text={stripFrontmatter(detail.content ?? "")} />
@@ -1085,7 +1085,7 @@ function ImportDialog({
                               }
                             >
                               <span
-                                className="mt-[3px] w-3.5 h-3.5 rounded-[4px] border shrink-0 flex items-center justify-center"
+                                className="mt-[3px] w-3.5 h-3.5 rounded-[var(--radius-xs)] border shrink-0 flex items-center justify-center"
                                 style={{
                                   borderColor: on ? "var(--color-accent)" : "var(--color-border)",
                                   background: on ? "var(--color-accent)" : "transparent",

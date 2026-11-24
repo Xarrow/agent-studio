@@ -184,7 +184,7 @@ export function CommandPalette() {
       onClick={() => setOpen(false)}
     >
       <div
-        className="w-[min(620px,92vw)] overflow-hidden rounded-[14px] shadow-2xl"
+        className="w-[min(620px,92vw)] overflow-hidden rounded-[var(--radius-lg)] shadow-2xl"
         style={{ background: "var(--color-surface)" }}
         onClick={(e) => e.stopPropagation()}
         role="dialog"

@@ -283,7 +283,7 @@ export default function KnowledgePage() {
       </div>
 
       {pasteOpen ? (
-        <div className="mb-3 rounded-[12px] p-3" style={{ background: "var(--color-surface-2)" }}>
+        <div className="mb-3 rounded-[var(--radius-lg)] p-3" style={{ background: "var(--color-surface-2)" }}>
           <div className="flex flex-wrap items-center gap-2">
             <input
               className="input h-9 w-48 text-[length:var(--fs-sm)]"
@@ -343,7 +343,7 @@ export default function KnowledgePage() {
       ) : null}
 
       {urlOpen ? (
-        <div className="mb-3 rounded-[12px] p-3" style={{ background: "var(--color-surface-2)" }}>
+        <div className="mb-3 rounded-[var(--radius-lg)] p-3" style={{ background: "var(--color-surface-2)" }}>
           <div className="flex flex-wrap items-center gap-2">
             <input
               className="input h-9 min-w-0 flex-1 text-[length:var(--fs-sm)]"
@@ -595,7 +595,7 @@ function DocDetail({
                 </>
               )}
               <input
-                className="input h-7 w-24 text-[length:var(--fs-xs)]"
+                className="input w-24 text-[length:var(--fs-xs)]"
                 placeholder="加标签"
                 value={tagDraft}
                 onChange={(e) => setTagDraft(e.target.value)}
@@ -669,7 +669,7 @@ function DocDetail({
         </div>
 
         {/* 试打：用文档自己的话试，不让用户造词 */}
-        <div className="rounded-[10px] px-2.5 py-2" style={{ background: "var(--color-surface-2)" }}>
+        <div className="rounded-[var(--radius-md)] px-2.5 py-2" style={{ background: "var(--color-surface-2)" }}>
           <div className="mb-1 text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
             试打检索
           </div>
@@ -689,7 +689,7 @@ function DocDetail({
               </button>
             ))}
             <input
-              className="input h-7 w-40 text-[length:var(--fs-xs)]"
+              className="input w-40 text-[length:var(--fs-xs)]"
               placeholder="或输入文档里出现过的词…"
               value={probeQ}
               onChange={(e) => setProbeQ(e.target.value)}
@@ -721,7 +721,7 @@ function DocDetail({
                 </div>
               ) : (
                 probeRes.items.slice(0, 3).map((h) => (
-                  <div key={h.id} className="rounded-[8px] px-2 py-1 text-[length:var(--fs-sm)]" style={{ background: "var(--color-surface-3)" }}>
+                  <div key={h.id} className="rounded-[var(--radius-sm)] px-2 py-1 text-[length:var(--fs-sm)]" style={{ background: "var(--color-surface-3)" }}>
                     <span className="mr-1">{h.name}</span>
                     <span style={{ color: "var(--color-text-3)" }}>
                       {h.matched_path === "both" ? "词+义" : h.matched_path === "vector" ? "语义" : "关键词"}
@@ -887,7 +887,7 @@ function CategoriesSection({
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-2">
           <input
-            className="input h-8 w-44 text-[length:var(--fs-sm)]"
+            className="input w-44 text-[length:var(--fs-sm)]"
             placeholder="新建分类名"
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -928,7 +928,7 @@ function CategoriesSection({
         </div>
 
         {firstLoad && ordered.length === 0 ? (
-          <div className="h-14 animate-pulse rounded-[10px]" style={{ background: "var(--color-surface-2)" }} />
+          <div className="h-14 animate-pulse rounded-[var(--radius-md)]" style={{ background: "var(--color-surface-2)" }} />
         ) : ordered.length === 0 ? (
           <Empty title="还没有分类" hint="先建一个「合同」「技术文档」这样的顶级分类，上传时就能直接归进去" />
         ) : (
@@ -990,7 +990,7 @@ function CategoriesSection({
                   </span>
                   {editing?.id === c.id ? (
                     <input
-                      className="input h-7 w-36 text-[length:var(--fs-sm)]"
+                      className="input w-36 text-[length:var(--fs-sm)]"
                       value={editing.name}
                       onChange={(e) => setEditing({ id: c.id, name: e.target.value })}
                       aria-label="分类新名字"
@@ -1048,7 +1048,7 @@ function TagsSection({
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-2">
           <input
-            className="input h-8 w-44 text-[length:var(--fs-sm)]"
+            className="input w-44 text-[length:var(--fs-sm)]"
             placeholder="新建标签"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
@@ -1077,7 +1077,7 @@ function TagsSection({
         </div>
 
         {firstLoad && usage.length === 0 ? (
-          <div className="h-14 animate-pulse rounded-[10px]" style={{ background: "var(--color-surface-2)" }} />
+          <div className="h-14 animate-pulse rounded-[var(--radius-md)]" style={{ background: "var(--color-surface-2)" }} />
         ) : usage.length === 0 ? (
           <Empty
             title="还没有标签"
@@ -1241,7 +1241,7 @@ function StorageSection({
     >
       <div className="space-y-2">
         {firstLoad && storages.length === 0 ? (
-          <div className="h-14 animate-pulse rounded-[10px]" style={{ background: "var(--color-surface-2)" }} />
+          <div className="h-14 animate-pulse rounded-[var(--radius-md)]" style={{ background: "var(--color-surface-2)" }} />
         ) : (
           <div className="-mx-3">
             <RowList>
@@ -1316,7 +1316,7 @@ function StorageSection({
         )}
 
         {adding ? (
-          <div className="rounded-[10px] p-3" style={{ background: "var(--color-surface-2)" }}>
+          <div className="rounded-[var(--radius-md)] p-3" style={{ background: "var(--color-surface-2)" }}>
             <div className="mb-2 flex flex-wrap items-center gap-2">
               <Select
                 compact
@@ -1330,7 +1330,7 @@ function StorageSection({
                 onChange={(v) => setForm((f) => ({ ...f, type: v as "local" | "s3" }))}
               />
               <input
-                className="input h-8 w-40 text-[length:var(--fs-sm)]"
+                className="input w-40 text-[length:var(--fs-sm)]"
                 placeholder="名字（如 公司 OSS）"
                 value={form.name}
                 onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
@@ -1358,7 +1358,7 @@ function StorageSection({
                 ] as const).map(([key, label]) => (
                   <input
                     key={key}
-                    className="input h-8 text-[length:var(--fs-sm)]"
+                    className="input text-[length:var(--fs-sm)]"
                     placeholder={label}
                     type={key === "secret_access_key" ? "password" : "text"}
                     value={form[key]}
@@ -1368,7 +1368,7 @@ function StorageSection({
               </div>
             ) : (
               <input
-                className="input h-8 w-full text-[length:var(--fs-sm)]"
+                className="input w-full text-[length:var(--fs-sm)]"
                 placeholder="本地根目录（如 /data/knowledge）"
                 value={form.root}
                 onChange={(e) => setForm((f) => ({ ...f, root: e.target.value }))}
@@ -1377,7 +1377,7 @@ function StorageSection({
 
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <input
-                className="input h-8 w-56 text-[length:var(--fs-sm)]"
+                className="input w-56 text-[length:var(--fs-sm)]"
                 placeholder="路径模板"
                 value={form.path_template}
                 onChange={(e) => setForm((f) => ({ ...f, path_template: e.target.value }))}
@@ -1617,7 +1617,7 @@ function RecallSection() {
     <button
       type="button"
       onClick={onClick}
-      className="flex-1 rounded-[10px] px-3 py-2 text-left"
+      className="flex-1 rounded-[var(--radius-md)] px-3 py-2 text-left"
       style={{ background: "var(--color-surface-2)", minWidth: 132 }}
     >
       <div className="text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
@@ -1637,7 +1637,7 @@ function RecallSection() {
       title="召回情况"
     >
       {!loaded && !stats ? (
-        <div className="h-16 animate-pulse rounded-[10px]" style={{ background: "var(--color-surface-2)" }} />
+        <div className="h-16 animate-pulse rounded-[var(--radius-md)]" style={{ background: "var(--color-surface-2)" }} />
       ) : !stats ? (
         <div className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-3)" }}>
           暂时读不到统计数据
@@ -1678,7 +1678,7 @@ function RecallSection() {
                 </div>
               ) : (
                 probeResult.items.map((h) => (
-                  <div key={h.id} className="rounded-[8px] px-2 py-1.5" style={{ background: "var(--color-surface-2)" }}>
+                  <div key={h.id} className="rounded-[var(--radius-sm)] px-2 py-1.5" style={{ background: "var(--color-surface-2)" }}>
                     <div className="flex items-center gap-1.5 text-[length:var(--fs-sm)]">
                       <span className="truncate">{h.name}</span>
                       <span
@@ -1722,7 +1722,7 @@ function RecallSection() {
           </div>
 
           {cov && cov.length > 0 ? (
-            <div className="rounded-[10px] px-2.5 py-2" style={{ background: "var(--color-surface-2)" }}>
+            <div className="rounded-[var(--radius-md)] px-2.5 py-2" style={{ background: "var(--color-surface-2)" }}>
               <div className="mb-1 text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
                 哪些助手能查到知识库
               </div>
@@ -1820,7 +1820,7 @@ function TrashSection({ onChanged }: { onChanged: () => Promise<void> | void }) 
       defaultOpen={false}
     >
       {items === null ? (
-        <div className="h-14 animate-pulse rounded-[10px]" style={{ background: "var(--color-surface-2)" }} />
+        <div className="h-14 animate-pulse rounded-[var(--radius-md)]" style={{ background: "var(--color-surface-2)" }} />
       ) : items.length === 0 ? (
         <div className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-3)" }}>
           回收站是空的
@@ -1914,7 +1914,7 @@ function PipelineSection({
   }, [load]);
 
   if (rows === null) {
-    return <div className="h-16 animate-pulse rounded-[12px]" style={{ background: "var(--color-surface-2)" }} />;
+    return <div className="h-16 animate-pulse rounded-[var(--radius-lg)]" style={{ background: "var(--color-surface-2)" }} />;
   }
   if (rows.length === 0) return null;
 
@@ -2161,7 +2161,7 @@ function DocumentFlow({
     <div className="space-y-2">
       {/* 投放卡：与文档卡同一形态，流程第一格就是"把它拖进来" */}
       <div
-        className="flex flex-wrap items-center gap-3 rounded-[12px] px-3 py-3"
+        className="flex flex-wrap items-center gap-3 rounded-[var(--radius-lg)] px-3 py-3"
         style={{ background: drag ? "color-mix(in srgb, var(--color-accent) 12%, var(--color-surface-2))" : "var(--color-surface-2)" }}
         onDragOver={(e) => {
           e.preventDefault();
@@ -2175,7 +2175,7 @@ function DocumentFlow({
         }}
       >
         <span
-          className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] text-[16px]"
+          className="grid h-9 w-9 shrink-0 place-items-center rounded-[var(--radius-md)] text-[16px]"
           style={{ background: "var(--color-surface)", color: "var(--color-accent)" }}
           aria-hidden
         >
@@ -2227,7 +2227,7 @@ function DocumentFlow({
       </Toolbar>
 
       {graphFilter ? (
-        <div className="flex flex-wrap items-center gap-2 rounded-[10px] px-2.5 py-1.5 text-[length:var(--fs-sm)]"
+        <div className="flex flex-wrap items-center gap-2 rounded-[var(--radius-md)] px-2.5 py-1.5 text-[length:var(--fs-sm)]"
              style={{ background: "color-mix(in srgb, var(--color-accent) 10%, transparent)" }}>
           <span>图谱筛选：{graphFilter.kind === "doc" ? "文档" : graphFilter.kind === "tag" ? "标签" : graphFilter.kind === "skill" ? "技能" : graphFilter.kind === "category" ? "分类" : "助手"} · {graphFilter.label}</span>
           <span style={{ color: "var(--color-text-3)" }}>{shownDocs.length} 份</span>
@@ -2239,7 +2239,7 @@ function DocumentFlow({
 
       {loading ? (
         <div
-          className="rounded-[12px] px-3 py-6 text-center text-[length:var(--fs-base)]"
+          className="rounded-[var(--radius-lg)] px-3 py-6 text-center text-[length:var(--fs-base)]"
           style={{ background: "var(--color-surface)", color: "var(--color-muted)" }}
         >
           正在读取文档清单…
@@ -2258,7 +2258,7 @@ function DocumentFlow({
         return (
           <div
             key={d.id}
-            className="overflow-hidden rounded-[12px]"
+            className="overflow-hidden rounded-[var(--radius-lg)]"
             style={{ background: "var(--color-surface)" }}
           >
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 px-3 py-2.5">

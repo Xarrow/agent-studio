@@ -98,7 +98,7 @@ export function CodeBlock({
   }
 
   return (
-    <div className="my-2 rounded-[8px] border overflow-hidden" style={{ borderColor: "var(--color-border)" }}>
+    <div className="my-2 rounded-[var(--radius-sm)] border overflow-hidden" style={{ borderColor: "var(--color-border)" }}>
       {/* 工具条：语言名 + 行数 + 动作（常驻可见，不藏 hover） */}
       <div
         className="flex items-center gap-2 px-2.5 py-1 border-b text-[length:var(--fs-sm)]"

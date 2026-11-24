@@ -236,7 +236,7 @@ function SvgBlock({ code }: { code: string }) {
     );
   }
   return (
-    <div className="my-2 rounded-[10px] border" style={{ borderColor: "var(--color-border)" }}>
+    <div className="my-2 rounded-[var(--radius-md)] border" style={{ borderColor: "var(--color-border)" }}>
       <div className="flex items-center gap-2 border-b px-2.5 py-1.5" style={{ borderColor: "var(--color-border)" }}>
         <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
           图（SVG）
@@ -350,7 +350,7 @@ function MarkdownBody({ text, chat = false }: { text: string; chat?: boolean }) 
       i += 2; // 表头 + 分隔行
       while (i < lines.length && /^\s*\|/.test(lines[i])) rows.push(splitRow(lines[i++]));
       blocks.push(
-        <div key={`t${k++}`} className="my-2 overflow-x-auto rounded-[8px] border" style={{ borderColor: "var(--color-border)" }}>
+        <div key={`t${k++}`} className="my-2 overflow-x-auto rounded-[var(--radius-sm)] border" style={{ borderColor: "var(--color-border)" }}>
           <table className="w-full text-[length:var(--fs-sm)]" style={{ borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ background: "var(--color-surface-2)" }}>
@@ -585,7 +585,7 @@ function SourceCard({ source }: { source: Record<string, unknown> }) {
   return (
     <div
       data-source-card
-      className="mt-2.5 rounded-[10px] px-3 py-2 text-[length:var(--fs-sm)] leading-relaxed"
+      className="mt-2.5 rounded-[var(--radius-md)] px-3 py-2 text-[length:var(--fs-sm)] leading-relaxed"
       style={{ background: "var(--color-surface-2)", color: "var(--color-text-2)" }}
     >
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">

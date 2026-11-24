@@ -173,11 +173,11 @@ export function AutoRunDialog({
       onClick={onClose}
     >
       <div
-        className="df-card flex max-h-[92dvh] w-full max-w-[560px] flex-col overflow-hidden rounded-b-none rounded-t-[14px] border sm:my-auto sm:max-h-[88dvh] sm:rounded-[12px]"
+        className="df-card flex max-h-[92dvh] w-full max-w-[560px] flex-col overflow-hidden rounded-b-none rounded-t-[14px] border sm:my-auto sm:max-h-[88dvh] sm:rounded-[var(--radius-lg)]"
         style={{ background: "var(--color-surface)", borderColor: "var(--color-border)" }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-2 flex items-center gap-2 rounded-[9px] bg-[var(--color-surface-2)] px-3 py-2.5">
+        <div className="mb-2 flex items-center gap-2 rounded-[var(--radius-sm)] bg-[var(--color-surface-2)] px-3 py-2.5">
           <span className="text-[length:var(--fs-lg)] font-semibold">自动运行</span>
           <span className="min-w-0 flex-1 truncate text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
             {wfName} —— 不用你在界面前，它也能按点跑
@@ -185,7 +185,7 @@ export function AutoRunDialog({
           <button
             type="button"
             onClick={onClose}
-            className="shrink-0 rounded-[6px] px-2 py-1 text-[length:var(--fs-base)]"
+            className="shrink-0 rounded-[var(--radius-xs)] px-2 py-1 text-[length:var(--fs-base)]"
             style={{ color: "var(--color-muted)" }}
             title="关闭"
           >
@@ -205,7 +205,7 @@ export function AutoRunDialog({
               onChange={(e) => setTask(e.target.value)}
               rows={2}
               placeholder="例如：汇总昨天新增的归档，列成清单"
-              className="mt-1 w-full rounded-[8px] border px-2.5 py-2 text-[length:var(--fs-base)] outline-none"
+              className="mt-1 w-full rounded-[var(--radius-sm)] border px-2.5 py-2 text-[length:var(--fs-base)] outline-none"
               style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
             />
           </label>
@@ -254,7 +254,7 @@ export function AutoRunDialog({
                       key={d.key}
                       type="button"
                       onClick={() => toggleDay(d.key)}
-                      className="rounded-[6px] border px-2 py-1 text-[length:var(--fs-sm)]"
+                      className="rounded-[var(--radius-xs)] border px-2 py-1 text-[length:var(--fs-sm)]"
                       style={{
                         borderColor: on ? "var(--color-accent)" : "var(--color-border)",
                         background: on ? "color-mix(in srgb, var(--color-accent) 12%, transparent)" : "var(--color-surface)",
@@ -272,7 +272,7 @@ export function AutoRunDialog({
           {/* ── 现状：下次 / 上次 ──────────────────────────────────── */}
           {auto && (
             <div
-              className="rounded-[8px] border px-3 py-2 text-[length:var(--fs-sm)]"
+              className="rounded-[var(--radius-sm)] border px-3 py-2 text-[length:var(--fs-sm)]"
               style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
             >
               <div>
@@ -306,13 +306,13 @@ export function AutoRunDialog({
                 readOnly
                 value={hookUrl}
                 onFocus={(e) => e.currentTarget.select()}
-                className="mono min-w-0 flex-1 rounded-[8px] border px-2 py-1.5 text-[length:var(--fs-sm)]"
+                className="mono min-w-0 flex-1 rounded-[var(--radius-sm)] border px-2 py-1.5 text-[length:var(--fs-sm)]"
                 style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
               />
               <button
                 type="button"
                 onClick={() => void copy()}
-                className="shrink-0 rounded-[8px] border px-2.5 py-1.5 text-[length:var(--fs-sm)]"
+                className="shrink-0 rounded-[var(--radius-sm)] border px-2.5 py-1.5 text-[length:var(--fs-sm)]"
                 style={{ borderColor: "var(--color-border)" }}
               >
                 {copied ? "已复制" : "复制"}
@@ -320,7 +320,7 @@ export function AutoRunDialog({
               <button
                 type="button"
                 onClick={() => void rotate()}
-                className="shrink-0 rounded-[8px] border px-2.5 py-1.5 text-[length:var(--fs-sm)]"
+                className="shrink-0 rounded-[var(--radius-sm)] border px-2.5 py-1.5 text-[length:var(--fs-sm)]"
                 style={{
                   borderColor: armRotate ? "var(--color-err)" : "var(--color-border)",
                   color: armRotate ? "var(--color-err)" : undefined,
@@ -343,7 +343,7 @@ export function AutoRunDialog({
           <button
             type="button"
             onClick={onClose}
-            className="ml-auto rounded-[8px] border px-3 py-1.5 text-[length:var(--fs-sm)]"
+            className="ml-auto rounded-[var(--radius-sm)] border px-3 py-1.5 text-[length:var(--fs-sm)]"
             style={{ borderColor: "var(--color-border)" }}
           >
             取消
@@ -352,7 +352,7 @@ export function AutoRunDialog({
             type="button"
             onClick={() => void save()}
             disabled={saving}
-            className="rounded-[8px] px-3.5 py-1.5 text-[length:var(--fs-sm)] font-medium disabled:opacity-50"
+            className="rounded-[var(--radius-sm)] px-3.5 py-1.5 text-[length:var(--fs-sm)] font-medium disabled:opacity-50"
             style={{ background: "var(--color-accent)", color: "var(--color-accent-fg)" }}
           >
             {saving ? "保存中…" : "保存"}

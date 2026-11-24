@@ -851,7 +851,7 @@ export function RunsPanel() {
               aria-expanded={menu}
               title="按时间清理 / 清空"
               onClick={() => setMenu((v) => !v)}
-              className="min-h-[36px] min-w-[40px] rounded-[8px] border px-2.5 text-[length:var(--fs-base)] hover:bg-[var(--color-surface-2)]"
+              className="min-h-[36px] min-w-[40px] rounded-[var(--radius-sm)] border px-2.5 text-[length:var(--fs-base)] hover:bg-[var(--color-surface-2)]"
               style={{ borderColor: "var(--color-border)" }}
             >
               ⋯
@@ -859,7 +859,7 @@ export function RunsPanel() {
             {menu && (
               <div
                 role="menu"
-                className="absolute right-0 z-30 mt-1 w-[190px] overflow-hidden rounded-[10px] border shadow-lg"
+                className="absolute right-0 z-30 mt-1 w-[190px] overflow-hidden rounded-[var(--radius-md)] border shadow-lg"
                 style={{ background: "var(--color-surface)", borderColor: "var(--color-border)" }}
               >
                 <button
@@ -1042,7 +1042,7 @@ export function RunsPanel() {
               type="button"
               data-tap
               onClick={() => setTicketsOpen((v) => !v)}
-              className="flex h-[32px] items-center gap-1 whitespace-nowrap rounded-[8px] border px-2 text-[length:var(--fs-sm)] max-md:h-[44px]"
+              className="flex h-[32px] items-center gap-1 whitespace-nowrap rounded-[var(--radius-sm)] border px-2 text-[length:var(--fs-sm)] max-md:h-[44px]"
               style={{
                 borderColor: "var(--color-warn)",
                 color: "var(--color-warn)",
@@ -1057,7 +1057,7 @@ export function RunsPanel() {
 
           {ticketsOpen && tickets && (
             <div
-              className="w-full basis-full max-md:order-9 rounded-[10px] border p-2 text-[length:var(--fs-sm)]"
+              className="w-full basis-full max-md:order-9 rounded-[var(--radius-md)] border p-2 text-[length:var(--fs-sm)]"
               style={{
                 borderColor: "var(--color-border)",
                 background: "var(--color-surface)",
@@ -1076,7 +1076,7 @@ export function RunsPanel() {
                 return (
                   <div
                     key={tk.id}
-                    className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[8px] px-1.5 py-1.5"
+                    className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[var(--radius-sm)] px-1.5 py-1.5"
                     style={{ borderColor: "var(--color-border)" }}
                   >
                     <span
@@ -1132,7 +1132,7 @@ export function RunsPanel() {
               type="button"
               data-tap
               onClick={() => setAttentionOpen((v) => !v)}
-              className="flex h-[32px] items-center gap-1 rounded-[8px] border px-2 text-[length:var(--fs-sm)] max-md:h-[44px]"
+              className="flex h-[32px] items-center gap-1 rounded-[var(--radius-sm)] border px-2 text-[length:var(--fs-sm)] max-md:h-[44px]"
               style={{
                 borderColor: attention.counts.hitl > 0 ? "var(--color-err)" : "var(--color-warn)",
                 color: attention.counts.hitl > 0 ? "var(--color-err)" : "var(--color-warn)",
@@ -1150,13 +1150,13 @@ export function RunsPanel() {
 
           {attentionOpen && attention && (
             <div
-              className="w-full basis-full max-md:order-9 rounded-[10px] border p-2 text-[length:var(--fs-sm)]"
+              className="w-full basis-full max-md:order-9 rounded-[var(--radius-md)] border p-2 text-[length:var(--fs-sm)]"
               style={{ borderColor: "var(--color-border)", background: "var(--color-surface)", minWidth: 0, width: "100%" }}
             >
               {attention.items.map((it) => (
                 <div
                   key={`${it.kind}-${it.run_id}`}
-                  className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[8px] px-1.5 py-1.5"
+                  className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[var(--radius-sm)] px-1.5 py-1.5"
                   style={{ borderColor: "var(--color-border)" }}
                 >
                   <span
@@ -1229,7 +1229,7 @@ export function RunsPanel() {
 
       {/* ── 列表：一段行列表，桌面手机同一套（响应式换行） ─────────────── */}
       <div
-        className="overflow-hidden rounded-[12px] border"
+        className="overflow-hidden rounded-[var(--radius-lg)] border"
         style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
       >
         {!loaded ? (
@@ -1265,7 +1265,7 @@ export function RunsPanel() {
           <>
             {/* 表头：只在桌面出现（窄屏靠每行自身的小字标签） */}
             <div
-              className="hidden items-center gap-2.5 rounded-t-[9px] px-3 py-2 text-[length:var(--fs-sm)] lg:flex"
+              className="hidden items-center gap-2.5 rounded-t-[var(--radius-sm)] px-3 py-2 text-[length:var(--fs-sm)] lg:flex"
               style={{ color: "var(--color-muted)", background: "var(--color-surface-2)" }}
             >
               <input
@@ -1304,7 +1304,7 @@ export function RunsPanel() {
                         toggleRow(it);
                       }
                     }}
-                    className="mb-0.5 flex min-h-[52px] cursor-pointer flex-wrap items-center gap-x-2.5 gap-y-1 rounded-[9px] px-3 py-2.5 hover:bg-[var(--bg-hover)]"
+                    className="mb-0.5 flex min-h-[52px] cursor-pointer flex-wrap items-center gap-x-2.5 gap-y-1 rounded-[var(--radius-sm)] px-3 py-2.5 hover:bg-[var(--bg-hover)]"
                     style={{
                       background: isOpen ? "color-mix(in srgb, var(--color-accent) 5%, transparent)" : undefined,
                     }}
@@ -1460,7 +1460,7 @@ export function RunsPanel() {
                       下面的 `d.llmCalls` 会把这个页面整片打崩（实测崩过一次）。 */}
                   {isOpen && d && (
                     <div
-                      className="mb-0.5 rounded-[9px] px-3 pb-3 pt-2.5"
+                      className="mb-0.5 rounded-[var(--radius-sm)] px-3 pb-3 pt-2.5"
                       style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
                     >
                       {it.summary && (
@@ -1494,7 +1494,7 @@ export function RunsPanel() {
                           {d.orch.steps.map((st, i) => (
                             <div key={st.run_id} className="space-y-1.5">
                               <div
-                                className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[6px] border px-2 py-1 text-[length:var(--fs-sm)]"
+                                className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[var(--radius-xs)] border px-2 py-1 text-[length:var(--fs-sm)]"
                                 style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
                               >
                                 <span className="mono w-5 shrink-0" style={{ color: "var(--color-muted)" }}>
@@ -1532,7 +1532,7 @@ export function RunsPanel() {
                           ))}
                           {typeof d.orch.output?.content === "string" && d.orch.output.content.trim() ? (
                             <div
-                              className="whitespace-pre-wrap break-words rounded-[6px] border p-2 text-[length:var(--fs-sm)]"
+                              className="whitespace-pre-wrap break-words rounded-[var(--radius-xs)] border p-2 text-[length:var(--fs-sm)]"
                               style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
                             >
                               {String(d.orch.output.content)}
@@ -1573,7 +1573,7 @@ export function RunsPanel() {
                               <div
                                 key={f.index}
                                 className={
-                                  "flex items-center gap-2 rounded-[6px] border px-2 py-1 text-[length:var(--fs-sm)]"
+                                  "flex items-center gap-2 rounded-[var(--radius-xs)] border px-2 py-1 text-[length:var(--fs-sm)]"
                                   + (it.kind === "chat" && d?.turnRunId === f.run_id
                                     ? " ring-1"
                                     : "")
@@ -1640,7 +1640,7 @@ export function RunsPanel() {
                                 {f.status !== "ok" && (
                                   <button
                                     type="button"
-                                    className="shrink-0 rounded-[5px] px-1.5 py-[1px] text-[length:var(--fs-sm)]"
+                                    className="shrink-0 rounded-[var(--radius-xs)] px-1.5 py-[1px] text-[length:var(--fs-sm)]"
                                     style={{
                                       color: retryArm === f.index + ":" + it.id ? "var(--color-err)" : "var(--color-accent)",
                                       border: `1px solid color-mix(in srgb, ${retryArm === f.index + ":" + it.id ? "var(--color-err)" : "var(--color-accent)"} 34%, transparent)`,
@@ -1670,11 +1670,11 @@ export function RunsPanel() {
                           这里不再摆一条空的。 */}
                       {d?.orch ? null : (
                         <div
-                          className="rounded-[8px] border"
+                          className="rounded-[var(--radius-sm)] border"
                           style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
                         >
                           <div
-                            className="flex items-center gap-2 rounded-[8px] px-2.5 py-1.5"
+                            className="flex items-center gap-2 rounded-[var(--radius-sm)] px-2.5 py-1.5"
                             style={{ borderColor: "var(--color-border)" }}
                           >
                             <span className="text-[length:var(--fs-sm)] font-medium" style={{ color: "var(--color-muted)" }}>
@@ -1725,7 +1725,7 @@ export function RunsPanel() {
                   type="button"
                   onClick={() => void loadMore()}
                   disabled={moreBusy}
-                  className="min-h-[36px] rounded-[8px] border px-3 disabled:opacity-50"
+                  className="min-h-[36px] rounded-[var(--radius-sm)] border px-3 disabled:opacity-50"
                   style={{ borderColor: "var(--color-border)" }}
                 >
                   {moreBusy ? "加载中…" : `加载更多（还有 ${Math.max(serverTotal - items.length, 0)} 条）`}

@@ -393,7 +393,7 @@ export default function CredentialsPage() {
                   >
                     {/* 密钥本体：默认掩码，点了才显示 —— 明文只在这个区块里出现 */}
                     <div
-                      className="rounded-[10px] border p-3"
+                      className="rounded-[var(--radius-md)] border p-3"
                       style={{ borderColor: "var(--color-border)", background: "var(--color-bg)" }}
                     >
                       <div className="mb-1.5 flex items-center justify-between">
@@ -432,7 +432,7 @@ export default function CredentialsPage() {
                     {/* 测试结果：成功给绿的框 + 延迟 + 可用模型；失败给红的框 + 原始错误 */}
                     {r ? (
                       <div
-                        className="mt-3 rounded-[10px] border p-3 text-[length:var(--fs-base)]"
+                        className="mt-3 rounded-[var(--radius-md)] border p-3 text-[length:var(--fs-base)]"
                         style={{ borderColor: r.ok ? "var(--color-ok)" : "var(--color-err)" }}
                       >
                         {r.ok ? (
@@ -499,7 +499,7 @@ export default function CredentialsPage() {
             {byProvider.map(({ meta, items }) => (
               <div
                 key={meta.name}
-                className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-[9px] px-1.5 py-2.5 hover:bg-[var(--bg-hover)]"
+                className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-[var(--radius-sm)] px-1.5 py-2.5 hover:bg-[var(--bg-hover)]"
               >
                 <span className="min-w-0 flex-1 basis-[220px]">
                   <span className="block text-[length:var(--fs-md)] font-medium">{meta.display_name}</span>

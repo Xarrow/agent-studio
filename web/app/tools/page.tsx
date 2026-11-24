@@ -504,7 +504,7 @@ export default function ToolsPage() {
                 aria-labelledby="attach-title"
                 onClick={(e) => e.stopPropagation()}
               >
-                <div className="rounded-[9px] px-3 py-3" style={{ borderColor: "var(--color-border)" }}>
+                <div className="rounded-[var(--radius-sm)] px-3 py-3" style={{ borderColor: "var(--color-border)" }}>
                   <h2 id="attach-title" className="text-[length:var(--fs-lg)] font-semibold">
                     把选中的 {picked.size} 个工具加到哪个助手？
                   </h2>
@@ -523,7 +523,7 @@ export default function ToolsPage() {
                         type="button"
                         disabled={attachBusy}
                         onClick={() => void attachTo(a.id, a.name)}
-                        className="flex min-h-[38px] w-full flex-col items-start justify-center rounded-[8px] px-3 text-left hover:bg-[var(--color-surface-2)] disabled:opacity-50"
+                        className="flex min-h-[38px] w-full flex-col items-start justify-center rounded-[var(--radius-sm)] px-3 text-left hover:bg-[var(--color-surface-2)] disabled:opacity-50"
                       >
                         <span className="text-[length:var(--fs-md)]">{a.name}</span>
                         <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
@@ -545,7 +545,7 @@ export default function ToolsPage() {
           {/* 工具条一行：类型筛选（带计数）+ 两个动作 */}
           <Toolbar>
             <input
-              className="input h-8 w-[180px] shrink-0 text-[length:var(--fs-sm)]"
+              className="input w-[180px] shrink-0 text-[length:var(--fs-sm)]"
               placeholder="搜工具名 / 说明 / 参数"
               aria-label="搜索工具"
               value={query}
@@ -841,7 +841,7 @@ export default function ToolsPage() {
                         )}
                         {testOut[t.id] ? (
                           <pre
-                            className="mt-2.5 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-[8px] border p-2.5 text-[length:var(--fs-sm)]"
+                            className="mt-2.5 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-[var(--radius-sm)] border p-2.5 text-[length:var(--fs-sm)]"
                             style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
                           >
                             {testOut[t.id]}

@@ -118,10 +118,10 @@ export function LlmCallsPanel({
 
   return (
     <div
-      className="rounded-[8px] border"
+      className="rounded-[var(--radius-sm)] border"
       style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
     >
-      <div className="mb-1 rounded-[8px] bg-[var(--color-surface-2)] px-2.5 py-1.5">
+      <div className="mb-1 rounded-[var(--radius-sm)] bg-[var(--color-surface-2)] px-2.5 py-1.5">
         <span className="text-[length:var(--fs-sm)] font-medium" style={{ color: "var(--color-muted)" }}>
           {title ?? `模型请求（${calls.length} 次）`}
         </span>
@@ -197,7 +197,7 @@ export function LlmCallsPanel({
         {calls.map((c) => (
           <div
             key={c.id}
-            className="rounded-[8px] border px-2.5 py-2"
+            className="rounded-[var(--radius-sm)] border px-2.5 py-2"
             style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
           >
             <div className="flex items-center gap-2">

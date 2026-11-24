@@ -210,7 +210,7 @@ export function DelegationBlock({
         key={d.run_id}
         data-delegation
         data-status={d.status}
-        className="relative mb-0.5 rounded-[9px] hover:bg-[var(--bg-hover)]"
+        className="relative mb-0.5 rounded-[var(--radius-sm)] hover:bg-[var(--bg-hover)]"
         style={{
           borderColor: "var(--color-border)",
           // 失败的行整条淡红：折叠态就要能看出来，不能点开才知道
@@ -346,7 +346,7 @@ export function DelegationBlock({
 
   return (
     <div
-      className={`rounded-[12px] text-[length:var(--fs-sm)] overflow-hidden ${className}`}
+      className={`rounded-[var(--radius-lg)] text-[length:var(--fs-sm)] overflow-hidden ${className}`}
       style={{
         border: "1px solid var(--color-border)",
         background: "color-mix(in srgb, var(--color-accent) 3%, var(--color-surface))",

@@ -125,7 +125,7 @@ export function FilePolicySettings() {
 
       {/* ── 危险模式 ─────────────────────────────────────────── */}
       <div
-        className="rounded-[10px] px-3 py-2.5"
+        className="rounded-[var(--radius-md)] px-3 py-2.5"
         style={{ background: danger ? "color-mix(in srgb, var(--color-err) 7%, var(--color-surface-2))" : "var(--color-surface-2)" }}
       >
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -207,7 +207,7 @@ export function FilePolicySettings() {
           <Empty title="还没有文件操作记录" hint="助手读写工作区之外的文件（含被拒绝、被拦下的）之后，这里会出现一条" />
         ) : (
           /* 一行一条：时间 · 助手 · 操作 · 路径 · 结果。分隔用底色差，不用 1px 线 */
-          <div className="rounded-[10px] overflow-hidden" style={{ background: "var(--color-surface-2)" }}>
+          <div className="rounded-[var(--radius-md)] overflow-hidden" style={{ background: "var(--color-surface-2)" }}>
             {rows.map((r, i) => {
               const tone = RESULT_TONE[r.result] || RESULT_TONE.allowed;
               return (

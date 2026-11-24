@@ -671,7 +671,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 <span className="max-md:hidden">← Agents</span>
               </Link>
             )}
-            <h1 className="text-[21px] font-semibold tracking-tight mt-1 truncate max-md:mt-0">
+            <h1 className="mt-1 truncate text-[22px] font-semibold tracking-tight max-md:mt-0 max-md:text-[20px]">
               {agent.name}
             </h1>
           </div>
@@ -760,7 +760,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
               信息默认可见 vs 页面干净之间的取舍 —— 错误摘要只占一行，折叠时
               用户也始终知道"最近一次失败了"，展开才给完整原因。 */}
           {lastRunOpen && ov.lastRun?.status === "error" && (
-            <div className="mt-2 text-[length:var(--fs-sm)] leading-relaxed rounded-[8px] px-3 py-2 max-w-[560px]"
+            <div className="mt-2 text-[length:var(--fs-sm)] leading-relaxed rounded-[var(--radius-sm)] px-3 py-2 max-w-[560px]"
               style={{ background: "color-mix(in srgb, var(--color-err) 8%, transparent)" }}>
               <div className="flex items-center gap-2 flex-wrap">
                 <span style={{ color: STATUS_STYLE.error }}>最近一次执行失败</span>
@@ -1561,7 +1561,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
             </div>
 
             {/* 专业参数收进折叠区：普通用户不该先面对看不懂的旋钮 */}
-            <details className="rounded-[10px]" style={{ background: "var(--color-surface-2)" }}>
+            <details className="rounded-[var(--radius-md)]" style={{ background: "var(--color-surface-2)" }}>
               <summary
                 data-tap
                 className="flex min-h-[40px] cursor-pointer items-center gap-2 px-3 text-[length:var(--fs-base)]"
