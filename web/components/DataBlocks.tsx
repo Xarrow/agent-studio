@@ -45,7 +45,7 @@ function Shell({
   const [copied, setCopied] = useState(false);
   return (
     <div className="my-2 overflow-hidden rounded-lg border border-[var(--color-border)]">
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1.5">
+      <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[8px] bg-[var(--color-surface-2)] px-2.5 py-1.5">
         <span className="text-[12px] font-medium text-[var(--color-text)]">{title}</span>
         {hint ? <span className="text-[12px] text-[var(--color-muted)]">{hint}</span> : null}
         <div className="ml-auto flex items-center gap-1">
@@ -184,7 +184,7 @@ export function CsvBlock({ code, delimiter }: { code: string; delimiter: string 
               {table.header.map((h, i) => (
                 <th
                   key={i}
-                  className="whitespace-nowrap border-b border-[var(--color-border)] px-2.5 py-1.5 text-left font-medium text-[var(--color-text)]"
+                  className="whitespace-nowrap px-2.5 py-1.5 text-left font-medium text-[var(--color-text)]"
                 >
                   {h}
                 </th>
@@ -195,7 +195,7 @@ export function CsvBlock({ code, delimiter }: { code: string; delimiter: string 
             {table.rows.map((r, ri) => (
               <tr key={ri} className={ri % 2 ? "bg-[var(--color-surface-2)]/60" : ""}>
                 {r.map((c, ci) => (
-                  <td key={ci} className="border-b border-[var(--color-border)] px-2.5 py-1.5 align-top text-[var(--color-text)]">
+                  <td key={ci} className="px-2.5 py-1.5 align-top text-[var(--color-text)]">
                     {c}
                   </td>
                 ))}

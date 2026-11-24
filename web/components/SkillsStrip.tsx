@@ -160,7 +160,7 @@ export function SkillsStrip({
             top: "calc(100% + 6px)",
           }}
         >
-          <div className="flex items-center justify-between px-2.5 h-9 border-b border-[var(--color-border)] shrink-0">
+          <div className="flex items-center justify-between px-2.5 h-9 shrink-0">
             <span className="text-[11.5px] font-medium" style={{ color: "var(--color-muted)" }}>
               技能 · 已挂 {mountedIds.length}
             </span>

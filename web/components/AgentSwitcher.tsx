@@ -284,7 +284,7 @@ export function AgentSwitcher({
               outline: "none",
             }}
           >
-            <div className="flex items-center justify-between px-3 h-10 border-b border-[var(--color-border)] shrink-0">
+            <div className="flex items-center justify-between px-3 h-10 shrink-0">
               <span className="text-[12px] font-medium" style={{ color: "var(--color-muted)" }}>
                 选择助手 · {agents.length}
               </span>

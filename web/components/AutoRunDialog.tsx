@@ -177,7 +177,7 @@ export function AutoRunDialog({
         style={{ background: "var(--color-surface)", borderColor: "var(--color-border)" }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-2 border-b px-4 py-3" style={{ borderColor: "var(--color-border)" }}>
+        <div className="mb-2 flex items-center gap-2 rounded-[9px] bg-[var(--color-surface-2)] px-3 py-2.5">
           <span className="text-[15px] font-semibold">自动运行</span>
           <span className="min-w-0 flex-1 truncate text-[12px]" style={{ color: "var(--color-muted)" }}>
             {wfName} —— 不用你在界面前，它也能按点跑

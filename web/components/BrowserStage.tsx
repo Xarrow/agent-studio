@@ -87,7 +87,7 @@ function ChromeBar({
   const waiting = control?.status === "waiting_user";
   return (
     <div
-      className="flex items-center gap-2 px-2.5 py-1.5 border-b"
+      className="flex items-center gap-2 rounded-[8px] bg-[var(--color-surface-2)] px-2.5 py-1.5"
       style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
     >
       <button

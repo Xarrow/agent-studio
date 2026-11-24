@@ -334,7 +334,7 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
       {detail && (
         <div className="mb-3 rounded-[10px] border" style={{ borderColor: "var(--color-border)" }}>
           <div
-            className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2"
+            className="mb-1 flex flex-wrap items-center justify-between gap-2 rounded-[9px] bg-[var(--color-surface-2)] px-3 py-2"
             style={{ borderColor: "var(--color-border)" }}
           >
             <div className="text-[12px]">
@@ -352,7 +352,7 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
             </div>
           </div>
           {(detail.results || []).map((r) => (
-            <div key={r.index} className="border-b last:border-b-0" style={{ borderColor: "var(--color-border)" }}>
+            <div key={r.index} className="mb-0.5 rounded-[9px] hover:bg-[var(--bg-hover)]">
               <button
                 type="button"
                 onClick={() => setOpenCase(openCase === r.index ? null : r.index)}

@@ -379,7 +379,7 @@ export function RunPanel({
           </div>
         )}
 
-        <div className="flex items-center gap-2 mb-3 flex-wrap pb-3 border-b border-[var(--color-border)]">
+        <div className="mb-3 flex items-center gap-2 flex-wrap pb-1">
           <span className="text-[12px] text-[var(--color-muted)] whitespace-nowrap">会话</span>
           <Select
             ariaLabel="会话"

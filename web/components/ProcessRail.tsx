@@ -47,7 +47,7 @@ export function ProcessRail({
       style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
     >
       <div
-        className="px-3 py-2 border-b flex items-center gap-2"
+        className="mx-1 mb-1 flex items-center gap-2 rounded-[9px] bg-[var(--color-surface-2)] px-2.5 py-2"
         style={{ borderColor: "var(--color-border)" }}
       >
         <span className="text-[12px] font-medium">浏览器</span>

@@ -290,7 +290,7 @@ function TablePreview({ text, path }: { text: string; path: string }) {
           <tr>
             {head.map((h, i) => (
               // eslint-disable-next-line react/no-array-index-key
-              <th key={i} className="whitespace-nowrap border-b px-2 py-1.5 text-left font-medium" style={{ borderColor: "var(--color-border)" }}>
+              <th key={i} className="whitespace-nowrap px-2 py-1.5 text-left font-medium">
                 {h || "—"}
               </th>
             ))}
@@ -302,7 +302,7 @@ function TablePreview({ text, path }: { text: string; path: string }) {
             <tr key={i} className="hover:bg-[var(--color-surface-2)]">
               {head.map((_, j) => (
                 // eslint-disable-next-line react/no-array-index-key
-                <td key={j} className="max-w-[320px] truncate border-b px-2 py-1" style={{ borderColor: "var(--color-border)" }} title={r[j] ?? ""}>
+                <td key={j} className="max-w-[320px] truncate px-2 py-1" title={r[j] ?? ""}>
                   {r[j] ?? ""}
                 </td>
               ))}

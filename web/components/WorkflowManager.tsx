@@ -221,7 +221,7 @@ export function WorkflowManager({
           className={
             variant === "page"
               ? "flex flex-wrap items-baseline gap-x-2.5 gap-y-1 pb-3"
-              : "flex items-center gap-3 border-b px-4 py-3"
+              : "flex items-center gap-3 rounded-[9px] px-3 py-3"
           }
           style={{ borderColor: "var(--color-border)" }}
         >
@@ -332,7 +332,7 @@ export function WorkflowManager({
             <button
               type="button"
               onClick={() => setSel(ALL)}
-              className="flex w-full flex-col gap-0.5 border-b px-3 py-2 text-left hover:bg-[var(--color-surface-2)]"
+              className="mb-0.5 flex w-full flex-col gap-0.5 rounded-[9px] px-3 py-2 text-left hover:bg-[var(--bg-hover)]"
               style={{
                 borderColor: "var(--color-border)",
                 background: sel === ALL ? "color-mix(in srgb, var(--color-accent) 7%, transparent)" : undefined,
@@ -357,7 +357,7 @@ export function WorkflowManager({
                   key={w.id}
                   type="button"
                   onClick={() => setSel(w.id)}
-                  className="flex w-full flex-col gap-0.5 border-b px-3 py-2 text-left hover:bg-[var(--color-surface-2)]"
+                  className="mb-0.5 flex w-full flex-col gap-0.5 rounded-[9px] px-3 py-2 text-left hover:bg-[var(--bg-hover)]"
                   style={{
                     borderColor: "var(--color-border)",
                     background: on ? "color-mix(in srgb, var(--color-accent) 7%, transparent)" : undefined,
@@ -393,7 +393,7 @@ export function WorkflowManager({
                 没跑过就是一片空白，用户看成了"点开流程显示不全"。
                 这里把流程本身摊开：几步、每步是谁、怎么连的（与画布同一套编号 + 助手名）。 */}
             {cur && (
-              <div className="border-b px-3 py-3" style={{ borderColor: "var(--color-border)" }}>
+              <div className="px-3 py-3">
                 <div className="mb-2 flex items-center gap-2">
                   <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
                     这条流程
@@ -439,7 +439,7 @@ export function WorkflowManager({
                 {/* 就地展开：这一步的 输入/思考/调用/回复（与画布点 agent 卡同一套分色） */}
                 {openStep && openStep.startsWith(`${runs[0]?.id ?? ""}:`) && stepDetail && (
                   <div className="mt-2 rounded-[8px] border" style={{ borderColor: "var(--color-border)" }}>
-                    <div className="flex items-center gap-2 border-b px-2 py-1" style={{ borderColor: "var(--color-border)" }}>
+                    <div className="mb-1 flex items-center gap-2 rounded-[8px] bg-[var(--color-surface-2)] px-2 py-1.5">
                       <span className="text-[12px] font-medium" style={{ color: "var(--color-muted)" }}>
                         这一步的执行详情
                       </span>
@@ -482,7 +482,7 @@ export function WorkflowManager({
               </div>
             )}
             {renaming && cur && (
-              <div className="flex items-center gap-2 border-b px-4 py-2" style={{ borderColor: "var(--color-border)" }}>
+              <div className="mb-1.5 flex items-center gap-2 rounded-[8px] bg-[var(--color-surface-2)] px-3 py-2">
                 <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
                   新名字
                 </span>

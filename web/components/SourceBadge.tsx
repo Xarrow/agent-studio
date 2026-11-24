@@ -97,7 +97,7 @@ export function SourceBadge({ runId, count }: { runId: string; count: number }) 
               target="_blank"
               rel="noreferrer noopener"
               data-tap
-              className="flex min-h-[36px] items-baseline gap-2 border-b px-3 py-1.5 last:border-b-0 max-md:min-h-[44px]"
+              className="flex min-h-[36px] items-baseline gap-2 rounded-[8px] px-2.5 py-1.5 hover:bg-[var(--bg-hover)] max-md:min-h-[44px]"
               style={{ borderColor: "var(--color-border)" }}
               title={it.snippet || it.url}
             >

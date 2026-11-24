@@ -62,7 +62,7 @@ const KIND_HINT: Record<ActivityItem["kind"], string> = {
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex gap-3 py-1.5 border-b border-[var(--color-border)] last:border-0">
+    <div className="mb-0.5 flex gap-3 rounded-[8px] px-1.5 py-1.5 hover:bg-[var(--bg-hover)]">
       <div className="w-20 shrink-0 text-[12px] text-[var(--color-muted)]">{label}</div>
       <div className="flex-1 min-w-0 text-[12px] break-words">{children}</div>
     </div>

@@ -121,7 +121,7 @@ export function LlmCallsPanel({
       className="rounded-[8px] border"
       style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
     >
-      <div className="border-b px-2.5 py-1.5" style={{ borderColor: "var(--color-border)" }}>
+      <div className="mb-1 rounded-[8px] bg-[var(--color-surface-2)] px-2.5 py-1.5">
         <span className="text-[12px] font-medium" style={{ color: "var(--color-muted)" }}>
           {title ?? `模型请求（${calls.length} 次）`}
         </span>
