@@ -709,7 +709,7 @@ export function RunsPanel() {
           onChange={(v) => setKind(v as (typeof KIND_TABS)[number]["key"])}
         />
         <div
-          className="hidden items-center gap-0.5 rounded-[10px] border p-0.5 md:flex"
+          className="hidden items-center gap-0.5 rounded-[var(--radius-sm)] bg-[var(--color-surface-2)] p-0.5 md:flex"
           style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
         >
           {KIND_TABS.map((t) => {
@@ -720,7 +720,7 @@ export function RunsPanel() {
                 key={t.key}
                 type="button"
                 onClick={() => setKind(t.key)}
-                className="min-h-[36px] whitespace-nowrap rounded-[7px] px-2.5 text-[length:var(--fs-sm)] transition-colors"
+                className="min-h-[36px] whitespace-nowrap rounded-[var(--radius-sm)] px-2.5 text-[length:var(--fs-sm)] transition-colors"
                 style={{
                   background: on ? "var(--color-accent)" : undefined,
                   color: on ? "var(--color-accent-contrast)" : "var(--color-muted)",

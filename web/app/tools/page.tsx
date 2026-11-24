@@ -812,7 +812,7 @@ export default function ToolsPage() {
                                 return (
                                   <label
                                     key={aid}
-                                    className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-[7px] border px-2.5 text-[length:var(--fs-sm)]"
+                                    className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-[var(--radius-sm)] border px-2.5 text-[length:var(--fs-sm)]"
                                     style={{
                                       borderColor: on ? "var(--color-accent)" : "var(--color-border)",
                                       background: on ? "color-mix(in srgb, var(--color-accent) 8%, transparent)" : "transparent",

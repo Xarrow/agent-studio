@@ -143,7 +143,7 @@ function PathList({
         {paths.map((p) => (
           <span
             key={p}
-            className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[length:var(--fs-sm)] mono"
+            className="inline-flex items-center gap-1 rounded-[var(--radius-xs)] bg-[var(--color-surface-3)] px-2 py-0.5 text-[length:var(--fs-sm)] mono"
             style={{ background: `color-mix(in srgb, ${color} 10%, transparent)`, color }}
           >
             {p}
@@ -244,7 +244,7 @@ export function PermissionScope({
   const setRows = (next: PermRule[]) => onChange(fromRows(mode, next));
 
   return (
-    <div className="mt-4 pt-4 border-t border-[var(--color-border)]">
+    <div className="mt-3 rounded-[var(--radius-md)] bg-[var(--color-surface-2)] p-3">
       <div className="flex items-center gap-2 mb-2">
         <span className="text-[length:var(--fs-sm)] font-medium">权限</span>
         <Hint text="范围内直接执行，不用每次问">
@@ -280,7 +280,7 @@ export function PermissionScope({
       )}
 
       {/* 平台黑名单：所有助手共享，任何模式都拦 */}
-      <div className="mt-4 pt-3 border-t border-[var(--color-border)]">
+      <div className="mt-3 rounded-[var(--radius-md)] bg-[var(--color-surface-2)] p-3">
         <div className="flex items-center gap-2 mb-1">
           <span className="text-[length:var(--fs-sm)] font-medium">平台黑名单</span>
           <Hint text="所有助手共享；任何权限模式下都直接拦截，助手无法绕过。匹配方式是命令里包含这些字样。">
@@ -296,7 +296,7 @@ export function PermissionScope({
                 {denyList.map((p) => (
                   <span
                     key={p}
-                    className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[length:var(--fs-sm)] mono"
+                    className="inline-flex items-center gap-1 rounded-[var(--radius-xs)] bg-[var(--color-surface-3)] px-2 py-0.5 text-[length:var(--fs-sm)] mono"
                     style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)" }}
                   >
                     {p}
@@ -429,7 +429,7 @@ export function PermissionScope({
       {/* 文件范围：默认只有会话目录。可读比可写窄 —— 越界读会停下来问一次；
           凭据位置（/root/.hermes、.env、私钥）不在任何范围里，加进来也碰不到。 */}
       {guardConf && onGuardChange && (
-        <div className="mt-4 pt-3 border-t border-[var(--color-border)]">
+        <div className="mt-3 rounded-[var(--radius-md)] bg-[var(--color-surface-2)] p-3">
           <div className="flex items-center gap-2 mb-1">
             <span className="text-[length:var(--fs-sm)] font-medium">文件范围</span>
             <Hint text="默认只有这个会话自己的工作目录。加进来的目录算它的额外地盘；不在这里的，读之前会停下来问你一次。">

@@ -277,7 +277,7 @@ export function Select({
           color: current ? "var(--color-text)" : "var(--color-text-3)",
         }}
       >
-        <span className="min-w-0 flex-1 truncate text-[length:var(--fs-sm)]">
+        <span className="min-w-0 flex-1 truncate text-[length:var(--fs-base)]">
           {current?.label ?? placeholder}
         </span>
         <svg

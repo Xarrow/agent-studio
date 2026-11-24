@@ -197,7 +197,7 @@ export function AgentSwitcher({
         }
       >
         <span
-          className="shrink-0 grid place-items-center w-[26px] h-[26px] rounded-[7px] text-[length:var(--fs-base)] font-semibold"
+          className="shrink-0 grid place-items-center w-[26px] h-[26px] rounded-[var(--radius-sm)] text-[length:var(--fs-base)] font-semibold"
           style={{
             background: "color-mix(in srgb, var(--color-accent) 12%, transparent)",
             color: "var(--color-accent)",

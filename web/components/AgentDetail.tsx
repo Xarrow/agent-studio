@@ -65,13 +65,24 @@ function withDefaults(d: AgentDefinition | null | undefined): AgentDefinition {
 function Fold({ title, summary, defaultOpen = false, children }: { title: string; summary?: ReactNode; defaultOpen?: boolean; children: ReactNode }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <section className="card mb-4 overflow-hidden">
-      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center gap-2 px-4 py-3 text-left">
-        <span className="text-[length:var(--fs-md)] font-medium">{title}</span>
-        {summary && <span className="truncate text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>{summary}</span>}
-        <span className="ml-auto shrink-0 text-[length:var(--fs-sm)]" style={{ color: "var(--color-accent)" }}>{open ? "收起" : "展开"}</span>
+    <section className="mb-3 overflow-hidden rounded-[var(--radius-lg)]" style={{ background: "var(--color-surface)" }}>
+      {/* 段头与 kit.Section 同一套：13px/500 + 32px 行高 + hover 底色，不再有 border-t */}
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-[var(--bg-hover)]"
+      >
+        <span className="text-[length:var(--fs-base)] font-medium">{title}</span>
+        {summary && (
+          <span className="truncate text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-3)" }}>
+            {summary}
+          </span>
+        )}
+        <span className="ml-auto shrink-0 text-[length:var(--fs-sm)]" style={{ color: "var(--color-accent)" }}>
+          {open ? "收起" : "展开"}
+        </span>
       </button>
-      {open && <div className="border-t px-4 py-3" style={{ borderColor: "var(--color-border)" }}>{children}</div>}
+      {open && <div className="px-3 pb-3 pt-0.5">{children}</div>}
     </section>
   );
 }
@@ -654,7 +665,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 href="/agents"
                 title="返回 Agents 列表"
                 aria-label="返回 Agents 列表"
-                className="inline-flex min-h-[36px] items-center text-[length:var(--fs-sm)] text-[var(--color-muted)] max-md:-ml-2 max-md:w-9 max-md:shrink-0 max-md:justify-center max-md:rounded-[7px] lg:min-h-0"
+                className="inline-flex min-h-[36px] items-center text-[length:var(--fs-sm)] text-[var(--color-muted)] max-md:-ml-2 max-md:w-9 max-md:shrink-0 max-md:justify-center max-md:rounded-[var(--radius-sm)] lg:min-h-0"
               >
                 <span className="md:hidden">←</span>
                 <span className="max-md:hidden">← Agents</span>
@@ -712,7 +723,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
               与其让人白改一通，不如把"它能干什么、怎么调、去哪管"一句话摆出来。 */}
           {def.runtime === "a2a" && (
             <div
-              className="mt-2.5 rounded-[10px] border px-3 py-2 text-[length:var(--fs-sm)] leading-relaxed max-w-[720px]"
+              className="mt-2.5 max-w-[720px] rounded-[var(--radius-md)] bg-[var(--color-surface-2)] px-3 py-2 text-[length:var(--fs-sm)] leading-relaxed"
               style={{
                 borderColor: "color-mix(in srgb, var(--color-accent) 28%, transparent)",
                 background: "color-mix(in srgb, var(--color-accent) 6%, transparent)",
@@ -1086,7 +1097,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 onChange={(v) => patch({ role: v as "worker" | "orchestrator" })}
               />
               {def.role === "orchestrator" && (
-                <div className="mt-2 rounded-[8px] border p-2.5" style={{ borderColor: "var(--color-border)" }}>
+                <div className="mt-2 rounded-[var(--radius-sm)] bg-[var(--color-surface-2)] p-2.5">
                   {/* 两行解释常驻 ✗ → 收进 ?（内容一字未删 ✓ 只是不再每次都占视觉） */}
                   <Hint text="编排者自带四件事：分析 → 管上下文 → 验证 → 归纳" />
                   <textarea
@@ -1311,7 +1322,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
             {/* 模型与运行时并进同一张「定义」卡：两者回答的是同一件事
                 「这个助手是谁、拿什么跑」。原先是两张卡、模型那节还默认收起 ——
                 改个模型要先展开一次，多一道门。 */}
-            <div id="sec-model" className="mt-1 scroll-mt-28 border-t pt-3.5 border-[var(--color-border)]">
+            <div id="sec-model" className="mt-3 scroll-mt-28 rounded-[var(--radius-md)] bg-[var(--color-surface-2)] p-3">
               <h3 className="text-[length:var(--fs-base)] font-medium mb-2.5">模型与运行时</h3>
             <div className="flex items-center justify-between">
               {caps && <span className="tag">{caps.display_name}</span>}
@@ -1339,7 +1350,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
               {/* 工作目录 —— **紧挨着权限放**：目录就是权限的边界，
                   "工作目录内直接放行"指的就是它，两者分开说得再清楚也容易脱节 */}
               <div
-                className="mt-4 rounded-[10px] border p-3"
+                className="mt-3 rounded-[var(--radius-md)] bg-[var(--color-surface-2)] p-3"
                 style={{ borderColor: "var(--color-border)" }}
               >
                 <div className="flex items-center gap-1.5">

@@ -302,7 +302,7 @@ export function RevisionHistory({
                           const long = r.before.length > 240 || r.after.length > 240;
                           const showFull = fullKey === k;
                           return (
-                            <div key={k} className="rounded-[7px] border p-2" style={{ borderColor: "var(--color-border)" }}>
+                            <div key={k} className="rounded-[var(--radius-sm)] border p-2" style={{ borderColor: "var(--color-border)" }}>
                               <div className="mb-1 flex flex-wrap items-center gap-2">
                                 <span className="text-[length:var(--fs-sm)] font-medium">{r.label}</span>
                                 {r.added?.length ? (

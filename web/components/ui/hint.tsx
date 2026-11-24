@@ -113,11 +113,11 @@ export function Hint({
         <span
           className="flex h-[16px] w-[16px] items-center justify-center rounded-full text-[10px] font-bold leading-none transition-colors"
           style={{
-            border: "1px solid color-mix(in srgb, var(--color-muted) 55%, transparent)",
-            color: "var(--color-muted)",
+            /* 不用 1px 描边画圈：实心底圆点，和全站"靠底色分层"一致 */
+            color: open ? "var(--color-accent)" : "var(--color-text-2)",
             background: open
-              ? "color-mix(in srgb, var(--color-accent) 12%, transparent)"
-              : "transparent",
+              ? "color-mix(in srgb, var(--color-accent) 16%, transparent)"
+              : "var(--color-surface-2)",
           }}
         >
           ?

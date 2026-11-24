@@ -293,7 +293,7 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
                 type="button"
                 title="删掉这一例"
                 onClick={() => setCases((cur) => (cur.length > 1 ? cur.filter((_, j) => j !== i) : [{ ...EMPTY }]))}
-                className="shrink-0 rounded-[7px] border px-1.5 py-1 text-[length:var(--fs-sm)]"
+                className="shrink-0 rounded-[var(--radius-sm)] border px-1.5 py-1 text-[length:var(--fs-sm)]"
                 style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
               >
                 ✕

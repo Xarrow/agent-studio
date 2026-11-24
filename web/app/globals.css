@@ -297,9 +297,9 @@ body {
             否则 iPhone 上一点输入框就会自动放大整个页面（用户会以为界面坏了）
    ========================================================================== */
 .card {
+  /* 与 kit.Section 同一套：无边框、圆角走令牌、靠底色与页面分开 */
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
 }
 .btn {
   display: inline-flex;
@@ -307,14 +307,17 @@ body {
   justify-content: center;
   gap: 6px;
   padding: 7px 14px;
-  border-radius: 7px;
-  font-size: 13px;
+  /* 圆角统一走令牌：控件（按钮 / 输入框 / 下拉）是同一个 --radius-sm，
+     之前按钮 7px、输入框 9px、下拉 8px，三种圆角并排看着"大小不一"。 */
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-base);
   font-weight: 500;
   /* 关键：不被 flex 容器挤压换行（否则"执行"两个字会竖排） */
   white-space: nowrap;
   flex-shrink: 0;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
+  border: 0;
+  /* 去边框后不能还是 surface（白底白页 = 隐形），用 surface-2 把按钮立起来 */
+  background: var(--color-surface-2);
   color: var(--color-text);
   cursor: pointer;
   /* 只过渡颜色类属性，布局属性（width/padding）永不参与 —— transition:all
@@ -323,7 +326,7 @@ body {
     border-color 0.12s ease, box-shadow 0.12s ease, opacity 0.12s ease;
 }
 .btn:hover {
-  border-color: var(--color-accent-dim);
+  background: var(--color-surface-3);
 }
 .btn-primary {
   background: var(--color-accent);
@@ -373,7 +376,7 @@ body {
 .input {
   width: 100%;
   padding: 8px 11px;
-  border-radius: 9px;
+  border-radius: var(--radius-sm);
   /* 不用边框：全站的分层靠底色差（surface / 2 / 3）+ 间距 + 圆角。
      1px 边框在手机上是"另一个系统的控件"感，也和卡片、列表行不是一套语言。 */
   border: 0;

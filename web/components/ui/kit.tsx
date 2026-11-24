@@ -75,7 +75,7 @@ export function Segmented<T extends string>({
   return (
     <div
       title={title}
-      className="flex items-center gap-0.5 rounded-[10px] border p-0.5"
+      className="flex items-center gap-0.5 rounded-[var(--radius-sm)] bg-[var(--color-surface-2)] p-0.5"
       style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
     >
       {options.map((o) => {
@@ -85,7 +85,7 @@ export function Segmented<T extends string>({
             key={o.key}
             type="button"
             onClick={() => onChange(o.key)}
-            className="min-h-[36px] whitespace-nowrap rounded-[7px] px-2.5 text-[length:var(--fs-sm)] transition-colors"
+            className="min-h-[32px] whitespace-nowrap rounded-[var(--radius-xs)] px-2.5 text-[length:var(--fs-base)] transition-colors"
             style={{
               background: on ? "var(--color-accent)" : undefined,
               color: on ? "#fff" : "var(--color-muted)",
@@ -447,8 +447,7 @@ export function Menu({
         aria-expanded={open}
         title={title}
         onClick={() => setOpen((v) => !v)}
-        className="min-h-[36px] rounded-[8px] border px-2.5 text-[length:var(--fs-base)] hover:bg-[var(--color-surface-2)]"
-        style={{ borderColor: "var(--color-border)" }}
+        className="min-h-[36px] rounded-[var(--radius-sm)] bg-[var(--color-surface-2)] px-2.5 text-[length:var(--fs-base)] hover:bg-[var(--color-surface-3)]"
       >
         {label}
       </button>
@@ -522,8 +521,8 @@ export function Section({
   const [open, setOpen] = useState(defaultOpen);
   return (
     <section
-      className="overflow-hidden rounded-[12px] border"
-      style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+      className="overflow-hidden rounded-[var(--radius-lg)]"
+      style={{ background: "var(--color-surface)" }}
     >
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 px-3 py-2.5">
         <button
@@ -532,7 +531,7 @@ export function Section({
           aria-expanded={open}
           className="flex min-h-[36px] min-w-0 flex-1 items-center gap-2 text-left"
         >
-          <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
+          <span className="text-[length:var(--fs-base)] font-medium" style={{ color: "var(--color-text-2)" }}>
             {open ? "▾" : "▸"}
           </span>
           <span className="min-w-0">

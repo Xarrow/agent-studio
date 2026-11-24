@@ -217,7 +217,7 @@ export function StoragePanel() {
               每个会话一个目录（sessions/<会话号>/）。这里只体检 + 清"没主的"：
               正常的清理走「删除会话」，那是用户的本意；这里兜的是残留。 */}
           <div
-            className="mt-4 pt-3 border-t"
+            className="mt-3 rounded-[var(--radius-md)] bg-[var(--color-surface-2)] p-3"
             style={{ borderColor: "var(--color-border)" }}
           >
             <div className="text-[length:var(--fs-base)] font-semibold">会话文件目录</div>
