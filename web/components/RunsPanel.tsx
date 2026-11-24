@@ -1076,7 +1076,7 @@ export function RunsPanel() {
                 return (
                   <div
                     key={tk.id}
-                    className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b py-1.5 last:border-b-0"
+                    className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[8px] px-1.5 py-1.5"
                     style={{ borderColor: "var(--color-border)" }}
                   >
                     <span
@@ -1156,7 +1156,7 @@ export function RunsPanel() {
               {attention.items.map((it) => (
                 <div
                   key={`${it.kind}-${it.run_id}`}
-                  className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b py-1.5 last:border-b-0"
+                  className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[8px] px-1.5 py-1.5"
                   style={{ borderColor: "var(--color-border)" }}
                 >
                   <span
@@ -1265,8 +1265,8 @@ export function RunsPanel() {
           <>
             {/* 表头：只在桌面出现（窄屏靠每行自身的小字标签） */}
             <div
-              className="hidden items-center gap-2.5 border-b px-3 py-2 text-[12px] lg:flex"
-              style={{ borderColor: "var(--color-border)", color: "var(--color-muted)", background: "var(--color-surface-2)" }}
+              className="hidden items-center gap-2.5 rounded-t-[9px] px-3 py-2 text-[12px] lg:flex"
+              style={{ color: "var(--color-muted)", background: "var(--color-surface-2)" }}
             >
               <input
                 type="checkbox"
@@ -1304,9 +1304,8 @@ export function RunsPanel() {
                         toggleRow(it);
                       }
                     }}
-                    className="flex min-h-[52px] cursor-pointer flex-wrap items-center gap-x-2.5 gap-y-1 border-b px-3 py-2.5 hover:bg-[var(--color-surface-2)]"
+                    className="mb-0.5 flex min-h-[52px] cursor-pointer flex-wrap items-center gap-x-2.5 gap-y-1 rounded-[9px] px-3 py-2.5 hover:bg-[var(--bg-hover)]"
                     style={{
-                      borderColor: "var(--color-border)",
                       background: isOpen ? "color-mix(in srgb, var(--color-accent) 5%, transparent)" : undefined,
                     }}
                   >
@@ -1461,7 +1460,7 @@ export function RunsPanel() {
                       下面的 `d.llmCalls` 会把这个页面整片打崩（实测崩过一次）。 */}
                   {isOpen && d && (
                     <div
-                      className="border-b px-3 pb-3 pt-2.5"
+                      className="mb-0.5 rounded-[9px] px-3 pb-3 pt-2.5"
                       style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
                     >
                       {it.summary && (
@@ -1675,7 +1674,7 @@ export function RunsPanel() {
                           style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
                         >
                           <div
-                            className="flex items-center gap-2 border-b px-2.5 py-1.5"
+                            className="flex items-center gap-2 rounded-[8px] px-2.5 py-1.5"
                             style={{ borderColor: "var(--color-border)" }}
                           >
                             <span className="text-[12px] font-medium" style={{ color: "var(--color-muted)" }}>

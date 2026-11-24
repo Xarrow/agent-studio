@@ -504,7 +504,7 @@ export default function ToolsPage() {
                 aria-labelledby="attach-title"
                 onClick={(e) => e.stopPropagation()}
               >
-                <div className="border-b px-4 py-3" style={{ borderColor: "var(--color-border)" }}>
+                <div className="rounded-[9px] px-3 py-3" style={{ borderColor: "var(--color-border)" }}>
                   <h2 id="attach-title" className="text-[15px] font-semibold">
                     把选中的 {picked.size} 个工具加到哪个助手？
                   </h2>

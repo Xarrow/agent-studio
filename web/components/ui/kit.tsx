@@ -137,8 +137,8 @@ export function Chip({
 export function RowList({ children }: { children: ReactNode }) {
   return (
     <div
-      className="overflow-hidden rounded-[12px] border"
-      style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+      className="overflow-hidden rounded-[12px] p-1"
+      style={{ background: "var(--color-surface)" }}
     >
       {children}
     </div>
@@ -166,9 +166,10 @@ export function Row({
 }) {
   return (
     <div
-      className="flex flex-wrap items-center gap-x-2.5 gap-y-2 border-b px-3 py-2.5 last:border-b-0 max-md:gap-y-2"
+      /* 不用 border-b 分隔：行与行靠 2px 空隙 + 圆角 + 点击底色分（用户铁律：
+         不要 1px 线条，分层靠底色差/间距/圆角）。RowList 给了 p-1，缝隙就是它的底色。 */
+      className="flex flex-wrap items-center gap-x-2.5 gap-y-2 rounded-[9px] px-2.5 py-2.5 transition-colors hover:bg-[var(--bg-hover)] max-md:gap-y-2"
       style={{
-        borderColor: "var(--color-border)",
         background: expanded ? "color-mix(in srgb, var(--color-accent) 5%, transparent)" : undefined,
       }}
     >
@@ -229,8 +230,9 @@ export function Row({
 export function RowDetail({ children }: { children: ReactNode }) {
   return (
     <div
-      className="border-b px-3 pb-3 pt-2.5 last:border-b-0"
-      style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
+      /* 展开区不用 border-b：浅底 + 圆角已经把它和行分开（同一条 UI 铁律） */
+      className="mb-0.5 rounded-[9px] px-3 pb-3 pt-2.5"
+      style={{ background: "var(--color-surface-2)" }}
     >
       {children}
     </div>

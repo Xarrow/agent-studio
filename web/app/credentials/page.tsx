@@ -499,8 +499,7 @@ export default function CredentialsPage() {
             {byProvider.map(({ meta, items }) => (
               <div
                 key={meta.name}
-                className="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-b py-2 last:border-b-0"
-                style={{ borderColor: "var(--color-border)" }}
+                className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-[9px] px-1.5 py-2.5 hover:bg-[var(--bg-hover)]"
               >
                 <span className="min-w-0 flex-1 basis-[220px]">
                   <span className="block text-[13.5px] font-medium">{meta.display_name}</span>
