@@ -200,7 +200,7 @@ export function StoragePanel() {
               type="button"
               disabled={busy}
               onClick={() => void compact()}
-              className="rounded-[var(--radius-sm)] border px-3 py-1.5 text-[length:var(--fs-sm)] disabled:opacity-50"
+              className="rounded-[var(--radius-sm)] px-3 py-1.5 text-[length:var(--fs-sm)] disabled:opacity-50 bg-[var(--color-surface)]"
               style={{
                 borderColor: armed ? "var(--color-err)" : "var(--color-border)",
                 color: armed ? "var(--color-err)" : undefined,
@@ -264,7 +264,7 @@ export function StoragePanel() {
                     type="button"
                     disabled={dirsCleaning || dirs.orphans.length === 0}
                     onClick={() => void cleanDirs()}
-                    className="rounded-[var(--radius-sm)] border px-3 py-1.5 text-[length:var(--fs-sm)] disabled:opacity-50"
+                    className="rounded-[var(--radius-sm)] px-3 py-1.5 text-[length:var(--fs-sm)] disabled:opacity-50 bg-[var(--color-surface)]"
                     style={{
                       borderColor: dirsArmed ? "var(--color-err)" : "var(--color-border)",
                       color: dirsArmed ? "var(--color-err)" : undefined,

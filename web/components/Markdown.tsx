@@ -85,7 +85,7 @@ function inline(text: string, keyBase: string): React.ReactNode[] {
             src={src}
             alt={mm ? mm[1] : ""}
             loading="lazy"
-            className="my-1 max-w-full max-h-[420px] rounded-md border"
+            className="my-1 max-w-full max-h-[420px] rounded-md"
             style={{ borderColor: "var(--color-border)" }}
           />
         </a>,
@@ -236,7 +236,7 @@ function SvgBlock({ code }: { code: string }) {
     );
   }
   return (
-    <div className="my-2 rounded-[var(--radius-md)] border" style={{ borderColor: "var(--color-border)" }}>
+    <div className="my-2 rounded-[var(--radius-md)]" style={{ borderColor: "var(--color-border)" }}>
       <div className="flex items-center gap-2 border-b px-2.5 py-1.5" style={{ borderColor: "var(--color-border)" }}>
         <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
           图（SVG）
@@ -350,7 +350,7 @@ function MarkdownBody({ text, chat = false }: { text: string; chat?: boolean }) 
       i += 2; // 表头 + 分隔行
       while (i < lines.length && /^\s*\|/.test(lines[i])) rows.push(splitRow(lines[i++]));
       blocks.push(
-        <div key={`t${k++}`} className="my-2 overflow-x-auto rounded-[var(--radius-sm)] border" style={{ borderColor: "var(--color-border)" }}>
+        <div key={`t${k++}`} className="my-2 overflow-x-auto rounded-[var(--radius-sm)]" style={{ borderColor: "var(--color-border)" }}>
           <table className="w-full text-[length:var(--fs-sm)]" style={{ borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ background: "var(--color-surface-2)" }}>

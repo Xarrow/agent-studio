@@ -257,7 +257,7 @@ export function WorkflowManager({
                       })();
                     }
                   }}
-                  className="rounded-[var(--radius-sm)] border px-2.5 py-1.5 text-[length:var(--fs-sm)] hover:bg-[var(--color-surface-2)]"
+                  className="rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[length:var(--fs-sm)] hover:bg-[var(--color-surface-2)]"
                   style={{ borderColor: "var(--color-border)" }}
                 >
                   {renaming ? "保存名字" : "重命名"}
@@ -265,7 +265,7 @@ export function WorkflowManager({
                 <button
                   type="button"
                   onClick={() => onDuplicate(cur)}
-                  className="rounded-[var(--radius-sm)] border px-2.5 py-1.5 text-[length:var(--fs-sm)] hover:bg-[var(--color-surface-2)]"
+                  className="rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[length:var(--fs-sm)] hover:bg-[var(--color-surface-2)]"
                   style={{ borderColor: "var(--color-border)" }}
                 >
                   复制
@@ -286,7 +286,7 @@ export function WorkflowManager({
                       onDeleted();
                     })();
                   }}
-                  className="rounded-[var(--radius-sm)] border px-2.5 py-1.5 text-[length:var(--fs-sm)]"
+                  className="rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[length:var(--fs-sm)] bg-[var(--color-surface)]"
                   style={{
                     borderColor: confirmDel ? "var(--color-err)" : "var(--color-border)",
                     color: confirmDel ? "var(--color-err)" : undefined,
@@ -414,7 +414,7 @@ export function WorkflowManager({
                         <button
                           type="button"
                           onClick={() => void showStep(runs[0]?.id ?? "", i)}
-                          className="flex items-center gap-1.5 rounded-full border px-2 py-[2px] text-[length:var(--fs-sm)] hover:brightness-[.97]"
+                          className="flex items-center gap-1.5 rounded-full px-2 py-[2px] text-[length:var(--fs-sm)] hover:brightness-[.97] bg-[var(--color-surface)]"
                           style={{
                             borderColor: "color-mix(in srgb, var(--color-accent) 34%, var(--color-border))",
                             background:
@@ -438,7 +438,7 @@ export function WorkflowManager({
                 )}
                 {/* 就地展开：这一步的 输入/思考/调用/回复（与画布点 agent 卡同一套分色） */}
                 {openStep && openStep.startsWith(`${runs[0]?.id ?? ""}:`) && stepDetail && (
-                  <div className="mt-2 rounded-[var(--radius-sm)] border" style={{ borderColor: "var(--color-border)" }}>
+                  <div className="mt-2 rounded-[var(--radius-sm)]" style={{ borderColor: "var(--color-border)" }}>
                     <div className="mb-1 flex items-center gap-2 rounded-[var(--radius-sm)] bg-[var(--color-surface-2)] px-2 py-1.5">
                       <span className="text-[length:var(--fs-sm)] font-medium" style={{ color: "var(--color-muted)" }}>
                         这一步的执行详情
@@ -461,7 +461,7 @@ export function WorkflowManager({
                         {stepDetail.steps.map((st, k) => {
                           const sty = STEP_STYLE[st.kind];
                           return (
-                            <div key={k} className="rounded-[var(--radius-sm)] border" style={{ borderColor: sty.border, background: sty.bg }}>
+                            <div key={k} className="rounded-[var(--radius-sm)]" style={{ borderColor: sty.border, background: sty.bg }}>
                               <div className="flex items-center gap-1.5 px-2 py-[3px] text-[length:var(--fs-sm)] font-semibold" style={{ color: sty.color }}>
                                 <span className="text-[10px] leading-none">{sty.icon}</span>
                                 {st.label}
@@ -494,7 +494,7 @@ export function WorkflowManager({
                     // 中文流程名组字中的回车是选字，不是「改完了」
                     if (e.key === "Enter" && !isImeEvent(e)) (e.target as HTMLInputElement).blur();
                   }}
-                  className="df-ctl h-[30px] flex-1 rounded-[var(--radius-sm)] border px-2 text-[length:var(--fs-sm)]"
+                  className="df-ctl h-[30px] flex-1 rounded-[var(--radius-sm)] px-2 text-[length:var(--fs-sm)] bg-[var(--color-surface)]"
                   style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
                 />
               </div>
@@ -516,7 +516,7 @@ export function WorkflowManager({
                   return (
                     <div
                       key={o.id}
-                      className="rounded-[var(--radius-md)] border px-3 py-2.5"
+                      className="rounded-[var(--radius-md)] px-3 py-2.5 bg-[var(--color-surface)]"
                       style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
                     >
                       {/* ① 结果一行 */}
@@ -551,7 +551,7 @@ export function WorkflowManager({
                                   </span>
                                 )}
                                 <span
-                                  className="flex items-center gap-1 rounded-full border px-1.5 py-[1px] text-[length:var(--fs-sm)]"
+                                  className="flex items-center gap-1 rounded-full px-1.5 py-[1px] text-[length:var(--fs-sm)] bg-[var(--color-surface)]"
                                   style={{
                                     borderColor: reached
                                       ? "color-mix(in srgb, var(--color-accent) 40%, var(--color-border))"

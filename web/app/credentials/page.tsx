@@ -393,7 +393,7 @@ export default function CredentialsPage() {
                   >
                     {/* 密钥本体：默认掩码，点了才显示 —— 明文只在这个区块里出现 */}
                     <div
-                      className="rounded-[var(--radius-md)] border p-3"
+                      className="rounded-[var(--radius-md)] p-3 bg-[var(--color-surface)]"
                       style={{ borderColor: "var(--color-border)", background: "var(--color-bg)" }}
                     >
                       <div className="mb-1.5 flex items-center justify-between">
@@ -432,7 +432,7 @@ export default function CredentialsPage() {
                     {/* 测试结果：成功给绿的框 + 延迟 + 可用模型；失败给红的框 + 原始错误 */}
                     {r ? (
                       <div
-                        className="mt-3 rounded-[var(--radius-md)] border p-3 text-[length:var(--fs-base)]"
+                        className="mt-3 rounded-[var(--radius-md)] p-3 text-[length:var(--fs-base)] bg-[var(--color-surface)]"
                         style={{ borderColor: r.ok ? "var(--color-ok)" : "var(--color-err)" }}
                       >
                         {r.ok ? (

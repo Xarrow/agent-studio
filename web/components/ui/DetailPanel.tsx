@@ -131,7 +131,7 @@ export function DetailPanel({
 
         {facts && facts.length > 0 && (
           <div
-            className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-y px-4 py-2 text-[length:var(--fs-sm)] md:px-5"
+            className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2 text-[length:var(--fs-sm)] md:px-5 bg-[var(--color-surface)]"
             style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
           >
             {facts.map((f, i) =>

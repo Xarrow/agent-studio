@@ -313,7 +313,7 @@ export function DelegationBlock({
             )}
             {shown.length > 0 && (
               <div
-                className="rounded-md border p-1.5"
+                className="rounded-md p-1.5 bg-[var(--color-surface)]"
                 style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
               >
                 <RunTimeline steps={shown} compact running={hot} />

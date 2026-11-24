@@ -232,7 +232,7 @@ export function BrowserDriversCard() {
   return (
     <div className="space-y-3">
       {/* 当前在用 */}
-      <div className="rounded-md border p-2.5" style={{ borderColor: "var(--color-border)" }}>
+      <div className="rounded-md p-2.5 bg-[var(--color-surface)]" style={{ borderColor: "var(--color-border)" }}>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span
             className="rounded px-1.5 py-0.5 text-[length:var(--fs-xs)]"
@@ -345,7 +345,7 @@ export function BrowserDriversCard() {
         {rows.map((r) => (
           <div
             key={`${r.kind}-${r.version}-${r.source}`}
-            className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[var(--radius-xs)] border px-2 py-1.5 text-[length:var(--fs-sm)]"
+            className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[var(--radius-xs)] px-2 py-1.5 text-[length:var(--fs-sm)] bg-[var(--color-surface)]"
             style={{
               borderColor: "var(--color-border)",
               background: r.active ? "color-mix(in srgb, var(--color-accent) 5%, transparent)" : undefined,
@@ -391,7 +391,7 @@ export function BrowserDriversCard() {
       </div>
 
       {/* 装一个新版本 */}
-      <div className="rounded-md border p-2.5" style={{ borderColor: "var(--color-border)" }}>
+      <div className="rounded-md p-2.5 bg-[var(--color-surface)]" style={{ borderColor: "var(--color-border)" }}>
         <div className="mb-2 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
           装一个新版本（下载到平台目录，不动系统）
         </div>

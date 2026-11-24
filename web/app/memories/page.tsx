@@ -411,7 +411,7 @@ export default function MemoriesPage() {
 
           {showMore && (
             <div
-              className="mt-3 flex flex-wrap items-end gap-3 border-l-2 pl-3"
+              className="mt-3 flex flex-wrap items-end gap-3 rounded-[var(--radius-sm)] bg-[var(--color-surface-2)] px-3 py-2"
               style={{ borderColor: "var(--color-border)" }}
             >
               <div>
@@ -742,7 +742,7 @@ export default function MemoriesPage() {
                   >
                     {/* 正文：记忆的全部内容，不改一个字 */}
                     <div
-                      className="whitespace-pre-wrap break-words rounded-[var(--radius-md)] border p-4 text-[length:var(--fs-md)] leading-relaxed"
+                      className="whitespace-pre-wrap break-words rounded-[var(--radius-md)] p-4 text-[length:var(--fs-md)] leading-relaxed bg-[var(--color-surface)]"
                       style={{ borderColor: "var(--color-border)", background: "var(--color-bg)" }}
                     >
                       {m.content}

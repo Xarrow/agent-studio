@@ -597,7 +597,7 @@ function ChatBlock({ item }: { item: RenderItem }) {
   }
   if (item.kind === "thinking") {
     return (
-      <div className="text-[length:var(--fs-sm)] text-[var(--color-muted)] italic whitespace-pre-wrap break-words pl-3 border-l-2 border-[var(--color-border)]">
+      <div className="text-[length:var(--fs-sm)] text-[var(--color-muted)] italic whitespace-pre-wrap break-words pl-3 border-l-2">
         {item.text}
       </div>
     );

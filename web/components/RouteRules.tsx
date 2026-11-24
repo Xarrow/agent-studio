@@ -169,7 +169,7 @@ export function RouteRules({
               {rules.map((r) => (
                 <span
                   key={r.id}
-                  className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[length:var(--fs-sm)]"
+                  className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[length:var(--fs-sm)] bg-[var(--color-surface)]"
                   style={{ borderColor: "var(--color-border)", background: "var(--color-bg)" }}
                 >
                   {r.kind === "regex" && (

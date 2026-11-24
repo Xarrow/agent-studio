@@ -282,7 +282,7 @@ export function BackupRestore() {
 
       {result ? (
         <div
-          className="rounded-[var(--radius-sm)] border px-3 py-2 text-[length:var(--fs-sm)]"
+          className="rounded-[var(--radius-sm)] px-3 py-2 text-[length:var(--fs-sm)] bg-[var(--color-surface)]"
           style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
         >
           <div>

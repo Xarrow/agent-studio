@@ -726,21 +726,21 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
               {/* 真正的 Markdown 渲染 —— 之前是 <pre> 裸文本，最丑的一点 */}
               {!String(detail.content ?? "").trim() ? (
                 <div
-                  className="rounded-[var(--radius-md)] border p-6 text-center text-[length:var(--fs-base)]"
+                  className="rounded-[var(--radius-md)] p-6 text-center text-[length:var(--fs-base)] bg-[var(--color-surface)]"
                   style={{ borderColor: "var(--color-border)", color: "var(--color-text-3)" }}
                 >
                   暂无详情文档（这个技能的 SKILL.md 读不到或为空）
                 </div>
               ) : detailMode === "src" ? (
                 <pre
-                  className="mono max-h-[60vh] overflow-auto rounded-[var(--radius-md)] border p-4 text-[length:var(--fs-sm)] leading-relaxed"
+                  className="mono max-h-[60vh] overflow-auto rounded-[var(--radius-md)] p-4 text-[length:var(--fs-sm)] leading-relaxed bg-[var(--color-surface)]"
                   style={{ borderColor: "var(--color-border)", background: "var(--color-bg)", whiteSpace: "pre-wrap" }}
                 >
                   {detail.content}
                 </pre>
               ) : (
                 <div
-                  className="max-h-[60vh] overflow-auto rounded-[var(--radius-md)] border p-4"
+                  className="max-h-[60vh] overflow-auto rounded-[var(--radius-md)] p-4 bg-[var(--color-surface)]"
                   style={{ borderColor: "var(--color-border)", background: "var(--color-bg)" }}
                 >
                   <Markdown text={stripFrontmatter(detail.content ?? "")} />
@@ -974,7 +974,7 @@ function ImportDialog({
             return (
               <button
                 key={k}
-                className="flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-[length:var(--fs-base)] transition-colors"
+                className="flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-[length:var(--fs-base)] transition-colors bg-[var(--color-surface)]"
                 style={{
                   borderColor: on ? "var(--color-accent)" : "var(--color-border)",
                   background: on ? "color-mix(in srgb, var(--color-accent) 8%, transparent)" : "var(--color-surface)",
@@ -1050,7 +1050,7 @@ function ImportDialog({
                   )}
 
                   {scan && (
-                    <div className="rounded-xl border p-3">
+                    <div className="rounded-xl p-3 bg-[var(--color-surface)]">
                       <div className="flex items-center gap-2 flex-wrap">
                         <a
                           href={scan.web_url}
@@ -1085,7 +1085,7 @@ function ImportDialog({
                               }
                             >
                               <span
-                                className="mt-[3px] w-3.5 h-3.5 rounded-[var(--radius-xs)] border shrink-0 flex items-center justify-center"
+                                className="mt-[3px] w-3.5 h-3.5 rounded-[var(--radius-xs)] shrink-0 flex items-center justify-center"
                                 style={{
                                   borderColor: on ? "var(--color-accent)" : "var(--color-border)",
                                   background: on ? "var(--color-accent)" : "transparent",
@@ -1251,7 +1251,7 @@ function ImportDialog({
               <div>
                 <label className="label">技能包</label>
                 <div
-                  className="rounded-[var(--radius-md)] border border-dashed px-3 py-4 text-center text-[length:var(--fs-sm)] transition-colors"
+                  className="rounded-[var(--radius-md)] border-dashed px-3 py-4 text-center text-[length:var(--fs-sm)] transition-colors bg-[var(--color-surface)]"
                   style={{
                     borderColor: dropHover ? "var(--color-accent)" : "var(--color-border)",
                     background: dropHover ? "var(--bg-selected)" : "transparent",

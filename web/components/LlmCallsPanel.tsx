@@ -118,7 +118,7 @@ export function LlmCallsPanel({
 
   return (
     <div
-      className="rounded-[var(--radius-sm)] border"
+      className="rounded-[var(--radius-sm)]"
       style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
     >
       <div className="mb-1 rounded-[var(--radius-sm)] bg-[var(--color-surface-2)] px-2.5 py-1.5">
@@ -197,7 +197,7 @@ export function LlmCallsPanel({
         {calls.map((c) => (
           <div
             key={c.id}
-            className="rounded-[var(--radius-sm)] border px-2.5 py-2"
+            className="rounded-[var(--radius-sm)] px-2.5 py-2 bg-[var(--color-surface)]"
             style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
           >
             <div className="flex items-center gap-2">

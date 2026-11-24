@@ -93,7 +93,7 @@ export function Sheet({
         <div className="flex-1 min-h-0 overflow-auto">{children}</div>
 
         {footer && (
-          <div className="shrink-0 flex items-center justify-between gap-2 px-3.5 py-2.5 border-[var(--color-border)]">
+          <div className="shrink-0 flex items-center justify-between gap-2 px-3.5 py-2.5 bg-[var(--color-surface)]">
             {footer}
           </div>
         )}

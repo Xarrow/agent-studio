@@ -201,7 +201,7 @@ export function SkillsStrip({
                   style={{ opacity: busyId === s.id ? 0.5 : 1 }}
                 >
                   <span
-                    className="shrink-0 mt-[3px] w-[15px] h-[15px] rounded-[var(--radius-xs)] grid place-items-center border"
+                    className="shrink-0 mt-[3px] w-[15px] h-[15px] rounded-[var(--radius-xs)] grid place-items-center"
                     style={{
                       borderColor: on ? "var(--color-accent)" : "var(--color-border-strong, var(--color-border))",
                       background: on ? "var(--color-accent)" : "transparent",
@@ -231,7 +231,7 @@ export function SkillsStrip({
           </div>
           <a
             href="/skills"
-            className="shrink-0 flex items-center justify-between px-2.5 h-9 border-[var(--color-border)] text-[length:var(--fs-sm)] hover:bg-[var(--color-surface-2)]"
+            className="shrink-0 flex items-center justify-between px-2.5 h-9 text-[length:var(--fs-sm)] hover:bg-[var(--color-surface-2)]"
             style={{ color: "var(--color-muted)" }}
           >
             技能库

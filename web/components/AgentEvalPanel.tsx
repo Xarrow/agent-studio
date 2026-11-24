@@ -194,7 +194,7 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
         <button
           type="button"
           onClick={startEdit}
-          className="rounded-[var(--radius-sm)] border px-2.5 py-1.5 text-[length:var(--fs-sm)]"
+          className="rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[length:var(--fs-sm)] bg-[var(--color-surface)]"
           style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
         >
           {suite ? "改用例" : "新建用例集"}
@@ -222,7 +222,7 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
                 }
               })();
             }}
-            className="rounded-[var(--radius-sm)] border px-2.5 py-1.5 text-[length:var(--fs-sm)]"
+            className="rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[length:var(--fs-sm)] bg-[var(--color-surface)]"
             style={{
               borderColor: armDelete ? "var(--color-err)" : "var(--color-border)",
               color: armDelete ? "var(--color-err)" : "var(--color-muted)",
@@ -236,7 +236,7 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
             type="button"
             disabled={busy || disabled}
             onClick={() => void runNow()}
-            className="rounded-[var(--radius-sm)] border px-2.5 py-1.5 text-[length:var(--fs-sm)] disabled:opacity-50"
+            className="rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[length:var(--fs-sm)] disabled:opacity-50 bg-[var(--color-surface)]"
             style={{ borderColor: "var(--color-accent)", color: "var(--color-accent)" }}
             title={disabled ? "先把这个助手的配置保存好" : "每例都真跑，算进用量"}
           >
@@ -248,7 +248,7 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
             value={label}
             onChange={(e) => setLabel(e.target.value)}
             placeholder="叫什么（可选）"
-            className="w-[190px] rounded-[var(--radius-sm)] border px-2 py-1.5 text-[length:var(--fs-sm)] outline-none"
+            className="w-[190px] rounded-[var(--radius-sm)] px-2 py-1.5 text-[length:var(--fs-sm)] outline-none bg-[var(--color-surface)]"
             style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
           />
         )}
@@ -256,12 +256,12 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
 
       {/* ── 编辑器：每行两个框（输入 / 必须包含），不让人手打分隔符语法 ── */}
       {editing && (
-        <div className="mb-3 rounded-[var(--radius-md)] border p-3" style={{ borderColor: "var(--color-border)" }}>
+        <div className="mb-3 rounded-[var(--radius-md)] p-3 bg-[var(--color-surface)]" style={{ borderColor: "var(--color-border)" }}>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="用例集名字"
-            className="mb-2 w-[240px] rounded-[var(--radius-sm)] border px-2 py-1.5 text-[length:var(--fs-sm)] outline-none"
+            className="mb-2 w-[240px] rounded-[var(--radius-sm)] px-2 py-1.5 text-[length:var(--fs-sm)] outline-none bg-[var(--color-surface)]"
             style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
           />
           {cases.map((c, i) => (
@@ -275,7 +275,7 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
                   setCases((cur) => cur.map((x, j) => (j === i ? { ...x, input: e.target.value } : x)))
                 }
                 placeholder="问它什么"
-                className="min-w-0 flex-1 rounded-[var(--radius-sm)] border px-2 py-1.5 text-[length:var(--fs-sm)] outline-none"
+                className="min-w-0 flex-1 rounded-[var(--radius-sm)] px-2 py-1.5 text-[length:var(--fs-sm)] outline-none bg-[var(--color-surface)]"
                 style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
               />
               <input
@@ -286,14 +286,14 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
                   )
                 }
                 placeholder="必须包含的词（| 分隔；留空由模型判）"
-                className="min-w-0 flex-1 rounded-[var(--radius-sm)] border px-2 py-1.5 text-[length:var(--fs-sm)] outline-none"
+                className="min-w-0 flex-1 rounded-[var(--radius-sm)] px-2 py-1.5 text-[length:var(--fs-sm)] outline-none bg-[var(--color-surface)]"
                 style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
               />
               <button
                 type="button"
                 title="删掉这一例"
                 onClick={() => setCases((cur) => (cur.length > 1 ? cur.filter((_, j) => j !== i) : [{ ...EMPTY }]))}
-                className="shrink-0 rounded-[var(--radius-sm)] border px-1.5 py-1 text-[length:var(--fs-sm)]"
+                className="shrink-0 rounded-[var(--radius-sm)] px-1.5 py-1 text-[length:var(--fs-sm)] bg-[var(--color-surface)]"
                 style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
               >
                 ✕
@@ -304,7 +304,7 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
             <button
               type="button"
               onClick={() => setCases((cur) => [...cur, { ...EMPTY }])}
-              className="rounded-[var(--radius-sm)] border px-2.5 py-1.5 text-[length:var(--fs-sm)]"
+              className="rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[length:var(--fs-sm)] bg-[var(--color-surface)]"
               style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
             >
               ＋ 再加一例
@@ -313,7 +313,7 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
               type="button"
               disabled={busy}
               onClick={() => void saveSuite()}
-              className="rounded-[var(--radius-sm)] border px-2.5 py-1.5 text-[length:var(--fs-sm)] disabled:opacity-50"
+              className="rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[length:var(--fs-sm)] disabled:opacity-50 bg-[var(--color-surface)]"
               style={{ borderColor: "var(--color-accent)", color: "var(--color-accent)" }}
             >
               保存用例集
@@ -321,7 +321,7 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
             <button
               type="button"
               onClick={() => setEditing(false)}
-              className="rounded-[var(--radius-sm)] border px-2.5 py-1.5 text-[length:var(--fs-sm)]"
+              className="rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[length:var(--fs-sm)] bg-[var(--color-surface)]"
               style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
             >
               取消
@@ -332,7 +332,7 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
 
       {/* ── 本次结果 ─────────────────────────────────────────────── */}
       {detail && (
-        <div className="mb-3 rounded-[var(--radius-md)] border" style={{ borderColor: "var(--color-border)" }}>
+        <div className="mb-3 rounded-[var(--radius-md)]" style={{ borderColor: "var(--color-border)" }}>
           <div
             className="mb-1 flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-sm)] bg-[var(--color-surface-2)] px-3 py-2"
             style={{ borderColor: "var(--color-border)" }}
@@ -417,7 +417,7 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
                     </div>
                   )}
                   <pre
-                    className="max-h-[240px] overflow-auto whitespace-pre-wrap rounded-[var(--radius-sm)] border p-2 text-[length:var(--fs-sm)]"
+                    className="max-h-[240px] overflow-auto whitespace-pre-wrap rounded-[var(--radius-sm)] p-2 text-[length:var(--fs-sm)] bg-[var(--color-surface)]"
                     style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
                   >
                     {r.output || "（没有产出）"}
@@ -435,7 +435,7 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
 
       {/* ── 对比：同一用例集两次，退步的排最前 ───────────────────── */}
       {runs.length >= 2 && (
-        <div className="rounded-[var(--radius-md)] border p-3" style={{ borderColor: "var(--color-border)" }}>
+        <div className="rounded-[var(--radius-md)] p-3 bg-[var(--color-surface)]" style={{ borderColor: "var(--color-border)" }}>
           <div className="mb-2 flex flex-wrap items-center gap-2 text-[length:var(--fs-sm)]">
             <span className="font-semibold">两版对比</span>
             <Select
@@ -480,7 +480,7 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
                   }
                 })()
               }
-              className="rounded-[var(--radius-sm)] border px-2.5 py-1.5 text-[length:var(--fs-sm)] disabled:opacity-50"
+              className="rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[length:var(--fs-sm)] disabled:opacity-50 bg-[var(--color-surface)]"
               style={{ borderColor: "var(--color-accent)", color: "var(--color-accent)" }}
             >
               对比

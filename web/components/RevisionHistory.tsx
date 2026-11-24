@@ -173,7 +173,7 @@ export function RevisionHistory({
         </span>
         <button
           type="button"
-          className="ml-auto rounded-[var(--radius-xs)] border px-2 py-0.5 text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--color-surface-2)]"
+          className="ml-auto rounded-[var(--radius-xs)] px-2 py-0.5 text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--color-surface-2)]"
           style={{ borderColor: "var(--color-border)" }}
           onClick={() => void load()}
           title="重新读一遍历史"
@@ -236,7 +236,7 @@ export function RevisionHistory({
                   <div className="flex shrink-0 items-center gap-1.5">
                     <button
                       type="button"
-                      className="rounded-[var(--radius-xs)] border px-2 py-0.5 text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--color-surface-2)]"
+                      className="rounded-[var(--radius-xs)] px-2 py-0.5 text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--color-surface-2)]"
                       style={{ borderColor: "var(--color-border)" }}
                       onClick={() => toggle(rev)}
                     >
@@ -247,7 +247,7 @@ export function RevisionHistory({
                         type="button"
                         disabled={busy === rev.id}
                         onClick={() => void restore(rev)}
-                        className="rounded-[var(--radius-xs)] border px-2 py-0.5 text-[length:var(--fs-sm)] disabled:opacity-50"
+                        className="rounded-[var(--radius-xs)] px-2 py-0.5 text-[length:var(--fs-sm)] disabled:opacity-50 bg-[var(--color-surface)]"
                         style={{
                           borderColor: armRestore === rev.id ? "var(--color-err)" : "var(--color-border)",
                           color: armRestore === rev.id ? "var(--color-err)" : undefined,
@@ -261,7 +261,7 @@ export function RevisionHistory({
                       type="button"
                       disabled={busy === rev.id}
                       onClick={() => void remove(rev)}
-                      className="rounded-[var(--radius-xs)] border px-2 py-0.5 text-[length:var(--fs-sm)] disabled:opacity-50"
+                      className="rounded-[var(--radius-xs)] px-2 py-0.5 text-[length:var(--fs-sm)] disabled:opacity-50 bg-[var(--color-surface)]"
                       style={{
                         borderColor: armDelete === rev.id ? "var(--color-err)" : "var(--color-border)",
                         color: "var(--color-err)",
@@ -302,7 +302,7 @@ export function RevisionHistory({
                           const long = r.before.length > 240 || r.after.length > 240;
                           const showFull = fullKey === k;
                           return (
-                            <div key={k} className="rounded-[var(--radius-sm)] border p-2" style={{ borderColor: "var(--color-border)" }}>
+                            <div key={k} className="rounded-[var(--radius-sm)] p-2 bg-[var(--color-surface)]" style={{ borderColor: "var(--color-border)" }}>
                               <div className="mb-1 flex flex-wrap items-center gap-2">
                                 <span className="text-[length:var(--fs-sm)] font-medium">{r.label}</span>
                                 {r.added?.length ? (
@@ -352,7 +352,7 @@ function Seg({ active, onClick, label, title }: { active: boolean; onClick: () =
       type="button"
       onClick={onClick}
       title={title}
-      className="rounded-[var(--radius-xs)] border px-2 py-0.5 text-[length:var(--fs-sm)] transition-colors"
+      className="rounded-[var(--radius-xs)] px-2 py-0.5 text-[length:var(--fs-sm)] transition-colors bg-[var(--color-surface)]"
       style={{
         borderColor: active ? "var(--color-accent)" : "var(--color-border)",
         color: active ? "var(--color-accent)" : "var(--color-muted)",

@@ -129,7 +129,7 @@ export function ExecutionTimeline({
           </span>
           <button
             type="button"
-            className="ml-auto rounded-[var(--radius-xs)] border px-2 py-0.5 text-[length:var(--fs-sm)]"
+            className="ml-auto rounded-[var(--radius-xs)] px-2 py-0.5 text-[length:var(--fs-sm)] bg-[var(--color-surface)]"
             style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
             onClick={() => void load()}
             title="重新读一遍（执行还在跑就刷新到最新）"

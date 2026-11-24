@@ -392,7 +392,7 @@ export function AgentSwitcher({
 
             <a
               href="/agents"
-              className="shrink-0 flex items-center justify-between px-3 h-9 border-[var(--color-border)] text-[length:var(--fs-base)] hover:bg-[var(--color-surface-2)]"
+              className="shrink-0 flex items-center justify-between px-3 h-9 text-[length:var(--fs-base)] hover:bg-[var(--color-surface-2)]"
               style={{ color: "var(--color-muted)" }}
             >
               管理全部助手

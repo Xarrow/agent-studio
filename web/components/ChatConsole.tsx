@@ -2948,7 +2948,7 @@ export function ChatConsole({
               {navView === "menu" ? (
                 /* 功能视图 —— 和桌面侧栏同一份定义、同样的完整标签 */
                 <>
-                  <div className="shrink-0 h-[calc(44px+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] flex items-center gap-1 pl-1 pr-3 border-b border-[var(--color-border)]"
+                  <div className="shrink-0 h-[calc(44px+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] flex items-center gap-1 pl-1 pr-3 border-b bg-[var(--color-surface)]"
                 style={{
                   background: "color-mix(in srgb, var(--color-surface) 62%, transparent)",
                   backdropFilter: "blur(16px) saturate(1.7)",
@@ -2958,7 +2958,7 @@ export function ChatConsole({
                       data-tap
                       aria-label="返回对话列表"
                       onClick={() => setNavView("sessions")}
-                      className="shrink-0 w-9 h-9 flex items-center justify-center rounded-lg text-[var(--color-muted)] active:bg-[var(--color-surface-2)] border"
+                      className="shrink-0 w-9 h-9 flex items-center justify-center rounded-lg text-[var(--color-muted)] active:bg-[var(--color-surface-2)]"
                       style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
                     >
                       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -3291,7 +3291,7 @@ export function ChatConsole({
                     setHeaderEditing(false);
                   }
                 }}
-                className="min-w-0 flex-1 rounded-[var(--radius-xs)] border px-1.5 py-0.5 text-[length:var(--fs-base)] outline-none"
+                className="min-w-0 flex-1 rounded-[var(--radius-xs)] px-1.5 py-0.5 text-[length:var(--fs-base)] outline-none bg-[var(--color-surface)]"
                 style={{
                   borderColor: "var(--color-accent)",
                   background: "var(--color-surface)",
@@ -3448,7 +3448,7 @@ export function ChatConsole({
                     olderFailedRef.current = false;   // 手动点 = 重试
                     void loadOlder();
                   }}
-                  className="mx-auto block rounded-full border px-3 py-1 text-[length:var(--fs-sm)] hover:bg-[var(--bg-selected)] disabled:opacity-60"
+                  className="mx-auto block rounded-full px-3 py-1 text-[length:var(--fs-sm)] hover:bg-[var(--bg-selected)] disabled:opacity-60"
                   style={{ borderColor: "var(--color-border)", color: "var(--color-text-2)" }}
                 >
                   {loadingOlder ? "正在加载…" : `加载更早的消息（还有 ${beforeTurn} 轮）`}
@@ -3583,7 +3583,7 @@ export function ChatConsole({
                     <button
                       key={it.q}
                       data-tap
-                      className="group text-left rounded-xl px-3 py-2.5 border transition-colors hover:bg-[var(--color-surface-2)] flex items-start gap-2.5"
+                      className="group text-left rounded-xl px-3 py-2.5 transition-colors hover:bg-[var(--color-surface-2)] flex items-start gap-2.5"
                       style={{ borderColor: "var(--color-border)", color: "var(--color-text)" }}
                       onClick={() => {
                         setInput(it.q);
@@ -3983,7 +3983,7 @@ export function ChatConsole({
                 {pendingFiles.map((f, i) => (
                   <div
                     key={f.path + i}
-                    className="relative rounded-lg border overflow-hidden"
+                    className="relative rounded-lg overflow-hidden"
                     style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
                   >
                     {f.kind === "image" ? (
@@ -4256,7 +4256,7 @@ export function ChatConsole({
                         >
                           <span
                             aria-hidden
-                            className="inline-flex h-[13px] w-[13px] shrink-0 items-center justify-center rounded-[var(--radius-xs)] border"
+                            className="inline-flex h-[13px] w-[13px] shrink-0 items-center justify-center rounded-[var(--radius-xs)]"
                             style={{
                               borderColor: picked.includes(f.path) ? "var(--color-accent)" : "var(--color-border)",
                               background: picked.includes(f.path) ? "var(--color-accent)" : "transparent",
@@ -4311,7 +4311,7 @@ export function ChatConsole({
               {/* 认不出来时的候选条：这句话留在手里，点谁就用谁发（不再猜第二遍） */}
               {routeAsk && (
                 <div
-                  className="mb-2 rounded-[var(--radius-lg)] border px-3 py-2"
+                  className="mb-2 rounded-[var(--radius-lg)] px-3 py-2 bg-[var(--color-surface)]"
                   style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
                 >
                   <div className="flex flex-wrap items-center gap-2">

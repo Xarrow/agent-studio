@@ -884,7 +884,7 @@ export function BrowserStage({
           </button>
         ) : null}
         <div
-          className="flex w-full items-center gap-2 rounded-[var(--radius-lg)] border px-2 py-1.5"
+          className="flex w-full items-center gap-2 rounded-[var(--radius-lg)] px-2 py-1.5 bg-[var(--color-surface)]"
           style={{ borderColor: "var(--color-border-strong)", background: "var(--color-surface-3)" }}
         >
         <button
@@ -894,7 +894,7 @@ export function BrowserStage({
           title="看画面与步骤"
         >
           <span
-            className="relative h-[54px] w-[80px] shrink-0 overflow-hidden rounded-md border"
+            className="relative h-[54px] w-[80px] shrink-0 overflow-hidden rounded-md"
             style={{ borderColor: "var(--color-border-strong)", background: "var(--color-surface)" }}
           >
             {thumbSrc ? (
@@ -1176,7 +1176,7 @@ export function BrowserStage({
               type="button"
               onClick={() => setViewStep(st)}
               title={`第 ${st.n} 步 · ${st.summary}`}
-              className="relative h-[34px] w-[56px] shrink-0 overflow-hidden rounded border"
+              className="relative h-[34px] w-[56px] shrink-0 overflow-hidden rounded"
               style={{
                 borderColor: shown?.n === st.n ? "var(--color-accent)" : "var(--color-border-strong)",
                 background: "var(--color-surface)",

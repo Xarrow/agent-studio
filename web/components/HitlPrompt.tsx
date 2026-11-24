@@ -314,7 +314,7 @@ export function HitlPrompt({
     const color = sent ? "var(--color-ok)" : "var(--color-err)";
     return (
       <div
-        className="flex items-center gap-2 rounded-xl border px-3 py-2 text-[length:var(--fs-base)] flex-wrap"
+        className="flex items-center gap-2 rounded-xl px-3 py-2 text-[length:var(--fs-base)] flex-wrap bg-[var(--color-surface)]"
         style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
       >
         <svg
@@ -342,7 +342,7 @@ export function HitlPrompt({
 
   return (
     <div
-      className="max-h-[40vh] overflow-y-auto rounded-[var(--radius-lg)] border"
+      className="max-h-[40vh] overflow-y-auto rounded-[var(--radius-lg)]"
       style={{
         borderColor: danger
           ? "color-mix(in srgb, var(--color-err) 45%, transparent)"

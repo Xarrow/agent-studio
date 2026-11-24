@@ -180,7 +180,7 @@ export function ExternalMemoryCard() {
       </button>
 
       {open && (
-        <div className="space-y-3 border-[var(--color-border)] px-3 py-3">
+        <div className="space-y-3 px-3 py-3 bg-[var(--color-surface)]">
           <label className="flex min-h-[36px] items-start gap-2 lg:min-h-0">
             <input
               type="checkbox"

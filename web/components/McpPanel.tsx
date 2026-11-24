@@ -231,7 +231,7 @@ export function McpPanel({ embedded = false }: { embedded?: boolean }) {
 
       {/* ── 粘贴 mcpServers JSON（收起，点「粘贴 JSON 导入」展开） ── */}
       {showPaste && (
-        <div className="mb-3 rounded-[var(--radius-md)] border p-3 md:p-4" style={{ borderColor: "var(--color-border)" }}>
+        <div className="mb-3 rounded-[var(--radius-md)] p-3 md:p-4 bg-[var(--color-surface)]" style={{ borderColor: "var(--color-border)" }}>
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <span className="text-[length:var(--fs-base)] font-medium">粘贴 mcpServers 配置</span>
             <span className="text-[length:var(--fs-sm)] text-[var(--color-muted)]">
@@ -599,7 +599,7 @@ function McpDialog({
 
           {probed && (
             <div
-              className="rounded-[var(--radius-sm)] border p-2.5 text-[length:var(--fs-sm)]"
+              className="rounded-[var(--radius-sm)] p-2.5 text-[length:var(--fs-sm)] bg-[var(--color-surface)]"
               style={{
                 borderColor: probed.ok
                   ? "color-mix(in srgb, var(--color-ok) 35%, var(--color-border))"

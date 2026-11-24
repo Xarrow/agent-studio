@@ -72,7 +72,7 @@ export function SourceBadge({ runId, count }: { runId: string; count: number }) 
 
       {open && (
         <div
-          className="mt-1 overflow-y-auto rounded-[var(--radius-md)] border"
+          className="mt-1 overflow-y-auto rounded-[var(--radius-md)]"
           style={{
             borderColor: "var(--color-border)",
             background: "var(--color-surface)",

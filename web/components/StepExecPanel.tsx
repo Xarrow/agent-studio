@@ -256,7 +256,7 @@ export function StepExecPanel({
 
   return (
     <div
-      className="rounded-[var(--radius-md)] border"
+      className="rounded-[var(--radius-md)]"
       style={{ borderColor: live ? "var(--color-accent)" : "var(--color-border)" }}
     >
       {/* 块头：这一格的结论 */}
@@ -337,7 +337,7 @@ export function StepExecPanel({
             ) : (
               <div className="flex flex-col gap-1.5">
                 {tools.map((t, i) => (
-                  <div key={i} className="rounded-[var(--radius-xs)] border px-2 py-1.5">
+                  <div key={i} className="rounded-[var(--radius-xs)] px-2 py-1.5 bg-[var(--color-surface)]">
                     <div className="flex flex-wrap items-baseline gap-2 text-[length:var(--fs-sm)]">
                       <code className="mono font-semibold">{t.name}</code>
                       <span

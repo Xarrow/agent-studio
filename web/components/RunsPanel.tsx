@@ -851,7 +851,7 @@ export function RunsPanel() {
               aria-expanded={menu}
               title="按时间清理 / 清空"
               onClick={() => setMenu((v) => !v)}
-              className="min-h-[36px] min-w-[40px] rounded-[var(--radius-sm)] border px-2.5 text-[length:var(--fs-base)] hover:bg-[var(--color-surface-2)]"
+              className="min-h-[36px] min-w-[40px] rounded-[var(--radius-sm)] px-2.5 text-[length:var(--fs-base)] hover:bg-[var(--color-surface-2)]"
             >
               ⋯
             </button>
@@ -1056,7 +1056,7 @@ export function RunsPanel() {
 
           {ticketsOpen && tickets && (
             <div
-              className="w-full basis-full max-md:order-9 rounded-[var(--radius-md)] border p-2 text-[length:var(--fs-sm)]"
+              className="w-full basis-full max-md:order-9 rounded-[var(--radius-md)] p-2 text-[length:var(--fs-sm)] bg-[var(--color-surface)]"
               style={{
                 borderColor: "var(--color-border)",
                 background: "var(--color-surface)",
@@ -1130,7 +1130,7 @@ export function RunsPanel() {
               type="button"
               data-tap
               onClick={() => setAttentionOpen((v) => !v)}
-              className="flex h-[32px] items-center gap-1 rounded-[var(--radius-sm)] border px-2 text-[length:var(--fs-sm)] max-md:h-9 max-md:h-11"
+              className="flex h-[32px] items-center gap-1 rounded-[var(--radius-sm)] px-2 text-[length:var(--fs-sm)] max-md:h-9 max-md:h-11 bg-[var(--color-surface)]"
               style={{
                 borderColor: attention.counts.hitl > 0 ? "var(--color-err)" : "var(--color-warn)",
                 color: attention.counts.hitl > 0 ? "var(--color-err)" : "var(--color-warn)",
@@ -1148,7 +1148,7 @@ export function RunsPanel() {
 
           {attentionOpen && attention && (
             <div
-              className="w-full basis-full max-md:order-9 rounded-[var(--radius-md)] border p-2 text-[length:var(--fs-sm)]"
+              className="w-full basis-full max-md:order-9 rounded-[var(--radius-md)] p-2 text-[length:var(--fs-sm)] bg-[var(--color-surface)]"
               style={{ borderColor: "var(--color-border)", background: "var(--color-surface)", minWidth: 0, width: "100%" }}
             >
               {attention.items.map((it) => (
@@ -1491,7 +1491,7 @@ export function RunsPanel() {
                           {d.orch.steps.map((st, i) => (
                             <div key={st.run_id} className="space-y-1.5">
                               <div
-                                className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[var(--radius-xs)] border px-2 py-1 text-[length:var(--fs-sm)]"
+                                className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[var(--radius-xs)] px-2 py-1 text-[length:var(--fs-sm)] bg-[var(--color-surface)]"
                                 style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
                               >
                                 <span className="mono w-5 shrink-0" style={{ color: "var(--color-muted)" }}>
@@ -1529,7 +1529,7 @@ export function RunsPanel() {
                           ))}
                           {typeof d.orch.output?.content === "string" && d.orch.output.content.trim() ? (
                             <div
-                              className="whitespace-pre-wrap break-words rounded-[var(--radius-xs)] border p-2 text-[length:var(--fs-sm)]"
+                              className="whitespace-pre-wrap break-words rounded-[var(--radius-xs)] p-2 text-[length:var(--fs-sm)] bg-[var(--color-surface)]"
                               style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
                             >
                               {String(d.orch.output.content)}
@@ -1667,7 +1667,7 @@ export function RunsPanel() {
                           这里不再摆一条空的。 */}
                       {d?.orch ? null : (
                         <div
-                          className="rounded-[var(--radius-sm)] border"
+                          className="rounded-[var(--radius-sm)]"
                           style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
                         >
                           <div
@@ -1721,7 +1721,7 @@ export function RunsPanel() {
                   type="button"
                   onClick={() => void loadMore()}
                   disabled={moreBusy}
-                  className="min-h-[36px] rounded-[var(--radius-sm)] border px-3 disabled:opacity-50"
+                  className="min-h-[36px] rounded-[var(--radius-sm)] px-3 disabled:opacity-50 bg-[var(--color-surface)]"
                 >
                   {moreBusy ? "加载中…" : `加载更多（还有 ${Math.max(serverTotal - items.length, 0)} 条）`}
                 </button>

@@ -812,7 +812,7 @@ export default function ToolsPage() {
                                 return (
                                   <label
                                     key={aid}
-                                    className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-[var(--radius-sm)] border px-2.5 text-[length:var(--fs-sm)]"
+                                    className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-[var(--radius-sm)] px-2.5 text-[length:var(--fs-sm)] bg-[var(--color-surface)]"
                                     style={{
                                       borderColor: on ? "var(--color-accent)" : "var(--color-border)",
                                       background: on ? "color-mix(in srgb, var(--color-accent) 8%, transparent)" : "transparent",
@@ -841,7 +841,7 @@ export default function ToolsPage() {
                         )}
                         {testOut[t.id] ? (
                           <pre
-                            className="mt-2.5 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-[var(--radius-sm)] border p-2.5 text-[length:var(--fs-sm)]"
+                            className="mt-2.5 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-[var(--radius-sm)] p-2.5 text-[length:var(--fs-sm)] bg-[var(--color-surface)]"
                             style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
                           >
                             {testOut[t.id]}
@@ -1068,7 +1068,7 @@ function NewToolDialog({
           </div>
 
           {/* 高级配置：请求头 / Cookie / 固定 query —— 默认收起，用得上再展开 */}
-          <div className="pt-1 border-[var(--color-border)]">
+          <div className="pt-1">
             <button
               className="text-[length:var(--fs-sm)] text-[var(--color-muted)] mt-2"
               data-tap
@@ -1350,7 +1350,7 @@ function EditToolDialog({
               </div>
 
               {/* 请求头 / Cookie / 固定 query —— 默认收起，已有配置时展示数量 */}
-              <div className="pt-1 border-[var(--color-border)]">
+              <div className="pt-1">
                 <button
                   className="text-[length:var(--fs-sm)] text-[var(--color-muted)] mt-2"
                   data-tap
@@ -1391,7 +1391,7 @@ function EditToolDialog({
           )}
 
           {/* 高级：直接改 impl */}
-          <div className="pt-1 border-[var(--color-border)]">
+          <div className="pt-1">
             <button
               className="text-[length:var(--fs-sm)] text-[var(--color-muted)] mt-3"
               data-tap

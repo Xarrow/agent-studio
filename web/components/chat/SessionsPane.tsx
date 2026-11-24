@@ -527,7 +527,7 @@ export function SessionsPane({
                                       }
                                     }}
                                     onBlur={() => setRenamingId(null)}
-                                    className="w-full rounded-[var(--radius-xs)] border px-1.5 py-0.5 text-[length:var(--fs-base)] outline-none"
+                                    className="w-full rounded-[var(--radius-xs)] px-1.5 py-0.5 text-[length:var(--fs-base)] outline-none bg-[var(--color-surface)]"
                                     style={{
                                       borderColor: "var(--color-accent)",
                                       background: "var(--color-surface)",

@@ -167,7 +167,7 @@ export function ToolPicker({
                 className="w-full text-left px-3.5 py-2 flex items-start gap-2.5 hover:bg-[var(--color-surface-2)] transition-colors"
               >
                 <span
-                  className="shrink-0 mt-0.5 w-[18px] h-[18px] grid place-items-center rounded-[var(--radius-xs)] border transition-colors"
+                  className="shrink-0 mt-0.5 w-[18px] h-[18px] grid place-items-center rounded-[var(--radius-xs)] transition-colors"
                   style={{
                     borderColor: on ? "var(--color-accent)" : "var(--color-border-strong, var(--color-border))",
                     background: on ? "var(--color-accent)" : "transparent",

@@ -118,7 +118,7 @@ export function MemoryPicker({
                   style={{ opacity: toggling === m.id ? 0.5 : 1 }}
                 >
                   <span
-                    className="w-[18px] h-[18px] grid place-items-center rounded-[var(--radius-xs)] border transition-colors"
+                    className="w-[18px] h-[18px] grid place-items-center rounded-[var(--radius-xs)] transition-colors"
                     style={{
                       borderColor: on ? "var(--color-accent)" : "var(--color-border-strong, var(--color-border))",
                       background: on ? "var(--color-accent)" : "transparent",

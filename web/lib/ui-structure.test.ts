@@ -880,3 +880,38 @@ test("没有野生的圆角 / 固定 44 高度 / 字面字号（全站扫描）"
   }
   assert.deepEqual(bad.slice(0, 6), [], `野生值：\n${bad.slice(0, 6).join("\n")}`);
 });
+
+/**
+ * 1px 边框护栏（2026-11 全站清理后固化）：裸 `border` 只允许出现在浮层/节点上
+ * （absolute / fixed / shadow- / composer-focus），内容块与列表一律靠底色分层。
+ * 白名单：Markdown 表格、提示气泡虚线、CodeBlock 语言栏、顶栏下边线。
+ */
+test("裸 border 只留给浮层与节点", () => {
+  const allowedHints = ["absolute", "fixed", "shadow-", "composer-focus", "divide-"];
+  const offenders: string[] = [];
+  const walk = (dir: string): string[] => {
+    const out: string[] = [];
+    const stack = [join(WEB, dir)];
+    while (stack.length) {
+      const cur = stack.pop()!;
+      for (const e of readdirSync(cur, { withFileTypes: true })) {
+        const full = join(cur, e.name);
+        if (e.isDirectory()) stack.push(full);
+        else if (e.name.endsWith(".tsx")) out.push(full);
+      }
+    }
+    return out;
+  };
+  for (const dir of ["app", "components"]) {
+    for (const file of walk(dir)) {
+      const rel = file.slice(WEB.length + 1);
+      const src = readFileSync(file, "utf8");
+      for (const m of src.matchAll(/className="([^"]*(?:^|\s)border(?=\s)[^"]*)"/g)) {
+        const cls = m[1];
+        if (allowedHints.some((h) => cls.includes(h))) continue;
+        offenders.push(`${rel} :: ${cls.slice(0, 60)}`);
+      }
+    }
+  }
+  assert.deepEqual(offenders.slice(0, 5), [], `内容块又用上 1px 边框了：\n${offenders.slice(0, 5).join("\n")}`);
+});

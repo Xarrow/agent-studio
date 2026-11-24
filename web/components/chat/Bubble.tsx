@@ -456,7 +456,7 @@ export function Bubble({
                         <img
                           src={a.url}
                           alt={a.name}
-                          className="max-h-40 rounded-lg object-cover border"
+                          className="max-h-40 rounded-lg object-cover"
                           style={{ borderColor: "var(--color-border)" }}
                         />
                       </a>

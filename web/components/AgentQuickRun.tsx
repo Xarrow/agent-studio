@@ -155,7 +155,7 @@ export function AgentQuickRun({
       {/* 输入坞：与对话页同一套形态（上下结构 + 右下角动作），
           不然同一个人在两页里看到两种输入框 */}
       <div
-        className="rounded-[18px] border"
+        className="rounded-[18px]"
         style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
       >
         <textarea
@@ -225,7 +225,7 @@ export function AgentQuickRun({
 
       {(busy || events.length > 0) && (
         <div
-          className="rounded-lg border p-2.5"
+          className="rounded-lg p-2.5 bg-[var(--color-surface)]"
           style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
         >
           <div className="flex items-center gap-2 mb-2 text-[length:var(--fs-sm)]">
@@ -252,7 +252,7 @@ export function AgentQuickRun({
             <button
               key={ex}
               type="button"
-              className="rounded-full border px-2.5 py-1 text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--bg-selected)]"
+              className="rounded-full px-2.5 py-1 text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--bg-selected)]"
               style={{ borderColor: "var(--color-border)", color: "var(--color-text-2)" }}
               onClick={() => setInput(ex)}
             >
@@ -280,7 +280,7 @@ export function AgentQuickRun({
                 key={r.id}
                 href={`/exec?agent=${agentId}`}
                 title="去对话页看那一轮的完整执行现场"
-                className="inline-flex min-h-[36px] items-center gap-1.5 rounded-md border px-2 py-1 text-[length:var(--fs-sm)] hover:bg-[var(--color-surface-2)] lg:min-h-0"
+                className="inline-flex min-h-[36px] items-center gap-1.5 rounded-md px-2 py-1 text-[length:var(--fs-sm)] hover:bg-[var(--color-surface-2)] lg:min-h-0"
                 style={{ borderColor: "var(--color-border)" }}
               >
                 <span style={{ color: STATUS_COLOR[r.status] ?? "var(--color-muted)" }}>

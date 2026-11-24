@@ -234,7 +234,7 @@ export function SkillSourcesDialog({
 
         {tab === "sources" ? (
           <>
-            <div className="mb-3 rounded-lg border p-3" style={{ borderColor: "var(--color-border)" }}>
+            <div className="mb-3 rounded-lg p-3 bg-[var(--color-surface)]" style={{ borderColor: "var(--color-border)" }}>
               <div className="mb-2 flex items-center gap-2 text-[length:var(--fs-base)]">
                 <IconLink size={14} />
                 使用哪种方式取内容
@@ -257,7 +257,7 @@ export function SkillSourcesDialog({
                 新增来源
               </button>
             ) : (
-              <div className="mb-3 space-y-2 rounded-lg border p-3" style={{ borderColor: "var(--color-border)" }}>
+              <div className="mb-3 space-y-2 rounded-lg p-3 bg-[var(--color-surface)]" style={{ borderColor: "var(--color-border)" }}>
                 <input
                   className="input w-full"
                   placeholder="地址：owner/repo、https://gitlab.corp/team/skills、/srv/skills、ssh://git@host/..."
@@ -315,7 +315,7 @@ export function SkillSourcesDialog({
                       <div className="mono text-[length:var(--fs-sm)] text-[var(--color-muted)] break-all">{s.address}</div>
 
                       {probe[s.id] && (
-                        <div className="rounded border p-2 text-[length:var(--fs-sm)]" style={{ borderColor: "var(--color-border)" }}>
+                        <div className="rounded p-2 text-[length:var(--fs-sm)] bg-[var(--color-surface)]" style={{ borderColor: "var(--color-border)" }}>
                           {probe[s.id].map((st) => (
                             <div key={st.step} className="flex items-center gap-2">
                               <span style={{ color: st.ok ? "var(--color-ok)" : "var(--color-danger)" }}>{st.ok ? "✓" : "✕"}</span>
@@ -328,7 +328,7 @@ export function SkillSourcesDialog({
                       )}
 
                       {browse[s.id] && (
-                        <div className="rounded border p-2" style={{ borderColor: "var(--color-border)" }}>
+                        <div className="rounded p-2 bg-[var(--color-surface)]" style={{ borderColor: "var(--color-border)" }}>
                           {browse[s.id].length === 0 ? (
                             <p className="text-[length:var(--fs-sm)] text-[var(--color-muted)]">这里面没找到技能</p>
                           ) : (

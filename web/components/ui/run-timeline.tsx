@@ -424,7 +424,7 @@ function TimelineRow({
               <img
                 src={`/api/work/file/${s.artifactPath}`}
                 alt={s.artifactPath.split("/").pop()}
-                className="max-h-56 rounded-md border my-1"
+                className="max-h-56 rounded-md my-1"
                 style={{ borderColor: st.border }}
               />
             ) : (
@@ -505,7 +505,7 @@ function TimelineRow({
                     src={u}
                     alt={decodeURIComponent(u.split("/").pop() || "")}
                     loading="lazy"
-                    className="max-h-40 rounded-md border"
+                    className="max-h-40 rounded-md"
                     style={{ borderColor: st.border }}
                   />
                 </a>
