@@ -109,7 +109,7 @@ export function SlashMenu({
       {filtered.map((it, i) => (
         <div key={it.id}>
         {it.group && it.group !== filtered[i - 1]?.group && (
-          <div className="px-3 pt-2 pb-1 text-[10.5px] font-medium" style={{ color: "var(--color-muted)" }}>
+          <div className="px-3 pt-2 pb-1 text-[length:var(--fs-xs)] font-medium" style={{ color: "var(--color-muted)" }}>
             {it.group}
           </div>
         )}
@@ -117,7 +117,7 @@ export function SlashMenu({
           type="button"
           role="option"
           aria-selected={i === idx}
-          className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left text-[13px]"
+          className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left text-[length:var(--fs-base)]"
           style={{
             background: i === idx ? "var(--color-surface-2)" : "transparent",
             minHeight: 44,
@@ -130,7 +130,7 @@ export function SlashMenu({
         >
           {/* 勾选态：技能/工具已挂显示 ✓（选中即取消），其余是动作箭头 */}
           <span
-            className="mono text-[12px] shrink-0 w-[14px] text-center"
+            className="mono text-[length:var(--fs-sm)] shrink-0 w-[14px] text-center"
             style={{ color: it.on ? "var(--color-accent)" : "var(--color-muted)" }}
             aria-hidden="true"
           >
@@ -138,7 +138,7 @@ export function SlashMenu({
           </span>
           <span className="truncate">{it.label}</span>
           {it.hint && (
-            <span className="ml-auto text-[12px] truncate shrink-0 max-w-[45%]" style={{ color: "var(--color-muted)" }}>
+            <span className="ml-auto text-[length:var(--fs-sm)] truncate shrink-0 max-w-[45%]" style={{ color: "var(--color-muted)" }}>
               {it.hint}
             </span>
           )}

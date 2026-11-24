@@ -166,7 +166,7 @@ export function ExternalMemoryCard() {
         onClick={() => setOpen((v) => !v)}
       >
         <span className="text-[var(--color-muted)]">{open ? "▾" : "▸"}</span>
-        <span className="text-[13px] font-medium">外部记忆服务</span>
+        <span className="text-[length:var(--fs-base)] font-medium">外部记忆服务</span>
         {loaded ? (
           cfg.ready ? (
             <Chip tone="ok">已接入</Chip>
@@ -174,7 +174,7 @@ export function ExternalMemoryCard() {
             <Chip tone="muted">未接入</Chip>
           )
         ) : null}
-        <span className="text-[12px] text-[var(--color-muted)]">
+        <span className="text-[length:var(--fs-sm)] text-[var(--color-muted)]">
           {cfg.ready ? cfg.base_url : "接自己的记忆库"}
         </span>
       </button>
@@ -188,7 +188,7 @@ export function ExternalMemoryCard() {
               checked={draft.enabled}
               onChange={(e) => setDraft((d) => ({ ...d, enabled: e.target.checked }))}
             />
-            <span className="text-[12px]">
+            <span className="text-[length:var(--fs-sm)]">
               启用外部记忆（关掉不删配置）
             </span>
           </label>
@@ -264,7 +264,7 @@ export function ExternalMemoryCard() {
             </div>
           </div>
 
-          <details className="rounded-md bg-[var(--color-surface-2)] px-2.5 py-2 text-[12px] text-[var(--color-muted)]">
+          <details className="rounded-md bg-[var(--color-surface-2)] px-2.5 py-2 text-[length:var(--fs-sm)] text-[var(--color-muted)]">
             <summary data-tap-lg className="min-h-[36px] cursor-pointer py-2">对方要实现两个接口</summary>
             <pre className="mt-1.5 whitespace-pre-wrap break-all leading-[1.6]">
 {`搜索  POST {地址}{搜索路径}
@@ -279,11 +279,11 @@ export function ExternalMemoryCard() {
 
           {/* 接口字段映射（高级）——默认收起：标准契约开箱可用，只有对方字段名不一样才需要 */}
           <details className="rounded-[8px] border border-[var(--color-border)]">
-            <summary data-tap-lg className="min-h-[36px] cursor-pointer px-3 py-2 text-[12px]">
+            <summary data-tap-lg className="min-h-[36px] cursor-pointer px-3 py-2 text-[length:var(--fs-sm)]">
               接口字段映射（高级）
             </summary>
             <div className="space-y-3 border-t px-3 py-3" style={{ borderColor: "var(--color-border)" }}>
-              <p className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+              <p className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                 留空 = 用标准契约：搜索发 <code>{"{query, top_k, agent_id}"}</code>、写入发{" "}
                 <code>{"{content, tags, agent_id}"}</code>、结果取 <code>results</code> 数组。
                 填了就按下面的来 —— 占位符 <code>{"{query} {top_k} {agent_id} {content} {tags}"}</code>
@@ -346,7 +346,7 @@ export function ExternalMemoryCard() {
             </button>
             {testResult ? (
               <span
-                className="text-[12px]"
+                className="text-[length:var(--fs-sm)]"
                 style={{ color: testResult.ok ? "var(--color-ok)" : "var(--color-err)" }}
               >
                 {testResult.ok ? "✓ " : "✕ "}
@@ -356,7 +356,7 @@ export function ExternalMemoryCard() {
             ) : null}
           </div>
           {!cfg.ready ? (
-            <p className="text-[12px] text-[var(--color-muted)]">
+            <p className="text-[length:var(--fs-sm)] text-[var(--color-muted)]">
               「测试连接」用的是已保存的配置 —— 改完先保存。
             </p>
           ) : null}

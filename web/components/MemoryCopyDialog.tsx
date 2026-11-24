@@ -78,7 +78,7 @@ export function MemoryCopyDialog({
     <div className={DLG_BACKDROP}>
       <div className={`${DLG_CARD} max-w-lg p-5`}>
         <h2 className="text-[16px] font-medium mb-1">复制这条记忆</h2>
-        <p className="text-[12px] text-[var(--color-muted)] mb-4">
+        <p className="text-[length:var(--fs-sm)] text-[var(--color-muted)] mb-4">
           原件（{ownerLabel}）保持不动，复制出的新记忆单独绑定到你选的去处。
         </p>
 
@@ -86,7 +86,7 @@ export function MemoryCopyDialog({
           <div>
             <label className="label">
               内容
-              <span className="text-[12px] text-[var(--color-muted)] font-normal ml-2">
+              <span className="text-[length:var(--fs-sm)] text-[var(--color-muted)] font-normal ml-2">
                 {KIND_LABEL[memory.kind] ?? memory.kind} · 可以直接改
               </span>
             </label>
@@ -113,14 +113,14 @@ export function MemoryCopyDialog({
                 }}
               >
                 <div
-                  className="text-[13px]"
+                  className="text-[length:var(--fs-base)]"
                   style={{
                     color: target === "__global__" ? "var(--color-accent)" : "var(--color-text)",
                   }}
                 >
                   所有助手共用
                 </div>
-                <div className="text-[12px] text-[var(--color-muted)]">
+                <div className="text-[length:var(--fs-sm)] text-[var(--color-muted)]">
                   每个助手都会带上这条（改一处对所有人生效）
                 </div>
               </button>
@@ -141,18 +141,18 @@ export function MemoryCopyDialog({
                     }}
                   >
                     <div
-                      className="text-[13px] flex items-center gap-2"
+                      className="text-[length:var(--fs-base)] flex items-center gap-2"
                       style={{ color: on ? "var(--color-accent)" : "var(--color-text)" }}
                     >
                       {a.name}
                       {isOwner && (
-                        <span className="text-[10.5px] text-[var(--color-muted)]">
+                        <span className="text-[length:var(--fs-xs)] text-[var(--color-muted)]">
                           （原件所属）
                         </span>
                       )}
                     </div>
                     {a.description && (
-                      <div className="text-[12px] text-[var(--color-muted)] truncate">
+                      <div className="text-[length:var(--fs-sm)] text-[var(--color-muted)] truncate">
                         {a.description}
                       </div>
                     )}
@@ -162,7 +162,7 @@ export function MemoryCopyDialog({
             </div>
           </div>
 
-          {err && <div className="text-[12px] text-[var(--color-err)]">{err}</div>}
+          {err && <div className="text-[length:var(--fs-sm)] text-[var(--color-err)]">{err}</div>}
         </div>
 
         <div className="flex justify-end gap-2 mt-5">

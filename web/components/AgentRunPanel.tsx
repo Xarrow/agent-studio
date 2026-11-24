@@ -362,7 +362,7 @@ export function RunPanel({
             再试跑，看到的还是旧行为，会误判「改了没用」（其实是没保存）。 */}
         {unsaved && (
           <div
-            className="mb-3 rounded-md px-3 py-2 flex items-center gap-3 flex-wrap text-[12px]"
+            className="mb-3 rounded-md px-3 py-2 flex items-center gap-3 flex-wrap text-[length:var(--fs-sm)]"
             style={{
               background: "color-mix(in srgb, var(--color-warn) 10%, transparent)",
               color: "var(--color-warn)",
@@ -380,7 +380,7 @@ export function RunPanel({
         )}
 
         <div className="mb-3 flex items-center gap-2 flex-wrap pb-1">
-          <span className="text-[12px] text-[var(--color-muted)] whitespace-nowrap">会话</span>
+          <span className="text-[length:var(--fs-sm)] text-[var(--color-muted)] whitespace-nowrap">会话</span>
           <Select
             ariaLabel="会话"
             value={sessionId}
@@ -413,7 +413,7 @@ export function RunPanel({
               >
                 第 {turnIndex + 1} 轮
               </span>
-              <span className="text-[12px] text-[var(--color-muted)] hidden sm:inline">
+              <span className="text-[length:var(--fs-sm)] text-[var(--color-muted)] hidden sm:inline">
                 共 {currentSession?.message_count ?? 0} 条历史
                 {(currentSession?.summarized_upto ?? 0) > 0 &&
                   ` · 已压缩至第 ${currentSession?.summarized_upto} 轮`}
@@ -426,12 +426,12 @@ export function RunPanel({
         </div>
 
         <div className="flex items-center gap-2 mb-3 flex-wrap">
-          <h2 className="text-[14px] font-medium">执行观测</h2>
+          <h2 className="text-[length:var(--fs-md)] font-medium">执行观测</h2>
           {status && (
             <span className={`tag ${busy ? "live-dot" : ""}`}>{busy ? "运行中" : status}</span>
           )}
           {events.length > 0 && (
-            <span className="text-[12px] text-[var(--color-muted)] flex items-center gap-1">
+            <span className="text-[length:var(--fs-sm)] text-[var(--color-muted)] flex items-center gap-1">
               <Hint text="每一步干了什么，数字 = 想了几轮">
                 {events.length} 个事件
               </Hint>
@@ -457,7 +457,7 @@ export function RunPanel({
                       : "协议层原始事件（调试用）"
                 }
                 onClick={() => setView(k)}
-                className={`px-2.5 py-1 rounded text-[12px] whitespace-nowrap transition-colors ${
+                className={`px-2.5 py-1 rounded text-[length:var(--fs-sm)] whitespace-nowrap transition-colors ${
                   view === k
                     ? "bg-[var(--color-surface)] text-[var(--color-accent)] font-medium"
                     : "text-[var(--color-muted)] hover:text-[var(--color-text)]"
@@ -469,7 +469,7 @@ export function RunPanel({
           </div>
 
           <div className="ml-auto flex items-center gap-2">
-            <label className="flex items-center gap-1.5 text-[12px] text-[var(--color-muted)] cursor-pointer whitespace-nowrap">
+            <label className="flex items-center gap-1.5 text-[length:var(--fs-sm)] text-[var(--color-muted)] cursor-pointer whitespace-nowrap">
               <input
                 type="checkbox"
                 checked={autoScroll}
@@ -479,7 +479,7 @@ export function RunPanel({
               自动滚动
             </label>
             {events.length > 0 && (
-              <button className="btn text-[12px]" onClick={() => void copyAll()}>
+              <button className="btn text-[length:var(--fs-sm)]" onClick={() => void copyAll()}>
                 复制
               </button>
             )}
@@ -489,7 +489,7 @@ export function RunPanel({
         {/* 视图区 */}
         <div className="flex-1 overflow-auto rounded-md bg-[var(--color-surface-2)] p-3 min-h-[240px]">
           {events.length === 0 ? (
-            <p className="text-[12px] text-[var(--color-muted)]">
+            <p className="text-[length:var(--fs-sm)] text-[var(--color-muted)]">
               还没有执行。输入消息后点「执行」——
               {sessionId ? "当前会话会带上上下文" : "当前是单轮模式"}。
             </p>
@@ -502,7 +502,7 @@ export function RunPanel({
           ) : view === "table" ? (
             <EventTable events={events} />
           ) : (
-            <pre className="whitespace-pre-wrap break-all text-[10.5px] mono">
+            <pre className="whitespace-pre-wrap break-all text-[length:var(--fs-xs)] mono">
               {JSON.stringify(events, null, 2)}
             </pre>
           )}
@@ -526,7 +526,7 @@ export function RunPanel({
           )}
 
           <textarea
-            className="input mono text-[12px] flex-1"
+            className="input mono text-[length:var(--fs-sm)] flex-1"
             rows={2}
             placeholder={`给「${agentName}」发消息…（Ctrl/⌘ + Enter 发送）`}
             value={input}
@@ -551,7 +551,7 @@ export function RunPanel({
           )}
         </div>
         {disabled && (
-          <p className="text-[12px] text-[var(--color-err)] mt-2">
+          <p className="text-[length:var(--fs-sm)] text-[var(--color-err)] mt-2">
             定义有错误，请先在「定义」页修正后再试跑。
           </p>
         )}
@@ -559,9 +559,9 @@ export function RunPanel({
 
       {/* 右侧：最近执行 */}
       <aside className="card p-4">
-        <h2 className="text-[14px] font-medium mb-3">最近执行</h2>
+        <h2 className="text-[length:var(--fs-md)] font-medium mb-3">最近执行</h2>
         {recent.length === 0 ? (
-          <p className="text-[12px] text-[var(--color-muted)]">暂无记录</p>
+          <p className="text-[length:var(--fs-sm)] text-[var(--color-muted)]">暂无记录</p>
         ) : (
           <div className="space-y-1">
             {recent.map((r) => (
@@ -571,10 +571,10 @@ export function RunPanel({
                 className="block w-full text-left p-2 rounded-md hover:bg-[var(--color-surface-2)] transition-colors"
               >
                 <div className="flex items-center gap-2">
-                  <span className={`text-[12px] ${STATUS_STYLE[r.status] ?? ""}`}>●</span>
-                  <span className="text-[12px] mono truncate flex-1">{r.id.slice(0, 18)}…</span>
+                  <span className={`text-[length:var(--fs-sm)] ${STATUS_STYLE[r.status] ?? ""}`}>●</span>
+                  <span className="text-[length:var(--fs-sm)] mono truncate flex-1">{r.id.slice(0, 18)}…</span>
                 </div>
-                <div className="text-[10.5px] text-[var(--color-muted)] mt-0.5">
+                <div className="text-[length:var(--fs-xs)] text-[var(--color-muted)] mt-0.5">
                   {fmt.relative(r.started_at)}
                   {r.usage?.total_tokens ? ` · ${r.usage.total_tokens} tokens` : ""}
                 </div>
@@ -592,12 +592,12 @@ export function RunPanel({
 function ChatBlock({ item }: { item: RenderItem }) {
   if (item.kind === "text") {
     return (
-      <div className="text-[13px] leading-relaxed whitespace-pre-wrap break-words">{item.text}</div>
+      <div className="text-[length:var(--fs-base)] leading-relaxed whitespace-pre-wrap break-words">{item.text}</div>
     );
   }
   if (item.kind === "thinking") {
     return (
-      <div className="text-[12px] text-[var(--color-muted)] italic whitespace-pre-wrap break-words pl-3 border-l-2 border-[var(--color-border)]">
+      <div className="text-[length:var(--fs-sm)] text-[var(--color-muted)] italic whitespace-pre-wrap break-words pl-3 border-l-2 border-[var(--color-border)]">
         {item.text}
       </div>
     );
@@ -608,18 +608,18 @@ function ChatBlock({ item }: { item: RenderItem }) {
         className="rounded-md p-2.5"
         style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)" }}
       >
-        <div className="flex items-center gap-2 text-[12px]" style={{ color: "var(--color-info)" }}>
+        <div className="flex items-center gap-2 text-[length:var(--fs-sm)]" style={{ color: "var(--color-info)" }}>
           <span>⚙</span>
           <span className="font-medium">{item.name}</span>
           {!item.done && <span className="live-dot">执行中…</span>}
         </div>
         {item.args && (
-          <pre className="mt-1.5 text-[10.5px] mono whitespace-pre-wrap break-all text-[var(--color-muted)]">
+          <pre className="mt-1.5 text-[length:var(--fs-xs)] mono whitespace-pre-wrap break-all text-[var(--color-muted)]">
             {item.args}
           </pre>
         )}
         {item.result && (
-          <pre className="mt-1.5 text-[10.5px] mono whitespace-pre-wrap break-all max-h-40 overflow-auto">
+          <pre className="mt-1.5 text-[length:var(--fs-xs)] mono whitespace-pre-wrap break-all max-h-40 overflow-auto">
             {item.result}
           </pre>
         )}
@@ -627,7 +627,7 @@ function ChatBlock({ item }: { item: RenderItem }) {
     );
   }
   return (
-    <div className="text-[12px] flex items-center gap-2 flex-wrap" style={{ color: item.color }}>
+    <div className="text-[length:var(--fs-sm)] flex items-center gap-2 flex-wrap" style={{ color: item.color }}>
       <span>—</span>
       <span>{item.label}</span>
       {item.text && (
@@ -644,7 +644,7 @@ function EventTable({ events }: { events: RunEvent[] }) {
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-[12px] min-w-[520px]">
+      <table className="w-full text-[length:var(--fs-sm)] min-w-[520px]">
         <thead className="text-[var(--color-muted)]">
           <tr>
             <th className="text-left py-1.5 pr-3 w-12">seq</th>
@@ -681,7 +681,7 @@ function EventTable({ events }: { events: RunEvent[] }) {
               isOpen ? (
                 <tr key={`${ev.seq}-p`} className="bg-[var(--color-surface)]">
                   <td colSpan={4} className="p-2">
-                    <pre className="whitespace-pre-wrap break-all text-[10.5px] max-h-64 overflow-auto">
+                    <pre className="whitespace-pre-wrap break-all text-[length:var(--fs-xs)] max-h-64 overflow-auto">
                       {JSON.stringify(ev.payload, null, 2)}
                     </pre>
                   </td>

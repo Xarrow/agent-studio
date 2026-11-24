@@ -121,7 +121,7 @@ export function ToolPicker({
       title="工具"
       hint="勾上就能用"
       extra={
-        <span className="text-[11px] tabular-nums" style={{ color: "var(--color-muted)" }}>
+        <span className="text-[length:var(--fs-xs)] tabular-nums" style={{ color: "var(--color-muted)" }}>
           已挂 {mountedIds.length} / 共 {all.length}
         </span>
       }
@@ -130,7 +130,7 @@ export function ToolPicker({
     >
       <div className="px-3.5 pb-2">
         <input
-          className="input h-9 w-full text-[13px]"
+          className="input h-9 w-full text-[length:var(--fs-base)]"
           value={q}
           placeholder="搜工具，比如：python 浏览器 文件"
           onChange={(e) => setQ(e.target.value)}
@@ -141,7 +141,7 @@ export function ToolPicker({
         <div className="px-3.5 py-8 text-center">
           {loadState === "failed" ? (
             <>
-              <p className="text-[12.5px] mb-2" style={{ color: "var(--color-err)" }}>
+              <p className="text-[length:var(--fs-base)] mb-2" style={{ color: "var(--color-err)" }}>
                 工具列表没加载出来
               </p>
               <button type="button" data-tap className="btn btn-sm" onClick={load}>
@@ -149,7 +149,7 @@ export function ToolPicker({
               </button>
             </>
           ) : (
-            <p className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+            <p className="text-[length:var(--fs-base)]" style={{ color: "var(--color-muted)" }}>
               {all.length === 0 ? "还没有工具，去「工具」页建一个" : "没有匹配的工具"}
             </p>
           )}
@@ -182,7 +182,7 @@ export function ToolPicker({
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-baseline gap-1.5">
-                    <span className="text-[13px] font-medium truncate">{t.name}</span>
+                    <span className="text-[length:var(--fs-base)] font-medium truncate">{t.name}</span>
                     <span
                       className="shrink-0 text-[10px] px-1 rounded"
                       style={{ background: "var(--color-surface-2)", color: "var(--color-muted)" }}
@@ -192,7 +192,7 @@ export function ToolPicker({
                   </span>
                   {t.description && (
                     <span
-                      className="text-[11.5px] leading-[1.45] mt-0.5 line-clamp-1"
+                      className="text-[length:var(--fs-sm)] leading-[1.45] mt-0.5 line-clamp-1"
                       style={{ color: "var(--color-muted)" }}
                     >
                       {t.description}

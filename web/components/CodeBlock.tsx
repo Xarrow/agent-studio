@@ -77,7 +77,7 @@ export function CodeBlock({
   if (bare) {
     return (
       <pre
-        className="hl overflow-auto px-3 py-2 text-[12px] leading-[1.6] m-0"
+        className="hl overflow-auto px-3 py-2 text-[length:var(--fs-sm)] leading-[1.6] m-0"
         style={{ background: "var(--color-surface-2)" }}
       >
         <code>
@@ -101,16 +101,16 @@ export function CodeBlock({
     <div className="my-2 rounded-[8px] border overflow-hidden" style={{ borderColor: "var(--color-border)" }}>
       {/* 工具条：语言名 + 行数 + 动作（常驻可见，不藏 hover） */}
       <div
-        className="flex items-center gap-2 px-2.5 py-1 border-b text-[12px]"
+        className="flex items-center gap-2 px-2.5 py-1 border-b text-[length:var(--fs-sm)]"
         style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
       >
         <span
-          className="mono shrink-0 rounded px-1.5 py-[1px] text-[11px] uppercase tracking-wide"
+          className="mono shrink-0 rounded px-1.5 py-[1px] text-[length:var(--fs-xs)] uppercase tracking-wide"
           style={{ background: "var(--color-surface)", color: "var(--color-muted)" }}
         >
           {effective || "text"}
         </span>
-        <span className="shrink-0 text-[11px]" style={{ color: "var(--color-muted)" }}>
+        <span className="shrink-0 text-[length:var(--fs-xs)]" style={{ color: "var(--color-muted)" }}>
           {lines.length} 行
         </span>
         <span className="ml-auto flex items-center gap-1.5">
@@ -201,7 +201,7 @@ export function CodeBlock({
         <>
           <div className="relative">
             <pre
-              className="hl overflow-auto px-2.5 py-2 text-[12px] leading-[1.6] m-0"
+              className="hl overflow-auto px-2.5 py-2 text-[length:var(--fs-sm)] leading-[1.6] m-0"
               style={{ background: "var(--color-surface-2)" }}
             >
               <code>
@@ -230,7 +230,7 @@ export function CodeBlock({
             <button
               type="button"
               onClick={() => setExpanded(true)}
-              className="flex w-full items-center justify-center gap-1 border-t py-1.5 text-[12px] max-md:min-h-[36px] hover:bg-[var(--color-surface)]"
+              className="flex w-full items-center justify-center gap-1 border-t py-1.5 text-[length:var(--fs-sm)] max-md:min-h-[36px] hover:bg-[var(--color-surface)]"
               style={{ borderColor: "var(--color-border)", color: "var(--color-accent)" }}
             >
               还有 {lines.length - PREVIEW_LINES} 行

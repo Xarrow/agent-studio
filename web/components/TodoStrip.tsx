@@ -72,7 +72,7 @@ export default function TodoStrip({
         data-tap
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1 text-[11.5px] max-md:min-h-[38px]"
+        className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1 text-[length:var(--fs-sm)] max-md:min-h-[38px]"
         style={{ background: "var(--color-surface-2)", color: "var(--color-muted)" }}
       >
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -93,7 +93,7 @@ export default function TodoStrip({
       </button>
 
       {open && (
-        <ul className="mt-1 flex flex-col gap-0.5 px-1 text-[12px]">
+        <ul className="mt-1 flex flex-col gap-0.5 px-1 text-[length:var(--fs-sm)]">
           {tasks.map((t) => {
             const ok = t.state === "completed";
             const running = t.state === "in_progress";
@@ -128,7 +128,7 @@ export default function TodoStrip({
                 >
                   {t.subject}
                 </span>
-                <span className="ml-auto shrink-0 text-[11px]" style={{ color: "var(--color-muted)" }}>
+                <span className="ml-auto shrink-0 text-[length:var(--fs-xs)]" style={{ color: "var(--color-muted)" }}>
                   {STATE_TEXT[t.state] || t.state}
                 </span>
               </li>

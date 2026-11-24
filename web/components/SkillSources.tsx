@@ -235,7 +235,7 @@ export function SkillSourcesDialog({
         {tab === "sources" ? (
           <>
             <div className="mb-3 rounded-lg border p-3" style={{ borderColor: "var(--color-border)" }}>
-              <div className="mb-2 flex items-center gap-2 text-[12.5px]">
+              <div className="mb-2 flex items-center gap-2 text-[length:var(--fs-base)]">
                 <IconLink size={14} />
                 使用哪种方式取内容
                 <Select
@@ -269,7 +269,7 @@ export function SkillSourcesDialog({
                   <input className="input w-24" placeholder="优先级" value={priority} onChange={(e) => setPriority(e.target.value)} />
                   <input className="input flex-1" placeholder="令牌（私有仓库才需要，加密保存）" value={token} onChange={(e) => setToken(e.target.value)} type="password" />
                 </div>
-                <p className="text-[11px] text-[var(--color-warn)]">
+                <p className="text-[length:var(--fs-xs)] text-[var(--color-warn)]">
                   来源里的技能是文本指令，也可能带脚本 —— 只添加你信任的来源。
                 </p>
                 <div className="flex gap-2">
@@ -284,7 +284,7 @@ export function SkillSourcesDialog({
             )}
 
             {loading ? (
-              <p className="text-[12px] text-[var(--color-muted)]">读取中…</p>
+              <p className="text-[length:var(--fs-sm)] text-[var(--color-muted)]">读取中…</p>
             ) : items.length === 0 ? (
               <Empty title="还没有登记来源" hint="登记后可以浏览里面的技能、装完再批量检查更新。" />
             ) : (
@@ -293,12 +293,12 @@ export function SkillSourcesDialog({
                   <Row key={s.id}>
                     <div className="flex flex-col gap-2 py-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-[13px]">{s.name}</span>
-                        <span className="rounded px-1.5 py-0.5 text-[11px]" style={{ background: "var(--bg-hover)", color: "var(--color-text-2)" }}>
+                        <span className="text-[length:var(--fs-base)]">{s.name}</span>
+                        <span className="rounded px-1.5 py-0.5 text-[length:var(--fs-xs)]" style={{ background: "var(--bg-hover)", color: "var(--color-text-2)" }}>
                           {KIND_LABEL[s.kind] ?? s.kind}
                         </span>
-                        <span className="text-[11px] text-[var(--color-muted)]">优先级 {s.priority}</span>
-                        {s.has_token && <span className="text-[11px] text-[var(--color-muted)]">已存令牌</span>}
+                        <span className="text-[length:var(--fs-xs)] text-[var(--color-muted)]">优先级 {s.priority}</span>
+                        {s.has_token && <span className="text-[length:var(--fs-xs)] text-[var(--color-muted)]">已存令牌</span>}
                         <span className="ml-auto flex items-center gap-1.5">
                           <Switch checked={s.enabled} onChange={() => void toggle(s)} />
                           <button className="btn" disabled={busy} onClick={() => void test(s)}>
@@ -312,10 +312,10 @@ export function SkillSourcesDialog({
                           </button>
                         </span>
                       </div>
-                      <div className="mono text-[11.5px] text-[var(--color-muted)] break-all">{s.address}</div>
+                      <div className="mono text-[length:var(--fs-sm)] text-[var(--color-muted)] break-all">{s.address}</div>
 
                       {probe[s.id] && (
-                        <div className="rounded border p-2 text-[11.5px]" style={{ borderColor: "var(--color-border)" }}>
+                        <div className="rounded border p-2 text-[length:var(--fs-sm)]" style={{ borderColor: "var(--color-border)" }}>
                           {probe[s.id].map((st) => (
                             <div key={st.step} className="flex items-center gap-2">
                               <span style={{ color: st.ok ? "var(--color-ok)" : "var(--color-danger)" }}>{st.ok ? "✓" : "✕"}</span>
@@ -330,12 +330,12 @@ export function SkillSourcesDialog({
                       {browse[s.id] && (
                         <div className="rounded border p-2" style={{ borderColor: "var(--color-border)" }}>
                           {browse[s.id].length === 0 ? (
-                            <p className="text-[11.5px] text-[var(--color-muted)]">这里面没找到技能</p>
+                            <p className="text-[length:var(--fs-sm)] text-[var(--color-muted)]">这里面没找到技能</p>
                           ) : (
                             browse[s.id].map((k) => (
                               <div key={k.name} className="flex items-start gap-2 py-0.5">
-                                <span className="text-[12.5px]">{k.name}</span>
-                                <span className="flex-1 truncate text-[11.5px] text-[var(--color-muted)]">{k.description}</span>
+                                <span className="text-[length:var(--fs-base)]">{k.name}</span>
+                                <span className="flex-1 truncate text-[length:var(--fs-sm)] text-[var(--color-muted)]">{k.description}</span>
                                 <button className="btn" disabled={busy} onClick={() => void install(s, k.name)}>
                                   安装
                                 </button>
@@ -359,14 +359,14 @@ export function SkillSourcesDialog({
                 {updates.map((u) => (
                   <Row key={u.id}>
                     <div className="flex items-center gap-2 py-1">
-                      <span className="text-[13px]">{u.name}</span>
+                      <span className="text-[length:var(--fs-base)]">{u.name}</span>
                       <span
-                        className="text-[11.5px]"
+                        className="text-[length:var(--fs-sm)]"
                         style={{ color: u.has_update ? "var(--color-warn)" : "var(--color-muted)" }}
                       >
                         {u.has_update ? `有更新 · ${u.latest_commit?.slice(0, 7) ?? ""}` : u.status === "cached" ? "已是最新（缓存）" : "已是最新"}
                       </span>
-                      {u.message && <span className="text-[11px] text-[var(--color-danger)]">{u.message}</span>}
+                      {u.message && <span className="text-[length:var(--fs-xs)] text-[var(--color-danger)]">{u.message}</span>}
                       {u.has_update && (
                         <button className="btn ml-auto" disabled={busy} onClick={() => void applyUpdate(u)}>
                           更新

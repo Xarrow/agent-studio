@@ -67,9 +67,9 @@ function Fold({ title, summary, defaultOpen = false, children }: { title: string
   return (
     <section className="card mb-4 overflow-hidden">
       <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center gap-2 px-4 py-3 text-left">
-        <span className="text-[14px] font-medium">{title}</span>
-        {summary && <span className="truncate text-[12px]" style={{ color: "var(--color-muted)" }}>{summary}</span>}
-        <span className="ml-auto shrink-0 text-[12px]" style={{ color: "var(--color-accent)" }}>{open ? "收起" : "展开"}</span>
+        <span className="text-[length:var(--fs-md)] font-medium">{title}</span>
+        {summary && <span className="truncate text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>{summary}</span>}
+        <span className="ml-auto shrink-0 text-[length:var(--fs-sm)]" style={{ color: "var(--color-accent)" }}>{open ? "收起" : "展开"}</span>
       </button>
       {open && <div className="border-t px-4 py-3" style={{ borderColor: "var(--color-border)" }}>{children}</div>}
     </section>
@@ -424,7 +424,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
         <div className="p-4 md:p-6 lg:p-7 max-w-lg">
           <div className="card p-5">
             <h1 className="text-[16px] font-medium mb-2">这个助手不存在</h1>
-            <p className="text-[13px] text-[var(--color-muted)] mb-4">
+            <p className="text-[length:var(--fs-base)] text-[var(--color-muted)] mb-4">
               它可能已经被删除了（旧链接或书签会落到这里）。平台现有的助手在列表里。
             </p>
             <div className="flex items-center gap-2 flex-wrap">
@@ -440,7 +440,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
       );
     }
     return (
-      <div className="p-4 md:p-6 lg:p-7 text-[13px] text-[var(--color-muted)]">
+      <div className="p-4 md:p-6 lg:p-7 text-[length:var(--fs-base)] text-[var(--color-muted)]">
         {err ? `加载失败：${err}` : "加载中…"}
       </div>
     );
@@ -654,7 +654,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 href="/agents"
                 title="返回 Agents 列表"
                 aria-label="返回 Agents 列表"
-                className="inline-flex min-h-[36px] items-center text-[12px] text-[var(--color-muted)] max-md:-ml-2 max-md:w-9 max-md:shrink-0 max-md:justify-center max-md:rounded-[7px] lg:min-h-0"
+                className="inline-flex min-h-[36px] items-center text-[length:var(--fs-sm)] text-[var(--color-muted)] max-md:-ml-2 max-md:w-9 max-md:shrink-0 max-md:justify-center max-md:rounded-[7px] lg:min-h-0"
               >
                 <span className="md:hidden">←</span>
                 <span className="max-md:hidden">← Agents</span>
@@ -668,7 +668,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
               （模型 / 工具 / Skills / 记忆）占一屏最贵的位置，而下面每一节
               又有完整信息 → 同一条信息两处 ✗。并进标题下一行副标题：
               值在前口径在后，要细看就去各自那一节。 */}
-          <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1 mt-1.5 text-[12px] text-[var(--color-muted)]">
+          <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1 mt-1.5 text-[length:var(--fs-sm)] text-[var(--color-muted)]">
             <span className="mono break-all" title="这个助手跑在哪个模型上">
               {def.model.name || "未指定模型"}
             </span>
@@ -712,7 +712,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
               与其让人白改一通，不如把"它能干什么、怎么调、去哪管"一句话摆出来。 */}
           {def.runtime === "a2a" && (
             <div
-              className="mt-2.5 rounded-[10px] border px-3 py-2 text-[12px] leading-relaxed max-w-[720px]"
+              className="mt-2.5 rounded-[10px] border px-3 py-2 text-[length:var(--fs-sm)] leading-relaxed max-w-[720px]"
               style={{
                 borderColor: "color-mix(in srgb, var(--color-accent) 28%, transparent)",
                 background: "color-mix(in srgb, var(--color-accent) 6%, transparent)",
@@ -720,7 +720,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
             >
               <div className="flex flex-wrap items-center gap-2">
                 <span
-                  className="rounded-full px-1.5 py-[1px] text-[10.5px] font-semibold"
+                  className="rounded-full px-1.5 py-[1px] text-[length:var(--fs-xs)] font-semibold"
                   style={{ background: "color-mix(in srgb, var(--color-accent) 16%, transparent)", color: "var(--color-accent)" }}
                 >
                   远端 A2A
@@ -729,7 +729,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                   它跑在别的平台上：模型、工具、记忆都由远端管理，这里只是它的影子条目，改这些不会生效。
                 </span>
               </div>
-              <div className="mt-1 mono text-[11.5px] break-all text-[var(--color-muted)]">
+              <div className="mt-1 mono text-[length:var(--fs-sm)] break-all text-[var(--color-muted)]">
                 {String((def as unknown as Record<string, unknown>).remote_url || "（没有记录远端地址）")}
                 {String((def as unknown as Record<string, unknown>).remote_agent_id || "")
                   ? ` · 远端助手 ${String((def as unknown as Record<string, unknown>).remote_agent_id)}`
@@ -749,7 +749,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
               信息默认可见 vs 页面干净之间的取舍 —— 错误摘要只占一行，折叠时
               用户也始终知道"最近一次失败了"，展开才给完整原因。 */}
           {lastRunOpen && ov.lastRun?.status === "error" && (
-            <div className="mt-2 text-[12px] leading-relaxed rounded-[8px] px-3 py-2 max-w-[560px]"
+            <div className="mt-2 text-[length:var(--fs-sm)] leading-relaxed rounded-[8px] px-3 py-2 max-w-[560px]"
               style={{ background: "color-mix(in srgb, var(--color-err) 8%, transparent)" }}>
               <div className="flex items-center gap-2 flex-wrap">
                 <span style={{ color: STATUS_STYLE.error }}>最近一次执行失败</span>
@@ -773,10 +773,10 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {msg && <span className="text-[12px] text-[var(--color-ok)]">{msg}</span>}
+          {msg && <span className="text-[length:var(--fs-sm)] text-[var(--color-ok)]">{msg}</span>}
           {saveErr && !saving && (
             <span
-              className="max-w-[420px] text-[12px] leading-snug"
+              className="max-w-[420px] text-[length:var(--fs-sm)] leading-snug"
               style={{ color: "var(--color-err)" }}
               title={saveErr}
             >
@@ -785,7 +785,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
           )}
           {dirty && !saving && (
             <span
-              className="text-[12px] flex items-center gap-1"
+              className="text-[length:var(--fs-sm)] flex items-center gap-1"
               style={{ color: "var(--color-warn)" }}
               title="还没保存，点「保存改动」"
             >
@@ -814,7 +814,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 >
                   <button
                     role="menuitem"
-                    className="block w-full px-3 py-1.5 text-left text-[12.5px] hover:bg-[var(--bg-selected)]"
+                    className="block w-full px-3 py-1.5 text-left text-[length:var(--fs-base)] hover:bg-[var(--bg-selected)]"
                     onClick={async () => {
                       setMoreOpen(false);
                       const c = await api.duplicateAgent(agentId, {});
@@ -830,7 +830,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                   <a
                     role="menuitem"
                     href={`/exec?agent=${agentId}`}
-                    className="block px-3 py-1.5 text-[12.5px] hover:bg-[var(--bg-selected)]"
+                    className="block px-3 py-1.5 text-[length:var(--fs-base)] hover:bg-[var(--bg-selected)]"
                     onClick={() => setMoreOpen(false)}
                   >
                     打开对话页
@@ -842,7 +842,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
           {/* 没改动就禁用：点了会白写一条版本记录（save() 无条件 PUT）——
                 配置页不该因为「手滑点一下保存」多出一版历史 */}
           {/* 只有一个状态位：保存中 / 已自动保存·时间 / 保存失败[重试] */}
-          <div className="flex items-center gap-2 text-[12.5px]" style={{ color: "var(--color-text-3)" }}>
+          <div className="flex items-center gap-2 text-[length:var(--fs-base)]" style={{ color: "var(--color-text-3)" }}>
             {credMissing ? (
               <span style={{ color: "var(--color-err)" }} title={credReason}>
                 缺少 LLM 配置，暂不保存
@@ -935,7 +935,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
           <a
             key={id}
             href={`#${id}`}
-            className="shrink-0 rounded-full px-2.5 py-1 text-[12px] transition-colors"
+            className="shrink-0 rounded-full px-2.5 py-1 text-[length:var(--fs-sm)] transition-colors"
             style={{
               background: activeSection === id ? "var(--bg-selected)" : "transparent",
               color: activeSection === id ? "var(--color-text)" : "var(--color-text-3)",
@@ -954,13 +954,13 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
       {(errors.length > 0 || warnings.length > 0) && (
         <div className="card p-3.5 mb-4 space-y-1">
           {errors.map((i, n) => (
-            <div key={`e${n}`} className="text-[12px] text-[var(--color-err)]">
+            <div key={`e${n}`} className="text-[length:var(--fs-sm)] text-[var(--color-err)]">
               ✗ {i.field ? `${i.field}: ` : ""}
               {i.message}
             </div>
           ))}
           {warnings.map((i, n) => (
-            <div key={`w${n}`} className="text-[12px] text-[var(--color-warn)]">
+            <div key={`w${n}`} className="text-[length:var(--fs-sm)] text-[var(--color-warn)]">
               ⚠ {i.field ? `${i.field}: ` : ""}
               {i.message}
             </div>
@@ -988,11 +988,11 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
           原来是 2 列 grid 塞 5 个不等高 Fold，视觉错落且顺序对不上心智模型 ✗。 */}
       <div id="sec-define" className="grid gap-4 grid-cols-1 scroll-mt-14">
           <section className="card p-4 space-y-3.5">
-            <h2 className="text-[14px] font-medium">定义</h2>
+            <h2 className="text-[length:var(--fs-md)] font-medium">定义</h2>
             <div>
               <label className="label">名称</label>
               {nameErr && (
-                <p className="text-[12px] mb-1" style={{ color: "var(--color-err)" }}>
+                <p className="text-[length:var(--fs-sm)] mb-1" style={{ color: "var(--color-err)" }}>
                   {nameErr}
                 </p>
               )}
@@ -1098,13 +1098,13 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                     onChange={(e) => patch({ orchestrator_brief: e.target.value })}
                   />
                   <div className="mt-1.5 flex items-center gap-2">
-                    <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+                    <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                       {def.orchestrator_brief ? "正在使用：助手自己的定义" : "正在使用：平台默认定义（占位文字就是它）"}
                     </span>
                     {def.orchestrator_brief ? (
                       <button
                         type="button"
-                        className="text-[12px] underline"
+                        className="text-[length:var(--fs-sm)] underline"
                         style={{ color: "var(--color-accent)" }}
                         onClick={() => patch({ orchestrator_brief: "" })}
                       >
@@ -1120,7 +1120,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 <label className="label mb-0">System Prompt</label>
                 <div className="flex items-center gap-2">
                   {/* token 估算：中文按 1 字≈1 token 粗算，给个量级就够（精确数要模型分词器） */}
-                  <span className="text-[11px] tabular-nums" style={{ color: "var(--color-text-3)" }}
+                  <span className="text-[length:var(--fs-xs)] tabular-nums" style={{ color: "var(--color-text-3)" }}
                     title="粗估：中文按 1 字 ≈ 1 token，英文按 4 字符 ≈ 1 token">
                     {(def.system_prompt ?? "").length} 字 · ≈{Math.round(((def.system_prompt ?? "").match(/[\u4e00-\u9fa5]/g)?.length ?? 0) + ((def.system_prompt ?? "").length - ((def.system_prompt ?? "").match(/[\u4e00-\u9fa5]/g)?.length ?? 0)) / 4)} tokens
                   </span>
@@ -1147,8 +1147,8 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
             {promptFull && (
               <div className="fixed inset-0 z-50 flex flex-col p-4" style={{ background: "var(--color-bg)" }}>
                 <div className="mb-2 flex items-center gap-2">
-                  <span className="text-[13px] font-medium">System Prompt</span>
-                  <span className="text-[11.5px]" style={{ color: "var(--color-text-3)" }}>
+                  <span className="text-[length:var(--fs-base)] font-medium">System Prompt</span>
+                  <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-3)" }}>
                     {(def.system_prompt ?? "").length} 字
                   </span>
                   <button className="btn btn-sm ml-auto" onClick={() => setPromptFull(false)}>
@@ -1174,8 +1174,8 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                  style={{ background: "var(--color-surface-2)" }}>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="text-[13px] font-medium">远程调用</div>
-                  <div className="mt-0.5 text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                  <div className="text-[length:var(--fs-base)] font-medium">远程调用</div>
+                  <div className="mt-0.5 text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
                     {agent?.expose_remote
                       ? "已开放：别的 Agent Studio 可以把这个助手加进它的列表并按 A2A 调用"
                       : "关闭中：对端拿不到卡片，调用直接 403"}
@@ -1191,7 +1191,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
               {agent?.expose_remote && (
                 <div className="mt-2.5 space-y-2">
                   <div className="flex items-center gap-1.5">
-                    <code className="mono min-w-0 flex-1 truncate text-[11px]"
+                    <code className="mono min-w-0 flex-1 truncate text-[length:var(--fs-xs)]"
                           style={{ color: "var(--color-text-2)" }} title={a2aUrl}>
                       {a2aUrl}
                     </code>
@@ -1248,7 +1248,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                   )}
                 </div>
                 {def.limits.max_iters === -1 ? (
-                  <p className="mt-1 flex flex-wrap items-center gap-1.5 text-[12px]" style={{ color: "var(--color-warn)" }}>
+                  <p className="mt-1 flex flex-wrap items-center gap-1.5 text-[length:var(--fs-sm)]" style={{ color: "var(--color-warn)" }}>
                     ⚠ 不限制轮数，可能一直转下去
                     <button
                       type="button"
@@ -1259,7 +1259,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                     </button>
                   </p>
                 ) : (
-                  <p className="mt-1 text-[12px]" style={{ color: "var(--color-muted)" }}>
+                  <p className="mt-1 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                     推理-行动循环上限
                   </p>
                 )}
@@ -1281,7 +1281,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                     })
                   }
                 />
-                <p className="text-[12px] text-[var(--color-muted)] mt-1">
+                <p className="text-[length:var(--fs-sm)] text-[var(--color-muted)] mt-1">
                   默认 60 秒
                 </p>
               </div>
@@ -1303,7 +1303,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                     })
                   }
                 />
-                <p className="text-[12px] text-[var(--color-muted)] mt-1">
+                <p className="text-[length:var(--fs-sm)] text-[var(--color-muted)] mt-1">
                   超过就停（按模型单价算）
                 </p>
               </div>
@@ -1312,7 +1312,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 「这个助手是谁、拿什么跑」。原先是两张卡、模型那节还默认收起 ——
                 改个模型要先展开一次，多一道门。 */}
             <div id="sec-model" className="mt-1 scroll-mt-28 border-t pt-3.5 border-[var(--color-border)]">
-              <h3 className="text-[13px] font-medium mb-2.5">模型与运行时</h3>
+              <h3 className="text-[length:var(--fs-base)] font-medium mb-2.5">模型与运行时</h3>
             <div className="flex items-center justify-between">
               {caps && <span className="tag">{caps.display_name}</span>}
             </div>
@@ -1343,7 +1343,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 style={{ borderColor: "var(--color-border)" }}
               >
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[13px] font-semibold">工作目录</span>
+                  <span className="text-[length:var(--fs-base)] font-semibold">工作目录</span>
                   <Hint text="产物落这里，出不了沙箱。只填名字（如 报价调研），不要写路径" />
                 </div>
                 <input
@@ -1355,7 +1355,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 {/* 文件目录隔离 —— 摆成**选择器**而不是让用户填（能枚举的值不给手打），
                     并且把"会话之间看不看得见文件"这句人话放在它旁边 */}
                 <div className="mt-2.5">
-                  <div className="text-[12.5px] mb-1">文件目录怎么分</div>
+                  <div className="text-[length:var(--fs-base)] mb-1">文件目录怎么分</div>
                   <Segmented
                     value={def.workspace_isolation ?? "session"}
                     onChange={(v) => patch({ workspace_isolation: v })}
@@ -1364,7 +1364,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                       { key: "shared", label: "所有会话共用一个" },
                     ]}
                   />
-                  <p className="mt-1 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                  <p className="mt-1 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                     {(def.workspace_isolation ?? "session") === "shared"
                       ? "多会话共用这个目录：互相可见、同名会覆盖"
                       : "每会话一个目录：互不可见，产物可回流"}
@@ -1375,10 +1375,10 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                     只留下**会变的那一段**：实际路径（每改一次名字它就变，必须实时可见 ✓） */}
                 {/* 项目上下文：放在目录里的 AGENTS.md 会被自动读进来 ——
                     这是"这个项目该怎么做"的地方，不该混进上面那个 system prompt（换项目就不适用了） */}
-                <p className="mt-1.5 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                <p className="mt-1.5 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                   放一个 <span className="mono">AGENTS.md</span> 写项目规矩，每次开工自动读（≤8000 字）。
                 </p>
-                <p className="mt-1 text-[12px] mono" style={{ color: "var(--color-muted)" }}>
+                <p className="mt-1 text-[length:var(--fs-sm)] mono" style={{ color: "var(--color-muted)" }}>
                   实际位置：
                   {(def.workspace_isolation ?? "session") === "shared"
                     ? `data/work/${def.workspace?.trim() || "（沙箱根）"}`
@@ -1468,19 +1468,19 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                   const b = host(def.model.base_url);
                   if (!a || !b || a === b) return null;
                   return (
-                    <p className="mt-1 text-[12px]" style={{ color: "var(--color-warn)" }}>
+                    <p className="mt-1 text-[length:var(--fs-sm)]" style={{ color: "var(--color-warn)" }}>
                       这个助手的端点（{b}）和凭据「{usedCred?.name}」的端点（{a}）不是同一家 ——
                       执行时会按凭据的端点走；想避免混淆，把「端点」清空让它跟随凭据。
                     </p>
                   );
                 })()}
                 {credMissing && (
-                  <p className="mt-1 text-[12px]" style={{ color: "var(--color-err)" }}>
+                  <p className="mt-1 text-[length:var(--fs-sm)]" style={{ color: "var(--color-err)" }}>
                     {credReason}
                   </p>
                 )}
                 {usedCred && usedCred.provider !== def.model.provider && (
-                  <p className="mt-1 text-[12px]" style={{ color: "var(--color-warn)" }}>
+                  <p className="mt-1 text-[length:var(--fs-sm)]" style={{ color: "var(--color-warn)" }}>
                     当前凭据「{usedCred.name}」属于 {usedCred.provider}，与所选 Provider
                     不适配 —— 切回原 Provider 即恢复显示；或改选上面列表中的配置。
                   </p>
@@ -1540,7 +1540,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                   </button>
                 )}
               </div>
-              <p className="mt-1 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+              <p className="mt-1 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                 只在主模型所属服务商
                 {providers.find((p) => p.name === def.model.provider)?.display_name
                   ? `（${providers.find((p) => p.name === def.model.provider)!.display_name}）`
@@ -1553,11 +1553,11 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
             <details className="rounded-[10px]" style={{ background: "var(--color-surface-2)" }}>
               <summary
                 data-tap
-                className="flex min-h-[40px] cursor-pointer items-center gap-2 px-3 text-[12.5px]"
+                className="flex min-h-[40px] cursor-pointer items-center gap-2 px-3 text-[length:var(--fs-base)]"
                 style={{ color: "var(--color-text-2)" }}
               >
                 高级参数
-                <span className="text-[11.5px]" style={{ color: "var(--color-text-3)" }}>
+                <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-3)" }}>
                   temperature{" "}
                   {Math.round(Number((def.model.params as Record<string, number>)?.temperature ?? 0.7) * 100) / 100}
                   （默认 0.70）
@@ -1601,7 +1601,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                     恢复默认
                   </button>
                 </div>
-                <p className="mt-1 text-[11.5px]" style={{ color: "var(--color-text-3)" }}>
+                <p className="mt-1 text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-3)" }}>
                   越低越稳、越高越发散；范围 0–2，日常 0.7 够用。
                 </p>
               </div>
@@ -1625,9 +1625,9 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                 checked={def.tools_lazy !== false}
                 onChange={(e) => patch({ tools_lazy: e.target.checked })}
               />
-              <span className="text-[12.5px] leading-relaxed">
+              <span className="text-[length:var(--fs-base)] leading-relaxed">
                 工具按需加载
-                <span className="block text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                <span className="block text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                   只把常用工具（读写文件、跑命令、算数据、查资料）的完整定义发给模型；其余只在提示里列名字，
                   模型需要时自己取用。工具越多省得越多（接了 MCP 尤其明显）；关掉 = 全部一次性下发。
                 </span>
@@ -1635,7 +1635,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
             </label>
             {tools.length === 0 && skills.length === 0 && mcpServers.length === 0 ? (
               <div className="space-y-2.5">
-                <p className="text-[12px] text-[var(--color-muted)]">
+                <p className="text-[length:var(--fs-sm)] text-[var(--color-muted)]">
                   还没有能力可选。先把内置工具同步进来（不用跳页）。
                 </p>
                 <div className="flex items-center gap-2 flex-wrap">
@@ -1646,7 +1646,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
                   >
                     {syncing ? "同步中…" : "同步内置工具"}
                   </button>
-                  <Link href="/tools" className="text-[12px] text-[var(--color-muted)] hover:underline">
+                  <Link href="/tools" className="text-[length:var(--fs-sm)] text-[var(--color-muted)] hover:underline">
                     去工具页创建自定义工具 / 注册 MCP / 导入 Skill →
                   </Link>
                 </div>
@@ -1682,8 +1682,8 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
           <div>
             <div className="flex items-center justify-between gap-2">
               <div className="min-w-0">
-                <h2 className="text-[14px] font-medium">试一句</h2>
-                <p className="mt-0.5 text-[11.5px]" style={{ color: "var(--color-text-3)" }}>
+                <h2 className="text-[length:var(--fs-md)] font-medium">试一句</h2>
+                <p className="mt-0.5 text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-3)" }}>
                   在对话页跑，能看完整现场（工具、耗时、检索）
                 </p>
               </div>
@@ -1692,7 +1692,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
               </a>
             </div>
             {errors.length > 0 && (
-              <p className="mt-2 text-[12px]" style={{ color: "var(--color-err)" }}>
+              <p className="mt-2 text-[length:var(--fs-sm)]" style={{ color: "var(--color-err)" }}>
                 先修上面的 {errors.length} 个问题，它会跑不起来
               </p>
             )}
@@ -1710,15 +1710,15 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
           >
             <div className="space-y-4">
               <div>
-                <div className="text-[12px] font-medium mb-2">历史版本</div>
+                <div className="text-[length:var(--fs-sm)] font-medium mb-2">历史版本</div>
                 <RevisionHistory kind="agent" targetId={agentId} onRestored={() => void load()} />
               </div>
               <div>
-                <div className="text-[12px] font-medium mb-2">评测</div>
+                <div className="text-[length:var(--fs-sm)] font-medium mb-2">评测</div>
                 <AgentEvalPanel agentId={agentId} disabled={dirty} />
               </div>
               <div>
-                <div className="text-[12px] font-medium mb-2">
+                <div className="text-[length:var(--fs-sm)] font-medium mb-2">
                   记忆
                   {ov.memoryOwn !== null && (
                     <span className="ml-2 font-normal text-[var(--color-muted)]">

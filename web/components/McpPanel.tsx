@@ -224,7 +224,7 @@ export function McpPanel({ embedded = false }: { embedded?: boolean }) {
           value={filter}
           onChange={setFilter}
         />
-        <span className="ml-auto text-[12px] text-[var(--color-muted)]">
+        <span className="ml-auto text-[length:var(--fs-sm)] text-[var(--color-muted)]">
           {loading ? "加载中…" : `${servers.length} 个`}
         </span>
       </Toolbar>
@@ -233,20 +233,20 @@ export function McpPanel({ embedded = false }: { embedded?: boolean }) {
       {showPaste && (
         <div className="mb-3 rounded-[10px] border p-3 md:p-4" style={{ borderColor: "var(--color-border)" }}>
           <div className="mb-2 flex flex-wrap items-center gap-2">
-            <span className="text-[13px] font-medium">粘贴 mcpServers 配置</span>
-            <span className="text-[12px] text-[var(--color-muted)]">
+            <span className="text-[length:var(--fs-base)] font-medium">粘贴 mcpServers 配置</span>
+            <span className="text-[length:var(--fs-sm)] text-[var(--color-muted)]">
               原样粘进来，不用拆字段手填；同名再导是更新
             </span>
           </div>
           <textarea
-            className="input min-h-[64px] w-full font-mono text-[12px]"
+            className="input min-h-[64px] w-full font-mono text-[length:var(--fs-sm)]"
             placeholder={'{\n  "mcpServers": {\n    "名字": { "command": "npx", "args": ["-y", "包名"] }\n  }\n}'}
             value={pasted}
             onChange={(e) => setPasted(e.target.value)}
             spellCheck={false}
           />
           {pastePreview && (
-            <div className="mt-2 text-[12px]">
+            <div className="mt-2 text-[length:var(--fs-sm)]">
               {pastePreview.error ? (
                 <p style={{ color: "var(--color-err)" }}>{pastePreview.error}</p>
               ) : (
@@ -320,7 +320,7 @@ export function McpPanel({ embedded = false }: { embedded?: boolean }) {
                         title={s.enabled ? "停用（助手暂不可用这些工具）" : "启用"}
                       />
                       <button
-                        className="btn !min-h-0 !px-2 !py-1 text-[12px]"
+                        className="btn !min-h-0 !px-2 !py-1 text-[length:var(--fs-sm)]"
                         disabled={busyId === s.id}
                         title="连上去要一次工具清单"
                         onClick={(e) => {
@@ -331,7 +331,7 @@ export function McpPanel({ embedded = false }: { embedded?: boolean }) {
                         {busyId === s.id ? "连接中…" : "探测"}
                       </button>
                       <button
-                        className="btn !min-h-0 !px-2 !py-1 text-[12px]"
+                        className="btn !min-h-0 !px-2 !py-1 text-[length:var(--fs-sm)]"
                         title="编辑连接配置"
                         onClick={(e) => {
                           e.stopPropagation();
@@ -341,7 +341,7 @@ export function McpPanel({ embedded = false }: { embedded?: boolean }) {
                         编辑
                       </button>
                       <button
-                        className="btn !min-h-0 !px-2 !py-1 text-[12px] text-[var(--color-err)]"
+                        className="btn !min-h-0 !px-2 !py-1 text-[length:var(--fs-sm)] text-[var(--color-err)]"
                         title="删除"
                         onClick={(e) => {
                           e.stopPropagation();
@@ -353,7 +353,7 @@ export function McpPanel({ embedded = false }: { embedded?: boolean }) {
                     </>
                   }
                 >
-                  <span className="truncate text-[13.5px] font-semibold">{s.name}</span>
+                  <span className="truncate text-[length:var(--fs-md)] font-semibold">{s.name}</span>
                   <Chip tone="muted">{s.transport === "stdio" ? "本地进程" : "远端 http"}</Chip>
                   {s.last_probe_at === 0 ? (
                     <Chip tone="warn">还没探测</Chip>
@@ -363,7 +363,7 @@ export function McpPanel({ embedded = false }: { embedded?: boolean }) {
                     <Chip tone="err">连不上</Chip>
                   )}
                   {!s.enabled && <Chip tone="muted">已停用</Chip>}
-                  <code className="mono hidden min-w-0 flex-1 truncate text-[12px] text-[var(--color-muted)] md:inline">
+                  <code className="mono hidden min-w-0 flex-1 truncate text-[length:var(--fs-sm)] text-[var(--color-muted)] md:inline">
                     {target}
                   </code>
                 </Row>
@@ -388,12 +388,12 @@ export function McpPanel({ embedded = false }: { embedded?: boolean }) {
                       <KV k="挂到助手">到「Agents → 某个助手 → 能力」里勾上它</KV>
                       {s.tools.length > 0 && (
                         <div className="mt-1">
-                          <p className="mb-1 text-[12px] text-[var(--color-muted)]">
+                          <p className="mb-1 text-[length:var(--fs-sm)] text-[var(--color-muted)]">
                             工具清单（探测所得，{s.tools.length} 个）：
                           </p>
                           <ul className="flex flex-col gap-1">
                             {s.tools.map((t) => (
-                              <li key={t.name} className="text-[12px]">
+                              <li key={t.name} className="text-[length:var(--fs-sm)]">
                                 <code className="mono">{t.name}</code>
                                 <span className="ml-2 text-[var(--color-muted)]">{t.description}</span>
                               </li>
@@ -513,8 +513,8 @@ function McpDialog({
         style={{ background: "var(--color-surface)", borderColor: "var(--color-border)" }}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-[15px] font-semibold">{server ? "编辑 MCP 服务器" : "注册 MCP 服务器"}</h2>
-        <p className="mt-1 text-[12px] text-[var(--color-muted)]">
+        <h2 className="text-[length:var(--fs-lg)] font-semibold">{server ? "编辑 MCP 服务器" : "注册 MCP 服务器"}</h2>
+        <p className="mt-1 text-[length:var(--fs-sm)] text-[var(--color-muted)]">
           只填"怎么连"。工具清单保存后点「探测」自动取回来。
         </p>
 
@@ -527,7 +527,7 @@ function McpDialog({
               placeholder="例如 filesystem"
               onChange={(e) => setForm({ ...form, name: e.target.value })}
             />
-            <span className="mt-1 block text-[12px] text-[var(--color-muted)]">
+            <span className="mt-1 block text-[length:var(--fs-sm)] text-[var(--color-muted)]">
               它会成为工具名前缀（<code className="mono">mcp__&lt;名字&gt;__&lt;工具&gt;</code>）。
               用英文字母/数字/下划线/连字符 —— 填中文会自动换成一个稳定的短名。
             </span>
@@ -599,7 +599,7 @@ function McpDialog({
 
           {probed && (
             <div
-              className="rounded-[8px] border p-2.5 text-[12px]"
+              className="rounded-[8px] border p-2.5 text-[length:var(--fs-sm)]"
               style={{
                 borderColor: probed.ok
                   ? "color-mix(in srgb, var(--color-ok) 35%, var(--color-border))"
@@ -621,7 +621,7 @@ function McpDialog({
               ) : (
                 <>
                   <b style={{ color: "var(--color-err)" }}>没连上</b>
-                  <p className="mt-0.5 break-all text-[12px] text-[var(--color-muted)]">{probed.error}</p>
+                  <p className="mt-0.5 break-all text-[length:var(--fs-sm)] text-[var(--color-muted)]">{probed.error}</p>
                 </>
               )}
             </div>

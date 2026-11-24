@@ -2576,7 +2576,7 @@ export function ChatConsole({
   /* ------------------------------- 渲染 ------------------------------- */
 
   if (loading) {
-    return <div className="p-4 md:p-6 lg:p-7 text-[13px] text-[var(--color-muted)]">加载中…</div>;
+    return <div className="p-4 md:p-6 lg:p-7 text-[length:var(--fs-base)] text-[var(--color-muted)]">加载中…</div>;
   }
 
   const currentAgent = agents.find((a) => a.id === agentId);
@@ -2632,7 +2632,7 @@ export function ChatConsole({
         title="换模型（只影响这个会话，刷新后仍然有效）"
         aria-label="换模型"
         aria-expanded={modelOpen}
-        className={`inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-[11.5px] hover:bg-[var(--color-surface-2)] ${
+        className={`inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-[length:var(--fs-sm)] hover:bg-[var(--color-surface-2)] ${
           /* 手机：模型名最多 88px —— 原来 124px 把助手名挤到 45px，
              长一点的助手名只剩两个字的宽度（真机：Hermes-Claude优化版本 → "Herm…"） */
           compact ? "max-w-[88px]" : "max-w-[220px]"
@@ -2645,7 +2645,7 @@ export function ChatConsole({
         </svg>
       </button>
     ) : (
-      <span className="mono shrink-0 truncate text-[11.5px]" style={{ color: "var(--color-text-3)" }}>
+      <span className="mono shrink-0 truncate text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-3)" }}>
         {shownModel}
       </span>
     );
@@ -2676,11 +2676,11 @@ export function ChatConsole({
               {modelOverride && (
                 <button
                   type="button"
-                  className="mt-1 flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-[12px] hover:bg-[var(--bg-selected)]"
+                  className="mt-1 flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-[length:var(--fs-sm)] hover:bg-[var(--bg-selected)]"
                   onClick={() => void quickSwitchModel(null)}
                 >
                   <span>恢复助手默认</span>
-                  <span className="mono truncate text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                  <span className="mono truncate text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
                     {currentAgent.definition.model?.name || "未指定"}
                   </span>
                 </button>
@@ -2756,16 +2756,16 @@ export function ChatConsole({
         <div className="card p-6 max-w-md text-center">
           <div className="text-[28px] mb-2">✦</div>
           <h2 className="text-[16px] font-medium mb-2">还没有可以聊的助手</h2>
-          <p className="text-[12px] text-[var(--color-muted)] leading-relaxed mb-4">
+          <p className="text-[length:var(--fs-sm)] text-[var(--color-muted)] leading-relaxed mb-4">
             助手就是「会自己想办法帮你做事的 AI」。
             <br />
             创建一个，然后就能像发消息一样让它干活了。
           </p>
           <div className="flex flex-col sm:flex-row gap-2 justify-center">
-            <Link href="/agents" className="rounded-[var(--radius-sm)] px-3 py-1.5 text-[13px]" style={{ background: "var(--color-surface-2)", color: "var(--color-text)" }}>
+            <Link href="/agents" className="rounded-[var(--radius-sm)] px-3 py-1.5 text-[length:var(--fs-base)]" style={{ background: "var(--color-surface-2)", color: "var(--color-text)" }}>
               创建一个助手
             </Link>
-            <Link href="/credentials" className="btn text-[13px]">
+            <Link href="/credentials" className="btn text-[length:var(--fs-base)]">
               先配模型密钥
             </Link>
           </div>
@@ -2791,7 +2791,7 @@ export function ChatConsole({
             对着旧界面判断"改了没用" */}
         {staleBuild && (
           <div
-            className="fixed left-1/2 top-2 z-[90] -translate-x-1/2 rounded-full border px-3 py-1.5 text-[12px] shadow-lg"
+            className="fixed left-1/2 top-2 z-[90] -translate-x-1/2 rounded-full border px-3 py-1.5 text-[length:var(--fs-sm)] shadow-lg"
             style={{
               background: "var(--color-surface)",
               borderColor: "var(--color-accent)",
@@ -2932,7 +2932,7 @@ export function ChatConsole({
             </svg>
             </button>
             <span
-              className="text-[10.5px] tabular-nums px-1.5 rounded-full"
+              className="text-[length:var(--fs-xs)] tabular-nums px-1.5 rounded-full"
               style={{ background: "var(--color-surface-2)", color: "var(--color-muted)" }}
             >
               {sessions.length}
@@ -2965,7 +2965,7 @@ export function ChatConsole({
                         <path d="M15 18l-6-6 6-6" />
                       </svg>
                     </button>
-                    <span className="text-[15px] font-semibold tracking-tight">功能与配置</span>
+                    <span className="text-[length:var(--fs-lg)] font-semibold tracking-tight">功能与配置</span>
                   </div>
                   {/* 和桌面侧栏同一套行式菜单：图标 + 名字（+ 一句说明）。
                       条目同源（USE_ITEMS / SETUP_ITEMS）、同样分「使用 / 配置」两组，
@@ -2975,7 +2975,7 @@ export function ChatConsole({
                       <div key={grp.label} className="mb-1.5">
                         {/* 只有一条的组不写组名（否则「对话 / 对话」念两遍） */}
                         {grp.items.length > 2 ? (
-                          <div className="px-2 pt-2 pb-1 text-[11px] font-semibold tracking-[0.06em] text-[var(--color-muted)]">
+                          <div className="px-2 pt-2 pb-1 text-[length:var(--fs-xs)] font-semibold tracking-[0.06em] text-[var(--color-muted)]">
                             {grp.label}
                           </div>
                         ) : (
@@ -2999,8 +2999,8 @@ export function ChatConsole({
                               </svg>
                             </span>
                             <span className="min-w-0 flex flex-col">
-                              <span className="text-[14px] leading-tight">{item.label}</span>
-                              <span className="text-[11.5px] leading-snug truncate text-[var(--color-muted)]">
+                              <span className="text-[length:var(--fs-md)] leading-tight">{item.label}</span>
+                              <span className="text-[length:var(--fs-sm)] leading-snug truncate text-[var(--color-muted)]">
                                 {item.tip}
                               </span>
                             </span>
@@ -3060,7 +3060,7 @@ export function ChatConsole({
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                         <path d="M4 6h16M4 12h16M4 18h10" />
                       </svg>
-                      <span className="text-[13.5px]">功能与配置</span>
+                      <span className="text-[length:var(--fs-md)]">功能与配置</span>
                       <span className="ml-auto text-[var(--color-muted)]">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                           <path d="M9 18l6-6-6-6" />
@@ -3135,7 +3135,7 @@ export function ChatConsole({
             {/* 页眉「助手名 · 模型名」：模型名点一下就换（只影响本会话）。
                 两个断点同一份 —— 以前桌面整条页眉是 lg:hidden，模型入口实际
                 只在 md~lg 那一段露出来。 */}
-            <span aria-hidden="true" className="shrink-0 text-[13px]" style={{ color: "var(--color-text-3)" }}>
+            <span aria-hidden="true" className="shrink-0 text-[length:var(--fs-base)]" style={{ color: "var(--color-text-3)" }}>
               ·
             </span>
             {modelChip(true)}
@@ -3195,13 +3195,13 @@ export function ChatConsole({
           {/* 桌面页眉：助手名 · 模型名。桌面原来**没有任何页眉**，对话中换模型
               只能回助手详情页；这里与手机页眉共用同一个按钮与浮层。 */}
           <header className="hidden lg:flex h-11 shrink-0 items-center gap-2 px-3">
-            <span className="min-w-0 truncate text-[13px] font-medium">{currentAgent?.name ?? ""}</span>
-            <span aria-hidden="true" className="shrink-0 text-[13px]" style={{ color: "var(--color-text-3)" }}>
+            <span className="min-w-0 truncate text-[length:var(--fs-base)] font-medium">{currentAgent?.name ?? ""}</span>
+            <span aria-hidden="true" className="shrink-0 text-[length:var(--fs-base)]" style={{ color: "var(--color-text-3)" }}>
               ·
             </span>
             {modelChip()}
             {modelOverride && (
-              <span className="shrink-0 text-[11px]" style={{ color: "var(--color-text-3)" }}>
+              <span className="shrink-0 text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
                 仅本会话
               </span>
             )}
@@ -3214,7 +3214,7 @@ export function ChatConsole({
               这种话应该在跑的时候由它自己讲，不是印在页面上。 */}
           {curKind === "worker" && (
             <div
-              className={`shrink-0 flex items-center gap-2 px-3 h-7 text-[12px] max-lg:mt-[calc(44px+env(safe-area-inset-top))] max-lg:h-[44px] ${curKind === "worker" ? "max-lg:cursor-pointer" : ""}`}
+              className={`shrink-0 flex items-center gap-2 px-3 h-7 text-[length:var(--fs-sm)] max-lg:mt-[calc(44px+env(safe-area-inset-top))] max-lg:h-[44px] ${curKind === "worker" ? "max-lg:cursor-pointer" : ""}`}
               style={{
                 background: `color-mix(in srgb, ${agentColor(curAgentId)} 9%, var(--color-surface))`,
                 color: agentColor(curAgentId),
@@ -3245,7 +3245,7 @@ export function ChatConsole({
               </span>
               {curKind === "worker" && curParent && (
               <button
-                className="ml-auto shrink-0 px-2 h-6 rounded-md text-[11.5px] max-lg:hidden"
+                className="ml-auto shrink-0 px-2 h-6 rounded-md text-[length:var(--fs-sm)] max-lg:hidden"
                 style={{ background: "color-mix(in srgb, currentColor 12%, transparent)", color: "inherit" }}
                 data-tap
                 onClick={async () => {
@@ -3448,7 +3448,7 @@ export function ChatConsole({
                     olderFailedRef.current = false;   // 手动点 = 重试
                     void loadOlder();
                   }}
-                  className="mx-auto block rounded-full border px-3 py-1 text-[12px] hover:bg-[var(--bg-selected)] disabled:opacity-60"
+                  className="mx-auto block rounded-full border px-3 py-1 text-[length:var(--fs-sm)] hover:bg-[var(--bg-selected)] disabled:opacity-60"
                   style={{ borderColor: "var(--color-border)", color: "var(--color-text-2)" }}
                 >
                   {loadingOlder ? "正在加载…" : `加载更早的消息（还有 ${beforeTurn} 轮）`}
@@ -3476,12 +3476,12 @@ export function ChatConsole({
                   >
                     ✦
                   </div>
-                  <p className="text-[15px] font-medium">{currentAgent?.name || "Agent"}</p>
+                  <p className="text-[length:var(--fs-lg)] font-medium">{currentAgent?.name || "Agent"}</p>
                   {/* 这个助手是干什么的：直接用配置里的一句话职责，比一排通用建议卡
                       更能让人知道该说什么（验收反馈：空状态跟助手身份无关） */}
                   {(currentAgent?.definition?.opening_line || currentAgent?.description) ? (
                     <p
-                      className="mx-auto mt-1 max-w-[360px] text-[12.5px] leading-relaxed"
+                      className="mx-auto mt-1 max-w-[360px] text-[length:var(--fs-base)] leading-relaxed"
                       style={{ color: "var(--color-muted)" }}
                     >
                       {currentAgent?.definition?.opening_line || currentAgent?.description}
@@ -3493,7 +3493,7 @@ export function ChatConsole({
                         data-tap
                         aria-expanded={emptySwitchOpen}
                         onClick={() => setEmptySwitchOpen((v) => !v)}
-                        className="mt-1 inline-flex items-center gap-1 text-[12px] rounded-md px-2 h-7 hover:bg-[var(--color-surface-2)]"
+                        className="mt-1 inline-flex items-center gap-1 text-[length:var(--fs-sm)] rounded-md px-2 h-7 hover:bg-[var(--color-surface-2)]"
                         style={{ color: "var(--color-accent)" }}
                       >
                         换一个助手
@@ -3520,8 +3520,8 @@ export function ChatConsole({
                               className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left hover:bg-[var(--color-surface-3)]"
                               style={{ background: a.id === agentId ? "var(--color-surface-3)" : "transparent" }}
                             >
-                              <span className="min-w-0 flex-1 truncate text-[12.5px]">{a.name}</span>
-                              <span className="mono shrink-0 truncate text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                              <span className="min-w-0 flex-1 truncate text-[length:var(--fs-base)]">{a.name}</span>
+                              <span className="mono shrink-0 truncate text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
                                 {a.definition?.model?.name || "远端管理"}
                               </span>
                             </button>
@@ -3606,8 +3606,8 @@ export function ChatConsole({
                         {it.icon}
                       </svg>
                       <span className="min-w-0">
-                        <span className="block text-[13px] leading-snug">{it.q}</span>
-                        <span className="block text-[11.5px] mt-0.5" style={{ color: "var(--color-muted)" }}>
+                        <span className="block text-[length:var(--fs-base)] leading-snug">{it.q}</span>
+                        <span className="block text-[length:var(--fs-sm)] mt-0.5" style={{ color: "var(--color-muted)" }}>
                           {it.hint}
                         </span>
                       </span>
@@ -3627,7 +3627,7 @@ export function ChatConsole({
                     return (
                       <div
                         key={m.id ?? `sys-${i}`}
-                        className="flex justify-center px-2 text-[11.5px] leading-[1.6]"
+                        className="flex justify-center px-2 text-[length:var(--fs-sm)] leading-[1.6]"
                         style={{ color: "var(--color-muted)" }}
                       >
                         <span
@@ -3762,7 +3762,7 @@ export function ChatConsole({
                               setDockStepRun(liveRunId);
                               openDock("steps");
                             }}
-                            className="text-[12px] text-[var(--color-muted)] hover:text-[var(--color-text)]"
+                            className="text-[length:var(--fs-sm)] text-[var(--color-muted)] hover:text-[var(--color-text)]"
                           >
                             在右栏看 →
                           </button>
@@ -3797,7 +3797,7 @@ export function ChatConsole({
                 data-tap
                 onClick={jumpLatest}
                 title="回到最新"
-                className="fab-in absolute right-3 lg:right-5 inline-flex items-center gap-1.5 rounded-full pl-2.5 pr-3 h-8 text-[12px] shadow-md z-10"
+                className="fab-in absolute right-3 lg:right-5 inline-flex items-center gap-1.5 rounded-full pl-2.5 pr-3 h-8 text-[length:var(--fs-sm)] shadow-md z-10"
                 style={{
                   // 输入坞现在是浮起来的，这个按钮要跟着抬到它上面
                   // 抬高一点并给正文留出右侧空位：原来贴着输入坞，会压住最后一行字
@@ -3895,7 +3895,7 @@ export function ChatConsole({
                   }}
                 >
                   <div
-                    className="flex items-center gap-2 text-[13px] font-medium"
+                    className="flex items-center gap-2 text-[length:var(--fs-base)] font-medium"
                     style={{ color: "var(--color-text)" }}
                   >
                     <span
@@ -3904,11 +3904,11 @@ export function ChatConsole({
                       style={{ background: "var(--color-warn)" }}
                     />
                     {browserCtl?.phase_text || "等你处理"}
-                    <span className="text-[12px] font-normal" style={{ color: "var(--color-muted)" }}>
+                    <span className="text-[length:var(--fs-sm)] font-normal" style={{ color: "var(--color-muted)" }}>
                       · 在浏览器里完成操作
                     </span>
                   </div>
-                  <p className="mt-1 text-[12.5px] leading-relaxed" style={{ color: "var(--color-text-2)" }}>
+                  <p className="mt-1 text-[length:var(--fs-base)] leading-relaxed" style={{ color: "var(--color-text-2)" }}>
                     {browserCtl?.reason ||
                       browserCtl?.hint ||
                       "请在浏览器画面里完成操作，好了点「交还给 Agent」。"}
@@ -3918,7 +3918,7 @@ export function ChatConsole({
                       type="button"
                       data-tap
                       onClick={() => void browserControl("release")}
-                      className="rounded-[8px] px-3 py-1.5 text-[12.5px] font-medium"
+                      className="rounded-[8px] px-3 py-1.5 text-[length:var(--fs-base)] font-medium"
                       style={{
                         color: "var(--color-accent)",
                         background: "color-mix(in srgb, var(--color-accent) 12%, transparent)",
@@ -3936,7 +3936,7 @@ export function ChatConsole({
                           setBrowserOpen(true);
                         }
                       }}
-                      className="rounded-[8px] px-3 py-1.5 text-[12.5px]"
+                      className="rounded-[8px] px-3 py-1.5 text-[length:var(--fs-base)]"
                       style={{ color: "var(--color-text-2)", background: "var(--color-surface-3)" }}
                     >
                       打开浏览器画面
@@ -3948,7 +3948,7 @@ export function ChatConsole({
 
             {failed && (
               <div
-                className="max-w-[760px] mx-auto mb-2 rounded-xl px-3 py-2 flex items-start gap-3 flex-wrap text-[12.5px]"
+                className="max-w-[760px] mx-auto mb-2 rounded-xl px-3 py-2 flex items-start gap-3 flex-wrap text-[length:var(--fs-base)]"
                 style={{
                   background: "color-mix(in srgb, var(--color-err) 10%, transparent)",
                   color: "var(--color-err)",
@@ -3970,7 +3970,7 @@ export function ChatConsole({
                   </button>
                 )}
                 <button
-                  className="shrink-0 rounded px-1 text-[12px] hover:underline max-md:min-h-[32px] max-md:px-2"
+                  className="shrink-0 rounded px-1 text-[length:var(--fs-sm)] hover:underline max-md:min-h-[32px] max-md:px-2"
                   onClick={() => setFailed(null)}
                 >
                   忽略
@@ -3998,8 +3998,8 @@ export function ChatConsole({
                           <path d="M14 2v6h6" />
                         </svg>
                         <span className="min-w-0">
-                          <span className="block truncate text-[12px] leading-tight">{f.name}</span>
-                          <span className="block text-[10.5px] leading-tight text-[var(--color-muted)]">
+                          <span className="block truncate text-[length:var(--fs-sm)] leading-tight">{f.name}</span>
+                          <span className="block text-[length:var(--fs-xs)] leading-tight text-[var(--color-muted)]">
                             {fmt.bytes(f.size)}
                           </span>
                         </span>
@@ -4007,7 +4007,7 @@ export function ChatConsole({
                     )}
                     <button
                       data-tap
-                      className="absolute top-0.5 right-0.5 flex h-5 w-5 items-center justify-center rounded-full text-[11px] hover:brightness-110"
+                      className="absolute top-0.5 right-0.5 flex h-5 w-5 items-center justify-center rounded-full text-[length:var(--fs-xs)] hover:brightness-110"
                       style={{ background: "rgba(0,0,0,0.45)", color: "var(--color-accent-fg)" }}
                       title="撤掉"
                       onClick={() => setPendingFiles((p) => p.filter((_, j) => j !== i))}
@@ -4075,7 +4075,7 @@ export function ChatConsole({
                     {fileCount > 0 && (
                       <button
                         type="button"
-                        className="h-8 px-2 rounded-lg text-[12px] hover:bg-[var(--color-surface-2)]"
+                        className="h-8 px-2 rounded-lg text-[length:var(--fs-sm)] hover:bg-[var(--color-surface-2)]"
                         style={{ color: managing ? "var(--color-err)" : "var(--color-accent)" }}
                         onClick={() => {
                           setManaging((v) => !v);
@@ -4150,7 +4150,7 @@ export function ChatConsole({
                 {sessionFiles?.work_dir && (
                   <button
                     type="button"
-                    className="mono block w-full truncate text-left text-[11px] py-0.5 hover:underline max-md:hidden"
+                    className="mono block w-full truncate text-left text-[length:var(--fs-xs)] py-0.5 hover:underline max-md:hidden"
                     style={{ color: "var(--color-muted)" }}
                     title={`点一下复制完整路径\n${sessionFiles.work_dir}`}
                     onClick={() =>
@@ -4173,7 +4173,7 @@ export function ChatConsole({
                       {/* 不写死 height：手机会把 12px 的字撑成 30px 高的小方块，
                           iOS 还会因为字号 <16px 聚焦放大整页。交给 .input 自己按断点收。 */}
                       <input
-                        className="input input-inline flex-1 text-[13px]"
+                        className="input input-inline flex-1 text-[length:var(--fs-base)]"
                         value={fileQuery}
                         onChange={(e) => setFileQuery(e.target.value)}
                         placeholder="按文件名找（输入就过滤）"
@@ -4182,13 +4182,13 @@ export function ChatConsole({
                       {fileQuery ? (
                         <button
                           type="button"
-                          className="btn shrink-0 px-2 py-0.5 text-[12px] max-md:min-h-[32px]"
+                          className="btn shrink-0 px-2 py-0.5 text-[length:var(--fs-sm)] max-md:min-h-[32px]"
                           onClick={() => setFileQuery("")}
                         >
                           清空
                         </button>
                       ) : null}
-                      <span className="shrink-0 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                      <span className="shrink-0 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                         {shownFiles.length}/{fileCount}
                       </span>
                     </div>
@@ -4199,21 +4199,21 @@ export function ChatConsole({
                       截成一样长，扫起来得来回找。列表是文件该有的样子。 */}
                   {/* 管理态的动作条：放在列表**上面**，文件再多也不会被滚走 */}
                   {managing && (
-                    <div className="mb-1.5 flex flex-wrap items-center gap-2 text-[12px]">
+                    <div className="mb-1.5 flex flex-wrap items-center gap-2 text-[length:var(--fs-sm)]">
                       {/* 「已选 N」已经在标题那一行写着，这里不重复 */}
-                      <span className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                      <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                         点文件勾选，可多选
                       </span>
                       <button
                         type="button"
-                        className="btn px-2 py-0.5 text-[12px] max-md:min-h-[32px]"
+                        className="btn px-2 py-0.5 text-[length:var(--fs-sm)] max-md:min-h-[32px]"
                         onClick={() => setPicked(shownFiles.map((f) => f.path))}
                       >
                         全选
                       </button>
                       <button
                         type="button"
-                        className="btn px-2 py-0.5 text-[12px] max-md:min-h-[32px]"
+                        className="btn px-2 py-0.5 text-[length:var(--fs-sm)] max-md:min-h-[32px]"
                         disabled={bulkBusy}
                         style={{
                           color: bulkConfirm ? "var(--color-accent-contrast)" : "var(--color-err)",
@@ -4246,7 +4246,7 @@ export function ChatConsole({
                           type="button"
                           onClick={() => togglePick(f.path)}
                           aria-pressed={picked.includes(f.path)}
-                          className="w-full flex items-center gap-2.5 rounded-lg px-2 py-2.5 text-left text-[12.5px] transition-colors"
+                          className="w-full flex items-center gap-2.5 rounded-lg px-2 py-2.5 text-left text-[length:var(--fs-base)] transition-colors"
                           style={{
                             background: picked.includes(f.path)
                               ? "color-mix(in srgb, var(--color-accent) 10%, transparent)"
@@ -4282,24 +4282,24 @@ export function ChatConsole({
                           onOpen={() => setFilesOpenPref(false)}
                         >
                           <FileTypeIcon kind={fileTypeKey(f.path)} size={15} className="shrink-0 opacity-60" />
-                          <span className="mono flex-1 min-w-0 truncate text-[12.5px]" title={f.path}>
+                          <span className="mono flex-1 min-w-0 truncate text-[length:var(--fs-base)]" title={f.path}>
                             {shortFilePath(f.path)}
                           </span>
-                          <span className="shrink-0 tabular-nums text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                          <span className="shrink-0 tabular-nums text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                             {fmt.bytes(f.size)}
                           </span>
                         </FileRowButton>
                       ),
                     )}
                     {shownFiles.length === 0 && fileQuery ? (
-                      <span className="inline-flex items-center px-1 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                      <span className="inline-flex items-center px-1 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                         没有匹配「{fileQuery}」的文件
                       </span>
                     ) : null}
                   </div>
                   </>
                 ) : (
-                  <div className="mt-0.5 text-[11px]" style={{ color: "var(--color-muted)" }}>
+                  <div className="mt-0.5 text-[length:var(--fs-xs)]" style={{ color: "var(--color-muted)" }}>
                     还没有文件 —— 这个会话生成的文档都会存在上面的目录里
                   </div>
                 ))}
@@ -4315,7 +4315,7 @@ export function ChatConsole({
                   style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
                 >
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+                    <span className="text-[length:var(--fs-base)]" style={{ color: "var(--color-muted)" }}>
                       这句该交给谁？
                     </span>
                     {(routeAsk.multi.length >= 2 ? routeAsk.multi : routeAsk.options).map((o) => (
@@ -4323,7 +4323,7 @@ export function ChatConsole({
                         key={o.agent_id}
                         data-tap
                         type="button"
-                        className="btn h-[32px] px-3 text-[12.5px] max-md:h-[44px]"
+                        className="btn h-[32px] px-3 text-[length:var(--fs-base)] max-md:h-[44px]"
                         onClick={() => void runAuto(routeAsk.text, o.agent_id)}
                       >
                         {o.name}
@@ -4332,7 +4332,7 @@ export function ChatConsole({
                     <button
                       data-tap
                       type="button"
-                      className="h-[32px] px-2 text-[12.5px] max-md:h-[44px]"
+                      className="h-[32px] px-2 text-[length:var(--fs-base)] max-md:h-[44px]"
                       style={{ color: "var(--color-muted)" }}
                       onClick={() => {
                         setInput(routeAsk.text);
@@ -4342,7 +4342,7 @@ export function ChatConsole({
                       取消
                     </button>
                   </div>
-                  <div className="mt-1 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                  <div className="mt-1 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                     {routeAsk.reason}
                   </div>
                 </div>
@@ -4351,7 +4351,7 @@ export function ChatConsole({
               {/* 换了模型：对话里一行轻提示（几秒后自己消失），不弹窗 */}
               {modelHint && (
                 <div
-                  className="mb-1.5 flex items-center gap-1.5 px-3 text-[11.5px]"
+                  className="mb-1.5 flex items-center gap-1.5 px-3 text-[length:var(--fs-sm)]"
                   style={{ color: "var(--color-muted)" }}
                 >
                   <span style={{ color: "var(--color-accent)" }}>↺</span>
@@ -4362,7 +4362,7 @@ export function ChatConsole({
               {/* 刚交给谁 —— 常驻一行，不用翻日志才知道这句话去哪了 */}
               {routeNote && !routeAsk && (
                 <div
-                  className="mb-1.5 flex items-center gap-1.5 px-3 text-[11.5px]"
+                  className="mb-1.5 flex items-center gap-1.5 px-3 text-[length:var(--fs-sm)]"
                   style={{ color: "var(--color-muted)" }}
                 >
                   <span style={{ color: "var(--color-accent)" }}>↳</span>
@@ -4434,7 +4434,7 @@ export function ChatConsole({
                 <textarea
                   ref={taRef}
                   rows={1}
-                  className="block w-full resize-none bg-transparent border-0 outline-none px-4 py-2.5 text-[14px] leading-[24px] min-h-[44px] sm:min-h-[56px] sm:py-3"
+                  className="block w-full resize-none bg-transparent border-0 outline-none px-4 py-2.5 text-[length:var(--fs-md)] leading-[24px] min-h-[44px] sm:min-h-[56px] sm:py-3"
                   style={{ maxHeight: 208 }}
                   placeholder={
                     paused
@@ -4504,7 +4504,7 @@ export function ChatConsole({
                       onClick={() => setPlusOpen((v) => !v)}
                     >
                       {uploading ? (
-                        <span className="text-[13px]">…</span>
+                        <span className="text-[length:var(--fs-base)]">…</span>
                       ) : (
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
                           <path d="M12 5v14M5 12h14" />
@@ -4568,7 +4568,7 @@ export function ChatConsole({
                   </>
                   )}
                   </div>
-                  <span className="hidden sm:block text-[11.5px] truncate text-[var(--color-muted)]">
+                  <span className="hidden sm:block text-[length:var(--fs-sm)] truncate text-[var(--color-muted)]">
                     {dragging
                       ? "松手即添加为附件"
                       : busy && !paused
@@ -4716,13 +4716,13 @@ export function ChatConsole({
               )}
             </div>
 
-            <div className="max-w-[760px] mx-auto mt-1.5 flex items-center gap-3 text-[11.5px] text-[var(--color-muted)]">
+            <div className="max-w-[760px] mx-auto mt-1.5 flex items-center gap-3 text-[length:var(--fs-sm)] text-[var(--color-muted)]">
               <span className="hidden sm:inline">Enter 发送 · Shift + Enter 换行 · 可直接粘贴截图</span>
             </div>
 
             {showPaths && paths && (
               <div
-                className="max-w-[760px] mx-auto mt-1.5 rounded-lg px-2.5 py-2 text-[11.5px] flex flex-wrap items-center gap-x-2 gap-y-1"
+                className="max-w-[760px] mx-auto mt-1.5 rounded-lg px-2.5 py-2 text-[length:var(--fs-sm)] flex flex-wrap items-center gap-x-2 gap-y-1"
                 style={{ background: "var(--color-surface-2)", color: "var(--color-muted)" }}
               >
                 <span>对话保存在</span>

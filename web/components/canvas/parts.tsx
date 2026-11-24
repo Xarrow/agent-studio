@@ -107,11 +107,11 @@ export function DetailSection({ kind, label, children }: { kind: StepKind; label
   const st = STEP_STYLE[kind];
   return (
     <div className="rounded-[8px] border" style={{ borderColor: st.border, background: st.bg }}>
-      <div className="flex items-center gap-1.5 px-2 py-[3px] text-[12px] font-semibold" style={{ color: st.color }}>
+      <div className="flex items-center gap-1.5 px-2 py-[3px] text-[length:var(--fs-sm)] font-semibold" style={{ color: st.color }}>
         <span className="text-[10px] leading-none">{st.icon}</span>
         {label}
       </div>
-      <div className="px-2 pb-[6px] text-[12px] leading-[1.65]" style={{ color: "var(--color-text)" }}>
+      <div className="px-2 pb-[6px] text-[length:var(--fs-sm)] leading-[1.65]" style={{ color: "var(--color-text)" }}>
         {children}
       </div>
     </div>
@@ -123,7 +123,7 @@ export function Block({ title, children }: { title: string; children: React.Reac
   return (
     <div className="mb-3">
       <div
-        className="mb-1 text-[12px] font-semibold"
+        className="mb-1 text-[length:var(--fs-sm)] font-semibold"
         style={{ color: "var(--color-muted)" }}
       >
         {title}

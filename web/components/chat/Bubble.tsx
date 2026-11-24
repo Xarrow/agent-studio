@@ -62,7 +62,7 @@ export function MsgAction({
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         <path d={path} />
       </svg>
-      <span className="max-md:hidden text-[12px]">{label}</span>
+      <span className="max-md:hidden text-[length:var(--fs-sm)]">{label}</span>
     </button>
   );
 }
@@ -300,7 +300,7 @@ export function Bubble({
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
               </svg>
-              <span className="text-[12px] font-medium" style={{ color: "var(--color-accent)" }}>
+              <span className="text-[length:var(--fs-sm)] font-medium" style={{ color: "var(--color-accent)" }}>
                 改这条问句
               </span>
               <button
@@ -315,7 +315,7 @@ export function Bubble({
               </button>
             </div>
             <textarea
-              className="w-full resize-none border-0 bg-transparent px-3 py-2.5 text-[14px] leading-relaxed outline-none"
+              className="w-full resize-none border-0 bg-transparent px-3 py-2.5 text-[length:var(--fs-md)] leading-relaxed outline-none"
               rows={Math.min(12, Math.max(2, draft.split("\n").length))}
               value={draft}
               autoFocus
@@ -340,7 +340,7 @@ export function Bubble({
               style={{ borderTop: "1px solid var(--color-border)", background: "var(--color-surface-2)" }}
             >
               {onRerun ? (
-                <span className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                   重跑会作废这条之后的回答
                 </span>
               ) : null}
@@ -390,7 +390,7 @@ export function Bubble({
                     <button
                       data-tap
                       onClick={() => onOpenDock(runId)}
-                      className="text-[12px] text-[var(--color-muted)] hover:text-[var(--color-text)]"
+                      className="text-[length:var(--fs-sm)] text-[var(--color-muted)] hover:text-[var(--color-text)]"
                     >
                       在右栏看 →
                     </button>
@@ -398,12 +398,12 @@ export function Bubble({
                   <button
                     data-tap
                     onClick={() => setDetailOpen(true)}
-                    className="text-[12px] text-[var(--color-muted)] hover:text-[var(--color-text)]"
+                    className="text-[length:var(--fs-sm)] text-[var(--color-muted)] hover:text-[var(--color-text)]"
                   >
                     完整记录 →
                   </button>
                   {meta && (
-                    <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+                    <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                       {meta.tokens > 0 ? `${fmt.int(meta.tokens)} tokens · ` : ""}
                       {fmt.ms(meta.seconds * 1000)}
                     </span>
@@ -416,14 +416,14 @@ export function Bubble({
         <div
           className={`break-words ${
             isUser
-              ? `text-[var(--color-text)] w-fit max-w-full whitespace-pre-wrap [word-break:break-all] ml-auto text-[15px] ${
+              ? `text-[var(--color-text)] w-fit max-w-full whitespace-pre-wrap [word-break:break-all] ml-auto text-[length:var(--fs-lg)] ${
                   /* 短消息（一行内、无附件）= 胶囊；长消息 = 18px 圆角块，右下角收成 6px
                      （气泡"尾巴"角），右边贴齐。用户要求：气泡样式与尺寸激进一点。 */
                   shortMsg
                     ? "rounded-full px-4 py-2 leading-[1.6]"
                     : "rounded-[18px] rounded-br-[6px] px-3.5 py-2.5 leading-[1.6]"
                 }`
-              : "text-[15px] leading-[1.8] text-[var(--color-text)] max-w-[46rem]"
+              : "text-[length:var(--fs-lg)] leading-[1.8] text-[var(--color-text)] max-w-[46rem]"
           }`}
           style={
             isUser
@@ -466,7 +466,7 @@ export function Bubble({
                       <FileRowButton
                         key={i}
                         file={{ path: a.url, name: a.name, url: a.url, size: a.size }}
-                        className="inline-flex items-center gap-2 rounded-lg pl-2.5 pr-3 py-2 max-w-[240px] text-[12px] hover:brightness-110"
+                        className="inline-flex items-center gap-2 rounded-lg pl-2.5 pr-3 py-2 max-w-[240px] text-[length:var(--fs-sm)] hover:brightness-110"
                         style={{ background: "rgba(255,255,255,0.16)", border: "1px solid rgba(255,255,255,0.25)" }}
                       >
                         <span
@@ -479,7 +479,7 @@ export function Bubble({
                           </svg>
                           <span className="min-w-0 text-left">
                             <span className="block truncate leading-tight">{a.name}</span>
-                            <span className="block text-[10.5px] opacity-80 leading-tight">{fmt.bytes(a.size)}</span>
+                            <span className="block text-[length:var(--fs-xs)] opacity-80 leading-tight">{fmt.bytes(a.size)}</span>
                           </span>
                         </span>
                       </FileRowButton>
@@ -488,7 +488,7 @@ export function Bubble({
                 </div>
               )}
               {isSteerMsg && (
-                <span className="block text-[11px] opacity-80 leading-tight mb-0.5">运行中插话</span>
+                <span className="block text-[length:var(--fs-xs)] opacity-80 leading-tight mb-0.5">运行中插话</span>
               )}
               {userBody}
             </>
@@ -520,7 +520,7 @@ export function Bubble({
                   {long ? (
                     <button
                       type="button"
-                      className="mt-1 text-[11.5px]"
+                      className="mt-1 text-[length:var(--fs-sm)]"
                       style={{ color: "var(--color-accent)" }}
                       onClick={() => setExpanded((v) => !v)}
                       aria-expanded={expanded}
@@ -547,7 +547,7 @@ export function Bubble({
             }`}
           >
             {ts ? (
-              <span className="mr-1.5 text-[11px] tabular-nums" style={{ color: "var(--color-muted)" }}>
+              <span className="mr-1.5 text-[length:var(--fs-xs)] tabular-nums" style={{ color: "var(--color-muted)" }}>
                 {/* ts 是**毫秒**时间戳（后端 now_ms 落库）。以前这里又乘了 1000，
                     年月直接溢出到几万年后，时间显示成 14:50 / 03:12 这种随机值 ——
                     同一个会话里时间跳来跳去，用户会怀疑对话被改过。 */}
@@ -561,12 +561,12 @@ export function Bubble({
                 className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1"
                 style={{ background: "color-mix(in srgb, var(--color-err) 10%, transparent)" }}
               >
-                <span className="text-[11.5px]" style={{ color: "var(--color-err)" }}>
+                <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-err)" }}>
                   删掉这轮和之后的消息？
                 </span>
                 <button
                   data-tap
-                  className="rounded px-1.5 py-0.5 text-[11.5px] font-medium"
+                  className="rounded px-1.5 py-0.5 text-[length:var(--fs-sm)] font-medium"
                   style={{ color: "var(--color-err)" }}
                   onClick={() => {
                     setConfirmRewind(false);
@@ -577,7 +577,7 @@ export function Bubble({
                 </button>
                 <button
                   data-tap
-                  className="rounded px-1.5 py-0.5 text-[11.5px]"
+                  className="rounded px-1.5 py-0.5 text-[length:var(--fs-sm)]"
                   style={{ color: "var(--color-muted)" }}
                   onClick={() => setConfirmRewind(false)}
                 >

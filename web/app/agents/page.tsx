@@ -291,7 +291,7 @@ export default function AgentsPage() {
       />
 
       {err && (
-        <div className="card p-4 mb-4 text-[13px] text-[var(--color-err)]">
+        <div className="card p-4 mb-4 text-[length:var(--fs-base)] text-[var(--color-err)]">
           加载失败：{err}
         </div>
       )}
@@ -314,7 +314,7 @@ export default function AgentsPage() {
       )}
 
       {!loaded ? (
-        <div className="card p-6 text-[13px] text-[var(--color-muted)]">加载中…</div>
+        <div className="card p-6 text-[length:var(--fs-base)] text-[var(--color-muted)]">加载中…</div>
       ) : agents.length === 0 ? (
         <div className="card">
           <Empty
@@ -346,7 +346,7 @@ export default function AgentsPage() {
                     <>
                       <Link
                         href={`/agents/detail?id=${a.id}`}
-                        className="btn btn-primary text-[12px] max-md:px-2.5"
+                        className="btn btn-primary text-[length:var(--fs-sm)] max-md:px-2.5"
                         title="设置 / 定义：改提示词、模型、工具、权限"
                       >
                         <span className="max-md:hidden">设置 / 定义</span>
@@ -356,7 +356,7 @@ export default function AgentsPage() {
                         type="button"
                         /* 次要动作：无边框、灰字 —— 与主操作「设置/定义」拉开层级，
                            但不藏起来（用户明确否决把常用动作收进 ⋯） */
-                        className="btn text-[12px] max-md:w-9 max-md:px-0"
+                        className="btn text-[length:var(--fs-sm)] max-md:w-9 max-md:px-0"
                         style={{ borderColor: "transparent", background: "transparent", color: "var(--color-text-3)" }}
                         title="改名"
                         aria-label="改名"
@@ -371,7 +371,7 @@ export default function AgentsPage() {
                       </button>
                       <button
                         type="button"
-                        className="btn text-[12px] max-md:w-9 max-md:px-0"
+                        className="btn text-[length:var(--fs-sm)] max-md:w-9 max-md:px-0"
                         style={{ borderColor: "transparent", background: "transparent", color: "var(--color-text-3)" }}
                         aria-label="复制一份"
                         disabled={busy === a.id}
@@ -383,7 +383,7 @@ export default function AgentsPage() {
                       </button>
                       <button
                         type="button"
-                        className="btn text-[12px] max-md:w-9 max-md:px-0 ml-1"
+                        className="btn text-[length:var(--fs-sm)] max-md:w-9 max-md:px-0 ml-1"
                         style={{ borderColor: "transparent", background: "transparent", color: "var(--color-err)" }}
                         aria-label="删除"
                         title="删除这个助手（会再确认一次）"
@@ -412,12 +412,12 @@ export default function AgentsPage() {
                         }}
                         onBlur={() => void rename(a)}
                         onFocus={(e) => e.currentTarget.select()}
-                        className="input text-[14px]"
+                        className="input text-[length:var(--fs-md)]"
                         placeholder="给它起个名字"
                       />
                     ) : (
                       <span className="flex min-w-0 items-center gap-2">
-                        <span className="truncate text-[14.5px] font-medium">{a.name}</span>
+                        <span className="truncate text-[length:var(--fs-lg)] font-medium">{a.name}</span>
                         {a.definition?.role === "orchestrator" && (
                           <Chip tone="accent" title="编排者：分析 → 管上下文 → 验证 → 归纳">
                             ✦ 编排者
@@ -429,7 +429,7 @@ export default function AgentsPage() {
                         「deepseek-flash · 工具 25 · Skills 8 · 3 分钟前 ✓」——
                         手机上一换行就变成"一条一条竖着堆"。 */}
                     <span
-                      className="mt-1 flex items-center gap-3 text-[11.5px]"
+                      className="mt-1 flex items-center gap-3 text-[length:var(--fs-sm)]"
                       style={{ color: "var(--color-muted)" }}
                     >
                       <span className="inline-flex min-w-0 items-center gap-1" title="模型">
@@ -551,7 +551,7 @@ export default function AgentsPage() {
                     onClose={() => toggleRow(a.id)}
                   >
                     {a.description ? (
-                      <div className="mb-3 text-[13px] leading-relaxed">{a.description}</div>
+                      <div className="mb-3 text-[length:var(--fs-base)] leading-relaxed">{a.description}</div>
                     ) : null}
 
                     {/* 就地换模型：看完列表里这行就知道它用哪个模型、能直接换，
@@ -562,7 +562,7 @@ export default function AgentsPage() {
                         style={{ background: "var(--color-surface-2)" }}
                       >
                         <div
-                          className="mb-1.5 text-[11.5px]"
+                          className="mb-1.5 text-[length:var(--fs-sm)]"
                           style={{ color: "var(--color-text-3)" }}
                         >
                           模型（换完立刻生效）
@@ -580,11 +580,11 @@ export default function AgentsPage() {
                     {/* 血缘：派生自谁 / 派生出哪些 —— 有血缘才显示，没有就不占一行 */}
                     {(a.parent_id || childrenOf(a.id).length > 0) && (
                       <div className="mb-3 rounded-[10px] px-3 py-2.5" style={{ background: "var(--color-surface-2)" }}>
-                        <div className="mb-1.5 inline-flex items-center gap-1.5 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                        <div className="mb-1.5 inline-flex items-center gap-1.5 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                           <IconGitBranch size={12} />
                           fork 血缘（助手之间的派生关系）
                         </div>
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px]">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[length:var(--fs-base)]">
                           {a.parent_id && (
                             <>
                               <span style={{ color: "var(--color-muted)" }}>派生自</span>
@@ -815,29 +815,29 @@ function NewAgentDialog({
   const preview = (
     <div className="space-y-3">
       <div className="rounded-[14px] p-4" style={{ background: "var(--color-surface-2)" }}>
-        <div className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+        <div className="text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
           新会话第一屏
         </div>
         <div className="mt-3 flex items-center gap-2">
           <span
-            className="inline-flex h-8 w-8 items-center justify-center rounded-2xl text-[15px]"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-2xl text-[length:var(--fs-lg)]"
             style={{ background: "var(--color-surface-3)", color: "var(--color-text-2)" }}
           >
             ✦
           </span>
-          <span className="truncate text-[14px] font-medium">{name.trim() || "未命名助手"}</span>
+          <span className="truncate text-[length:var(--fs-md)] font-medium">{name.trim() || "未命名助手"}</span>
         </div>
-        <p className="mt-2 text-[13px] leading-relaxed" style={{ color: "var(--color-text-2)" }}>
+        <p className="mt-2 text-[length:var(--fs-base)] leading-relaxed" style={{ color: "var(--color-text-2)" }}>
           {opening.trim() || desc.trim() || "（还没有开场白，第一屏会是空的）"}
         </p>
         <div
-          className="mt-4 flex items-center rounded-[10px] px-3 py-2.5 text-[12.5px]"
+          className="mt-4 flex items-center rounded-[10px] px-3 py-2.5 text-[length:var(--fs-base)]"
           style={{ background: "var(--color-surface)", color: "var(--color-text-3)" }}
         >
           说点什么…
         </div>
       </div>
-      <div className="text-[12px] leading-relaxed" style={{ color: "var(--color-text-3)" }}>
+      <div className="text-[length:var(--fs-sm)] leading-relaxed" style={{ color: "var(--color-text-3)" }}>
         <div>
           模型 <span className="mono">{model || "（建好后在配置里选）"}</span>
         </div>
@@ -867,13 +867,13 @@ function NewAgentDialog({
               onClick={requestClose}
               title="关闭（Esc）"
               aria-label="关闭"
-              className="flex h-10 w-10 items-center justify-center rounded-[10px] text-[15px] leading-none hover:bg-[var(--color-surface-2)]"
+              className="flex h-10 w-10 items-center justify-center rounded-[10px] text-[length:var(--fs-lg)] leading-none hover:bg-[var(--color-surface-2)]"
               style={{ color: confirmClose ? "var(--color-err)" : "var(--color-muted)" }}
             >
               ✕
             </button>
             {confirmClose && (
-              <span className="text-[12px]" style={{ color: "var(--color-err)" }}>
+              <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-err)" }}>
                 再点一次关闭，填的内容会丢
               </span>
             )}
@@ -901,7 +901,7 @@ function NewAgentDialog({
                       }}
                     >
                       <div
-                        className="text-[13px] font-medium"
+                        className="text-[length:var(--fs-base)] font-medium"
                         style={{ color: on ? "var(--color-accent)" : undefined }}
                       >
                         {p.icon} {p.label}
@@ -970,12 +970,12 @@ function NewAgentDialog({
                 onChange={setModel}
               />
               {providers.length === 0 && (
-                <p className="mt-1 text-[12px]" style={{ color: "var(--color-err)" }}>
+                <p className="mt-1 text-[length:var(--fs-sm)]" style={{ color: "var(--color-err)" }}>
                   还没有可用的服务商，先去「LLM 配置」加一个。
                 </p>
               )}
               {providers.length > 0 && usableCreds.length === 0 && (
-                <p className="mt-1 text-[12px]" style={{ color: "var(--color-err)" }}>
+                <p className="mt-1 text-[length:var(--fs-sm)]" style={{ color: "var(--color-err)" }}>
                   {providerMeta?.display_name ?? provider} 还没有密钥，建成后跑不起来。
                 </p>
               )}
@@ -1001,12 +1001,12 @@ function NewAgentDialog({
                       }}
                     >
                       <div
-                        className="text-[13px] font-medium"
+                        className="text-[length:var(--fs-base)] font-medium"
                         style={{ color: on ? "var(--color-accent)" : undefined }}
                       >
                         {o.t}
                       </div>
-                      <div className="mt-0.5 text-[12px]" style={{ color: "var(--color-text-3)" }}>
+                      <div className="mt-0.5 text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-3)" }}>
                         {o.d}
                       </div>
                     </button>
@@ -1020,7 +1020,7 @@ function NewAgentDialog({
                 type="button"
                 data-tap
                 onClick={() => setShowAdvanced((v) => !v)}
-                className="flex items-center gap-1 text-[12px]"
+                className="flex items-center gap-1 text-[length:var(--fs-sm)]"
                 style={{ color: "var(--color-accent)" }}
               >
                 <span>{showAdvanced ? "▾" : "▸"}</span> 高级设置（一般不用改）
@@ -1061,7 +1061,7 @@ function NewAgentDialog({
             </div>
 
             {err && (
-              <div className="text-[12px]" style={{ color: "var(--color-err)" }}>
+              <div className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-err)" }}>
                 {err}
               </div>
             )}
@@ -1074,7 +1074,7 @@ function NewAgentDialog({
           className="sticky bottom-0 -mx-5 mt-4 flex items-center justify-end gap-2 border-t bg-[var(--color-surface)] px-5 pb-1 pt-3"
           style={{ borderColor: "var(--color-border)" }}
         >
-          <span className="mr-auto text-[12px]" style={{ color: created ? "var(--color-ok)" : "var(--color-text-3)" }}>
+          <span className="mr-auto text-[length:var(--fs-sm)]" style={{ color: created ? "var(--color-ok)" : "var(--color-text-3)" }}>
             {created
               ? "建好了，正在进入对话页…"
               : busy

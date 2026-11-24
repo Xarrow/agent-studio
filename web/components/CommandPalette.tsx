@@ -213,17 +213,17 @@ export function CommandPalette() {
           }}
           placeholder="搜助手、会话、记忆、知识、工具，或者输入命令…"
           aria-label="搜索"
-          className="w-full bg-transparent px-4 py-3.5 text-[14px] outline-none"
+          className="w-full bg-transparent px-4 py-3.5 text-[length:var(--fs-md)] outline-none"
           style={{ color: "var(--color-text)" }}
         />
         <div className="max-h-[52vh] overflow-y-auto pb-1">
           {loading && filtered.length === 0 && (
-            <div className="px-4 py-3 text-[12.5px]" style={{ color: "var(--color-text-3)" }}>
+            <div className="px-4 py-3 text-[length:var(--fs-base)]" style={{ color: "var(--color-text-3)" }}>
               正在读取…
             </div>
           )}
           {!loading && filtered.length === 0 && (
-            <div className="px-4 py-3 text-[12.5px]" style={{ color: "var(--color-text-3)" }}>
+            <div className="px-4 py-3 text-[length:var(--fs-base)]" style={{ color: "var(--color-text-3)" }}>
               没有匹配项
             </div>
           )}
@@ -233,7 +233,7 @@ export function CommandPalette() {
               <div key={it.key}>
                 {showGroup && (
                   <div
-                    className="px-4 pt-2 pb-1 text-[11px] font-semibold tracking-wide"
+                    className="px-4 pt-2 pb-1 text-[length:var(--fs-xs)] font-semibold tracking-wide"
                     style={{ color: "var(--color-text-3)" }}
                   >
                     {it.group}
@@ -247,10 +247,10 @@ export function CommandPalette() {
                   className="flex w-full items-center gap-2 px-4 py-2 text-left"
                   style={{ background: i === hi ? "var(--color-surface-2)" : "transparent" }}
                 >
-                  <span className="min-w-0 flex-1 truncate text-[13px]">{it.label}</span>
+                  <span className="min-w-0 flex-1 truncate text-[length:var(--fs-base)]">{it.label}</span>
                   {it.hint && (
                     <span
-                      className="mono shrink-0 truncate text-[11px]"
+                      className="mono shrink-0 truncate text-[length:var(--fs-xs)]"
                       style={{ color: "var(--color-text-3)" }}
                     >
                       {it.hint}
@@ -262,7 +262,7 @@ export function CommandPalette() {
           })}
         </div>
         <div
-          className="flex items-center gap-3 px-4 py-2 text-[11px]"
+          className="flex items-center gap-3 px-4 py-2 text-[length:var(--fs-xs)]"
           style={{ color: "var(--color-text-3)", background: "var(--color-surface-2)" }}
         >
           <span>↑↓ 选择</span>

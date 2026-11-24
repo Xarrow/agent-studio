@@ -75,7 +75,7 @@ export function SearchHealthCard() {
 
   return (
     <div className="space-y-2.5">
-      <div className="flex flex-wrap items-center gap-2 text-[12.5px]">
+      <div className="flex flex-wrap items-center gap-2 text-[length:var(--fs-base)]">
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2 w-2 rounded-full" style={{ background: tone }} />
           <span style={{ color: tone }}>{title}</span>
@@ -93,7 +93,7 @@ export function SearchHealthCard() {
       {h && h.probes.length > 0 && (
         <div className="space-y-1">
           {h.probes.map((p) => (
-            <div key={p.query} className="flex flex-wrap items-baseline gap-2 text-[11.5px]">
+            <div key={p.query} className="flex flex-wrap items-baseline gap-2 text-[length:var(--fs-sm)]">
               <span
                 className="shrink-0 tabular-nums"
                 style={{ color: p.ok ? "var(--color-ok)" : "var(--color-danger)" }}
@@ -112,14 +112,14 @@ export function SearchHealthCard() {
         </div>
       )}
 
-      <p className="text-[11.5px] leading-relaxed text-[var(--color-muted)]">
+      <p className="text-[length:var(--fs-sm)] leading-relaxed text-[var(--color-muted)]">
         自检用两句固定查询真实搜索一次（一句中文、一句英文），看首条结果里命中了多少查询词。
         低于 {h?.threshold ?? 0.5} 或超过 8 秒即判异常 —— 这通常意味着搜索源改了结构或封了请求，
         Agent 的 web_search 会开始返回无关内容。
       </p>
 
       {err && (
-        <p className="text-[11.5px]" style={{ color: "var(--color-danger)" }}>
+        <p className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-danger)" }}>
           {err}
         </p>
       )}

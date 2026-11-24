@@ -48,7 +48,7 @@ export function SourceBadge({ runId, count }: { runId: string; count: number }) 
         data-tap
         onClick={() => void toggle()}
         aria-expanded={open}
-        className="flex min-h-[28px] items-center gap-1.5 rounded-[8px] px-1.5 text-[11.5px] max-md:h-[44px]"
+        className="flex min-h-[28px] items-center gap-1.5 rounded-[8px] px-1.5 text-[length:var(--fs-sm)] max-md:h-[44px]"
         style={{ color: "var(--color-muted)" }}
       >
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -81,12 +81,12 @@ export function SourceBadge({ runId, count }: { runId: string; count: number }) 
           }}
         >
           {busy && (
-            <div className="px-3 py-2 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+            <div className="px-3 py-2 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
               正在取来源…
             </div>
           )}
           {!busy && (items?.length ?? 0) === 0 && (
-            <div className="px-3 py-2 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+            <div className="px-3 py-2 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
               这一轮没有可列的来源
             </div>
           )}
@@ -101,14 +101,14 @@ export function SourceBadge({ runId, count }: { runId: string; count: number }) 
               style={{ borderColor: "var(--color-border)" }}
               title={it.snippet || it.url}
             >
-              <span className="w-4 shrink-0 text-[11px]" style={{ color: "var(--color-muted)" }}>
+              <span className="w-4 shrink-0 text-[length:var(--fs-xs)]" style={{ color: "var(--color-muted)" }}>
                 {i + 1}
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-[12.5px]" style={{ color: "var(--color-text)" }}>
+                <span className="block truncate text-[length:var(--fs-base)]" style={{ color: "var(--color-text)" }}>
                   {it.title || it.url}
                 </span>
-                <span className="block truncate text-[11px]" style={{ color: "var(--color-muted)" }}>
+                <span className="block truncate text-[length:var(--fs-xs)]" style={{ color: "var(--color-muted)" }}>
                   {it.site} · {it.kind === "search" ? "搜索结果" : it.kind === "fetch" ? "已抓取" : "浏览器访问"}
                 </span>
               </span>

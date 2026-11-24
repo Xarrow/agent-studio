@@ -331,7 +331,7 @@ export function ModelPicker({
             </button>
           )}
         </div>
-        <p className="text-[12px] text-[var(--color-muted)] mt-1.5">
+        <p className="text-[length:var(--fs-sm)] text-[var(--color-muted)] mt-1.5">
           手动填写 —— 服务商探测不到（如方舟的接入点 ID）或**清单里没有你要的模型**时，都直接填 ✓
         </p>
       </div>
@@ -397,7 +397,7 @@ export function ModelPicker({
               style={{ background: "var(--color-surface)", borderColor: "var(--color-border)" }}
             >
               {filtered.length === 0 ? (
-                <div className="px-3 py-2 text-[12px]" style={{ color: "var(--color-text-3)" }}>
+                <div className="px-3 py-2 text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-3)" }}>
                   {probing ? "正在探测…" : q ? "没有匹配的模型" : "这家没有可选清单"}
                   {q ? (
                     <button
@@ -413,7 +413,7 @@ export function ModelPicker({
               ) : (
                 <>
                   {pinned.length > 0 && (
-                    <div className="px-3 pt-2 pb-1 text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                    <div className="px-3 pt-2 pb-1 text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
                       最近使用
                     </div>
                   )}
@@ -436,9 +436,9 @@ export function ModelPicker({
                         color: m === value ? "var(--color-accent)" : undefined,
                       }}
                     >
-                      <span className="mono flex-1 truncate text-[12.5px]">{m}</span>
+                      <span className="mono flex-1 truncate text-[length:var(--fs-base)]">{m}</span>
                       {priceLabel(m) ? (
-                        <span className="shrink-0 text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                        <span className="shrink-0 text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
                           {priceLabel(m)}
                         </span>
                       ) : null}
@@ -450,7 +450,7 @@ export function ModelPicker({
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => setShowAll((v) => !v)}
-                className="flex min-h-[36px] w-full items-center justify-between border-t px-3 text-left text-[12px]"
+                className="flex min-h-[36px] w-full items-center justify-between border-t px-3 text-left text-[length:var(--fs-sm)]"
                 style={{ borderColor: "var(--color-border)", color: "var(--color-text-3)" }}
               >
                 <span>{showAll ? "隐藏重复档（:batch / ~ 别名）" : `显示全部原始档${rawList.length ? `（${rawList.length}）` : ""}`}</span>
@@ -464,7 +464,7 @@ export function ModelPicker({
                     setManual(true);
                     setOpen(false);
                   }}
-                  className="flex min-h-[38px] w-full items-center border-t px-3 text-left text-[12.5px]"
+                  className="flex min-h-[38px] w-full items-center border-t px-3 text-left text-[length:var(--fs-base)]"
                   style={{ borderColor: "var(--color-border)", color: "var(--color-text-2)" }}
                 >
                   ✎ 手动填写…
@@ -486,13 +486,13 @@ export function ModelPicker({
         )}
       </div>
       {switchNote && (
-        <p className="text-[12px] mt-1.5" style={{ color: "var(--color-warn)" }}>{switchNote}</p>
+        <p className="text-[length:var(--fs-sm)] mt-1.5" style={{ color: "var(--color-warn)" }}>{switchNote}</p>
       )}
       {note && (
-        <p className="text-[12px] text-[var(--color-muted)] mt-1.5">{note}</p>
+        <p className="text-[length:var(--fs-sm)] text-[var(--color-muted)] mt-1.5">{note}</p>
       )}
       {!credentialId && !(models && models.length > 0) && (
-        <p className="text-[12px] text-[var(--color-muted)] mt-1.5">
+        <p className="text-[length:var(--fs-sm)] text-[var(--color-muted)] mt-1.5">
           先在下面选好「LLM 配置」，就能自动探测它可用的模型。
         </p>
       )}

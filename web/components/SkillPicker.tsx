@@ -115,7 +115,7 @@ export function SkillPicker({
       title="技能"
       hint="勾上就对这一轮生效"
       extra={
-        <span className="text-[11px] tabular-nums" style={{ color: "var(--color-muted)" }}>
+        <span className="text-[length:var(--fs-xs)] tabular-nums" style={{ color: "var(--color-muted)" }}>
           已挂 {mountedIds.length} / 共 {all.length}
         </span>
       }
@@ -124,7 +124,7 @@ export function SkillPicker({
     >
       <div className="px-3.5 pb-2">
         <input
-          className="input h-9 w-full text-[13px]"
+          className="input h-9 w-full text-[length:var(--fs-base)]"
           value={q}
           placeholder={all.length > 8 ? "搜索技能…" : "搜索"}
           onChange={(e) => setQ(e.target.value)}
@@ -135,7 +135,7 @@ export function SkillPicker({
         <div className="px-3.5 py-8 text-center">
           {loadState === "failed" ? (
             <>
-              <p className="text-[12.5px] mb-2" style={{ color: "var(--color-err)" }}>
+              <p className="text-[length:var(--fs-base)] mb-2" style={{ color: "var(--color-err)" }}>
                 技能列表没加载出来
               </p>
               <button type="button" data-tap className="btn btn-sm" onClick={load}>
@@ -143,11 +143,11 @@ export function SkillPicker({
               </button>
             </>
           ) : loadState === "loading" ? (
-            <p className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+            <p className="text-[length:var(--fs-base)]" style={{ color: "var(--color-muted)" }}>
               正在加载…
             </p>
           ) : (
-            <p className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+            <p className="text-[length:var(--fs-base)]" style={{ color: "var(--color-muted)" }}>
               {all.length === 0 ? "还没有技能，去「工具」页装一个" : "没有匹配的技能"}
             </p>
           )}
@@ -181,10 +181,10 @@ export function SkillPicker({
                   )}
                 </span>
                 <span className="min-w-0">
-                  <span className="block text-[13px] font-medium truncate">{s.name}</span>
+                  <span className="block text-[length:var(--fs-base)] font-medium truncate">{s.name}</span>
                   {s.description && (
                     <span
-                      className="text-[11.5px] leading-[1.45] mt-0.5 line-clamp-1"
+                      className="text-[length:var(--fs-sm)] leading-[1.45] mt-0.5 line-clamp-1"
                       style={{ color: "var(--color-muted)" }}
                     >
                       {s.description}

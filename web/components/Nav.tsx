@@ -146,14 +146,14 @@ export function Nav() {
     href === "/" ? pathname === "/" : pathname.startsWith(href);
 
   const rowCls = (active: boolean) =>
-    `flex items-center gap-2.5 px-3 py-2 rounded-md text-[13px] transition-colors ${
+    `flex items-center gap-2.5 px-3 py-2 rounded-md text-[length:var(--fs-base)] transition-colors ${
       active
         ? "bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)] text-[var(--color-accent)] font-medium"
         : "text-[var(--color-text)] hover:bg-[var(--color-surface-2)]"
     }`;
 
   const groupLabel = (t: string) => (
-    <div className="px-3 pt-3 pb-1 text-[10.5px] font-semibold tracking-wider text-[var(--color-muted)] uppercase">
+    <div className="px-3 pt-3 pb-1 text-[length:var(--fs-xs)] font-semibold tracking-wider text-[var(--color-muted)] uppercase">
       {t}
     </div>
   );
@@ -191,7 +191,7 @@ export function Nav() {
             />
           </svg>
         </button>
-        <span className="font-semibold text-[15px] tracking-tight">{currentLabel}</span>
+        <span className="font-semibold text-[length:var(--fs-lg)] tracking-tight">{currentLabel}</span>
       </header>
       )}
 
@@ -206,7 +206,7 @@ export function Nav() {
           <aside className="md:hidden fixed inset-y-0 left-0 z-50 w-[17rem] max-w-[82vw] bg-[var(--color-surface)] flex flex-col overflow-auto">
             <div className="px-4 py-4 flex items-center">
               {/* 手机上整块做成 44 高的可点区（抽屉顶上这一下常点，14px 的字高不够） */}
-              <Link href="/" className="inline-flex min-h-[36px] items-center font-semibold text-[15px] tracking-tight">
+              <Link href="/" className="inline-flex min-h-[36px] items-center font-semibold text-[length:var(--fs-lg)] tracking-tight">
                 Agent Studio
               </Link>
               <button
@@ -267,7 +267,7 @@ export function Nav() {
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             {expanded ? <path d="M15 6l-6 6 6 6" /> : <path d="M9 6l6 6-6 6" />}
           </svg>
-          {expanded && <span className="text-[12px]">收起</span>}
+          {expanded && <span className="text-[length:var(--fs-sm)]">收起</span>}
         </button>
 
         {/* 打开命令面板：手机与鼠标也要有入口（⌘K 只对键盘有效） */}
@@ -285,9 +285,9 @@ export function Nav() {
             <circle cx="11" cy="11" r="7" />
             <path d="m20 20-3.6-3.6" />
           </svg>
-          {expanded && <span className="text-[12.5px]">搜索</span>}
+          {expanded && <span className="text-[length:var(--fs-base)]">搜索</span>}
           {expanded && (
-            <span className="ml-auto text-[11px]" style={{ color: "var(--color-text-3)" }}>
+            <span className="ml-auto text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
               ⌘K
             </span>
           )}
@@ -356,7 +356,7 @@ export function Nav() {
           }`}
           style={{ color: "var(--color-muted)" }}
         >
-          {expanded && <span className="text-[12.5px]">{dark ? "浅色主题" : "深色主题"}</span>}
+          {expanded && <span className="text-[length:var(--fs-base)]">{dark ? "浅色主题" : "深色主题"}</span>}
           {dark ? (
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
               <circle cx="12" cy="12" r="4" />
@@ -410,7 +410,7 @@ function RailLink({
       <Icon d={ICON_PATHS[item.icon] ?? ""} size={17} />
       {expanded && (
         <>
-          <span className="min-w-0 flex-1 truncate text-[12.5px]" style={{ color: active ? "var(--color-text)" : "var(--color-text-2)" }}>
+          <span className="min-w-0 flex-1 truncate text-[length:var(--fs-base)]" style={{ color: active ? "var(--color-text)" : "var(--color-text-2)" }}>
             {item.label}
           </span>
           {badge && (
@@ -423,7 +423,7 @@ function RailLink({
           )}
           {dotLabel ? (
             <span
-              className="shrink-0 text-[10.5px]"
+              className="shrink-0 text-[length:var(--fs-xs)]"
               style={{ color: dot === "var(--color-ok)" ? "var(--color-text-3)" : "var(--color-err)" }}
             >
               {dotLabel}
@@ -459,7 +459,7 @@ function RailLink({
 function NavGroupLabel({ children }: { children: React.ReactNode }) {
   return (
     <div
-      className="px-2 pt-2 pb-1 text-[10.5px] font-semibold uppercase tracking-wider"
+      className="px-2 pt-2 pb-1 text-[length:var(--fs-xs)] font-semibold uppercase tracking-wider"
       style={{ color: "var(--color-text-3)" }}
     >
       {children}

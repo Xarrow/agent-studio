@@ -41,7 +41,7 @@ export function PageHead({
         <h1 className="text-[22px] font-semibold tracking-tight max-md:text-[20px]">{title}</h1>
         {desc ? (
           <p
-            className="mt-1 text-[13px] leading-snug max-md:text-[13px] max-md:leading-relaxed"
+            className="mt-1 text-[length:var(--fs-base)] leading-snug max-md:text-[length:var(--fs-base)] max-md:leading-relaxed"
             style={{ color: "var(--color-muted)" }}
           >
             {desc}
@@ -85,7 +85,7 @@ export function Segmented<T extends string>({
             key={o.key}
             type="button"
             onClick={() => onChange(o.key)}
-            className="min-h-[36px] whitespace-nowrap rounded-[7px] px-2.5 text-[12px] transition-colors"
+            className="min-h-[36px] whitespace-nowrap rounded-[7px] px-2.5 text-[length:var(--fs-sm)] transition-colors"
             style={{
               background: on ? "var(--color-accent)" : undefined,
               color: on ? "#fff" : "var(--color-muted)",
@@ -125,7 +125,7 @@ export function Chip({
   return (
     <span
       title={title}
-      className="shrink-0 whitespace-nowrap rounded px-1.5 py-0.5 text-[12px]"
+      className="shrink-0 whitespace-nowrap rounded px-1.5 py-0.5 text-[length:var(--fs-sm)]"
       style={{ background: `color-mix(in srgb, ${c} 12%, transparent)`, color: c }}
     >
       {children}
@@ -251,9 +251,9 @@ export function Empty({
 }) {
   return (
     <div className="px-4 py-10 text-center">
-      <div className="text-[14px]">{title}</div>
+      <div className="text-[length:var(--fs-md)]">{title}</div>
       {hint ? (
-        <div className="mx-auto mt-1.5 max-w-[420px] text-[12px] leading-relaxed" style={{ color: "var(--color-muted)" }}>
+        <div className="mx-auto mt-1.5 max-w-[420px] text-[length:var(--fs-sm)] leading-relaxed" style={{ color: "var(--color-muted)" }}>
           {hint}
         </div>
       ) : null}
@@ -265,7 +265,7 @@ export function Empty({
 /** 键值一行（展开区里用：左边是名目，右边是值）。 */
 export function KV({ k, children }: { k: ReactNode; children: ReactNode }) {
   return (
-    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[12px]">
+    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[length:var(--fs-sm)]">
       <span className="shrink-0" style={{ color: "var(--color-muted)" }}>
         {k}
       </span>
@@ -335,11 +335,11 @@ export function SelectionBar({
       className="mb-2 flex flex-wrap items-center gap-2 rounded-[10px] px-3 py-2"
       style={{ background: "color-mix(in srgb, var(--color-accent) 8%, transparent)" }}
     >
-      <span className="text-[12px]">已选 {count} 条</span>
+      <span className="text-[length:var(--fs-sm)]">已选 {count} 条</span>
       {actions}
       {onSelectAll ? (
         <button
-          className="btn text-[12px]"
+          className="btn text-[length:var(--fs-sm)]"
           style={{ color: "var(--color-muted)" }}
           onClick={onSelectAll}
         >
@@ -348,7 +348,7 @@ export function SelectionBar({
       ) : null}
       {onClear ? (
         <button
-          className="btn text-[12px]"
+          className="btn text-[length:var(--fs-sm)]"
           style={{ color: "var(--color-muted)" }}
           onClick={onClear}
         >
@@ -447,7 +447,7 @@ export function Menu({
         aria-expanded={open}
         title={title}
         onClick={() => setOpen((v) => !v)}
-        className="min-h-[36px] rounded-[8px] border px-2.5 text-[13px] hover:bg-[var(--color-surface-2)]"
+        className="min-h-[36px] rounded-[8px] border px-2.5 text-[length:var(--fs-base)] hover:bg-[var(--color-surface-2)]"
         style={{ borderColor: "var(--color-border)" }}
       >
         {label}
@@ -471,13 +471,13 @@ export function Menu({
                 setOpen(false);
                 it.onSelect();
               }}
-              className="flex min-h-[38px] w-full flex-col items-start justify-center px-3 text-left text-[12px] hover:bg-[var(--color-surface-2)] disabled:opacity-40"
+              className="flex min-h-[38px] w-full flex-col items-start justify-center px-3 text-left text-[length:var(--fs-sm)] hover:bg-[var(--color-surface-2)] disabled:opacity-40"
               style={it.danger ? { color: "var(--color-err)" } : undefined}
             >
               <span>{it.label}</span>
               {/* hint 直接显示，不靠 title —— 触屏没有 hover，藏在 title 里等于没写 */}
               {it.hint ? (
-                <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                <span className="text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
                   {it.hint}
                 </span>
               ) : null}
@@ -532,20 +532,20 @@ export function Section({
           aria-expanded={open}
           className="flex min-h-[36px] min-w-0 flex-1 items-center gap-2 text-left"
         >
-          <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+          <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
             {open ? "▾" : "▸"}
           </span>
           <span className="min-w-0">
-            <span className="block text-[13.5px] font-medium">
+            <span className="block text-[length:var(--fs-md)] font-medium">
               {title}
               {count != null ? (
-                <span className="ml-1.5 text-[12px] font-normal" style={{ color: "var(--color-muted)" }}>
+                <span className="ml-1.5 text-[length:var(--fs-sm)] font-normal" style={{ color: "var(--color-muted)" }}>
                   {count}
                 </span>
               ) : null}
             </span>
             {desc ? (
-              <span className="mt-0.5 block text-[12px] leading-snug" style={{ color: "var(--color-muted)" }}>
+              <span className="mt-0.5 block text-[length:var(--fs-sm)] leading-snug" style={{ color: "var(--color-muted)" }}>
                 {desc}
               </span>
             ) : null}

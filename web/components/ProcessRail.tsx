@@ -50,20 +50,20 @@ export function ProcessRail({
         className="mx-1 mb-1 flex items-center gap-2 rounded-[9px] bg-[var(--color-surface-2)] px-2.5 py-2"
         style={{ borderColor: "var(--color-border)" }}
       >
-        <span className="text-[12px] font-medium">浏览器</span>
+        <span className="text-[length:var(--fs-sm)] font-medium">浏览器</span>
         {onCollapse && (
           <button
             data-tap
             title="收起（对话区变宽）"
             onClick={onCollapse}
-            className="w-7 h-7 -my-1 flex items-center justify-center rounded-md text-[12px] hover:bg-[var(--color-surface-2)]"
+            className="w-7 h-7 -my-1 flex items-center justify-center rounded-md text-[length:var(--fs-sm)] hover:bg-[var(--color-surface-2)]"
             style={{ color: "var(--color-muted)" }}
           >
             »
           </button>
         )}
         {busy && frame ? (
-          <span className="ml-auto text-[11.5px] live-dot" style={{ color: "var(--color-accent)" }}>
+          <span className="ml-auto text-[length:var(--fs-sm)] live-dot" style={{ color: "var(--color-accent)" }}>
             ● 直播
           </span>
         ) : null}
@@ -82,7 +82,7 @@ export function ProcessRail({
             onLoadSteps={onLoadSteps}
           />
         ) : (
-          <div className="px-3 py-8 text-center text-[12px]" style={{ color: "var(--color-muted)" }}>
+          <div className="px-3 py-8 text-center text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
             {busy ? "正在启动…" : "助手用浏览器时，这里显示画面"}
           </div>
         )}

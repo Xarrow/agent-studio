@@ -26,10 +26,10 @@ export default function AgentDetailError({
     <div className="p-4 md:p-6 lg:p-7 max-w-2xl">
       <div className="card p-5">
         <h1 className="text-[16px] font-medium mb-2">这个页面没能加载出来</h1>
-        <p className="text-[13px] text-[var(--color-muted)] mb-3">
+        <p className="text-[length:var(--fs-base)] text-[var(--color-muted)] mb-3">
           助手配置页在渲染时出错了。下面是可以带走排查的信息：
         </p>
-        <pre className="rounded-md p-3 bg-[var(--color-surface-2)] text-[12px] whitespace-pre-wrap break-all mb-4">
+        <pre className="rounded-md p-3 bg-[var(--color-surface-2)] text-[length:var(--fs-sm)] whitespace-pre-wrap break-all mb-4">
           {error.message || String(error)}
           {error.digest ? `\n\ndigest: ${error.digest}` : ""}
         </pre>
@@ -40,7 +40,7 @@ export default function AgentDetailError({
           <button className="btn" onClick={() => window.location.reload()}>
             重新加载页面
           </button>
-          <a className="text-[12px] text-[var(--color-accent)]" href="/agents">
+          <a className="text-[length:var(--fs-sm)] text-[var(--color-accent)]" href="/agents">
             返回助手列表 →
           </a>
         </div>

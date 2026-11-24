@@ -372,10 +372,10 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
             <h1 className="text-[22px] font-semibold tracking-tight flex items-center gap-1.5">
               <Hint text={HINTS.skill}>Skills</Hint>
             </h1>
-            <p className="text-[13px] text-[var(--color-muted)] mt-1">
+            <p className="text-[length:var(--fs-base)] text-[var(--color-muted)] mt-1">
               预先写好的「做事套路」。装上之后，助手遇到这类任务就知道该按什么步骤做。
             </p>
-            <p className="text-[12px] text-[var(--color-muted)] mt-1">
+            <p className="text-[length:var(--fs-sm)] text-[var(--color-muted)] mt-1">
               标准 <span className="mono">SKILL.md</span> 格式，与 Claude Code / Hermes / AgentScope 通用
             </p>
           </div>
@@ -488,7 +488,7 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
       )}
 
       {!loaded ? (
-        <div className="card p-6 text-[13px] text-[var(--color-muted)]">加载中…</div>
+        <div className="card p-6 text-[length:var(--fs-base)] text-[var(--color-muted)]">加载中…</div>
       ) : view === "grouped" ? (
         <GroupedSkills
           groups={groups.filter((g) => {
@@ -540,7 +540,7 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
       ) : shown.length === 0 ? (
         <div className="card p-8 text-center">
           <IconSkill size={22} className="mx-auto mb-2 text-[var(--color-muted)]" />
-          <div className="text-[13px]" style={{ color: "var(--color-muted)" }}>
+          <div className="text-[length:var(--fs-base)]" style={{ color: "var(--color-muted)" }}>
             {skills.length === 0
               ? "还没有 Skill。可以从 Git 仓库、URL、服务器本地目录导入，或直接写一份。"
               : "这个筛选下没有技能"}
@@ -575,14 +575,14 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
                       （来源 tag 本来在第三行，和三个数字挤在一起；挪上来以后
                        左边是"它是什么"，右边留给人看描述） */}
                   <span className="flex min-w-0 items-center gap-1.5">
-                    <span className="truncate text-[13.5px] font-medium">{s.name}</span>
+                    <span className="truncate text-[length:var(--fs-md)] font-medium">{s.name}</span>
                     {(() => {
                       const ns = nsOf(s);
                       const label = ns === "system" ? "系统" : ns === "vendor" ? "三方" : "沉淀";
                       const ro = ns !== "workspace";
                       return (
                         <span
-                          className="shrink-0 rounded px-1 py-[1px] text-[10.5px]"
+                          className="shrink-0 rounded px-1 py-[1px] text-[length:var(--fs-xs)]"
                           title={ro ? `${label}来源：只读（随同步/版本更新）` : "Agent 沉淀：可编辑"}
                           style={{
                             background: "var(--color-surface-2)",
@@ -596,7 +596,7 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
                     })()}
                     {s.source_stale && (
                       <span
-                        className="shrink-0 rounded px-1 py-[1px] text-[10.5px]"
+                        className="shrink-0 rounded px-1 py-[1px] text-[length:var(--fs-xs)]"
                         title="来源文档出了新版本，或所属标签下加了新文档 —— 可到知识中心按该标签重新生成"
                         style={{
                           background: "color-mix(in srgb, var(--color-warn, #d97706) 14%, transparent)",
@@ -612,7 +612,7 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
                       </span>
                     )}
                     <span
-                      className="inline-flex shrink-0 items-center gap-1 text-[11px]"
+                      className="inline-flex shrink-0 items-center gap-1 text-[length:var(--fs-xs)]"
                       style={{ color: meta.color }}
                     >
                       <span className="h-1.5 w-1.5 rounded-full" style={{ background: meta.color }} aria-hidden="true" />
@@ -621,7 +621,7 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
                     <span className="tag ml-auto hidden shrink-0 sm:inline-flex">{sourceLabel(s.source)}</span>
                   </span>
                   {s.description && (
-                    <span className="mt-0.5 block truncate text-[12px]" style={{ color: "var(--color-muted)" }}>
+                    <span className="mt-0.5 block truncate text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                       {s.description}
                     </span>
                   )}
@@ -629,7 +629,7 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
                       「3 个附件 · 用了 12 次 · 最后 2 天前」这种长句在手机上必换行，
                       换行后整行就被撑成"一条一条竖着往下堆"。 */}
                   <span
-                    className="mt-1 flex items-center gap-3 text-[11.5px]"
+                    className="mt-1 flex items-center gap-3 text-[length:var(--fs-sm)]"
                     style={{ color: "var(--color-muted)" }}
                   >
                     <span className="inline-flex items-center gap-1 whitespace-nowrap" title="附件数">
@@ -691,7 +691,7 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
             <article>
               {/* 正文头：像读一份文档，不是看一段日志 */}
               <div className="mb-2 flex items-center justify-between">
-                <span className="inline-flex items-center gap-1.5 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                <span className="inline-flex items-center gap-1.5 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                   <IconFileText size={13} />
                   <span className="mono">SKILL.md</span>
                   <span>·</span>
@@ -709,7 +709,7 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
                     ]}
                   />
                   <button
-                    className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11.5px] hover:bg-[var(--color-surface-2)]"
+                    className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[length:var(--fs-sm)] hover:bg-[var(--color-surface-2)]"
                     style={{ color: "var(--color-accent)" }}
                     onClick={() => {
                       void copyText(detail.content ?? "").then((ok) =>
@@ -726,14 +726,14 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
               {/* 真正的 Markdown 渲染 —— 之前是 <pre> 裸文本，最丑的一点 */}
               {!String(detail.content ?? "").trim() ? (
                 <div
-                  className="rounded-[10px] border p-6 text-center text-[12.5px]"
+                  className="rounded-[10px] border p-6 text-center text-[length:var(--fs-base)]"
                   style={{ borderColor: "var(--color-border)", color: "var(--color-text-3)" }}
                 >
                   暂无详情文档（这个技能的 SKILL.md 读不到或为空）
                 </div>
               ) : detailMode === "src" ? (
                 <pre
-                  className="mono max-h-[60vh] overflow-auto rounded-[10px] border p-4 text-[11.5px] leading-relaxed"
+                  className="mono max-h-[60vh] overflow-auto rounded-[10px] border p-4 text-[length:var(--fs-sm)] leading-relaxed"
                   style={{ borderColor: "var(--color-border)", background: "var(--color-bg)", whiteSpace: "pre-wrap" }}
                 >
                   {detail.content}
@@ -750,7 +750,7 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
               {/* 附件单独一段（正文看得见之后，附件不该插在中间打断阅读） */}
               {Object.keys(detail.files ?? {}).length > 0 && (
                 <div className="mt-3">
-                  <div className="mb-1.5 inline-flex items-center gap-1.5 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                  <div className="mb-1.5 inline-flex items-center gap-1.5 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                     <IconFile size={13} />
                     附件 {Object.keys(detail.files).length} 个
                   </div>
@@ -954,7 +954,7 @@ function ImportDialog({
     <div className={DLG_BACKDROP}>
       <div className={`${DLG_CARD} max-w-2xl p-5`}>
         <h2 className="text-[16px] font-medium mb-1">装 Skill</h2>
-        <p className="text-[12px] text-[var(--color-muted)] mb-4">
+        <p className="text-[length:var(--fs-sm)] text-[var(--color-muted)] mb-4">
           抄一条 GitHub 引用就行（跟 <span className="mono">npx skills add</span> 一样），
           也可以给单个 SKILL.md 链接、服务器上的目录，或直接手写一份。
         </p>
@@ -974,7 +974,7 @@ function ImportDialog({
             return (
               <button
                 key={k}
-                className="flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-[12.5px] transition-colors"
+                className="flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-[length:var(--fs-base)] transition-colors"
                 style={{
                   borderColor: on ? "var(--color-accent)" : "var(--color-border)",
                   background: on ? "color-mix(in srgb, var(--color-accent) 8%, transparent)" : "var(--color-surface)",
@@ -1017,14 +1017,14 @@ function ImportDialog({
                         {busy ? "取回中…" : "预览"}
                       </button>
                     </div>
-                    <p className="text-[11.5px] text-[var(--color-muted)] mt-1">
+                    <p className="text-[length:var(--fs-sm)] text-[var(--color-muted)] mt-1">
                       owner/repo，也可以带仓库内目录（owner/repo/skills/web-design）或版本（@v2.16.0）；
                       从 README 抄整条命令（npx skills add …）也行
                     </p>
                   </div>
 
                   {/* 没有 Node 的机器：把 npx 换成影子命令，README 那一行就能照抄 */}
-                  <div className="flex items-center gap-2 flex-wrap text-[11.5px] text-[var(--color-muted)]">
+                  <div className="flex items-center gap-2 flex-wrap text-[length:var(--fs-sm)] text-[var(--color-muted)]">
                     <span>这台机器没有 Node？</span>
                     <button
                       type="button"
@@ -1042,7 +1042,7 @@ function ImportDialog({
                   </div>
                   {cliMsg && (
                     <div
-                      className="rounded-lg px-2.5 py-2 text-[11.5px] mono break-all"
+                      className="rounded-lg px-2.5 py-2 text-[length:var(--fs-sm)] mono break-all"
                       style={{ background: "var(--color-surface-2)" }}
                     >
                       {cliMsg}
@@ -1056,20 +1056,20 @@ function ImportDialog({
                           href={scan.web_url}
                           target="_blank"
                           rel="noreferrer"
-                          className="mono text-[12.5px] hover:underline"
+                          className="mono text-[length:var(--fs-base)] hover:underline"
                           style={{ color: "var(--color-accent)" }}
                         >
                           {scan.repo}
                         </a>
                         <span className="tag">{scan.ref}</span>
-                        {scan.sha && <span className="mono text-[11px] text-[var(--color-muted)]">{scan.sha.slice(0, 7)}</span>}
+                        {scan.sha && <span className="mono text-[length:var(--fs-xs)] text-[var(--color-muted)]">{scan.sha.slice(0, 7)}</span>}
                         {typeof scan.stars === "number" && (
-                          <span className="text-[11.5px] text-[var(--color-muted)]">★ {scan.stars}</span>
+                          <span className="text-[length:var(--fs-sm)] text-[var(--color-muted)]">★ {scan.stars}</span>
                         )}
-                        {scan.license && <span className="text-[11.5px] text-[var(--color-muted)]">{scan.license}</span>}
+                        {scan.license && <span className="text-[length:var(--fs-sm)] text-[var(--color-muted)]">{scan.license}</span>}
                       </div>
                       {scan.description && (
-                        <p className="text-[12px] text-[var(--color-muted)] mt-1">{scan.description}</p>
+                        <p className="text-[length:var(--fs-sm)] text-[var(--color-muted)] mt-1">{scan.description}</p>
                       )}
                       <div className="mt-2 space-y-1">
                         {scan.skills.map((it) => {
@@ -1098,12 +1098,12 @@ function ImportDialog({
                                 )}
                               </span>
                               <span className="min-w-0">
-                                <span className="text-[13px] font-medium">{it.name}</span>
+                                <span className="text-[length:var(--fs-base)] font-medium">{it.name}</span>
                                 {it.path && (
-                                  <span className="mono text-[11px] text-[var(--color-muted)] ml-1.5">{it.path}</span>
+                                  <span className="mono text-[length:var(--fs-xs)] text-[var(--color-muted)] ml-1.5">{it.path}</span>
                                 )}
                                 {it.description && (
-                                  <span className="block text-[12px] text-[var(--color-muted)] line-clamp-2">
+                                  <span className="block text-[length:var(--fs-sm)] text-[var(--color-muted)] line-clamp-2">
                                     {it.description}
                                   </span>
                                 )}
@@ -1113,7 +1113,7 @@ function ImportDialog({
                         })}
                       </div>
                       <div className="flex items-center gap-2 mt-2.5">
-                        <span className="text-[11.5px] text-[var(--color-muted)]">
+                        <span className="text-[length:var(--fs-sm)] text-[var(--color-muted)]">
                           {picked.length === 0
                             ? "勾一个再装"
                             : `已选 ${picked.length} 个 · 附件一起搬`}
@@ -1141,7 +1141,7 @@ function ImportDialog({
                     </div>
                     <button
                       type="button"
-                      className="text-[11.5px] text-[var(--color-muted)] hover:underline self-end pb-2"
+                      className="text-[length:var(--fs-sm)] text-[var(--color-muted)] hover:underline self-end pb-2"
                       onClick={() => setLegacyGit(true)}
                     >
                       不是 GitHub？用克隆地址
@@ -1151,10 +1151,10 @@ function ImportDialog({
               ) : (
                 <>
                   <div className="flex items-center gap-2">
-                    <span className="text-[12px] text-[var(--color-muted)]">任意 Git 主机</span>
+                    <span className="text-[length:var(--fs-sm)] text-[var(--color-muted)]">任意 Git 主机</span>
                     <button
                       type="button"
-                      className="text-[11.5px] hover:underline"
+                      className="text-[length:var(--fs-sm)] hover:underline"
                       style={{ color: "var(--color-accent)" }}
                       onClick={() => setLegacyGit(false)}
                     >
@@ -1251,7 +1251,7 @@ function ImportDialog({
               <div>
                 <label className="label">技能包</label>
                 <div
-                  className="rounded-[var(--radius-md)] border border-dashed px-3 py-4 text-center text-[12px] transition-colors"
+                  className="rounded-[var(--radius-md)] border border-dashed px-3 py-4 text-center text-[length:var(--fs-sm)] transition-colors"
                   style={{
                     borderColor: dropHover ? "var(--color-accent)" : "var(--color-border)",
                     background: dropHover ? "var(--bg-selected)" : "transparent",
@@ -1294,7 +1294,7 @@ function ImportDialog({
                   value={fileDir}
                   onChange={(e) => setFileDir(e.target.value)}
                 />
-                <p className="mt-1 text-[11px] text-[var(--color-muted)]">
+                <p className="mt-1 text-[length:var(--fs-xs)] text-[var(--color-muted)]">
                   相对于服务器工作目录；包里的所有 SKILL.md 都会被找到并加进技能库，
                   原始文件保留在这个目录里方便你继续改。
                 </p>
@@ -1302,7 +1302,7 @@ function ImportDialog({
             </>
           )}
 
-          {err && <div className="text-[12px] text-[var(--color-err)]">{err}</div>}
+          {err && <div className="text-[length:var(--fs-sm)] text-[var(--color-err)]">{err}</div>}
         </div>
 
         <div className="flex justify-end gap-2 mt-5">
@@ -1374,7 +1374,7 @@ function SkillEditor({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2 text-[12px] text-[var(--color-muted)]">
+      <div className="flex items-center gap-2 text-[length:var(--fs-sm)] text-[var(--color-muted)]">
         <span className="mono">{fmName}</span>
         <span>·</span>
         <span>
@@ -1382,13 +1382,13 @@ function SkillEditor({
         </span>
       </div>
       <textarea
-        className="input mono text-[12px] w-full"
+        className="input mono text-[length:var(--fs-sm)] w-full"
         rows={16}
         value={content}
         onChange={(e) => setContent(e.target.value)}
         spellCheck={false}
       />
-      <div className="text-[12px] text-[var(--color-muted)]">
+      <div className="text-[length:var(--fs-sm)] text-[var(--color-muted)]">
         格式：开头的 <span className="mono">---</span> 里写 name 和 description；正文写给
         Agent 的步骤、命令、坑。description 写"什么时候用我"，别写目录。
       </div>
@@ -1472,7 +1472,7 @@ function GroupedSkills({
     return (
       <div className="card p-8 text-center">
         <IconSkill size={22} className="mx-auto mb-2 text-[var(--color-muted)]" />
-        <div className="text-[13px]" style={{ color: "var(--color-muted)" }}>
+        <div className="text-[length:var(--fs-base)]" style={{ color: "var(--color-muted)" }}>
           还没有技能。用「新建 / 导入」从仓库装一个，它会以「仓库 → 技能」的形式出现在这里。
         </div>
       </div>
@@ -1517,14 +1517,14 @@ function GroupedSkills({
                 <span className="min-w-0">
                   {/* 第一行 = 仓库（这一组的"爹"）：名字最大、带分支与 commit */}
                   <span className="flex flex-wrap items-center gap-1.5">
-                    <span className="truncate text-[13.5px] font-semibold">{g.name}</span>
+                    <span className="truncate text-[length:var(--fs-md)] font-semibold">{g.name}</span>
                     {g.branch && (
-                      <span className="mono shrink-0 rounded px-1.5 py-[1px] text-[10.5px]" style={{ background: "var(--bg-hover)", color: "var(--color-text-2)" }}>
+                      <span className="mono shrink-0 rounded px-1.5 py-[1px] text-[length:var(--fs-xs)]" style={{ background: "var(--bg-hover)", color: "var(--color-text-2)" }}>
                         {g.branch}
                       </span>
                     )}
                     {g.installed_commit && (
-                      <span className="mono shrink-0 text-[10.5px]" style={{ color: "var(--color-text-3)" }} title={g.installed_commit}>
+                      <span className="mono shrink-0 text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }} title={g.installed_commit}>
                         {g.installed_commit.slice(0, 7)}
                       </span>
                     )}
@@ -1532,12 +1532,12 @@ function GroupedSkills({
                   {/* 第二行 = 出处与规模：地址 + "N 个技能"（父级一眼可数） */}
                   <span className="mt-0.5 flex flex-wrap items-center gap-1.5">
                     {g.address && g.address.replace(/^https?:\/\//, "").replace(/\.git$/, "") !== g.name && (
-                      <span className="mono truncate text-[10.5px]" style={{ color: "var(--color-text-3)", maxWidth: 320 }} title={g.address}>
+                      <span className="mono truncate text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)", maxWidth: 320 }} title={g.address}>
                         {g.address}
                       </span>
                     )}
                     <span
-                      className="shrink-0 rounded-full px-1.5 py-[1px] text-[10.5px] tabular-nums"
+                      className="shrink-0 rounded-full px-1.5 py-[1px] text-[length:var(--fs-xs)] tabular-nums"
                       style={{ background: "var(--bg-hover)", color: "var(--color-text-2)" }}
                     >
                       {g.counts.installed} 个技能{g.counts.active !== g.counts.installed ? ` · 在用 ${g.counts.active}` : ""}
@@ -1547,7 +1547,7 @@ function GroupedSkills({
                 {/* 更新状态常驻：没检查过也明说，不让用户先点一下才知道 */}
                 {remote && (
                   <span
-                    className="shrink-0 rounded-full px-1.5 py-[1px] text-[10.5px]"
+                    className="shrink-0 rounded-full px-1.5 py-[1px] text-[length:var(--fs-xs)]"
                     style={{
                       background: check?.has_update
                         ? "color-mix(in srgb, var(--color-warn) 16%, transparent)"
@@ -1575,25 +1575,25 @@ function GroupedSkills({
               <div className="flex shrink-0 items-center gap-1.5">
                 {g.source_id && (
                   <>
-                    <button className="btn h-7 text-[11.5px]" disabled={busy === key} onClick={() => onCheck(g)} title="只探一次该仓库的远程 HEAD">
+                    <button className="btn h-7 text-[length:var(--fs-sm)]" disabled={busy === key} onClick={() => onCheck(g)} title="只探一次该仓库的远程 HEAD">
                       检查更新
                     </button>
                     <button
-                      className={check?.has_update ? "btn btn-primary h-7 text-[11.5px]" : "btn h-7 text-[11.5px]"}
+                      className={check?.has_update ? "btn btn-primary h-7 text-[length:var(--fs-sm)]" : "btn h-7 text-[length:var(--fs-sm)]"}
                       disabled={busy === key}
                       onClick={() => onSync(g)}
                       title={check?.has_update ? "拉取该仓库最新内容并更新这一组技能" : "重新拉一次该仓库（内容没变就是空跑）"}
                     >
                       同步
                     </button>
-                    <button className="btn h-7 text-[11.5px]" disabled={busy === key} onClick={() => onManage(g)}>
+                    <button className="btn h-7 text-[length:var(--fs-sm)]" disabled={busy === key} onClick={() => onManage(g)}>
                       增减技能
                     </button>
-                    <button className="btn h-7 text-[11.5px]" disabled={busy === key} onClick={() => onToggleState(g)}>
+                    <button className="btn h-7 text-[length:var(--fs-sm)]" disabled={busy === key} onClick={() => onToggleState(g)}>
                       {allOff ? "启用整组" : "停用整组"}
                     </button>
                     <button
-                      className="btn h-7 px-1.5 text-[11.5px]"
+                      className="btn h-7 px-1.5 text-[length:var(--fs-sm)]"
                       style={{
                         color: confirmRepo === key ? "var(--color-bg)" : "var(--color-danger)",
                         background: confirmRepo === key ? "var(--color-danger)" : undefined,
@@ -1617,7 +1617,7 @@ function GroupedSkills({
                     </button>
                     <div className="relative">
                       <button
-                        className="btn h-7 px-1.5 text-[11.5px]"
+                        className="btn h-7 px-1.5 text-[length:var(--fs-sm)]"
                         title="更多操作"
                         aria-haspopup="menu"
                         aria-expanded={menu?.key === key}
@@ -1657,7 +1657,7 @@ function GroupedSkills({
                             >
                               <button
                                 role="menuitem"
-                                className="block w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-selected)]"
+                                className="block w-full px-3 py-1.5 text-left text-[length:var(--fs-sm)] hover:bg-[var(--bg-selected)]"
                                 onClick={() => {
                                   setMenu(null);
                                   void copyText(`npx skills add ${g.address || g.name}`).then((ok) =>
@@ -1673,7 +1673,7 @@ function GroupedSkills({
                                   href={g.address.replace(/\.git$/, "")}
                                   target="_blank"
                                   rel="noreferrer"
-                                  className="block px-3 py-1.5 text-[12px] hover:bg-[var(--bg-selected)]"
+                                  className="block px-3 py-1.5 text-[length:var(--fs-sm)] hover:bg-[var(--bg-selected)]"
                                   onClick={() => setMenu(null)}
                                 >
                                   打开原仓库
@@ -1682,7 +1682,7 @@ function GroupedSkills({
                               <div className="my-1 h-px" style={{ background: "var(--color-border)" }} />
                               <button
                                 role="menuitem"
-                                className="block w-full px-3 py-1.5 text-left text-[12px]"
+                                className="block w-full px-3 py-1.5 text-left text-[length:var(--fs-sm)]"
                                 style={{ color: "var(--color-danger)" }}
                                 onClick={() => {
                                   setMenu(null);
@@ -1699,7 +1699,7 @@ function GroupedSkills({
                   </>
                 )}
                 {!g.source_id && !g.legacy_repo && (
-                  <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                  <span className="text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
                     手写 / 本地 / 助手沉淀
                   </span>
                 )}
@@ -1736,7 +1736,7 @@ function GroupedSkills({
                     />
                     <button className="min-w-0 flex-1 text-left" onClick={() => onOpen(k.id)} title={k.path || k.name}>
                       <div className="flex items-center gap-1.5">
-                        <span className="truncate text-[12.5px]">{k.name}</span>
+                        <span className="truncate text-[length:var(--fs-base)]">{k.name}</span>
                         {(k as unknown as { source_stale?: boolean }).source_stale ? (
                           <span
                             className="shrink-0 rounded px-1 py-[1px] text-[10px]"
@@ -1757,12 +1757,12 @@ function GroupedSkills({
                           {g.name.split("/").pop()}
                         </span>
                       </div>
-                      <div className="truncate text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                      <div className="truncate text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
                         {k.description || "（没有说明）"}
                       </div>
                       <div className="flex items-center gap-1">
                         <span
-                          className="mono min-w-0 truncate text-[10.5px]"
+                          className="mono min-w-0 truncate text-[length:var(--fs-xs)]"
                           style={{ color: "var(--color-text-3)", opacity: 0.9 }}
                           title={k.location || ""}
                         >
@@ -1789,7 +1789,7 @@ function GroupedSkills({
                       </div>
                     </button>
                     <span
-                      className="shrink-0 rounded px-1.5 py-[1px] text-[10.5px]"
+                      className="shrink-0 rounded px-1.5 py-[1px] text-[length:var(--fs-xs)]"
                       style={{
                         background: "var(--bg-hover)",
                         color: k.state === "active" ? "var(--color-ok)" : "var(--color-text-3)",
@@ -1798,7 +1798,7 @@ function GroupedSkills({
                       {k.state === "active" ? "在用" : k.state === "stale" ? "闲置" : "未用"}
                     </span>
                     <button
-                      className="btn h-6 px-1.5 text-[11px]"
+                      className="btn h-6 px-1.5 text-[length:var(--fs-xs)]"
                       onClick={(e) => {
                         e.stopPropagation();
                         onToggleSkill(k.id, k.state === "active" ? "archived" : "active");
@@ -1808,7 +1808,7 @@ function GroupedSkills({
                       {k.state === "active" ? "停用" : "启用"}
                     </button>
                     <button
-                      className="btn h-6 px-1.5 text-[11px]"
+                      className="btn h-6 px-1.5 text-[length:var(--fs-xs)]"
                       style={{
                         color: confirmSkill === k.id ? "var(--color-bg)" : "var(--color-danger)",
                         background: confirmSkill === k.id ? "var(--color-danger)" : undefined,

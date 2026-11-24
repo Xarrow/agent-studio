@@ -174,8 +174,8 @@ export function AgentConfigDrawer({
       >
         <header className="flex items-center gap-2 px-4 py-3">
           <div className="min-w-0 flex-1">
-            <div className="truncate text-[14px] font-medium">{def.name || agent.name}</div>
-            <div className="text-[11.5px]" style={{ color: "var(--color-text-3)" }}>
+            <div className="truncate text-[length:var(--fs-md)] font-medium">{def.name || agent.name}</div>
+            <div className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-3)" }}>
               {saving ? "保存中…" : err ? `保存失败：${err}` : changed ? "改动待保存…" : savedAt ? `已自动保存 · ${savedAt}` : "改完自动保存"}
             </div>
           </div>
@@ -202,7 +202,7 @@ export function AgentConfigDrawer({
               type="button"
               data-tap
               onClick={() => setTab(o.k)}
-              className="h-8 rounded-md px-2.5 text-[12.5px]"
+              className="h-8 rounded-md px-2.5 text-[length:var(--fs-base)]"
               style={{
                 background: tab === o.k ? "var(--color-surface-2)" : "transparent",
                 color: tab === o.k ? "var(--color-text)" : "var(--color-text-3)",
@@ -217,12 +217,12 @@ export function AgentConfigDrawer({
         {tab === "sessions" ? (
           <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
             {busyTab && (
-              <p className="px-2 py-2 text-[12px]" style={{ color: "var(--color-text-3)" }}>
+              <p className="px-2 py-2 text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-3)" }}>
                 正在读取…
               </p>
             )}
             {!busyTab && sesList.length === 0 && (
-              <p className="px-2 py-2 text-[12px]" style={{ color: "var(--color-text-3)" }}>
+              <p className="px-2 py-2 text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-3)" }}>
                 这个助手还没有会话
               </p>
             )}
@@ -234,8 +234,8 @@ export function AgentConfigDrawer({
                 onClick={() => onPickSession(s.id)}
                 className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left hover:bg-[var(--color-surface-2)]"
               >
-                <span className="min-w-0 flex-1 truncate text-[12.5px]">{s.title || "（无标题会话）"}</span>
-                <span className="shrink-0 text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                <span className="min-w-0 flex-1 truncate text-[length:var(--fs-base)]">{s.title || "（无标题会话）"}</span>
+                <span className="shrink-0 text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
                   {s.turn_count ?? 0} 轮
                 </span>
               </button>
@@ -259,24 +259,24 @@ export function AgentConfigDrawer({
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto">
               {busyTab && (
-                <p className="py-2 text-[12px]" style={{ color: "var(--color-text-3)" }}>
+                <p className="py-2 text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-3)" }}>
                   正在读取…
                 </p>
               )}
               {!busyTab && memList.length === 0 && (
-                <p className="py-2 text-[12px]" style={{ color: "var(--color-text-3)" }}>
+                <p className="py-2 text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-3)" }}>
                   它还没记住关于你的事
                 </p>
               )}
               {memList.map((m) => (
                 <div key={m.id} className="flex items-start gap-2 rounded-md px-2 py-2">
-                  <span className="min-w-0 flex-1 text-[12.5px] leading-relaxed">{m.content}</span>
+                  <span className="min-w-0 flex-1 text-[length:var(--fs-base)] leading-relaxed">{m.content}</span>
                   <button
                     type="button"
                     data-tap
                     aria-label="删掉这条记忆"
                     title="删掉这条记忆"
-                    className="shrink-0 rounded px-1 text-[11px]"
+                    className="shrink-0 rounded px-1 text-[length:var(--fs-xs)]"
                     style={{ color: "var(--color-text-3)" }}
                     onClick={async () => {
                       try {
@@ -360,11 +360,11 @@ export function AgentConfigDrawer({
           <details className="rounded-[10px]" style={{ background: "var(--color-surface-2)" }}>
             <summary
               data-tap
-              className="flex min-h-[40px] cursor-pointer items-center gap-2 px-3 text-[12.5px]"
+              className="flex min-h-[40px] cursor-pointer items-center gap-2 px-3 text-[length:var(--fs-base)]"
               style={{ color: "var(--color-text-2)" }}
             >
               高级参数
-              <span className="text-[11.5px]" style={{ color: "var(--color-text-3)" }}>
+              <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-3)" }}>
                 temperature{" "}
                 {Math.round(Number((def.model.params as Record<string, number>)?.temperature ?? 0.7) * 100) / 100}
                 （默认 0.70）
@@ -411,18 +411,18 @@ export function AgentConfigDrawer({
             </button>
             <Link
               href={`/agents/detail?id=${agent.id}`}
-              className="text-[12px]"
+              className="text-[length:var(--fs-sm)]"
               style={{ color: "var(--color-accent)" }}
             >
               工具 / 权限 / 记忆 →
             </Link>
           </div>
           {err && (
-            <p className="text-[12px]" style={{ color: "var(--color-err)" }}>
+            <p className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-err)" }}>
               {err}
             </p>
           )}
-          <p className="text-[11.5px]" style={{ color: "var(--color-text-3)" }}>
+          <p className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-3)" }}>
             改完下一条消息就按新配置走；想留一个可回滚的版本，去完整配置点「记为一版」。
           </p>
         </div>

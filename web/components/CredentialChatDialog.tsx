@@ -135,7 +135,7 @@ export function CredentialChatDialog({
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="min-w-0">
             <h2 className="text-[16px] font-medium">对话测试 · {credential.name}</h2>
-            <p className="text-[12px] text-[var(--color-muted)] mt-0.5">
+            <p className="text-[length:var(--fs-sm)] text-[var(--color-muted)] mt-0.5">
               直接跟模型聊，不经过助手 —— 用来确认「这把 key + 这个模型」本身能通
             </p>
           </div>
@@ -146,7 +146,7 @@ export function CredentialChatDialog({
 
         {/* 模型选择 */}
         <div className="flex items-center gap-2 mb-3">
-          <span className="text-[12px] text-[var(--color-muted)] shrink-0">模型</span>
+          <span className="text-[length:var(--fs-sm)] text-[var(--color-muted)] shrink-0">模型</span>
           {/* 原来是原生 select 平铺 488 项，还默认选第一个而不是这条凭据的默认模型（复测 F20） */}
           <div className="min-w-0 flex-1">
             <ModelPicker
@@ -170,14 +170,14 @@ export function CredentialChatDialog({
           style={{ background: "var(--color-surface-2)" }}
         >
           {turns.length === 0 && !busy && (
-            <p className="text-[12px] text-[var(--color-muted)] text-center py-10">
+            <p className="text-[length:var(--fs-sm)] text-[var(--color-muted)] text-center py-10">
               随便问一句，看看它答不答得上来。
             </p>
           )}
           {turns.map((t, i) => (
             <div key={i} className={t.role === "user" ? "text-right" : ""}>
               <div
-                className="inline-block text-left max-w-[85%] rounded-md px-3 py-2 text-[13px] whitespace-pre-wrap break-words"
+                className="inline-block text-left max-w-[85%] rounded-md px-3 py-2 text-[length:var(--fs-base)] whitespace-pre-wrap break-words"
                 style={{
                   background:
                     t.role === "user"
@@ -189,16 +189,16 @@ export function CredentialChatDialog({
                 {t.content}
               </div>
               {t.meta && (
-                <div className="text-[10.5px] text-[var(--color-muted)] mt-0.5">{t.meta}</div>
+                <div className="text-[length:var(--fs-xs)] text-[var(--color-muted)] mt-0.5">{t.meta}</div>
               )}
             </div>
           ))}
           {busy && (
-            <div className="text-[12px] text-[var(--color-muted)]">思考中…</div>
+            <div className="text-[length:var(--fs-sm)] text-[var(--color-muted)]">思考中…</div>
           )}
         </div>
 
-        {err && <div className="text-[12px] text-[var(--color-err)] mt-2">{err}</div>}
+        {err && <div className="text-[length:var(--fs-sm)] text-[var(--color-err)] mt-2">{err}</div>}
 
         {/* 输入 */}
         <div className="flex gap-2 mt-3">

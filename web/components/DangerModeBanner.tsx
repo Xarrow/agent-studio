@@ -64,7 +64,7 @@ export function DangerModeBanner() {
 
   return (
     <div
-      className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-1.5 text-[12.5px]"
+      className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-1.5 text-[length:var(--fs-base)]"
       style={{ background: "var(--color-err)", color: "var(--color-accent-contrast)" }}
       role="status"
     >
@@ -92,7 +92,7 @@ export function DangerModeBanner() {
         data-tap
         disabled={busy}
         onClick={() => void off()}
-        className="ml-auto rounded-full px-2.5 py-[3px] text-[12px] font-medium disabled:opacity-60"
+        className="ml-auto rounded-full px-2.5 py-[3px] text-[length:var(--fs-sm)] font-medium disabled:opacity-60"
         style={{ background: "var(--color-accent-contrast)", color: "var(--color-err)" }}
       >
         {busy ? "关闭中…" : "关掉"}

@@ -164,7 +164,7 @@ export default function BgProcsStrip({
       className={`panel-strip max-w-3xl mx-auto mb-1.5 px-2.5 py-1.5 max-md:px-2 ${running > 0 ? "is-live" : ""}`}
     >
       <div
-        className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px]"
+        className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[length:var(--fs-sm)]"
         style={{ color: "var(--color-muted)" }}
       >
         <button
@@ -218,7 +218,7 @@ export default function BgProcsStrip({
         <div className="mt-1.5 flex flex-col gap-1">
           {items.map((it) => (
             <div key={it.id} className="min-w-0">
-              <div className="flex min-w-0 items-center gap-1.5 text-[12px]">
+              <div className="flex min-w-0 items-center gap-1.5 text-[length:var(--fs-sm)]">
                 <span
                   className={it.status === "running" ? "live-dot" : ""}
                   style={{
@@ -240,7 +240,7 @@ export default function BgProcsStrip({
                   {it.label}
                 </button>
                 <span
-                  className="shrink-0 text-[11px] tabular-nums"
+                  className="shrink-0 text-[length:var(--fs-xs)] tabular-nums"
                   style={{ color: STATUS_COLOR[it.status] }}
                   title={it.status === "running" ? "已跑" : "用时"}
                 >
@@ -256,7 +256,7 @@ export default function BgProcsStrip({
                   <button
                     type="button"
                     data-tap
-                    className="shrink-0 rounded px-1.5 text-[11.5px] max-md:inline-flex max-md:min-h-[32px] max-md:items-center"
+                    className="shrink-0 rounded px-1.5 text-[length:var(--fs-sm)] max-md:inline-flex max-md:min-h-[32px] max-md:items-center"
                     style={{
                       border: "1px solid var(--color-border)",
                       background: "var(--color-surface)",
@@ -272,7 +272,7 @@ export default function BgProcsStrip({
               </div>
               {logFor === it.id && (
                 <pre
-                  className="mono mt-1 max-h-[180px] overflow-auto whitespace-pre-wrap break-words rounded-lg px-2 py-1.5 text-[11px] leading-[1.5]"
+                  className="mono mt-1 max-h-[180px] overflow-auto whitespace-pre-wrap break-words rounded-lg px-2 py-1.5 text-[length:var(--fs-xs)] leading-[1.5]"
                   style={{
                     background: "var(--color-surface)",
                     border: "1px solid var(--color-border)",

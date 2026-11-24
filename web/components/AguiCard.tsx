@@ -56,18 +56,18 @@ export function AguiCard() {
   return (
     <div className="space-y-2">
       {err ? (
-        <p className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+        <p className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
           读取失败：{err}
         </p>
       ) : !info ? (
-        <p className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+        <p className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
           读取中…
         </p>
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-2">
             <span
-              className="rounded px-1.5 py-0.5 text-[12px]"
+              className="rounded px-1.5 py-0.5 text-[length:var(--fs-sm)]"
               style={{
                 background: "color-mix(in srgb, var(--color-ok) 14%, transparent)",
                 color: "var(--color-ok)",
@@ -75,21 +75,21 @@ export function AguiCard() {
             >
               已启用
             </span>
-            <span className="mono text-[12px]">POST {info.endpoint}</span>
-            <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+            <span className="mono text-[length:var(--fs-sm)]">POST {info.endpoint}</span>
+            <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
               ag-ui v{info.version} · SSE 传输 · 可用助手 {info.agents.length} 个
             </span>
           </div>
-          <p className="text-[12px] leading-relaxed" style={{ color: "var(--color-muted)" }}>
+          <p className="text-[length:var(--fs-sm)] leading-relaxed" style={{ color: "var(--color-muted)" }}>
             {info.notes}
           </p>
           <div>
             <div className="mb-1 flex items-center gap-2">
-              <span className="text-[12px] font-medium">调用示例</span>
+              <span className="text-[length:var(--fs-sm)] font-medium">调用示例</span>
               <button
                 type="button"
                 data-tap
-                className="rounded px-1.5 text-[12px]"
+                className="rounded px-1.5 text-[length:var(--fs-sm)]"
                 style={{ color: "var(--color-accent)" }}
                 onClick={() => {
                   void navigator.clipboard?.writeText(curl);
@@ -100,7 +100,7 @@ export function AguiCard() {
               </button>
             </div>
             <pre
-              className="mono overflow-x-auto whitespace-pre-wrap break-all rounded p-2 text-[12px] leading-relaxed"
+              className="mono overflow-x-auto whitespace-pre-wrap break-all rounded p-2 text-[length:var(--fs-sm)] leading-relaxed"
               style={{ background: "var(--color-surface-2)", color: "var(--color-muted)" }}
             >
               {curl}

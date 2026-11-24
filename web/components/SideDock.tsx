@@ -464,7 +464,7 @@ export function SideDock({
             className="flex h-9 shrink-0 items-center gap-2 px-2.5"
             style={{ borderBottom: "1px solid var(--color-border)" }}
           >
-            <span className="min-w-0 flex-1 truncate text-[12px]" style={{ color: "var(--color-text)" }}>
+            <span className="min-w-0 flex-1 truncate text-[length:var(--fs-sm)]" style={{ color: "var(--color-text)" }}>
               {panel === "browser"
                 ? "浏览器画面"
                 : panel === "steps"
@@ -478,7 +478,7 @@ export function SideDock({
                 type="button"
                 data-tap
                 onClick={onBrowserOpenFull}
-                className="rounded px-1 text-[11px] hover:underline"
+                className="rounded px-1 text-[length:var(--fs-xs)] hover:underline"
                 style={{ color: "var(--color-muted)" }}
                 title="全屏看（Esc 退出）"
               >
@@ -505,7 +505,7 @@ export function SideDock({
               {(outline?.length ?? 0) > 10 && (
                 <div className="shrink-0 px-2 pb-1 pt-2">
                   <input
-                    className="input h-8 w-full text-[12px]"
+                    className="input h-8 w-full text-[length:var(--fs-sm)]"
                     placeholder="过滤这一会话的问题"
                     value={outlineQ}
                     onChange={(e) => setOutlineQ(e.target.value)}
@@ -538,11 +538,11 @@ export function SideDock({
                   ))}
                 </div>
               ) : !outline || outline.length === 0 ? (
-                <p className="px-2 py-3 text-[12px] leading-relaxed" style={{ color: "var(--color-muted)" }}>
+                <p className="px-2 py-3 text-[length:var(--fs-sm)] leading-relaxed" style={{ color: "var(--color-muted)" }}>
                   发送第一个问题后，这里会出现目录。
                 </p>
               ) : shownOutline.length === 0 ? (
-                <p className="px-2 py-3 text-[12px]" style={{ color: "var(--color-muted)" }}>
+                <p className="px-2 py-3 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                   没有匹配的问题
                 </p>
               ) : (
@@ -569,14 +569,14 @@ export function SideDock({
                       className="mb-[2px] flex min-h-[48px] w-full items-center gap-2 rounded-[var(--radius-sm)] px-2 py-1.5 text-left transition-colors hover:bg-[var(--bg-selected)]"
                       style={{ background: active ? "var(--bg-selected)" : "transparent" }}
                     >
-                      <span className="w-6 shrink-0 text-right text-[11px] tabular-nums" style={{ color: "var(--color-text-3)" }}>
+                      <span className="w-6 shrink-0 text-right text-[length:var(--fs-xs)] tabular-nums" style={{ color: "var(--color-text-3)" }}>
                         {it.seq}
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[13px]" style={{ color: active ? "var(--color-text)" : "var(--color-text-2)" }}>
+                        <span className="block truncate text-[length:var(--fs-base)]" style={{ color: active ? "var(--color-text)" : "var(--color-text-2)" }}>
                           {it.digest || "（无摘要）"}
                         </span>
-                        <span className="mt-0.5 block text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                        <span className="mt-0.5 block text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
                           {bits.join(" · ")}
                         </span>
                       </span>
@@ -596,7 +596,7 @@ export function SideDock({
           ) : panel === "browser" ? (
             <div className="flex min-h-0 flex-1 flex-col">
               {browserSuspended ? (
-                <div className="flex flex-1 items-center justify-center px-4 text-center text-[12px]" style={{ color: "var(--color-muted)" }}>
+                <div className="flex flex-1 items-center justify-center px-4 text-center text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                   画面在全屏窗口里
                 </div>
               ) : (
@@ -622,7 +622,7 @@ export function SideDock({
               {stepRunId ? (
                 <ExecutionTimeline runId={stepRunId} title="步骤详情" compact />
               ) : (
-                <p className="p-2 text-[12.5px] leading-relaxed" style={{ color: "var(--color-muted)" }}>
+                <p className="p-2 text-[length:var(--fs-base)] leading-relaxed" style={{ color: "var(--color-muted)" }}>
                   点对话里那一轮的执行过程条 → 「在右栏看」，这里会展开每一步的细节。
                 </p>
               )}
@@ -666,7 +666,7 @@ export function SideDock({
 
               <div className="flex items-center gap-1.5 px-2 py-2">
                 <input
-                  className="input h-8 flex-1 text-[12px]"
+                  className="input h-8 flex-1 text-[length:var(--fs-sm)]"
                   placeholder="筛文件名"
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
@@ -697,7 +697,7 @@ export function SideDock({
 
               <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
                 {shown.length === 0 ? (
-                  <div className="px-2 py-3 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                  <div className="px-2 py-3 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                     {files.length === 0
                       ? "这个会话还没有文件 —— 助手生成的东西都会落在会话目录里"
                       : "没有匹配的文件"}
@@ -708,7 +708,7 @@ export function SideDock({
                       return (
                         <p
                           key={`h-${r.label}`}
-                          className="mt-1.5 px-2 pb-0.5 text-[10.5px] tracking-wide"
+                          className="mt-1.5 px-2 pb-0.5 text-[length:var(--fs-xs)] tracking-wide"
                           style={{ color: "var(--color-text-3)" }}
                         >
                           {r.label} · {r.n}
@@ -745,10 +745,10 @@ export function SideDock({
                           style={{ color: "var(--color-text)" }}
                         >
                           <FileTypeIcon kind={fileTypeKey(f.path)} size={14} className="shrink-0 opacity-60" />
-                          <span className="mono min-w-0 flex-1 truncate text-[12px]" title={f.path}>
+                          <span className="mono min-w-0 flex-1 truncate text-[length:var(--fs-sm)]" title={f.path}>
                             {shortFilePath(f.path, 20, 10)}
                           </span>
-                          <span className="shrink-0 tabular-nums text-[10.5px]" style={{ color: "var(--color-muted)" }}>
+                          <span className="shrink-0 tabular-nums text-[length:var(--fs-xs)]" style={{ color: "var(--color-muted)" }}>
                             {fmt.bytes(f.size)}
                           </span>
                         </FileRowButton>
@@ -761,7 +761,7 @@ export function SideDock({
               {/* 批量动作：有勾选才出现（就地出现比常驻一排禁用按钮干净） */}
               {pick.length > 0 ? (
                 <div
-                  className="flex shrink-0 items-center gap-2 px-2 py-2 text-[11.5px]"
+                  className="flex shrink-0 items-center gap-2 px-2 py-2 text-[length:var(--fs-sm)]"
                   style={{ borderTop: "1px solid var(--color-border)", background: "var(--color-surface-2)" }}
                 >
                   <span style={{ color: "var(--color-muted)" }}>

@@ -127,14 +127,14 @@ function PathList({
   return (
     <div className="mt-2">
       <div className="flex flex-wrap items-center gap-x-1.5">
-        <span className="text-[12px]">{label}</span>
-        <span className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+        <span className="text-[length:var(--fs-sm)]">{label}</span>
+        <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
           {hint}
         </span>
       </div>
       <div className="mt-1 flex flex-wrap items-center gap-1.5">
         <span
-          className="inline-flex items-center rounded-md px-2 py-0.5 text-[12px]"
+          className="inline-flex items-center rounded-md px-2 py-0.5 text-[length:var(--fs-sm)]"
           style={{ background: "color-mix(in srgb, var(--color-muted) 12%, transparent)", color: "var(--color-muted)" }}
           title="每个会话自己的工作目录：永远可读写，删不掉"
         >
@@ -143,7 +143,7 @@ function PathList({
         {paths.map((p) => (
           <span
             key={p}
-            className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[12px] mono"
+            className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[length:var(--fs-sm)] mono"
             style={{ background: `color-mix(in srgb, ${color} 10%, transparent)`, color }}
           >
             {p}
@@ -161,7 +161,7 @@ function PathList({
       </div>
       <div className="mt-1.5 flex items-center gap-1.5">
         <input
-          className="input input-inline flex-1 min-w-[120px] text-[12px] mono"
+          className="input input-inline flex-1 min-w-[120px] text-[length:var(--fs-sm)] mono"
           value={draft}
           placeholder="加一个绝对路径，如 /srv/src"
           onChange={(e) => setDraft(e.target.value)}
@@ -177,7 +177,7 @@ function PathList({
       </div>
       {paths.length === 0 && (
         <div className="mt-1 flex flex-wrap items-center gap-1.5">
-          <span className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+          <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
             常用：
           </span>
           {COMMON_PATHS.map((p) => (
@@ -185,7 +185,7 @@ function PathList({
               key={p}
               type="button"
               data-tap
-              className="text-[11.5px] mono rounded px-1.5 py-0.5"
+              className="text-[length:var(--fs-sm)] mono rounded px-1.5 py-0.5"
               style={{ border: "1px solid var(--color-border)", color: "var(--color-muted)" }}
               onClick={() => add(p)}
             >
@@ -246,9 +246,9 @@ export function PermissionScope({
   return (
     <div className="mt-4 pt-4 border-t border-[var(--color-border)]">
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-[12px] font-medium">权限</span>
+        <span className="text-[length:var(--fs-sm)] font-medium">权限</span>
         <Hint text="范围内直接执行，不用每次问">
-          <span className="text-[12px] text-[var(--color-muted)]">工具执行前的许可范围</span>
+          <span className="text-[length:var(--fs-sm)] text-[var(--color-muted)]">工具执行前的许可范围</span>
         </Hint>
       </div>
 
@@ -260,16 +260,16 @@ export function PermissionScope({
       />
 
       {meta && (
-        <p className="mt-1.5 text-[12px]" style={{ color: "var(--color-text)" }}>
+        <p className="mt-1.5 text-[length:var(--fs-sm)]" style={{ color: "var(--color-text)" }}>
           {meta.result}
         </p>
       )}
       {meta && (
-        <p className="text-[12px] text-[var(--color-muted)] mt-0.5">{meta.desc}</p>
+        <p className="text-[length:var(--fs-sm)] text-[var(--color-muted)] mt-0.5">{meta.desc}</p>
       )}
       {meta?.warn && (
         <p
-          className="text-[12px] mt-1.5 rounded-md px-2 py-1.5"
+          className="text-[length:var(--fs-sm)] mt-1.5 rounded-md px-2 py-1.5"
           style={{
             background: "color-mix(in srgb, var(--color-warn) 10%, transparent)",
             color: "var(--color-warn)",
@@ -282,13 +282,13 @@ export function PermissionScope({
       {/* 平台黑名单：所有助手共享，任何模式都拦 */}
       <div className="mt-4 pt-3 border-t border-[var(--color-border)]">
         <div className="flex items-center gap-2 mb-1">
-          <span className="text-[12px] font-medium">平台黑名单</span>
+          <span className="text-[length:var(--fs-sm)] font-medium">平台黑名单</span>
           <Hint text="所有助手共享；任何权限模式下都直接拦截，助手无法绕过。匹配方式是命令里包含这些字样。">
-            <span className="text-[12px] text-[var(--color-muted)]">全平台拦截（不可放行）</span>
+            <span className="text-[length:var(--fs-sm)] text-[var(--color-muted)]">全平台拦截（不可放行）</span>
           </Hint>
         </div>
         {denyList === null ? (
-          <p className="text-[12px] text-[var(--color-muted)]">加载中…</p>
+          <p className="text-[length:var(--fs-sm)] text-[var(--color-muted)]">加载中…</p>
         ) : (
           <>
             {denyList.length > 0 && (
@@ -296,7 +296,7 @@ export function PermissionScope({
                 {denyList.map((p) => (
                   <span
                     key={p}
-                    className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[12px] mono"
+                    className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[length:var(--fs-sm)] mono"
                     style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)" }}
                   >
                     {p}
@@ -316,7 +316,7 @@ export function PermissionScope({
             )}
             <div className="flex items-center gap-1.5">
               <input
-                className="input input-inline flex-1 min-w-[120px] text-[12px] mono"
+                className="input input-inline flex-1 min-w-[120px] text-[length:var(--fs-sm)] mono"
                 value={denyDraft}
                 placeholder="加一条命令片段，如 rm -rf /"
                 onChange={(e) => setDenyDraft(e.target.value)}
@@ -343,7 +343,7 @@ export function PermissionScope({
                 加入
               </button>
             </div>
-            <p className="text-[12px] text-[var(--color-muted)] mt-1">
+            <p className="text-[length:var(--fs-sm)] text-[var(--color-muted)] mt-1">
               改动对之后新开的执行生效；正在跑的不受影响。
             </p>
           </>
@@ -352,10 +352,10 @@ export function PermissionScope({
 
       {/* 例外规则 */}
       <div className="flex items-center justify-between mt-3 mb-1.5">
-        <span className="text-[12px] text-[var(--color-muted)]">例外规则（可选）</span>
+        <span className="text-[length:var(--fs-sm)] text-[var(--color-muted)]">例外规则（可选）</span>
         <button
           data-tap
-          className="text-[12px] text-[var(--color-accent)] hover:underline"
+          className="text-[length:var(--fs-sm)] text-[var(--color-accent)] hover:underline"
           onClick={() =>
             setRows([...rows, { tool: toolNames[0] ?? "", pattern: "", behavior: "deny" }])
           }
@@ -367,7 +367,7 @@ export function PermissionScope({
       </div>
 
       {rows.length === 0 ? (
-        <p className="text-[12px] text-[var(--color-muted)]">
+        <p className="text-[length:var(--fs-sm)] text-[var(--color-muted)]">
           {toolNames.length === 0
             ? "先勾选工具，再来划权限"
             : "没有例外规则"}
@@ -392,7 +392,7 @@ export function PermissionScope({
                 }
               />
               <input
-                className="input input-inline flex-1 min-w-[110px] text-[12px]"
+                className="input input-inline flex-1 min-w-[110px] text-[length:var(--fs-sm)]"
                 value={r.pattern ?? ""}
                 placeholder="匹配（可留空）"
                 title="Bash 填命令片段（如 npm install）；Read/Write 填路径（如 src/**）"
@@ -416,7 +416,7 @@ export function PermissionScope({
               />
               <button
                 data-tap
-                className="text-[13px] px-1 text-[var(--color-muted)] hover:text-[var(--color-text)]"
+                className="text-[length:var(--fs-base)] px-1 text-[var(--color-muted)] hover:text-[var(--color-text)]"
                 onClick={() => setRows(rows.filter((_, j) => j !== i))}
                 title="删掉这条"
               >
@@ -431,9 +431,9 @@ export function PermissionScope({
       {guardConf && onGuardChange && (
         <div className="mt-4 pt-3 border-t border-[var(--color-border)]">
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-[12px] font-medium">文件范围</span>
+            <span className="text-[length:var(--fs-sm)] font-medium">文件范围</span>
             <Hint text="默认只有这个会话自己的工作目录。加进来的目录算它的额外地盘；不在这里的，读之前会停下来问你一次。">
-              <span className="text-[12px] text-[var(--color-muted)]">它能碰哪些目录</span>
+              <span className="text-[length:var(--fs-sm)] text-[var(--color-muted)]">它能碰哪些目录</span>
             </Hint>
           </div>
           <PathList
@@ -451,16 +451,16 @@ export function PermissionScope({
           />
           {(guardConf.read_roots ?? []).includes("/") || (guardConf.roots ?? []).includes("/") ? (
             <p
-              className="text-[12px] mt-1.5 rounded-md px-2 py-1.5"
+              className="text-[length:var(--fs-sm)] mt-1.5 rounded-md px-2 py-1.5"
               style={{ background: "color-mix(in srgb, var(--color-err) 10%, transparent)", color: "var(--color-err)" }}
             >
               ⚠ 配了 / —— 等于 Hermes 的权限：全盘可读，越界读不再问。凭据位置仍然碰不到。
             </p>
           ) : null}
-          <p className="text-[11.5px] mt-1.5" style={{ color: "var(--color-muted)" }}>
+          <p className="text-[length:var(--fs-sm)] mt-1.5" style={{ color: "var(--color-muted)" }}>
             凭据（/root/.hermes、.env、私钥、数据库文件）不在任何范围里 —— 加进来也读不到、写不进。
           </p>
-          <p className="text-[11.5px] mt-0.5" style={{ color: "var(--color-muted)" }}>
+          <p className="text-[length:var(--fs-sm)] mt-0.5" style={{ color: "var(--color-muted)" }}>
             服务级只读：整台机器上只有 <span className="mono">{WRITABLE_HINT}</span> 可写，别的目录配了也写不进去。
           </p>
         </div>

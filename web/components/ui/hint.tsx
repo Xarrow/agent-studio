@@ -127,7 +127,7 @@ export function Hint({
       {open && (
         <span
           role="tooltip"
-          className={`absolute top-full mt-1.5 z-50 w-[17.5rem] max-w-[calc(100vw-2.5rem)] p-2.5 rounded-md text-[12px] leading-relaxed font-normal shadow-lg ${
+          className={`absolute top-full mt-1.5 z-50 w-[17.5rem] max-w-[calc(100vw-2.5rem)] p-2.5 rounded-md text-[length:var(--fs-sm)] leading-relaxed font-normal shadow-lg ${
             alignRight ? "right-0" : "left-0"
           }`}
           style={{

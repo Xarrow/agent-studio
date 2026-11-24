@@ -115,14 +115,14 @@ export function CapabilityPicker({
     <div>
       <div className="mb-2.5 flex flex-wrap items-center gap-2">
         <input
-          className="input input-inline flex-1 min-w-[180px] text-[12px]"
+          className="input input-inline flex-1 min-w-[180px] text-[length:var(--fs-sm)]"
           value={q}
           placeholder="搜工具 / MCP / Skill 的名字或说明…"
           onChange={(e) => setQ(e.target.value)}
         />
         <button
           type="button"
-          className="btn text-[12px]"
+          className="btn text-[length:var(--fs-sm)]"
           onClick={() => {
             setShowAll((v) => !v);
             setQ("");
@@ -133,7 +133,7 @@ export function CapabilityPicker({
       </div>
 
       {filtered.length === 0 ? (
-        <p className="px-1 py-2 text-[12px]" style={{ color: "var(--color-muted)" }}>
+        <p className="px-1 py-2 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
           {kw ? `没有匹配「${q}」的能力` : "还没勾选能力，点右上「显示全部」"}
         </p>
       ) : (
@@ -156,7 +156,7 @@ export function CapabilityPicker({
               />
               <span className="min-w-0 flex-1">
                 <span className="flex flex-wrap items-center gap-1.5">
-                  <span className={`text-[13px] mono ${i.disabled ? "line-through" : ""}`}>{i.name}</span>
+                  <span className={`text-[length:var(--fs-base)] mono ${i.disabled ? "line-through" : ""}`}>{i.name}</span>
                   <span className="tag">{i.tag}</span>
                   {i.warn && (
                     <span className="tag" style={{ color: "var(--color-warn)" }}>
@@ -170,7 +170,7 @@ export function CapabilityPicker({
                   )}
                 </span>
                 {i.description && (
-                  <span className="block text-[12px] mt-0.5" style={{ color: "var(--color-muted)" }}>
+                  <span className="block text-[length:var(--fs-sm)] mt-0.5" style={{ color: "var(--color-muted)" }}>
                     {i.description}
                   </span>
                 )}

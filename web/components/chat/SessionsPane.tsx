@@ -343,7 +343,7 @@ export function SessionsPane({
             data-tap
             onClick={() => setOnlyPinned((v) => !v)}
             aria-pressed={onlyPinned}
-            className="shrink-0 whitespace-nowrap rounded-full px-2 py-[2px] text-[11px] transition-colors"
+            className="shrink-0 whitespace-nowrap rounded-full px-2 py-[2px] text-[length:var(--fs-xs)] transition-colors"
             style={{
               background: onlyPinned ? "var(--bg-selected)" : "transparent",
               color: onlyPinned ? "var(--color-text)" : "var(--color-text-3)",
@@ -355,7 +355,7 @@ export function SessionsPane({
           {/* 只有真的在「仅看置顶」或确实有置顶时才说这句 ——
               平时常驻「还没置顶任何对话」等于一句噪音（复测 F17） */}
           {(onlyPinned || pinned.size > 0) && (
-            <span className="text-[10.5px] truncate" style={{ color: "var(--color-text-3)" }}>
+            <span className="text-[length:var(--fs-xs)] truncate" style={{ color: "var(--color-text-3)" }}>
               {pinned.size ? `${pinned.size} 条已置顶` : "没有置顶的对话"}
             </span>
           )}
@@ -567,7 +567,7 @@ export function SessionsPane({
 
                               {(kids.get(s.id)?.length ?? 0) > 0 && (
                                 <button
-                                  className="shrink-0 h-7 px-1.5 flex items-center gap-0.5 rounded-[var(--radius-xs)] text-[10.5px] tabular-nums"
+                                  className="shrink-0 h-7 px-1.5 flex items-center gap-0.5 rounded-[var(--radius-xs)] text-[length:var(--fs-xs)] tabular-nums"
                                   style={{
                                     color: WORKER_COLOR,
                                     background: "color-mix(in srgb, var(--color-warn) 10%, transparent)",
@@ -769,7 +769,7 @@ export function SessionsPane({
                                         >
                                           {c.ticket_title || c.title.replace(/^worker-/, "派活 ")}
                                         </span>
-                                        <span className="shrink-0 text-[10.5px] tabular-nums" style={{ color: "var(--color-text-3)" }}>
+                                        <span className="shrink-0 text-[length:var(--fs-xs)] tabular-nums" style={{ color: "var(--color-text-3)" }}>
                                           {c.turn_count} 轮
                                         </span>
                                       </div>
@@ -794,7 +794,7 @@ export function SessionsPane({
                   对话内容{hitBusy ? " · 搜索中…" : hits.length ? ` · ${hits.length} 条` : ""}
                 </div>
                 {!hitBusy && hits.length === 0 && list.length > 0 && (
-                  <p className="px-2 pb-1 text-[11.5px]" style={{ color: "var(--color-text-3)" }}>
+                  <p className="px-2 pb-1 text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-3)" }}>
                     没有在对话内容里找到「{q.trim()}」。
                   </p>
                 )}
@@ -807,12 +807,12 @@ export function SessionsPane({
                     className="w-full rounded-[var(--radius-sm)] px-2 py-1.5 text-left hover:bg-[var(--bg-selected)]"
                     title={h.snippet}
                   >
-                    <span className="flex items-center gap-1.5 text-[11.5px]" style={{ color: "var(--color-text-3)" }}>
+                    <span className="flex items-center gap-1.5 text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-3)" }}>
                       <span className="truncate">{h.session_title}</span>
                       <span className="shrink-0">· {fmt.relative(h.ts)}</span>
                       <span className="shrink-0">· {h.role === "assistant" ? "我" : "你"}</span>
                     </span>
-                    <span className="mt-0.5 block text-[12px] leading-snug line-clamp-2">{h.snippet}</span>
+                    <span className="mt-0.5 block text-[length:var(--fs-sm)] leading-snug line-clamp-2">{h.snippet}</span>
                   </button>
                 ))}
               </div>

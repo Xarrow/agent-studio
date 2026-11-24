@@ -20,7 +20,7 @@ import { useEffect, useMemo, useState } from "react";
 function Note({ children }: { children: React.ReactNode }) {
   return (
     <p
-      className="mt-2 rounded-[8px] px-2.5 py-1.5 text-[11.5px] leading-relaxed"
+      className="mt-2 rounded-[8px] px-2.5 py-1.5 text-[length:var(--fs-sm)] leading-relaxed"
       style={{ background: "var(--color-surface-2)", color: "var(--color-muted)" }}
     >
       {children}
@@ -30,7 +30,7 @@ function Note({ children }: { children: React.ReactNode }) {
 
 function Empty({ children }: { children: React.ReactNode }) {
   return (
-    <p className="py-6 text-center text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+    <p className="py-6 text-center text-[length:var(--fs-base)]" style={{ color: "var(--color-muted)" }}>
       {children}
     </p>
   );
@@ -51,14 +51,14 @@ function Grid({
       className="max-h-[52dvh] overflow-auto rounded-[10px] border"
       style={{ borderColor: "var(--color-border)" }}
     >
-      <table className="w-max min-w-full border-collapse text-[12.5px]">
+      <table className="w-max min-w-full border-collapse text-[length:var(--fs-base)]">
         <tbody>
           {rows.map((row, ri) => {
             const isHead = firstRowIsHeader && ri === 0;
             return (
               <tr key={ri}>
                 <th
-                  className="sticky left-0 z-[1] w-9 min-w-9 px-1.5 py-1 text-right text-[11px] font-normal tabular-nums"
+                  className="sticky left-0 z-[1] w-9 min-w-9 px-1.5 py-1 text-right text-[length:var(--fs-xs)] font-normal tabular-nums"
                   style={{
                     background: "var(--color-surface-2)",
                     color: "var(--color-muted)",
@@ -128,7 +128,7 @@ export function SpreadsheetView({ sheets }: { sheets: SheetData[] }) {
               key={s.name + i}
               type="button"
               onClick={() => setActive(i)}
-              className="shrink-0 rounded-full px-2.5 text-[12px] max-md:min-h-[32px]"
+              className="shrink-0 rounded-full px-2.5 text-[length:var(--fs-sm)] max-md:min-h-[32px]"
               style={{
                 minHeight: 30,
                 background: i === active ? "var(--color-accent-soft, var(--color-surface-2))" : "var(--color-surface-2)",
@@ -142,7 +142,7 @@ export function SpreadsheetView({ sheets }: { sheets: SheetData[] }) {
         </div>
       )}
       <Grid rows={cur.rows} />
-      <p className="mt-1.5 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+      <p className="mt-1.5 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
         {cur.name} · {cur.rows.length} 行
         {cur.totalRows && cur.totalRows > cur.rows.length ? `（共 ${cur.totalRows} 行）` : ""}
         {cur.totalCols ? ` × ${cur.totalCols} 列` : ""}
@@ -176,19 +176,19 @@ export function DocumentView({ blocks }: { blocks: DocBlock[] }) {
           );
         if (b.t.startsWith("h"))
           return (
-            <h3 key={key} className="mt-2.5 mb-1 text-[14.5px] font-semibold leading-snug">
+            <h3 key={key} className="mt-2.5 mb-1 text-[length:var(--fs-lg)] font-semibold leading-snug">
               {b.text}
             </h3>
           );
         if (b.t === "li")
           return (
-            <p key={key} className="mb-1 flex gap-1.5 text-[13.5px] leading-[1.65]">
+            <p key={key} className="mb-1 flex gap-1.5 text-[length:var(--fs-md)] leading-[1.65]">
               <span style={{ color: "var(--color-accent)" }}>·</span>
               <span className="min-w-0 flex-1">{b.text}</span>
             </p>
           );
         return (
-          <p key={key} className="mb-1.5 text-[13.5px] leading-[1.65]">
+          <p key={key} className="mb-1.5 text-[length:var(--fs-md)] leading-[1.65]">
             {b.text}
           </p>
         );
@@ -212,18 +212,18 @@ export function SlidesView({ slides }: { slides: SlideData[] }) {
         className="rounded-[12px] border p-3.5 max-md:p-3"
         style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
       >
-        <p className="text-[11px] tabular-nums" style={{ color: "var(--color-muted)" }}>
+        <p className="text-[length:var(--fs-xs)] tabular-nums" style={{ color: "var(--color-muted)" }}>
           第 {s.n} 页
         </p>
         <h3 className="mt-0.5 text-[16px] font-semibold leading-snug">{s.title || "（这页没有标题）"}</h3>
         <div className="mt-2 space-y-1">
           {s.lines.length === 0 ? (
-            <p className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+            <p className="text-[length:var(--fs-base)]" style={{ color: "var(--color-muted)" }}>
               这页没有文字（可能是整张图片）
             </p>
           ) : (
             s.lines.map((ln, i) => (
-              <p key={i} className="whitespace-pre-wrap text-[13.5px] leading-[1.6]">
+              <p key={i} className="whitespace-pre-wrap text-[length:var(--fs-md)] leading-[1.6]">
                 {ln}
               </p>
             ))
@@ -231,28 +231,28 @@ export function SlidesView({ slides }: { slides: SlideData[] }) {
         </div>
         {s.notes ? (
           <details className="mt-2.5">
-            <summary className="cursor-pointer text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+            <summary className="cursor-pointer text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
               备注
             </summary>
-            <p className="mt-1 whitespace-pre-wrap text-[12.5px] leading-relaxed">{s.notes}</p>
+            <p className="mt-1 whitespace-pre-wrap text-[length:var(--fs-base)] leading-relaxed">{s.notes}</p>
           </details>
         ) : null}
       </div>
       <div className="mt-2 flex items-center gap-2">
         <button
           type="button"
-          className="btn px-2.5 text-[12px] max-md:min-h-[36px]"
+          className="btn px-2.5 text-[length:var(--fs-sm)] max-md:min-h-[36px]"
           disabled={idx === 0}
           onClick={() => at(idx - 1)}
         >
           上一页
         </button>
-        <span className="tabular-nums text-[12px]" style={{ color: "var(--color-muted)" }}>
+        <span className="tabular-nums text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
           {idx + 1} / {slides.length}
         </span>
         <button
           type="button"
-          className="btn ml-auto px-2.5 text-[12px] max-md:min-h-[36px]"
+          className="btn ml-auto px-2.5 text-[length:var(--fs-sm)] max-md:min-h-[36px]"
           disabled={idx === slides.length - 1}
           onClick={() => at(idx + 1)}
         >
@@ -289,9 +289,9 @@ function OutlineBranch({ node, depth }: { node: OutlineNode; depth: number }) {
           <span className="w-[10px] shrink-0" />
         )}
         <div className="min-w-0">
-          <span className={depth === 0 ? "text-[14px] font-semibold" : "text-[13px]"}>{node.title || "（空）"}</span>
+          <span className={depth === 0 ? "text-[length:var(--fs-md)] font-semibold" : "text-[length:var(--fs-base)]"}>{node.title || "（空）"}</span>
           {node.note ? (
-            <span className="ml-1.5 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+            <span className="ml-1.5 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
               {node.note}
             </span>
           ) : null}
@@ -324,7 +324,7 @@ export function OutlineView({ sheets }: { sheets: OutlineSheet[] }) {
               key={s.title + i}
               type="button"
               onClick={() => setActive(i)}
-              className="shrink-0 rounded-full px-2.5 text-[12px] max-md:min-h-[32px]"
+              className="shrink-0 rounded-full px-2.5 text-[length:var(--fs-sm)] max-md:min-h-[32px]"
               style={{
                 minHeight: 30,
                 background: "var(--color-surface-2)",
@@ -366,7 +366,7 @@ function JsonBranch({ k, v, depth, budget }: { k: string | null; v: unknown; dep
 
   if (!isObj) {
     return (
-      <div className="pl-3 text-[12.5px] leading-[1.7]">
+      <div className="pl-3 text-[length:var(--fs-base)] leading-[1.7]">
         {label}
         <JsonScalar v={v} />
       </div>
@@ -376,7 +376,7 @@ function JsonBranch({ k, v, depth, budget }: { k: string | null; v: unknown; dep
   const entries = isArr ? (v as unknown[]).map((x, i) => [String(i), x] as const) : Object.entries(v as Record<string, unknown>);
   const summary = isArr ? `[${entries.length}]` : `{${entries.length}}`;
   return (
-    <div className="text-[12.5px] leading-[1.7]">
+    <div className="text-[length:var(--fs-base)] leading-[1.7]">
       <button
         type="button"
         onClick={() => setOpen((x) => !x)}
@@ -396,7 +396,7 @@ function JsonBranch({ k, v, depth, budget }: { k: string | null; v: unknown; dep
             return <JsonBranch key={kk} k={kk} v={vv} depth={depth + 1} budget={budget} />;
           })}
           {budget.n <= 0 ? (
-            <p className="pl-3 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+            <p className="pl-3 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
               …节点太多，后面的没画出来（下载下来看完整结构）
             </p>
           ) : null}
@@ -448,7 +448,7 @@ export function XmlFetch({ url, path }: { url: string | null; path: string }) {
   }, [url]);
   if (err)
     return (
-      <p className="rounded-[10px] border p-3 text-[12.5px]" style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}>
+      <p className="rounded-[10px] border p-3 text-[length:var(--fs-base)]" style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}>
         读不出内容（{err}），可以直接下载试试。
       </p>
     );
@@ -526,7 +526,7 @@ export function XmlView({ text }: { text: string }) {
   return (
     <div>
       <pre
-        className="max-h-[56dvh] overflow-auto rounded-[10px] border p-2.5 text-[12px] leading-[1.6] whitespace-pre"
+        className="max-h-[56dvh] overflow-auto rounded-[10px] border p-2.5 text-[length:var(--fs-sm)] leading-[1.6] whitespace-pre"
         style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
       >
         {shown}

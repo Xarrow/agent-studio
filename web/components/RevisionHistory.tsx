@@ -167,13 +167,13 @@ export function RevisionHistory({
   return (
     <section className="card p-4" id="revisions">
       <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
-        <h2 className="text-[14px] font-medium">{title}</h2>
-        <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+        <h2 className="text-[length:var(--fs-md)] font-medium">{title}</h2>
+        <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
           {subtitle}
         </span>
         <button
           type="button"
-          className="ml-auto rounded-[6px] border px-2 py-0.5 text-[12px] transition-colors hover:bg-[var(--color-surface-2)]"
+          className="ml-auto rounded-[6px] border px-2 py-0.5 text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--color-surface-2)]"
           style={{ borderColor: "var(--color-border)" }}
           onClick={() => void load()}
           title="重新读一遍历史"
@@ -183,11 +183,11 @@ export function RevisionHistory({
       </div>
 
       {loading ? (
-        <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+        <div className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
           读取中…
         </div>
       ) : items.length === 0 ? (
-        <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+        <div className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
           还没有历史 —— 点「记为一版」才会在这里留一条（平时的自动保存不产生版本）。
         </div>
       ) : (
@@ -206,10 +206,10 @@ export function RevisionHistory({
                     aria-expanded={expanded}
                     title="点开看这一版改了什么"
                   >
-                    <span className="mono text-[12px] font-medium">v{rev.version}</span>
+                    <span className="mono text-[length:var(--fs-sm)] font-medium">v{rev.version}</span>
                     {/* 里程碑 vs 旧的自动快照：旧数据不清洗，只在这里分开显示 */}
                     <span
-                      className="shrink-0 rounded px-1.5 py-0.5 text-[11px]"
+                      className="shrink-0 rounded px-1.5 py-0.5 text-[length:var(--fs-xs)]"
                       style={
                         rev.milestone
                           ? { background: "color-mix(in srgb, var(--color-accent) 12%, transparent)", color: "var(--color-accent)" }
@@ -220,23 +220,23 @@ export function RevisionHistory({
                     </span>
                     {rev.current && (
                       <span
-                        className="rounded px-1.5 py-0.5 text-[12px]"
+                        className="rounded px-1.5 py-0.5 text-[length:var(--fs-sm)]"
                         style={{ background: "color-mix(in srgb, var(--color-ok) 14%, transparent)", color: "var(--color-ok)" }}
                       >
                         当前
                       </span>
                     )}
-                    <span className="min-w-0 flex-1 truncate text-[12px]" title={rev.note ? `${rev.note} · ${rev.label}` : rev.label}>
+                    <span className="min-w-0 flex-1 truncate text-[length:var(--fs-sm)]" title={rev.note ? `${rev.note} · ${rev.label}` : rev.label}>
                       {rev.note || rev.label}
                     </span>
-                    <span className="shrink-0 text-[12px]" style={{ color: "var(--color-muted)" }}>
+                    <span className="shrink-0 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                       {fmt.time(rev.created_at)}
                     </span>
                   </button>
                   <div className="flex shrink-0 items-center gap-1.5">
                     <button
                       type="button"
-                      className="rounded-[6px] border px-2 py-0.5 text-[12px] transition-colors hover:bg-[var(--color-surface-2)]"
+                      className="rounded-[6px] border px-2 py-0.5 text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--color-surface-2)]"
                       style={{ borderColor: "var(--color-border)" }}
                       onClick={() => toggle(rev)}
                     >
@@ -247,7 +247,7 @@ export function RevisionHistory({
                         type="button"
                         disabled={busy === rev.id}
                         onClick={() => void restore(rev)}
-                        className="rounded-[6px] border px-2 py-0.5 text-[12px] disabled:opacity-50"
+                        className="rounded-[6px] border px-2 py-0.5 text-[length:var(--fs-sm)] disabled:opacity-50"
                         style={{
                           borderColor: armRestore === rev.id ? "var(--color-err)" : "var(--color-border)",
                           color: armRestore === rev.id ? "var(--color-err)" : undefined,
@@ -261,7 +261,7 @@ export function RevisionHistory({
                       type="button"
                       disabled={busy === rev.id}
                       onClick={() => void remove(rev)}
-                      className="rounded-[6px] border px-2 py-0.5 text-[12px] disabled:opacity-50"
+                      className="rounded-[6px] border px-2 py-0.5 text-[length:var(--fs-sm)] disabled:opacity-50"
                       style={{
                         borderColor: armDelete === rev.id ? "var(--color-err)" : "var(--color-border)",
                         color: "var(--color-err)",
@@ -277,22 +277,22 @@ export function RevisionHistory({
                 {expanded && (
                   <div className="mt-2 rounded-[8px] p-2.5" style={{ background: "var(--color-surface-2)" }}>
                     <div className="mb-2 flex flex-wrap items-center gap-1.5">
-                      <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+                      <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                         对比
                       </span>
                       <Seg active={against === "prev"} onClick={() => switchAgainst("prev")} label="上一版" title="和上一版比（默认）" />
                       <Seg active={against === "current"} onClick={() => switchAgainst("current")} label="当前" title="和现在的配置比" />
-                      <span className="ml-auto text-[12px]" style={{ color: "var(--color-muted)" }}>
+                      <span className="ml-auto text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                         {diff?.summary || ""}
                       </span>
                     </div>
 
                     {diff?.loading ? (
-                      <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+                      <div className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                         读取差异…
                       </div>
                     ) : !diff || diff.rows.length === 0 ? (
-                      <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+                      <div className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                         这一版和{diff?.againstLabel || "对照版"}内容一致（没有字段级差异）。
                       </div>
                     ) : (
@@ -304,21 +304,21 @@ export function RevisionHistory({
                           return (
                             <div key={k} className="rounded-[7px] border p-2" style={{ borderColor: "var(--color-border)" }}>
                               <div className="mb-1 flex flex-wrap items-center gap-2">
-                                <span className="text-[12px] font-medium">{r.label}</span>
+                                <span className="text-[length:var(--fs-sm)] font-medium">{r.label}</span>
                                 {r.added?.length ? (
-                                  <span className="text-[12px]" style={{ color: "var(--color-ok)" }}>
+                                  <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-ok)" }}>
                                     +{r.added.join("、")}
                                   </span>
                                 ) : null}
                                 {r.removed?.length ? (
-                                  <span className="text-[12px]" style={{ color: "var(--color-err)" }}>
+                                  <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-err)" }}>
                                     −{r.removed.join("、")}
                                   </span>
                                 ) : null}
                                 {long && (
                                   <button
                                     type="button"
-                                    className="ml-auto text-[12px] underline"
+                                    className="ml-auto text-[length:var(--fs-sm)] underline"
                                     style={{ color: "var(--color-muted)" }}
                                     onClick={() => setFullKey(showFull ? null : k)}
                                   >
@@ -352,7 +352,7 @@ function Seg({ active, onClick, label, title }: { active: boolean; onClick: () =
       type="button"
       onClick={onClick}
       title={title}
-      className="rounded-[6px] border px-2 py-0.5 text-[12px] transition-colors"
+      className="rounded-[6px] border px-2 py-0.5 text-[length:var(--fs-sm)] transition-colors"
       style={{
         borderColor: active ? "var(--color-accent)" : "var(--color-border)",
         color: active ? "var(--color-accent)" : "var(--color-muted)",
@@ -367,11 +367,11 @@ function Seg({ active, onClick, label, title }: { active: boolean; onClick: () =
 function Value({ label, text, muted }: { label: string; text: string; muted?: boolean }) {
   return (
     <div className="min-w-0">
-      <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+      <div className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
         {label}
       </div>
       <div
-        className="mono whitespace-pre-wrap break-words rounded-[6px] px-1.5 py-1 text-[12px]"
+        className="mono whitespace-pre-wrap break-words rounded-[6px] px-1.5 py-1 text-[length:var(--fs-sm)]"
         style={{ background: "var(--color-surface)", color: muted ? "var(--color-muted)" : "var(--color-text)" }}
       >
         {text}

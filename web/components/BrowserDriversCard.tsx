@@ -226,7 +226,7 @@ export function BrowserDriversCard() {
   };
 
   if (loading) {
-    return <div className="text-[12.5px] text-[var(--color-muted)]">读取中…</div>;
+    return <div className="text-[length:var(--fs-base)] text-[var(--color-muted)]">读取中…</div>;
   }
 
   return (
@@ -235,7 +235,7 @@ export function BrowserDriversCard() {
       <div className="rounded-md border p-2.5" style={{ borderColor: "var(--color-border)" }}>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span
-            className="rounded px-1.5 py-0.5 text-[10.5px]"
+            className="rounded px-1.5 py-0.5 text-[length:var(--fs-xs)]"
             style={{
               background: "color-mix(in srgb, var(--color-ok) 14%, transparent)",
               color: "var(--color-ok)",
@@ -243,10 +243,10 @@ export function BrowserDriversCard() {
           >
             在用
           </span>
-          <span className="text-[13.5px] font-medium">{active?.label}</span>
-          <span className="mono text-[12px]">{active?.version || "—"}</span>
+          <span className="text-[length:var(--fs-md)] font-medium">{active?.label}</span>
+          <span className="mono text-[length:var(--fs-sm)]">{active?.version || "—"}</span>
           <span
-            className="rounded px-1.5 py-0.5 text-[10.5px]"
+            className="rounded px-1.5 py-0.5 text-[length:var(--fs-xs)]"
             style={{
               background: "color-mix(in srgb, var(--color-accent) 12%, transparent)",
               color: "var(--color-accent)",
@@ -255,13 +255,13 @@ export function BrowserDriversCard() {
           >
             {PROTO_LABEL[active?.proto ?? ""] ?? active?.proto}
           </span>
-          <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+          <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
             {active?.source === "managed" ? "平台装的" : "系统装的"}
           </span>
           {active?.custom ? (
             <button
               type="button"
-              className="ml-auto rounded-[5px] px-2 py-1 text-[12px]"
+              className="ml-auto rounded-[5px] px-2 py-1 text-[length:var(--fs-sm)]"
               style={{ color: "var(--color-accent)", border: "1px solid color-mix(in srgb, var(--color-accent) 34%, transparent)" }}
               onClick={() => void reset()}
               disabled={busy}
@@ -271,7 +271,7 @@ export function BrowserDriversCard() {
           ) : null}
         </div>
         {active?.path ? (
-          <div className="mono mt-1 break-all text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+          <div className="mono mt-1 break-all text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
             {active.path}
           </div>
         ) : null}
@@ -282,24 +282,24 @@ export function BrowserDriversCard() {
             const v = active?.verify as BrowserDriverVerify | undefined;
             if (!v || v.checked_at === undefined) {
               return (
-                <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+                <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                   还没自检过
                 </span>
               );
             }
             return v.ok ? (
-              <span className="text-[12px]" style={{ color: "var(--color-ok)" }}>
+              <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-ok)" }}>
                 ✓ 自检通过（真拉起跑过一次）
               </span>
             ) : (
-              <span className="text-[12px]" style={{ color: "var(--color-err)" }}>
+              <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-err)" }}>
                 ✗ 起不来：{v.problem}
               </span>
             );
           })()}
           <button
             type="button"
-            className="ml-auto rounded-[5px] px-2 py-0.5 text-[12px]"
+            className="ml-auto rounded-[5px] px-2 py-0.5 text-[length:var(--fs-sm)]"
             style={{ color: "var(--color-accent)", border: "1px solid color-mix(in srgb, var(--color-accent) 34%, transparent)" }}
             onClick={() => void checkActive()}
             disabled={checking || !active?.path}
@@ -311,7 +311,7 @@ export function BrowserDriversCard() {
           const v = active?.verify as BrowserDriverVerify | undefined;
           if (!v || v.ok !== false) return null;
           return (
-            <div className="mt-1 space-y-1 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+            <div className="mt-1 space-y-1 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
               {v.hint ? (
                 <div className="mono break-all" style={{ color: "var(--color-err)" }}>
                   {v.hint}
@@ -338,14 +338,14 @@ export function BrowserDriversCard() {
       </div>
 
       {/* 这台机器上能用的驱动 */}
-      <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+      <div className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
         这台机器上的驱动（{rows.length}）
       </div>
       <div className="flex flex-col gap-1">
         {rows.map((r) => (
           <div
             key={`${r.kind}-${r.version}-${r.source}`}
-            className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[6px] border px-2 py-1.5 text-[12px]"
+            className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[6px] border px-2 py-1.5 text-[length:var(--fs-sm)]"
             style={{
               borderColor: "var(--color-border)",
               background: r.active ? "color-mix(in srgb, var(--color-accent) 5%, transparent)" : undefined,
@@ -392,7 +392,7 @@ export function BrowserDriversCard() {
 
       {/* 装一个新版本 */}
       <div className="rounded-md border p-2.5" style={{ borderColor: "var(--color-border)" }}>
-        <div className="mb-2 text-[12px]" style={{ color: "var(--color-muted)" }}>
+        <div className="mb-2 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
           装一个新版本（下载到平台目录，不动系统）
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -427,7 +427,7 @@ export function BrowserDriversCard() {
           />
           <button
             type="button"
-            className="rounded-[5px] px-2.5 py-1 text-[12.5px]"
+            className="rounded-[5px] px-2.5 py-1 text-[length:var(--fs-base)]"
             style={{
               background: "var(--color-accent)",
               color: "var(--color-accent-contrast)",
@@ -439,7 +439,7 @@ export function BrowserDriversCard() {
             安装
           </button>
           {job && (
-            <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+            <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
               {job.phase} {job.percent}%
             </span>
           )}

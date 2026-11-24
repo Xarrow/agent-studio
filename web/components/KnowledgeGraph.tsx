@@ -145,7 +145,7 @@ export function KnowledgeGraph({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2 text-[12px]" style={{ color: "var(--color-text-3)" }}>
+      <div className="flex flex-wrap items-center gap-2 text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-3)" }}>
         <span>只画真实引用：文档的分分类、技能沉淀自哪份文档、助手挂了哪个技能</span>
         <button className="btn btn-sm ml-auto" type="button" onClick={() => void load()}>
           刷新
@@ -156,7 +156,7 @@ export function KnowledgeGraph({
         <div className="h-40 animate-pulse rounded-lg" style={{ background: "var(--color-surface-2)" }} />
       ) : data!.nodes.length === 0 ? (
         <div
-          className="rounded-lg px-4 py-10 text-center text-[12px]"
+          className="rounded-lg px-4 py-10 text-center text-[length:var(--fs-sm)]"
           style={{ background: "var(--color-surface-2)", color: "var(--color-text-3)" }}
         >
           还没有可画的引用关系。先把文档分个类，或者把文档提炼成 Skill。
@@ -264,7 +264,7 @@ export function KnowledgeGraph({
       )}
 
       {selected ? (
-        <div className="flex flex-wrap items-center gap-2 text-[12px]" style={{ color: "var(--color-text-2)" }}>
+        <div className="flex flex-wrap items-center gap-2 text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-2)" }}>
           <span>
             已选中：{kindName((selected.split(":")[0] as GNode["kind"]) || "doc")} ·{" "}
             {data?.nodes.find((n) => n.id === selected)?.label}
@@ -276,7 +276,7 @@ export function KnowledgeGraph({
         </div>
       ) : null}
 
-      <div className="flex flex-wrap gap-3 text-[11px]" style={{ color: "var(--color-text-3)" }}>
+      <div className="flex flex-wrap gap-3 text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
         {COLUMNS.map((c) => (
           <span key={c.kind} className="flex items-center gap-1">
             <span style={{ display: "inline-block", width: 3, height: 11, borderRadius: 2, background: kindColor[c.kind] }} />

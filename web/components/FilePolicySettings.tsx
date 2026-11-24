@@ -109,7 +109,7 @@ export function FilePolicySettings() {
   return (
     <div className="space-y-3">
       {/* ── 现在的规则（信息默认可见，不用点开看） ─────────────── */}
-      <ul className="text-[12.5px] leading-relaxed space-y-1" style={{ color: "var(--color-text)" }}>
+      <ul className="text-[length:var(--fs-base)] leading-relaxed space-y-1" style={{ color: "var(--color-text)" }}>
         <li>
           <b>读</b>：除禁区外不限制 —— 家目录、别的会话目录、系统目录都能读，<b>不打扰你</b>。
         </li>
@@ -129,9 +129,9 @@ export function FilePolicySettings() {
         style={{ background: danger ? "color-mix(in srgb, var(--color-err) 7%, var(--color-surface-2))" : "var(--color-surface-2)" }}
       >
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="text-[13px] font-medium">危险模式：跳过文件写入确认</span>
+          <span className="text-[length:var(--fs-base)] font-medium">危险模式：跳过文件写入确认</span>
           <span
-            className="rounded-full px-1.5 py-[1px] text-[10.5px]"
+            className="rounded-full px-1.5 py-[1px] text-[length:var(--fs-xs)]"
             style={
               danger
                 ? { background: "var(--color-err)", color: "var(--color-accent-contrast)" }
@@ -149,7 +149,7 @@ export function FilePolicySettings() {
             />
           </div>
         </div>
-        <p className="mt-1 text-[12px] leading-relaxed" style={{ color: "var(--color-muted)" }}>
+        <p className="mt-1 text-[length:var(--fs-sm)] leading-relaxed" style={{ color: "var(--color-muted)" }}>
           开启后，助手往会话目录之外写文件<b>不再弹确认卡、直接执行</b>。
           禁区（~/.hermes）和「删库 / 格式化 / 关机」这类硬拦截不受影响，仍然会拒。
           开关是全局一份、跟着数据走，不用每个会话重新设。
@@ -160,10 +160,10 @@ export function FilePolicySettings() {
             className="mt-2 rounded-lg px-2.5 py-2"
             style={{ background: "color-mix(in srgb, var(--color-err) 10%, transparent)" }}
           >
-            <div className="text-[12.5px] font-medium" style={{ color: "var(--color-err)" }}>
+            <div className="text-[length:var(--fs-base)] font-medium" style={{ color: "var(--color-err)" }}>
               确认开启危险模式？开启期间它可以直接改你机器上的文件，看完这行再点。
             </div>
-            <div className="text-[12px] mt-1" style={{ color: "var(--color-text)" }}>
+            <div className="text-[length:var(--fs-sm)] mt-1" style={{ color: "var(--color-text)" }}>
               具体后果：助手在会话目录外新建/覆盖/删除文件都不会再问你；
               它写错地方、覆盖掉你的文件，你<b>当场不会收到任何提示</b>。所有操作仍会记在下面的审计里，
               事后可查。随时可以在顶栏那条红色提示上点「关掉」恢复确认。
@@ -187,7 +187,7 @@ export function FilePolicySettings() {
       </div>
 
       {err && (
-        <p className="text-[12px]" style={{ color: "var(--color-err)" }}>
+        <p className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-err)" }}>
           {err}
         </p>
       )}
@@ -195,8 +195,8 @@ export function FilePolicySettings() {
       {/* ── 审计 ─────────────────────────────────────────────── */}
       <div>
         <div className="flex flex-wrap items-center gap-2 mb-1.5">
-          <span className="text-[12.5px] font-medium">文件操作记录</span>
-          <span className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+          <span className="text-[length:var(--fs-base)] font-medium">文件操作记录</span>
+          <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
             最近 30 条 · 共 {total} 条（读、写都记：被允许 / 被拒绝 / 危险模式跳过 / 禁区拦截；工作区内的读不记）
           </span>
           <button data-tap className="btn btn-sm ml-auto" disabled={loading} onClick={() => void load()}>
@@ -213,10 +213,10 @@ export function FilePolicySettings() {
               return (
                 <div
                   key={r.id}
-                  className="flex flex-wrap items-center gap-x-2 gap-y-0.5 px-2.5 py-1.5 text-[12px]"
+                  className="flex flex-wrap items-center gap-x-2 gap-y-0.5 px-2.5 py-1.5 text-[length:var(--fs-sm)]"
                   style={{ background: i % 2 ? "transparent" : "var(--color-surface)" }}
                 >
-                  <span className="mono text-[11px]" style={{ color: "var(--color-muted)" }}>
+                  <span className="mono text-[length:var(--fs-xs)]" style={{ color: "var(--color-muted)" }}>
                     {fmtTs(r.ts)}
                   </span>
                   <span className="font-medium">{r.agent_name || r.agent_id || "（未知助手）"}</span>
@@ -225,7 +225,7 @@ export function FilePolicySettings() {
                     {r.path}
                   </span>
                   <span
-                    className="ml-auto rounded-full px-1.5 py-[1px] text-[10.5px] shrink-0"
+                    className="ml-auto rounded-full px-1.5 py-[1px] text-[length:var(--fs-xs)] shrink-0"
                     style={{ background: tone.bg, color: tone.color }}
                     title={r.rule}
                   >

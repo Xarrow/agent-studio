@@ -160,7 +160,7 @@ export function AgentQuickRun({
       >
         <textarea
           ref={taRef}
-          className="block w-full resize-none bg-transparent border-0 outline-none px-3.5 pt-2.5 pb-1 text-[13.5px] leading-6"
+          className="block w-full resize-none bg-transparent border-0 outline-none px-3.5 pt-2.5 pb-1 text-[length:var(--fs-md)] leading-6"
           rows={1}
           style={{ maxHeight: "40vh" }}
           placeholder="给它一句话试跑，不存会话"
@@ -177,7 +177,7 @@ export function AgentQuickRun({
           }}
         />
         <div className="flex items-center gap-2 px-2 pb-2 pt-0.5">
-          <span className="text-[11.5px] truncate text-[var(--color-muted)]">
+          <span className="text-[length:var(--fs-sm)] truncate text-[var(--color-muted)]">
             {busy ? "跑着呢…" : "Enter 试跑 · Shift + Enter 换行"}
           </span>
           <div className="ml-auto">
@@ -206,7 +206,7 @@ export function AgentQuickRun({
       </div>
 
       {unsaved && (
-        <p className="text-[11.5px]" style={{ color: "var(--color-warn)" }}>
+        <p className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-warn)" }}>
           有未保存改动 —— 试跑前会先保存，跑的就是你现在看到的这版
         </p>
       )}
@@ -228,7 +228,7 @@ export function AgentQuickRun({
           className="rounded-lg border p-2.5"
           style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
         >
-          <div className="flex items-center gap-2 mb-2 text-[11.5px]">
+          <div className="flex items-center gap-2 mb-2 text-[length:var(--fs-sm)]">
             <span className={busy ? "live-dot" : ""} style={{ color: busy ? "var(--color-accent)" : STATUS_COLOR[status] ?? "var(--color-muted)" }}>
               {busy ? "● 跑着呢" : `● ${status || "结束"}`}
             </span>
@@ -239,7 +239,7 @@ export function AgentQuickRun({
           {steps.length > 0 ? (
             <RunTimeline steps={steps} compact />
           ) : (
-            <div className="text-[12px] text-[var(--color-muted)]">已提交，等它开始…</div>
+            <div className="text-[length:var(--fs-sm)] text-[var(--color-muted)]">已提交，等它开始…</div>
           )}
           <div ref={endRef} />
         </div>
@@ -252,7 +252,7 @@ export function AgentQuickRun({
             <button
               key={ex}
               type="button"
-              className="rounded-full border px-2.5 py-1 text-[11.5px] transition-colors hover:bg-[var(--bg-selected)]"
+              className="rounded-full border px-2.5 py-1 text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--bg-selected)]"
               style={{ borderColor: "var(--color-border)", color: "var(--color-text-2)" }}
               onClick={() => setInput(ex)}
             >
@@ -265,10 +265,10 @@ export function AgentQuickRun({
       {recent.length > 0 && (
         <div>
           <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11.5px] text-[var(--color-muted)]">最近跑过</span>
+            <span className="text-[length:var(--fs-sm)] text-[var(--color-muted)]">最近跑过</span>
             <Link
               href={`/exec?agent=${agentId}`}
-              className="inline-flex min-h-[36px] items-center text-[11.5px] hover:underline lg:min-h-0"
+              className="inline-flex min-h-[36px] items-center text-[length:var(--fs-sm)] hover:underline lg:min-h-0"
               style={{ color: "var(--color-accent)" }}
             >
               打开对话（多轮 · 完整现场）→
@@ -280,7 +280,7 @@ export function AgentQuickRun({
                 key={r.id}
                 href={`/exec?agent=${agentId}`}
                 title="去对话页看那一轮的完整执行现场"
-                className="inline-flex min-h-[36px] items-center gap-1.5 rounded-md border px-2 py-1 text-[11.5px] hover:bg-[var(--color-surface-2)] lg:min-h-0"
+                className="inline-flex min-h-[36px] items-center gap-1.5 rounded-md border px-2 py-1 text-[length:var(--fs-sm)] hover:bg-[var(--color-surface-2)] lg:min-h-0"
                 style={{ borderColor: "var(--color-border)" }}
               >
                 <span style={{ color: STATUS_COLOR[r.status] ?? "var(--color-muted)" }}>

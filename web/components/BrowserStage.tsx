@@ -94,7 +94,7 @@ function ChromeBar({
         type="button"
         onClick={onCopy}
         title={url ? `复制网址：${url}` : "未打开"}
-        className="mono min-w-0 flex-1 truncate rounded px-1.5 py-0.5 text-left text-[11px] hover:bg-[var(--color-surface-3)]"
+        className="mono min-w-0 flex-1 truncate rounded px-1.5 py-0.5 text-left text-[length:var(--fs-xs)] hover:bg-[var(--color-surface-3)]"
         style={{ color: "var(--color-muted)" }}
       >
         {waiting ? "需要你操作" : prettyUrl(url)}
@@ -103,7 +103,7 @@ function ChromeBar({
       {/* 状态芯片：文字来自后端（和徽章、按钮永远同一句话）—— 别再自己判 busy */}
       {control && control.badge ? (
         <span
-          className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10.5px]"
+          className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[length:var(--fs-xs)]"
           style={{ color: toneColor(control), background: `color-mix(in srgb, ${toneColor(control)} 12%, transparent)` }}
         >
           <span aria-hidden className="h-[6px] w-[6px] rounded-full" style={{ background: toneColor(control) }} />
@@ -167,14 +167,14 @@ function ControlBar({
           style={{ background: "var(--color-surface-2)" }}
         >
           <span
-            className="inline-flex shrink-0 items-center gap-1 rounded-[6px] px-1.5 py-0.5 text-[11px]"
+            className="inline-flex shrink-0 items-center gap-1 rounded-[6px] px-1.5 py-0.5 text-[length:var(--fs-xs)]"
             style={{ color, background: `color-mix(in srgb, ${color} 12%, transparent)` }}
             title={control?.hint}
           >
             <span aria-hidden className="h-[6px] w-[6px] rounded-full" style={{ background: color }} />
             {badge}
           </span>
-          <span className="min-w-0 flex-1 truncate text-[11px]" style={{ color: "var(--color-muted)" }}>
+          <span className="min-w-0 flex-1 truncate text-[length:var(--fs-xs)]" style={{ color: "var(--color-muted)" }}>
             {hint}
           </span>
           {/* 画面链路（实测）：流畅模式带 fps/延迟；回退后写「兼容模式」+ JPEG 实测 fps 并给一个手动切回 */}
@@ -188,7 +188,7 @@ function ControlBar({
                       ? `实时视频没连上（${stream.reason}），已自动切回兼容画面 · 数字是这一秒实际收到的 JPEG 帧数`
                       : "兼容画面 · 数字是这一秒实际收到的 JPEG 帧数"
                   }
-                  className="rounded-[6px] px-1.5 py-0.5 text-[10.5px] tabular-nums"
+                  className="rounded-[6px] px-1.5 py-0.5 text-[length:var(--fs-xs)] tabular-nums"
                   style={{
                     color: "var(--color-warn)",
                     background: "color-mix(in srgb, var(--color-warn) 14%, transparent)",
@@ -201,7 +201,7 @@ function ControlBar({
                     type="button"
                     data-tap
                     onClick={onRetry}
-                    className="rounded-[6px] px-1.5 py-0.5 text-[10.5px] hover:underline"
+                    className="rounded-[6px] px-1.5 py-0.5 text-[length:var(--fs-xs)] hover:underline"
                     style={{ color: "var(--color-accent)" }}
                     title="再试一次实时视频（不影响当前操作）"
                   >
@@ -213,7 +213,7 @@ function ControlBar({
               <span
                 data-stream-stat
                 title="实时视频（WebRTC）实测值：帧率来自 getStats 的 framesDecoded；延迟 = 抖动缓冲 + RTT/2（估算）"
-                className="shrink-0 rounded-[6px] px-1.5 py-0.5 text-[10.5px] tabular-nums"
+                className="shrink-0 rounded-[6px] px-1.5 py-0.5 text-[length:var(--fs-xs)] tabular-nums"
                 style={{
                   color: stream.mode === "webrtc" ? "var(--color-ok)" : "var(--color-muted)",
                   background:
@@ -234,7 +234,7 @@ function ControlBar({
               data-browser-take={canTake ? "1" : undefined}
               disabled={canTake && taking}
               onClick={() => onControl?.(action === "take" ? "take" : "release")}
-              className={`shrink-0 rounded-[8px] px-3.5 py-2 text-[13px] font-medium ${
+              className={`shrink-0 rounded-[8px] px-3.5 py-2 text-[length:var(--fs-base)] font-medium ${
                 canTake && pulse ? "browser-take-pulse" : ""
               }`}
               style={{
@@ -263,7 +263,7 @@ function ControlBar({
             data-tap
             data-surface="browser-notice"
             onClick={() => onControl?.("take")}
-            className="block w-full px-2.5 py-1.5 text-left text-[11.5px]"
+            className="block w-full px-2.5 py-1.5 text-left text-[length:var(--fs-sm)]"
             style={{
               color: "var(--color-err)",
               background: "color-mix(in srgb, var(--color-err) 10%, var(--color-surface))",
@@ -276,7 +276,7 @@ function ControlBar({
         ) : (
           <div
             data-surface="browser-notice"
-            className="px-2.5 py-1.5 text-[11.5px]"
+            className="px-2.5 py-1.5 text-[length:var(--fs-sm)]"
             style={{
               color: "var(--color-err)",
               background: "color-mix(in srgb, var(--color-err) 10%, var(--color-surface))",
@@ -315,7 +315,7 @@ function ActionLine({ actions, control }: { actions: BrowserAction[]; control?: 
 
   return (
     <div className="min-w-0 px-2.5 py-1.5" style={{ background: "var(--color-surface-2)" }}>
-      <div className="flex items-center gap-1.5 text-[11.5px]" style={{ color: "var(--color-text)" }}>
+      <div className="flex items-center gap-1.5 text-[length:var(--fs-sm)]" style={{ color: "var(--color-text)" }}>
         <span
           aria-hidden
           className="inline-block h-[6px] w-[6px] shrink-0 rounded-full"
@@ -324,7 +324,7 @@ function ActionLine({ actions, control }: { actions: BrowserAction[]; control?: 
         <span className="truncate">{current}</span>
       </div>
       {history.length > 0 && (
-        <div className="mt-0.5 truncate text-[10.5px]" style={{ color: "var(--color-muted)" }}>
+        <div className="mt-0.5 truncate text-[length:var(--fs-xs)]" style={{ color: "var(--color-muted)" }}>
           {history.map((a, i) => a.summary).join(" · ")}
         </div>
       )}
@@ -873,7 +873,7 @@ export function BrowserStage({
             data-tap
             data-surface="browser-notice"
             onClick={() => requestControl("take")}
-            className="mb-1 block w-full rounded-[var(--radius-sm)] px-2 py-1 text-left text-[11px]"
+            className="mb-1 block w-full rounded-[var(--radius-sm)] px-2 py-1 text-left text-[length:var(--fs-xs)]"
             style={{
               color: "var(--color-err)",
               background: "color-mix(in srgb, var(--color-err) 10%, var(--color-surface))",
@@ -923,11 +923,11 @@ export function BrowserStage({
                 <circle cx="12" cy="12" r="9" />
                 <path d="M3 9h18M9 3c-2 3-2 15 0 18M15 3c2 3 2 15 0 18" />
               </svg>
-              <span className="truncate text-[12px]" style={{ color: "var(--color-text)" }}>
+              <span className="truncate text-[length:var(--fs-sm)]" style={{ color: "var(--color-text)" }}>
                 {hostOf(frame?.url || lastStep?.url || "") || "浏览器"}
               </span>
               <span
-                className="shrink-0 rounded px-1.5 py-0.5 text-[10.5px]"
+                className="shrink-0 rounded px-1.5 py-0.5 text-[length:var(--fs-xs)]"
                 style={{
                   color: control?.badge ? toneColor(control) : "var(--color-text-3)",
                   background: control?.badge
@@ -938,12 +938,12 @@ export function BrowserStage({
                 {control?.badge || (live ? "助手操作中" : "浏览器")}
               </span>
               {stepLabel ? (
-                <span className="shrink-0 text-[10.5px]" style={{ color: "var(--color-muted)" }}>
+                <span className="shrink-0 text-[length:var(--fs-xs)]" style={{ color: "var(--color-muted)" }}>
                   {stepLabel}
                 </span>
               ) : null}
             </span>
-            <span className="mt-0.5 block truncate text-[11px]" style={{ color: "var(--color-muted)" }}>
+            <span className="mt-0.5 block truncate text-[length:var(--fs-xs)]" style={{ color: "var(--color-muted)" }}>
               {line}
             </span>
           </span>
@@ -960,7 +960,7 @@ export function BrowserStage({
             data-browser-take={takeAction === "take" ? "1" : undefined}
             disabled={takeAction === "take" && taking}
             onClick={() => requestControl(takeAction)}
-            className={`shrink-0 rounded-[8px] px-2.5 py-1.5 text-[12px] font-medium ${
+            className={`shrink-0 rounded-[8px] px-2.5 py-1.5 text-[length:var(--fs-sm)] font-medium ${
               takeAction === "take" && pulse ? "browser-take-pulse" : ""
             }`}
             style={{
@@ -989,12 +989,12 @@ export function BrowserStage({
         onCopy={copyUrl}
         right={
           <span className="flex shrink-0 items-center gap-2">
-            {copied ? <span className="text-[10.5px]" style={{ color: "var(--color-ok)" }}>已复制</span> : null}
+            {copied ? <span className="text-[length:var(--fs-xs)]" style={{ color: "var(--color-ok)" }}>已复制</span> : null}
             {onClose ? (
               <button
                 type="button"
                 onClick={onClose}
-                className="rounded px-1 text-[11px] hover:underline"
+                className="rounded px-1 text-[length:var(--fs-xs)] hover:underline"
                 style={{ color: "var(--color-muted)" }}
               >
                 收起
@@ -1063,14 +1063,14 @@ export function BrowserStage({
         />
         {rtcMode === "connecting" ? (
           <div
-            className="pointer-events-none absolute left-1/2 top-2 z-[2] -translate-x-1/2 rounded-full px-2.5 py-1 text-[11px]"
+            className="pointer-events-none absolute left-1/2 top-2 z-[2] -translate-x-1/2 rounded-full px-2.5 py-1 text-[length:var(--fs-xs)]"
             style={{ background: "rgba(15,23,42,0.72)", color: "#fff" }}
           >
             正在连接流畅模式…
           </div>
         ) : null}
         {hasFrame || rtcMode === "live" || shown ? null : (
-          <div className="flex h-full min-h-[160px] items-center justify-center text-[12px]" style={{ color: "var(--color-text-3)" }}>
+          <div className="flex h-full min-h-[160px] items-center justify-center text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-3)" }}>
             还未打开网页
           </div>
         )}
@@ -1097,7 +1097,7 @@ export function BrowserStage({
             role="status"
             aria-live="polite"
             data-surface="browser-inline-feedback"
-            className="pointer-events-none absolute z-10 max-w-[88%] rounded-[8px] px-2.5 py-1.5 text-[12px] leading-snug shadow-lg"
+            className="pointer-events-none absolute z-10 max-w-[88%] rounded-[8px] px-2.5 py-1.5 text-[length:var(--fs-sm)] leading-snug shadow-lg"
             style={{
               left: feedback.x >= 0 ? Math.min(Math.max(feedback.x + 8, 8), Math.max(8, feedback.w - 248)) : 12,
               top: feedback.x >= 0 ? Math.min(Math.max(feedback.y + 8, 8), Math.max(8, feedback.h - 92)) : undefined,
@@ -1118,7 +1118,7 @@ export function BrowserStage({
           className="flex flex-wrap items-center gap-1.5 px-2.5 py-1.5"
           style={{ background: "var(--color-surface-2)" }}
         >
-          <span className="shrink-0 text-[10.5px]" style={{ color: "var(--color-muted)" }}>
+          <span className="shrink-0 text-[length:var(--fs-xs)]" style={{ color: "var(--color-muted)" }}>
             按键
           </span>
           {KEY_BUTTONS.map((k) => (
@@ -1129,7 +1129,7 @@ export function BrowserStage({
               data-key-button={k.key}
               onClick={() => sendKey(k)}
               title={k.title}
-              className="h-[30px] min-w-[44px] rounded-[7px] px-2 text-[11.5px] max-md:h-[44px]"
+              className="h-[30px] min-w-[44px] rounded-[7px] px-2 text-[length:var(--fs-sm)] max-md:h-[44px]"
               style={{ color: "var(--color-text-2)", background: "var(--color-surface-3)" }}
             >
               {k.label}
@@ -1140,17 +1140,17 @@ export function BrowserStage({
 
       {shown ? (
         <div className="flex items-center gap-2 px-2.5 py-1.5" style={{ background: "var(--color-surface-2)" }}>
-          <span className="text-[11.5px]" style={{ color: "var(--color-text)" }}>
+          <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-text)" }}>
             第 {shown.n} 步 · {shown.summary}
           </span>
-          <span className="truncate text-[10.5px]" style={{ color: "var(--color-muted)" }}>
+          <span className="truncate text-[length:var(--fs-xs)]" style={{ color: "var(--color-muted)" }}>
             {shown.url}
           </span>
           {hasFrame || frame ? (
             <button
               type="button"
               onClick={() => setViewStep(null)}
-              className="ml-auto shrink-0 rounded px-1 text-[11px] hover:underline"
+              className="ml-auto shrink-0 rounded px-1 text-[length:var(--fs-xs)] hover:underline"
               style={{ color: "var(--color-accent)" }}
             >
               回到最新
@@ -1167,7 +1167,7 @@ export function BrowserStage({
           className="flex shrink-0 items-center gap-1.5 overflow-x-auto px-2 py-1.5"
           style={{ background: "var(--color-surface-3)", borderTop: "1px solid var(--color-border)" }}
         >
-          <span className="shrink-0 text-[10.5px]" style={{ color: "var(--color-muted)" }}>
+          <span className="shrink-0 text-[length:var(--fs-xs)]" style={{ color: "var(--color-muted)" }}>
             {control?.step_label || `过程 ${steps.length} 步`}
           </span>
           {steps.map((st) => (
@@ -1205,7 +1205,7 @@ export function BrowserStage({
           过期就写"已过期"。以前这里固定写"仅可查看"，可用户明明能看不能点、也没解释。 */}
       {control && control.status !== "none" && control.footer ? (
         <div
-          className="px-2.5 py-2 text-[11.5px]"
+          className="px-2.5 py-2 text-[length:var(--fs-sm)]"
           style={{
             background: "var(--color-surface)",
             color: control.status === "closed" ? "var(--color-muted)" : "var(--color-text-2)",
@@ -1219,7 +1219,7 @@ export function BrowserStage({
       {onUserText ? (
         <div className="flex gap-1.5 px-2.5 py-2" style={{ background: "var(--color-surface)" }}>
           <input
-            className="input flex-1 text-[13px]"
+            className="input flex-1 text-[length:var(--fs-base)]"
             data-surface="browser-input"
             placeholder={
               canClick

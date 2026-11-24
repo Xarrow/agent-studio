@@ -97,7 +97,7 @@ export function DetailPanel({
                 <h2 className="truncate text-[17px] font-semibold tracking-tight">{title}</h2>
                 {pinned && (
                   <span
-                    className="shrink-0 text-[11px]"
+                    className="shrink-0 text-[length:var(--fs-xs)]"
                     style={{ color: "var(--color-accent)" }}
                     title="已固定"
                   >
@@ -107,7 +107,7 @@ export function DetailPanel({
               </div>
               {subtitle && (
                 <div
-                  className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px]"
+                  className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[length:var(--fs-sm)]"
                   style={{ color: "var(--color-muted)" }}
                 >
                   {subtitle}
@@ -131,7 +131,7 @@ export function DetailPanel({
 
         {facts && facts.length > 0 && (
           <div
-            className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-y px-4 py-2 text-[12px] md:px-5"
+            className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-y px-4 py-2 text-[length:var(--fs-sm)] md:px-5"
             style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
           >
             {facts.map((f, i) =>

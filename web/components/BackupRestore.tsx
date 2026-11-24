@@ -135,12 +135,12 @@ export function BackupRestore() {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+        <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
           按功能挑着导，或者一键全量；导入只新增、不覆盖现有数据
         </span>
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <label
-            className="flex items-center gap-1.5 text-[12px]"
+            className="flex items-center gap-1.5 text-[length:var(--fs-sm)]"
             style={{ color: "var(--color-text-2)" }}
             title="带上 LLM 密钥明文：导入到另一台机器即可直接跑；发给别人请关掉"
           >
@@ -153,7 +153,7 @@ export function BackupRestore() {
             含密钥
           </label>
           <label
-            className="flex items-center gap-1.5 text-[12px]"
+            className="flex items-center gap-1.5 text-[length:var(--fs-sm)]"
             style={{ color: "var(--color-text-2)" }}
             title="把会话标题与全部消息一起带走（产物文件不打包）"
           >
@@ -223,7 +223,7 @@ export function BackupRestore() {
       </div>
 
       {repairNote && (
-        <p className="text-[12px]" style={{ color: "var(--color-text-2)" }}>
+        <p className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-2)" }}>
           {repairNote}
         </p>
       )}
@@ -236,13 +236,13 @@ export function BackupRestore() {
         >
           {sections.map((s) => (
             <div key={s.key} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
-              <span className="text-[13px] font-medium">{s.label}</span>
-              <span className="text-[12px] tabular-nums" style={{ color: "var(--color-muted)" }}>
+              <span className="text-[length:var(--fs-base)] font-medium">{s.label}</span>
+              <span className="text-[length:var(--fs-sm)] tabular-nums" style={{ color: "var(--color-muted)" }}>
                 {s.count} 条
               </span>
               {!s.importable ? (
                 <span
-                  className="rounded px-1.5 py-0.5 text-[12px]"
+                  className="rounded px-1.5 py-0.5 text-[length:var(--fs-sm)]"
                   style={{
                     background: "color-mix(in srgb, var(--color-warn) 14%, transparent)",
                     color: "var(--color-warn)",
@@ -251,7 +251,7 @@ export function BackupRestore() {
                   只导出、不导入
                 </span>
               ) : null}
-              <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+              <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                 {/* 备注是纯文本渲染：把 markdown 的加粗标记去掉，别让用户看到 ** 号 */}
                 {s.note.replace(/\*\*/g, "")}
               </span>
@@ -269,7 +269,7 @@ export function BackupRestore() {
         </div>
       ) : null}
 
-      <ul className="space-y-1 text-[12px] leading-relaxed" style={{ color: "var(--color-muted)" }}>
+      <ul className="space-y-1 text-[length:var(--fs-sm)] leading-relaxed" style={{ color: "var(--color-muted)" }}>
         <li>
           <b>不含密钥</b>：LLM key、访问口令、工具请求头里的 token 都不进包 ——
           它们属于"环境"，换机器后请在「LLM 配置」里重新填（导入结果会列出要重填哪些）。
@@ -282,7 +282,7 @@ export function BackupRestore() {
 
       {result ? (
         <div
-          className="rounded-[8px] border px-3 py-2 text-[12px]"
+          className="rounded-[8px] border px-3 py-2 text-[length:var(--fs-sm)]"
           style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
         >
           <div>

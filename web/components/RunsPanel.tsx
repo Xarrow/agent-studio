@@ -720,7 +720,7 @@ export function RunsPanel() {
                 key={t.key}
                 type="button"
                 onClick={() => setKind(t.key)}
-                className="min-h-[36px] whitespace-nowrap rounded-[7px] px-2.5 text-[12px] transition-colors"
+                className="min-h-[36px] whitespace-nowrap rounded-[7px] px-2.5 text-[length:var(--fs-sm)] transition-colors"
                 style={{
                   background: on ? "var(--color-accent)" : undefined,
                   color: on ? "var(--color-accent-contrast)" : "var(--color-muted)",
@@ -779,7 +779,7 @@ export function RunsPanel() {
               data-tap
               onClick={() => void openGuard()}
               title="今日用量 —— 点开调整护栏（今日上限 / 分派层数 / 每棵树最多花多少）"
-              className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-left text-[12px] tabular-nums"
+              className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-left text-[length:var(--fs-sm)] tabular-nums"
               style={{ color: "var(--color-muted)" }}
             >
               <span title={`今日 ${usage.today.calls} 次 · 近 ${usage.days} 天 ${usage.period.calls} 次`}>
@@ -829,7 +829,7 @@ export function RunsPanel() {
 
           {/* 选择总数 + 清理菜单（自研下拉，禁用原生 confirm/alert） */}
           {selected.size > 0 && (
-            <span className="text-[12px] tabular-nums" style={{ color: "var(--color-accent)" }}>
+            <span className="text-[length:var(--fs-sm)] tabular-nums" style={{ color: "var(--color-accent)" }}>
               已选 {selected.size}
             </span>
           )}
@@ -851,7 +851,7 @@ export function RunsPanel() {
               aria-expanded={menu}
               title="按时间清理 / 清空"
               onClick={() => setMenu((v) => !v)}
-              className="min-h-[36px] min-w-[40px] rounded-[8px] border px-2.5 text-[13px] hover:bg-[var(--color-surface-2)]"
+              className="min-h-[36px] min-w-[40px] rounded-[8px] border px-2.5 text-[length:var(--fs-base)] hover:bg-[var(--color-surface-2)]"
               style={{ borderColor: "var(--color-border)" }}
             >
               ⋯
@@ -867,7 +867,7 @@ export function RunsPanel() {
                   role="menuitem"
                   disabled={busy}
                   onClick={() => void pruneOld()}
-                  className="flex min-h-[38px] w-full items-center gap-2 px-3 text-left text-[12px] hover:bg-[var(--color-surface-2)] disabled:opacity-40"
+                  className="flex min-h-[38px] w-full items-center gap-2 px-3 text-left text-[length:var(--fs-sm)] hover:bg-[var(--color-surface-2)] disabled:opacity-40"
                 >
                   按时间清理
                 </button>
@@ -876,7 +876,7 @@ export function RunsPanel() {
                   role="menuitem"
                   disabled={busy || items.length === 0}
                   onClick={() => void clearAll()}
-                  className="flex min-h-[38px] w-full items-center gap-2 px-3 text-left text-[12px] hover:bg-[var(--color-surface-2)] disabled:opacity-40"
+                  className="flex min-h-[38px] w-full items-center gap-2 px-3 text-left text-[length:var(--fs-sm)] hover:bg-[var(--color-surface-2)] disabled:opacity-40"
                   style={{ color: "var(--color-err)" }}
                 >
                   清空执行记录
@@ -890,7 +890,7 @@ export function RunsPanel() {
               选完立刻生效 —— 这三条是"别在没人看着的时候烧光额度"的唯一旋钮。 */}
           {guardOpen && (
             <div
-              className="w-full basis-full max-md:order-9 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t pt-1.5 text-[12px]"
+              className="w-full basis-full max-md:order-9 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t pt-1.5 text-[length:var(--fs-sm)]"
               style={{ borderColor: "var(--color-border)", color: "var(--color-muted)", minWidth: 0, width: "100%" }}
             >
               {!guard ? (
@@ -1042,7 +1042,7 @@ export function RunsPanel() {
               type="button"
               data-tap
               onClick={() => setTicketsOpen((v) => !v)}
-              className="flex h-[32px] items-center gap-1 whitespace-nowrap rounded-[8px] border px-2 text-[12px] max-md:h-[44px]"
+              className="flex h-[32px] items-center gap-1 whitespace-nowrap rounded-[8px] border px-2 text-[length:var(--fs-sm)] max-md:h-[44px]"
               style={{
                 borderColor: "var(--color-warn)",
                 color: "var(--color-warn)",
@@ -1057,7 +1057,7 @@ export function RunsPanel() {
 
           {ticketsOpen && tickets && (
             <div
-              className="w-full basis-full max-md:order-9 rounded-[10px] border p-2 text-[12px]"
+              className="w-full basis-full max-md:order-9 rounded-[10px] border p-2 text-[length:var(--fs-sm)]"
               style={{
                 borderColor: "var(--color-border)",
                 background: "var(--color-surface)",
@@ -1080,7 +1080,7 @@ export function RunsPanel() {
                     style={{ borderColor: "var(--color-border)" }}
                   >
                     <span
-                      className="rounded-full px-1.5 py-0.5 text-[11px]"
+                      className="rounded-full px-1.5 py-0.5 text-[length:var(--fs-xs)]"
                       style={{
                         color: hot ? "var(--color-warn)" : "var(--color-muted)",
                         background: "var(--color-bg)",
@@ -1095,7 +1095,7 @@ export function RunsPanel() {
                       {who}
                       {rpt ? ` · ${rpt.text.replace(/\s+/g, " ").slice(0, 60)}` : ""}
                     </span>
-                    <span className="tabular-nums text-[11px]" style={{ color: "var(--color-muted)" }}>
+                    <span className="tabular-nums text-[length:var(--fs-xs)]" style={{ color: "var(--color-muted)" }}>
                       {new Date(tk.updated_at).toLocaleString("zh-CN", {
                         month: "2-digit",
                         day: "2-digit",
@@ -1104,7 +1104,7 @@ export function RunsPanel() {
                       })}
                     </span>
                     {tk.status !== "open" && (
-                      <span className="ml-auto text-[11px]" style={{ color: "var(--color-muted)" }}>
+                      <span className="ml-auto text-[length:var(--fs-xs)]" style={{ color: "var(--color-muted)" }}>
                         已结束
                       </span>
                     )}
@@ -1112,7 +1112,7 @@ export function RunsPanel() {
                       <button
                         type="button"
                         data-tap
-                        className="ml-auto inline-flex h-[28px] items-center justify-center text-[11px] underline decoration-dotted max-md:h-[44px] max-md:min-w-[44px] max-md:px-2"
+                        className="ml-auto inline-flex h-[28px] items-center justify-center text-[length:var(--fs-xs)] underline decoration-dotted max-md:h-[44px] max-md:min-w-[44px] max-md:px-2"
                         style={{ color: ticketArm === tk.id ? "var(--color-err)" : "var(--color-muted)" }}
                         onClick={() => void endTicket(tk)}
                       >
@@ -1132,7 +1132,7 @@ export function RunsPanel() {
               type="button"
               data-tap
               onClick={() => setAttentionOpen((v) => !v)}
-              className="flex h-[32px] items-center gap-1 rounded-[8px] border px-2 text-[12px] max-md:h-[44px]"
+              className="flex h-[32px] items-center gap-1 rounded-[8px] border px-2 text-[length:var(--fs-sm)] max-md:h-[44px]"
               style={{
                 borderColor: attention.counts.hitl > 0 ? "var(--color-err)" : "var(--color-warn)",
                 color: attention.counts.hitl > 0 ? "var(--color-err)" : "var(--color-warn)",
@@ -1150,7 +1150,7 @@ export function RunsPanel() {
 
           {attentionOpen && attention && (
             <div
-              className="w-full basis-full max-md:order-9 rounded-[10px] border p-2 text-[12px]"
+              className="w-full basis-full max-md:order-9 rounded-[10px] border p-2 text-[length:var(--fs-sm)]"
               style={{ borderColor: "var(--color-border)", background: "var(--color-surface)", minWidth: 0, width: "100%" }}
             >
               {attention.items.map((it) => (
@@ -1160,7 +1160,7 @@ export function RunsPanel() {
                   style={{ borderColor: "var(--color-border)" }}
                 >
                   <span
-                    className="rounded-full px-1.5 py-0.5 text-[11px]"
+                    className="rounded-full px-1.5 py-0.5 text-[length:var(--fs-xs)]"
                     style={{
                       color:
                         it.kind === "hitl"
@@ -1233,9 +1233,9 @@ export function RunsPanel() {
         style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
       >
         {!loaded ? (
-          <div className="px-4 py-6 text-[13px]" style={{ color: "var(--color-muted)" }}>加载中…</div>
+          <div className="px-4 py-6 text-[length:var(--fs-base)]" style={{ color: "var(--color-muted)" }}>加载中…</div>
         ) : items.length === 0 ? (
-          <div className="px-4 py-10 text-center text-[13px]" style={{ color: "var(--color-muted)" }}>
+          <div className="px-4 py-10 text-center text-[length:var(--fs-base)]" style={{ color: "var(--color-muted)" }}>
             {q || status || agentId || kind !== "all" ? (
               <>
                 没有符合条件的记录。
@@ -1265,7 +1265,7 @@ export function RunsPanel() {
           <>
             {/* 表头：只在桌面出现（窄屏靠每行自身的小字标签） */}
             <div
-              className="hidden items-center gap-2.5 rounded-t-[9px] px-3 py-2 text-[12px] lg:flex"
+              className="hidden items-center gap-2.5 rounded-t-[9px] px-3 py-2 text-[length:var(--fs-sm)] lg:flex"
               style={{ color: "var(--color-muted)", background: "var(--color-surface-2)" }}
             >
               <input
@@ -1330,7 +1330,7 @@ export function RunsPanel() {
                     )}
 
                     <span
-                      className="w-[68px] shrink-0 whitespace-nowrap text-[12px] font-medium"
+                      className="w-[68px] shrink-0 whitespace-nowrap text-[length:var(--fs-sm)] font-medium"
                       style={{ color: STATUS_STYLE[it.status] ?? "" }}
                       title={`状态值：${it.status}`}
                     >
@@ -1340,7 +1340,7 @@ export function RunsPanel() {
 
                     <span className="flex w-[104px] shrink-0 items-center gap-1 overflow-hidden">
                       <span
-                        className="whitespace-nowrap rounded px-1.5 py-0.5 text-[12px]"
+                        className="whitespace-nowrap rounded px-1.5 py-0.5 text-[length:var(--fs-sm)]"
                         style={{
                           background: "color-mix(in srgb, var(--color-accent) 10%, transparent)",
                           color: "var(--color-accent)",
@@ -1350,7 +1350,7 @@ export function RunsPanel() {
                       </span>
                       {it.trigger && (
                         <span
-                          className="whitespace-nowrap rounded px-1.5 py-0.5 text-[12px]"
+                          className="whitespace-nowrap rounded px-1.5 py-0.5 text-[length:var(--fs-sm)]"
                           style={{
                             background: "color-mix(in srgb, var(--color-warn) 14%, transparent)",
                             color: "var(--color-warn)",
@@ -1368,7 +1368,7 @@ export function RunsPanel() {
 
                     {/* 主体：标题 + 一格小灰字（模型 · 耗时 · 分派/轮次计数） */}
                     <span className="min-w-0 flex-1 basis-[calc(100%-260px)]">
-                      <span className="block truncate text-[13px]">
+                      <span className="block truncate text-[length:var(--fs-base)]">
                         {it.session_id && !it.session_deleted ? (
                           <Link
                             href={`/exec?s=${it.session_id}${it.agent_id ? `&agent=${it.agent_id}` : ""}`}
@@ -1382,7 +1382,7 @@ export function RunsPanel() {
                         )}
                         {it.session_deleted && (
                           <span
-                            className="ml-1.5 inline-block rounded px-1.5 py-0.5 align-[1px] text-[11px] font-medium"
+                            className="ml-1.5 inline-block rounded px-1.5 py-0.5 align-[1px] text-[length:var(--fs-xs)] font-medium"
                             style={{
                               background: "color-mix(in srgb, var(--color-warn) 15%, transparent)",
                               color: "var(--color-warn)",
@@ -1394,7 +1394,7 @@ export function RunsPanel() {
                         )}
                       </span>
                       <span
-                        className="mt-0.5 block truncate text-[12px]"
+                        className="mt-0.5 block truncate text-[length:var(--fs-sm)]"
                         style={{ color: it.error ? "var(--color-err)" : "var(--color-muted)" }}
                       >
                         {it.error ? (
@@ -1412,7 +1412,7 @@ export function RunsPanel() {
                     </span>
 
                     <span
-                      className="w-[104px] shrink-0 text-right text-[12px] tabular-nums"
+                      className="w-[104px] shrink-0 text-right text-[length:var(--fs-sm)] tabular-nums"
                       style={{ color: "var(--color-muted)" }}
                     >
                       {new Date(it.at).toLocaleString("zh-CN", {
@@ -1424,7 +1424,7 @@ export function RunsPanel() {
                       })}
                     </span>
                     <span
-                      className="w-[104px] shrink-0 whitespace-nowrap text-right text-[12px] tabular-nums"
+                      className="w-[104px] shrink-0 whitespace-nowrap text-right text-[length:var(--fs-sm)] tabular-nums"
                       style={{ color: "var(--color-muted)" }}
                       title={`输入 ${it.tokens_in} · 输出 ${it.tokens_out}`}
                     >
@@ -1438,7 +1438,7 @@ export function RunsPanel() {
                       )}
                     </span>
                     <span
-                      className="w-[72px] shrink-0 text-right text-[12px] tabular-nums"
+                      className="w-[72px] shrink-0 text-right text-[length:var(--fs-sm)] tabular-nums"
                       title={
                         it.cost == null
                           ? it.model
@@ -1450,7 +1450,7 @@ export function RunsPanel() {
                     >
                       {fmt.money(it.cost, it.currency ?? "¥")}
                     </span>
-                    <span className="w-[14px] shrink-0 text-[12px]" style={{ color: "var(--color-muted)" }}>
+                    <span className="w-[14px] shrink-0 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                       {isOpen ? "▾" : "▸"}
                     </span>
                   </div>
@@ -1464,7 +1464,7 @@ export function RunsPanel() {
                       style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
                     >
                       {it.summary && (
-                        <div className="mb-2 text-[12px] leading-[1.65]" style={{ color: "var(--color-muted)" }}>
+                        <div className="mb-2 text-[length:var(--fs-sm)] leading-[1.65]" style={{ color: "var(--color-muted)" }}>
                           {it.summary}
                         </div>
                       )}
@@ -1472,7 +1472,7 @@ export function RunsPanel() {
                       {/* 编排：步骤清单 + 待你确认的那一步（就地允许/拒绝，点了编排接着跑） */}
                       {d?.orch ? (
                         <div className="mb-2.5 space-y-1.5">
-                          <div className="flex flex-wrap items-center gap-x-2 text-[12px]" style={{ color: "var(--color-muted)" }}>
+                          <div className="flex flex-wrap items-center gap-x-2 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                             <span>执行步骤（{d.orch.steps.length} 步）</span>
                             {/* 这次跑的是哪一份编排：结构指纹 + 每位助手版本（助手会被改，没有这行就说不清当时是什么样） */}
                             {(() => {
@@ -1494,7 +1494,7 @@ export function RunsPanel() {
                           {d.orch.steps.map((st, i) => (
                             <div key={st.run_id} className="space-y-1.5">
                               <div
-                                className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[6px] border px-2 py-1 text-[12px]"
+                                className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[6px] border px-2 py-1 text-[length:var(--fs-sm)]"
                                 style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
                               >
                                 <span className="mono w-5 shrink-0" style={{ color: "var(--color-muted)" }}>
@@ -1532,7 +1532,7 @@ export function RunsPanel() {
                           ))}
                           {typeof d.orch.output?.content === "string" && d.orch.output.content.trim() ? (
                             <div
-                              className="whitespace-pre-wrap break-words rounded-[6px] border p-2 text-[12px]"
+                              className="whitespace-pre-wrap break-words rounded-[6px] border p-2 text-[length:var(--fs-sm)]"
                               style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
                             >
                               {String(d.orch.output.content)}
@@ -1541,7 +1541,7 @@ export function RunsPanel() {
                         </div>
                       ) : null}
                       {it.error && (
-                        <div className="mb-2 whitespace-pre-wrap break-words text-[12px] leading-[1.65]" style={{ color: "var(--color-err)" }}>
+                        <div className="mb-2 whitespace-pre-wrap break-words text-[length:var(--fs-sm)] leading-[1.65]" style={{ color: "var(--color-err)" }}>
                           ✗ {it.error}
                         </div>
                       )}
@@ -1549,7 +1549,7 @@ export function RunsPanel() {
                       {/* 分派出去的每一路 / 这个会话的每一轮 —— 就地列出，可单独重跑 */}
                       {it.fanout && (
                         <div className="mb-2">
-                          <div className="mb-1 text-[12px]" style={{ color: "var(--color-muted)" }}>
+                          <div className="mb-1 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                             {it.kind === "chat"
                               ? `这个对话的 ${it.fanout.total} 轮`
                               : `这一步分派出去的 ${it.fanout.total} 路`}
@@ -1562,7 +1562,7 @@ export function RunsPanel() {
                               只有真分派（不是会话轮次）才画，图是自动布局出来的。 */}
                           {dispatchChain(it, agentNameOf) && (
                             <div className="mb-1.5">
-                              <div className="mb-1 text-[12px]" style={{ color: "var(--color-muted)" }}>
+                              <div className="mb-1 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                                 调用链（谁派给谁）
                               </div>
                               <Mermaid code={dispatchChain(it, agentNameOf)!} />
@@ -1573,7 +1573,7 @@ export function RunsPanel() {
                               <div
                                 key={f.index}
                                 className={
-                                  "flex items-center gap-2 rounded-[6px] border px-2 py-1 text-[12px]"
+                                  "flex items-center gap-2 rounded-[6px] border px-2 py-1 text-[length:var(--fs-sm)]"
                                   + (it.kind === "chat" && d?.turnRunId === f.run_id
                                     ? " ring-1"
                                     : "")
@@ -1614,7 +1614,7 @@ export function RunsPanel() {
                                 <span className="min-w-0 flex-1 truncate">{f.label || `第 ${f.index + 1} 项`}</span>
                                 {f.agent_name && (
                                   <span
-                                    className="shrink-0 rounded px-1.5 py-px text-[10.5px]"
+                                    className="shrink-0 rounded px-1.5 py-px text-[length:var(--fs-xs)]"
                                     title={`这一路由「${f.agent_name}」执行`}
                                     style={{
                                       background: "color-mix(in srgb, var(--color-accent) 12%, transparent)",
@@ -1640,7 +1640,7 @@ export function RunsPanel() {
                                 {f.status !== "ok" && (
                                   <button
                                     type="button"
-                                    className="shrink-0 rounded-[5px] px-1.5 py-[1px] text-[12px]"
+                                    className="shrink-0 rounded-[5px] px-1.5 py-[1px] text-[length:var(--fs-sm)]"
                                     style={{
                                       color: retryArm === f.index + ":" + it.id ? "var(--color-err)" : "var(--color-accent)",
                                       border: `1px solid color-mix(in srgb, ${retryArm === f.index + ":" + it.id ? "var(--color-err)" : "var(--color-accent)"} 34%, transparent)`,
@@ -1677,15 +1677,15 @@ export function RunsPanel() {
                             className="flex items-center gap-2 rounded-[8px] px-2.5 py-1.5"
                             style={{ borderColor: "var(--color-border)" }}
                           >
-                            <span className="text-[12px] font-medium" style={{ color: "var(--color-muted)" }}>
+                            <span className="text-[length:var(--fs-sm)] font-medium" style={{ color: "var(--color-muted)" }}>
                               {it.kind === "chat" && d?.turnRunId ? "执行过程（当前轮）" : "执行过程"}
                             </span>
                             {it.kind === "chat" && d?.turnRunId ? (
-                              <span className="mono text-[12px]" style={{ color: "var(--color-muted)" }}>
+                              <span className="mono text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                                 {d.turnRunId}
                               </span>
                             ) : it.id && it.kind !== "llm_test" ? (
-                              <span className="mono text-[12px]" style={{ color: "var(--color-muted)" }}>
+                              <span className="mono text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                                 {it.id}
                               </span>
                             ) : null}
@@ -1697,7 +1697,7 @@ export function RunsPanel() {
                               d?.turnRunId ? (
                                 <ExecutionTimeline runId={d.turnRunId} compact />
                               ) : (
-                                <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+                                <div className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                                   在上面的轮次里点一轮，看它的执行过程。
                                 </div>
                               )
@@ -1718,7 +1718,7 @@ export function RunsPanel() {
         {/* 分页：一页 50 条。不摆页码 —— 记录一直在新增，页码会错位，
             用户要的其实是"还有没有、还有多少"。 */}
         {!loading && items.length > 0 && (
-          <div className="flex items-center justify-center gap-3 py-3 text-[12px]">
+          <div className="flex items-center justify-center gap-3 py-3 text-[length:var(--fs-sm)]">
             {hasMore ? (
               <>
                 <button

@@ -77,7 +77,7 @@ export function MemoryPicker({
       title="记忆"
       hint="勾上生效，点内容填进输入框"
       extra={
-        <span className="text-[11px] tabular-nums" style={{ color: "var(--color-muted)" }}>
+        <span className="text-[length:var(--fs-xs)] tabular-nums" style={{ color: "var(--color-muted)" }}>
           {busy ? "…" : `${activeCount} / ${items.length}`}
         </span>
       }
@@ -86,7 +86,7 @@ export function MemoryPicker({
     >
       <div className="px-3.5 pb-2">
         <input
-          className="input h-9 w-full text-[13px]"
+          className="input h-9 w-full text-[length:var(--fs-base)]"
           value={q}
           placeholder="搜内容，比如：部署 端口 偏好"
           onChange={(e) => setQ(e.target.value)}
@@ -94,7 +94,7 @@ export function MemoryPicker({
       </div>
 
       {items.length === 0 ? (
-        <p className="px-3.5 py-8 text-center text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+        <p className="px-3.5 py-8 text-center text-[length:var(--fs-base)]" style={{ color: "var(--color-muted)" }}>
           {busy ? "正在找…" : q.trim() ? "没有匹配的记忆" : "还没有记忆"}
         </p>
       ) : (
@@ -142,12 +142,12 @@ export function MemoryPicker({
                   title="填进输入框"
                 >
                   <span
-                    className="text-[12px] leading-[1.5] line-clamp-2"
+                    className="text-[length:var(--fs-sm)] leading-[1.5] line-clamp-2"
                     style={{ color: on ? "var(--color-text)" : "var(--color-muted)" }}
                   >
                     {m.content}
                   </span>
-                  <span className="mt-1 flex items-center gap-1.5 text-[10.5px]" style={{ color: "var(--color-muted)" }}>
+                  <span className="mt-1 flex items-center gap-1.5 text-[length:var(--fs-xs)]" style={{ color: "var(--color-muted)" }}>
                     <span className="px-1.5 py-px rounded" style={{ background: "var(--color-surface-2)" }}>
                       {m.layer === "user" ? "关于你" : "助手笔记"}
                     </span>

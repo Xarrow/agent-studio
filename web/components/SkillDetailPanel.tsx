@@ -213,9 +213,9 @@ export function SkillDetailPanel({
       {/* 文件位置：以前只写在 title 里，触屏根本看不到；这里直接显示路径 + 一键复制 */}
       {skill.location && (
         <div className="mb-3 rounded-[var(--radius-md)] px-2.5 py-2" style={{ background: "var(--surface-2)" }}>
-          <div className="mb-1 text-[11px]" style={{ color: "var(--color-text-3)" }}>文件位置</div>
+          <div className="mb-1 text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>文件位置</div>
           <div className="flex items-center gap-2">
-            <span className="mono min-w-0 flex-1 truncate text-[11.5px]" style={{ color: "var(--color-text-2)" }} title={skill.location}>
+            <span className="mono min-w-0 flex-1 truncate text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-2)" }} title={skill.location}>
               {skill.location}
             </span>
             <button
@@ -236,7 +236,7 @@ export function SkillDetailPanel({
       {/* 谁在用：技能"装了但没人挂"和"正在被三个助手用"是两种状态，
           页面上必须一眼能分出来，不用去助手页一个个翻 */}
       <div className="mb-3">
-        <div className="mb-1 text-[11.5px]" style={{ color: "var(--color-text-3)" }}>
+        <div className="mb-1 text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-3)" }}>
           {agents === undefined
             ? "读取使用情况…"
             : agents.length === 0
@@ -249,7 +249,7 @@ export function SkillDetailPanel({
               <a
                 key={a.id}
                 href={`/agents/detail?id=${a.id}`}
-                className="inline-flex items-center gap-1 rounded-full px-2 py-[3px] text-[11.5px] transition-colors hover:bg-[var(--bg-selected)]"
+                className="inline-flex items-center gap-1 rounded-full px-2 py-[3px] text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--bg-selected)]"
                 style={{
                   background: "var(--bg-hover)",
                   color: a.enabled ? "var(--color-text-2)" : "var(--color-text-3)",
@@ -286,7 +286,7 @@ function SkillFiles({
 
   if (names.length === 0) {
     return (
-      <p className="mb-3 text-[11.5px]" style={{ color: "var(--color-text-3)" }}>
+      <p className="mb-3 text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-3)" }}>
         这个技能只有 SKILL.md，没有额外附件。
       </p>
     );
@@ -313,7 +313,7 @@ function SkillFiles({
 
   return (
     <div className="mb-3">
-      <div className="mb-1 flex items-center gap-2 text-[11.5px]" style={{ color: "var(--color-text-3)" }}>
+      <div className="mb-1 flex items-center gap-2 text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-3)" }}>
         <span>
           附件 {names.length} 个{total > 0 ? ` · ${(total / 1024).toFixed(0)}KB` : ""}
         </span>
@@ -332,21 +332,21 @@ function SkillFiles({
               onClick={() => void preview(n)}
               title={n}
             >
-              <span className="mono min-w-0 flex-1 truncate text-[11.5px]" style={{ color: "var(--color-text-2)" }}>
+              <span className="mono min-w-0 flex-1 truncate text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-2)" }}>
                 {n}
               </span>
               {sizes[n] ? (
-                <span className="shrink-0 text-[10.5px] tabular-nums" style={{ color: "var(--color-text-3)" }}>
+                <span className="shrink-0 text-[length:var(--fs-xs)] tabular-nums" style={{ color: "var(--color-text-3)" }}>
                   {sizes[n] > 1024 ? `${(sizes[n] / 1024).toFixed(1)}KB` : `${sizes[n]}B`}
                 </span>
               ) : null}
-              <span className="shrink-0 text-[10.5px]" style={{ color: "var(--color-text-3)" }}>
+              <span className="shrink-0 text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
                 {open === n ? "收起" : "预览"}
               </span>
             </button>
             {open === n && (
               <pre
-                className="mono mt-1 max-h-64 overflow-auto rounded-[var(--radius-sm)] p-2 text-[11px] leading-relaxed"
+                className="mono mt-1 max-h-64 overflow-auto rounded-[var(--radius-sm)] p-2 text-[length:var(--fs-xs)] leading-relaxed"
                 style={{ background: "var(--surface-2)", color: "var(--color-text-2)" }}
               >
                 {err ? `读取失败：${err}` : body?.path === n ? body.text || "（空文件）" : "读取中…"}
@@ -356,7 +356,7 @@ function SkillFiles({
         ))}
       </div>
       {!all && names.length > 8 && (
-        <button className="mt-1 text-[11px]" style={{ color: "var(--color-text-3)" }} onClick={() => setAll(true)}>
+        <button className="mt-1 text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }} onClick={() => setAll(true)}>
           还有 {names.length - 8} 个…
         </button>
       )}

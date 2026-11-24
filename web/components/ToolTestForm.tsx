@@ -84,7 +84,7 @@ export function ToolTestForm({ tool, onDone }: { tool: Tool; onDone: (out: strin
         <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => void submit()}>
           {busy ? "测试中…" : "试运行（无参数）"}
         </button>
-        <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+        <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
           这个工具不需要参数
         </span>
       </div>
@@ -94,13 +94,13 @@ export function ToolTestForm({ tool, onDone }: { tool: Tool; onDone: (out: strin
   return (
     <div className="mt-2.5 border-t pt-2.5" style={{ borderColor: "var(--color-border)" }}>
       <div className="mb-2 flex items-center gap-2">
-        <span className="text-[12px] font-medium">试运行参数</span>
-        <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+        <span className="text-[length:var(--fs-sm)] font-medium">试运行参数</span>
+        <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
           按签名自动生成 —— 不用写 JSON
         </span>
         <button
           type="button"
-          className="ml-auto inline-flex min-h-[36px] items-center text-[12px] underline lg:min-h-0"
+          className="ml-auto inline-flex min-h-[36px] items-center text-[length:var(--fs-sm)] underline lg:min-h-0"
           style={{ color: "var(--color-muted)" }}
           onClick={() => setJsonMode((v) => !v)}
         >
@@ -121,10 +121,10 @@ export function ToolTestForm({ tool, onDone }: { tool: Tool; onDone: (out: strin
         <div className="flex flex-col gap-1.5">
           {fields.map((f) => (
             <label key={f.name} className="flex flex-wrap items-center gap-2">
-              <span className="w-[130px] shrink-0 text-[12px] mono truncate" title={f.description}>
+              <span className="w-[130px] shrink-0 text-[length:var(--fs-sm)] mono truncate" title={f.description}>
                 {f.name}
                 {f.required && <span style={{ color: "var(--color-err)" }}> *</span>}
-                <span className="ml-1 text-[10.5px]" style={{ color: "var(--color-muted)" }}>
+                <span className="ml-1 text-[length:var(--fs-xs)]" style={{ color: "var(--color-muted)" }}>
                   {f.type}
                 </span>
               </span>
@@ -155,7 +155,7 @@ export function ToolTestForm({ tool, onDone }: { tool: Tool; onDone: (out: strin
                 />
               ) : (
                 <input
-                  className="input mono flex-1 min-w-0 text-[12px]"
+                  className="input mono flex-1 min-w-0 text-[length:var(--fs-sm)]"
                   type={f.type === "number" ? "number" : "text"}
                   value={values[f.name] ?? ""}
                   placeholder={f.description || (f.required ? "必填" : "可空")}
@@ -171,7 +171,7 @@ export function ToolTestForm({ tool, onDone }: { tool: Tool; onDone: (out: strin
         <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => void submit()}>
           {busy ? "测试中…" : "试运行"}
         </button>
-        <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+        <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
           只读工具会真实执行（限制在工作目录内）；写/执行类工具会被跳过。
         </span>
       </div>

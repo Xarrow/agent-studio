@@ -171,7 +171,7 @@ export function OrchestrationSteps({
   return (
     <div className="space-y-2">
       {/* ① 汇总一行：一行数字代替一堆卡片 */}
-      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12px] text-[var(--color-muted)]">
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[length:var(--fs-sm)] text-[var(--color-muted)]">
         <span className="mono text-[var(--color-text)]">{orch.steps.length} 步</span>
         {wide > 1 && <span>· 并行 {wide} 路</span>}
         <span>· {dur(span.end - span.start)}</span>
@@ -206,7 +206,7 @@ export function OrchestrationSteps({
           return (
             <div key={`g${gi}`} className="space-y-1">
               {parallel && (
-                <div className="flex items-center gap-2 text-[11px] text-[var(--color-muted)] pl-1">
+                <div className="flex items-center gap-2 text-[length:var(--fs-xs)] text-[var(--color-muted)] pl-1">
                   <span className="mono">▾ 并行 {g.steps.length} 路</span>
                   <span>· {dur(g.end - g.start)}</span>
                   <span>
@@ -227,7 +227,7 @@ export function OrchestrationSteps({
                       onClick={() => setOpenId(open ? null : st.run_id)}
                       className="w-full text-left rounded-md px-2.5 py-2 bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-3)] transition-colors min-h-[44px] lg:min-h-0"
                     >
-                      <div className="flex items-center gap-2 text-[12px]">
+                      <div className="flex items-center gap-2 text-[length:var(--fs-sm)]">
                         <span className="mono text-[var(--color-muted)] w-6 shrink-0">{idx}</span>
                         <span
                           className="h-1.5 w-1.5 shrink-0 rounded-full"
@@ -248,7 +248,7 @@ export function OrchestrationSteps({
                         <span className="text-[var(--color-muted)] truncate flex-1 min-w-0">
                           {st.error ? st.error : firstLine(st.output_text)}
                         </span>
-                        <span className="mono text-[11px] text-[var(--color-muted)] shrink-0">
+                        <span className="mono text-[length:var(--fs-xs)] text-[var(--color-muted)] shrink-0">
                           {dur((st.ended_at ?? now) - st.started_at)}
                         </span>
                       </div>
@@ -286,18 +286,18 @@ export function OrchestrationSteps({
                       <div className="mt-1 space-y-1.5 rounded-md p-2.5 bg-[var(--color-surface-1)] border border-[var(--color-border)]">
                         {st.error && (
                           <div
-                            className="rounded p-2 text-[12px] break-all"
+                            className="rounded p-2 text-[length:var(--fs-sm)] break-all"
                             style={{ background: "var(--tint-err-bg)", color: "var(--color-err)" }}
                           >
                             {st.error}
                           </div>
                         )}
-                        <div className="text-[11px] text-[var(--color-muted)]">领到的任务</div>
-                        <div className="text-[12px] whitespace-pre-wrap break-words max-h-40 overflow-auto">
+                        <div className="text-[length:var(--fs-xs)] text-[var(--color-muted)]">领到的任务</div>
+                        <div className="text-[length:var(--fs-sm)] whitespace-pre-wrap break-words max-h-40 overflow-auto">
                           {st.input_text || "—"}
                         </div>
-                        <div className="text-[11px] text-[var(--color-muted)]">产出</div>
-                        <div className="text-[12px] max-h-72 overflow-auto">
+                        <div className="text-[length:var(--fs-xs)] text-[var(--color-muted)]">产出</div>
+                        <div className="text-[length:var(--fs-sm)] max-h-72 overflow-auto">
                           {st.output_text ? <Markdown text={st.output_text} /> : "—"}
                         </div>
                         <div className="flex items-center gap-2 pt-1">
@@ -306,12 +306,12 @@ export function OrchestrationSteps({
                               type="button"
                               disabled={busy === st.run_id}
                               onClick={() => void rerun(st.run_id)}
-                              className="text-[12px] px-2.5 py-1 rounded border border-[var(--color-border)] hover:bg-[var(--color-surface-2)] disabled:opacity-50 min-h-[36px]"
+                              className="text-[length:var(--fs-sm)] px-2.5 py-1 rounded border border-[var(--color-border)] hover:bg-[var(--color-surface-2)] disabled:opacity-50 min-h-[36px]"
                             >
                               {busy === st.run_id ? "重跑中…" : "重跑这一步"}
                             </button>
                           )}
-                          <span className="mono text-[11px] text-[var(--color-muted)]">{st.run_id}</span>
+                          <span className="mono text-[length:var(--fs-xs)] text-[var(--color-muted)]">{st.run_id}</span>
                         </div>
                       </div>
                     )}
@@ -322,12 +322,12 @@ export function OrchestrationSteps({
           );
         })}
         {orch.steps.length === 0 && (
-          <div className="text-[12px] text-[var(--color-muted)] p-2">还没有步骤（或这次编排只跑了一个助手）。</div>
+          <div className="text-[length:var(--fs-sm)] text-[var(--color-muted)] p-2">还没有步骤（或这次编排只跑了一个助手）。</div>
         )}
       </div>
 
-      {note && <div className="text-[11px] text-[var(--color-muted)]">{note}</div>}
-      <div className="text-[11px] text-[var(--color-muted)]">
+      {note && <div className="text-[length:var(--fs-xs)] text-[var(--color-muted)]">{note}</div>}
+      <div className="text-[length:var(--fs-xs)] text-[var(--color-muted)]">
         {doneCount}/{orch.steps.length} 步完成 · 点任一行看这一步的输入与产出
       </div>
     </div>

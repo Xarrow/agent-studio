@@ -514,11 +514,11 @@ input[type="number"] {
   main {
     line-height: 1.6;
   }
-  [class~="text-[12px]"] {
-    font-size: 12.5px;
-  }
-  [class~="text-[13.5px]"] {
-    font-size: 14px;
+  /* 字号统一走令牌之后，手机端的"抬半档"直接改令牌值 —— 原来靠匹配
+     `[class~="text-[12px]"]` 这种字面类名，令牌化之后就匹配不到了。
+     12 → 12.5 只抬次要字号；13.5 → 14 已由 --fs-md 本身承担。 */
+  :root {
+    --fs-sm: 12.5px;
   }
   /* 元信息行（时间 / 模型 / token / 耗时）常常 4~6 段挤一行：给行间距 */
   [class*="gap-y-0.5"] {

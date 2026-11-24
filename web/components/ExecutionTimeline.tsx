@@ -99,21 +99,21 @@ export function ExecutionTimeline({
 
   if (loading) {
     return (
-      <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+      <div className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
         读取执行过程…
       </div>
     );
   }
   if (error) {
     return (
-      <div className="text-[12px]" style={{ color: "var(--color-err)" }}>
+      <div className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-err)" }}>
         执行过程读取失败：{error}
       </div>
     );
   }
   if (!data || data.items.length === 0) {
     return (
-      <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+      <div className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
         这次执行没有留下过程记录（很可能是刚建就失败，或运行时没上报事件）。
       </div>
     );
@@ -123,13 +123,13 @@ export function ExecutionTimeline({
     <div>
       {!compact && (
         <div className="mb-2 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          <span className="text-[12px] font-medium">{title}</span>
-          <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+          <span className="text-[length:var(--fs-sm)] font-medium">{title}</span>
+          <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
             {headline(data)}
           </span>
           <button
             type="button"
-            className="ml-auto rounded-[6px] border px-2 py-0.5 text-[12px]"
+            className="ml-auto rounded-[6px] border px-2 py-0.5 text-[length:var(--fs-sm)]"
             style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
             onClick={() => void load()}
             title="重新读一遍（执行还在跑就刷新到最新）"
@@ -141,7 +141,7 @@ export function ExecutionTimeline({
 
       {agents.length > 1 && (
         <div
-          className="mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px]"
+          className="mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[length:var(--fs-sm)]"
           style={{ color: "var(--color-muted)" }}
         >
           <span>按助手分色</span>
@@ -172,7 +172,7 @@ export function ExecutionTimeline({
               >
                 {/* 层级：缩进表达"挂在哪一轮下面"，不做树控件 */}
                 <span
-                  className={`flex min-w-0 items-center gap-1.5 text-[12px] ${
+                  className={`flex min-w-0 items-center gap-1.5 text-[length:var(--fs-sm)] ${
                     compact ? "w-[120px]" : "w-[124px] md:w-[190px]"
                   }`}
                   style={{ paddingLeft: depth * 12 }}
@@ -201,13 +201,13 @@ export function ExecutionTimeline({
                 </span>
 
                 <span
-                  className="mono shrink-0 text-right text-[12px]"
+                  className="mono shrink-0 text-right text-[length:var(--fs-sm)]"
                   style={{ width: 46, color: "var(--color-muted)" }}
                 >
                   {fmtSeconds(item.duration_ms)}
                 </span>
                 <span
-                  className="shrink-0 text-[12px]"
+                  className="shrink-0 text-[length:var(--fs-sm)]"
                   style={{ width: 14, color: "var(--color-muted)" }}
                   aria-hidden
                 >
@@ -218,7 +218,7 @@ export function ExecutionTimeline({
               {/* 一句话摘要：不点也能判断"是不是这条"（信息默认可见） */}
               {!expanded && (
                 <div
-                  className="truncate pb-1 text-[12px]"
+                  className="truncate pb-1 text-[length:var(--fs-sm)]"
                   style={{ paddingLeft: depth * 12 + 16, color: "var(--color-muted)" }}
                 >
                   {digest(item)}
@@ -271,13 +271,13 @@ function ItemDetail({
         />
         {callId ? (
           <div className="rounded-[6px] p-2" style={{ background: "var(--color-surface)" }}>
-            <div className="mb-1 text-[12px]" style={{ color: "var(--color-muted)" }}>
+            <div className="mb-1 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
               这次请求发了什么、回了什么
             </div>
             <LlmCallPayloadView runId={runId} callId={callId} />
           </div>
         ) : (
-          <p className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+          <p className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
             这一次没有关联到请求原文明细（老记录或运行时未上报）。
           </p>
         )}
@@ -288,21 +288,21 @@ function ItemDetail({
   if (item.kind === "think") {
     return (
       <div className="space-y-1.5">
-        <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+        <div className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
           思考 {a.chars ? `${fmt.int(a.chars)} 字` : ""} · {fmtSeconds(item.duration_ms)}
         </div>
         {busy ? (
-          <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+          <div className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
             读取全文…
           </div>
         ) : text?.text ? (
-          <pre className="mono max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-[6px] p-2 text-[12px]"
+          <pre className="mono max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-[6px] p-2 text-[length:var(--fs-sm)]"
                style={{ background: "var(--color-surface)" }}>
             {text.text}
             {text.truncated && "\n…（已截断）"}
           </pre>
         ) : (
-          <pre className="mono max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-[6px] p-2 text-[12px]"
+          <pre className="mono max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-[6px] p-2 text-[length:var(--fs-sm)]"
                style={{ background: "var(--color-surface)" }}>
             {String(a.preview || "（没有留下思考内容）")}
           </pre>
@@ -328,15 +328,15 @@ function ItemDetail({
         ) : null}
         {a.error ? <Block label="报错" text={String(a.error)} error /> : null}
         <div>
-          <div className="mb-1 text-[12px]" style={{ color: "var(--color-muted)" }}>
+          <div className="mb-1 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
             结果
           </div>
           {busy ? (
-            <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+            <div className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
               读取完整结果…
             </div>
           ) : (
-            <pre className="mono max-h-60 overflow-auto whitespace-pre-wrap break-words rounded-[6px] p-2 text-[12px]"
+            <pre className="mono max-h-60 overflow-auto whitespace-pre-wrap break-words rounded-[6px] p-2 text-[length:var(--fs-sm)]"
                  style={{ background: "var(--color-surface)" }}>
               {text?.text || String(a.result_preview || "（没有留下结果）")}
               {text?.truncated && "\n…（已截断）"}
@@ -382,7 +382,7 @@ function ItemDetail({
   }
 
   return (
-    <pre className="mono whitespace-pre-wrap break-words text-[12px]" style={{ color: "var(--color-muted)" }}>
+    <pre className="mono whitespace-pre-wrap break-words text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
       {JSON.stringify(a, null, 2)}
     </pre>
   );
@@ -390,7 +390,7 @@ function ItemDetail({
 
 function Meta({ rows }: { rows: [string, string][] }) {
   return (
-    <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[12px]">
+    <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[length:var(--fs-sm)]">
       {rows.map(([k, v]) => (
         <div key={k} className="contents">
           <span style={{ color: "var(--color-muted)" }}>{k}</span>
@@ -404,11 +404,11 @@ function Meta({ rows }: { rows: [string, string][] }) {
 function Block({ label, text, error }: { label: string; text: string; error?: boolean }) {
   return (
     <div>
-      <div className="mb-1 text-[12px]" style={{ color: "var(--color-muted)" }}>
+      <div className="mb-1 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
         {label}
       </div>
       <pre
-        className="mono max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-[6px] p-2 text-[12px]"
+        className="mono max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-[6px] p-2 text-[length:var(--fs-sm)]"
         style={{ background: "var(--color-surface)", color: error ? "var(--color-err)" : undefined }}
       >
         {text}

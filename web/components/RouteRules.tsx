@@ -128,11 +128,11 @@ export function RouteRules({
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-2 px-4 py-3 text-left"
       >
-        <span className="text-[14px] font-medium">收这些话</span>
-        <span className="truncate text-[12px]" style={{ color: "var(--color-muted)" }}>
+        <span className="text-[length:var(--fs-md)] font-medium">收这些话</span>
+        <span className="truncate text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
           {rules.length ? `${rules.length} 条规则` : "没配 —— 靠名字和能力去猜"}
         </span>
-        <span className="ml-auto shrink-0 text-[12px]" style={{ color: "var(--color-accent)" }}>
+        <span className="ml-auto shrink-0 text-[length:var(--fs-sm)]" style={{ color: "var(--color-accent)" }}>
           {open ? "收起" : "展开"}
         </span>
       </button>
@@ -159,7 +159,7 @@ export function RouteRules({
               添加
             </button>
           </div>
-          <p className="mt-1.5 text-[11.5px] leading-relaxed" style={{ color: "var(--color-muted)" }}>
+          <p className="mt-1.5 text-[length:var(--fs-sm)] leading-relaxed" style={{ color: "var(--color-muted)" }}>
             命中其中任意一个词，这句话就归它；以 <span className="mono">re:</span> 开头按正则处理
             （如 <span className="mono">re:第\d+周</span>）。
           </p>
@@ -169,7 +169,7 @@ export function RouteRules({
               {rules.map((r) => (
                 <span
                   key={r.id}
-                  className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[12px]"
+                  className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[length:var(--fs-sm)]"
                   style={{ borderColor: "var(--color-border)", background: "var(--color-bg)" }}
                 >
                   {r.kind === "regex" && (
@@ -184,7 +184,7 @@ export function RouteRules({
                     type="button"
                     title="删掉这条"
                     onClick={() => void remove(r)}
-                    className="px-0.5 text-[13px] leading-none"
+                    className="px-0.5 text-[length:var(--fs-base)] leading-none"
                     style={{ color: "var(--color-muted)" }}
                   >
                     ×
@@ -218,10 +218,10 @@ export function RouteRules({
             </div>
 
             {decision && (
-              <div className="mt-2 text-[12px] leading-relaxed">
+              <div className="mt-2 text-[length:var(--fs-sm)] leading-relaxed">
                 <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                   <span
-                    className="rounded-full px-1.5 py-0.5 text-[11px]"
+                    className="rounded-full px-1.5 py-0.5 text-[length:var(--fs-xs)]"
                     style={{ color: CONF[decision.confidence].color, background: "var(--color-bg)" }}
                   >
                     {CONF[decision.confidence].label}

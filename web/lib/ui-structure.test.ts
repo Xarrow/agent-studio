@@ -307,10 +307,14 @@ test("手机排版的护栏（行距和次要字号别再退回 1.38）", () => 
   assert.match(css, /main\s*\{\s*line-height:\s*1\.6;/, "手机上正文行距要 1.6");
   assert.match(css, /\[class~="leading-snug"\][\s\S]{0,120}?line-height:\s*1\.6/, "说明类的紧凑行距手机上要放宽");
   // 次要字号 12 → 12.5（12px 的中文在手机上偏小）
-  assert.match(css, /\[class~="text-\[12px\]"\]\s*\{\s*font-size:\s*12\.5px/, "次要字号手机上要抬到 12.5");
+  assert.match(css, /--fs-sm:\s*12\.5px/, "次要字号手机上要抬到 12.5（走令牌覆盖）");
   // 页头说明：手机上 13px + 宽松行距
   const kit = read("components/ui/kit.tsx");
-  assert.match(kit, /max-md:text-\[13px\] max-md:leading-relaxed/, "页头说明手机上要 13px/宽松行距");
+  assert.match(
+    kit,
+    /max-md:text-\[length:var\(--fs-base\)\] max-md:leading-relaxed/,
+    "页头说明手机上要 13px/宽松行距",
+  );
 });
 
 /**
@@ -344,10 +348,10 @@ test("发送气泡：短消息胶囊、长消息圆角+尾巴，尺寸与字阶�
   // 2026-10 对标主流对话：正文统一 15px / 行高 1.8
   assert.match(
     chat,
-    /text-\[var\(--color-text\)\] w-fit max-w-full whitespace-pre-wrap \[word-break:break-all\] ml-auto text-\[15px\]/,
+    /text-\[var\(--color-text\)\] w-fit max-w-full whitespace-pre-wrap \[word-break:break-all\] ml-auto text-\[length:var\(--fs-lg\)\]/,
     "气泡 15px、贴右、宽度撑到外层上限、长 URL 可断行",
   );
-  assert.match(chat, /text-\[15px\] leading-\[1\.8\] text-\[var\(--color-text\)\] max-w-\[46rem\]/, "助手正文 15px/1.8 且封顶 46rem");
+  assert.match(chat, /text-\[length:var\(--fs-lg\)\] leading-\[1\.8\] text-\[var\(--color-text\)\] max-w-\[46rem\]/, "助手正文 15px/1.8 且封顶 46rem");
   assert.match(chat, /max-w-\[88%\] max-md:max-w-\[90%\]/, "外层给气泡 88%（桌面）/90%（手机）");
 });
 
@@ -501,8 +505,8 @@ test("对话正文：15px/1.8，Markdown 走 chat 档", () => {
   const md = read("components/Markdown.tsx");
   assert.match(chat, /<Markdown text=\{content\} chat \/>/, "对话正文用 chat 档");
   assert.match(md, /chat = false \}: \{ text: string; chat\?: boolean \}/, "Markdown 要能切档");
-  assert.match(md, /chat\s*\?\s*"my-2 text-\[15px\] leading-\[1\.8\] break-words"/, "chat 档段落 15px/1.8");
-  assert.match(md, /: "my-1\.5 text-\[12px\] leading-\[1\.75\] break-words"/, "面板档保持 12px");
+  assert.match(md, /chat\s*\?\s*"my-2 text-\[length:var\(--fs-lg\)\] leading-\[1\.8\] break-words"/, "chat 档段落 15px/1.8");
+  assert.match(md, /: "my-1\.5 text-\[length:var\(--fs-sm\)\] leading-\[1\.75\] break-words"/, "面板档保持 12px");
 });
 
 test("自动跟随：贴底才跟，否则给「最新」", () => {

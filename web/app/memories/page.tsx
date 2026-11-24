@@ -385,7 +385,7 @@ export default function MemoriesPage() {
         <div className="card mb-3 p-3">
           <textarea
             autoFocus
-            className="input mono text-[12px]"
+            className="input mono text-[length:var(--fs-sm)]"
             rows={2}
             placeholder="例如：用户偏好中文回复，不要 emoji。"
             value={draft}
@@ -397,14 +397,14 @@ export default function MemoriesPage() {
             </button>
             <button
               type="button"
-              className="text-[12px]"
+              className="text-[length:var(--fs-sm)]"
               style={{ color: "var(--color-muted)" }}
               data-tap
               onClick={() => setShowMore((v) => !v)}
             >
               {showMore ? "▾" : "▸"} 更多选项
             </button>
-            <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+            <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
               所有助手共用
             </span>
           </div>
@@ -526,14 +526,14 @@ export default function MemoriesPage() {
           actions={
             <>
               {/* 候选的"确认使用"与在用的"启用"是同一件事，只是说法不同 */}
-              <button className="btn btn-primary text-[12px]" onClick={() => void bulk("active")}>
+              <button className="btn btn-primary text-[length:var(--fs-sm)]" onClick={() => void bulk("active")}>
                 {pickedAllCandidates(items, picked) ? "确认使用" : "启用"}
               </button>
-              <button className="btn text-[12px]" onClick={() => void bulk("archived")}>
+              <button className="btn text-[length:var(--fs-sm)]" onClick={() => void bulk("archived")}>
                 停用
               </button>
               <button
-                className="btn text-[12px]"
+                className="btn text-[length:var(--fs-sm)]"
                 style={{ color: "var(--color-err)" }}
                 onClick={() => void bulkDelete()}
               >
@@ -547,7 +547,7 @@ export default function MemoriesPage() {
       {/* 一行一对象：一条记忆一行；点行就地展开全部明细 */}
       <RowList>
         {!loaded ? (
-          <div className="px-4 py-6 text-[13px]" style={{ color: "var(--color-muted)" }}>
+          <div className="px-4 py-6 text-[length:var(--fs-base)]" style={{ color: "var(--color-muted)" }}>
             加载中…
           </div>
         ) : items.length === 0 ? (
@@ -576,14 +576,14 @@ export default function MemoriesPage() {
                         <>
                           <button
                             type="button"
-                            className="btn btn-primary min-h-[36px] px-2.5 text-[12px]"
+                            className="btn btn-primary min-h-[36px] px-2.5 text-[length:var(--fs-sm)]"
                             onClick={() => void setStatusOf(m, "active")}
                           >
                             确认使用
                           </button>
                           <button
                             type="button"
-                            className="btn min-h-[36px] px-2.5 text-[12px]"
+                            className="btn min-h-[36px] px-2.5 text-[length:var(--fs-sm)]"
                             onClick={() => void setStatusOf(m, "archived")}
                           >
                             丢弃
@@ -593,7 +593,7 @@ export default function MemoriesPage() {
                       {m.status === "active" && (
                         <button
                           type="button"
-                          className="btn min-h-[36px] px-2.5 text-[12px]"
+                          className="btn min-h-[36px] px-2.5 text-[length:var(--fs-sm)]"
                           title="暂时不用它 —— 之后能在「已停用」里找回"
                           onClick={() => void setStatusOf(m, "archived")}
                         >
@@ -603,7 +603,7 @@ export default function MemoriesPage() {
                       {arch && (
                         <button
                           type="button"
-                          className="btn min-h-[36px] px-2.5 text-[12px]"
+                          className="btn min-h-[36px] px-2.5 text-[length:var(--fs-sm)]"
                           onClick={() => void setStatusOf(m, "active")}
                         >
                           启用
@@ -611,7 +611,7 @@ export default function MemoriesPage() {
                       )}
                       <button
                         type="button"
-                        className="min-h-[36px] rounded px-2 text-[12px] hover:bg-[var(--color-surface-2)]"
+                        className="min-h-[36px] rounded px-2 text-[length:var(--fs-sm)] hover:bg-[var(--color-surface-2)]"
                         style={{ color: "var(--color-err)" }}
                         onClick={() => void remove(m)}
                       >
@@ -637,7 +637,7 @@ export default function MemoriesPage() {
                     </span>
                     {/* 内容才是这一行要给人看的东西 —— 给它两行，其余一行足够 */}
                     <span
-                      className="mt-0.5 line-clamp-2 min-w-0 text-[13.5px] leading-snug"
+                      className="mt-0.5 line-clamp-2 min-w-0 text-[length:var(--fs-md)] leading-snug"
                       style={{ color: arch ? "var(--color-muted)" : undefined }}
                       title={m.content}
                     >
@@ -646,7 +646,7 @@ export default function MemoriesPage() {
                     {/* 元信息：图标 + 短词。原来是一整句「所有助手共用 · 自动提炼 · 用过 3 次 · 4 分钟前」，
                         手机上必换行，每个对象要多占一整行 —— 就是"一条一条竖着堆"的来源。 */}
                     <span
-                      className="mt-1 flex items-center gap-3 text-[11.5px]"
+                      className="mt-1 flex items-center gap-3 text-[length:var(--fs-sm)]"
                       style={{ color: "var(--color-muted)" }}
                     >
                       <span className="inline-flex min-w-0 items-center gap-1" title={m.scope === "global" ? "所有助手共用" : `只给 ${m.agent_name ?? "已失效的助手"} 用`}>
@@ -664,7 +664,7 @@ export default function MemoriesPage() {
                     </span>
                   </span>
 
-                  <span className="shrink-0 text-[12px]" style={{ color: "var(--color-muted)" }}>
+                  <span className="shrink-0 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                     <IconChevronRight size={16} />
                   </span>
                 </Row>
@@ -742,7 +742,7 @@ export default function MemoriesPage() {
                   >
                     {/* 正文：记忆的全部内容，不改一个字 */}
                     <div
-                      className="whitespace-pre-wrap break-words rounded-[10px] border p-4 text-[13.5px] leading-relaxed"
+                      className="whitespace-pre-wrap break-words rounded-[10px] border p-4 text-[length:var(--fs-md)] leading-relaxed"
                       style={{ borderColor: "var(--color-border)", background: "var(--color-bg)" }}
                     >
                       {m.content}
@@ -782,7 +782,7 @@ export default function MemoriesPage() {
                         <span style={{ color: "var(--color-muted)" }}> · {fmt.relative(m.created_at)}</span>
                       </KV>
                       <KV k="编号">
-                        <span className="mono text-[12px]" style={{ color: "var(--color-muted)" }}>
+                        <span className="mono text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                           {m.id}
                         </span>
                       </KV>
@@ -795,7 +795,7 @@ export default function MemoriesPage() {
         )}
       </RowList>
 
-      <p className="mt-3 text-[12px]" style={{ color: "var(--color-muted)" }}>
+      <p className="mt-3 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
         相关设置在每个 Agent 的「记忆」面板里；长期没被用到的记忆会自动降低优先级。
         <br />
         要让多个助手共用同一条内容，用「复制到别的助手…」—— 复制出的副本单独绑定，原件不受影响。
@@ -839,7 +839,7 @@ function KindTag({ kind }: { kind: string }) {
   const color = KIND_COLOR[kind] ?? "var(--color-muted)";
   return (
     <span
-      className="inline-block shrink-0 rounded px-1.5 py-0.5 text-[10.5px] whitespace-nowrap"
+      className="inline-block shrink-0 rounded px-1.5 py-0.5 text-[length:var(--fs-xs)] whitespace-nowrap"
       style={{ background: `color-mix(in srgb, ${color} 14%, transparent)`, color }}
     >
       {KIND_LABEL[kind] ?? kind}

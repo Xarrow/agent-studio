@@ -50,14 +50,14 @@ export function LlmCallPayloadView({ runId, callId }: { runId: string; callId: n
 
   if (err) {
     return (
-      <p className="text-[12px]" style={{ color: "var(--color-err)" }}>
+      <p className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-err)" }}>
         原文读取失败：{err}
       </p>
     );
   }
   if (!data) {
     return (
-      <p className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+      <p className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
         正在读原文…
       </p>
     );
@@ -66,12 +66,12 @@ export function LlmCallPayloadView({ runId, callId }: { runId: string; callId: n
   return (
     <div className="space-y-2">
       {data.truncated ? (
-        <p className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+        <p className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
           体积超过上限，下面只保留了前段（完整内容没有被保存）。
         </p>
       ) : null}
       <div>
-        <p className="mb-1 text-[12px] font-medium">
+        <p className="mb-1 text-[length:var(--fs-sm)] font-medium">
           发给模型的请求
           <span className="ml-2 font-normal" style={{ color: "var(--color-muted)" }}>
             {data.model ?? "—"} · 进 {data.tokens_in} tokens
@@ -81,7 +81,7 @@ export function LlmCallPayloadView({ runId, callId }: { runId: string; callId: n
         <JsonBlock code={JSON.stringify(data.request ?? {}, null, 1)} />
       </div>
       <div>
-        <p className="mb-1 text-[12px] font-medium">
+        <p className="mb-1 text-[length:var(--fs-sm)] font-medium">
           模型返回
           <span className="ml-2 font-normal" style={{ color: "var(--color-muted)" }}>
             出 {data.tokens_out} tokens · {data.duration_ms ?? "—"}ms
@@ -89,7 +89,7 @@ export function LlmCallPayloadView({ runId, callId }: { runId: string; callId: n
         </p>
         {data.error ? (
           <pre
-            className="whitespace-pre-wrap break-all rounded-md p-2 text-[12px]"
+            className="whitespace-pre-wrap break-all rounded-md p-2 text-[length:var(--fs-sm)]"
             style={{ background: "var(--color-surface-2)", color: "var(--color-err)" }}
           >
             {data.error}
@@ -122,14 +122,14 @@ export function LlmCallsPanel({
       style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
     >
       <div className="mb-1 rounded-[8px] bg-[var(--color-surface-2)] px-2.5 py-1.5">
-        <span className="text-[12px] font-medium" style={{ color: "var(--color-muted)" }}>
+        <span className="text-[length:var(--fs-sm)] font-medium" style={{ color: "var(--color-muted)" }}>
           {title ?? `模型请求（${calls.length} 次）`}
         </span>
       </div>
 
       {/* 桌面（≥1024）：表格，数值成列好对比 */}
       <div className="hidden overflow-x-auto px-2.5 py-2 lg:block">
-        <table className="w-full text-[12px]">
+        <table className="w-full text-[length:var(--fs-sm)]">
           <thead style={{ color: "var(--color-muted)" }}>
             <tr>
               <th className="py-1 font-normal text-left">#</th>
@@ -162,7 +162,7 @@ export function LlmCallsPanel({
                       <button
                         type="button"
                         data-tap
-                        className="rounded px-1.5 text-[12px]"
+                        className="rounded px-1.5 text-[length:var(--fs-sm)]"
                         style={{ color: "var(--color-accent)" }}
                         onClick={() => setOpenCall((cur) => (cur === c.id ? null : c.id))}
                       >
@@ -170,7 +170,7 @@ export function LlmCallsPanel({
                       </button>
                     ) : (
                       <span
-                        className="text-[12px]"
+                        className="text-[length:var(--fs-sm)]"
                         style={{ color: "var(--color-muted)" }}
                         title="这条执行早于原文记录上线，没存原文"
                       >
@@ -201,19 +201,19 @@ export function LlmCallsPanel({
             style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
           >
             <div className="flex items-center gap-2">
-              <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+              <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                 #{c.iteration}
               </span>
-              <span className="mono truncate text-[12px]">{c.model ?? "—"}</span>
+              <span className="mono truncate text-[length:var(--fs-sm)]">{c.model ?? "—"}</span>
               <span
-                className="ml-auto mono text-[12px]"
+                className="ml-auto mono text-[length:var(--fs-sm)]"
                 style={{ color: STATUS_COLOR[c.status] ?? "" }}
               >
                 {c.status}
               </span>
             </div>
             <div
-              className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[12px]"
+              className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[length:var(--fs-sm)]"
               style={{ color: "var(--color-muted)" }}
             >
               <span>首字 {fmt.ms(c.ttft_ms)}</span>
@@ -231,7 +231,7 @@ export function LlmCallsPanel({
                 {openCall === c.id ? "收起原文" : "看原文"}
               </button>
             ) : (
-              <p className="mt-1 text-[12px]" style={{ color: "var(--color-muted)" }}>
+              <p className="mt-1 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                 这次调用早于「原文记录」上线（09-28 06:08 起留存），没有存过原文
               </p>
             )}
@@ -280,14 +280,14 @@ export function ModelTestDetail({ testId, hasPayload }: { testId: string; hasPay
 
   if (err) {
     return (
-      <p className="text-[12px]" style={{ color: "var(--color-err)" }}>
+      <p className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-err)" }}>
         记录读取失败：{err}
       </p>
     );
   }
   if (!rec) {
     return (
-      <p className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+      <p className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
         正在读取…
       </p>
     );
@@ -298,7 +298,7 @@ export function ModelTestDetail({ testId, hasPayload }: { testId: string; hasPay
       {/* 对话：人看得懂的部分 */}
       <div className="space-y-1">
         {rec.messages.map((m, i) => (
-          <div key={i} className="flex gap-2 text-[12px]">
+          <div key={i} className="flex gap-2 text-[length:var(--fs-sm)]">
             <span className="shrink-0" style={{ color: "var(--color-muted)", minWidth: 44 }}>
               {m.role === "user" ? "我" : m.role}
             </span>
@@ -306,7 +306,7 @@ export function ModelTestDetail({ testId, hasPayload }: { testId: string; hasPay
           </div>
         ))}
         {rec.reply ? (
-          <div className="flex gap-2 text-[12px]">
+          <div className="flex gap-2 text-[length:var(--fs-sm)]">
             <span className="shrink-0" style={{ color: "var(--color-muted)", minWidth: 44 }}>
               模型
             </span>
@@ -314,7 +314,7 @@ export function ModelTestDetail({ testId, hasPayload }: { testId: string; hasPay
           </div>
         ) : null}
         {rec.error ? (
-          <p className="text-[12px]" style={{ color: "var(--color-err)" }}>
+          <p className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-err)" }}>
             报错：{rec.error}
           </p>
         ) : null}
@@ -329,23 +329,23 @@ export function ModelTestDetail({ testId, hasPayload }: { testId: string; hasPay
           {showRaw ? (
             <div className="mt-2 space-y-2">
               {raw.truncated ? (
-                <p className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+                <p className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                   体积超过上限，只保留了前段。
                 </p>
               ) : null}
               <div>
-                <p className="mb-1 text-[12px] font-medium">发给模型的请求</p>
+                <p className="mb-1 text-[length:var(--fs-sm)] font-medium">发给模型的请求</p>
                 <JsonBlock code={JSON.stringify(raw.request ?? {}, null, 1)} />
               </div>
               <div>
-                <p className="mb-1 text-[12px] font-medium">模型返回（原始）</p>
+                <p className="mb-1 text-[length:var(--fs-sm)] font-medium">模型返回（原始）</p>
                 <JsonBlock code={JSON.stringify(raw.response ?? {}, null, 1)} />
               </div>
             </div>
           ) : null}
         </div>
       ) : (
-        <p className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+        <p className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
           这条测试早于「原文记录」上线（2026-09-28 06:08 起才开始留存），只能在上面看到当时的对话。
         </p>
       )}

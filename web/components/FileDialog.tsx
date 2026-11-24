@@ -137,7 +137,7 @@ export function FileChip({
       type="button"
       onClick={() => openHere({ path, url })}
       title={url ? `打开 ${path}（可预览 / 下载）` : path}
-      className={`inline-flex max-w-full min-h-[32px] items-center gap-1 rounded border px-1.5 text-left align-middle mono text-[12px] hover:bg-[var(--color-surface-2)] ${className}`}
+      className={`inline-flex max-w-full min-h-[32px] items-center gap-1 rounded border px-1.5 text-left align-middle mono text-[length:var(--fs-sm)] hover:bg-[var(--color-surface-2)] ${className}`}
       style={{ color: "var(--color-accent)", borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
     >
       {/* 图片路径直接给缩略图：一眼知道是图，点开看大图（其它类型仍是文件图标） */}
@@ -278,14 +278,14 @@ function TablePreview({ text, path }: { text: string; path: string }) {
   const body = rows.slice(1);
   if (rows.length === 0) {
     return (
-      <p className="rounded-[10px] border p-3 text-[12.5px]" style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}>
+      <p className="rounded-[10px] border p-3 text-[length:var(--fs-base)]" style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}>
         这个表是空的。
       </p>
     );
   }
   return (
     <div className="max-h-[52dvh] overflow-auto rounded-[10px] border" style={{ borderColor: "var(--color-border)" }}>
-      <table className="w-full border-collapse text-[12.5px]">
+      <table className="w-full border-collapse text-[length:var(--fs-base)]">
         <thead className="sticky top-0" style={{ background: "var(--color-surface-2)" }}>
           <tr>
             {head.map((h, i) => (
@@ -311,7 +311,7 @@ function TablePreview({ text, path }: { text: string; path: string }) {
         </tbody>
       </table>
       {body.length >= TABLE_MAX_ROWS ? (
-        <p className="px-2 py-1.5 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+        <p className="px-2 py-1.5 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
           只显示前 {TABLE_MAX_ROWS} 行，完整内容请下载。
         </p>
       ) : null}
@@ -550,8 +550,8 @@ export function FileDialog({
               <FileTypeIcon kind={fileTypeKey(file.path)} size={18} />
             </span>
             <div className="min-w-0">
-              <h2 className="truncate text-[15px] font-medium mono">{file.name ?? baseName(file.path)}</h2>
-              <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[12px]" style={{ color: "var(--color-muted)" }}>
+              <h2 className="truncate text-[length:var(--fs-lg)] font-medium mono">{file.name ?? baseName(file.path)}</h2>
+              <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                 {extOf(file.path) ? (
                   <span className="mono rounded px-1 py-[1px]" style={{ background: "var(--color-surface-2)" }}>
                     {extOf(file.path).toUpperCase()}
@@ -576,7 +576,7 @@ export function FileDialog({
         {/* 预览 */}
         <div className="mt-3">
           {!url ? (
-            <p className="rounded-[10px] border p-3 text-[12.5px]" style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}>
+            <p className="rounded-[10px] border p-3 text-[length:var(--fs-base)]" style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}>
               这个文件不在本会话的工作目录里，页面里不能预览或下载 —— 可以复制路径去别处用。
             </p>
           ) : kind === "image" ? (
@@ -601,7 +601,7 @@ export function FileDialog({
               style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
             >
               <audio src={url} controls className="w-full" />
-              <p className="mt-2 text-[12px]" style={{ color: "var(--color-muted)" }}>
+              <p className="mt-2 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                 浏览器不支持这个音频编码时，用下面的「下载」本机播放。
               </p>
             </div>
@@ -632,7 +632,7 @@ export function FileDialog({
                   />
                   {(warn || converting || convErr) && (
                     <div
-                      className="mt-2 rounded-[10px] border p-2.5 text-[12.5px]"
+                      className="mt-2 rounded-[10px] border p-2.5 text-[length:var(--fs-base)]"
                       style={{ borderColor: warn ? "var(--color-warn)" : "var(--color-border)" }}
                     >
                       {warn ? (
@@ -650,12 +650,12 @@ export function FileDialog({
                         >
                           {converting ? "转换中…（大文件要等一会儿）" : videoUrl ? "重新转一份" : "转成能播的版本（H.264）"}
                         </button>
-                        <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+                        <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                           转完存到同一目录，再打开直接播
                         </span>
                       </div>
                       {convErr ? (
-                        <p className="mt-1 text-[12px]" style={{ color: "var(--color-err)" }}>
+                        <p className="mt-1 text-[length:var(--fs-sm)]" style={{ color: "var(--color-err)" }}>
                           转换失败：{convErr}
                         </p>
                       ) : null}
@@ -677,13 +677,13 @@ export function FileDialog({
               </div>
             ) : parseErr ? (
               <p
-                className="rounded-[10px] border p-3 text-[12.5px] leading-relaxed"
+                className="rounded-[10px] border p-3 text-[length:var(--fs-base)] leading-relaxed"
                 style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
               >
                 {parseErr}
               </p>
             ) : !parsed?.kind ? (
-              <p className="text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+              <p className="text-[length:var(--fs-base)]" style={{ color: "var(--color-muted)" }}>
                 没有内容可显示
               </p>
             ) : parsed.kind === "spreadsheet" ? (
@@ -719,7 +719,7 @@ export function FileDialog({
                 ))}
               </div>
             ) : state === "fail" ? (
-              <p className="rounded-[10px] border p-3 text-[12.5px]" style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}>
+              <p className="rounded-[10px] border p-3 text-[length:var(--fs-base)]" style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}>
                 读不出内容（文件可能已被删掉或移走），可以直接下载试试。
               </p>
             ) : (
@@ -744,13 +744,13 @@ export function FileDialog({
                   </div>
                 )}
                 <div
-                  className="flex flex-wrap items-center gap-2 px-1 pt-1 text-[12px]"
+                  className="flex flex-wrap items-center gap-2 px-1 pt-1 text-[length:var(--fs-sm)]"
                   style={{ color: "var(--color-muted)" }}
                 >
                   {(kind === "markdown" || kind === "table" || kind === "json") && (
                     <button
                       type="button"
-                      className="btn px-2 py-0.5 text-[12px] max-md:min-h-[32px]"
+                      className="btn px-2 py-0.5 text-[length:var(--fs-sm)] max-md:min-h-[32px]"
                       onClick={() => setRawView((v) => !v)}
                     >
                       {rawView
@@ -777,7 +777,7 @@ export function FileDialog({
               </div>
             )
           ) : (
-            <p className="rounded-[10px] border p-3 text-[12.5px]" style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}>
+            <p className="rounded-[10px] border p-3 text-[length:var(--fs-base)]" style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}>
               这类文件（{extOf(file.path) || "无扩展名"}）不能在页面里预览 —— 下载后用本机程序打开。
               能直接看的有：图片、PDF、音频、视频、Word/Excel/PPT（含 xlsx/docx/pptx）、思维导图（xmind）、
               Markdown、CSV/TSV、JSON/XML、代码与纯文本。
@@ -789,7 +789,7 @@ export function FileDialog({
         <div className="mt-3">
           <div className="label">{file.path.startsWith("/api/") ? "链接" : "路径"}</div>
           <div className="flex items-center gap-2">
-            <input className="input mono text-[12px]" readOnly value={file.path} onFocus={(e) => e.currentTarget.select()} />
+            <input className="input mono text-[length:var(--fs-sm)]" readOnly value={file.path} onFocus={(e) => e.currentTarget.select()} />
             <button type="button" className="btn shrink-0 px-2.5 max-md:min-h-[36px]" onClick={() => copy("path")}>
               {copied === "path" ? "已复制" : "复制"}
             </button>
@@ -841,7 +841,7 @@ export function FileDialog({
           ) : null}
         </div>
         {delErr ? (
-          <p className="mt-2 text-[12px]" style={{ color: "var(--color-err)" }}>
+          <p className="mt-2 text-[length:var(--fs-sm)]" style={{ color: "var(--color-err)" }}>
             删除失败：{delErr}
           </p>
         ) : null}

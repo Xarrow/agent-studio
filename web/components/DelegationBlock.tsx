@@ -255,7 +255,7 @@ export function DelegationBlock({
             <b className="shrink-0" style={{ color: "var(--color-text)", fontWeight: 600 }}>{d.agent_name}</b>
             {domain && (
               <span
-                className="shrink-0 max-w-[40%] truncate rounded px-1 py-[1px] text-[10.5px]"
+                className="shrink-0 max-w-[40%] truncate rounded px-1 py-[1px] text-[length:var(--fs-xs)]"
                 style={{ background: `color-mix(in srgb, ${tint} 13%, transparent)`, color: tint }}
                 title={d.agent_domain}
               >
@@ -288,7 +288,7 @@ export function DelegationBlock({
           {/* 干完就断了最难受：派出去三件，回来一句"都办好了"，谁带回了什么看不见 */}
           {!hot && !failed && d.output_excerpt && (
             <div
-              className={`mt-0.5 truncate text-[11px] ${nested ? "" : "pl-[14px]"}`}
+              className={`mt-0.5 truncate text-[length:var(--fs-xs)] ${nested ? "" : "pl-[14px]"}`}
               style={{ color: "color-mix(in srgb, var(--color-ok) 72%, var(--color-muted))" }}
               title={d.output_excerpt}
             >
@@ -297,7 +297,7 @@ export function DelegationBlock({
           )}
           {failed && d.error && (
             <div
-              className={`mt-0.5 line-clamp-2 text-[11px] ${nested ? "" : "pl-[14px]"}`}
+              className={`mt-0.5 line-clamp-2 text-[length:var(--fs-xs)] ${nested ? "" : "pl-[14px]"}`}
               style={{ color: "var(--color-err)" }}
               title={d.error}
             >
@@ -346,7 +346,7 @@ export function DelegationBlock({
 
   return (
     <div
-      className={`rounded-[12px] text-[12px] overflow-hidden ${className}`}
+      className={`rounded-[12px] text-[length:var(--fs-sm)] overflow-hidden ${className}`}
       style={{
         border: "1px solid var(--color-border)",
         background: "color-mix(in srgb, var(--color-accent) 3%, var(--color-surface))",
@@ -357,7 +357,7 @@ export function DelegationBlock({
       {/* 抬头：这一轮编排的总读数 —— 派了几件、几件在干、收口没有 */}
       <div className="flex items-center gap-2 pl-2.5 pr-2 pt-1.5 pb-1">
         <span
-          className="shrink-0 rounded-full px-1.5 py-[1px] text-[10.5px] font-semibold tracking-[0.04em]"
+          className="shrink-0 rounded-full px-1.5 py-[1px] text-[length:var(--fs-xs)] font-semibold tracking-[0.04em]"
           style={{
             background: "color-mix(in srgb, var(--color-accent) 14%, transparent)",
             color: "var(--color-accent)",
@@ -426,13 +426,13 @@ export function DelegationBlock({
                   <path d="M4 5h16v6H4zM4 15h16v4H4z" />
                 </svg>
                 <span
-                  className="min-w-0 truncate text-[11.5px]"
+                  className="min-w-0 truncate text-[length:var(--fs-sm)]"
                   style={{ color: "var(--color-text)", fontWeight: 500 }}
                   title={g.title}
                 >
                   {g.title || "一件活"}
                 </span>
-                <span className="shrink-0 text-[10.5px] tabular-nums" style={{ color: "var(--color-muted)" }}>
+                <span className="shrink-0 text-[length:var(--fs-xs)] tabular-nums" style={{ color: "var(--color-muted)" }}>
                   {g.runs.length} 人
                 </span>
               </div>

@@ -107,7 +107,7 @@ export function ToolSearchCard() {
         <div>
           <div className="label mb-1.5">Base URL</div>
           <input
-            className="input text-[13px] mono"
+            className="input text-[length:var(--fs-base)] mono"
             placeholder="https://.../v1"
             value={conf.base_url}
             disabled={busy}
@@ -119,7 +119,7 @@ export function ToolSearchCard() {
             API Key <Hint text="保存后 Fernet 加密落库，明文/密文都不回显；界面留空 = 保持原值" />
           </div>
           <input
-            className="input text-[13px] mono"
+            className="input text-[length:var(--fs-base)] mono"
             type="password"
             placeholder={conf.api_key === "__set__" ? "已配置（留空保持）" : "sk-…"}
             value={conf._draft_key ?? ""}
@@ -130,7 +130,7 @@ export function ToolSearchCard() {
         <div>
           <div className="label mb-1.5">模型</div>
           <input
-            className="input text-[13px] mono"
+            className="input text-[length:var(--fs-base)] mono"
             placeholder="text-embedding-v4"
             value={conf.model}
             disabled={busy}
@@ -165,13 +165,13 @@ export function ToolSearchCard() {
           </>
         )}
         {testing && (
-          <span className="text-[12px]" style={{ color: testing.startsWith("失败") || testing === "三项都要填" ? "var(--color-err)" : "var(--color-muted)" }}>
+          <span className="text-[length:var(--fs-sm)]" style={{ color: testing.startsWith("失败") || testing === "三项都要填" ? "var(--color-err)" : "var(--color-muted)" }}>
             {testing}
           </span>
         )}
       </div>
 
-      <p className="text-[12px] text-[var(--color-muted)] leading-relaxed">
+      <p className="text-[length:var(--fs-sm)] text-[var(--color-muted)] leading-relaxed">
         tool_search 默认用词面检索（BM25），不依赖任何端点。配上 embeddings
         后加一路语义检索（换说法也能命中），两路融合。停用即回纯词面检索。
         <Hint text="检索机制对应 MCP Gateway（ATC 2026）的 ToolSearch：稀疏 BM25 + 稠密向量 + RRF 名次融合" />

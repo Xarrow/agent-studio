@@ -142,8 +142,8 @@ export default function CredentialsPage() {
    * 原来并排的「测试连接」「对话测试」名字太近、用户分不清，对话调试收进 ⋯。
    */
   const credActions = (c: Credential, big = false) => {
-    const btn = big ? "btn btn-sm" : "btn text-[12px] max-md:w-9 max-md:px-0";
-    const primary = big ? "btn btn-primary btn-sm" : "btn text-[12px] max-md:w-9 max-md:px-0";
+    const btn = big ? "btn btn-sm" : "btn text-[length:var(--fs-sm)] max-md:w-9 max-md:px-0";
+    const primary = big ? "btn btn-primary btn-sm" : "btn text-[length:var(--fs-sm)] max-md:w-9 max-md:px-0";
     const label = (text: string) => (big ? text : <span className="max-md:hidden">{text}</span>);
     return (
       <>
@@ -251,7 +251,7 @@ export default function CredentialsPage() {
       />
 
       {err && (
-        <div className="card p-4 mb-4 text-[13px] text-[var(--color-err)]">
+        <div className="card p-4 mb-4 text-[length:var(--fs-base)] text-[var(--color-err)]">
           加载失败：{err}
         </div>
       )}
@@ -290,7 +290,7 @@ export default function CredentialsPage() {
       )}
 
       {!loaded ? (
-        <div className="card p-6 text-[13px] text-[var(--color-muted)]">加载中…</div>
+        <div className="card p-6 text-[length:var(--fs-base)] text-[var(--color-muted)]">加载中…</div>
       ) : creds.length === 0 ? (
         <div className="card">
           <Empty
@@ -319,7 +319,7 @@ export default function CredentialsPage() {
                 >
                   <span className="min-w-0 flex-1 basis-[240px]">
                     <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                      <span className="truncate text-[14px] font-medium">{c.name}</span>
+                      <span className="truncate text-[length:var(--fs-md)] font-medium">{c.name}</span>
                       <Chip tone="muted">{c.provider_display}</Chip>
                       {/* 被几个助手在用：删除会被拒绝，先让用户看得见 */}
                       {(c.used_by ?? 0) > 0 && (
@@ -333,7 +333,7 @@ export default function CredentialsPage() {
                           原来前端从不显示——刷新后只剩一个红 chip，无从排查） */}
                       {c.last_test_ok === false && c.last_test_error && (
                         <span
-                          className="basis-full truncate text-[11.5px]"
+                          className="basis-full truncate text-[length:var(--fs-sm)]"
                           style={{ color: "var(--color-err)" }}
                           title={c.last_test_error}
                         >
@@ -343,7 +343,7 @@ export default function CredentialsPage() {
                     </span>
                     {/* 元信息：图标 + 短词，三个事实不再用「·」串成一句话 */}
                     <span
-                      className="mt-1 flex items-center gap-3 text-[11.5px]"
+                      className="mt-1 flex items-center gap-3 text-[length:var(--fs-sm)]"
                       style={{ color: "var(--color-muted)" }}
                     >
                       <span className="inline-flex min-w-0 items-center gap-1" title="密钥（掩码）">
@@ -397,14 +397,14 @@ export default function CredentialsPage() {
                       style={{ borderColor: "var(--color-border)", background: "var(--color-bg)" }}
                     >
                       <div className="mb-1.5 flex items-center justify-between">
-                        <span className="inline-flex items-center gap-1.5 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                        <span className="inline-flex items-center gap-1.5 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                           <IconKey size={12} />
                           API Key
                         </span>
                         <span className="flex items-center gap-1">
                           <button
                             type="button"
-                            className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11.5px] hover:bg-[var(--color-surface-2)]"
+                            className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[length:var(--fs-sm)] hover:bg-[var(--color-surface-2)]"
                             style={{ color: "var(--color-accent)" }}
                             onClick={() => (revealed[c.id] ? hide(c.id) : void reveal(c))}
                           >
@@ -414,7 +414,7 @@ export default function CredentialsPage() {
                           {revealed[c.id] ? (
                             <button
                               type="button"
-                              className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11.5px] hover:bg-[var(--color-surface-2)]"
+                              className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[length:var(--fs-sm)] hover:bg-[var(--color-surface-2)]"
                               style={{ color: "var(--color-accent)" }}
                               onClick={() => void copyKey(c.id)}
                             >
@@ -424,7 +424,7 @@ export default function CredentialsPage() {
                           ) : null}
                         </span>
                       </div>
-                      <div className="mono break-all text-[12.5px]">
+                      <div className="mono break-all text-[length:var(--fs-base)]">
                         {revealed[c.id] || c.masked_key}
                       </div>
                     </div>
@@ -432,7 +432,7 @@ export default function CredentialsPage() {
                     {/* 测试结果：成功给绿的框 + 延迟 + 可用模型；失败给红的框 + 原始错误 */}
                     {r ? (
                       <div
-                        className="mt-3 rounded-[10px] border p-3 text-[12.5px]"
+                        className="mt-3 rounded-[10px] border p-3 text-[length:var(--fs-base)]"
                         style={{ borderColor: r.ok ? "var(--color-ok)" : "var(--color-err)" }}
                       >
                         {r.ok ? (
@@ -441,7 +441,7 @@ export default function CredentialsPage() {
                               <IconCheck size={14} />
                               连接正常
                             </div>
-                            <div className="mt-1 inline-flex items-center gap-1.5 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                            <div className="mt-1 inline-flex items-center gap-1.5 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                               <IconClock size={12} />
                               延迟 {fmt.ms(r.latency_ms)}
                               <span>·</span>
@@ -491,7 +491,7 @@ export default function CredentialsPage() {
           count={loaded ? `${byProvider.length} 家` : undefined}
         >
           {!loaded ? (
-            <div className="py-2 text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+            <div className="py-2 text-[length:var(--fs-base)]" style={{ color: "var(--color-muted)" }}>
               正在读取服务商清单…
             </div>
           ) : (
@@ -502,9 +502,9 @@ export default function CredentialsPage() {
                 className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-[9px] px-1.5 py-2.5 hover:bg-[var(--bg-hover)]"
               >
                 <span className="min-w-0 flex-1 basis-[220px]">
-                  <span className="block text-[13.5px] font-medium">{meta.display_name}</span>
+                  <span className="block text-[length:var(--fs-md)] font-medium">{meta.display_name}</span>
                   <span
-                    className="mono mt-0.5 block truncate text-[12px]"
+                    className="mono mt-0.5 block truncate text-[length:var(--fs-sm)]"
                     style={{ color: "var(--color-muted)" }}
                   >
                     {meta.default_base_url || "（固定端点）"}
@@ -694,7 +694,7 @@ function NewCredentialDialog({
     <div className={DLG_BACKDROP}>
       <div className={`${DLG_CARD} max-w-lg p-5`}>
         <h2 className="text-[16px] font-medium mb-1">添加 LLM 配置</h2>
-        <p className="text-[12px] text-[var(--color-muted)] mb-4">粘贴 Key → 确认模型 → 完成。</p>
+        <p className="text-[length:var(--fs-sm)] text-[var(--color-muted)] mb-4">粘贴 Key → 确认模型 → 完成。</p>
 
         <div className="space-y-3">
           {/* 第一屏唯一的主动作 */}
@@ -716,7 +716,7 @@ function NewCredentialDialog({
           </div>
 
           {/* 识别结果一行：认出哪家、要不要手动改 */}
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px]">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[length:var(--fs-sm)]">
             {phase === "detecting" && <span style={{ color: "var(--color-text-3)" }}>正在识别服务商并验证…</span>}
             {phase === "ok" && detected && (
               <span style={{ color: "var(--color-ok)" }}>
@@ -760,7 +760,7 @@ function NewCredentialDialog({
             </label>
           </div>
 
-          {err && <div className="text-[12px] text-[var(--color-err)]">{err}</div>}
+          {err && <div className="text-[length:var(--fs-sm)] text-[var(--color-err)]">{err}</div>}
 
           {/* 验证通过后（或这家本来就验证不了）才出现：名称（可留空）/ 默认模型选择器 */}
           {verified && (
@@ -773,7 +773,7 @@ function NewCredentialDialog({
                   onChange={(e) => setNameDraft(e.target.value)}
                   placeholder={finalName || "自动生成"}
                 />
-                <p className="mt-1 text-[11.5px]" style={{ color: "var(--color-text-3)" }}>
+                <p className="mt-1 text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-3)" }}>
                   留空就用「{finalName}」（系统生成，不会与现有重名）
                 </p>
               </div>
@@ -789,13 +789,13 @@ function NewCredentialDialog({
                   onChange={setModel}
                 />
                 {models.length === 0 && (
-                  <p className="mt-1 text-[11.5px]" style={{ color: "var(--color-warn)" }}>
+                  <p className="mt-1 text-[length:var(--fs-sm)]" style={{ color: "var(--color-warn)" }}>
                     这家没给出模型清单：先选一个推荐模型（也可以保存后在配置里重新探测）。
                   </p>
                 )}
               </div>
 
-              <details className="text-[12px]">
+              <details className="text-[length:var(--fs-sm)]">
                 <summary className="cursor-pointer select-none py-1" style={{ color: "var(--color-text-3)" }}>
                   端点（默认已填好，一般不用改）
                 </summary>
@@ -811,7 +811,7 @@ function NewCredentialDialog({
           )}
 
           {phase === "fail" && detected && detected.tried.length > 0 && (
-            <div className="text-[11.5px]" style={{ color: "var(--color-text-3)" }}>
+            <div className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-3)" }}>
               试过：{detected.tried.map((t: { display_name: string }) => t.display_name).join("、")}。识别不出就从上面改选服务商。
             </div>
           )}
@@ -819,7 +819,7 @@ function NewCredentialDialog({
 
         <div className="flex items-center gap-2 mt-5">
           {/* 禁用原因写在按钮旁边 + title 上，不用「点了没反应」的哑按钮 */}
-          <span className="mr-auto text-[11.5px]" style={{ color: "var(--color-text-3)" }}>
+          <span className="mr-auto text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-3)" }}>
             {saveHint}
           </span>
           {/* 验证不了的服务商没有「重新识别」这一步，别摆一个点了也不动的按钮 */}
@@ -999,7 +999,7 @@ function EditCredentialDialog({
     <div className={DLG_BACKDROP}>
       <div className={`${DLG_CARD} max-w-lg p-5`}>
         <h2 className="text-[16px] font-medium mb-1">编辑配置「{credential.name}」</h2>
-        <p className="text-[12px] text-[var(--color-muted)] mb-4">
+        <p className="text-[length:var(--fs-sm)] text-[var(--color-muted)] mb-4">
           API Key 留空表示不修改。其它字段改完保存即生效。
         </p>
 
@@ -1091,13 +1091,13 @@ function EditCredentialDialog({
               </button>
             </div>
             {model.trim() === "" && (
-              <p className="text-[12px] text-[var(--color-muted)] mt-1.5">
+              <p className="text-[length:var(--fs-sm)] text-[var(--color-muted)] mt-1.5">
                 未选择时，模型由使用它的助手决定（在助手的模型设置里选）。
               </p>
             )}
           </div>
 
-          {err && <div className="text-[12px] text-[var(--color-err)]">{err}</div>}
+          {err && <div className="text-[length:var(--fs-sm)] text-[var(--color-err)]">{err}</div>}
         </div>
 
         <div className="flex justify-end gap-2 mt-5">

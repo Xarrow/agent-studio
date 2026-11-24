@@ -83,7 +83,7 @@ function maskToken(t: string): string {
 /** 抽屉头部的字符标记（不用图标） */
 function Monogram({ name }: { name: string }) {
   return (
-    <span className="text-[15px] font-semibold tracking-tight">
+    <span className="text-[length:var(--fs-lg)] font-semibold tracking-tight">
       {(name || "ST").slice(0, 2).toUpperCase()}
     </span>
   );
@@ -227,13 +227,13 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
           className="mb-3 flex flex-wrap items-center gap-2 rounded-md px-2.5 py-2"
           style={{ background: "var(--color-surface-2)" }}
         >
-          <span className="shrink-0 text-[12px]" style={{ color: "var(--color-text-2)" }}>
+          <span className="shrink-0 text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-2)" }}>
             本节点连接口令
           </span>
-          <code className="mono min-w-0 flex-1 truncate text-[11px]" title="对端连我时要填它">
+          <code className="mono min-w-0 flex-1 truncate text-[length:var(--fs-xs)]" title="对端连我时要填它">
             {myToken ? maskToken(myToken) : "（读取中…）"}
           </code>
-          <span className="hidden text-[11px] sm:inline" style={{ color: "var(--color-text-3)" }}>
+          <span className="hidden text-[length:var(--fs-xs)] sm:inline" style={{ color: "var(--color-text-3)" }}>
             对端读清单/握手/心跳时用
           </span>
           <button
@@ -291,14 +291,14 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
                 setErr(null);
               }}
             />
-            <label className="mt-2 flex items-center gap-2 text-[12px]" style={{ color: "var(--color-text-2)" }}>
+            <label className="mt-2 flex items-center gap-2 text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-2)" }}>
               <Switch checked={mutual} onChange={setMutual} ariaLabel="双向连接" />
               双向连接（对方那边也会出现一条待接受的请求）
             </label>
 
             {preview && (
               <div className="mt-2 rounded-md p-2.5" style={{ background: "var(--color-surface-2)" }}>
-                <div className="text-[12px]">
+                <div className="text-[length:var(--fs-sm)]">
                   能连上：<span className="font-medium">{preview.name || "未命名节点"}</span>，开放{" "}
                   {preview.agents.length} 个助手
                   {preview.private ? "（内网地址：不会由本机发心跳）" : ""}
@@ -315,7 +315,7 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
                 </button>
               </div>
             )}
-            {err && <div className="mt-2 text-[12px]" style={{ color: "var(--color-err)" }}>{err}</div>}
+            {err && <div className="mt-2 text-[length:var(--fs-sm)]" style={{ color: "var(--color-err)" }}>{err}</div>}
           </div>
         )}
 
@@ -330,9 +330,9 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
                   borderLeft: "3px solid var(--color-warn, #d97706)",
                 }}
               >
-                <span className="text-[12px] font-medium">待接受</span>
-                <span className="text-[13px] font-medium">{p.name}</span>
-                <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                <span className="text-[length:var(--fs-sm)] font-medium">待接受</span>
+                <span className="text-[length:var(--fs-base)] font-medium">{p.name}</span>
+                <span className="text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
                   {p.agents_count} 个助手 · {ago(p.last_seen_at)}请求连接你
                 </span>
                 <span className="ml-auto flex gap-1.5">
@@ -364,7 +364,7 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
           </div>
         ) : active.length === 0 && pending.length === 0 ? (
           <div
-            className="rounded-md px-3 py-4 text-[12px]"
+            className="rounded-md px-3 py-4 text-[length:var(--fs-sm)]"
             style={{ background: "var(--color-surface-2)", color: "var(--color-text-3)" }}
           >
             还没有节点。点右上「＋ 连接节点」，填上对方地址和它的连接口令；连上之后点节点，右侧会显示它的详情与助手。
@@ -392,17 +392,17 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
               >
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-2">
-                    <span className="truncate text-[13px] font-medium">{p.name}</span>
-                    <span className="flex items-center gap-1 text-[11px]" style={{ color: "var(--color-text-2)" }}>
+                    <span className="truncate text-[length:var(--fs-base)] font-medium">{p.name}</span>
+                    <span className="flex items-center gap-1 text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-2)" }}>
                       <Dot tone={st.tone} />
                       {st.label}
                     </span>
                     {p.direction === "both" && (
-                      <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>互相连接</span>
+                      <span className="text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>互相连接</span>
                     )}
                     {!p.heartbeat && (
                       <span
-                        className="text-[11px]"
+                        className="text-[length:var(--fs-xs)]"
                         style={{ color: "var(--color-text-3)" }}
                         title="对方是内网地址：由它发心跳给我"
                       >
@@ -410,7 +410,7 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
                       </span>
                     )}
                   </span>
-                  <span className="mt-0.5 block truncate text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                  <span className="mt-0.5 block truncate text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
                     {p.base_url || "地址未知"} · 已同步 {p.agents_synced}/{p.agents_count} 个助手 · 上次同步{" "}
                     {ago(p.last_sync_at)}
                   </span>
@@ -510,10 +510,10 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
                 {curRemote?.version ? `${curRemote.version}（${curRemote.protocol || "studio/1"}）` : "—"}
               </KV>
               <KV k="节点 ID">
-                <code className="mono text-[11px]">{curRemote?.studio_id || cur.studio_id}</code>
+                <code className="mono text-[length:var(--fs-xs)]">{curRemote?.studio_id || cur.studio_id}</code>
               </KV>
               <KV k="地址">
-                <code className="mono text-[11px]">{curRemote?.base_url || cur.base_url || "未知"}</code>
+                <code className="mono text-[length:var(--fs-xs)]">{curRemote?.base_url || cur.base_url || "未知"}</code>
               </KV>
               <KV k="助手">
                 {curRemote
@@ -521,7 +521,7 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
                   : `已同步 ${cur.agents_synced} / 记录 ${cur.agents_count}`}
               </KV>
               <KV k="指纹">
-                <code className="mono text-[11px]">{cur.fingerprint || "—"}</code>
+                <code className="mono text-[length:var(--fs-xs)]">{cur.fingerprint || "—"}</code>
               </KV>
               <KV k="心跳">{cur.heartbeat ? "本机每 60 秒发一次" : "对方是内网：由它发心跳给我"} · 上次 {ago(cur.last_seen_at)}</KV>
               <KV k="连接方式">
@@ -533,7 +533,7 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
                 {editPeer === cur.id ? (
                   <span className="flex flex-wrap items-center gap-1.5">
                     <input
-                      className="input h-7 flex-1 py-0 text-[11px]"
+                      className="input h-7 flex-1 py-0 text-[length:var(--fs-xs)]"
                       placeholder="nd_ 开头"
                       value={peerTokenDraft}
                       onChange={(e) => setPeerTokenDraft(e.target.value)}
@@ -582,8 +582,8 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
 
             {curRemote && (
               <div className="flex items-center gap-2 rounded-md px-2.5 py-2" style={{ background: "var(--color-surface-2)" }}>
-                <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>名片地址</span>
-                <code className="mono min-w-0 flex-1 truncate text-[11px]">{curRemote.card_url}</code>
+                <span className="text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>名片地址</span>
+                <code className="mono min-w-0 flex-1 truncate text-[length:var(--fs-xs)]">{curRemote.card_url}</code>
                 <button
                   className="btn btn-sm shrink-0"
                   onClick={() => {
@@ -596,15 +596,15 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
               </div>
             )}
             {curErr && (
-              <div className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+              <div className="text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
                 刚没读到对端名片：{curErr}（下面用本地记录）
               </div>
             )}
 
             <div>
               <div className="mb-1.5 flex items-center justify-between">
-                <span className="text-[12px] font-medium">它开放的助手</span>
-                <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                <span className="text-[length:var(--fs-sm)] font-medium">它开放的助手</span>
+                <span className="text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
                   {curAgents === undefined ? "读取中…" : `${curAgents.length} 个已同步`}
                 </span>
               </div>
@@ -616,7 +616,7 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
                 </div>
               ) : curAgents.length === 0 ? (
                 <div
-                  className="rounded-md px-3 py-3 text-[12px]"
+                  className="rounded-md px-3 py-3 text-[length:var(--fs-sm)]"
                   style={{ background: "var(--color-surface-2)", color: "var(--color-text-3)" }}
                 >
                   还没有同步到本地助手。点上面的「同步助手」。
@@ -644,27 +644,27 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
                         >
                           <span className="min-w-0 flex-1">
                             <span className="flex items-center gap-2">
-                              <span className="truncate text-[12.5px]">{a.name}</span>
-                              <span className="flex items-center gap-1 text-[11px]" style={{ color: "var(--color-text-2)" }}>
+                              <span className="truncate text-[length:var(--fs-base)]">{a.name}</span>
+                              <span className="flex items-center gap-1 text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-2)" }}>
                                 <Dot tone={as.tone} />
                                 {as.label}
                               </span>
                               {!a.enabled && (
-                                <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>已停用</span>
+                                <span className="text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>已停用</span>
                               )}
                             </span>
-                            <span className="mt-0.5 block truncate text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                            <span className="mt-0.5 block truncate text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
                               {a.skills.length} 个技能 · 上次可用 {ago(a.last_ok_at)}
                             </span>
                           </span>
-                          <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                          <span className="text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
                             {aOpen ? "收起" : "详情"}
                           </span>
                         </div>
 
                         {aOpen && (
                           <div className="space-y-3 px-3 pb-3" style={{ background: "var(--color-surface)" }}>
-                            <p className="text-[12.5px] leading-relaxed" style={{ color: "var(--color-text-2)" }}>
+                            <p className="text-[length:var(--fs-base)] leading-relaxed" style={{ color: "var(--color-text-2)" }}>
                               {a.description || "远端没有提供说明"}
                             </p>
                             {a.skills.length > 0 && (
@@ -675,7 +675,7 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
                               </div>
                             )}
                             <div className="flex items-center gap-2">
-                              <code className="mono min-w-0 flex-1 truncate text-[11px]" title={a.card_url || a.url}>
+                              <code className="mono min-w-0 flex-1 truncate text-[length:var(--fs-xs)]" title={a.card_url || a.url}>
                                 {a.card_url || a.url}
                               </code>
                               <button
@@ -689,7 +689,7 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
                               </button>
                             </div>
                             <div className="flex flex-wrap items-center gap-3">
-                              <label className="flex items-center gap-1.5 text-[12px]">
+                              <label className="flex items-center gap-1.5 text-[length:var(--fs-sm)]">
                                 <Switch
                                   checked={a.enabled}
                                   ariaLabel={`启用 ${a.name}`}
@@ -697,12 +697,12 @@ export function StudioPeers({ onSynced }: { onSynced?: () => void }) {
                                 />
                                 在本机使用
                               </label>
-                              <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                              <span className="text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
                                 远端助手 ID {a.remote_agent_id || "—"} · 状态检查 {ago(a.last_checked_at)}
                               </span>
                             </div>
                             {a.last_error && (
-                              <div className="text-[11px]" style={{ color: "var(--color-err)" }}>{a.last_error}</div>
+                              <div className="text-[length:var(--fs-xs)]" style={{ color: "var(--color-err)" }}>{a.last_error}</div>
                             )}
                           </div>
                         )}

@@ -46,14 +46,14 @@ function Shell({
   return (
     <div className="my-2 overflow-hidden rounded-lg border border-[var(--color-border)]">
       <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[8px] bg-[var(--color-surface-2)] px-2.5 py-1.5">
-        <span className="text-[12px] font-medium text-[var(--color-text)]">{title}</span>
-        {hint ? <span className="text-[12px] text-[var(--color-muted)]">{hint}</span> : null}
+        <span className="text-[length:var(--fs-sm)] font-medium text-[var(--color-text)]">{title}</span>
+        {hint ? <span className="text-[length:var(--fs-sm)] text-[var(--color-muted)]">{hint}</span> : null}
         <div className="ml-auto flex items-center gap-1">
           <button
             type="button"
             onClick={() => setShowRaw((v) => !v)}
             data-tap
-            className="rounded px-1.5 py-1 text-[12px] text-[var(--color-muted)] hover:bg-[var(--color-surface-3)]"
+            className="rounded px-1.5 py-1 text-[length:var(--fs-sm)] text-[var(--color-muted)] hover:bg-[var(--color-surface-3)]"
           >
             {showRaw ? "看渲染" : "看源码"}
           </button>
@@ -65,7 +65,7 @@ function Shell({
               window.setTimeout(() => setCopied(false), 1500);
             }}
             data-tap
-            className="rounded px-1.5 py-1 text-[12px] text-[var(--color-muted)] hover:bg-[var(--color-surface-3)]"
+            className="rounded px-1.5 py-1 text-[length:var(--fs-sm)] text-[var(--color-muted)] hover:bg-[var(--color-surface-3)]"
           >
             {copied ? "已复制" : "复制"}
           </button>
@@ -77,7 +77,7 @@ function Shell({
             <CodeBlock code={raw} lang={rawLang} bare />
           </div>
         ) : (
-          <pre className="max-h-[420px] overflow-auto px-3 py-2 text-[12px] leading-[1.6] text-[var(--color-text)]">
+          <pre className="max-h-[420px] overflow-auto px-3 py-2 text-[length:var(--fs-sm)] leading-[1.6] text-[var(--color-text)]">
             {raw}
           </pre>
         )
@@ -116,8 +116,8 @@ function TreeNode({
 
   if (!node.collapsible) {
     return (
-      <div className="flex items-start gap-1.5 py-[1px] font-mono text-[12px] leading-[1.55]" style={{ paddingLeft: pad }}>
-        <span className="shrink-0 text-[12px] text-[var(--color-muted)]">
+      <div className="flex items-start gap-1.5 py-[1px] font-mono text-[length:var(--fs-sm)] leading-[1.55]" style={{ paddingLeft: pad }}>
+        <span className="shrink-0 text-[length:var(--fs-sm)] text-[var(--color-muted)]">
           {node.key === "$" ? "" : node.key}
         </span>
         {node.key !== "$" ? <span className="text-[var(--color-muted)]">:</span> : null}
@@ -128,7 +128,7 @@ function TreeNode({
     );
   }
   return (
-    <div className="py-[1px] font-mono text-[12px] leading-[1.55]">
+    <div className="py-[1px] font-mono text-[length:var(--fs-sm)] leading-[1.55]">
       <button
         type="button"
         data-jsonrow
@@ -175,10 +175,10 @@ export function CsvBlock({ code, delimiter }: { code: string; delimiter: string 
   return (
     <Shell title={delimiter === "\t" ? "TSV" : "CSV"} hint={`${table.rows.length} 行`} raw={code}>
       {table.header.length >= 3 ? (
-        <p className="px-2.5 pt-1 text-[12px] text-[var(--color-muted)] lg:hidden">← 左右滑动看更多列 →</p>
+        <p className="px-2.5 pt-1 text-[length:var(--fs-sm)] text-[var(--color-muted)] lg:hidden">← 左右滑动看更多列 →</p>
       ) : null}
       <div className="max-h-[420px] overflow-auto">
-        <table className="w-full border-collapse text-[12px]">
+        <table className="w-full border-collapse text-[length:var(--fs-sm)]">
           <thead className="sticky top-0 bg-[var(--color-surface-2)]">
             <tr>
               {table.header.map((h, i) => (
@@ -313,7 +313,7 @@ export function ChartBlock({ code }: { code: string }) {
         {spec.series.length > 1 ? (
           <div className="mt-1 flex flex-wrap gap-3 px-1">
             {spec.series.map((s, i) => (
-              <span key={i} className="inline-flex items-center gap-1.5 text-[12px] text-[var(--color-text)]">
+              <span key={i} className="inline-flex items-center gap-1.5 text-[length:var(--fs-sm)] text-[var(--color-text)]">
                 <span className="inline-block h-2 w-2 rounded-sm" style={{ background: color(i) }} />
                 {s.name}
               </span>
@@ -340,7 +340,7 @@ export function DiffBlock({ code }: { code: string }) {
   const lines = useMemo(() => parseDiff(code), [code]);
   return (
     <Shell title="改动" hint={`+${lines.filter((l) => l.type === "add").length} / -${lines.filter((l) => l.type === "del").length}`} raw={code}>
-      <div className="max-h-[420px] overflow-auto py-1 font-mono text-[12px] leading-[1.55]">
+      <div className="max-h-[420px] overflow-auto py-1 font-mono text-[length:var(--fs-sm)] leading-[1.55]">
         {lines.map((l, i) => (
           <div key={i} className={`whitespace-pre-wrap break-all px-2.5 ${DIFF_STYLE[l.type] ?? ""}`}>
             {l.text || " "}

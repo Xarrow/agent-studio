@@ -79,11 +79,11 @@ export function Sheet({
         }
       >
         <div className="shrink-0 px-3.5 pt-3 pb-2 flex items-baseline gap-2">
-          <span id={labelledBy} className="text-[13.5px] font-semibold">
+          <span id={labelledBy} className="text-[length:var(--fs-md)] font-semibold">
             {title}
           </span>
           {hint && (
-            <span className="text-[11px] min-w-0 truncate" style={{ color: "var(--color-muted)" }}>
+            <span className="text-[length:var(--fs-xs)] min-w-0 truncate" style={{ color: "var(--color-muted)" }}>
               {hint}
             </span>
           )}

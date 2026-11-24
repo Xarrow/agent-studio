@@ -197,7 +197,7 @@ export function AgentSwitcher({
         }
       >
         <span
-          className="shrink-0 grid place-items-center w-[26px] h-[26px] rounded-[7px] text-[12.5px] font-semibold"
+          className="shrink-0 grid place-items-center w-[26px] h-[26px] rounded-[7px] text-[length:var(--fs-base)] font-semibold"
           style={{
             background: "color-mix(in srgb, var(--color-accent) 12%, transparent)",
             color: "var(--color-accent)",
@@ -208,7 +208,7 @@ export function AgentSwitcher({
         </span>
         {!mini && (
         <span
-          className="min-w-0 flex-1 truncate font-medium text-[13.5px] leading-[1.25]"
+          className="min-w-0 flex-1 truncate font-medium text-[length:var(--fs-md)] leading-[1.25]"
           title={current?.name ?? undefined}
         >
           {current?.name ?? "选择助手"}
@@ -285,12 +285,12 @@ export function AgentSwitcher({
             }}
           >
             <div className="flex items-center justify-between px-3 h-10 shrink-0">
-              <span className="text-[12px] font-medium" style={{ color: "var(--color-muted)" }}>
+              <span className="text-[length:var(--fs-sm)] font-medium" style={{ color: "var(--color-muted)" }}>
                 选择助手 · {agents.length}
               </span>
               <button
                 data-tap
-                className="lg:hidden text-[12.5px] px-2 h-8 rounded-md"
+                className="lg:hidden text-[length:var(--fs-base)] px-2 h-8 rounded-md"
                 style={{ color: "var(--color-muted)" }}
                 onClick={close}
               >
@@ -302,7 +302,7 @@ export function AgentSwitcher({
               <div className="px-2 pt-2 shrink-0">
                 <input
                   ref={inputRef}
-                  className="input h-9 text-[13px]"
+                  className="input h-9 text-[length:var(--fs-base)]"
                   placeholder="搜索助手"
                   value={q}
                   onChange={(e) => {
@@ -315,7 +315,7 @@ export function AgentSwitcher({
 
             <div ref={listRef} className="min-h-0 flex-1 overflow-auto py-1" style={{ maxHeight: "min(58vh, 420px)" }}>
               {shown.length === 0 && (
-                <div className="px-3 py-6 text-center text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+                <div className="px-3 py-6 text-center text-[length:var(--fs-base)]" style={{ color: "var(--color-muted)" }}>
                   没找到「{q}」
                 </div>
               )}
@@ -336,7 +336,7 @@ export function AgentSwitcher({
                     style={{ background: i === active ? "var(--color-surface-2)" : "transparent" }}
                   >
                     <span
-                      className="shrink-0 grid place-items-center w-[30px] h-[30px] rounded-lg text-[13px] font-semibold mt-0.5"
+                      className="shrink-0 grid place-items-center w-[30px] h-[30px] rounded-lg text-[length:var(--fs-base)] font-semibold mt-0.5"
                       style={{
                         background: "color-mix(in srgb, var(--color-accent) 12%, transparent)",
                         color: "var(--color-accent)",
@@ -347,10 +347,10 @@ export function AgentSwitcher({
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center gap-1.5">
-                        <span className="truncate text-[13.5px] font-medium">{a.name}</span>
+                        <span className="truncate text-[length:var(--fs-md)] font-medium">{a.name}</span>
                         {orch && (
                           <span
-                            className="shrink-0 text-[10.5px] px-1.5 py-[1px] rounded"
+                            className="shrink-0 text-[length:var(--fs-xs)] px-1.5 py-[1px] rounded"
                             style={{
                               background: "var(--color-surface-3)",
                               color: "var(--color-muted)",
@@ -361,7 +361,7 @@ export function AgentSwitcher({
                         )}
                       </span>
                       <span
-                        className="block truncate text-[11.5px] mt-[2px]"
+                        className="block truncate text-[length:var(--fs-sm)] mt-[2px]"
                         style={{ color: "var(--color-muted)" }}
                       >
                         {a.description || ml || "没有描述"}
@@ -392,7 +392,7 @@ export function AgentSwitcher({
 
             <a
               href="/agents"
-              className="shrink-0 flex items-center justify-between px-3 h-9 border-t border-[var(--color-border)] text-[12.5px] hover:bg-[var(--color-surface-2)]"
+              className="shrink-0 flex items-center justify-between px-3 h-9 border-t border-[var(--color-border)] text-[length:var(--fs-base)] hover:bg-[var(--color-surface-2)]"
               style={{ color: "var(--color-muted)" }}
             >
               管理全部助手

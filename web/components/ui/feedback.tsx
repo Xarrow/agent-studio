@@ -229,16 +229,16 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
             >
               <div className="flex gap-2.5 p-3">
                 <span
-                  className="shrink-0 w-[18px] h-[18px] rounded-full flex items-center justify-center text-[12px] font-bold mt-[1px]"
+                  className="shrink-0 w-[18px] h-[18px] rounded-full flex items-center justify-center text-[length:var(--fs-sm)] font-bold mt-[1px]"
                   style={{ background: s.accent, color: "var(--color-accent-fg)" }}
                 >
                   {s.icon}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <div className="text-[13px] font-medium break-words">{t.title}</div>
+                  <div className="text-[length:var(--fs-base)] font-medium break-words">{t.title}</div>
                   {t.message && (
                     <div
-                      className="text-[12px] mt-0.5 whitespace-pre-wrap break-words"
+                      className="text-[length:var(--fs-sm)] mt-0.5 whitespace-pre-wrap break-words"
                       style={{ color: "var(--color-muted)" }}
                     >
                       {t.message}
@@ -247,7 +247,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
                 </div>
                 <button
                   aria-label="关闭"
-                  className="shrink-0 text-[14px] leading-none px-1 opacity-50 hover:opacity-100"
+                  className="shrink-0 text-[length:var(--fs-md)] leading-none px-1 opacity-50 hover:opacity-100"
                   onClick={() => setToasts((p) => p.filter((x) => x.id !== t.id))}
                 >
                   ×
@@ -313,18 +313,18 @@ function ConfirmDialog({
   return (
     <Modal onClose={() => onDone(false)} labelledBy="cfm-title" width={opt.details?.length ? 520 : 440}>
       <div className="p-5">
-        <h2 id="cfm-title" className="text-[15px] font-semibold mb-2">
+        <h2 id="cfm-title" className="text-[length:var(--fs-lg)] font-semibold mb-2">
           {opt.title}
         </h2>
         {opt.description && (
-          <p className="text-[13px] leading-relaxed" style={{ color: "var(--color-muted)" }}>
+          <p className="text-[length:var(--fs-base)] leading-relaxed" style={{ color: "var(--color-muted)" }}>
             {opt.description}
           </p>
         )}
 
         {opt.details && opt.details.length > 0 && (
           <div
-            className="mt-3 rounded-md p-3 text-[12px] mono"
+            className="mt-3 rounded-md p-3 text-[length:var(--fs-sm)] mono"
             style={{ background: "var(--color-surface-2)", border: "1px solid var(--color-border)" }}
           >
             {opt.details.map((d, i) => (
@@ -338,7 +338,7 @@ function ConfirmDialog({
 
         {opt.warning && (
           <div
-            className="mt-3 flex items-start gap-2 rounded-md px-3 py-2 text-[12.5px] leading-relaxed"
+            className="mt-3 flex items-start gap-2 rounded-md px-3 py-2 text-[length:var(--fs-base)] leading-relaxed"
             style={{
               background: "color-mix(in srgb, var(--color-err) 10%, transparent)",
               border: "1px solid color-mix(in srgb, var(--color-err) 35%, transparent)",
@@ -359,7 +359,7 @@ function ConfirmDialog({
         )}
 
         {danger && (
-          <p className="mt-3 text-[12px]" style={{ color: "var(--color-err)" }}>
+          <p className="mt-3 text-[length:var(--fs-sm)]" style={{ color: "var(--color-err)" }}>
             此操作不可撤销。
           </p>
         )}
@@ -421,7 +421,7 @@ function PromptDialog({
     onDone(value);
   };
 
-  const inputCls = "input mono text-[12px]";
+  const inputCls = "input mono text-[length:var(--fs-sm)]";
   const inputStyle =
     liveErr || err
       ? { borderColor: "var(--color-err)" }
@@ -430,11 +430,11 @@ function PromptDialog({
   return (
     <Modal onClose={() => onDone(null)} labelledBy="prm-title" width={560}>
       <div className="p-5">
-        <h2 id="prm-title" className="text-[15px] font-semibold mb-2">
+        <h2 id="prm-title" className="text-[length:var(--fs-lg)] font-semibold mb-2">
           {opt.title}
         </h2>
         {opt.description && (
-          <p className="text-[13px] leading-relaxed whitespace-pre-wrap" style={{ color: "var(--color-muted)" }}>
+          <p className="text-[length:var(--fs-base)] leading-relaxed whitespace-pre-wrap" style={{ color: "var(--color-muted)" }}>
             {opt.description}
           </p>
         )}
@@ -477,12 +477,12 @@ function PromptDialog({
 
         {/* 校验反馈：实时红字，不用弹窗 */}
         {(liveErr || err) && (
-          <p className="mt-1.5 text-[12px]" style={{ color: "var(--color-err)" }}>
+          <p className="mt-1.5 text-[length:var(--fs-sm)]" style={{ color: "var(--color-err)" }}>
             {liveErr ?? err}
           </p>
         )}
         {!liveErr && opt.hint && (
-          <p className="mt-1.5 text-[12px]" style={{ color: "var(--color-muted)" }}>
+          <p className="mt-1.5 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
             {opt.hint}
           </p>
         )}

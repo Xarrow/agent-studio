@@ -94,7 +94,7 @@ export function SkillsStrip({
     <div ref={rootRef} className="relative px-1.5 pt-1 pb-1">
       <div className="flex items-center gap-1.5 min-w-0">
         <span
-          className="shrink-0 text-[11px]"
+          className="shrink-0 text-[length:var(--fs-xs)]"
           style={{ color: "var(--color-muted)" }}
           title="这个助手挂载的技能"
         >
@@ -106,7 +106,7 @@ export function SkillsStrip({
               key={s.id}
               data-tap
               title={s.description || s.name}
-              className="shrink-0 max-w-[92px] truncate rounded-md px-1.5 h-[22px] text-[11px] transition-colors hover:brightness-95"
+              className="shrink-0 max-w-[92px] truncate rounded-md px-1.5 h-[22px] text-[length:var(--fs-xs)] transition-colors hover:brightness-95"
               style={{
                 background: "color-mix(in srgb, var(--color-accent) 9%, transparent)",
                 color: "var(--color-accent)",
@@ -119,7 +119,7 @@ export function SkillsStrip({
           {rest > 0 && (
             <button
               data-tap
-              className="shrink-0 rounded-md px-1.5 h-[22px] text-[11px]"
+              className="shrink-0 rounded-md px-1.5 h-[22px] text-[length:var(--fs-xs)]"
               style={{ background: "var(--color-surface-2)", color: "var(--color-muted)" }}
               onClick={() => setOpen(true)}
             >
@@ -127,12 +127,12 @@ export function SkillsStrip({
             </button>
           )}
           {mountedSkills.length === 0 && mountedIds.length > 0 && (
-            <span className="shrink-0 text-[11px]" style={{ color: "var(--color-muted)" }}>
+            <span className="shrink-0 text-[length:var(--fs-xs)]" style={{ color: "var(--color-muted)" }}>
               已挂 {mountedIds.length} 个
             </span>
           )}
           {mountedIds.length === 0 && (
-            <span className="text-[11px]" style={{ color: "var(--color-muted)" }}>
+            <span className="text-[length:var(--fs-xs)]" style={{ color: "var(--color-muted)" }}>
               未挂载
             </span>
           )}
@@ -161,12 +161,12 @@ export function SkillsStrip({
           }}
         >
           <div className="flex items-center justify-between px-2.5 h-9 shrink-0">
-            <span className="text-[11.5px] font-medium" style={{ color: "var(--color-muted)" }}>
+            <span className="text-[length:var(--fs-sm)] font-medium" style={{ color: "var(--color-muted)" }}>
               技能 · 已挂 {mountedIds.length}
             </span>
             <button
               data-tap
-              className="text-[11.5px] px-1.5 h-6 rounded"
+              className="text-[length:var(--fs-sm)] px-1.5 h-6 rounded"
               style={{ color: "var(--color-muted)" }}
               onClick={() => setOpen(false)}
             >
@@ -176,7 +176,7 @@ export function SkillsStrip({
           {all.length > 8 && (
             <div className="px-2 pt-2 shrink-0">
               <input
-                className="input h-8 text-[12.5px]"
+                className="input h-8 text-[length:var(--fs-base)]"
                 placeholder="搜索技能"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
@@ -185,7 +185,7 @@ export function SkillsStrip({
           )}
           <div className="overflow-auto py-1" style={{ maxHeight: "min(50vh, 340px)" }}>
             {list.length === 0 && (
-              <div className="px-3 py-5 text-center text-[12px]" style={{ color: "var(--color-muted)" }}>
+              <div className="px-3 py-5 text-center text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                 {all.length === 0 ? "技能库是空的" : `没找到「${q}」`}
               </div>
             )}
@@ -215,10 +215,10 @@ export function SkillsStrip({
                     )}
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[12.5px]">{s.name}</span>
+                    <span className="block truncate text-[length:var(--fs-base)]">{s.name}</span>
                     {s.description && (
                       <span
-                        className="block truncate text-[11px] mt-[1px]"
+                        className="block truncate text-[length:var(--fs-xs)] mt-[1px]"
                         style={{ color: "var(--color-muted)" }}
                       >
                         {s.description}
@@ -231,7 +231,7 @@ export function SkillsStrip({
           </div>
           <a
             href="/skills"
-            className="shrink-0 flex items-center justify-between px-2.5 h-9 border-t border-[var(--color-border)] text-[11.5px] hover:bg-[var(--color-surface-2)]"
+            className="shrink-0 flex items-center justify-between px-2.5 h-9 border-t border-[var(--color-border)] text-[length:var(--fs-sm)] hover:bg-[var(--color-surface-2)]"
             style={{ color: "var(--color-muted)" }}
           >
             技能库

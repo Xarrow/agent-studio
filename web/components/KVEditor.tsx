@@ -56,7 +56,7 @@ export function KVEditor({
   return (
     <div className="flex flex-col gap-1.5">
       {pairs.length === 0 && (
-        <p className="text-[12px] text-[var(--color-muted)]">还没有配置项</p>
+        <p className="text-[length:var(--fs-sm)] text-[var(--color-muted)]">还没有配置项</p>
       )}
       {pairs.map((p, i) => {
         const dup = dupKeys.has(p.k.trim().toLowerCase());
@@ -87,7 +87,7 @@ export function KVEditor({
             <button
               type="button"
               data-tap
-              className="btn !min-h-0 !px-2 !py-1 text-[12px] text-[var(--color-err)] shrink-0"
+              className="btn !min-h-0 !px-2 !py-1 text-[length:var(--fs-sm)] text-[var(--color-err)] shrink-0"
               title="删除这一项"
               onClick={() => onChange(pairs.filter((_, j) => j !== i))}
             >
@@ -100,7 +100,7 @@ export function KVEditor({
         <button
           type="button"
           data-tap
-          className="btn !min-h-0 !px-2.5 !py-1 text-[12px] shrink-0"
+          className="btn !min-h-0 !px-2.5 !py-1 text-[length:var(--fs-sm)] shrink-0"
           onClick={() => onChange([...pairs, { k: "", v: "" }])}
         >
           {addLabel}
@@ -109,7 +109,7 @@ export function KVEditor({
           <button
             type="button"
             data-tap
-            className="text-[12px] text-[var(--color-muted)] underline"
+            className="text-[length:var(--fs-sm)] text-[var(--color-muted)] underline"
             onClick={() => setReveal(!reveal)}
           >
             {reveal ? "隐藏值" : "显示值"}

@@ -24,7 +24,7 @@ function Badge({ ok, text, pending }: { ok: boolean; text: string; pending?: boo
   const tone = pending ? "var(--color-muted)" : ok ? "var(--color-ok)" : "var(--color-warn)";
   return (
     <span
-      className="rounded px-1.5 py-0.5 text-[12px]"
+      className="rounded px-1.5 py-0.5 text-[length:var(--fs-sm)]"
       style={{ background: `color-mix(in srgb, ${tone} 14%, transparent)`, color: tone }}
     >
       {text}
@@ -53,12 +53,12 @@ function Row({
       style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
     >
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[13.5px] font-medium">{title}</span>
+        <span className="text-[length:var(--fs-md)] font-medium">{title}</span>
         <Badge ok={ok} pending={pending} text={pending ? "检测中…" : ok ? "已就绪" : "没找到"} />
-        <span className="mono text-[12px]">{header}</span>
+        <span className="mono text-[length:var(--fs-sm)]">{header}</span>
         {action ? <div className="ml-auto">{action}</div> : null}
       </div>
-      <div className="mt-1 text-[12px] leading-relaxed" style={{ color: "var(--color-muted)" }}>
+      <div className="mt-1 text-[length:var(--fs-sm)] leading-relaxed" style={{ color: "var(--color-muted)" }}>
         {detail}
       </div>
     </div>
@@ -197,7 +197,7 @@ export function RuntimeCard() {
       />
 
       {info?.os ? (
-        <p className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+        <p className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
           系统：{info.os.system} {info.os.release} · {info.os.machine} · 镜像：{info.mirror}
         </p>
       ) : null}
@@ -208,7 +208,7 @@ export function RuntimeCard() {
           style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
         >
           <div className="flex items-center gap-2">
-            <span className="text-[12px] font-medium">
+            <span className="text-[length:var(--fs-sm)] font-medium">
               安装 {job.target === "node" ? "Node.js" : "Python"}
               {job.version ? ` ${job.version}` : ""}
             </span>
@@ -218,7 +218,7 @@ export function RuntimeCard() {
             />
           </div>
           <pre
-            className="mono mt-1 max-h-[240px] overflow-auto whitespace-pre-wrap break-all rounded p-2 text-[12px] leading-relaxed"
+            className="mono mt-1 max-h-[240px] overflow-auto whitespace-pre-wrap break-all rounded p-2 text-[length:var(--fs-sm)] leading-relaxed"
             style={{ background: "var(--color-surface-2)", color: "var(--color-muted)" }}
           >
             {job.steps.map((s) => s.line).join("\n") || "启动中…"}

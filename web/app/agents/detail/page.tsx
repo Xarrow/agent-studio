@@ -38,7 +38,7 @@ export default function AgentEditorPage() {
   if (!agentId) {
     return (
       <div className="p-4 md:p-6 lg:p-7 max-w-5xl">
-        <p className="text-[13px]" style={{ color: "var(--color-muted)" }}>
+        <p className="text-[length:var(--fs-base)]" style={{ color: "var(--color-muted)" }}>
           URL 里没有助手 id ——{" "}
           <a href="/agents" className="underline" style={{ color: "var(--color-accent)" }}>
             回助手列表

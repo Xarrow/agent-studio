@@ -256,7 +256,7 @@ export default function EnvironmentPage() {
 
   /* ------------------------------ 渲染 ------------------------------ */
   if (loading) {
-    return <div className="p-4 md:p-6 lg:p-7 text-[13px] text-[var(--color-muted)]">加载中…</div>;
+    return <div className="p-4 md:p-6 lg:p-7 text-[length:var(--fs-base)] text-[var(--color-muted)]">加载中…</div>;
   }
 
   const info = drivers.find((d) => d.key === driver);
@@ -335,13 +335,13 @@ export default function EnvironmentPage() {
                 style={{ background: status.reachable ? "var(--color-ok)" : "var(--color-err)" }}
                 title={status.reachable ? "连接正常" : "连不上"}
               />
-              <span className="text-[15px] font-semibold">{status.config.driver_label}</span>
-              <span className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+              <span className="text-[length:var(--fs-lg)] font-semibold">{status.config.driver_label}</span>
+              <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                 {status.table_count} 张表
                 {status.reachable ? "" : " · 连不上"}
               </span>
               <span
-                className="ml-auto rounded-full px-1.5 py-[1px] text-[10.5px] leading-[15px]"
+                className="ml-auto rounded-full px-1.5 py-[1px] text-[length:var(--fs-xs)] leading-[15px]"
                 style={{
                   background: "color-mix(in srgb, var(--color-accent) 12%, transparent)",
                   color: "var(--color-accent)",
@@ -351,20 +351,20 @@ export default function EnvironmentPage() {
               </span>
             </div>
 
-            <div className="mono mt-1.5 truncate text-[11.5px]" style={{ color: "var(--color-muted)" }} title={status.runtime.describe}>
+            <div className="mono mt-1.5 truncate text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }} title={status.runtime.describe}>
               {status.runtime.describe}
             </div>
-            <div className="mono mt-0.5 truncate text-[11px]" style={{ color: "var(--color-muted)" }} title={status.config_path}>
+            <div className="mono mt-0.5 truncate text-[length:var(--fs-xs)]" style={{ color: "var(--color-muted)" }} title={status.config_path}>
               配置 {status.config_path}
             </div>
 
             {status.error && (
-              <p className="text-[12px] mt-2" style={{ color: "var(--color-err)" }}>
+              <p className="text-[length:var(--fs-sm)] mt-2" style={{ color: "var(--color-err)" }}>
                 {status.error}
               </p>
             )}
             {status.pending_restart && (
-              <p className="text-[12px] mt-2" style={{ color: "var(--color-warn)" }}>
+              <p className="text-[length:var(--fs-sm)] mt-2" style={{ color: "var(--color-warn)" }}>
                 配置已改动但还没生效 —— 重启服务后才会用新库。
               </p>
             )}
@@ -376,7 +376,7 @@ export default function EnvironmentPage() {
           type="button"
           onClick={() => setSwitchOpen((v) => !v)}
           aria-expanded={switchOpen}
-          className="mt-3 flex w-full items-center gap-1.5 rounded-lg text-left text-[11.5px]"
+          className="mt-3 flex w-full items-center gap-1.5 rounded-lg text-left text-[length:var(--fs-sm)]"
           style={{ color: "var(--color-muted)", minHeight: 32 }}
         >
           <span>{switchOpen ? "▾" : "▸"}</span>
@@ -408,7 +408,7 @@ export default function EnvironmentPage() {
                 }}
               >
                 <div
-                  className="text-[13px] font-medium mb-0.5 flex items-center gap-1.5"
+                  className="text-[length:var(--fs-base)] font-medium mb-0.5 flex items-center gap-1.5"
                   style={{ color: on ? "var(--color-accent)" : "var(--color-text)" }}
                 >
                   {d.label}
@@ -417,10 +417,10 @@ export default function EnvironmentPage() {
                   )}
                   {/* 手机：换行后的三张卡本来就只占一行高，选中的那张再给一段说明
                       —— 三张各带三四行说明时这一节要 500px，现在 ~200px。 */}
-                  {on && <span className="ml-auto text-[11px] sm:hidden">当前选择</span>}
+                  {on && <span className="ml-auto text-[length:var(--fs-xs)] sm:hidden">当前选择</span>}
                 </div>
                 <div
-                  className={`text-[12px] leading-snug text-[var(--color-muted)] max-md:leading-relaxed ${
+                  className={`text-[length:var(--fs-sm)] leading-snug text-[var(--color-muted)] max-md:leading-relaxed ${
                     on || inUse ? "" : "max-md:hidden"
                   }`}
                 >
@@ -437,7 +437,7 @@ export default function EnvironmentPage() {
             <div>
               <div className="label mb-1.5">数据库文件路径</div>
               <input
-                className="input text-[13px] mono"
+                className="input text-[length:var(--fs-base)] mono"
                 placeholder="留空则用默认：<项目>/data/studio.db"
                 value={form.sqlite_path}
                 disabled={switching}
@@ -453,7 +453,7 @@ export default function EnvironmentPage() {
                 <div className="sm:col-span-2">
                   <div className="label mb-1.5">主机地址</div>
                   <input
-                    className="input text-[13px] mono"
+                    className="input text-[length:var(--fs-base)] mono"
                     placeholder={driver === "mysql" ? "127.0.0.1" : "127.0.0.1"}
                     value={form.host}
                     disabled={switching}
@@ -466,7 +466,7 @@ export default function EnvironmentPage() {
                 <div>
                   <div className="label mb-1.5">端口</div>
                   <input
-                    className="input text-[13px] mono"
+                    className="input text-[length:var(--fs-base)] mono"
                     placeholder={String(info?.default_port ?? "")}
                     value={form.port}
                     disabled={switching}
@@ -482,7 +482,7 @@ export default function EnvironmentPage() {
                 <div>
                   <div className="label mb-1.5">用户名</div>
                   <input
-                    className="input text-[13px] mono"
+                    className="input text-[length:var(--fs-base)] mono"
                     value={form.user}
                     disabled={switching}
                     onChange={(e) => {
@@ -494,7 +494,7 @@ export default function EnvironmentPage() {
                 <div>
                   <div className="label mb-1.5">密码</div>
                   <input
-                    className="input text-[13px]"
+                    className="input text-[length:var(--fs-base)]"
                     type="password"
                     placeholder={sameDriver && status?.config.has_password ? "留空 = 不修改" : ""}
                     value={form.password}
@@ -511,7 +511,7 @@ export default function EnvironmentPage() {
                 <div>
                   <div className="label mb-1.5">数据库名</div>
                   <input
-                    className="input text-[13px] mono"
+                    className="input text-[length:var(--fs-base)] mono"
                     placeholder="agent_studio"
                     value={form.database}
                     disabled={switching}
@@ -520,13 +520,13 @@ export default function EnvironmentPage() {
                       setTest(null);
                     }}
                   />
-                  <p className="text-[12px] text-[var(--color-muted)] mt-1">不存在会自动创建</p>
+                  <p className="text-[length:var(--fs-sm)] text-[var(--color-muted)] mt-1">不存在会自动创建</p>
                 </div>
                 {driver === "mysql" && (
                   <div>
                     <div className="label mb-1.5">字符集</div>
                     <input
-                      className="input text-[13px] mono"
+                      className="input text-[length:var(--fs-base)] mono"
                       value={form.charset}
                       disabled={switching}
                       onChange={(e) => {
@@ -537,7 +537,7 @@ export default function EnvironmentPage() {
                   </div>
                 )}
                 <div className="flex items-end">
-                  <label className="flex items-center gap-2 text-[12px] text-[var(--color-muted)] cursor-pointer pb-2">
+                  <label className="flex items-center gap-2 text-[length:var(--fs-sm)] text-[var(--color-muted)] cursor-pointer pb-2">
                     <input
                       type="checkbox"
                       checked={form.ssl}
@@ -553,7 +553,7 @@ export default function EnvironmentPage() {
               </div>
 
               {!passwordReady && (
-                <p className="text-[12px]" style={{ color: "var(--color-warn)" }}>
+                <p className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-warn)" }}>
                   切到另一个驱动需要重新填密码（密码不会跨驱动沿用）。
                 </p>
               )}
@@ -570,11 +570,11 @@ export default function EnvironmentPage() {
               border: `1px solid ${test.ok ? "var(--color-ok)" : "var(--color-err)"}`,
             }}
           >
-            <div className="text-[12px] font-medium mb-1.5" style={{ color: test.ok ? "var(--color-ok)" : "var(--color-err)" }}>
+            <div className="text-[length:var(--fs-sm)] font-medium mb-1.5" style={{ color: test.ok ? "var(--color-ok)" : "var(--color-err)" }}>
               {test.ok ? "✓ 测试通过" : "✕ 测试未通过"}
             </div>
             {test.ok ? (
-              <ul className="text-[12px] text-[var(--color-muted)] space-y-0.5">
+              <ul className="text-[length:var(--fs-sm)] text-[var(--color-muted)] space-y-0.5">
                 <li>目标：{test.target}</li>
                 <li>
                   表：{test.table_count} 张{test.created_database ? "（数据库是本次自动创建的）" : ""}
@@ -582,7 +582,7 @@ export default function EnvironmentPage() {
                 {test.server_version && <li className="mono break-all">{test.server_version}</li>}
               </ul>
             ) : (
-              <div className="text-[12px] text-[var(--color-muted)] space-y-1">
+              <div className="text-[length:var(--fs-sm)] text-[var(--color-muted)] space-y-1">
                 {test.problems.length > 0 && (
                   <ul className="list-disc pl-4">
                     {test.problems.map((p) => (
@@ -609,7 +609,7 @@ export default function EnvironmentPage() {
             {busy === "switch" || switching ? "切换中…" : "保存并切换"}
           </button>
           {!test?.ok && (
-            <span className="text-[12px] text-[var(--color-muted)]">
+            <span className="text-[length:var(--fs-sm)] text-[var(--color-muted)]">
               先测试通过才能切换（避免把服务切坏）
             </span>
           )}
@@ -658,7 +658,7 @@ export default function EnvironmentPage() {
         </div>
         {upCfg && (
           <p
-            className="mt-2 text-[12px]"
+            className="mt-2 text-[length:var(--fs-sm)]"
             style={{ color: upCfg.writable ? "var(--color-ok)" : "var(--color-err)" }}
           >
             {upCfg.writable ? "✓ 目录可用（已存在且可写）" : `✗ 不可写：${upCfg.error || "未知原因"}`}
@@ -709,7 +709,7 @@ export default function EnvironmentPage() {
         desc="数据不搬、要重启、切错自动退回"
         defaultOpen={false}
       >
-        <ul className="text-[12px] text-[var(--color-muted)] space-y-1.5 leading-relaxed">
+        <ul className="text-[length:var(--fs-sm)] text-[var(--color-muted)] space-y-1.5 leading-relaxed">
           <li>
             <b>数据不会自动搬过去。</b>切到新库后表会自动建好，但里面是空的 ——
             原来的数据还在旧库里。切回来就能看到。

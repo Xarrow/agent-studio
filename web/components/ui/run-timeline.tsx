@@ -380,7 +380,7 @@ function TimelineRow({
       {/* 左侧：图标 + 连接线（把"一连串步骤"这件事视觉化） */}
       <div className="flex flex-col items-center shrink-0">
         <div
-          className="relative w-6 h-6 rounded-md flex items-center justify-center text-[12px] shrink-0"
+          className="relative w-6 h-6 rounded-md flex items-center justify-center text-[length:var(--fs-sm)] shrink-0"
           style={{
             background: isErr ? "var(--tint-err-bg)" : st.bg,
             color: isErr ? "var(--color-err-strong)" : st.color,
@@ -414,7 +414,7 @@ function TimelineRow({
           /* 产物卡：图片直接内联显示，其他文件给可点链接（后端 /api/work/file） */
           <div>
             <span
-              className="text-[12px] font-medium mb-0.5 block"
+              className="text-[length:var(--fs-sm)] font-medium mb-0.5 block"
               style={{ color: st.color }}
             >
               产物 · {s.artifactPath.split("/").pop()}
@@ -432,7 +432,7 @@ function TimelineRow({
                 href={`/api/work/file/${s.artifactPath}`}
                 target="_blank"
                 rel="noreferrer"
-                className="text-[12px] underline underline-offset-2 inline-flex min-h-[32px] items-center lg:min-h-0"
+                className="text-[length:var(--fs-sm)] underline underline-offset-2 inline-flex min-h-[32px] items-center lg:min-h-0"
                 style={{ color: st.color }}
               >
                 {s.artifactPath.split("/").pop()}
@@ -444,28 +444,28 @@ function TimelineRow({
         <button
           type="button"
           data-tap
-          className="text-[12px] font-medium mb-0.5 inline-flex min-h-[32px] min-w-[32px] items-center gap-1 text-left lg:min-h-0"
+          className="text-[length:var(--fs-sm)] font-medium mb-0.5 inline-flex min-h-[32px] min-w-[32px] items-center gap-1 text-left lg:min-h-0"
           style={{ color: isErr ? "var(--color-err-strong)" : st.color }}
           onClick={() => long && setOpen(!open)}
         >
           {s.label}
           {isErr && (
             <span
-              className="rounded px-1 text-[10.5px]"
+              className="rounded px-1 text-[length:var(--fs-xs)]"
               style={{ background: "var(--tint-err-bg)", color: "var(--color-err-strong)" }}
             >
               失败
             </span>
           )}
           {long && (
-            <span className="text-[10.5px] font-normal" style={{ color: "var(--color-muted)" }}>
+            <span className="text-[length:var(--fs-xs)] font-normal" style={{ color: "var(--color-muted)" }}>
               {open ? "收起" : "展开全部"}
             </span>
           )}
         </button>
         {long && !open ? (
           <div
-            className={`text-[12px] leading-relaxed whitespace-pre-wrap break-words ${monoBody ? "mono" : ""}`}
+            className={`text-[length:var(--fs-sm)] leading-relaxed whitespace-pre-wrap break-words ${monoBody ? "mono" : ""}`}
             style={{ color: "var(--color-text)" }}
           >
             {bodyLines.slice(0, 6).join("\n") + "\n…"}
@@ -473,14 +473,14 @@ function TimelineRow({
         ) : monoBody ? (
           /* 工具调用 / 工具结果：原样等宽（是日志，重排反而看不清） */
           <div
-            className="text-[12px] leading-relaxed whitespace-pre-wrap break-words mono"
+            className="text-[length:var(--fs-sm)] leading-relaxed whitespace-pre-wrap break-words mono"
             style={{ color: "var(--color-text)" }}
           >
             {s.body}
           </div>
         ) : (
           /* 思考 / 回答这类正话：走 Markdown（图片、列表、加粗、公式都能显示） */
-          <div className="text-[12px] leading-relaxed" style={{ color: "var(--color-text)" }}>
+          <div className="text-[length:var(--fs-sm)] leading-relaxed" style={{ color: "var(--color-text)" }}>
             <Markdown text={s.body} />
           </div>
         )}
@@ -835,7 +835,7 @@ export function ProcessBar({
 
         {failures > 0 && (
           <span
-            className="shrink-0 rounded px-1 text-[10.5px] font-medium"
+            className="shrink-0 rounded px-1 text-[length:var(--fs-xs)] font-medium"
             style={{ background: "var(--tint-err-bg)", color: "var(--color-err-strong)", border: "1px solid var(--tint-err-line)" }}
           >
             {failures} 步失败
@@ -843,7 +843,7 @@ export function ProcessBar({
         )}
 
         {usage && usage.tokens > 0 && open && (
-          <span className="shrink-0 text-[11px]" style={{ color: "var(--color-muted)" }}>
+          <span className="shrink-0 text-[length:var(--fs-xs)]" style={{ color: "var(--color-muted)" }}>
             {new Intl.NumberFormat("en-US").format(usage.tokens)} tokens
           </span>
         )}
@@ -871,7 +871,7 @@ export function ProcessBar({
       {open && (
         <div className="proc-body">
           {loading && proc.length === 0 ? (
-            <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+            <div className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
               正在加载这一步的过程…
             </div>
           ) : (
@@ -882,7 +882,7 @@ export function ProcessBar({
             <button
               type="button"
               data-tap
-              className="ml-auto text-[11.5px] inline-flex items-center gap-1.5"
+              className="ml-auto text-[length:var(--fs-sm)] inline-flex items-center gap-1.5"
               style={{ color: anim ? "var(--color-accent)" : "var(--color-muted)" }}
               onClick={() => saveAnim(!anim)}
               title="执行动效（思考 / 工具 / 结果）"

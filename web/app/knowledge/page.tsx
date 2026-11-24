@@ -76,7 +76,7 @@ const STATUS: Record<string, { label: string; color: string }> = {
 function StatusDot({ status }: { status: string }) {
   const st = STATUS[status] ?? STATUS.uploading;
   return (
-    <span className="inline-flex items-center gap-1.5 text-[11px]" style={{ color: "var(--color-text-2)" }}>
+    <span className="inline-flex items-center gap-1.5 text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-2)" }}>
       <span aria-hidden className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: st.color }} />
       {st.label}
     </span>
@@ -286,20 +286,20 @@ export default function KnowledgePage() {
         <div className="mb-3 rounded-[12px] p-3" style={{ background: "var(--color-surface-2)" }}>
           <div className="flex flex-wrap items-center gap-2">
             <input
-              className="input h-9 w-48 text-[12px]"
+              className="input h-9 w-48 text-[length:var(--fs-sm)]"
               placeholder="标题（留空自动命名）"
               value={pasteDraft.title}
               onChange={(e) => setPasteDraft((d) => ({ ...d, title: e.target.value }))}
             />
             <input
-              className="input h-9 min-w-0 flex-1 text-[12px]"
+              className="input h-9 min-w-0 flex-1 text-[length:var(--fs-sm)]"
               placeholder="标签，逗号分隔（可留空，向量化后会自动提关键词）"
               value={pasteDraft.tags}
               onChange={(e) => setPasteDraft((d) => ({ ...d, tags: e.target.value }))}
             />
           </div>
           <textarea
-            className="input mt-2 w-full text-[12.5px]"
+            className="input mt-2 w-full text-[length:var(--fs-base)]"
             rows={6}
             placeholder="把正文贴进来（支持 Markdown：标题、列表、表格都保留）"
             value={pasteDraft.text}
@@ -346,13 +346,13 @@ export default function KnowledgePage() {
         <div className="mb-3 rounded-[12px] p-3" style={{ background: "var(--color-surface-2)" }}>
           <div className="flex flex-wrap items-center gap-2">
             <input
-              className="input h-9 min-w-0 flex-1 text-[12px]"
+              className="input h-9 min-w-0 flex-1 text-[length:var(--fs-sm)]"
               placeholder="https://…（公网地址；内网与元数据地址会被拒绝）"
               value={urlDraft.url}
               onChange={(e) => setUrlDraft((d) => ({ ...d, url: e.target.value }))}
             />
             <input
-              className="input h-9 w-36 text-[12px]"
+              className="input h-9 w-36 text-[length:var(--fs-sm)]"
               placeholder="标题（可留空）"
               value={urlDraft.name}
               onChange={(e) => setUrlDraft((d) => ({ ...d, name: e.target.value }))}
@@ -522,7 +522,7 @@ function DocDetail({
           <KV k="标签">
             <span className="flex flex-wrap items-center gap-1">
               {tagLinks === null ? (
-                <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                <span className="text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
                   读取中…
                 </span>
               ) : (
@@ -530,7 +530,7 @@ function DocDetail({
                   {tagLinks.filter((t) => t.status === "accepted").map((t) => (
                     <span
                       key={t.tag_id}
-                      className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px]"
+                      className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[length:var(--fs-xs)]"
                       style={{ background: "var(--color-surface-3)" }}
                       title={t.source === "model" ? "模型提炼" : "自己加的"}
                     >
@@ -551,7 +551,7 @@ function DocDetail({
                   ))}
                   {tagLinks.filter((t) => t.status === "candidate").length > 0 ? (
                     <span className="flex flex-wrap items-center gap-1">
-                      <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                      <span className="text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
                         模型建议：
                       </span>
                       {tagLinks
@@ -559,7 +559,7 @@ function DocDetail({
                         .map((t) => (
                           <span
                             key={t.tag_id}
-                            className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px]"
+                            className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[length:var(--fs-xs)]"
                             style={{ background: "color-mix(in srgb, var(--color-accent) 10%, transparent)" }}
                           >
                             {t.name}
@@ -595,7 +595,7 @@ function DocDetail({
                 </>
               )}
               <input
-                className="input h-7 w-24 text-[11px]"
+                className="input h-7 w-24 text-[length:var(--fs-xs)]"
                 placeholder="加标签"
                 value={tagDraft}
                 onChange={(e) => setTagDraft(e.target.value)}
@@ -613,12 +613,12 @@ function DocDetail({
           </KV>
           <KV k="版本">
             <span className="flex flex-wrap items-center gap-1">
-              <span className="text-[12px]">v{doc.version}</span>
+              <span className="text-[length:var(--fs-sm)]">v{doc.version}</span>
               {versions.slice(0, 4).map((v) => (
                 <button
                   key={`${v.version}-${v.id}`}
                   type="button"
-                  className="text-[11px] underline"
+                  className="text-[length:var(--fs-xs)] underline"
                   style={{ color: v.current ? "var(--color-text-3)" : "var(--color-accent)" }}
                   disabled={v.current}
                   onClick={async () => {
@@ -654,10 +654,10 @@ function DocDetail({
             </span>
           </KV>
           <KV k="存储路径">
-            <code className="mono break-all text-[11px]">{doc.storage_path || "—"}</code>
+            <code className="mono break-all text-[length:var(--fs-xs)]">{doc.storage_path || "—"}</code>
           </KV>
           <KV k="sha256">
-            <code className="mono break-all text-[11px]">{doc.sha256.slice(0, 16)}…</code>
+            <code className="mono break-all text-[length:var(--fs-xs)]">{doc.sha256.slice(0, 16)}…</code>
           </KV>
           <KV k="解析">
             {doc.parsed?.parserVersion ? `v${doc.parsed.parserVersion}` : "—"}
@@ -670,7 +670,7 @@ function DocDetail({
 
         {/* 试打：用文档自己的话试，不让用户造词 */}
         <div className="rounded-[10px] px-2.5 py-2" style={{ background: "var(--color-surface-2)" }}>
-          <div className="mb-1 text-[11px]" style={{ color: "var(--color-text-3)" }}>
+          <div className="mb-1 text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
             试打检索
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
@@ -678,7 +678,7 @@ function DocDetail({
               <button
                 key={q}
                 type="button"
-                className="rounded-full px-2 py-0.5 text-[11px]"
+                className="rounded-full px-2 py-0.5 text-[length:var(--fs-xs)]"
                 style={{ background: "var(--color-surface-3)", color: "var(--color-text-2)" }}
                 onClick={() => {
                   setProbeQ(q);
@@ -689,7 +689,7 @@ function DocDetail({
               </button>
             ))}
             <input
-              className="input h-7 w-40 text-[11px]"
+              className="input h-7 w-40 text-[length:var(--fs-xs)]"
               placeholder="或输入文档里出现过的词…"
               value={probeQ}
               onChange={(e) => setProbeQ(e.target.value)}
@@ -708,7 +708,7 @@ function DocDetail({
               {probing ? "查…" : "查"}
             </button>
             {probeRes ? (
-              <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+              <span className="text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
                 {probeRes.items.length} 条 · {probeRes.latency_ms}ms
               </span>
             ) : null}
@@ -716,12 +716,12 @@ function DocDetail({
           {probeRes ? (
             <div className="mt-1 space-y-1">
               {probeRes.items.length === 0 ? (
-                <div className="text-[11.5px]" style={{ color: "var(--color-err,#dc2626)" }}>
+                <div className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-err,#dc2626)" }}>
                   没查到：这段文字可能还没进索引，或换文档里出现过的词再试
                 </div>
               ) : (
                 probeRes.items.slice(0, 3).map((h) => (
-                  <div key={h.id} className="rounded-[8px] px-2 py-1 text-[11.5px]" style={{ background: "var(--color-surface-3)" }}>
+                  <div key={h.id} className="rounded-[8px] px-2 py-1 text-[length:var(--fs-sm)]" style={{ background: "var(--color-surface-3)" }}>
                     <span className="mr-1">{h.name}</span>
                     <span style={{ color: "var(--color-text-3)" }}>
                       {h.matched_path === "both" ? "词+义" : h.matched_path === "vector" ? "语义" : "关键词"}
@@ -738,7 +738,7 @@ function DocDetail({
 
         {doc.error?.message ? (
           <div
-            className="rounded-md px-2.5 py-2 text-[12px]"
+            className="rounded-md px-2.5 py-2 text-[length:var(--fs-sm)]"
             style={{ background: "color-mix(in srgb, var(--color-err,#dc2626) 8%, transparent)", color: "var(--color-err,#dc2626)" }}
           >
             {doc.error.message}
@@ -746,7 +746,7 @@ function DocDetail({
         ) : null}
 
         <div id={`raw-${doc.id}`}>
-          <div className="mb-1.5 flex items-center gap-2 text-[12px]">
+          <div className="mb-1.5 flex items-center gap-2 text-[length:var(--fs-sm)]">
             <span style={{ color: "var(--color-text-2)" }}>解析文本</span>
             {chunks.length > 2 ? (
               <button
@@ -762,7 +762,7 @@ function DocDetail({
           {text === null ? (
             <div className="h-16 animate-pulse rounded-md" style={{ background: "var(--color-surface-3)" }} />
           ) : chunks.length === 0 ? (
-            <div className="text-[12px]" style={{ color: "var(--color-text-3)" }}>
+            <div className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-3)" }}>
               {doc.status === "failed" ? "解析失败，没有文本" : "还没有解析文本（扫描件需要 OCR）"}
             </div>
           ) : (
@@ -770,16 +770,16 @@ function DocDetail({
               {shown.map((c) => (
                 <div
                   key={c.ord}
-                  className="rounded-md p-2.5 text-[12.5px] leading-relaxed"
+                  className="rounded-md p-2.5 text-[length:var(--fs-base)] leading-relaxed"
                   style={{ background: "var(--color-surface-3)", color: "var(--color-text-2)", whiteSpace: "pre-wrap" }}
                 >
                   {c.page != null ? (
-                    <span className="mr-1 text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                    <span className="mr-1 text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
                       第 {c.page} 页
                     </span>
                   ) : null}
                   {c.sheet ? (
-                    <span className="mr-1 text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                    <span className="mr-1 text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
                       {c.sheet}
                     </span>
                   ) : null}
@@ -887,7 +887,7 @@ function CategoriesSection({
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-2">
           <input
-            className="input h-8 w-44 text-[12px]"
+            className="input h-8 w-44 text-[length:var(--fs-sm)]"
             placeholder="新建分类名"
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -985,18 +985,18 @@ function CategoriesSection({
                     )
                   }
                 >
-                  <span style={{ paddingLeft: Math.max(0, (c.depth - 1) * 18) }} className="min-w-0 flex-1 truncate text-[13px]">
+                  <span style={{ paddingLeft: Math.max(0, (c.depth - 1) * 18) }} className="min-w-0 flex-1 truncate text-[length:var(--fs-base)]">
                     {c.name}
                   </span>
                   {editing?.id === c.id ? (
                     <input
-                      className="input h-7 w-36 text-[12px]"
+                      className="input h-7 w-36 text-[length:var(--fs-sm)]"
                       value={editing.name}
                       onChange={(e) => setEditing({ id: c.id, name: e.target.value })}
                       aria-label="分类新名字"
                     />
                   ) : null}
-                  <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                  <span className="text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
                     {c.doc_count} 份
                   </span>
                 </Row>
@@ -1048,7 +1048,7 @@ function TagsSection({
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-2">
           <input
-            className="input h-8 w-44 text-[12px]"
+            className="input h-8 w-44 text-[length:var(--fs-sm)]"
             placeholder="新建标签"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
@@ -1182,9 +1182,9 @@ function TagsSection({
                     </>
                   }
                 >
-                  <span className="min-w-0 flex-1 truncate text-[13px]">{t.name}</span>
+                  <span className="min-w-0 flex-1 truncate text-[length:var(--fs-base)]">{t.name}</span>
                   <Chip tone="muted">{t.origin === "agent" ? "模型提炼" : "自己加的"}</Chip>
-                  <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                  <span className="text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
                     {t.doc_count} 份
                   </span>
                 </Row>
@@ -1294,18 +1294,18 @@ function StorageSection({
                     </>
                   }
                 >
-                  <span className="min-w-0 flex-1 truncate text-[13px]">{s.name}</span>
+                  <span className="min-w-0 flex-1 truncate text-[length:var(--fs-base)]">{s.name}</span>
                   <Chip tone="muted">{s.type === "local" ? "本地磁盘" : "S3 兼容"}</Chip>
                   {s.is_default ? <Chip tone="accent">默认</Chip> : null}
                   {s.last_test_ok === true ? <Chip tone="ok">连接正常</Chip> : null}
                   {s.last_test_ok === false ? <Chip tone="err">连接失败</Chip> : null}
-                  <span className="min-w-0 truncate text-[11px]" style={{ color: "var(--color-text-3)", maxWidth: 260 }}>
+                  <span className="min-w-0 truncate text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)", maxWidth: 260 }}>
                     {s.type === "local"
                       ? String(s.params?.root ?? "")
                       : `${s.params?.endpoint ?? ""}/${s.params?.bucket ?? ""}`}
                   </span>
                   {s.last_test_error ? (
-                    <span className="w-full truncate text-[11px]" style={{ color: "var(--color-err,#dc2626)" }}>
+                    <span className="w-full truncate text-[length:var(--fs-xs)]" style={{ color: "var(--color-err,#dc2626)" }}>
                       {s.last_test_error}
                     </span>
                   ) : null}
@@ -1330,13 +1330,13 @@ function StorageSection({
                 onChange={(v) => setForm((f) => ({ ...f, type: v as "local" | "s3" }))}
               />
               <input
-                className="input h-8 w-40 text-[12px]"
+                className="input h-8 w-40 text-[length:var(--fs-sm)]"
                 placeholder="名字（如 公司 OSS）"
                 value={form.name}
                 onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                 aria-label="存储名字"
               />
-              <label className="flex items-center gap-1.5 text-[12px]">
+              <label className="flex items-center gap-1.5 text-[length:var(--fs-sm)]">
                 <input
                   type="checkbox"
                   checked={form.is_default}
@@ -1358,7 +1358,7 @@ function StorageSection({
                 ] as const).map(([key, label]) => (
                   <input
                     key={key}
-                    className="input h-8 text-[12px]"
+                    className="input h-8 text-[length:var(--fs-sm)]"
                     placeholder={label}
                     type={key === "secret_access_key" ? "password" : "text"}
                     value={form[key]}
@@ -1368,7 +1368,7 @@ function StorageSection({
               </div>
             ) : (
               <input
-                className="input h-8 w-full text-[12px]"
+                className="input h-8 w-full text-[length:var(--fs-sm)]"
                 placeholder="本地根目录（如 /data/knowledge）"
                 value={form.root}
                 onChange={(e) => setForm((f) => ({ ...f, root: e.target.value }))}
@@ -1377,7 +1377,7 @@ function StorageSection({
 
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <input
-                className="input h-8 w-56 text-[12px]"
+                className="input h-8 w-56 text-[length:var(--fs-sm)]"
                 placeholder="路径模板"
                 value={form.path_template}
                 onChange={(e) => setForm((f) => ({ ...f, path_template: e.target.value }))}
@@ -1434,7 +1434,7 @@ function StorageSection({
               <button className="btn btn-sm" type="button" onClick={() => setAdding(false)}>
                 取消
               </button>
-              <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+              <span className="text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
                 密钥加密入库，页面上不再回显
               </span>
             </div>
@@ -1491,7 +1491,7 @@ function MigrateSection({ storages }: { storages: KnowledgeStorage[] }) {
             ]}
             onChange={setFromId}
           />
-          <span className="text-[12px]" style={{ color: "var(--color-text-3)" }}>
+          <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-3)" }}>
             →
           </span>
           <Select
@@ -1530,7 +1530,7 @@ function MigrateSection({ storages }: { storages: KnowledgeStorage[] }) {
 
         {running ? (
           <div>
-            <div className="mb-1 flex items-center justify-between text-[11px]" style={{ color: "var(--color-text-2)" }}>
+            <div className="mb-1 flex items-center justify-between text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-2)" }}>
               <span>
                 正在搬到「{running.to_name}」：{running.moved}/{running.total}
                 {running.failed > 0 ? ` · 失败 ${running.failed}` : ""}
@@ -1551,7 +1551,7 @@ function MigrateSection({ storages }: { storages: KnowledgeStorage[] }) {
 
         {last ? (
           <div
-            className="text-[11px]"
+            className="text-[length:var(--fs-xs)]"
             style={{ color: last.status === "failed" ? "var(--color-err,#dc2626)" : "var(--color-text-3)" }}
           >
             上次：{last.status === "done" ? "已完成" : "有失败"} · {last.from_name} → {last.to_name} · 搬了 {last.moved}/
@@ -1620,13 +1620,13 @@ function RecallSection() {
       className="flex-1 rounded-[10px] px-3 py-2 text-left"
       style={{ background: "var(--color-surface-2)", minWidth: 132 }}
     >
-      <div className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+      <div className="text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
         {label}
       </div>
       <div className="text-[18px] font-medium">
         {rate === null ? "—" : `${Math.round(rate * 100)}%`}
       </div>
-      <div className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+      <div className="text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
         {detail}
       </div>
     </button>
@@ -1639,14 +1639,14 @@ function RecallSection() {
       {!loaded && !stats ? (
         <div className="h-16 animate-pulse rounded-[10px]" style={{ background: "var(--color-surface-2)" }} />
       ) : !stats ? (
-        <div className="text-[12px]" style={{ color: "var(--color-text-3)" }}>
+        <div className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-3)" }}>
           暂时读不到统计数据
         </div>
       ) : (
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
             <input
-              className="input h-9 min-w-0 flex-1 text-[12px] sm:max-w-md"
+              className="input h-9 min-w-0 flex-1 text-[length:var(--fs-sm)] sm:max-w-md"
               placeholder="输入文档里出现过的词或句子…"
               value={probe}
               onChange={(e) => setProbe(e.target.value)}
@@ -1660,12 +1660,12 @@ function RecallSection() {
               {probing ? "查…" : "试一下"}
             </button>
             {idx ? (
-              <span className="text-[11px]" style={{ color: idx.available ? "var(--color-text-3)" : "var(--color-warn, #d97706)" }}>
+              <span className="text-[length:var(--fs-xs)]" style={{ color: idx.available ? "var(--color-text-3)" : "var(--color-warn, #d97706)" }}>
                 {idx.available ? `BM25 索引：${idx.chunks} 块 / ${idx.docs} 份` : "索引不可用（关键词走 SQL LIKE）"}
               </span>
             ) : null}
             {probeResult ? (
-              <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+              <span className="text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
                 {probeResult.items.length} 条 · {probeResult.latency_ms}ms
               </span>
             ) : null}
@@ -1673,13 +1673,13 @@ function RecallSection() {
           {probeResult ? (
             <div className="space-y-1">
               {probeResult.items.length === 0 ? (
-                <div className="text-[12px]" style={{ color: "var(--color-err,#dc2626)" }}>
+                <div className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-err,#dc2626)" }}>
                   没查到——试试换个说法，或给文档补标签/补关键词
                 </div>
               ) : (
                 probeResult.items.map((h) => (
                   <div key={h.id} className="rounded-[8px] px-2 py-1.5" style={{ background: "var(--color-surface-2)" }}>
-                    <div className="flex items-center gap-1.5 text-[12px]">
+                    <div className="flex items-center gap-1.5 text-[length:var(--fs-sm)]">
                       <span className="truncate">{h.name}</span>
                       <span
                         className="shrink-0 rounded px-1 text-[10px]"
@@ -1688,7 +1688,7 @@ function RecallSection() {
                         {h.matched_path === "both" ? "词+义" : h.matched_path === "vector" ? "语义" : "关键词"}
                       </span>
                     </div>
-                    <div className="truncate text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                    <div className="truncate text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
                       {h.snippet}
                     </div>
                   </div>
@@ -1723,7 +1723,7 @@ function RecallSection() {
 
           {cov && cov.length > 0 ? (
             <div className="rounded-[10px] px-2.5 py-2" style={{ background: "var(--color-surface-2)" }}>
-              <div className="mb-1 text-[11px]" style={{ color: "var(--color-text-3)" }}>
+              <div className="mb-1 text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
                 哪些助手能查到知识库
               </div>
               <div className="flex flex-wrap items-center gap-1.5">
@@ -1731,7 +1731,7 @@ function RecallSection() {
                   <button
                     key={a.id}
                     type="button"
-                    className="rounded-full px-2 py-0.5 text-[11px]"
+                    className="rounded-full px-2 py-0.5 text-[length:var(--fs-xs)]"
                     title={a.has_search ? "已挂 knowledge_search，点一下摘掉" : "点一下挂上 knowledge_search"}
                     style={{
                       background: a.has_search
@@ -1755,7 +1755,7 @@ function RecallSection() {
                   </button>
                 ))}
                 {cov.length > 8 ? (
-                  <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                  <span className="text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
                     还有 {cov.length - 8} 个
                   </span>
                 ) : null}
@@ -1765,11 +1765,11 @@ function RecallSection() {
 
           {open === "docs" ? (
             <div className="space-y-1">
-              <div className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+              <div className="text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
                 这些文档用自己标题+首段也查不到（多半是正文太短或标题太泛）
               </div>
               {stats.docs.misses.map((m) => (
-                <div key={m.id} className="truncate text-[12px]" style={{ color: "var(--color-text-2)" }}>
+                <div key={m.id} className="truncate text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-2)" }}>
                   {m.name}
                 </div>
               ))}
@@ -1777,11 +1777,11 @@ function RecallSection() {
           ) : null}
           {open === "tags" ? (
             <div className="space-y-1">
-              <div className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+              <div className="text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
                 这些标签名查不全它下面的文档（术语和正文不一致时最常见）
               </div>
               {stats.tags.misses.map((m) => (
-                <div key={m.id} className="truncate text-[12px]" style={{ color: "var(--color-text-2)" }}>
+                <div key={m.id} className="truncate text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-2)" }}>
                   {m.name} · 命中 {m.hit}/{m.expected}
                 </div>
               ))}
@@ -1822,7 +1822,7 @@ function TrashSection({ onChanged }: { onChanged: () => Promise<void> | void }) 
       {items === null ? (
         <div className="h-14 animate-pulse rounded-[10px]" style={{ background: "var(--color-surface-2)" }} />
       ) : items.length === 0 ? (
-        <div className="text-[12px]" style={{ color: "var(--color-text-3)" }}>
+        <div className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-3)" }}>
           回收站是空的
         </div>
       ) : (
@@ -1861,8 +1861,8 @@ function TrashSection({ onChanged }: { onChanged: () => Promise<void> | void }) 
                   </>
                 }
               >
-                <span className="min-w-0 flex-1 truncate text-[13px]">{d.name}</span>
-                <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                <span className="min-w-0 flex-1 truncate text-[length:var(--fs-base)]">{d.name}</span>
+                <span className="text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
                   {ago(d.updated_at)}
                 </span>
               </Row>
@@ -1925,7 +1925,7 @@ function PipelineSection({
       desc="每份文档走四步：解析 → 向量化 → 打标签 → 生成检索技能。哪一步没做，这里直接给按钮"
       right={
         embedOk ? null : (
-          <span className="text-[11px]" style={{ color: "var(--color-warn, #d97706)" }}>
+          <span className="text-[length:var(--fs-xs)]" style={{ color: "var(--color-warn, #d97706)" }}>
             向量化端点未配置
           </span>
         )
@@ -1938,11 +1938,11 @@ function PipelineSection({
               key={d.id}
               actions={
                 d.next === "wait_parse" ? (
-                  <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+                  <span className="text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
                     解析中…
                   </span>
                 ) : d.next === "done" ? (
-                  <span className="text-[11px]" style={{ color: "var(--color-ok,#16a34a)" }}>
+                  <span className="text-[length:var(--fs-xs)]" style={{ color: "var(--color-ok,#16a34a)" }}>
                     已完成
                   </span>
                 ) : (
@@ -1994,14 +1994,14 @@ function PipelineSection({
                 )
               }
             >
-              <span className="min-w-0 flex-1 truncate text-[13px]">{d.name}</span>
+              <span className="min-w-0 flex-1 truncate text-[length:var(--fs-base)]">{d.name}</span>
               <span className="flex items-center gap-1">
                 {STEP_LABEL.map((st) => {
                   const ok = d.steps[st.key];
                   return (
                     <span
                       key={st.key}
-                      className="rounded px-1 py-[1px] text-[10.5px]"
+                      className="rounded px-1 py-[1px] text-[length:var(--fs-xs)]"
                       title={ok ? `${st.text}已完成` : `${st.text}还没做`}
                       style={{
                         background: ok
@@ -2182,8 +2182,8 @@ function DocumentFlow({
           ＋
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block text-[12.5px]">{drag ? "松手即入库" : "拖文件进来，或选择文件"}</span>
-          <span className="block text-[11px]" style={{ color: "var(--color-text-3)" }}>
+          <span className="block text-[length:var(--fs-base)]">{drag ? "松手即入库" : "拖文件进来，或选择文件"}</span>
+          <span className="block text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
             PDF · DOCX · XLSX · PPTX · MD · TXT · HTML · ≤100MB
           </span>
         </span>
@@ -2204,7 +2204,7 @@ function DocumentFlow({
 
       <Toolbar>
         <input
-          className="input h-9 min-w-0 flex-1 text-[12px] sm:max-w-xs"
+          className="input h-9 min-w-0 flex-1 text-[length:var(--fs-sm)] sm:max-w-xs"
           placeholder="搜文档名（正文命中会一起出现在结果里）"
           value={q}
           onChange={(e) => onQuery(e.target.value)}
@@ -2221,13 +2221,13 @@ function DocumentFlow({
           ]}
           onChange={onTagFilter}
         />
-        <span className="ml-auto text-[11px]" style={{ color: "var(--color-text-3)" }}>
+        <span className="ml-auto text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
           {loading ? "读取中…" : `${shownDocs.length} 份`}
         </span>
       </Toolbar>
 
       {graphFilter ? (
-        <div className="flex flex-wrap items-center gap-2 rounded-[10px] px-2.5 py-1.5 text-[11.5px]"
+        <div className="flex flex-wrap items-center gap-2 rounded-[10px] px-2.5 py-1.5 text-[length:var(--fs-sm)]"
              style={{ background: "color-mix(in srgb, var(--color-accent) 10%, transparent)" }}>
           <span>图谱筛选：{graphFilter.kind === "doc" ? "文档" : graphFilter.kind === "tag" ? "标签" : graphFilter.kind === "skill" ? "技能" : graphFilter.kind === "category" ? "分类" : "助手"} · {graphFilter.label}</span>
           <span style={{ color: "var(--color-text-3)" }}>{shownDocs.length} 份</span>
@@ -2239,7 +2239,7 @@ function DocumentFlow({
 
       {loading ? (
         <div
-          className="rounded-[12px] px-3 py-6 text-center text-[12.5px]"
+          className="rounded-[12px] px-3 py-6 text-center text-[length:var(--fs-base)]"
           style={{ background: "var(--color-surface)", color: "var(--color-muted)" }}
         >
           正在读取文档清单…
@@ -2268,10 +2268,10 @@ function DocumentFlow({
                 onClick={() => setOpenId(open ? null : d.id)}
                 aria-expanded={open}
               >
-                <span className="text-[11px]" style={{ color: "var(--color-muted)" }}>
+                <span className="text-[length:var(--fs-xs)]" style={{ color: "var(--color-muted)" }}>
                   {open ? "▾" : "▸"}
                 </span>
-                <span className="min-w-0 flex-1 truncate text-[13px]">{d.name}</span>
+                <span className="min-w-0 flex-1 truncate text-[length:var(--fs-base)]">{d.name}</span>
               </button>
               <span className="flex items-center gap-1">
                 {([
@@ -2282,7 +2282,7 @@ function DocumentFlow({
                 ] as [string, boolean][]).map(([label, ok]) => (
                   <span
                     key={label}
-                    className="rounded-full px-1.5 py-[1px] text-[10.5px]"
+                    className="rounded-full px-1.5 py-[1px] text-[length:var(--fs-xs)]"
                     style={{
                       background: ok ? "color-mix(in srgb, var(--color-accent) 12%, transparent)" : "var(--color-surface-3)",
                       color: ok ? "var(--color-accent)" : "var(--color-text-3)",

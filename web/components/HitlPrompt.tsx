@@ -55,24 +55,24 @@ function FileWriteBlock({ file, compact }: { file: FileAction; compact?: boolean
   return (
     <div className="rounded-[10px] px-2.5 py-2" style={{ background: "var(--color-surface)" }}>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span className="text-[13px] font-medium">
+        <span className="text-[length:var(--fs-base)] font-medium">
           {file.agent ? `${file.agent} 要` : "助手要"}
           <span style={{ color: opTone }}>{file.op}</span>
           {targets.length > 1 ? ` ${targets.length} 个位置` : "一个文件"}
         </span>
         {file.exists && file.op !== "删除" && (
-          <span className="rounded-full px-1.5 py-[1px] text-[10.5px]" style={{ background: "var(--color-surface-2)", color: "var(--color-muted)" }}>
+          <span className="rounded-full px-1.5 py-[1px] text-[length:var(--fs-xs)]" style={{ background: "var(--color-surface-2)", color: "var(--color-muted)" }}>
             已有文件会被覆盖
           </span>
         )}
-        <span className="ml-auto text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+        <span className="ml-auto text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
           {file.op === "删除" ? "" : file.lines ? `${file.lines} 行` : file.size ? `${kb} KB` : ""}
         </span>
       </div>
 
       {/* 完整目标路径：目录灰、文件名深，一眼看清落在哪 */}
       <div
-        className="mono mt-1.5 rounded-md px-2 py-1.5 text-[12px] leading-relaxed break-all"
+        className="mono mt-1.5 rounded-md px-2 py-1.5 text-[length:var(--fs-sm)] leading-relaxed break-all"
         style={{ background: "var(--color-surface-2)", color: "var(--color-text)" }}
         title="完整目标路径"
       >
@@ -83,14 +83,14 @@ function FileWriteBlock({ file, compact }: { file: FileAction; compact?: boolean
       {/* 同一张卡上的其它目标：一条命令写好几个位置时，每一个都得看得见 */}
       {extra.length > 0 && (
         <div className="mt-1.5">
-          <div className="text-[11px]" style={{ color: "var(--color-muted)" }}>
+          <div className="text-[length:var(--fs-xs)]" style={{ color: "var(--color-muted)" }}>
             这条命令还会动这些位置
           </div>
           <div className="mt-1 space-y-1">
             {extra.map((t, i) => (
               <div
                 key={`${t.op}-${t.path}-${i}`}
-                className="mono rounded-md px-2 py-1.5 text-[11.5px] leading-relaxed break-all"
+                className="mono rounded-md px-2 py-1.5 text-[length:var(--fs-sm)] leading-relaxed break-all"
                 style={{ background: "var(--color-surface-2)" }}
               >
                 <span style={{ color: t.op === "删除" ? "var(--color-err)" : "var(--color-accent)" }}>
@@ -98,7 +98,7 @@ function FileWriteBlock({ file, compact }: { file: FileAction; compact?: boolean
                 </span>{" "}
                 <span>{t.path}</span>
                 {t.exists && t.op !== "删除" && (
-                  <span className="ml-1 text-[10.5px]" style={{ color: "var(--color-muted)" }}>
+                  <span className="ml-1 text-[length:var(--fs-xs)]" style={{ color: "var(--color-muted)" }}>
                     （已有，会覆盖）
                   </span>
                 )}
@@ -112,22 +112,22 @@ function FileWriteBlock({ file, compact }: { file: FileAction; compact?: boolean
       {file.before && file.before.length > 0 && file.after && file.after.length > 0 ? (
         <div className={`mt-1.5 grid gap-1.5 ${compact ? "" : "md:grid-cols-2"}`}>
           <div>
-            <div className="text-[11px] mb-0.5" style={{ color: "var(--color-muted)" }}>
+            <div className="text-[length:var(--fs-xs)] mb-0.5" style={{ color: "var(--color-muted)" }}>
               现在的内容（前几行）
             </div>
             <pre
-              className="mono text-[11px] rounded-md px-2 py-1.5 overflow-auto max-h-28 whitespace-pre-wrap break-all"
+              className="mono text-[length:var(--fs-xs)] rounded-md px-2 py-1.5 overflow-auto max-h-28 whitespace-pre-wrap break-all"
               style={{ background: "var(--color-surface-2)", color: "var(--color-muted)" }}
             >
               {file.before.join("\n")}
             </pre>
           </div>
           <div>
-            <div className="text-[11px] mb-0.5" style={{ color: "var(--color-muted)" }}>
+            <div className="text-[length:var(--fs-xs)] mb-0.5" style={{ color: "var(--color-muted)" }}>
               写入后（前几行）
             </div>
             <pre
-              className="mono text-[11px] rounded-md px-2 py-1.5 overflow-auto max-h-28 whitespace-pre-wrap break-all"
+              className="mono text-[length:var(--fs-xs)] rounded-md px-2 py-1.5 overflow-auto max-h-28 whitespace-pre-wrap break-all"
               style={{ background: "color-mix(in srgb, var(--color-accent) 7%, var(--color-surface-2))" }}
             >
               {file.after.join("\n")}
@@ -136,11 +136,11 @@ function FileWriteBlock({ file, compact }: { file: FileAction; compact?: boolean
         </div>
       ) : file.preview ? (
         <div className="mt-1.5">
-          <div className="text-[11px] mb-0.5" style={{ color: "var(--color-muted)" }}>
+          <div className="text-[length:var(--fs-xs)] mb-0.5" style={{ color: "var(--color-muted)" }}>
             内容摘要
           </div>
           <pre
-            className="mono text-[11px] rounded-md px-2 py-1.5 overflow-auto max-h-28 whitespace-pre-wrap break-all"
+            className="mono text-[length:var(--fs-xs)] rounded-md px-2 py-1.5 overflow-auto max-h-28 whitespace-pre-wrap break-all"
             style={{ background: "var(--color-surface-2)" }}
           >
             {file.preview}
@@ -149,11 +149,11 @@ function FileWriteBlock({ file, compact }: { file: FileAction; compact?: boolean
       ) : null}
 
       {file.command && (
-        <div className="mono text-[11px] mt-1.5 break-all" style={{ color: "var(--color-muted)" }}>
+        <div className="mono text-[length:var(--fs-xs)] mt-1.5 break-all" style={{ color: "var(--color-muted)" }}>
           命令：{file.command}
         </div>
       )}
-      <div className="text-[11.5px] mt-1.5" style={{ color: "var(--color-muted)" }}>
+      <div className="text-[length:var(--fs-sm)] mt-1.5" style={{ color: "var(--color-muted)" }}>
         这个位置在<strong style={{ color: "var(--color-text)" }}>当前会话目录之外</strong>，
         所以要你点一下。拒绝的话它不会写，并且会在对话里说明。
       </div>
@@ -300,7 +300,7 @@ export function HitlPrompt({
   if (stale) {
     return (
       <div
-        className="flex items-center gap-2 rounded-xl px-3 py-2 text-[12.5px] flex-wrap"
+        className="flex items-center gap-2 rounded-xl px-3 py-2 text-[length:var(--fs-base)] flex-wrap"
         style={{ background: "var(--color-surface-2)", color: "var(--color-muted)" }}
       >
         <span>这次的待确认已经处理过了，卡片已收起。</span>
@@ -314,7 +314,7 @@ export function HitlPrompt({
     const color = sent ? "var(--color-ok)" : "var(--color-err)";
     return (
       <div
-        className="flex items-center gap-2 rounded-xl border px-3 py-2 text-[12.5px] flex-wrap"
+        className="flex items-center gap-2 rounded-xl border px-3 py-2 text-[length:var(--fs-base)] flex-wrap"
         style={{ borderColor: "var(--color-border)", background: "var(--color-surface-2)" }}
       >
         <svg
@@ -367,17 +367,17 @@ export function HitlPrompt({
           <path d="M8 10.5V7a4 4 0 0 1 8 0v3.5" />
         </svg>
         <span
-          className="text-[13px] font-medium"
+          className="text-[length:var(--fs-base)] font-medium"
           style={{ color: danger ? "var(--color-err)" : "var(--color-warn)" }}
         >
           {fileCalls.length > 0 && !danger ? "要写会话目录之外的文件" : "需要你授权才能继续"}
         </span>
-        <span className="text-[12px] text-[var(--color-muted)]">
+        <span className="text-[length:var(--fs-sm)] text-[var(--color-muted)]">
           {headCount}
         </span>
         {danger && (
           <span
-            className="ml-auto rounded-full px-2 py-[2px] text-[11px] font-medium"
+            className="ml-auto rounded-full px-2 py-[2px] text-[length:var(--fs-xs)] font-medium"
             style={{ background: "var(--color-err)", color: "var(--color-accent-contrast)" }}
           >
             危险操作
@@ -394,13 +394,13 @@ export function HitlPrompt({
           {otherCalls.map((c, i) => (
             <div key={i} className="rounded-lg px-2.5 py-2" style={{ background: "var(--color-surface-2)" }}>
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[13px] font-medium">{c.label}</span>
+                <span className="text-[length:var(--fs-base)] font-medium">{c.label}</span>
                 {c.raw && c.raw !== c.label && (
-                  <span className="mono text-[10.5px] text-[var(--color-muted)]">{c.raw}</span>
+                  <span className="mono text-[length:var(--fs-xs)] text-[var(--color-muted)]">{c.raw}</span>
                 )}
                 {c.risk?.level === "danger" && (
                   <span
-                    className="rounded-full px-1.5 py-[1px] text-[10.5px] font-medium"
+                    className="rounded-full px-1.5 py-[1px] text-[length:var(--fs-xs)] font-medium"
                     style={{
                       background: "color-mix(in srgb, var(--color-err) 16%, transparent)",
                       color: "var(--color-err)",
@@ -411,23 +411,23 @@ export function HitlPrompt({
                 )}
                 {c.risk?.level === "caution" && (
                   <span
-                    className="rounded-full px-1.5 py-[1px] text-[10.5px]"
+                    className="rounded-full px-1.5 py-[1px] text-[length:var(--fs-xs)]"
                     style={{ background: "var(--color-surface)", color: "var(--color-muted)" }}
                   >
                     会改动文件
                   </span>
                 )}
               </div>
-              <div className="mono text-[11.5px] mt-1 break-all leading-relaxed">{c.detail}</div>
+              <div className="mono text-[length:var(--fs-sm)] mt-1 break-all leading-relaxed">{c.detail}</div>
               {c.risk?.level === "danger" && (
-                <div className="text-[11.5px] mt-1" style={{ color: "var(--color-err)" }}>
+                <div className="text-[length:var(--fs-sm)] mt-1" style={{ color: "var(--color-err)" }}>
                   {c.risk.reason}
                 </div>
               )}
               <button
                 type="button"
                 data-tap
-                className="text-[11.5px] mt-1 text-[var(--color-muted)] hover:text-[var(--color-text)] hover:underline"
+                className="text-[length:var(--fs-sm)] mt-1 text-[var(--color-muted)] hover:text-[var(--color-text)] hover:underline"
                 onClick={() => setShowFull(showFull === i ? null : i)}
                 aria-expanded={showFull === i}
               >
@@ -435,7 +435,7 @@ export function HitlPrompt({
               </button>
               {showFull === i && (
                 <pre
-                  className="mono text-[11px] mt-1.5 rounded-md p-2 overflow-auto max-h-64 whitespace-pre-wrap break-all"
+                  className="mono text-[length:var(--fs-xs)] mt-1.5 rounded-md p-2 overflow-auto max-h-64 whitespace-pre-wrap break-all"
                   style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)" }}
                 >
                   {c.full}
@@ -447,7 +447,7 @@ export function HitlPrompt({
       )}
 
       {err && (
-        <div className="px-3 pb-1 text-[12px]" style={{ color: "var(--color-err)" }}>
+        <div className="px-3 pb-1 text-[length:var(--fs-sm)]" style={{ color: "var(--color-err)" }}>
           恢复失败：{err}
         </div>
       )}
@@ -460,15 +460,15 @@ export function HitlPrompt({
         {confirming ? (
           /* 危险操作第二步：先把后果说清楚，再让点 */
           <div className="flex items-center gap-2 flex-wrap w-full">
-            <span className="text-[12.5px] font-medium" style={{ color: "var(--color-err)" }}>
+            <span className="text-[length:var(--fs-base)] font-medium" style={{ color: "var(--color-err)" }}>
               确认要执行{risky.length > 1 ? "这些" : "这个"}危险操作？
             </span>
-            <span className="text-[12px] text-[var(--color-muted)]">
+            <span className="text-[length:var(--fs-sm)] text-[var(--color-muted)]">
               {risky.map((c) => c.risk?.reason).filter(Boolean).join("；")}
             </span>
             {/* 危险操作的第二步才给「不再问」：默认关上，勾了才生效 —— 少一次点击，
                 但不把"以后都直接执行 rm"变成默认行为 */}
-            <label className="flex items-center gap-1.5 text-[12px] cursor-pointer select-none w-full" style={{ color: "var(--color-muted)" }}>
+            <label className="flex items-center gap-1.5 text-[length:var(--fs-sm)] cursor-pointer select-none w-full" style={{ color: "var(--color-muted)" }}>
               <input
                 type="checkbox"
                 checked={remember}
@@ -528,7 +528,7 @@ export function HitlPrompt({
             >
               拒绝
             </button>
-            <span className="text-[12px] text-[var(--color-muted)]">
+            <span className="text-[length:var(--fs-sm)] text-[var(--color-muted)]">
               拒绝后它不会写，会在对话里说明。
             </span>
           </>
@@ -553,7 +553,7 @@ export function HitlPrompt({
             </button>
             {!danger && (
               /* 同类操作问十遍是主要噪音源；危险操作故意不给这个选项（每次都该问） */
-              <label className="flex items-center gap-1.5 text-[12px] text-[var(--color-muted)] cursor-pointer select-none">
+              <label className="flex items-center gap-1.5 text-[length:var(--fs-sm)] text-[var(--color-muted)] cursor-pointer select-none">
                 <input
                   type="checkbox"
                   checked={remember}
@@ -572,14 +572,14 @@ export function HitlPrompt({
             >
               拒绝
             </button>
-            <span className="text-[12px] text-[var(--color-muted)]">
+            <span className="text-[length:var(--fs-sm)] text-[var(--color-muted)]">
               拒绝后它会拿到结果、自己换个做法。
             </span>
             {permissionHref && (
               <a
                 href={permissionHref}
                 data-tap
-                className="ml-auto text-[12px] hover:underline"
+                className="ml-auto text-[length:var(--fs-sm)] hover:underline"
                 style={{ color: "var(--color-accent)" }}
               >
                 总是允许？去助手权限里配 →

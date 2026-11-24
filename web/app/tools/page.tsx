@@ -505,15 +505,15 @@ export default function ToolsPage() {
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="rounded-[9px] px-3 py-3" style={{ borderColor: "var(--color-border)" }}>
-                  <h2 id="attach-title" className="text-[15px] font-semibold">
+                  <h2 id="attach-title" className="text-[length:var(--fs-lg)] font-semibold">
                     把选中的 {picked.size} 个工具加到哪个助手？
                   </h2>
-                  <p className="mt-1 text-[12px]" style={{ color: "var(--color-muted)" }}>
+                  <p className="mt-1 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                   </p>
                 </div>
                 <div className="p-2">
                   {attachAgents.length === 0 ? (
-                    <div className="px-3 py-6 text-center text-[12px]" style={{ color: "var(--color-muted)" }}>
+                    <div className="px-3 py-6 text-center text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                       加载中…
                     </div>
                   ) : (
@@ -525,8 +525,8 @@ export default function ToolsPage() {
                         onClick={() => void attachTo(a.id, a.name)}
                         className="flex min-h-[38px] w-full flex-col items-start justify-center rounded-[8px] px-3 text-left hover:bg-[var(--color-surface-2)] disabled:opacity-50"
                       >
-                        <span className="text-[13.5px]">{a.name}</span>
-                        <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+                        <span className="text-[length:var(--fs-md)]">{a.name}</span>
+                        <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                           {a.description || "没有说明"}
                         </span>
                       </button>
@@ -545,7 +545,7 @@ export default function ToolsPage() {
           {/* 工具条一行：类型筛选（带计数）+ 两个动作 */}
           <Toolbar>
             <input
-              className="input h-8 w-[180px] shrink-0 text-[12px]"
+              className="input h-8 w-[180px] shrink-0 text-[length:var(--fs-sm)]"
               placeholder="搜工具名 / 说明 / 参数"
               aria-label="搜索工具"
               value={query}
@@ -586,7 +586,7 @@ export default function ToolsPage() {
           </Toolbar>
 
           {!loaded ? (
-            <div className="card p-6 text-[13px] text-[var(--color-muted)]">加载中…</div>
+            <div className="card p-6 text-[length:var(--fs-base)] text-[var(--color-muted)]">加载中…</div>
           ) : filtered.length === 0 ? (
             <div className="card">
               <Empty
@@ -624,11 +624,11 @@ export default function ToolsPage() {
                 onClear={() => setPicked(new Set())}
                 actions={
                   <>
-                    <button className="btn btn-primary text-[12px]" onClick={() => void openAttach()}>
+                    <button className="btn btn-primary text-[length:var(--fs-sm)]" onClick={() => void openAttach()}>
                       加到助手…
                     </button>
                     <button
-                      className="btn text-[12px]"
+                      className="btn text-[length:var(--fs-sm)]"
                       style={{ color: "var(--color-err)" }}
                       onClick={() => void bulkRemove()}
                     >
@@ -661,7 +661,7 @@ export default function ToolsPage() {
                         <>
                           <button
                             type="button"
-                            className="btn text-[12px] max-md:w-9 max-md:px-0"
+                            className="btn text-[length:var(--fs-sm)] max-md:w-9 max-md:px-0"
                             title="编辑"
                             aria-label="编辑"
                             onClick={() => {
@@ -675,7 +675,7 @@ export default function ToolsPage() {
                           </button>
                           <button
                             type="button"
-                            className="btn text-[12px] max-md:w-9 max-md:px-0"
+                            className="btn text-[length:var(--fs-sm)] max-md:w-9 max-md:px-0"
                             aria-label={isTesting ? "收起试运行" : "试运行"}
                             disabled={unavailable}
                             title={
@@ -694,7 +694,7 @@ export default function ToolsPage() {
                           {!PROTECTED_KINDS.has(t.kind) && (
                             <button
                               type="button"
-                              className="btn text-[12px] max-md:w-9 max-md:px-0"
+                              className="btn text-[length:var(--fs-sm)] max-md:w-9 max-md:px-0"
                               title="删除"
                               aria-label="删除"
                               style={{ color: "var(--color-err)" }}
@@ -717,14 +717,14 @@ export default function ToolsPage() {
                       )}
                       <span className="min-w-0 flex-1 basis-[240px]">
                         <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                          <span className="mono truncate text-[14px] font-medium">{t.name}</span>
+                          <span className="mono truncate text-[length:var(--fs-md)] font-medium">{t.name}</span>
                           <Chip tone="muted">{t.kind}</Chip>
                           {Boolean(t.flags?.read_only) && <Chip tone="ok">只读</Chip>}
                           {Boolean(t.flags?.dangerous) && <Chip tone="warn">写/执行</Chip>}
                           {unavailable && <Chip tone="err">当前平台不可用</Chip>}
                         </span>
                         <span
-                          className="mt-0.5 block truncate text-[12px]"
+                          className="mt-0.5 block truncate text-[length:var(--fs-sm)]"
                           style={{ color: "var(--color-muted)" }}
                         >
                           {/* 摘要行只留纯文本（单行截断）：星号原样显示比不显示更糟 */}
@@ -748,7 +748,7 @@ export default function ToolsPage() {
                           已试跑
                         </Chip>
                       ) : null}
-                      <span className="shrink-0 text-[12px]" style={{ color: "var(--color-muted)" }}>
+                      <span className="shrink-0 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                         {open ? "▾" : "▸"}
                       </span>
                     </Row>
@@ -756,7 +756,7 @@ export default function ToolsPage() {
                     {open && (
                       <RowDetail>
                         {unavailable && typeof t.flags?.platform_note === "string" ? (
-                          <div className="mb-2 text-[12px]" style={{ color: "var(--color-err)" }}>
+                          <div className="mb-2 text-[length:var(--fs-sm)]" style={{ color: "var(--color-err)" }}>
                             ⚠ {t.flags.platform_note}
                           </div>
                         ) : null}
@@ -796,11 +796,11 @@ export default function ToolsPage() {
                         </div>
                         {/* ── 哪些助手在用：就地勾选增删（与助手页能力区双向同步） ── */}
                         <div className="mt-2.5">
-                          <div className="mb-1 text-[12px]" style={{ color: "var(--color-muted)" }}>
+                          <div className="mb-1 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                             哪些助手在用
                           </div>
                           {Object.keys(agentNames).length === 0 ? (
-                            <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+                            <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                               还没有助手 —— 先去 Agents 建一个
                             </span>
                           ) : (
@@ -812,7 +812,7 @@ export default function ToolsPage() {
                                 return (
                                   <label
                                     key={aid}
-                                    className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-[7px] border px-2.5 text-[12px]"
+                                    className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-[7px] border px-2.5 text-[length:var(--fs-sm)]"
                                     style={{
                                       borderColor: on ? "var(--color-accent)" : "var(--color-border)",
                                       background: on ? "color-mix(in srgb, var(--color-accent) 8%, transparent)" : "transparent",
@@ -836,12 +836,12 @@ export default function ToolsPage() {
                             <ToolTestForm tool={t} onDone={(out) => testOut2(t, out)} />
                           </div>
                         ) : (
-                          <div className="mt-2.5 text-[12px]" style={{ color: "var(--color-muted)" }}>
+                          <div className="mt-2.5 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                           </div>
                         )}
                         {testOut[t.id] ? (
                           <pre
-                            className="mt-2.5 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-[8px] border p-2.5 text-[12px]"
+                            className="mt-2.5 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-[8px] border p-2.5 text-[length:var(--fs-sm)]"
                             style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
                           >
                             {testOut[t.id]}
@@ -950,7 +950,7 @@ function NewToolDialog({
     <div className={DLG_BACKDROP}>
       <div className={`${DLG_CARD} max-w-xl p-5 max-h-[86vh] overflow-auto`}>
         <h2 className="text-[16px] font-medium mb-1">自定义 HTTP 工具</h2>
-        <p className="text-[12px] text-[var(--color-muted)] mb-4">
+        <p className="text-[length:var(--fs-sm)] text-[var(--color-muted)] mb-4">
           值里用 <code className="mono">{"{{参数名}}"}</code> 占位（URL、请求头、Cookie、请求体都支持），
           调用时替换成模型给出的实参。
         </p>
@@ -1029,7 +1029,7 @@ function NewToolDialog({
               />
             </div>
           ) : (
-            <p className="text-[12px] text-[var(--color-muted)]">
+            <p className="text-[length:var(--fs-sm)] text-[var(--color-muted)]">
               {method} 没有请求体 —— 参数通过 URL 占位符和下面的查询参数携带。
             </p>
           )}
@@ -1044,7 +1044,7 @@ function NewToolDialog({
             />
             {knownParams.length > 0 && (
               <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+                <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                   模板里的占位符：
                 </span>
                 {knownParams.map((p) => (
@@ -1056,7 +1056,7 @@ function NewToolDialog({
                 {missing.length > 0 && (
                   <button
                     type="button"
-                    className="text-[12px] underline"
+                    className="text-[length:var(--fs-sm)] underline"
                     style={{ color: "var(--color-accent)" }}
                     onClick={() => setParams([...declaredParams, ...missing].join(", "))}
                   >
@@ -1070,7 +1070,7 @@ function NewToolDialog({
           {/* 高级配置：请求头 / Cookie / 固定 query —— 默认收起，用得上再展开 */}
           <div className="pt-1 border-t border-[var(--color-border)]">
             <button
-              className="text-[12px] text-[var(--color-muted)] mt-2"
+              className="text-[length:var(--fs-sm)] text-[var(--color-muted)] mt-2"
               data-tap
               onClick={() => setShowAdvanced(!showAdvanced)}
             >
@@ -1096,7 +1096,7 @@ function NewToolDialog({
             )}
           </div>
 
-          <label className="flex items-center gap-2 text-[12px]">
+          <label className="flex items-center gap-2 text-[length:var(--fs-sm)]">
             <input
               type="checkbox"
               checked={readOnly}
@@ -1105,7 +1105,7 @@ function NewToolDialog({
             />
             只读工具（不产生副作用，可并发）
           </label>
-          {err && <div className="text-[12px] text-[var(--color-err)]">{err}</div>}
+          {err && <div className="text-[length:var(--fs-sm)] text-[var(--color-err)]">{err}</div>}
         </div>
 
         <div className="flex justify-end gap-2 mt-5">
@@ -1255,7 +1255,7 @@ function EditToolDialog({
           <h2 className="text-[16px] font-medium">编辑工具</h2>
           <span className="tag mono">{t.kind}</span>
         </div>
-        <p className="text-[12px] text-[var(--color-muted)] mb-4">
+        <p className="text-[length:var(--fs-sm)] text-[var(--color-muted)] mb-4">
           {isBuiltin
             ? "内置工具只能改描述，同步会覆盖回来"
             : isHttp
@@ -1352,7 +1352,7 @@ function EditToolDialog({
               {/* 请求头 / Cookie / 固定 query —— 默认收起，已有配置时展示数量 */}
               <div className="pt-1 border-t border-[var(--color-border)]">
                 <button
-                  className="text-[12px] text-[var(--color-muted)] mt-2"
+                  className="text-[length:var(--fs-sm)] text-[var(--color-muted)] mt-2"
                   data-tap
                   onClick={() => setShowKV(!showKV)}
                 >
@@ -1378,7 +1378,7 @@ function EditToolDialog({
                 )}
               </div>
 
-              <label className="flex items-center gap-2 text-[12px]">
+              <label className="flex items-center gap-2 text-[length:var(--fs-sm)]">
                 <input
                   type="checkbox"
                   checked={readOnly}
@@ -1393,7 +1393,7 @@ function EditToolDialog({
           {/* 高级：直接改 impl */}
           <div className="pt-1 border-t border-[var(--color-border)]">
             <button
-              className="text-[12px] text-[var(--color-muted)] mt-3"
+              className="text-[length:var(--fs-sm)] text-[var(--color-muted)] mt-3"
               data-tap
               onClick={() => {
                 setShowImpl(!showImpl);
@@ -1411,14 +1411,14 @@ function EditToolDialog({
                   onChange={(e) => setImplText(e.target.value)}
                   spellCheck={false}
                 />
-                <p className="text-[12px] text-[var(--color-muted)] mt-1">
+                <p className="text-[length:var(--fs-sm)] text-[var(--color-muted)] mt-1">
                   这里改的是原始定义（含超时、字节上限等表单未暴露的字段）。格式必须是合法 JSON。
                 </p>
               </>
             )}
           </div>
 
-          {err && <div className="text-[12px] text-[var(--color-err)]">{err}</div>}
+          {err && <div className="text-[length:var(--fs-sm)] text-[var(--color-err)]">{err}</div>}
         </div>
 
         <div className="flex justify-end gap-2 mt-5">

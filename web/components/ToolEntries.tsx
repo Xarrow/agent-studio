@@ -65,7 +65,7 @@ const btnCls =
   "h-9 sm:h-8 sm:px-2 px-1 shrink-0 flex items-center justify-center gap-1 rounded-xl hover:bg-[var(--color-surface-2)] transition-colors";
 
 const Label = ({ children }: { children: string }) => (
-  <span className="text-[12px] leading-none whitespace-nowrap">{children}</span>
+  <span className="text-[length:var(--fs-sm)] leading-none whitespace-nowrap">{children}</span>
 );
 
 export function SkillEntry({

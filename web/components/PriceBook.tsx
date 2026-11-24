@@ -95,17 +95,17 @@ export function PriceBook() {
     >
       <div className="min-w-0 flex-1 basis-[170px]">
         <div className="mono truncate">{r.model}</div>
-        <div className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+        <div className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
           {r.calls ? `${r.calls} 次调用` : "还没跑过"}
           {used(r) ? ` · 输入 ${fmt.num(r.tokens_in)} / 输出 ${fmt.num(r.tokens_out)}` : ""}
           {r.priced ? " · 已填单价" : ""}
         </div>
       </div>
-      <div className="shrink-0 text-right text-[12px]" style={{ color: "var(--color-muted)" }}>
-        <div className="text-[12px]">已用 tokens</div>
+      <div className="shrink-0 text-right text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
+        <div className="text-[length:var(--fs-sm)]">已用 tokens</div>
         {used(r) ? fmt.num(used(r)) : "—"}
       </div>
-      <label className="flex shrink-0 items-center gap-1.5 text-[12px]" style={{ color: "var(--color-muted)" }}>
+      <label className="flex shrink-0 items-center gap-1.5 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
         输入{currency}/百万
         <input
           inputMode="decimal"
@@ -114,11 +114,11 @@ export function PriceBook() {
             setDraft((d) => ({ ...d, [r.model]: { i: e.target.value, o: d[r.model]?.o ?? "" } }))
           }
           placeholder="例如 1"
-          className="input text-right text-[13px]"
+          className="input text-right text-[length:var(--fs-base)]"
           style={{ width: 92 }}
         />
       </label>
-      <label className="flex shrink-0 items-center gap-1.5 text-[12px]" style={{ color: "var(--color-muted)" }}>
+      <label className="flex shrink-0 items-center gap-1.5 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
         输出{currency}/百万
         <input
           inputMode="decimal"
@@ -127,7 +127,7 @@ export function PriceBook() {
             setDraft((d) => ({ ...d, [r.model]: { i: d[r.model]?.i ?? "", o: e.target.value } }))
           }
           placeholder="例如 2"
-          className="input text-right text-[13px]"
+          className="input text-right text-[length:var(--fs-base)]"
           style={{ width: 92 }}
         />
       </label>
@@ -137,7 +137,7 @@ export function PriceBook() {
   return (
     <section id="prices">
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <h2 className="text-[15px] font-medium">单价（算钱用）</h2>
+        <h2 className="text-[length:var(--fs-lg)] font-medium">单价（算钱用）</h2>
         <Select
           compact
           className="!w-[78px]"
@@ -158,11 +158,11 @@ export function PriceBook() {
       </div>
 
       {loading ? (
-        <div className="card p-4 text-[13px]" style={{ color: "var(--color-muted)" }}>
+        <div className="card p-4 text-[length:var(--fs-base)]" style={{ color: "var(--color-muted)" }}>
           读取中…
         </div>
       ) : rows.length === 0 ? (
-        <div className="card p-4 text-[13px]" style={{ color: "var(--color-muted)" }}>
+        <div className="card p-4 text-[length:var(--fs-base)]" style={{ color: "var(--color-muted)" }}>
           还没有用过的模型 —— 跑一次助手或聊一句，这里就会出现模型名。
         </div>
       ) : (
@@ -183,12 +183,12 @@ export function PriceBook() {
                   <button
                     type="button"
                     onClick={() => setShowIdle((v) => !v)}
-                    className="mb-0.5 flex w-full items-center gap-2 rounded-[9px] px-2.5 py-2.5 text-left text-[12.5px] hover:bg-[var(--bg-hover)]"
+                    className="mb-0.5 flex w-full items-center gap-2 rounded-[9px] px-2.5 py-2.5 text-left text-[length:var(--fs-base)] hover:bg-[var(--bg-hover)]"
                     style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
                   >
                     <span aria-hidden>{showIdle ? "▾" : "▸"}</span>
                     {idle.length} 个已配置但还没跑过的模型
-                    <span className="text-[11.5px]">（{showIdle ? "收起" : "点开填单价"}）</span>
+                    <span className="text-[length:var(--fs-sm)]">（{showIdle ? "收起" : "点开填单价"}）</span>
                   </button>
                 )}
                 {showIdle && idle.map(renderRow)}

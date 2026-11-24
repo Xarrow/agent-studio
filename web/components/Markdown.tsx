@@ -34,7 +34,7 @@ function InlineCode({ text }: { text: string }) {
   if (open && looksLikeFilePath(text)) return <FileChip path={text} />;
   return (
     <code
-      className="rounded px-1 py-px text-[12px]"
+      className="rounded px-1 py-px text-[length:var(--fs-sm)]"
       style={{ background: "var(--color-surface-2)", border: "1px solid var(--color-border)" }}
     >
       {text}
@@ -225,7 +225,7 @@ function SvgBlock({ code }: { code: string }) {
         <button
           type="button"
           data-tap
-          className="mb-1 text-[12px] hover:underline"
+          className="mb-1 text-[length:var(--fs-sm)] hover:underline"
           style={{ color: "var(--color-accent)" }}
           onClick={() => setShowCode(false)}
         >
@@ -238,13 +238,13 @@ function SvgBlock({ code }: { code: string }) {
   return (
     <div className="my-2 rounded-[10px] border" style={{ borderColor: "var(--color-border)" }}>
       <div className="flex items-center gap-2 border-b px-2.5 py-1.5" style={{ borderColor: "var(--color-border)" }}>
-        <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+        <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
           图（SVG）
         </span>
         <button
           type="button"
           data-tap
-          className="ml-auto text-[12px] hover:underline"
+          className="ml-auto text-[length:var(--fs-sm)] hover:underline"
           style={{ color: "var(--color-accent)" }}
           onClick={() => setShowCode(true)}
         >
@@ -351,7 +351,7 @@ function MarkdownBody({ text, chat = false }: { text: string; chat?: boolean }) 
       while (i < lines.length && /^\s*\|/.test(lines[i])) rows.push(splitRow(lines[i++]));
       blocks.push(
         <div key={`t${k++}`} className="my-2 overflow-x-auto rounded-[8px] border" style={{ borderColor: "var(--color-border)" }}>
-          <table className="w-full text-[12px]" style={{ borderCollapse: "collapse" }}>
+          <table className="w-full text-[length:var(--fs-sm)]" style={{ borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ background: "var(--color-surface-2)" }}>
                 {rows[0].map((h, j) => (
@@ -462,8 +462,8 @@ function MarkdownBody({ text, chat = false }: { text: string; chat?: boolean }) 
           key={`q${k++}`}
           className={
             chat
-              ? "my-2 border-l-2 pl-3 text-[14.5px] leading-[1.75]"
-              : "my-2 border-l-2 pl-2.5 text-[12px] leading-[1.7]"
+              ? "my-2 border-l-2 pl-3 text-[length:var(--fs-lg)] leading-[1.75]"
+              : "my-2 border-l-2 pl-2.5 text-[length:var(--fs-sm)] leading-[1.7]"
           }
           style={{ borderColor: "var(--color-accent)", color: "var(--color-muted)" }}
         >
@@ -487,7 +487,7 @@ function MarkdownBody({ text, chat = false }: { text: string; chat?: boolean }) 
             <li
               key={n}
               className={
-                chat ? "flex gap-2 text-[15px] leading-[1.8]" : "flex gap-1.5 text-[12px] leading-[1.7]"
+                chat ? "flex gap-2 text-[length:var(--fs-lg)] leading-[1.8]" : "flex gap-1.5 text-[length:var(--fs-sm)] leading-[1.7]"
               }
               style={{ paddingLeft: Math.min(it.indent, 8) * 1.5 }}
             >
@@ -520,7 +520,7 @@ function MarkdownBody({ text, chat = false }: { text: string; chat?: boolean }) 
         blocks.push(
           <p
             key={`p${k++}`}
-            className={chat ? "my-0.5 text-[15px] leading-[1.8] break-words" : "my-0.5 text-[12px] leading-[1.75] break-words"}
+            className={chat ? "my-0.5 text-[length:var(--fs-lg)] leading-[1.8] break-words" : "my-0.5 text-[length:var(--fs-sm)] leading-[1.75] break-words"}
           >
             {inline(t, `p${k}`)}
           </p>,
@@ -555,8 +555,8 @@ function MarkdownBody({ text, chat = false }: { text: string; chat?: boolean }) 
         key={`p${k++}`}
         className={
           chat
-            ? "my-2 text-[15px] leading-[1.8] break-words"
-            : "my-1.5 text-[12px] leading-[1.75] break-words"
+            ? "my-2 text-[length:var(--fs-lg)] leading-[1.8] break-words"
+            : "my-1.5 text-[length:var(--fs-sm)] leading-[1.75] break-words"
         }
       >
         {inline(buf.join(" "), `p${k}`)}
@@ -585,11 +585,11 @@ function SourceCard({ source }: { source: Record<string, unknown> }) {
   return (
     <div
       data-source-card
-      className="mt-2.5 rounded-[10px] px-3 py-2 text-[12px] leading-relaxed"
+      className="mt-2.5 rounded-[10px] px-3 py-2 text-[length:var(--fs-sm)] leading-relaxed"
       style={{ background: "var(--color-surface-2)", color: "var(--color-text-2)" }}
     >
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span className="text-[11px]" style={{ color: "var(--color-text-3)" }}>
+        <span className="text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
           来源
         </span>
         {url ? (
@@ -606,7 +606,7 @@ function SourceCard({ source }: { source: Record<string, unknown> }) {
           <span className="font-medium break-all">{title || id}</span>
         )}
         {score != null && (
-          <span className="text-[11px] tabular-nums" style={{ color: "var(--color-text-3)" }}>
+          <span className="text-[length:var(--fs-xs)] tabular-nums" style={{ color: "var(--color-text-3)" }}>
             相关度 {score.toFixed(2)}
           </span>
         )}

@@ -99,7 +99,7 @@ export function QuickTags({ onPick, prefix }: { onPick: (text: string) => void; 
         <button
           data-tap
           onClick={openEditor}
-          className="chip-thin text-[12px] px-2.5 h-7 rounded-md hover:bg-[var(--color-surface-2)]"
+          className="chip-thin text-[length:var(--fs-sm)] px-2.5 h-7 rounded-md hover:bg-[var(--color-surface-2)]"
           style={{ color: "var(--color-muted)" }}
         >
           + 快捷标签
@@ -119,7 +119,7 @@ export function QuickTags({ onPick, prefix }: { onPick: (text: string) => void; 
             key={t}
             data-tap
             onClick={() => onPick(t)}
-            className="chip-thin shrink-0 inline-flex items-center h-7 px-2.5 rounded-full border text-[12px] transition-colors hover:bg-[var(--color-surface-2)]"
+            className="chip-thin shrink-0 inline-flex items-center h-7 px-2.5 rounded-full border text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--color-surface-2)]"
             style={{ borderColor: "var(--color-border)", color: "var(--color-text)" }}
             title={`把「${t}」填进输入框`}
           >
@@ -162,11 +162,11 @@ export function QuickTags({ onPick, prefix }: { onPick: (text: string) => void; 
             }}
           >
             <div className="shrink-0 px-3.5 pt-3 pb-2 flex items-baseline gap-2">
-              <span className="text-[13.5px] font-semibold">快捷问句</span>
-              <span className="text-[11px] min-w-0 truncate" style={{ color: "var(--color-muted)" }}>
+              <span className="text-[length:var(--fs-md)] font-semibold">快捷问句</span>
+              <span className="text-[length:var(--fs-xs)] min-w-0 truncate" style={{ color: "var(--color-muted)" }}>
                 点了填进输入框
               </span>
-              <span className="ml-auto text-[11px] tabular-nums" style={{ color: "var(--color-muted)" }}>
+              <span className="ml-auto text-[length:var(--fs-xs)] tabular-nums" style={{ color: "var(--color-muted)" }}>
                 {draft.length}/{MAX}
               </span>
             </div>
@@ -174,7 +174,7 @@ export function QuickTags({ onPick, prefix }: { onPick: (text: string) => void; 
             {/* 标签流：已确定的都在这里，点 ✕ 删。没有「每行一个输入框」那种表格感 */}
             <div className="px-3.5 pb-2.5 min-h-[44px] max-h-[38vh] overflow-auto">
               {draft.length === 0 ? (
-                <p className="text-[12px] py-3" style={{ color: "var(--color-muted)" }}>
+                <p className="text-[length:var(--fs-sm)] py-3" style={{ color: "var(--color-muted)" }}>
                   还没有，在下面加一条试试
                 </p>
               ) : (
@@ -182,7 +182,7 @@ export function QuickTags({ onPick, prefix }: { onPick: (text: string) => void; 
                   {draft.map((t, i) => (
                     <span
                       key={`${t}-${i}`}
-                      className="inline-flex items-center gap-1 h-8 pl-2.5 pr-1 rounded-lg text-[12.5px]"
+                      className="inline-flex items-center gap-1 h-8 pl-2.5 pr-1 rounded-lg text-[length:var(--fs-base)]"
                       style={{ background: "var(--color-surface-2)", color: "var(--color-text)" }}
                     >
                       {t}
@@ -206,7 +206,7 @@ export function QuickTags({ onPick, prefix }: { onPick: (text: string) => void; 
             {/* 添加：一个输入框 + 一个＋，回车即加 —— 不再每行都配一个删除键 */}
             <div className="px-3.5 pb-3 flex items-center gap-1.5">
               <input
-                className="input h-10 flex-1 min-w-0 text-[13.5px]"
+                className="input h-10 flex-1 min-w-0 text-[length:var(--fs-md)]"
                 value={newTag}
                 placeholder={draft.length >= MAX ? `最多 ${MAX} 条` : "添加一条，回车确认"}
                 disabled={draft.length >= MAX}
@@ -234,7 +234,7 @@ export function QuickTags({ onPick, prefix }: { onPick: (text: string) => void; 
             </div>
 
             {err && (
-              <p className="px-3.5 pb-2 text-[11.5px]" style={{ color: "var(--color-err)" }}>
+              <p className="px-3.5 pb-2 text-[length:var(--fs-sm)]" style={{ color: "var(--color-err)" }}>
                 {err}
               </p>
             )}
@@ -242,7 +242,7 @@ export function QuickTags({ onPick, prefix }: { onPick: (text: string) => void; 
             <div className="shrink-0 flex items-center justify-end gap-1.5 px-3.5 py-2.5 border-t border-[var(--color-border)]">
               <button
                 data-tap
-                className="h-9 px-3 rounded-lg text-[13px] hover:bg-[var(--color-surface-2)]"
+                className="h-9 px-3 rounded-lg text-[length:var(--fs-base)] hover:bg-[var(--color-surface-2)]"
                 style={{ color: "var(--color-muted)" }}
                 onClick={() => setOpen(false)}
                 disabled={saving}
@@ -251,7 +251,7 @@ export function QuickTags({ onPick, prefix }: { onPick: (text: string) => void; 
               </button>
               <button
                 data-tap
-                className="h-9 px-4 rounded-lg text-[13px] font-medium disabled:opacity-50"
+                className="h-9 px-4 rounded-lg text-[length:var(--fs-base)] font-medium disabled:opacity-50"
                 style={{ background: "var(--color-accent)", color: "var(--color-accent-contrast)" }}
                 onClick={() => void save()}
                 disabled={saving}

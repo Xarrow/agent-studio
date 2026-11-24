@@ -57,13 +57,13 @@ type Filter = "all" | "ok" | "error" | "off";
 function CallList({ rows }: { rows: RemoteAgentCallRecord[] | null }) {
   if (rows === null)
     return (
-      <p className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+      <p className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
         读取中…
       </p>
     );
   if (!rows.length)
     return (
-      <p className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+      <p className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
         还没有调用记录
       </p>
     );
@@ -73,7 +73,7 @@ function CallList({ rows }: { rows: RemoteAgentCallRecord[] | null }) {
         <div key={c.run_id} className="flex flex-col gap-0.5 rounded p-2" style={{ background: "var(--color-surface-2)" }}>
           <div className="flex items-center gap-2">
             <span
-              className="text-[12px] font-medium"
+              className="text-[length:var(--fs-sm)] font-medium"
               style={{
                 color:
                   c.status === "ok" ? "var(--color-ok)" : c.status === "error" ? "var(--color-err)" : "var(--color-warn)",
@@ -81,20 +81,20 @@ function CallList({ rows }: { rows: RemoteAgentCallRecord[] | null }) {
             >
               {c.status === "ok" ? "成功" : c.status === "error" ? "失败" : c.status === "aborted" ? "已中止" : c.status}
             </span>
-            <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+            <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
               {new Date(c.started_at).toLocaleString()}
               {c.duration_ms != null ? ` · ${(c.duration_ms / 1000).toFixed(1)}s` : ""}
             </span>
           </div>
           {c.input ? (
-            <span className="truncate text-[12px]">问：{c.input}</span>
+            <span className="truncate text-[length:var(--fs-sm)]">问：{c.input}</span>
           ) : null}
           {c.error ? (
-            <span className="text-[12px]" style={{ color: "var(--color-err)" }}>
+            <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-err)" }}>
               {c.error}
             </span>
           ) : c.output ? (
-            <span className="truncate text-[12px]" style={{ color: "var(--color-muted)" }}>
+            <span className="truncate text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
               答：{c.output}
             </span>
           ) : null}
@@ -107,20 +107,20 @@ function CallList({ rows }: { rows: RemoteAgentCallRecord[] | null }) {
 function EventList({ rows }: { rows: RemoteAgentEventRecord[] | null }) {
   if (rows === null)
     return (
-      <p className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+      <p className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
         读取中…
       </p>
     );
   if (!rows.length)
     return (
-      <p className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+      <p className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
         还没有操作记录
       </p>
     );
   return (
     <div className="flex flex-col gap-1">
       {rows.map((e) => (
-        <div key={e.id} className="flex items-baseline gap-2 text-[12px]">
+        <div key={e.id} className="flex items-baseline gap-2 text-[length:var(--fs-sm)]">
           <span className="mono shrink-0" style={{ color: "var(--color-muted)" }}>
             {new Date(e.created_at).toLocaleString()}
           </span>
@@ -143,7 +143,7 @@ function SkillTable({ parsed }: { parsed: RemoteAgentParsed }) {
   const skills = parsed.skills ?? [];
   if (!skills.length) {
     return (
-      <p className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+      <p className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
         远端没声明技能，挂上后靠描述判断
       </p>
     );
@@ -156,11 +156,11 @@ function SkillTable({ parsed }: { parsed: RemoteAgentParsed }) {
           className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded px-2 py-1"
           style={{ background: "var(--color-surface)" }}
         >
-          <span className="text-[12px] font-medium">{s.name || s.id}</span>
+          <span className="text-[length:var(--fs-sm)] font-medium">{s.name || s.id}</span>
           {(s.tags ?? []).map((t) => (
             <span
               key={t}
-              className="rounded px-1 text-[12px]"
+              className="rounded px-1 text-[length:var(--fs-sm)]"
               style={{ background: "var(--color-surface-2)", color: "var(--color-muted)" }}
             >
               {t}
@@ -168,7 +168,7 @@ function SkillTable({ parsed }: { parsed: RemoteAgentParsed }) {
           ))}
           {s.description ? (
             <span
-              className="line-clamp-2 text-[12px]"
+              className="line-clamp-2 text-[length:var(--fs-sm)]"
               style={{ color: "var(--color-muted)" }}
               title={s.description}
             >
@@ -406,7 +406,7 @@ export default function RemoteAgentsPage() {
                           {r.enabled ? "停用" : "启用"}
                         </button>
                         <button
-                          className="btn ml-auto text-[12px]"
+                          className="btn ml-auto text-[length:var(--fs-sm)]"
                           style={{ color: "var(--color-err)" }}
                           title="删除这个远程 agent（会再确认一次）"
                           onClick={() => void onDelete(r)}
@@ -418,7 +418,7 @@ export default function RemoteAgentsPage() {
                   >
                     <span className="min-w-0 flex-1">
                       <span className="flex min-w-0 items-center gap-1.5">
-                        <span className="truncate text-[13.5px] font-medium">{r.name}</span>
+                        <span className="truncate text-[length:var(--fs-md)] font-medium">{r.name}</span>
                         <StatusChip r={r} />
                         {r.bound_agents.length ? (
                           <Chip tone="accent">已挂 {r.bound_agents.length}</Chip>
@@ -426,7 +426,7 @@ export default function RemoteAgentsPage() {
                       </span>
                       {/* 元信息：图标 + 短词（原来四个 span 平铺，窄屏一换行就竖着堆） */}
                       <span
-                        className="mt-1 flex items-center gap-3 text-[11.5px]"
+                        className="mt-1 flex items-center gap-3 text-[length:var(--fs-sm)]"
                         style={{ color: "var(--color-muted)" }}
                       >
                         <span className="inline-flex min-w-0 items-center gap-1" title={r.url}>
@@ -526,7 +526,7 @@ export default function RemoteAgentsPage() {
                       <div className="flex flex-col gap-3">
                         <div className="flex flex-col gap-1">
                           <KV k="地址">
-                            <code className="mono break-all text-[12px]">{r.url}</code>
+                            <code className="mono break-all text-[length:var(--fs-sm)]">{r.url}</code>
                           </KV>
                           <KV k="版本">
                             {r.parsed?.version || "—"} · A2A {r.parsed?.protocol_version || "—"}
@@ -556,7 +556,7 @@ export default function RemoteAgentsPage() {
 
                         {r.last_error ? (
                           <div
-                            className="rounded px-2 py-1.5 text-[12px]"
+                            className="rounded px-2 py-1.5 text-[length:var(--fs-sm)]"
                             style={{
                               background: "color-mix(in srgb, var(--color-warn) 12%, transparent)",
                               color: "var(--color-warn)",
@@ -572,7 +572,7 @@ export default function RemoteAgentsPage() {
                         </div>
 
                         <div
-                          className="rounded px-2.5 py-2 text-[12px]"
+                          className="rounded px-2.5 py-2 text-[length:var(--fs-sm)]"
                           style={{ background: "var(--color-surface-2)", color: "var(--color-muted)" }}
                         >
                           绑定在助手的配置页做：它注册时会自动生成一个同名工具，到
@@ -589,7 +589,7 @@ export default function RemoteAgentsPage() {
 
                         <div className="flex items-center gap-2">
                           <button
-                            className="btn text-[12.5px]"
+                            className="btn text-[length:var(--fs-base)]"
                             disabled={busy === `probe:${r.id}`}
                             onClick={() =>
                               void run(
@@ -601,7 +601,7 @@ export default function RemoteAgentsPage() {
                           >
                             {busy === `probe:${r.id}` ? "检查中…" : "检查可用性"}
                           </button>
-                          <span className="text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                          <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                             后台也会按上面的间隔自己查；这里只是立刻查一次
                           </span>
                         </div>
@@ -630,7 +630,7 @@ export default function RemoteAgentsPage() {
       >
         <div className="flex flex-col gap-2">
           <KV k="注册地址">
-            <code className="mono text-[12px]" id="selfreg-url">
+            <code className="mono text-[length:var(--fs-sm)]" id="selfreg-url">
               {selfRegUrl}
             </code>
             <button className="btn" onClick={() => void copySelfreg()}>
@@ -638,16 +638,16 @@ export default function RemoteAgentsPage() {
             </button>
           </KV>
           <KV k="从公网访问">
-            <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+            <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
               远端在别的机器上，要用**公网**地址（本页显示的地址只在内网可达）：
-              <code className="mono ml-1 text-[12px]">https://as-prod.zeit.ccwu.cc/api/remote-agents/self</code>
+              <code className="mono ml-1 text-[length:var(--fs-sm)]">https://as-prod.zeit.ccwu.cc/api/remote-agents/self</code>
             </span>
           </KV>
           <KV k="本平台卡片">
-            <code className="mono text-[12px]">{selfCardUrl}</code>
+            <code className="mono text-[length:var(--fs-sm)]">{selfCardUrl}</code>
           </KV>
           <KV k="注册口令">
-            <code className="mono text-[12px]">
+            <code className="mono text-[length:var(--fs-sm)]">
               {showReg ? regToken || "（取不到）" : regToken ? "•".repeat(Math.min(20, regToken.length)) : "…"}
             </code>
             <div className="flex items-center gap-1.5">
@@ -677,11 +677,11 @@ export default function RemoteAgentsPage() {
             className="flex flex-col gap-1 rounded p-2.5"
             style={{ background: "var(--color-surface-2)" }}
           >
-            <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+            <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
               远端用一条 POST 完成注册（body 是它自己的 agent card，url 字段填它的回连地址；重推一次 = 更新技能清单）：
             </span>
             <pre
-              className="mono overflow-x-auto whitespace-pre text-[12px]"
+              className="mono overflow-x-auto whitespace-pre text-[length:var(--fs-sm)]"
               style={{ color: "var(--color-muted)" }}
             >{`curl -X POST ${selfRegUrl} \
   -H 'Content-Type: application/json' \
@@ -689,7 +689,7 @@ export default function RemoteAgentsPage() {
   -d '{"name":"我的助手","description":"……","skills":[],"url":"http://远端地址:端口"}'`}</pre>
           </div>
           {copied ? (
-            <span className="text-[12px]" style={{ color: "var(--color-ok)" }}>
+            <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-ok)" }}>
               已复制
             </span>
           ) : null}
@@ -889,7 +889,7 @@ function RegisterDialog({ onClose, onDone }: { onClose: () => void; onDone: () =
     <div className={DLG_BACKDROP}>
       <div className={`${DLG_CARD} flex max-h-[88vh] w-full max-w-2xl flex-col p-4`}>
         <div className="mb-2 flex items-center gap-2">
-          <span className="text-[14px] font-medium">接入远程 Agent（粘地址）</span>
+          <span className="text-[length:var(--fs-md)] font-medium">接入远程 Agent（粘地址）</span>
           <button className="btn ml-auto" onClick={onClose}>
             关闭
           </button>
@@ -913,7 +913,7 @@ function RegisterDialog({ onClose, onDone }: { onClose: () => void; onDone: () =
             </div>
           </div>
 
-          <button className="self-start inline-flex min-h-[36px] items-center text-[12px] lg:min-h-0" style={{ color: "var(--color-accent)" }} onClick={() => setAdvanced(!advanced)}>
+          <button className="self-start inline-flex min-h-[36px] items-center text-[length:var(--fs-sm)] lg:min-h-0" style={{ color: "var(--color-accent)" }} onClick={() => setAdvanced(!advanced)}>
             {advanced ? "收起凭据设置" : "远端需要鉴权？填凭据"}
           </button>
           {advanced ? (
@@ -935,7 +935,7 @@ function RegisterDialog({ onClose, onDone }: { onClose: () => void; onDone: () =
 
           {err ? (
             <div
-              className="rounded px-2 py-1.5 text-[12px]"
+              className="rounded px-2 py-1.5 text-[length:var(--fs-sm)]"
               style={{
                 background: "color-mix(in srgb, var(--color-warn) 12%, transparent)",
                 color: "var(--color-warn)",
@@ -951,18 +951,18 @@ function RegisterDialog({ onClose, onDone }: { onClose: () => void; onDone: () =
               style={{ background: "var(--color-surface-2)" }}
             >
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[13px] font-medium">{preview.parsed.name}</span>
+                <span className="text-[length:var(--fs-base)] font-medium">{preview.parsed.name}</span>
                 <Chip tone="ok">解析成功</Chip>
-                <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+                <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                   {preview.parsed.version ? `版本 ${preview.parsed.version}` : ""}
                   {preview.parsed.protocol_version ? ` · A2A ${preview.parsed.protocol_version}` : ""}
                   {` · 技能 ${preview.skills}`}
                 </span>
               </div>
-              <p className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+              <p className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                 {preview.parsed.description || "（远端没写描述）"}
               </p>
-              <p className="mono break-all text-[12px]" style={{ color: "var(--color-muted)" }}>
+              <p className="mono break-all text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                 归一化地址：{preview.base}
               </p>
               <SkillTable parsed={preview.parsed} />
@@ -974,13 +974,13 @@ function RegisterDialog({ onClose, onDone }: { onClose: () => void; onDone: () =
           <button className="btn btn-primary" disabled={!preview || job !== "idle"} onClick={() => void doSave()}>
             {job === "saving" ? "接入中…" : "确认接入"}
           </button>
-          <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+          <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
             注册后会自动生成一个同名工具，助手的「工具」里就能勾到它
           </span>
         </div>
 
         <div
-          className="mt-2 rounded p-2 text-[12px]"
+          className="mt-2 rounded p-2 text-[length:var(--fs-sm)]"
           style={{ background: "var(--color-surface-2)", color: "var(--color-muted)" }}
         >
           <span>反过来，远端 agent 也能<b>自己注册进来</b>：它向</span>
