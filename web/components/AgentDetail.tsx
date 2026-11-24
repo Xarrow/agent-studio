@@ -29,6 +29,7 @@ import { ModelPicker } from "@/components/ModelPicker";
 import { Segmented, Switch } from "@/components/ui/kit";
 import { copyText } from "@/lib/clipboard";
 import { useFeedback } from "@/components/ui/feedback";
+import { Select } from "@/components/ui/select";
 
 /**
  * 后端存的是**原始定义**：远端 A2A 影子 Agent（runtime=a2a）没有 model/tools/skills
@@ -1075,14 +1076,15 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
               >
                 流程里的角色
               </label>
-              <select
-                className="input"
+              <Select
+                ariaLabel="流程角色"
                 value={def.role ?? "worker"}
-                onChange={(e) => patch({ role: e.target.value as "worker" | "orchestrator" })}
-              >
-                <option value="worker">干活（默认）· 做完交给下一个</option>
-                <option value="orchestrator">编排者 · 分析 → 上下文 → 验证 → 归纳</option>
-              </select>
+                options={[
+                  { value: "worker", label: "干活（默认）· 做完交给下一个" },
+                  { value: "orchestrator", label: "编排者 · 分析 → 上下文 → 验证 → 归纳" },
+                ]}
+                onChange={(v) => patch({ role: v as "worker" | "orchestrator" })}
+              />
               {def.role === "orchestrator" && (
                 <div className="mt-2 rounded-[8px] border p-2.5" style={{ borderColor: "var(--color-border)" }}>
                   {/* 两行解释常驻 ✗ → 收进 ?（内容一字未删 ✓ 只是不再每次都占视觉） */}
@@ -1319,17 +1321,12 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
               <label className="label">
                 运行时
               </label>
-              <select
-                className="input"
+              <Select
+                ariaLabel="运行时"
                 value={def.runtime}
-                onChange={(e) => patch({ runtime: e.target.value })}
-              >
-                {runtimes.map((r) => (
-                  <option key={r.name} value={r.name}>
-                    {r.display_name}
-                  </option>
-                ))}
-              </select>
+                options={runtimes.map((r) => ({ value: r.name, label: r.display_name }))}
+                onChange={(v) => patch({ runtime: v })}
+              />
               {caps && (
                 <div className="flex flex-wrap gap-1.5 mt-2">
                   {caps.supports_hitl && <span className="tag">人工确认</span>}
@@ -1428,52 +1425,32 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="label">Provider</label>
-                <select
-                  className="input"
+                <Select
+                  ariaLabel="服务商"
                   value={def.model.provider}
-                  onChange={(e) => {
-                    const p = providers.find((x) => x.name === e.target.value);
-                    // **切 Provider 不动凭据**（v2 修正）：v1「属于新 Provider 就保留」
-                    // 挡不住来回切——volcengine→deepseek 时凭据不兼容被清成 null，
-                    // 再切回来时凭据已经是 null，无从恢复 = 数据照样丢。
-                    // 正解是切 Provider 时 credential_ref 原值保留：凭据下拉按
-                    // provider 过滤，不兼容的凭据只是暂时不显示（select 空白），
-                    // 切回来原值还在；真正选错凭据由下方不适配提示与保存后的
-                    // 运行时校验兜住。
+                  options={providers.map((x) => ({ value: x.name, label: x.display_name }))}
+                  onChange={(v) => {
+                    const pr = providers.find((x) => x.name === v);
+                    // 切 Provider 不动凭据（v2 修正）：credential_ref 原值保留，
+                    // 不兼容的凭据只是暂时不显示，切回来原值还在。
                     patch({
-                      model: {
-                        ...def.model,
-                        provider: e.target.value,
-                        name: p?.models?.[0] ?? "",
-                      },
+                      model: { ...def.model, provider: v, name: pr?.models?.[0] ?? "" },
                     });
                   }}
-                >
-                  {providers.map((p) => (
-                    <option key={p.name} value={p.name}>
-                      {p.display_name}
-                    </option>
-                  ))}
-                </select>
+                />
               </div>
               <div>
                 <label className="label">LLM 配置</label>
-                <select
-                  className="input"
+                <Select
+                  ariaLabel="LLM 配置"
                   value={def.model.credential_ref ?? ""}
-                  onChange={(e) =>
-                    patch({
-                      model: { ...def.model, credential_ref: e.target.value || null },
-                    })
-                  }
-                >
-                  <option value="">— 环境变量默认 —</option>
-                  {usableCreds.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}（{c.masked_key}）
-                    </option>
-                  ))}
-                </select>
+                  placeholder="— 环境变量默认 —"
+                  options={[
+                    { value: "", label: "— 环境变量默认 —" },
+                    ...usableCreds.map((c) => ({ value: c.id, label: `${c.name}（${c.masked_key}）` })),
+                  ]}
+                  onChange={(v) => patch({ model: { ...def.model, credential_ref: v || null } })}
+                />
                 {/* 切了 Provider 后原凭据不显示（按 provider 过滤掉了），但值还在 ——
                     必须告诉用户"没丢，只是这个 Provider 下看不见"，否则会被当成
                     凭据丢了去手填（v2 修复的根源误会）。 */}

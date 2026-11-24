@@ -17,6 +17,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { useFeedback } from "@/components/ui/feedback";
+import { Select } from "@/components/ui/select";
 import { api, fmt } from "@/lib/api";
 import type {
   EvalCompareRead,
@@ -170,22 +171,21 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
       {/* ── 用例集：选一个 / 改 / 新建 ──────────────────────────────── */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
         {suites.length > 0 ? (
-          <select
-            className="rounded-[8px] border px-2 py-1.5 text-[12px]"
-            style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+          <Select
+            compact
+            className="!w-[210px]"
+            ariaLabel="评测集"
             value={suiteId}
-            onChange={(e) => {
-              setSuiteId(e.target.value);
+            options={suites.map((s) => ({
+              value: s.id,
+              label: `${s.name}（${s.cases.length} 例）`,
+            }))}
+            onChange={(v) => {
+              setSuiteId(v);
               setDetail(null);
               setCmp(null);
             }}
-          >
-            {suites.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}（{s.cases.length} 例）
-              </option>
-            ))}
-          </select>
+          />
         ) : (
           <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
             还没有用例集 —— 先写几条"这助手必须答对什么"
@@ -438,32 +438,36 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
         <div className="rounded-[10px] border p-3" style={{ borderColor: "var(--color-border)" }}>
           <div className="mb-2 flex flex-wrap items-center gap-2 text-[12px]">
             <span className="font-semibold">两版对比</span>
-            <select
-              className="rounded-[8px] border px-2 py-1.5 text-[12px]"
-              style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+            <Select
+              compact
+              className="!w-[240px]"
+              ariaLabel="基线运行"
               value={left}
-              onChange={(e) => setLeft(e.target.value)}
-            >
-              <option value="">基准（改之前）…</option>
-              {runs.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.label || "未命名"} · {fmt.relative(r.created_at)} · {r.score ?? "—"}
-                </option>
-              ))}
-            </select>
-            <select
-              className="rounded-[8px] border px-2 py-1.5 text-[12px]"
-              style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+              placeholder="基准（改之前）…"
+              options={[
+                { value: "", label: "基准（改之前）…" },
+                ...runs.map((r) => ({
+                  value: r.id,
+                  label: `${r.label || "未命名"} · ${fmt.relative(r.created_at)} · ${r.score ?? "—"}`,
+                })),
+              ]}
+              onChange={setLeft}
+            />
+            <Select
+              compact
+              className="!w-[240px]"
+              ariaLabel="对比运行"
               value={right}
-              onChange={(e) => setRight(e.target.value)}
-            >
-              <option value="">对比（改之后）…</option>
-              {runs.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.label || "未命名"} · {fmt.relative(r.created_at)} · {r.score ?? "—"}
-                </option>
-              ))}
-            </select>
+              placeholder="对比（改之后）…"
+              options={[
+                { value: "", label: "对比（改之后）…" },
+                ...runs.map((r) => ({
+                  value: r.id,
+                  label: `${r.label || "未命名"} · ${fmt.relative(r.created_at)} · ${r.score ?? "—"}`,
+                })),
+              ]}
+              onChange={setRight}
+            />
             <button
               type="button"
               disabled={!left || !right || left === right}

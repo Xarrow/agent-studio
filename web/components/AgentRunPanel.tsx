@@ -17,6 +17,7 @@ import { api, fmt, STATUS_STYLE } from "@/lib/api";
 import { isImeEvent } from "@/lib/ime";
 import type { RunEvent, Session } from "@/lib/types";
 import { useFeedback } from "./ui/feedback";
+import { Select } from "@/components/ui/select";
 import { Hint, HINTS } from "@/components/ui/hint";
 import { RunDetailById } from "@/components/RunDetailDialog";
 
@@ -380,22 +381,23 @@ export function RunPanel({
 
         <div className="flex items-center gap-2 mb-3 flex-wrap pb-3 border-b border-[var(--color-border)]">
           <span className="text-[12px] text-[var(--color-muted)] whitespace-nowrap">会话</span>
-          <select
-            className="input input-inline flex-1 min-w-[140px] sm:flex-none sm:w-56"
+          <Select
+            ariaLabel="会话"
             value={sessionId}
-            onChange={(e) => {
-              setSessionId(e.target.value);
+            placeholder="单轮模式（不带上下文）"
+            options={[
+              { value: "", label: "单轮模式（不带上下文）" },
+              ...sessions.map((s) => ({
+                value: s.id,
+                label: `${(s.title || s.id).slice(0, 32)} · ${s.turn_count} 轮`,
+              })),
+            ]}
+            onChange={(v) => {
+              setSessionId(v);
               setEvents([]);
               setRunId(null);
             }}
-          >
-            <option value="">单轮模式（不带上下文）</option>
-            {sessions.map((s) => (
-              <option key={s.id} value={s.id}>
-                {(s.title || s.id).slice(0, 32)} · {s.turn_count} 轮
-              </option>
-            ))}
-          </select>
+          />
           <button className="btn" onClick={() => void newSession()} disabled={busy}>
             + 新建会话
           </button>

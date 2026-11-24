@@ -18,6 +18,7 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import { isImeEvent } from "@/lib/ime";
 import { useFeedback } from "@/components/ui/feedback";
+import { Select } from "@/components/ui/select";
 import { ModelPicker } from "@/components/ModelPicker";
 import type { Agent, AgentDefinition, Credential, Memory, Provider, Session } from "@/lib/types";
 
@@ -330,11 +331,11 @@ export function AgentConfigDrawer({
           {def.runtime !== "a2a" && (
             <div>
               <label className="label">模型</label>
-              <select
-                className="input mb-2"
+              <Select
+                ariaLabel="服务商"
                 value={def.model.provider}
-                onChange={(e) => {
-                  const name = e.target.value;
+                options={providers.map((p) => ({ value: p.name, label: p.display_name }))}
+                onChange={(name) => {
                   const c = creds.find((x) => x.provider === name);
                   patch({
                     model: {
@@ -345,14 +346,7 @@ export function AgentConfigDrawer({
                     },
                   });
                 }}
-              >
-                {providers.map((p) => (
-                  <option key={p.name} value={p.name}>
-                    {p.display_name}
-                    {creds.some((c) => c.provider === p.name) ? "" : "（还没配密钥）"}
-                  </option>
-                ))}
-              </select>
+              />
               <ModelPicker
                 providers={providers}
                 provider={def.model.provider}

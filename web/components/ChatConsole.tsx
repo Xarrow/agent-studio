@@ -51,6 +51,7 @@ import { middleEllipsis, fileTypeKey, shortFilePath } from "@/lib/files";
 import { BrowserStage, type BrowserAction } from "@/components/BrowserStage";
 import type { BrowserControlState } from "@/lib/api";
 import { SideDock, type DockPanel } from "@/components/SideDock";
+import { Select } from "@/components/ui/select";
 import type { BrowserStep } from "@/lib/types";
 import { humanizeAssistantText } from "@/lib/messages";
 import { FileTypeIcon } from "@/components/ui/icons";
@@ -4584,10 +4585,17 @@ export function ChatConsole({
                       title="这句话交给谁：当前助手 / 按内容自动挑（认不出来会问你）"
                     >
                       交给
-                      <select
+                      <Select
+                        compact
+                        className="!w-[108px]"
+                        ariaLabel="这一轮交给谁执行"
                         value={autoPick ? "auto" : "manual"}
-                        onChange={(e) => {
-                          const next = e.target.value === "auto";
+                        options={[
+                          { value: "manual", label: "当前助手" },
+                          { value: "auto", label: "自动挑" },
+                        ]}
+                        onChange={(v) => {
+                          const next = v === "auto";
                           setAutoPick(next);
                           if (!next) {
                             setRouteAsk(null);
@@ -4599,13 +4607,7 @@ export function ChatConsole({
                             /* 存不了就算了，下次默认关 */
                           }
                         }}
-                        aria-label="这一轮交给谁执行"
-                        className="h-7 rounded-[var(--radius-xs)] border-0 bg-transparent pr-1 text-[length:var(--fs-sm)] outline-none"
-                        style={{ color: "var(--color-text)" }}
-                      >
-                        <option value="manual">当前助手</option>
-                        <option value="auto">自动挑</option>
-                      </select>
+                      />
                     </label>
                     )}
                     {false && (

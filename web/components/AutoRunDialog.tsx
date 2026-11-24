@@ -19,6 +19,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { api, fmt } from "@/lib/api";
 import { useFeedback } from "@/components/ui/feedback";
+import { Select } from "@/components/ui/select";
 import { DLG_BACKDROP, DLG_CARD } from "@/components/ui/kit";
 
 type Auto = {
@@ -213,47 +214,31 @@ export function AutoRunDialog({
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[12px] font-semibold">什么时候跑</span>
-              <select
+              <Select
+                ariaLabel="频率"
                 value={mode}
-                onChange={(e) => setMode(e.target.value)}
-                className="rounded-[8px] border px-2 py-1.5 text-[13px]"
-                style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
-              >
-                {MODES.map((m) => (
-                  <option key={m.key} value={m.key}>
-                    {m.label}
-                  </option>
-                ))}
-              </select>
+                options={MODES.map((m) => ({ value: m.key, label: m.label }))}
+                onChange={setMode}
+              />
               {(mode === "daily" || mode === "weekly") && (
                 <>
-                  <select
+                  <Select
+                    compact
+                    className="!w-[84px]"
+                    ariaLabel="小时"
                     value={hour}
-                    onChange={(e) => setHour(e.target.value)}
-                    className="rounded-[8px] border px-2 py-1.5 text-[13px]"
-                    style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
-                    title="小时"
-                  >
-                    {HOURS.map((h) => (
-                      <option key={h} value={h}>
-                        {h}
-                      </option>
-                    ))}
-                  </select>
+                    options={HOURS.map((h) => ({ value: h, label: h }))}
+                    onChange={setHour}
+                  />
                   <span>:</span>
-                  <select
+                  <Select
+                    compact
+                    className="!w-[84px]"
+                    ariaLabel="分钟"
                     value={minute}
-                    onChange={(e) => setMinute(e.target.value)}
-                    className="rounded-[8px] border px-2 py-1.5 text-[13px]"
-                    style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
-                    title="分钟"
-                  >
-                    {MINUTES.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
+                    options={MINUTES.map((m) => ({ value: m, label: m }))}
+                    onChange={setMinute}
+                  />
                 </>
               )}
             </div>

@@ -21,6 +21,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api } from "@/lib/api";
+import { Select } from "@/components/ui/select";
 import type { BrowserDriverEngine, BrowserDriverRow, BrowserDriverVerify } from "@/lib/api";
 import { useFeedback } from "@/components/ui/feedback";
 
@@ -395,35 +396,35 @@ export function BrowserDriversCard() {
           装一个新版本（下载到平台目录，不动系统）
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <select
-            className="rounded border bg-transparent px-2 py-1 text-[12.5px]"
-            style={{ borderColor: "var(--color-border)" }}
+          <Select
+            compact
+            className="!w-[132px]"
+            ariaLabel="引擎"
             value={kind}
-            onChange={(e) => void pickKind(e.target.value)}
+            placeholder="选引擎…"
             disabled={busy}
-          >
-            <option value="">选引擎…</option>
-            {engines.map((e) => (
-              <option key={e.kind} value={e.kind}>
-                {e.label}
-              </option>
-            ))}
-          </select>
-          <select
-            className="rounded border bg-transparent px-2 py-1 text-[12.5px]"
-            style={{ borderColor: "var(--color-border)" }}
+            options={[
+              { value: "", label: "选引擎…" },
+              ...engines.map((e) => ({ value: e.kind, label: e.label })),
+            ]}
+            onChange={(v) => void pickKind(v)}
+          />
+          <Select
+            compact
+            className="!w-[168px]"
+            ariaLabel="版本"
             value={version}
-            onChange={(e) => setVersion(e.target.value)}
+            placeholder={vLoading ? "读取版本…" : "选版本…"}
             disabled={busy || !kind || versions.length === 0}
-          >
-            {vLoading && <option value="">读取版本…</option>}
-            {versions.map((v) => (
-              <option key={v.version} value={v.version}>
-                {v.version}
-                {v.stable ? "（稳定）" : ""}
-              </option>
-            ))}
-          </select>
+            options={[
+              ...(vLoading ? [{ value: "", label: "读取版本…" }] : []),
+              ...versions.map((v) => ({
+                value: v.version,
+                label: v.stable ? `${v.version}（稳定）` : v.version,
+              })),
+            ]}
+            onChange={setVersion}
+          />
           <button
             type="button"
             className="rounded-[5px] px-2.5 py-1 text-[12.5px]"

@@ -14,6 +14,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type { RemoteSettings, SkillSource, SkillUpdate } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
+import { Select } from "@/components/ui/select";
 import { DLG_BACKDROP, DLG_CARD, Empty, Row, RowList, Segmented, Switch } from "@/components/ui/kit";
 import { IconLink, IconPlus, IconRefresh, IconTrash } from "@/components/ui/icons";
 
@@ -237,15 +238,16 @@ export function SkillSourcesDialog({
               <div className="mb-2 flex items-center gap-2 text-[12.5px]">
                 <IconLink size={14} />
                 使用哪种方式取内容
-                <select
-                  className="input"
+                <Select
+                  ariaLabel="安装方式"
                   value={settings?.mode ?? "auto"}
-                  onChange={(e) => void saveMode(e.target.value as RemoteSettings["mode"])}
-                >
-                  <option value="auto">自动（有可用的 npx 就用它）</option>
-                  <option value="npx">始终用 skills CLI</option>
-                  <option value="native">始终用内置实现</option>
-                </select>
+                  options={[
+                    { value: "auto", label: "自动（有可用的 npx 就用它）" },
+                    { value: "npx", label: "始终用 skills CLI" },
+                    { value: "native", label: "始终用内置实现" },
+                  ]}
+                  onChange={(v) => void saveMode(v as RemoteSettings["mode"])}
+                />
               </div>
             </div>
 

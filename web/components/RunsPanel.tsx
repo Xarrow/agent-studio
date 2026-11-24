@@ -44,6 +44,7 @@ import type {
   TicketList,
 } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
+import { Select } from "@/components/ui/select";
 import { KIND_LABEL } from "@/components/RunDetailDialog";
 import type { Span } from "@/lib/types";
 import { RunTimeline, eventsToSteps, type Step } from "@/components/ui/run-timeline";
@@ -141,6 +142,36 @@ type Detail = {
 
 //: 一页多少条。50 是「看得见一屏内容」与「别一次读上千行」之间的取舍。
 const PAGE = 50;
+
+
+/** 守卫里的数值档位：选项由后端给（choices），这里只负责渲染与回写 */
+function GuardSelect({
+  ariaLabel,
+  value,
+  choices,
+  format,
+  disabled,
+  onSave,
+}: {
+  ariaLabel: string;
+  value: number;
+  choices: number[];
+  format: (v: number) => string;
+  disabled?: boolean;
+  onSave: (n: number) => void;
+}) {
+  return (
+    <Select
+      compact
+      className="!w-[124px]"
+      ariaLabel={ariaLabel}
+      disabled={disabled}
+      value={String(value)}
+      options={choices.map((v) => ({ value: String(v), label: format(v) }))}
+      onChange={(v) => onSave(Number(v))}
+    />
+  );
+}
 
 export function RunsPanel() {
   const fb = useFeedback();
@@ -666,18 +697,17 @@ export function RunsPanel() {
       <div className="flex flex-wrap items-center gap-1.5">
         {/* 手机：五个类型 chip 折成两三行、把列表挤下去 → 换成一个下拉（值一眼可见、
             点一下就能选，不折行）。桌面仍是并排 chip，行为一致。 */}
-        <select
-          className="input input-inline h-[36px] min-w-0 max-md:order-1 md:hidden"
-          title="只看某一类记录"
+        <Select
+          compact
+          className="max-md:order-1 md:hidden !w-[132px]"
+          ariaLabel="记录类别"
           value={kind}
-          onChange={(e) => setKind(e.target.value as (typeof KIND_TABS)[number]["key"])}
-        >
-          {KIND_TABS.map((t) => (
-            <option key={t.key} value={t.key}>
-              {t.label} {loaded ? (t.key === "all" ? total : (counts[t.key] ?? 0)) : ""}
-            </option>
-          ))}
-        </select>
+          options={KIND_TABS.map((t) => ({
+            value: t.key,
+            label: `${t.label}${loaded ? (t.key === "all" ? ` ${total}` : ` ${counts[t.key] ?? 0}`) : ""}`,
+          }))}
+          onChange={(v) => setKind(v as (typeof KIND_TABS)[number]["key"])}
+        />
         <div
           className="hidden items-center gap-0.5 rounded-[10px] border p-0.5 md:flex"
           style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
@@ -712,31 +742,31 @@ export function RunsPanel() {
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
-        <select
-          className="input input-inline h-[36px] min-w-0 max-md:order-2"
-          title="只看某种状态"
+        <Select
+          compact
+          className="max-md:order-2 !w-[124px]"
+          ariaLabel="状态"
           value={status}
-          onChange={(e) => setStatus(e.target.value)}
-        >
-          <option value="">全部状态</option>
-          <option value="ok">完成</option>
-          <option value="error">失败</option>
-          <option value="running">运行中</option>
-          <option value="aborted">已中断</option>
-        </select>
-        <select
-          className="input input-inline h-[36px] max-w-[150px] min-w-0 max-md:order-3"
-          title="只看某个助手的记录"
+          options={[
+            { value: "", label: "全部状态" },
+            { value: "ok", label: "完成" },
+            { value: "error", label: "失败" },
+            { value: "running", label: "运行中" },
+            { value: "aborted", label: "已中断" },
+          ]}
+          onChange={setStatus}
+        />
+        <Select
+          compact
+          className="max-md:order-3 !w-[150px]"
+          ariaLabel="助手"
           value={agentId}
-          onChange={(e) => setAgentId(e.target.value)}
-        >
-          <option value="">全部助手</option>
-          {agents.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-            </option>
-          ))}
-        </select>
+          options={[
+            { value: "", label: "全部助手" },
+            ...agents.map((a) => ({ value: a.id, label: a.name })),
+          ]}
+          onChange={setAgentId}
+        />
 
         <div
           className="ml-auto flex flex-wrap items-center gap-2 max-md:order-5"
@@ -869,168 +899,124 @@ export function RunsPanel() {
                 <>
                   <label className="flex items-center gap-1.5">
                     今日上限
-                    <select
-                      className="input input-inline h-[32px] max-md:h-[44px]"
+                    <GuardSelect
+                      ariaLabel="每日上限"
                       value={guard.daily.limit}
+                      choices={guard.daily.choices}
+                      format={(v) => (v === 0 ? "不限" : fmt.num(v))}
                       disabled={guardBusy}
-                      onChange={(e) => void saveGuard("daily", Number(e.target.value))}
-                    >
-                      {guard.daily.choices.map((v) => (
-                        <option key={v} value={v}>
-                          {v === 0 ? "不限" : fmt.num(v)}
-                        </option>
-                      ))}
-                    </select>
+                      onSave={(n) => void saveGuard("daily", n)}
+                    />
                   </label>
                   <label className="flex items-center gap-1.5" title="分派出来的实例还能不能再分派">
                     分派层数
-                    <select
-                      className="input input-inline h-[32px] max-md:h-[44px]"
+                    <GuardSelect
+                      ariaLabel="嵌套深度"
                       value={guard.depth.limit}
+                      choices={guard.depth.choices}
+                      format={(v) => `${v} 层`}
                       disabled={guardBusy}
-                      onChange={(e) => void saveGuard("depth", Number(e.target.value))}
-                    >
-                      {guard.depth.choices.map((v) => (
-                        <option key={v} value={v}>
-                          {v} 层
-                        </option>
-                      ))}
-                    </select>
+                      onSave={(n) => void saveGuard("depth", n)}
+                    />
                   </label>
                   <label
                     className="flex items-center gap-1.5"
                     title="一棵分派树最多花多少 token —— 超了只拦新的派发，在跑的不打断"
                   >
                     每棵树
-                    <select
-                      className="input input-inline h-[32px] max-md:h-[44px]"
+                    <GuardSelect
+                      ariaLabel="子树上限"
                       value={guard.tree?.limit ?? 0}
+                      choices={guard.tree?.choices ?? [0]}
+                      format={(v) => (v === 0 ? "不限" : fmt.num(v))}
                       disabled={guardBusy}
-                      onChange={(e) => void saveGuard("tree", Number(e.target.value))}
-                    >
-                      {(guard.tree?.choices ?? [0]).map((v) => (
-                        <option key={v} value={v}>
-                          {v === 0 ? "不限" : fmt.num(v)}
-                        </option>
-                      ))}
-                    </select>
+                      onSave={(n) => void saveGuard("tree", n)}
+                    />
                   </label>
                   <label className="flex items-center gap-1.5" title="一个工具连续失败几次后，平台自动在下一轮注入「换一条路或上报」的止损提示">
                     止损
-                    <select
-                      className="input input-inline h-[32px] max-md:h-[44px]"
+                    <GuardSelect
+                      ariaLabel="连败即停"
                       value={guard.reliability?.stop_loss.value ?? 3}
+                      choices={guard.reliability?.stop_loss.choices ?? [0, 2, 3, 5]}
+                      format={(v) => (v === 0 ? "关" : `连败 ${v} 次`)}
                       disabled={guardBusy}
-                      onChange={(e) =>
-                        void saveGuard("reliability", { stop_loss: Number(e.target.value) })
-                      }
-                    >
-                      {(guard.reliability?.stop_loss.choices ?? [0, 2, 3, 5]).map((v) => (
-                        <option key={v} value={v}>
-                          {v === 0 ? "关" : `连败 ${v} 次`}
-                        </option>
-                      ))}
-                    </select>
+                      onSave={(n) => void saveGuard("reliability", { stop_loss: n })}
+                    />
                   </label>
                   <label
                     className="flex items-center gap-1.5"
                     title="同一工具连续失败这么多次，平台直接中止执行（不等 Router、不再给模型尝试的机会；中止前回收已产出的正文片段供重派续跑）"
                   >
                     硬停
-                    <select
-                      className="input input-inline h-[32px] max-md:h-[44px]"
+                    <GuardSelect
+                      ariaLabel="连败硬停"
                       value={guard.reliability?.hard_stop.value ?? 5}
+                      choices={guard.reliability?.hard_stop.choices ?? [0, 3, 5, 8]}
+                      format={(v) => (v === 0 ? "关" : `连败 ${v} 次`)}
                       disabled={guardBusy}
-                      onChange={(e) =>
-                        void saveGuard("reliability", { hard_stop: Number(e.target.value) })
-                      }
-                    >
-                      {(guard.reliability?.hard_stop.choices ?? [0, 3, 5, 8]).map((v) => (
-                        <option key={v} value={v}>
-                          {v === 0 ? "关" : `连败 ${v} 次`}
-                        </option>
-                      ))}
-                    </select>
+                      onSave={(n) => void saveGuard("reliability", { hard_stop: n })}
+                    />
                   </label>
                   <label
                     className="flex items-center gap-1.5"
                     title="worker 跑着的时候，平台每隔这么久把它的实时画像送进 Router 会话判一次要不要纠偏（没有新动作不打扰）；0=关"
                   >
                     巡检
-                    <select
-                      className="input input-inline h-[32px] max-md:h-[44px]"
+                    <GuardSelect
+                      ariaLabel="复查间隔"
                       value={guard.reliability?.review?.value ?? 180}
+                      choices={guard.reliability?.review?.choices ?? [0, 90, 180, 300]}
+                      format={(v) => (v === 0 ? "关" : `${v}秒`)}
                       disabled={guardBusy}
-                      onChange={(e) =>
-                        void saveGuard("reliability", { review: Number(e.target.value) })
-                      }
-                    >
-                      {(guard.reliability?.review?.choices ?? [0, 90, 180, 300]).map((v) => (
-                        <option key={v} value={v}>
-                          {v === 0 ? "关" : `${v}秒`}
-                        </option>
-                      ))}
-                    </select>
+                      onSave={(n) => void saveGuard("reliability", { review: n })}
+                    />
                   </label>
                   <label
                     className="flex items-center gap-1.5"
                     title="连续多少次工具调用全部失败就判定为死路，自动上报 blocked 唤醒 Router"
                   >
                     死路
-                    <select
-                      className="input input-inline h-[32px] max-md:h-[44px]"
+                    <GuardSelect
+                      ariaLabel="死路判定"
                       value={guard.reliability?.dead_end.value ?? 0}
+                      choices={guard.reliability?.dead_end.choices ?? [0, 5, 8, 12]}
+                      format={(v) => (v === 0 ? "关" : `${v} 次`)}
                       disabled={guardBusy}
-                      onChange={(e) =>
-                        void saveGuard("reliability", { dead_end: Number(e.target.value) })
-                      }
-                    >
-                      {(guard.reliability?.dead_end.choices ?? [0, 5, 8, 12]).map((v) => (
-                        <option key={v} value={v}>
-                          {v === 0 ? "关" : `${v} 次`}
-                        </option>
-                      ))}
-                    </select>
+                      onSave={(n) => void saveGuard("reliability", { dead_end: n })}
+                    />
                   </label>
                   <label
                     className="flex items-center gap-1.5"
                     title="执行时间用到超时的几成时，自动注入「开始收尾」提醒（0=关）"
                   >
                     软预算
-                    <select
-                      className="input input-inline h-[32px] max-md:h-[44px]"
+                    <GuardSelect
+                      ariaLabel="软预算"
                       value={guard.reliability?.soft_budget.value ?? 80}
+                      choices={guard.reliability?.soft_budget.choices ?? [0, 60, 80, 90]}
+                      format={(v) => (v === 0 ? "关" : `${v}%`)}
                       disabled={guardBusy}
-                      onChange={(e) =>
-                        void saveGuard("reliability", { soft_budget: Number(e.target.value) })
-                      }
-                    >
-                      {(guard.reliability?.soft_budget.choices ?? [0, 60, 80, 90]).map((v) => (
-                        <option key={v} value={v}>
-                          {v === 0 ? "关" : `${v}%`}
-                        </option>
-                      ))}
-                    </select>
+                      onSave={(n) => void saveGuard("reliability", { soft_budget: n })}
+                    />
                   </label>
                   <label
                     className="flex items-center gap-1.5"
                     title="超时被停时把最后的正文存为断点，收口时带给 Router，重派可从断点续"
                   >
                     断点回收
-                    <select
-                      className="input input-inline h-[32px] max-md:h-[44px]"
-                      value={guard.reliability?.partial.value ?? "on"}
+                    <Select
+                      compact
+                      className="!w-[92px]"
+                      ariaLabel="部分完成"
                       disabled={guardBusy}
-                      onChange={(e) =>
-                        void saveGuard("reliability", { partial: e.target.value })
-                      }
-                    >
-                      {(guard.reliability?.partial.choices ?? ["off", "on"]).map((v) => (
-                        <option key={v} value={v}>
-                          {v === "on" ? "开" : "关"}
-                        </option>
-                      ))}
-                    </select>
+                      value={guard.reliability?.partial.value ?? "on"}
+                      options={[
+                        { value: "on", label: "开" },
+                        { value: "off", label: "关" },
+                      ]}
+                      onChange={(v) => void saveGuard("reliability", { partial: v })}
+                    />
                   </label>
                   <span className="tabular-nums">
                     今日已用{" "}

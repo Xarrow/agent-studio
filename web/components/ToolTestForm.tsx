@@ -14,6 +14,7 @@
 
 import { useEffect, useState } from "react";
 import type { Tool } from "@/lib/types";
+import { Select } from "@/components/ui/select";
 import { argsToFields, fieldToValue, schemaToFields, valueToField, type FieldSpec } from "@/lib/tool-params";
 import { useFeedback } from "@/components/ui/feedback";
 import { api, fmt } from "@/lib/api";
@@ -128,28 +129,30 @@ export function ToolTestForm({ tool, onDone }: { tool: Tool; onDone: (out: strin
                 </span>
               </span>
               {f.enumValues ? (
-                <select
-                  className="input flex-1 min-w-0 text-[12px]"
+                <Select
+                  className="flex-1 min-w-0"
+                  ariaLabel={f.name}
                   value={values[f.name] ?? ""}
-                  onChange={(e) => setValues((p) => ({ ...p, [f.name]: e.target.value }))}
-                >
-                  <option value="">— 选 {f.name} —</option>
-                  {f.enumValues.map((v) => (
-                    <option key={v} value={v}>
-                      {v}
-                    </option>
-                  ))}
-                </select>
+                  placeholder={`— 选 ${f.name} —`}
+                  options={[
+                    { value: "", label: `— 选 ${f.name} —` },
+                    ...f.enumValues.map((v) => ({ value: v, label: v })),
+                  ]}
+                  onChange={(v) => setValues((p) => ({ ...p, [f.name]: v }))}
+                />
               ) : f.type === "boolean" ? (
-                <select
-                  className="input flex-1 min-w-0 text-[12px]"
+                <Select
+                  className="flex-1 min-w-0"
+                  ariaLabel={f.name}
                   value={values[f.name] ?? ""}
-                  onChange={(e) => setValues((p) => ({ ...p, [f.name]: e.target.value }))}
-                >
-                  <option value="">— 未设置 —</option>
-                  <option value="true">true</option>
-                  <option value="false">false</option>
-                </select>
+                  placeholder="— 未设置 —"
+                  options={[
+                    { value: "", label: "— 未设置 —" },
+                    { value: "true", label: "true" },
+                    { value: "false", label: "false" },
+                  ]}
+                  onChange={(v) => setValues((p) => ({ ...p, [f.name]: v }))}
+                />
               ) : (
                 <input
                   className="input mono flex-1 min-w-0 text-[12px]"

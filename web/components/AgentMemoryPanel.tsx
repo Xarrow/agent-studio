@@ -24,6 +24,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type { Memory, MemoryPolicy } from "@/lib/types";
 import { useFeedback } from "./ui/feedback";
+import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/kit";
 
 /** 精简阈值的可选档位：0 = 不精简 */
@@ -201,20 +202,19 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
         <div className="mt-3 pt-3 border-t border-[var(--color-border)]">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-[12px]">它要记东西时</span>
-            <select
-              className="input h-[32px] min-w-0"
-              style={{ width: "auto" }}
+            <Select
+              compact
+              className="!w-[210px]"
+              ariaLabel="写入方式"
               value={policy.save_mode}
               disabled={busy || !memoryOn}
-              title={memoryOn ? "决定助手能不能自己把事写进记忆" : "记忆关了，这个设置暂不生效"}
-              onChange={(e) =>
-                void patch({ save_mode: e.target.value as "auto" | "confirm" | "off" })
-              }
-            >
-              <option value="auto">直接记下（不用问我）</option>
-              <option value="confirm">先放待确认，我点「记住」才生效</option>
-              <option value="off">不许记（只能读已有的）</option>
-            </select>
+              options={[
+                { value: "auto", label: "直接记下（不用问我）" },
+                { value: "confirm", label: "先放待确认，点「记住」才生效" },
+                { value: "off", label: "不许记（只能读已有的）" },
+              ]}
+              onChange={(v) => void patch({ save_mode: v as "auto" | "confirm" | "off" })}
+            />
           </div>
           <p className="mt-1 text-[11.5px] leading-snug text-[var(--color-muted)]">
             {policy.save_mode === "auto"
@@ -346,20 +346,17 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
           <div className="mt-4 space-y-4">
             <div>
               <label className="label">记忆从哪来</label>
-              <select
-                className="input"
+              <Select
+                ariaLabel="召回来源"
                 value={policy.recall_backend}
                 disabled={busy}
-                onChange={(e) =>
-                  void patch({
-                    recall_backend: e.target.value as MemoryPolicy["recall_backend"],
-                  })
-                }
-              >
-                <option value="local">平台内置记忆（本地关键词匹配）</option>
-                <option value="external">外部记忆服务（接你自己的记忆库）</option>
-                <option value="hybrid">两者都用 · 合并去重</option>
-              </select>
+                options={[
+                  { value: "local", label: "平台内置记忆（本地关键词匹配）" },
+                  { value: "external", label: "外部记忆服务（接你自己的记忆库）" },
+                  { value: "hybrid", label: "两者都用 · 合并去重" },
+                ]}
+                onChange={(v) => void patch({ recall_backend: v as MemoryPolicy["recall_backend"] })}
+              />
               <p className="text-[12px] text-[var(--color-muted)] mt-1">
                 {policy.recall_backend === "local"
                   ? "存平台库里，按关键词 + 最近使用打分"
@@ -371,20 +368,17 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
 
             <div>
               <label className="label">挑选方式</label>
-              <select
-                className="input"
+              <Select
+                ariaLabel="排序策略"
                 value={policy.recall_strategy}
                 disabled={busy}
-                onChange={(e) =>
-                  void patch({
-                    recall_strategy: e.target.value as MemoryPolicy["recall_strategy"],
-                  })
-                }
-              >
-                <option value="hybrid">按相关度 + 最近使用 · 推荐</option>
-                <option value="keyword">只按相关度</option>
-                <option value="recent">只按最近使用</option>
-              </select>
+                options={[
+                  { value: "hybrid", label: "按相关度 + 最近使用 · 推荐" },
+                  { value: "keyword", label: "只按相关度" },
+                  { value: "recent", label: "只按最近使用" },
+                ]}
+                onChange={(v) => void patch({ recall_strategy: v as MemoryPolicy["recall_strategy"] })}
+              />
             </div>
 
             <div>
@@ -441,24 +435,28 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
             <div>
               <label className="label">对话变长后自动精简</label>
               {/* 档位用选的（枚举值不给自由输入框 —— 手打轮次容易填出奇怪的数） */}
-              <select
-                className="input"
-                value={COMPRESS_CHOICES.includes(policy.compress_after_turns) ? policy.compress_after_turns : -1}
-                disabled={busy}
-                onChange={(e) => {
-                  const v = Number(e.target.value);
-                  if (v >= 0) void patch({ compress_after_turns: v });
-                }}
-              >
-                {!COMPRESS_CHOICES.includes(policy.compress_after_turns) && (
-                  <option value={-1}>{policy.compress_after_turns} 轮（当前）</option>
+              <Select
+                ariaLabel="精简时机"
+                value={String(
+                  COMPRESS_CHOICES.includes(policy.compress_after_turns)
+                    ? policy.compress_after_turns
+                    : -1,
                 )}
-                {COMPRESS_CHOICES.map((n) => (
-                  <option key={n} value={n}>
-                    {n === 0 ? "不精简" : `超过 ${n} 轮`}
-                  </option>
-                ))}
-              </select>
+                disabled={busy}
+                options={[
+                  ...(!COMPRESS_CHOICES.includes(policy.compress_after_turns)
+                    ? [{ value: "-1", label: `${policy.compress_after_turns} 轮（当前）` }]
+                    : []),
+                  ...COMPRESS_CHOICES.map((n) => ({
+                    value: String(n),
+                    label: n === 0 ? "不精简" : `超过 ${n} 轮`,
+                  })),
+                ]}
+                onChange={(v) => {
+                  const n = Number(v);
+                  if (n >= 0) void patch({ compress_after_turns: n });
+                }}
+              />
               <p className="text-[12px] text-[var(--color-muted)] mt-1">
                 {policy.compress_after_turns === 0
                   ? "一直保留全部原文（可能占满上下文）"

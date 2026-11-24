@@ -21,6 +21,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, fmt } from "@/lib/api";
 import type { McpProbeResult, McpServer, McpServerInput } from "@/lib/types";
 import { useFeedback } from "@/components/ui/feedback";
+import { Select } from "@/components/ui/select";
 import { Hint } from "@/components/ui/hint";
 import {
   PageHead,
@@ -534,14 +535,15 @@ function McpDialog({
 
           <label className="block">
             <span className="label">怎么连</span>
-            <select
-              className="input w-full"
+            <Select
+              ariaLabel="连接方式"
               value={form.transport}
-              onChange={(e) => setForm({ ...form, transport: e.target.value as "stdio" | "http" })}
-            >
-              <option value="stdio">本地起一个进程（stdio）</option>
-              <option value="http">连远端地址（http）</option>
-            </select>
+              options={[
+                { value: "stdio", label: "本地起一个进程（stdio）" },
+                { value: "http", label: "连远端地址（http）" },
+              ]}
+              onChange={(v) => setForm({ ...form, transport: v as "stdio" | "http" })}
+            />
           </label>
 
           {form.transport === "stdio" ? (

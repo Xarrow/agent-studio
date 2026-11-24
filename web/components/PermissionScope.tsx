@@ -23,6 +23,7 @@
 
 import { useEffect, useState } from "react";
 import { Hint } from "@/components/ui/hint";
+import { Select } from "@/components/ui/select";
 import { api } from "@/lib/api";
 
 export type PermRule = { tool: string; pattern?: string; behavior: "allow" | "deny" | "ask" };
@@ -251,13 +252,12 @@ export function PermissionScope({
         </Hint>
       </div>
 
-      <select className="input w-full" value={mode} onChange={(e) => setMode(e.target.value)}>
-        {MODES.map((m) => (
-          <option key={m.value} value={m.value}>
-            {m.label}
-          </option>
-        ))}
-      </select>
+      <Select
+        ariaLabel="权限模式"
+        value={mode}
+        options={MODES.map((m) => ({ value: m.value, label: m.label }))}
+        onChange={setMode}
+      />
 
       {meta && (
         <p className="mt-1.5 text-[12px]" style={{ color: "var(--color-text)" }}>
@@ -376,20 +376,21 @@ export function PermissionScope({
         <div className="space-y-1.5">
           {rows.map((r, i) => (
             <div key={i} className="flex items-center gap-1.5 flex-wrap">
-              <select
-                className="input input-inline flex-1 min-w-[110px] text-[12px]"
+              <Select
+                compact
+                className="flex-1 min-w-[110px]"
+                ariaLabel="工具"
                 value={r.tool}
-                onChange={(e) =>
-                  setRows(rows.map((x, j) => (j === i ? { ...x, tool: e.target.value } : x)))
+                options={[
+                  ...toolNames.map((t) => ({ value: t, label: t })),
+                  ...(r.tool && !toolNames.includes(r.tool)
+                    ? [{ value: r.tool, label: r.tool }]
+                    : []),
+                ]}
+                onChange={(v) =>
+                  setRows(rows.map((x, j) => (j === i ? { ...x, tool: v } : x)))
                 }
-              >
-                {toolNames.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-                {r.tool && !toolNames.includes(r.tool) && <option value={r.tool}>{r.tool}</option>}
-              </select>
+              />
               <input
                 className="input input-inline flex-1 min-w-[110px] text-[12px]"
                 value={r.pattern ?? ""}
@@ -399,23 +400,20 @@ export function PermissionScope({
                   setRows(rows.map((x, j) => (j === i ? { ...x, pattern: e.target.value } : x)))
                 }
               />
-              <select
-                className="input input-inline w-[84px] text-[12px]"
+              <Select
+                compact
+                className="!w-[96px]"
+                ariaLabel="动作"
                 value={r.behavior}
-                onChange={(e) =>
+                options={BEHAVIORS.map((b) => ({ value: b.value, label: b.label }))}
+                onChange={(v) =>
                   setRows(
                     rows.map((x, j) =>
-                      j === i ? { ...x, behavior: e.target.value as PermRule["behavior"] } : x,
+                      j === i ? { ...x, behavior: v as PermRule["behavior"] } : x,
                     ),
                   )
                 }
-              >
-                {BEHAVIORS.map((b) => (
-                  <option key={b.value} value={b.value}>
-                    {b.label}
-                  </option>
-                ))}
-              </select>
+              />
               <button
                 data-tap
                 className="text-[13px] px-1 text-[var(--color-muted)] hover:text-[var(--color-text)]"
