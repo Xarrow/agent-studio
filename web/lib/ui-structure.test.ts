@@ -593,49 +593,6 @@ test("侧栏搜索：标题 + 对话内容两段，内容命中可点进会话",
   assert.match(api, /search: \(q: string/, "前端检索方法");
 });
 
-/**
- * 定时任务（2026-10）：让这个对话在你不看着的时候也跑，结果回到对话里或推到群里。
- * 口径：
- *   · 频率是枚举（每小时/每天/每周），不让用户写 cron
- *   · 投递两选一：本对话（零配置）/ webhook（飞书/企业微信/钉钉都是 POST 一个 JSON）
- *   · 没有定时任务时不出常驻条（只在输入框下面留一个安静的「定时」）
- */
-test("定时任务：枚举频率 + 两选一投递 + 空态不占位", () => {
-  const src = read("components/SessionJobs.tsx");
-  // 节奏从「三个分段 + 时间零件」改成整句下拉（每天 09:00 / 每周一三五 09:00），
-  // 枚举值仍在源码里明写着，不让用户写 cron
-  assert.match(src, /DAILY_PRESETS/, "频率是枚举好的整句");
-  assert.match(src, /key: "hourly", label: "每小时"/, "每小时仍可选");
-  assert.match(src, /key: "session" as const, label: "这个对话"/, "默认投递=本对话");
-  assert.match(src, /key: "feishu", label: "飞书"/, "webhook 支持飞书");
-  assert.match(src, /key: "wecom", label: "企业微信"/, "webhook 支持企业微信");
-  assert.match(src, /\{items\.length > 0 && \(/, "没有任务时不出常驻条");
-  // 「保存后立刻跑一次」的复选框改成卡片上的「跑一次」按钮：随时能验证，
-  // 也不必在创建时多做一次决定
-  assert.match(src, /跑一次/, "可以立刻跑一次验证");
-  assert.match(src, /api\.runJobNow/, "走的是后端 run-now 接口");
-  // 开关从两个字的按钮换成 Switch（状态比动作更直观，触屏也更好点）
-  assert.match(src, /<Switch[\s\S]{0,160}checked=\{j\.enabled\}/, "能开关");
-  // 对话页必须接上：按钮 + 常驻条
-  const chat = readChat();
-  // 入口在输入坞的工具排里（附件旁边），而且是"没有任务时"才摆 ——
-  // 有任务时上面有常驻条，条里已有「＋ 再排一个」，同一个动作只留一个入口
-  assert.match(
-    chat,
-    /jobCount === 0 && <JobButton onClick=\{\(\) => setJobOpen\(true\)\} \/>/,
-    "没有任务时工具排里有定时入口",
-  );
-  assert.doesNotMatch(
-    chat,
-    /Enter 发送 · Shift \+ Enter 换行 · 可直接粘贴截图<\/span>\s*\{sessionId && <JobButton/,
-    "定时不能混在键盘说明那一行里",
-  );
-  assert.match(chat, /<SessionJobs[\s\S]{0,160}onCount=\{setJobCount\}/, "常驻条与计数接上");
-  // 接口
-  const api = read("lib/api.ts");
-  assert.match(api, /sessionJobs: \(sessionId: string\)/, "按会话取任务");
-  assert.match(api, /runJobNow: \(id: string\)/, "能立刻跑一次");
-});
 
 /**
  * 备用模型（2026-10）：主模型的 key 失效 / 下线 / 持续 5xx 时，整轮换备用模型重跑一次。
@@ -684,25 +641,6 @@ test("运行中插话：执行中输入框可用 + 回车即插话 + 历史里�
   assert.match(api, /steerRun: \(id: string, text: string\)/, "接口封装存在");
 });
 
-/**
- * 变更门 + 心跳（2026-10）：定时任务别每次都为"没变化"烧一遍模型；
- * 长任务别让用户反复问"跑完没"。
- */
-test("定时任务：可设「有变化才跑」，并把跳过的原因说清楚", () => {
-  const jobs = read("components/SessionJobs.tsx");
-  assert.match(jobs, /只在有变化时才跑/, "变更门有入口（收进折叠区，不占常驻位置）");
-  assert.match(jobs, /option value="command"/, "命令型检查有入口");
-  assert.match(jobs, /option value="url"/, "网址型检查有入口");
-  assert.match(jobs, /monitor_kind: monitorKind/, "保存时带上类型");
-  // 节奏是派生值，「自定义…」必须有独立 state 记着，否则一选就被算回预设、下拉弹回去
-  assert.match(jobs, /rhythmCustom\s*\?\s*"custom"/, "自定义选项有独立 state");
-  assert.match(jobs, /setRhythmCustom\(true\)/, "选中自定义时置位");
-  assert.match(jobs, /结果和上次一样就「整个跳过」/, "文案说清为什么没跑");
-  assert.match(jobs, /有变化才跑/, "列表行上看得出来");
-
-  const types = read("lib/types.ts");
-  assert.match(types, /monitor_kind: "" \| "command" \| "url"/);
-});
 
 test("心跳：平台自己的提示在对话里有一行灰字（关掉页面回来还在）", () => {
   const chat = readChat();

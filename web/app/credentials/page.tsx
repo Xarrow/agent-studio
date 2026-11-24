@@ -7,6 +7,7 @@ import type { Credential, CredentialDetectResult, CredentialTestResult, Provider
 import { useFeedback } from "@/components/ui/feedback";
 import { Chip, DLG_BACKDROP, DLG_CARD, Empty, KV, Menu, PageHead, Row, RowList, Section } from "@/components/ui/kit";
 import { DetailPanel } from "@/components/ui/DetailPanel";
+import { Select } from "@/components/ui/select";
 
 /** 对话模型服务商：kind="tools" 的是工具密钥（搜索/抓取/OCR/语音），不该进 LLM 配置 */
 const isLlmProvider = (p: Provider) => (p.kind ?? "llm") !== "tools";
@@ -735,25 +736,28 @@ function NewCredentialDialog({
             )}
             <label className="ml-auto flex items-center gap-1.5" style={{ color: "var(--color-text-3)" }}>
               服务商
-              <select
-                className="input !w-auto !py-1 text-[12px]"
+              <Select
+                className="!w-[172px]"
+                compact
+                ariaLabel="服务商"
                 value={provider}
-                onChange={(e) => {
-                  setProvider(e.target.value);
+                placeholder="（未识别 · 从这选）"
+                options={[
+                  { value: "", label: "（未识别 · 从这选）" },
+                  ...providers.filter(isLlmProvider).map((p) => ({
+                    value: p.name,
+                    label: p.display_name,
+                  })),
+                ]}
+                onChange={(v) => {
+                  setProvider(v);
                   setProviderTouched(true);
                   setDetected(null);
                   setModels([]);
                   setModel("");
-                  if (!e.target.value) setBaseUrl("");
+                  if (!v) setBaseUrl("");
                 }}
-              >
-                <option value="">（未识别 · 从这选）</option>
-                {providers.filter(isLlmProvider).map((p) => (
-                  <option key={p.name} value={p.name}>
-                    {p.display_name}
-                  </option>
-                ))}
-              </select>
+              />
             </label>
           </div>
 
@@ -1003,11 +1007,17 @@ function EditCredentialDialog({
         <div className="space-y-3.5">
           <div>
             <label className="label">Provider</label>
-            <select
-              className="input"
+            <Select
+              ariaLabel="Provider"
               value={provider}
-              onChange={(e) => {
-                setProvider(e.target.value);
+              placeholder="选一家"
+              options={providers.filter(isLlmProvider).map((p) => ({
+                value: p.name,
+                label: p.display_name,
+                hint: p.requires_key ? undefined : "无需 Key",
+              }))}
+              onChange={(v) => {
+                setProvider(v);
                 setFound([]);
                 setProbeNote(null);
                 // 切 Provider 联动 Base URL —— 但**不清空已保存的值**：
@@ -1015,17 +1025,10 @@ function EditCredentialDialog({
                 // 火山 Agent Plan 的端点是它唯一能通的写法，一保存生产凭据就断）。
                 // 规约：切 option 只过滤显示，值还在；只有新 Provider 明确不允许
                 // 自定义端点（allows_base_url=false）才重置，否则原值原样保留。
-                const nextMeta = providers.find((p) => p.name === e.target.value);
+                const nextMeta = providers.find((p) => p.name === v);
                 if (nextMeta?.allows_base_url === false) setBaseUrl("");
               }}
-            >
-              {providers.filter(isLlmProvider).map((p) => (
-                <option key={p.name} value={p.name}>
-                  {p.display_name}
-                  {p.requires_key ? "" : "（无需 Key）"}
-                </option>
-              ))}
-            </select>
+            />
           </div>
 
           <div>

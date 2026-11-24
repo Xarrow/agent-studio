@@ -28,7 +28,6 @@ import { useFeedback } from "@/components/ui/feedback";
 import { ProcessBar, eventsToSteps, recallProc, rememberProc } from "@/components/ui/run-timeline";
 import BgProcsStrip from "@/components/BgProcsStrip";
 import TodoStrip from "@/components/TodoStrip";
-import SessionJobs, { JobButton } from "@/components/SessionJobs";
 import { pushFrame, clearFrame } from "@/lib/browser-frame";
 import { pushSessionLayer, useHistoryLayer } from "@/lib/use-history-layer";
 import { SlashMenu, type CommandItem } from "@/components/SlashMenu";
@@ -581,11 +580,8 @@ export function ChatConsole({
     { name: string; path: string; kind: "image" | "file"; url: string; size: number }[]
   >([]);
   const [busy, setBusy] = useState(false);
-  /** 定时任务弹框（这个对话按时自己跑） */
-  const [jobOpen, setJobOpen] = useState(false);
   // 清单在"一轮结束"时才整体刷新（跑的过程中由 TodoStrip 自己按 busy 轮询）
   const [todoTick, setTodoTick] = useState(0);
-  const [jobCount, setJobCount] = useState(0);
   /** 本轮开始时间（毫秒）——过程条右侧那个秒数用它算 */
   const [runStart, setRunStart] = useState<number>(0);
   /** 每秒跳一次，只为让耗时数字动起来 */
@@ -2636,7 +2632,9 @@ export function ChatConsole({
         aria-label="换模型"
         aria-expanded={modelOpen}
         className={`inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-[11.5px] hover:bg-[var(--color-surface-2)] ${
-          compact ? "max-w-[124px]" : "max-w-[220px]"
+          /* 手机：模型名最多 88px —— 原来 124px 把助手名挤到 45px，
+             长一点的助手名只剩两个字的宽度（真机：Hermes-Claude优化版本 → "Herm…"） */
+          compact ? "max-w-[88px]" : "max-w-[220px]"
         }`}
         style={{ color: "var(--color-text-3)" }}
       >
@@ -4023,18 +4021,6 @@ export function ChatConsole({
             {/* ── 后台任务（跑得住比一轮更久的活）────────────────────
                 助手用 proc_start 起的进程挂在这个会话上：关页面、run 结束都不影响。
                 没有任务时整条不渲染；有的话显示谁在跑、跑了多久、完事没有。 */}
-            {/* ── 定时（这个对话按时自己跑）────────────────────────
-                没有任务时只有输入框下面那个「定时」按钮；有任务时多这一条。 */}
-            {sessionId && (
-              <SessionJobs
-                sessionId={sessionId}
-                open={jobOpen}
-                onOpenChange={setJobOpen}
-                onCount={setJobCount}
-                draft={input}
-              />
-            )}
-
             {sessionId && <TodoStrip sessionId={sessionId} busy={busy} refreshKey={todoTick} />}
 
             {sessionId && <BgProcsStrip sessionId={sessionId} busy={busy} />}
@@ -4571,9 +4557,6 @@ export function ChatConsole({
                       </>
                     )}
                   </div>
-                  {/* 一个定时任务都没有时才摆这个入口：有了上面就有 strip，含「＋ 再排一个」 */}
-                  {sessionId && jobCount === 0 && <JobButton onClick={() => setJobOpen(true)} />}
-
                   {/* 技能 / 记忆放这里，不放上面那排 chips：
                       chips 是「这轮对话的上下文」（文件、常说的句子），多了就得左右滑；
                       这两个是「工具」，和附件、定时同性质，待在工具栏才对。

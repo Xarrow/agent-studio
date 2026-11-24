@@ -1538,7 +1538,7 @@ export const api = {
     request<SessionJob>(`/api/jobs/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   deleteSessionJob: (id: string) =>
     request<{ deleted: boolean }>(`/api/jobs/${id}`, { method: "DELETE" }),
-  runJobNow: (id: string) => post<{ run_id: string }>(`/api/jobs/${id}/run-now`, {}),
+
   /** 跨会话检索：标题命中 + 对话内容命中（与助手的 session_search 同一实现） */
   search: (q: string, opts: { limit?: number; agentId?: string } = {}) => {
     const qs = new URLSearchParams({ q, limit: String(opts.limit ?? 12) });

@@ -208,8 +208,8 @@ export function AgentSwitcher({
         </span>
         {!mini && (
         <span
-          className="min-w-0 font-medium text-[13.5px] leading-[1.25]"
-          style={{ overflowWrap: "anywhere" }}
+          className="min-w-0 flex-1 truncate font-medium text-[13.5px] leading-[1.25]"
+          title={current?.name ?? undefined}
         >
           {current?.name ?? "选择助手"}
         </span>
