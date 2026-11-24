@@ -151,7 +151,7 @@ export function SideDock({
   /** sheet 拖拽：拖动中不加过渡（跟手），松手才吸附 */
   const sheetDrag = useRef<{ y: number; h: number } | null>(null);
   const onSheetDown = (e: React.PointerEvent) => {
-    sheetDrag.current = { y: e.clientY, h: sheetHeight || window.innerHeight * 0.55 };
+    sheetDrag.current = { y: e.clientY, h: sheetHeight || window.innerHeight * 0.4 };
     try {
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     } catch {
@@ -162,7 +162,7 @@ export function SideDock({
     const d = sheetDrag.current;
     if (!d) return;
     const vh = window.innerHeight;
-    const h = Math.min(Math.max(d.h + (d.y - e.clientY), 140), vh * 0.92);
+    const h = Math.min(Math.max(d.h + (d.y - e.clientY), 120), vh * 0.92);
     // 记在 ref 上：pointerup 可能赶在最后一次 setState 渲染之前触发，
     // 那时闭包里的 sheetHeight 还是旧值，吸附会算错（实测拖完又弹回原高度）
     d.h = h;
@@ -173,13 +173,13 @@ export function SideDock({
     sheetDrag.current = null;
     if (!d) return;
     const vh = window.innerHeight;
-    const ratio = (d.h || sheetHeight || vh * 0.55) / vh;
+    const ratio = (d.h || sheetHeight || vh * 0.4) / vh;
     if (ratio < 0.3) {
-      onSheetHeight?.(vh * 0.55);
+      onSheetHeight?.(Math.round(vh * 0.4));
       onOpenChange(false);
       return;
     }
-    const snaps = [0.55, 0.75, 0.88];
+    const snaps = [0.4, 0.65, 0.88];
     const best = snaps.reduce((a, b) => (Math.abs(b - ratio) < Math.abs(a - ratio) ? b : a));
     onSheetHeight?.(Math.round(vh * best));
   };
@@ -325,7 +325,11 @@ export function SideDock({
             onOpenChange(true);
           }
         }}
-        className="relative grid h-10 w-10 place-items-center rounded-[10px] transition-colors"
+        className={
+          isSheet
+            ? "relative grid h-[34px] w-[34px] place-items-center rounded-[9px] transition-colors"
+            : "relative grid h-10 w-10 place-items-center rounded-[10px] transition-colors"
+        }
         style={{
           color: active ? "var(--color-accent)" : "var(--color-muted)",
           background: active ? "color-mix(in srgb, var(--color-accent) 10%, transparent)" : "transparent",
@@ -373,12 +377,12 @@ export function SideDock({
           onPointerMove={onSheetMove}
           onPointerUp={onSheetUp}
           onPointerCancel={onSheetUp}
-          className="flex h-7 shrink-0 cursor-row-resize items-center justify-center"
+          className="flex h-[18px] shrink-0 cursor-row-resize items-center justify-center"
           style={{ touchAction: "none" }}
         >
           <span
             aria-hidden
-            className="h-1 w-10 rounded-full"
+            className="h-[3px] w-9 rounded-full"
             style={{ background: "var(--color-border)" }}
           />
         </div>
@@ -404,7 +408,7 @@ export function SideDock({
         key="rail"
         className={
           isSheet
-            ? "flex shrink-0 items-center justify-center gap-1 py-1.5"
+            ? "flex shrink-0 items-center justify-center gap-0.5 py-1"
             : "flex w-[52px] shrink-0 flex-col items-center gap-1 py-2"
         }
         style={{ background: "var(--color-surface-2)" }}
@@ -413,7 +417,7 @@ export function SideDock({
           "outline",
           "目录",
           outline?.length,
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <path d="M4 6h12M4 12h12M4 18h12" />
             <circle cx="20" cy="6" r="1.4" />
             <circle cx="20" cy="12" r="1.4" />
@@ -424,7 +428,7 @@ export function SideDock({
           "browser",
           "浏览器",
           steps.length,
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <circle cx="12" cy="12" r="9" />
             <path d="M3 9h18M9 3c-2 3-2 15 0 18M15 3c2 3 2 15 0 18" />
           </svg>,
@@ -433,7 +437,7 @@ export function SideDock({
           "steps",
           "步骤",
           undefined,
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <path d="M4 6h10M4 12h16M4 18h7" />
             <circle cx="19" cy="6" r="1.6" />
             <circle cx="14" cy="18" r="1.6" />
@@ -443,7 +447,7 @@ export function SideDock({
           "files",
           "产物",
           files.length,
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <path d="M4 7a2 2 0 0 1 2-2h3l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" />
           </svg>,
         )}

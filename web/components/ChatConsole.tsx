@@ -505,7 +505,8 @@ export function ChatConsole({
       if (w >= 320 && w <= 560) setDockW(w);
       const p = localStorage.getItem("dock.panel");
       if (p === "browser" || p === "files" || p === "steps" || p === "outline") setDockPanel(p);
-      const sh = Number(localStorage.getItem("dock.sheetH") || "");
+      // 换 key（sheetH2）：上一版默认 55%（占半屏），旧值留着会让"调小了"看不到效果
+      const sh = Number(localStorage.getItem("dock.sheetH2") || "");
       if (sh > 140) setDockSheetH(sh);
       // 老版本把开合写进了 localStorage：清掉，别让历史偏好继续生效
       localStorage.removeItem("dock.open");
@@ -527,8 +528,8 @@ export function ChatConsole({
       sessionStorage.setItem("dock.open", o ? "1" : "0");
       localStorage.setItem("dock.panel", p);
       localStorage.setItem("dock.w", String(w));
-      const sh = Number(localStorage.getItem("dock.sheetH") || "0");
-      if (sh < 140) localStorage.removeItem("dock.sheetH");
+      const sh = Number(localStorage.getItem("dock.sheetH2") || "0");
+      if (sh < 140) localStorage.removeItem("dock.sheetH2");
     } catch {
       /* 忽略 */
     }
@@ -4767,12 +4768,12 @@ export function ChatConsole({
         {/* 右侧工具坞（≥1280 才渲染；更窄的屏走原来的抽屉/浮层） */}
         <SideDock
           variant={isWide ? "side" : "sheet"}
-          sheetHeight={dockSheetH || (typeof window !== "undefined" ? Math.round(window.innerHeight * 0.55) : 480)}
+          sheetHeight={dockSheetH || (typeof window !== "undefined" ? Math.round(window.innerHeight * 0.4) : 340)}
           sheetBottom={dockH}
           onSheetHeight={(h) => {
             setDockSheetH(h);
             try {
-              localStorage.setItem("dock.sheetH", String(h));
+              localStorage.setItem("dock.sheetH2", String(h));
             } catch {
               /* 隐私模式 */
             }
