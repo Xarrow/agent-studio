@@ -1620,12 +1620,12 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
             </div>
           </section>
 
-          {/* ── 能力：工具 + MCP + Skills 一个选择器 ──────────────────
-              用户心智是「这个助手会什么」一件事，原来三个 Fold 三套交互 ✗
-              （AgentScope 的 Toolkit 也是同一只手管 tool/MCP/Skill）。 */}
+          {/* ── 工具 / Skills / MCP：三段分开（用户明确要求不合并）──────────
+              合并成一个"能力"折叠段时，三类东西挤在一个列表里、共用一个计数，
+              想知道"挂了几台 MCP"得自己数。现在各自一段，段头就写清各选了多少。 */}
           <Fold
-            title="能力（工具 · MCP · Skills）"
-            summary={`${def.tools.length + (def.mcp_servers ?? []).length + def.skills.length} 已选 / ${tools.length + mcpServers.length + skills.length} 可用`}
+            title="工具"
+            summary={`${def.tools.length} 已选 / ${tools.length} 可用`}
           >
             {/* 工具按需加载 —— 摆在这里而不是"更多设置"里：它影响的正是这一节的工具数量，
                 用户看到"已选 27 个"时最该知道"这 27 个是不是每轮都发给模型" */}
@@ -1665,6 +1665,7 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
             ) : (
               <div id="sec-capability" className="scroll-mt-28">
               <CapabilityPicker
+                only={["tool"]}
                 tools={tools}
                 skills={skills}
                 mcpServers={mcpServers}
@@ -1677,6 +1678,36 @@ const dirty = def !== null && savedSnap !== "" && snap(def, desc) !== savedSnap;
               />
               </div>
             )}
+          </Fold>
+
+          <Fold title="Skills" summary={`${def.skills.length} 已选 / ${skills.length} 可用`}>
+            <CapabilityPicker
+              only={["skill"]}
+              tools={tools}
+              skills={skills}
+              mcpServers={mcpServers}
+              selectedToolIds={def.tools.map((t) => t.ref)}
+              selectedSkillIds={def.skills.map((s) => s.ref)}
+              selectedMcpIds={def.mcp_servers ?? []}
+              onToggleTool={toggleTool}
+              onToggleSkill={toggleSkill}
+              onToggleMcp={toggleMcp}
+            />
+          </Fold>
+
+          <Fold title="MCP" summary={`${(def.mcp_servers ?? []).length} 已选 / ${mcpServers.length} 可用`}>
+            <CapabilityPicker
+              only={["mcp"]}
+              tools={tools}
+              skills={skills}
+              mcpServers={mcpServers}
+              selectedToolIds={def.tools.map((t) => t.ref)}
+              selectedSkillIds={def.skills.map((s) => s.ref)}
+              selectedMcpIds={def.mcp_servers ?? []}
+              onToggleTool={toggleTool}
+              onToggleSkill={toggleSkill}
+              onToggleMcp={toggleMcp}
+            />
           </Fold>
         </div>
         </div>

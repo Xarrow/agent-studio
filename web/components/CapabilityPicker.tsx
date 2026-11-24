@@ -44,6 +44,7 @@ export function CapabilityPicker({
   onToggleTool,
   onToggleSkill,
   onToggleMcp,
+  only,
 }: {
   tools: Tool[];
   skills: Skill[];
@@ -54,6 +55,8 @@ export function CapabilityPicker({
   onToggleTool: (id: string) => void;
   onToggleSkill: (id: string) => void;
   onToggleMcp: (id: string) => void;
+  /** 只渲染指定类别：助手配置页把工具 / Skills / MCP 分成三段，各自一个选择器 */
+  only?: ("tool" | "mcp" | "skill")[];
 }) {
   const [q, setQ] = useState("");
   /** 默认显示全部（不只看已选）：一个没勾过的能力（比如注册远程 A2A agent 自动生成的
@@ -97,8 +100,9 @@ export function CapabilityPicker({
       on: selectedSkillIds.includes(x.id),
       toggle: () => onToggleSkill(x.id),
     }));
-    return [...t, ...m, ...s];
-  }, [tools, skills, mcpServers, selectedToolIds, selectedSkillIds, selectedMcpIds, onToggleTool, onToggleSkill, onToggleMcp]);
+    const all = [...t, ...m, ...s];
+    return only && only.length > 0 ? all.filter((i) => only.includes(i.group)) : all;
+  }, [tools, skills, mcpServers, selectedToolIds, selectedSkillIds, selectedMcpIds, onToggleTool, onToggleSkill, onToggleMcp, only]);
 
   const kw = q.trim().toLowerCase();
   const filtered = items.filter((i) => {
@@ -134,7 +138,9 @@ export function CapabilityPicker({
 
       {filtered.length === 0 ? (
         <p className="px-1 py-2 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
-          {kw ? `没有匹配「${q}」的能力` : "还没勾选能力，点右上「显示全部」"}
+          {kw
+            ? `没有匹配「${q}」的${only?.length === 1 ? { tool: "工具", skill: " Skill", mcp: " MCP" }[only[0]] : "能力"}`
+            : "这里还没有可选的项，点右上「显示全部」"}
         </p>
       ) : (
         <div className="flex flex-col gap-1 max-h-[340px] overflow-auto">
