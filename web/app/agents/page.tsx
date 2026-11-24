@@ -16,6 +16,7 @@ import type {
 } from "@/lib/types";
 import { Chip, DLG_BACKDROP, DLG_CARD, Empty, KV, PageHead, Row, RowList } from "@/components/ui/kit";
 import { DetailPanel } from "@/components/ui/DetailPanel";
+import { Select } from "@/components/ui/select";
 import {
   IconChevronRight,
   IconCopy,
@@ -1028,13 +1029,12 @@ function NewAgentDialog({
                 <div className="mt-2 space-y-3">
                   <div>
                     <label className="label">运行时</label>
-                    <select className="input" value={runtime} onChange={(e) => setRuntime(e.target.value)}>
-                      {runtimes.map((r) => (
-                        <option key={r.name} value={r.name}>
-                          {r.display_name}
-                        </option>
-                      ))}
-                    </select>
+                    <Select
+                      ariaLabel="运行时"
+                      value={runtime}
+                      options={runtimes.map((r) => ({ value: r.name, label: r.display_name }))}
+                      onChange={setRuntime}
+                    />
                     {caps && (
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         {caps.supports_hitl && <span className="tag">人工确认</span>}
@@ -1045,18 +1045,16 @@ function NewAgentDialog({
                   </div>
                   <div>
                     <label className="label">用哪条密钥</label>
-                    <select
-                      className="input"
+                    <Select
+                      ariaLabel="LLM 配置"
                       value={credRef}
-                      onChange={(e) => setCredRef(e.target.value)}
-                    >
-                      <option value="">不指定（运行时再定）</option>
-                      {usableCreds.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
+                      placeholder="不指定（运行时再定）"
+                      options={[
+                        { value: "", label: "不指定（运行时再定）" },
+                        ...usableCreds.map((c) => ({ value: c.id, label: c.name })),
+                      ]}
+                      onChange={setCredRef}
+                    />
                   </div>
                 </div>
               )}

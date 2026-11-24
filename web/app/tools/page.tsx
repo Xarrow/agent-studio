@@ -28,6 +28,7 @@ import { ToolTestForm } from "@/components/ToolTestForm";
 import { urlParams } from "@/lib/tool-params";
 import { KVEditor, kvToPairs, pairsToKV, type KVPair } from "@/components/KVEditor";
 import { useFeedback } from "@/components/ui/feedback";
+import { Select } from "@/components/ui/select";
 
 /** 平台/运行时提供的工具：可绑定可试跑，但不给删（与后端 PROTECTED_KINDS 一致） */
 const PROTECTED_KINDS = new Set(["builtin", "native", "fork"]);
@@ -990,15 +991,12 @@ function NewToolDialog({
           <div className="grid grid-cols-[110px_1fr] gap-3">
             <div>
               <label className="label">方法</label>
-              <select
-                className="input"
+              <Select
+                ariaLabel="HTTP 方法"
                 value={method}
-                onChange={(e) => setMethod(e.target.value)}
-              >
-                {HTTP_METHODS.map((m) => (
-                  <option key={m}>{m}</option>
-                ))}
-              </select>
+                options={HTTP_METHODS.map((m) => ({ value: m, label: m }))}
+                onChange={setMethod}
+              />
             </div>
             <div>
               <label className="label">URL 模板</label>
@@ -1295,15 +1293,12 @@ function EditToolDialog({
               <div className="grid grid-cols-[110px_1fr] gap-3">
                 <div>
                   <label className="label">方法</label>
-                  <select
-                    className="input"
+                  <Select
+                    ariaLabel="HTTP 方法"
                     value={method}
-                    onChange={(e) => setMethod(e.target.value)}
-                  >
-                    {HTTP_METHODS.map((m) => (
-                      <option key={m}>{m}</option>
-                    ))}
-                  </select>
+                    options={HTTP_METHODS.map((m) => ({ value: m, label: m }))}
+                    onChange={setMethod}
+                  />
                 </div>
                 <div>
                   <label className="label">URL 模板</label>

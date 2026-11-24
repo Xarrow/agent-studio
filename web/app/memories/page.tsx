@@ -41,6 +41,7 @@ import {
   Toolbar,
 } from "@/components/ui/kit";
 import { useFeedback } from "@/components/ui/feedback";
+import { Select } from "@/components/ui/select";
 import { MemoryCopyDialog } from "@/components/MemoryCopyDialog";
 import { ExternalMemoryCard } from "@/components/ExternalMemoryCard";
 import { isImeEvent } from "@/lib/ime";
@@ -415,32 +416,28 @@ export default function MemoriesPage() {
             >
               <div>
                 <label className="label">类型</label>
-                <select
-                  className="input w-36"
+                <Select
+                  compact
+                  className="!w-[132px]"
+                  ariaLabel="记忆类型"
                   value={draftKind}
-                  onChange={(e) => setDraftKind(e.target.value)}
-                >
-                  {Object.entries(KIND_LABEL).map(([v, label]) => (
-                    <option key={v} value={v}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
+                  options={Object.entries(KIND_LABEL).map(([v, label]) => ({ value: v, label }))}
+                  onChange={setDraftKind}
+                />
               </div>
               <div>
                 <label className="label">归给谁</label>
-                <select
-                  className="input input-inline w-48"
+                <Select
+                  compact
+                  className="!w-[180px]"
+                  ariaLabel="归属助手"
                   value={draftOwner}
-                  onChange={(e) => setDraftOwner(e.target.value)}
-                >
-                  <option value="">所有助手共用</option>
-                  {agents.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name} 专有
-                    </option>
-                  ))}
-                </select>
+                  options={[
+                    { value: "", label: "所有助手共用" },
+                    ...agents.map((x) => ({ value: x.id, label: `${x.name} 专有` })),
+                  ]}
+                  onChange={setDraftOwner}
+                />
               </div>
             </div>
           )}
@@ -463,45 +460,40 @@ export default function MemoriesPage() {
             { key: "archived", label: "已停用", count: stats?.archived },
           ]}
         />
-        <select
-          className="input h-[36px] min-w-0"
-          style={{ width: "auto" }}
-          title="只看某个助手的记忆"
+        <Select
+          compact
+          className="!w-[150px]"
+          ariaLabel="只看某个助手的记忆"
           value={agentId}
-          onChange={(e) => setAgentId(e.target.value)}
-        >
-          <option value="">全部 Agent</option>
-          {agents.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-            </option>
-          ))}
-        </select>
-        <select
-          className="input h-[36px] min-w-0"
-          style={{ width: "auto" }}
-          title="关于用户 / 助手自己的笔记"
+          options={[
+            { value: "", label: "全部 Agent" },
+            ...agents.map((x) => ({ value: x.id, label: x.name })),
+          ]}
+          onChange={setAgentId}
+        />
+        <Select
+          compact
+          className="!w-[118px]"
+          ariaLabel="关于用户 / 助手自己的笔记"
           value={layer}
-          onChange={(e) => setLayer(e.target.value)}
-        >
-          <option value="">全部层</option>
-          <option value="user">关于用户</option>
-          <option value="memory">助手笔记</option>
-        </select>
-        <select
-          className="input h-[36px] min-w-0"
-          style={{ width: "auto" }}
-          title="只看某种类型"
+          options={[
+            { value: "", label: "全部层" },
+            { value: "user", label: "关于用户" },
+            { value: "memory", label: "助手笔记" },
+          ]}
+          onChange={setLayer}
+        />
+        <Select
+          compact
+          className="!w-[118px]"
+          ariaLabel="只看某种类型"
           value={kind}
-          onChange={(e) => setKind(e.target.value)}
-        >
-          <option value="">全部类型</option>
-          {Object.entries(KIND_LABEL).map(([v, label]) => (
-            <option key={v} value={v}>
-              {label}
-            </option>
-          ))}
-        </select>
+          options={[
+            { value: "", label: "全部类型" },
+            ...Object.entries(KIND_LABEL).map(([v, label]) => ({ value: v, label })),
+          ]}
+          onChange={setKind}
+        />
         <input
           className="input input-inline h-[36px] min-w-0 flex-1 sm:flex-none sm:w-[200px]"
           placeholder="搜索内容…（回车）"

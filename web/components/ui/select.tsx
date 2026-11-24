@@ -17,6 +17,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { isImeEvent } from "@/lib/ime";
 
 export interface SelectOption {
   value: string;
@@ -107,7 +108,8 @@ export function Select({
 
   const onButtonKey = (e: React.KeyboardEvent) => {
     if (disabled) return;
-    if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") {
+    // 空格不当激活键（用户口径：空格是滚动/输入空格，不该弹开面板）
+    if (e.key === "ArrowDown" || e.key === "Enter") {
       e.preventDefault();
       place();
       setOpen(true);
@@ -144,6 +146,8 @@ export function Select({
                 boxShadow: "var(--shadow-2)",
               }}
               onKeyDown={(e) => {
+                // 中文组字中回车 = 选字，不是"确认这一项"
+                if (isImeEvent(e)) return;
                 if (e.key === "ArrowDown") {
                   e.preventDefault();
                   setCursor((c) => {

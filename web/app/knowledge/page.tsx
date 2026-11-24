@@ -48,6 +48,7 @@ import {
   Toolbar,
 } from "@/components/ui/kit";
 import { useFeedback } from "@/components/ui/feedback";
+import { Select } from "@/components/ui/select";
 import { useFirstLoad } from "@/lib/useFirstLoad";
 
 function sizeText(n: number): string {
@@ -892,19 +893,17 @@ function CategoriesSection({
             onChange={(e) => setName(e.target.value)}
             aria-label="新建分类名"
           />
-          <select
-            className="input h-8 w-40 text-[12px]"
+          <Select
+            compact
+            className="!w-[160px]"
+            ariaLabel="放到哪个分类下"
             value={parent}
-            onChange={(e) => setParent(e.target.value)}
-            aria-label="放到哪个分类下"
-          >
-            <option value="">顶级分类</option>
-            {tops.map((c) => (
-              <option key={c.id} value={c.id}>
-                归到「{c.name}」下
-              </option>
-            ))}
-          </select>
+            options={[
+              { value: "", label: "顶级分类" },
+              ...tops.map((c) => ({ value: c.id, label: `归到「${c.name}」下` })),
+            ]}
+            onChange={setParent}
+          />
           <button
             className="btn btn-primary btn-sm"
             type="button"
@@ -1117,21 +1116,20 @@ function TagsSection({
                       </button>
                       {merging?.id === t.id ? (
                         <>
-                          <select
-                            className="input h-7 w-32 text-[11px]"
+                          <Select
+                            compact
+                            className="!w-[128px]"
+                            ariaLabel="合并到哪个标签"
                             value={merging.into}
-                            onChange={(e) => setMerging({ id: t.id, into: e.target.value })}
-                            aria-label="合并到哪个标签"
-                          >
-                            <option value="">合并到…</option>
-                            {usage
-                              .filter((x) => x.id !== t.id)
-                              .map((x) => (
-                                <option key={x.id} value={x.id}>
-                                  {x.name}
-                                </option>
-                              ))}
-                          </select>
+                            placeholder="合并到…"
+                            options={[
+                              { value: "", label: "合并到…" },
+                              ...usage
+                                .filter((x) => x.id !== t.id)
+                                .map((x) => ({ value: x.id, label: x.name })),
+                            ]}
+                            onChange={(v) => setMerging({ id: t.id, into: v })}
+                          />
                           <button
                             className="btn btn-sm"
                             type="button"
@@ -1320,15 +1318,17 @@ function StorageSection({
         {adding ? (
           <div className="rounded-[10px] p-3" style={{ background: "var(--color-surface-2)" }}>
             <div className="mb-2 flex flex-wrap items-center gap-2">
-              <select
-                className="input h-8 w-32 text-[12px]"
+              <Select
+                compact
+                className="!w-[128px]"
+                ariaLabel="存储类型"
                 value={form.type}
-                onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as "local" | "s3" }))}
-                aria-label="存储类型"
-              >
-                <option value="s3">S3 兼容</option>
-                <option value="local">本地磁盘</option>
-              </select>
+                options={[
+                  { value: "s3", label: "S3 兼容" },
+                  { value: "local", label: "本地磁盘" },
+                ]}
+                onChange={(v) => setForm((f) => ({ ...f, type: v as "local" | "s3" }))}
+              />
               <input
                 className="input h-8 w-40 text-[12px]"
                 placeholder="名字（如 公司 OSS）"
@@ -1480,37 +1480,32 @@ function MigrateSection({ storages }: { storages: KnowledgeStorage[] }) {
     >
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-2">
-          <select
-            className="input h-8 w-40 text-[12px]"
+          <Select
+            compact
+            className="!w-[160px]"
+            ariaLabel="从哪个存储搬"
             value={fromId}
-            onChange={(e) => setFromId(e.target.value)}
-            aria-label="从哪个存储搬"
-          >
-            <option value="">全部已入库文档</option>
-            {storages.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
+            options={[
+              { value: "", label: "全部已入库文档" },
+              ...storages.map((x) => ({ value: x.id, label: x.name })),
+            ]}
+            onChange={setFromId}
+          />
           <span className="text-[12px]" style={{ color: "var(--color-text-3)" }}>
             →
           </span>
-          <select
-            className="input h-8 w-40 text-[12px]"
+          <Select
+            compact
+            className="!w-[160px]"
+            ariaLabel="搬到哪个存储"
             value={toId}
-            onChange={(e) => setToId(e.target.value)}
-            aria-label="搬到哪个存储"
-          >
-            <option value="">选目标存储</option>
-            {storages
-              .filter((s) => s.id !== fromId)
-              .map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-          </select>
+            placeholder="选目标存储"
+            options={[
+              { value: "", label: "选目标存储" },
+              ...storages.filter((x) => x.id !== fromId).map((x) => ({ value: x.id, label: x.name })),
+            ]}
+            onChange={setToId}
+          />
           <button
             className="btn btn-sm"
             type="button"
@@ -2215,19 +2210,17 @@ function DocumentFlow({
           onChange={(e) => onQuery(e.target.value)}
           aria-label="搜文档"
         />
-        <select
-          className="input h-9 w-36 text-[12px]"
+        <Select
+          compact
+          className="!w-[144px]"
+          ariaLabel="按标签筛选"
           value={tagFilter}
-          onChange={(e) => onTagFilter(e.target.value)}
-          aria-label="按标签筛选"
-        >
-          <option value="">全部标签</option>
-          {tags.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
-        </select>
+          options={[
+            { value: "", label: "全部标签" },
+            ...tags.map((t) => ({ value: t, label: t })),
+          ]}
+          onChange={onTagFilter}
+        />
         <span className="ml-auto text-[11px]" style={{ color: "var(--color-text-3)" }}>
           {loading ? "读取中…" : `${shownDocs.length} 份`}
         </span>

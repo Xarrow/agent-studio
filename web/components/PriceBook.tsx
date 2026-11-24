@@ -18,6 +18,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { fmt } from "@/lib/api";
 import { useFeedback } from "@/components/ui/feedback";
+import { Select } from "@/components/ui/select";
 
 type Row = {
   model: string;
@@ -137,19 +138,14 @@ export function PriceBook() {
     <section id="prices">
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <h2 className="text-[15px] font-medium">单价（算钱用）</h2>
-        <select
+        <Select
+          compact
+          className="!w-[78px]"
+          ariaLabel="币种"
           value={currency}
-          onChange={(e) => setCurrency(e.target.value)}
-          title="金额用哪个币种显示"
-          className="input"
-          style={{ width: 76, paddingLeft: 6, paddingRight: 6 }}
-        >
-          {[...new Set([currency, ...CURRENCIES])].map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </select>
+          options={[...new Set([currency, ...CURRENCIES])].map((c) => ({ value: c, label: c }))}
+          onChange={setCurrency}
+        />
         <button
           type="button"
           onClick={() => void save()}

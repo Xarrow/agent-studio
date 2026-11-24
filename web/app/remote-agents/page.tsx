@@ -25,6 +25,7 @@ import type {
   RemoteAgentRecord,
 } from "@/lib/types";
 import { DetailPanel } from "@/components/ui/DetailPanel";
+import { Select } from "@/components/ui/select";
 import { StudioPeers } from "@/components/StudioPeers";
 import {
   IconClock,
@@ -775,17 +776,16 @@ function EditRow({
       <div className="grid gap-2 sm:grid-cols-2">
         <div>
           <FieldLabel hint="远端是别人的机器，挂了这边该自己知道">自动检查可用性</FieldLabel>
-          <select
-            className="input"
+          <Select
+            ariaLabel="自动检查"
             value={healthS}
-            onChange={(e) => setHealthS(e.target.value)}
-          >
-            <option value="0">不自动检查</option>
-            <option value="60">每 1 分钟</option>
-            <option value="300">每 5 分钟</option>
-            <option value="900">每 15 分钟</option>
-            <option value="3600">每 1 小时</option>
-          </select>
+            options={[{ value: "0", label: "不自动检查" }, { value: "60", label: "每 1 分钟" }, { value: "300", label: "每 5 分钟" }, { value: "900", label: "每 15 分钟" }, { value: "3600", label: "每 1 小时" }].concat(
+              healthS && !["0", "60", "300", "900", "1800"].includes(healthS)
+                ? [{ value: healthS, label: `每 ${Math.round(Number(healthS) / 60)} 分钟` }]
+                : [],
+            )}
+            onChange={setHealthS}
+          />
         </div>
         <div>
           <FieldLabel>备注</FieldLabel>
