@@ -252,6 +252,7 @@ def unpack_archive(data: bytes, dest: Path) -> None:
     dest.mkdir(parents=True, exist_ok=True)
     total = 0
     count = 0
+    skipped: list[str] = []
     try:
         tf = tarfile.open(fileobj=io.BytesIO(data), mode="r:gz")
     except tarfile.TarError as exc:
@@ -280,8 +281,15 @@ def unpack_archive(data: bytes, dest: Path) -> None:
             if m.isdir():
                 (dest / name).mkdir(parents=True, exist_ok=True)
                 continue
-            if m.issym() or m.islnk() or m.ischr() or m.isblk() or m.isfifo():
-                raise FetchError("unsafe_entry", f"压缩包里有链接/设备文件：{name}")
+            if m.ischr() or m.isblk() or m.isfifo():
+                raise FetchError("unsafe_entry", f"压缩包里有设备/管道文件：{name}")
+            if m.issym() or m.islnk():
+                # 符号链接/硬链接：**跳过，不落盘**。
+                # 真实仓库常带 .claude/.cursor 这类指向仓库内的软链（vercel-labs/agent-browser
+                # 就是这样），一律拒绝会让"能装"变成"不能装"；但落盘又有逃逸风险。
+                # 取中间：不创建，记一条 note，技能本身的文件照常装。
+                skipped.append(name)
+                continue
             if not m.isfile():
                 continue
             if m.size > MAX_FILE_BYTES * 50:

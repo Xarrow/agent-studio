@@ -291,6 +291,12 @@ export type BrowserDriverRow = {
   size_mb?: number;
   active?: boolean;
   custom?: boolean;
+  /** 设置里选的浏览器在本机找不到 → 实际回退系统 Chromium，界面要说清楚 */
+  stale?: boolean;
+  stale_reason?: string;
+  configured_path?: string;
+  /** 跨机迁移时自动纠正过：原路径（提示用） */
+  corrected_from?: string;
   verify?: BrowserDriverVerify | Record<string, never>;
 };
 

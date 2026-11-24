@@ -241,7 +241,7 @@ export function BrowserDriversCard() {
               color: "var(--color-ok)",
             }}
           >
-            在用
+            {active?.stale ? "已回退" : "在用"}
           </span>
           <span className="text-[length:var(--fs-md)] font-medium">{active?.label}</span>
           <span className="mono text-[length:var(--fs-sm)]">{active?.version || "—"}</span>
@@ -258,6 +258,15 @@ export function BrowserDriversCard() {
           <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
             {active?.source === "managed" ? "平台装的" : "系统装的"}
           </span>
+          {active?.stale ? (
+            <span className="w-full text-[length:var(--fs-sm)]" style={{ color: "var(--color-err)" }}>
+              {active.stale_reason}，现在实际跑的是系统 Chromium —— 重装一个版本或重新选择即可
+            </span>
+          ) : active?.corrected_from ? (
+            <span className="w-full text-[length:var(--fs-sm)]" style={{ color: "var(--color-text-3)" }}>
+              设置里的路径不在这台机器上（{active.corrected_from}），已自动指到本机同版本
+            </span>
+          ) : null}
           {active?.custom ? (
             <button
               type="button"

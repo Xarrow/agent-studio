@@ -600,6 +600,12 @@ class BrowserSession:
 
             drv = await resolve_bin()
             bin_path = str(drv.get("path") or CHROME_BIN)
+            if drv.get("stale"):
+                logger.warning(
+                    "浏览器驱动设置失效，实际用系统 Chromium（%s）：%s",
+                    bin_path,
+                    drv.get("stale_reason") or "",
+                )
             proto = str(drv.get("proto") or "cdp")
         except Exception:  # pragma: no cover
             logger.exception("读取浏览器驱动设置失败，退回系统 Chromium")

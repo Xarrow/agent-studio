@@ -63,13 +63,24 @@ async def test_git_and_archive_produce_identical_skills(repo, tmp_path, monkeypa
 @pytest.mark.parametrize("kind,code", [
     ("traversal", "unsafe_path"),
     ("absolute", "unsafe_path"),
-    ("symlink", "unsafe_entry"),
     ("device", "unsafe_entry"),
 ])
 async def test_evil_archive_rejected(tmp_path, kind, code):
     with pytest.raises(F.FetchError) as ei:
         F.unpack_archive(evil_tarball(kind), tmp_path / "out")
     assert ei.value.code == code
+
+
+async def test_符号链接跳过而不是整包失败(tmp_path):
+    """真实仓库常带 .claude/.cursor 这类软链（vercel-labs/agent-browser 就是）。
+
+    拒整包 = 能装的装不了；落盘 = 有逃逸风险。折中：跳过不创建，技能文件照常解出来。
+    """
+    out = tmp_path / "out"
+    F.unpack_archive(evil_tarball("symlink"), out)
+    # 解包没有抛错，但链接没有被创建
+    links = [p for p in out.rglob("*") if p.is_symlink()]
+    assert links == [], "符号链接不许落盘"
 
 
 async def test_entry_limit(tmp_path, monkeypatch):

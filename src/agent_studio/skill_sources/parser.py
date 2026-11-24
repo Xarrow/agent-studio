@@ -54,6 +54,12 @@ _REF_OK = re.compile(r"^[A-Za-z0-9_.\-/]{1,120}$")
 _REPO_HOSTS = {"github.com", "gitlab.com", "bitbucket.org", "gitee.com", "codeberg.org", "git.sr.ht"}
 # 直链文件的后缀（SKILL.md 或归档包）
 _FILE_TAIL = re.compile(r"(?i)(skill\.md$|\.(zip|tar|tar\.gz|tgz|tar\.bz2|tar\.xz)$)")
+#: 用户常常直接粘整条命令：``npx skills add owner/repo`` / ``npx -y skills add https://…``。
+#: 解析前把命令壳剥掉，只留来源本身（否则空格会被当成非法字符）。
+_CLI_PREFIX = re.compile(
+    r"^\s*(?:npx(?:\s+-{1,2}[\w.=-]+)*\s+skills|skills)\s+(?:add|install)\s+",
+    re.IGNORECASE,
+)
 
 
 class SourceError(ValueError):
@@ -211,7 +217,8 @@ def parse_source(
     strict: bool = True,
 ) -> SourceRef:
     """解析来源。``sources`` 给了就支持 ``<来源名>:<技能>`` 的引用写法。"""
-    s = _reject_bad(raw)
+    s = _CLI_PREFIX.sub("", raw or "")
+    s = _reject_bad(s)
     if s.lower().startswith("git+"):
         s = s[4:]
 

@@ -237,6 +237,30 @@ def installed() -> list[dict[str, Any]]:
     return rows
 
 
+def _remap_path(path: str) -> str:
+    """把"别的机器上的绝对路径"映射到本机可用的同版本路径。
+
+    真实场景：库从本机迁到东京后，设置里还留着 /srv/src/agent-studio/data/browsers/
+    chrome-158.../chrome，东京上没有这个文件 —— 以前这里静默回退系统 Chromium，
+    用户在页面上看着"已选中 158"，实际跑的是 148，且没有任何提示。
+
+    做法：按版本目录名（chrome-158.0.8113.0 这种）在本机 data/browsers 下找同名版本。
+    """
+    if not path:
+        return ""
+    if Path(path).exists():
+        return path
+    parts = Path(path).parts
+    ver_dir = next((x for x in parts if x.startswith(("chrome-", "chromium-", "firefox-"))), "")
+    if not ver_dir:
+        return ""
+    for tail in (("chrome-linux64", "chrome"), ("chrome-linux64", "chrome"), ("firefox", "firefox")):
+        cand = ROOT / ver_dir / Path(*tail)
+        if cand.exists():
+            return str(cand)
+    return ""
+
+
 async def get_active(session: Any) -> dict[str, Any]:
     """当前生效的驱动。没设过 = 系统 Chromium（平台一直以来的默认）。
 
@@ -246,6 +270,21 @@ async def get_active(session: Any) -> dict[str, Any]:
     raw = await get_setting(session, SETTING_KEY, None) or {}
     kind = str(raw.get("kind") or "")
     path = str(raw.get("path") or "")
+    corrected_from = ""
+    if path and not Path(path).exists():
+        fixed = _remap_path(path)
+        if fixed:
+            # 跨机迁移遗留：自动纠正并写回，用户不必理解路径差异
+            corrected_from = path
+            logger.warning("浏览器驱动路径不在本机，已自动纠正：%s → %s", path, fixed)
+            try:
+                from .settings_store import set_setting as _set
+
+                await _set(session, SETTING_KEY, {**raw, "path": fixed})
+                await session.commit()
+            except Exception:  # pragma: no cover - 写不回也不影响本次使用
+                logger.debug("纠正后的路径写回失败", exc_info=True)
+            path = fixed
     if path and Path(path).exists() and kind in _BY_KIND:
         check = verify(path, kind)
         return {
@@ -257,11 +296,22 @@ async def get_active(session: Any) -> dict[str, Any]:
             "source": str(raw.get("source") or "managed"),
             "custom": True,
             "verify": check,
+            "corrected_from": corrected_from,
         }
+    # 设置了但本机找不到、也没法自愈 → 明确告诉界面，别静默回退
+    stale_reason = ""
+    configured = ""
+    if path and kind in _BY_KIND and not Path(path).exists():
+        configured = path
+        stale_reason = f"设置里选的浏览器不在这台机器上：{path}"
+        logger.warning("浏览器驱动设置失效（%s），回退系统 Chromium", path)
     # 默认：系统 chromium
     p = _which(_BY_KIND["chromium"]["bins"]) or ""
     return {
         "kind": "chromium",
+        "stale": bool(stale_reason),
+        "stale_reason": stale_reason,
+        "configured_path": configured,
         "label": "Chromium",
         "proto": "cdp",
         "version": _version_of(p) if p else "",
