@@ -504,7 +504,7 @@ export default function ToolsPage() {
                 aria-labelledby="attach-title"
                 onClick={(e) => e.stopPropagation()}
               >
-                <div className="rounded-[var(--radius-sm)] px-3 py-3" style={{ borderColor: "var(--color-border)" }}>
+                <div className="rounded-[var(--radius-sm)] px-3 py-3">
                   <h2 id="attach-title" className="text-[length:var(--fs-lg)] font-semibold">
                     把选中的 {picked.size} 个工具加到哪个助手？
                   </h2>
@@ -533,7 +533,7 @@ export default function ToolsPage() {
                     ))
                   )}
                 </div>
-                <div className="flex justify-end gap-2 border-t px-4 py-3" style={{ borderColor: "var(--color-border)" }}>
+                <div className="flex justify-end gap-2 px-4 py-3">
                   <button className="btn" onClick={() => setAttachOpen(false)}>
                     取消
                   </button>
@@ -1068,7 +1068,7 @@ function NewToolDialog({
           </div>
 
           {/* 高级配置：请求头 / Cookie / 固定 query —— 默认收起，用得上再展开 */}
-          <div className="pt-1 border-t border-[var(--color-border)]">
+          <div className="pt-1 border-[var(--color-border)]">
             <button
               className="text-[length:var(--fs-sm)] text-[var(--color-muted)] mt-2"
               data-tap
@@ -1350,7 +1350,7 @@ function EditToolDialog({
               </div>
 
               {/* 请求头 / Cookie / 固定 query —— 默认收起，已有配置时展示数量 */}
-              <div className="pt-1 border-t border-[var(--color-border)]">
+              <div className="pt-1 border-[var(--color-border)]">
                 <button
                   className="text-[length:var(--fs-sm)] text-[var(--color-muted)] mt-2"
                   data-tap
@@ -1391,7 +1391,7 @@ function EditToolDialog({
           )}
 
           {/* 高级：直接改 impl */}
-          <div className="pt-1 border-t border-[var(--color-border)]">
+          <div className="pt-1 border-[var(--color-border)]">
             <button
               className="text-[length:var(--fs-sm)] text-[var(--color-muted)] mt-3"
               data-tap

@@ -450,7 +450,7 @@ export function ModelPicker({
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => setShowAll((v) => !v)}
-                className="flex min-h-[36px] w-full items-center justify-between border-t px-3 text-left text-[length:var(--fs-sm)]"
+                className="flex min-h-[36px] w-full items-center justify-between px-3 text-left text-[length:var(--fs-sm)]"
                 style={{ borderColor: "var(--color-border)", color: "var(--color-text-3)" }}
               >
                 <span>{showAll ? "隐藏重复档（:batch / ~ 别名）" : `显示全部原始档${rawList.length ? `（${rawList.length}）` : ""}`}</span>
@@ -464,7 +464,7 @@ export function ModelPicker({
                     setManual(true);
                     setOpen(false);
                   }}
-                  className="flex min-h-[38px] w-full items-center border-t px-3 text-left text-[length:var(--fs-base)]"
+                  className="flex min-h-[38px] w-full items-center px-3 text-left text-[length:var(--fs-base)]"
                   style={{ borderColor: "var(--color-border)", color: "var(--color-text-2)" }}
                 >
                   ✎ 手动填写…

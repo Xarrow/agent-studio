@@ -92,7 +92,7 @@ export function ToolTestForm({ tool, onDone }: { tool: Tool; onDone: (out: strin
   }
 
   return (
-    <div className="mt-2.5 border-t pt-2.5" style={{ borderColor: "var(--color-border)" }}>
+    <div className="mt-2.5 rounded-[var(--radius-md)] bg-[var(--color-surface-2)] p-2.5">
       <div className="mb-2 flex items-center gap-2">
         <span className="text-[length:var(--fs-sm)] font-medium">试运行参数</span>
         <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>

@@ -1050,7 +1050,7 @@ function ImportDialog({
                   )}
 
                   {scan && (
-                    <div className="rounded-xl border p-3" style={{ borderColor: "var(--color-border)" }}>
+                    <div className="rounded-xl border p-3">
                       <div className="flex items-center gap-2 flex-wrap">
                         <a
                           href={scan.web_url}
@@ -1708,10 +1708,10 @@ function GroupedSkills({
 
             {/* 卡片内：该仓库下的技能 */}
             {isOpen && (
-              <div className="border-t" style={{ borderColor: "var(--color-border)" }}>
+              <div className="">
                 {/* 子项列表整体挂一条竖线（从仓库那一行延伸下来），
                     每个子项再用一段横线接上去 —— 父子关系是画出来的，不是猜的 */}
-                <div className="relative ml-[26px] border-l py-1 pl-4" style={{ borderColor: "var(--color-border)" }}>
+                <div className="relative ml-[26px] border-l py-1 pl-4">
                   {g.skills.map((k, idx) => (
                   <div
                     key={k.id}

@@ -3051,7 +3051,7 @@ export function ChatConsole({
                     onExportJson={(s) => void exportSession(s, "json")}
                     onCollapse={() => setMobileNav(false)}
                   />
-                  <div className="shrink-0 border-t border-[var(--color-border)] pb-[env(safe-area-inset-bottom)]">
+                  <div className="shrink-0 bg-[var(--color-surface-2)] pb-[env(safe-area-inset-bottom)]">
                     <button
                       data-tap
                       onClick={() => setNavView("menu")}

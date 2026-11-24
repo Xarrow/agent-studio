@@ -789,7 +789,7 @@ export function SessionsPane({
 
             {/* ── 对话内容命中（跨会话检索）*/}
             {q.trim().length >= 2 && (
-              <div className="mt-1 border-t pt-1" style={{ borderColor: "var(--color-border)" }}>
+              <div className="mt-1 rounded-[var(--radius-md)] bg-[var(--color-surface-2)] p-1">
                 <div className="px-2 pt-1 pb-1 text-[length:var(--fs-xs)] text-[var(--color-text-3)]">
                   对话内容{hitBusy ? " · 搜索中…" : hits.length ? ` · ${hits.length} 条` : ""}
                 </div>
@@ -824,7 +824,7 @@ export function SessionsPane({
       {/* 批量条：管理模式下固定在列表底部 */}
       {managing && (
         <div
-          className="shrink-0 border-t px-2 py-2"
+          className="shrink-0 px-2 py-2"
           style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
         >
           <div className="flex items-center gap-2">

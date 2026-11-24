@@ -138,7 +138,7 @@ export function RouteRules({
       </button>
 
       {open && (
-        <div className="border-t px-4 py-3" style={{ borderColor: "var(--color-border)" }}>
+        <div className=" px-4 py-3">
           <div className="flex flex-wrap items-center gap-2">
             <input
               className="input h-[32px] min-w-0 flex-1 max-md:h-9 max-md:h-11"
@@ -195,7 +195,7 @@ export function RouteRules({
           )}
 
           {/* 试一句：规则写对了没有，撞一下就知道 */}
-          <div className="mt-3 border-t pt-2.5" style={{ borderColor: "var(--color-border)" }}>
+          <div className="mt-3 rounded-[var(--radius-md)] bg-[var(--color-surface-2)] p-2.5">
             <div className="flex flex-wrap items-center gap-2">
               <input
                 className="input h-[32px] min-w-0 flex-1 max-md:h-9 max-md:h-11"

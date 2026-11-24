@@ -302,7 +302,7 @@ export function StepExecPanel({
       </button>
 
       {open && (
-        <div className="border-t px-3 py-2.5" style={{ borderColor: "var(--color-border)" }}>
+        <div className=" px-3 py-2.5">
           {err && (
             <p className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-err)" }}>
               取不到这一步的过程：{err}
@@ -337,7 +337,7 @@ export function StepExecPanel({
             ) : (
               <div className="flex flex-col gap-1.5">
                 {tools.map((t, i) => (
-                  <div key={i} className="rounded-[var(--radius-xs)] border px-2 py-1.5" style={{ borderColor: "var(--color-border)" }}>
+                  <div key={i} className="rounded-[var(--radius-xs)] border px-2 py-1.5">
                     <div className="flex flex-wrap items-baseline gap-2 text-[length:var(--fs-sm)]">
                       <code className="mono font-semibold">{t.name}</code>
                       <span
@@ -383,7 +383,7 @@ export function StepExecPanel({
           )}
 
           {/* 日志：默认折叠（是排障证据，不是正文） */}
-          <div className="mt-2 border-t pt-2" style={{ borderColor: "var(--color-border)" }}>
+          <div className="mt-2 rounded-[var(--radius-md)] bg-[var(--color-surface-2)] p-2">
             <button
               type="button"
               onClick={() => setShowLog((v) => !v)}

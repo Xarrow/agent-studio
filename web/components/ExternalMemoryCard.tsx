@@ -180,7 +180,7 @@ export function ExternalMemoryCard() {
       </button>
 
       {open && (
-        <div className="space-y-3 border-t border-[var(--color-border)] px-3 py-3">
+        <div className="space-y-3 border-[var(--color-border)] px-3 py-3">
           <label className="flex min-h-[36px] items-start gap-2 lg:min-h-0">
             <input
               type="checkbox"
@@ -282,7 +282,7 @@ export function ExternalMemoryCard() {
             <summary data-tap-lg className="min-h-[36px] cursor-pointer px-3 py-2 text-[length:var(--fs-sm)]">
               接口字段映射（高级）
             </summary>
-            <div className="space-y-3 border-t px-3 py-3" style={{ borderColor: "var(--color-border)" }}>
+            <div className="space-y-3 px-3 py-3">
               <p className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
                 留空 = 用标准契约：搜索发 <code>{"{query, top_k, agent_id}"}</code>、写入发{" "}
                 <code>{"{content, tags, agent_id}"}</code>、结果取 <code>results</code> 数组。

@@ -852,7 +852,6 @@ export function RunsPanel() {
               title="按时间清理 / 清空"
               onClick={() => setMenu((v) => !v)}
               className="min-h-[36px] min-w-[40px] rounded-[var(--radius-sm)] border px-2.5 text-[length:var(--fs-base)] hover:bg-[var(--color-surface-2)]"
-              style={{ borderColor: "var(--color-border)" }}
             >
               ⋯
             </button>
@@ -890,7 +889,7 @@ export function RunsPanel() {
               选完立刻生效 —— 这三条是"别在没人看着的时候烧光额度"的唯一旋钮。 */}
           {guardOpen && (
             <div
-              className="w-full basis-full max-md:order-9 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t pt-1.5 text-[length:var(--fs-sm)]"
+              className="w-full basis-full max-md:order-9 flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-1.5 text-[length:var(--fs-sm)]"
               style={{ borderColor: "var(--color-border)", color: "var(--color-muted)", minWidth: 0, width: "100%" }}
             >
               {!guard ? (
@@ -1077,7 +1076,6 @@ export function RunsPanel() {
                   <div
                     key={tk.id}
                     className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[var(--radius-sm)] px-1.5 py-1.5"
-                    style={{ borderColor: "var(--color-border)" }}
                   >
                     <span
                       className="rounded-full px-1.5 py-0.5 text-[length:var(--fs-xs)]"
@@ -1157,7 +1155,6 @@ export function RunsPanel() {
                 <div
                   key={`${it.kind}-${it.run_id}`}
                   className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[var(--radius-sm)] px-1.5 py-1.5"
-                  style={{ borderColor: "var(--color-border)" }}
                 >
                   <span
                     className="rounded-full px-1.5 py-0.5 text-[length:var(--fs-xs)]"
@@ -1675,7 +1672,6 @@ export function RunsPanel() {
                         >
                           <div
                             className="flex items-center gap-2 rounded-[var(--radius-sm)] px-2.5 py-1.5"
-                            style={{ borderColor: "var(--color-border)" }}
                           >
                             <span className="text-[length:var(--fs-sm)] font-medium" style={{ color: "var(--color-muted)" }}>
                               {it.kind === "chat" && d?.turnRunId ? "执行过程（当前轮）" : "执行过程"}
@@ -1726,7 +1722,6 @@ export function RunsPanel() {
                   onClick={() => void loadMore()}
                   disabled={moreBusy}
                   className="min-h-[36px] rounded-[var(--radius-sm)] border px-3 disabled:opacity-50"
-                  style={{ borderColor: "var(--color-border)" }}
                 >
                   {moreBusy ? "加载中…" : `加载更多（还有 ${Math.max(serverTotal - items.length, 0)} 条）`}
                 </button>

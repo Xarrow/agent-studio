@@ -334,7 +334,7 @@ export function AutoRunDialog({
         </div>
 
         <div
-          className="flex items-center gap-2 border-t px-4 py-3"
+          className="mt-1 flex items-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-surface-2)] px-3 py-2.5"
           style={{ borderColor: "var(--color-border)" }}
         >
           <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>

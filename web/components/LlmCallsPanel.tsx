@@ -144,7 +144,7 @@ export function LlmCallsPanel({
           <tbody>
             {calls.map((c) => (
               <React.Fragment key={c.id}>
-                <tr className="border-t" style={{ borderColor: "var(--color-border)" }}>
+                <tr className="">
                   <td className="py-1" style={{ color: "var(--color-muted)" }}>
                     {c.iteration}
                   </td>
@@ -180,7 +180,7 @@ export function LlmCallsPanel({
                   </td>
                 </tr>
                 {openCall === c.id ? (
-                  <tr className="border-t" style={{ borderColor: "var(--color-border)" }}>
+                  <tr className="">
                     <td colSpan={7} className="py-2">
                       <LlmCallPayloadView runId={runId} callId={c.id} />
                     </td>

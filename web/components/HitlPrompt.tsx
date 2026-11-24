@@ -454,8 +454,7 @@ export function HitlPrompt({
 
       {/* 底部：动作 */}
       <div
-        className="flex items-center gap-2 px-3 py-2 flex-wrap border-t"
-        style={{ borderColor: "var(--color-border)" }}
+        className="flex items-center gap-2 px-3 py-2 flex-wrap"
       >
         {confirming ? (
           /* 危险操作第二步：先把后果说清楚，再让点 */

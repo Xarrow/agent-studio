@@ -231,7 +231,7 @@ export function SkillsStrip({
           </div>
           <a
             href="/skills"
-            className="shrink-0 flex items-center justify-between px-2.5 h-9 border-t border-[var(--color-border)] text-[length:var(--fs-sm)] hover:bg-[var(--color-surface-2)]"
+            className="shrink-0 flex items-center justify-between px-2.5 h-9 border-[var(--color-border)] text-[length:var(--fs-sm)] hover:bg-[var(--color-surface-2)]"
             style={{ color: "var(--color-muted)" }}
           >
             技能库

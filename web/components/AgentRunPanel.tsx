@@ -665,7 +665,7 @@ function EventTable({ events }: { events: RunEvent[] }) {
               <tr
                 key={ev.seq}
                 onClick={() => setOpen(isOpen ? null : ev.seq)}
-                className="border-t border-[var(--color-border)] cursor-pointer hover:bg-[var(--color-surface)]"
+                className="cursor-pointer rounded-[var(--radius-sm)] hover:bg-[var(--color-surface)]"
               >
                 <td className="py-1.5 pr-3 mono text-[var(--color-muted)]">{ev.seq}</td>
                 <td className="py-1.5 pr-3 whitespace-nowrap" style={{ color: meta.color }}>

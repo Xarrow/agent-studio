@@ -239,7 +239,7 @@ export function QuickTags({ onPick, prefix }: { onPick: (text: string) => void; 
               </p>
             )}
 
-            <div className="shrink-0 flex items-center justify-end gap-1.5 px-3.5 py-2.5 border-t border-[var(--color-border)]">
+            <div className="shrink-0 flex items-center justify-end gap-1.5 px-3.5 py-2.5 border-[var(--color-border)]">
               <button
                 data-tap
                 className="h-9 px-3 rounded-lg text-[length:var(--fs-base)] hover:bg-[var(--color-surface-2)]"

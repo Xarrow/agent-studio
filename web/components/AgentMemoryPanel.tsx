@@ -199,7 +199,7 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
         </div>
 
         {/* 存的时候先问还是直接存 —— 这是「记忆归谁管」的开关，放在数量上面 */}
-        <div className="mt-3 pt-3 border-t border-[var(--color-border)]">
+        <div className="mt-3 rounded-[var(--radius-md)] bg-[var(--color-surface-2)] p-3">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-[length:var(--fs-sm)]">它要记东西时</span>
             <Select
@@ -225,7 +225,7 @@ export function AgentMemoryPanel({ agentId }: { agentId: string }) {
           </p>
         </div>
 
-        <div className="mt-3 pt-3 border-t border-[var(--color-border)] flex items-center gap-3 flex-wrap">
+        <div className="mt-3 rounded-[var(--radius-md)] bg-[var(--color-surface-2)] p-3 flex items-center gap-3 flex-wrap">
           <span className="text-[length:var(--fs-sm)]">
             它当前记得 <strong>{own.length + shared.length}</strong> 条
             {shared.length > 0 && (

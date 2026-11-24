@@ -1071,7 +1071,7 @@ function NewAgentDialog({
         </div>
 
         <div
-          className="sticky bottom-0 -mx-5 mt-4 flex items-center justify-end gap-2 border-t bg-[var(--color-surface)] px-5 pb-1 pt-3"
+          className="sticky bottom-0 -mx-5 mt-4 flex items-center justify-end gap-2 bg-[var(--color-surface)] px-5 pb-1 pt-3"
           style={{ borderColor: "var(--color-border)" }}
         >
           <span className="mr-auto text-[length:var(--fs-sm)]" style={{ color: created ? "var(--color-ok)" : "var(--color-text-3)" }}>

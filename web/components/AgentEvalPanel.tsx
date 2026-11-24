@@ -500,7 +500,7 @@ export function AgentEvalPanel({ agentId, disabled }: { agentId: string; disable
               {cmp.items.map((x) => (
                 <div
                   key={x.index}
-                  className="flex items-center gap-2 border-t py-1.5 text-[length:var(--fs-sm)]"
+                  className="mb-0.5 flex items-center gap-2 rounded-[var(--radius-sm)] px-1.5 py-1.5 hover:bg-[var(--bg-hover)] text-[length:var(--fs-sm)]"
                   style={{ borderColor: "var(--color-border)" }}
                 >
                   <span className="min-w-0 flex-1 truncate">{x.input}</span>

@@ -460,7 +460,7 @@ export function RunDetailDialog({
 
         {/* ── 底部动作区 ─────────────────────────────────────────
             把"对这条记录能做的事"放在看它的地方 —— 不用先记住 id 再跳去别处操作。 */}
-        <div className="flex items-center gap-2 mt-5 pt-4 border-t border-[var(--color-border)] flex-wrap">
+        <div className="flex items-center gap-2 mt-5 rounded-[var(--radius-md)] bg-[var(--color-surface-2)] p-4 flex-wrap">
           {!isTest && status === "ok" && (
             <button
               className="btn btn-sm"

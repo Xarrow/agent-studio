@@ -1060,7 +1060,7 @@ function EditCredentialDialog({
           </div>
 
           {/* ── 默认模型 ─────────────────────────────────────── */}
-          <div className="pt-1 border-t border-[var(--color-border)]">
+          <div className="mt-2 rounded-[var(--radius-md)] bg-[var(--color-surface-2)] p-3">
             <label className="label mt-3">默认模型</label>
             <div className="flex gap-2 items-stretch">
               {/* 模型**可以手填**（用户要求：编辑配置里手动添加模型 → 测试 → 保存 ✓）

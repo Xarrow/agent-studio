@@ -553,7 +553,7 @@ export function Section({
         {right ? <div className="flex shrink-0 flex-wrap items-center gap-1.5">{right}</div> : null}
       </div>
       {open ? (
-        <div className="border-t px-3 py-3" style={{ borderColor: "var(--color-border)" }}>
+        <div className=" px-3 py-3">
           {children}
         </div>
       ) : null}
