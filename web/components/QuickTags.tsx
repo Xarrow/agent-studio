@@ -119,7 +119,7 @@ export function QuickTags({ onPick, prefix }: { onPick: (text: string) => void; 
             key={t}
             data-tap
             onClick={() => onPick(t)}
-            className="chip-thin shrink-0 inline-flex items-center h-7 px-2.5 rounded-full border text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--color-surface-2)]"
+            className="chip-thin shrink-0 inline-flex items-center h-7 rounded-full bg-[var(--color-surface-2)] px-2.5 text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--color-surface-3)]"
             style={{ borderColor: "var(--color-border)", color: "var(--color-text)" }}
             title={`把「${t}」填进输入框`}
           >

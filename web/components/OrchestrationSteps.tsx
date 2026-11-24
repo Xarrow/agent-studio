@@ -283,7 +283,7 @@ export function OrchestrationSteps({
                     ) : null}
 
                     {open && (
-                      <div className="mt-1 space-y-1.5 rounded-md p-2.5 bg-[var(--color-surface-1)] border border-[var(--color-border)]">
+                      <div className="mt-1 space-y-1.5 rounded-[var(--radius-sm)] bg-[var(--color-surface-2)] p-2.5">
                         {st.error && (
                           <div
                             className="rounded p-2 text-[length:var(--fs-sm)] break-all"
@@ -306,7 +306,7 @@ export function OrchestrationSteps({
                               type="button"
                               disabled={busy === st.run_id}
                               onClick={() => void rerun(st.run_id)}
-                              className="text-[length:var(--fs-sm)] px-2.5 py-1 rounded border border-[var(--color-border)] hover:bg-[var(--color-surface-2)] disabled:opacity-50 min-h-[36px]"
+                              className="rounded-[var(--radius-xs)] bg-[var(--color-surface-3)] px-2.5 py-1 text-[length:var(--fs-sm)] hover:bg-[var(--color-surface-2)] disabled:opacity-50 min-h-[36px]"
                             >
                               {busy === st.run_id ? "重跑中…" : "重跑这一步"}
                             </button>

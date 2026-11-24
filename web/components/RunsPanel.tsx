@@ -1041,7 +1041,7 @@ export function RunsPanel() {
               type="button"
               data-tap
               onClick={() => setTicketsOpen((v) => !v)}
-              className="flex h-[32px] items-center gap-1 whitespace-nowrap rounded-[var(--radius-sm)] border px-2 text-[length:var(--fs-sm)] max-md:h-9 max-md:h-11"
+              className="flex h-[32px] items-center gap-1 whitespace-nowrap rounded-[var(--radius-sm)] bg-[var(--color-surface-2)] px-2 text-[length:var(--fs-sm)] max-md:h-11"
               style={{
                 borderColor: "var(--color-warn)",
                 color: "var(--color-warn)",
@@ -1226,7 +1226,7 @@ export function RunsPanel() {
 
       {/* ── 列表：一段行列表，桌面手机同一套（响应式换行） ─────────────── */}
       <div
-        className="overflow-hidden rounded-[var(--radius-lg)] border"
+        className="overflow-hidden rounded-[var(--radius-lg)] bg-[var(--color-surface)]"
         style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
       >
         {!loaded ? (
