@@ -480,6 +480,10 @@ export function ChatConsole({
   const [dockOpen, setDockOpen] = useState(false);
   const [dockPanel, setDockPanel] = useState<DockPanel>("browser");
   const [dockW, setDockW] = useState(400);
+  /** 手机底部面板的高度（px）；0 = 还没量过，用 55vh 起步 */
+  const [dockSheetH, setDockSheetH] = useState(0);
+  /** 桌面（≥1024）：桌面渲染右侧竖栏，窄屏渲染底部面板。同一个组件两种形态 */
+  const [isWide, setIsWide] = useState(true);
   /** 「步骤」标签看哪一次执行：点过程条的「在右栏看」时写入 */
   const [dockStepRun, setDockStepRun] = useState<string | null>(null);
   /** 用户亲手操作过右栏之后，就不再自动展开（自动抢焦点只允许一次） */
@@ -500,18 +504,31 @@ export function ChatConsole({
       const w = Number(localStorage.getItem("dock.w") || "");
       if (w >= 320 && w <= 560) setDockW(w);
       const p = localStorage.getItem("dock.panel");
-      if (p === "browser" || p === "files" || p === "steps") setDockPanel(p);
+      if (p === "browser" || p === "files" || p === "steps" || p === "outline") setDockPanel(p);
+      const sh = Number(localStorage.getItem("dock.sheetH") || "");
+      if (sh > 140) setDockSheetH(sh);
       // 老版本把开合写进了 localStorage：清掉，别让历史偏好继续生效
       localStorage.removeItem("dock.open");
     } catch {
       /* 隐私模式拿不到 storage：用默认值 */
     }
   }, []);
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const sync = () => setIsWide(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+
   const saveDock = useCallback((o: boolean, p: DockPanel, w: number) => {
     try {
       sessionStorage.setItem("dock.open", o ? "1" : "0");
       localStorage.setItem("dock.panel", p);
       localStorage.setItem("dock.w", String(w));
+      const sh = Number(localStorage.getItem("dock.sheetH") || "0");
+      if (sh < 140) localStorage.removeItem("dock.sheetH");
     } catch {
       /* 忽略 */
     }
@@ -3130,6 +3147,34 @@ export function ChatConsole({
                   用齿轮而不是「配置」两个字的按钮：一个字块在同一行里比
                   名字还重，会把这行顶成「左边身份、右边一个按钮」的割裂感；
                   齿轮是通用认知，且图标按钮比文字按钮矮一号。 */}
+              {/* 窄屏：底部面板的入口。桌面有常驻图标轨，手机没有 —— 不给入口等于功能不存在 */}
+              {!isWide && (
+                <button
+                  data-tap
+                  className="w-9 h-9 shrink-0 flex items-center justify-center rounded-lg"
+                  style={{
+                    color: dockOpen ? "var(--color-accent)" : "var(--color-muted)",
+                    background: dockOpen ? "color-mix(in srgb, var(--color-accent) 12%, transparent)" : "transparent",
+                  }}
+                  title={dockOpen ? "收起面板" : "打开面板（目录 / 浏览器 / 步骤 / 产物）"}
+                  aria-label={dockOpen ? "收起面板" : "打开面板"}
+                  aria-expanded={dockOpen}
+                  onClick={() => {
+                    dockTouched.current = true;
+                    if (dockOpen) {
+                      setDockOpen(false);
+                      saveDock(false, dockPanel, dockW);
+                    } else {
+                      openDock(dockPanel);
+                    }
+                  }}
+                >
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <rect x="3" y="4" width="18" height="16" rx="2.5" />
+                    <path d="M3 14h18" />
+                  </svg>
+                </button>
+              )}
               {agentId && (
                 <button
                   data-tap
@@ -4721,6 +4766,17 @@ export function ChatConsole({
 
         {/* 右侧工具坞（≥1280 才渲染；更窄的屏走原来的抽屉/浮层） */}
         <SideDock
+          variant={isWide ? "side" : "sheet"}
+          sheetHeight={dockSheetH || (typeof window !== "undefined" ? Math.round(window.innerHeight * 0.55) : 480)}
+          sheetBottom={dockH}
+          onSheetHeight={(h) => {
+            setDockSheetH(h);
+            try {
+              localStorage.setItem("dock.sheetH", String(h));
+            } catch {
+              /* 隐私模式 */
+            }
+          }}
           panel={dockPanel}
           outline={outline}
           outlineLoading={outlineLoading}

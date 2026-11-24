@@ -72,6 +72,11 @@ export function SideDock({
   /* 步骤 */
   stepRunId,
   currentRunId,
+  /* 形态：桌面是右侧竖栏，手机是底部面板（上下分栏：面板在上、对话与输入坞在下） */
+  variant = "side",
+  sheetHeight = 0,
+  onSheetHeight,
+  sheetBottom = 0,
 }: {
   panel: DockPanel | null;
   onPanel: (p: DockPanel) => void;
@@ -132,9 +137,52 @@ export function SideDock({
   stepRunId?: string | null;
   /** 产物分组用：当前这一轮的 run id */
   currentRunId?: string | null;
+  /** "side" = 桌面右侧竖栏；"sheet" = 手机底部面板 */
+  variant?: "side" | "sheet";
+  /** sheet 形态的高度（px，由外部持久化），拖拽时回传 */
+  sheetHeight?: number;
+  onSheetHeight?: (h: number) => void;
+  /** sheet 形态的 bottom：让它停在输入坞上方，而不是盖住输入框 */
+  sheetBottom?: number;
 }) {
   const [dragging, setDragging] = useState(false);
   const dragRef = useRef<{ x: number; w: number } | null>(null);
+  const isSheet = variant === "sheet";
+  /** sheet 拖拽：拖动中不加过渡（跟手），松手才吸附 */
+  const sheetDrag = useRef<{ y: number; h: number } | null>(null);
+  const onSheetDown = (e: React.PointerEvent) => {
+    sheetDrag.current = { y: e.clientY, h: sheetHeight || window.innerHeight * 0.55 };
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      /* 老浏览器没有指针捕获，靠 pointerup 兜底 */
+    }
+  };
+  const onSheetMove = (e: React.PointerEvent) => {
+    const d = sheetDrag.current;
+    if (!d) return;
+    const vh = window.innerHeight;
+    const h = Math.min(Math.max(d.h + (d.y - e.clientY), 140), vh * 0.92);
+    // 记在 ref 上：pointerup 可能赶在最后一次 setState 渲染之前触发，
+    // 那时闭包里的 sheetHeight 还是旧值，吸附会算错（实测拖完又弹回原高度）
+    d.h = h;
+    onSheetHeight?.(h);
+  };
+  const onSheetUp = () => {
+    const d = sheetDrag.current;
+    sheetDrag.current = null;
+    if (!d) return;
+    const vh = window.innerHeight;
+    const ratio = (d.h || sheetHeight || vh * 0.55) / vh;
+    if (ratio < 0.3) {
+      onSheetHeight?.(vh * 0.55);
+      onOpenChange(false);
+      return;
+    }
+    const snaps = [0.55, 0.75, 0.88];
+    const best = snaps.reduce((a, b) => (Math.abs(b - ratio) < Math.abs(a - ratio) ? b : a));
+    onSheetHeight?.(Math.round(vh * best));
+  };
   const [q, setQ] = useState("");
   const [pick, setPick] = useState<string[]>([]);
   const [confirmDel, setConfirmDel] = useState(false);
@@ -297,11 +345,47 @@ export function SideDock({
     <aside
       data-sidedock
       data-open={open ? "1" : "0"}
-      className="relative hidden shrink-0 flex-row lg:flex"
-      style={{ background: "var(--color-surface)" }}
+      data-variant={variant}
+      className={
+        isSheet
+          ? "fixed inset-x-0 z-40 flex flex-col overflow-hidden rounded-t-[18px]"
+          : "relative hidden shrink-0 flex-row lg:flex"
+      }
+      style={
+        isSheet
+          ? {
+              bottom: sheetBottom,
+              height: open ? sheetHeight || undefined : undefined,
+              maxHeight: "92vh",
+              display: open ? "flex" : "none",
+              background: "var(--color-surface)",
+              boxShadow: "0 -12px 34px -20px color-mix(in srgb, var(--color-text) 45%, transparent)",
+            }
+          : { background: "var(--color-surface)" }
+      }
     >
-      {/* 拖宽手柄：贴在面板左缘，宽 6px，命中区比线宽大 */}
-      {open ? (
+      {/* sheet：顶部拖拽条（拖动跟手，松手吸附 55/75/88%） */}
+      {isSheet ? (
+        <div
+          role="separator"
+          aria-label="拖动调整面板高度，向下拖到底关闭"
+          onPointerDown={onSheetDown}
+          onPointerMove={onSheetMove}
+          onPointerUp={onSheetUp}
+          onPointerCancel={onSheetUp}
+          className="flex h-7 shrink-0 cursor-row-resize items-center justify-center"
+          style={{ touchAction: "none" }}
+        >
+          <span
+            aria-hidden
+            className="h-1 w-10 rounded-full"
+            style={{ background: "var(--color-border)" }}
+          />
+        </div>
+      ) : null}
+
+      {/* 拖宽手柄：贴在面板左缘，宽 6px，命中区比线宽大（只在桌面竖栏） */}
+      {!isSheet && open ? (
         <span
           role="separator"
           aria-orientation="vertical"
@@ -315,9 +399,14 @@ export function SideDock({
         />
       ) : null}
 
-      {/* 图标轨：收起态就是它 */}
+      {/* 图标轨：桌面在左侧竖排；手机在底部横排（收起态就是它） */}
       <div
-        className="flex w-[52px] shrink-0 flex-col items-center gap-1 py-2"
+        key="rail"
+        className={
+          isSheet
+            ? "flex shrink-0 items-center justify-center gap-1 py-1.5"
+            : "flex w-[52px] shrink-0 flex-col items-center gap-1 py-2"
+        }
         style={{ background: "var(--color-surface-2)" }}
       >
         {rail(
@@ -363,8 +452,9 @@ export function SideDock({
       {/* 面板 */}
       {open && panel ? (
         <div
-          className="flex min-h-0 flex-col"
-          style={{ width: Math.min(width, typeof window !== "undefined" && window.innerWidth < 1280 ? 480 : width) }}
+          key="panel"
+          className={isSheet ? "flex min-h-0 flex-1 flex-col" : "flex min-h-0 flex-col"}
+          style={isSheet ? undefined : { width: Math.min(width, typeof window !== "undefined" && window.innerWidth < 1280 ? 480 : width) }}
         >
           <div
             className="flex h-9 shrink-0 items-center gap-2 px-2.5"
