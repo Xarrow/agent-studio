@@ -245,15 +245,19 @@ async def test_禁区在中间件层直接拒绝():
 
 
 @pytest.mark.asyncio
-async def test_越界写在_bypass_模式下也要问():
-    """用户第 3 条不随"这个助手选了哪档权限"变 —— bypass 也不例外。"""
+async def test_越界写在_bypass_模式下直接放行():
+    """用户口径（2026-11-25）：全部放行 = 真的全部放行，越界写也不再问。
+
+    权限模式管"问不问"，黑名单管"能不能" —— DENY 类（凭据路径）另有用例守着。
+    """
     from agentscope.permission import PermissionBehavior, PermissionContext, PermissionMode
 
     agent = SimpleNamespace(
         state=SimpleNamespace(permission_context=PermissionContext(mode=PermissionMode.BYPASS))
     )
     d, _ = await _decide("write", {"file_path": "/root/x.md", "content": "x"}, agent=agent)
-    assert d.behavior == PermissionBehavior.ASK
+    assert d.behavior == PermissionBehavior.ALLOW
+    assert d.decision_reason == "file-write-danger-mode"  # 走 danger-mode：放行但留痕
 
 
 @pytest.mark.asyncio

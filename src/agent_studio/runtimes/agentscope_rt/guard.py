@@ -393,6 +393,10 @@ class DangerousActionGuard(MiddlewareBase):
             return "workspace"
         if self._dir_allowed(act.path):
             return "dir-allow"
+        # 权限模式 = 全部放行：越界写也不再问（用户口径：选了它就别再弹卡）。
+        # 仍留审计痕迹（走 danger-mode 分支），DENY 类（凭据路径/平台黑名单）照旧拦。
+        if self._mode(agent) == "bypass":
+            return "danger-mode"
         if await file_policy.skip_confirm():
             return "danger-mode"
         if await file_policy.denial_hit(act, session_id=session_id, user_text=user_text):
@@ -921,11 +925,12 @@ class DangerousActionGuard(MiddlewareBase):
         # （bypass_immune 无效），我们这层再发 ASK 就和模式矛盾 —— 用户选了
         # bypass 还是每次被问。这里对齐：只保留 DENY 拦截，ASK 放行。
         #
-        # 唯一例外是"越界写"和"读到文件范围外"：bypass 免的是"在你自己的地盘上
-        # 别问我"，不免"往机器别处写" —— 用户第 3 条说的是工作目录之外一律要确认。
+        # 全部放行 = **真的全部放行**（用户明确口径：选了它就别再问）。
+        # 以前这里把"越界写 / 读到范围外"排除在外，理由是他早期说过"工作目录外一律确认"；
+        # 现在他把两件事分开了：权限模式管"问不问"，黑名单管"能不能"。
+        # DENY（平台黑名单、凭据路径）在后面照旧拦，不受这里影响。
         if (
             verdict.risk == guardrails.RISK_ASK
-            and verdict.rule not in ("read-scope", guardrails.FILE_WRITE_RULE)
             and getattr(agent, "state", None) is not None
         ):
             _mode = getattr(

@@ -66,7 +66,7 @@ const MODES: { value: string; label: string; result: string; desc: string; warn?
     label: "全部放行（危险）",
     result: "什么都不问（危险，仅沙箱）",
     desc: "跳过检查，只保留显式拒绝规则",
-    warn: "危险操作也不再拦；动态展开、删系统目录、改敏感配置仍会问。仅限沙箱",
+    warn: "什么都不问（含越界读写）。只有平台黑名单与凭据路径仍会硬拦。仅限沙箱",
   },
 ];
 
