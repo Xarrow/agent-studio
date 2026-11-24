@@ -839,7 +839,10 @@ test("控件规格：36px / radius-sm / 无边框 / 手机才 44", () => {
   // .btn：圆角令牌 + 无边框 + 底色分层
   assert.match(css, /\.btn \{[\s\S]{0,400}?border-radius: var\(--radius-sm\);/, "按钮圆角走令牌");
   assert.match(css, /\.btn \{[\s\S]{0,400}?border: 0;/, "按钮不再画 1px 边框");
-  assert.match(css, /\.btn \{[\s\S]{0,500}?background: var\(--color-surface-2\);/, "按钮靠底色立起来");
+  // 控件层 = surface-3（比分组块 surface-2 深一档）：整页用同一个 surface-2 时会糊成一片
+  assert.match(css, /\.btn \{[\s\S]{0,500}?background: var\(--color-surface-3\);/, "按钮在控件层");
+  assert.match(css, /\.input \{[\s\S]{0,400}?background: var\(--color-surface-3\);/, "输入框在控件层");
+  assert.match(css, /\.input \{[\s\S]{0,500}?box-shadow: inset/, "输入框有内凹感（不是 1px 线）");
   // .input：圆角令牌 + 无边框
   assert.match(css, /\.input \{[\s\S]{0,300}?border: 0;/, "输入框不再画 1px 边框");
   assert.match(css, /\.input \{[\s\S]{0,300}?border-radius: var\(--radius-sm\);/, "输入框圆角走令牌");

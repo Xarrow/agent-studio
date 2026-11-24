@@ -273,7 +273,9 @@ export function Select({
           compact ? "h-8" : "h-9 max-md:h-11"
         } disabled:opacity-45 ${className}`}
         style={{
-          background: "var(--color-surface-2)",
+          // 与 .input 同一层：控件比分组块（surface-2）深一档，才看得出是"能点的控件"
+          background: "var(--color-surface-3)",
+          boxShadow: "inset 0 1px 2px color-mix(in srgb, var(--color-text) 9%, transparent)",
           color: current ? "var(--color-text)" : "var(--color-text-3)",
         }}
       >

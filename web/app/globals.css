@@ -316,8 +316,9 @@ body {
   white-space: nowrap;
   flex-shrink: 0;
   border: 0;
-  /* 去边框后不能还是 surface（白底白页 = 隐形），用 surface-2 把按钮立起来 */
-  background: var(--color-surface-2);
+  /* 按钮与输入框同在"控件层"（surface-3）：在白色卡片和浅灰分组块里都立得住。
+     区别靠形状与内凹阴影 —— 输入框凹下去，按钮不凹。 */
+  background: var(--color-surface-3);
   color: var(--color-text);
   cursor: pointer;
   /* 只过渡颜色类属性，布局属性（width/padding）永不参与 —— transition:all
@@ -326,7 +327,8 @@ body {
     border-color 0.12s ease, box-shadow 0.12s ease, opacity 0.12s ease;
 }
 .btn:hover {
-  background: var(--color-surface-3);
+  /* 默认已经是 surface-3，hover 再压深一点（不然看起来没反应） */
+  background: color-mix(in srgb, var(--color-surface-3) 82%, var(--color-text) 7%);
 }
 .btn-primary {
   background: var(--color-accent);
@@ -377,10 +379,14 @@ body {
   width: 100%;
   padding: 8px 11px;
   border-radius: var(--radius-sm);
-  /* 不用边框：全站的分层靠底色差（surface / 2 / 3）+ 间距 + 圆角。
-     1px 边框在手机上是"另一个系统的控件"感，也和卡片、列表行不是一套语言。 */
+  /* 不用边框：靠三层底色差 + 一点内凹阴影区分。
+     层级：卡片 surface(白) < 分组块 surface-2 < 控件 surface-3。
+     之前控件也用了 surface-2，和分组块同色 → 整页糊成一片，看不出哪里能配
+     （用户原话："都是一片样式，看不出来配置的组件"）。
+     内凹阴影不是 1px 线条，是柔和的"凹下去"感 —— 输入框本来就该比周围低。 */
   border: 0;
-  background: var(--color-surface-2);
+  background: var(--color-surface-3);
+  box-shadow: inset 0 1px 2px color-mix(in srgb, var(--color-text) 9%, transparent), inset 0 -1px 0 color-mix(in srgb, var(--color-bg) 60%, transparent);
   color: var(--color-text);
   font-size: 13px;
   outline: none;
@@ -389,6 +395,7 @@ body {
 /* 聚焦用内描边而不是改边框颜色：不改变布局尺寸，也不会把邻居挤动 */
 .input:focus,
 .input:focus-visible {
+  box-shadow: none;
   /* outline 而不是 box-shadow：Tailwind 的 preflight 会把 box-shadow 重置成
      透明色（真机实测 inset 规则被吃掉），outline 不在那条重置里。
      outline-offset 设负值 = 画在控件内侧，不占布局。 */
