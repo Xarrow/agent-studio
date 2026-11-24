@@ -4827,12 +4827,14 @@ export function ChatConsole({
       {browserOpen && (
         <div className="dialog-free fixed inset-0 z-[70] flex items-end justify-center md:items-center" role="dialog" aria-modal="true" aria-label="浏览器画面">
           <div className="absolute inset-0" style={{ background: "rgba(15,23,42,0.4)" }} onClick={() => setBrowserOpen(false)} />
+          {/* 全屏看浏览器：桌面给到 94vw / 最大 1280（原来 760px，1440 的屏只占一半，
+              画面里的小字根本看不清）；高度 72vh → 88vh。手机全宽 + 88vh。
+              容器去 1px 边框，靠阴影与遮罩分层。 */}
           <div
-            className="relative flex w-full flex-col overflow-hidden rounded-t-[16px] md:max-w-[760px] md:rounded-[var(--radius-lg)]"
+            className="relative flex w-full flex-col overflow-hidden rounded-t-[var(--radius-xl)] md:w-[min(1280px,94vw)] md:rounded-[var(--radius-lg)]"
             style={{
-              height: "72vh",
-              maxHeight: "72vh",
-              border: "1px solid var(--color-border-strong)",
+              height: "min(88vh, 92dvh)",
+              maxHeight: "92dvh",
               background: "var(--color-surface)",
               boxShadow: "0 24px 60px rgba(15,23,42,0.28)",
             }}
