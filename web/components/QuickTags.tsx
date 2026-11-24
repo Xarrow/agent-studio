@@ -172,7 +172,7 @@ export function QuickTags({ onPick, prefix }: { onPick: (text: string) => void; 
             </div>
 
             {/* 标签流：已确定的都在这里，点 ✕ 删。没有「每行一个输入框」那种表格感 */}
-            <div className="px-3.5 pb-2.5 min-h-[44px] max-h-[38vh] overflow-auto">
+            <div className="px-3.5 pb-2.5 min-h-9 max-md:h-11 max-h-[38vh] overflow-auto">
               {draft.length === 0 ? (
                 <p className="text-[length:var(--fs-sm)] py-3" style={{ color: "var(--color-muted)" }}>
                   还没有，在下面加一条试试

@@ -167,7 +167,7 @@ export function ExecutionTimeline({
                 type="button"
                 onClick={() => void toggle(item)}
                 aria-expanded={expanded}
-                className="flex min-h-[44px] w-full items-center gap-2 py-1.5 text-left md:min-h-0"
+                className="flex min-h-9 max-md:h-11 w-full items-center gap-2 py-1.5 text-left md:min-h-0"
                 title={`${KIND_LABEL[item.kind] ?? item.kind} · ${item.name}`}
               >
                 {/* 层级：缩进表达"挂在哪一轮下面"，不做树控件 */}

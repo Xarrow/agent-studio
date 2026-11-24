@@ -1129,7 +1129,7 @@ export function BrowserStage({
               data-key-button={k.key}
               onClick={() => sendKey(k)}
               title={k.title}
-              className="h-[30px] min-w-[44px] rounded-[var(--radius-sm)] px-2 text-[length:var(--fs-sm)] max-md:h-[44px]"
+              className="h-[30px] min-w-[44px] rounded-[var(--radius-sm)] px-2 text-[length:var(--fs-sm)] max-md:h-9 max-md:h-11"
               style={{ color: "var(--color-text-2)", background: "var(--color-surface-3)" }}
             >
               {k.label}

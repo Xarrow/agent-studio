@@ -854,7 +854,7 @@ function NewAgentDialog({
   return (
     <div className={DLG_BACKDROP} onClick={requestClose}>
       <div
-        className="card flex max-h-[92dvh] w-full max-w-[880px] flex-col overflow-hidden rounded-b-none rounded-t-[14px] p-5 sm:my-auto sm:max-h-[88dvh] sm:rounded-[var(--radius-lg)]"
+        className="card flex max-h-[92dvh] w-full max-w-[880px] flex-col overflow-hidden rounded-b-none rounded-t-[var(--radius-xl)] p-5 sm:my-auto sm:max-h-[88dvh] sm:rounded-[var(--radius-lg)]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-start gap-3">

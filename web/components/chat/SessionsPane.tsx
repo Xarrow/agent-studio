@@ -269,7 +269,7 @@ export function SessionsPane({
       {/* 头部：新对话 + 管理（批量） */}
       <div className="px-2.5 pb-1.5 flex items-center gap-1.5">
         <button
-          className="flex-1 rounded-[var(--radius-sm)] min-h-[40px] max-md:min-h-[44px] text-[length:var(--fs-base)] max-md:text-[length:var(--fs-md)] transition-colors hover:brightness-[0.97]"
+          className="flex-1 rounded-[var(--radius-sm)] min-h-[40px] max-md:min-h-9 max-md:h-11 text-[length:var(--fs-base)] max-md:text-[length:var(--fs-md)] transition-colors hover:brightness-[0.97]"
           style={{ background: "var(--color-surface-2)", color: "var(--color-text)" }}
           onClick={onNew}
         >

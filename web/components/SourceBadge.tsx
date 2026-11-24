@@ -48,7 +48,7 @@ export function SourceBadge({ runId, count }: { runId: string; count: number }) 
         data-tap
         onClick={() => void toggle()}
         aria-expanded={open}
-        className="flex min-h-[28px] items-center gap-1.5 rounded-[var(--radius-sm)] px-1.5 text-[length:var(--fs-sm)] max-md:h-[44px]"
+        className="flex min-h-[28px] items-center gap-1.5 rounded-[var(--radius-sm)] px-1.5 text-[length:var(--fs-sm)] max-md:h-9 max-md:h-11"
         style={{ color: "var(--color-muted)" }}
       >
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -97,7 +97,7 @@ export function SourceBadge({ runId, count }: { runId: string; count: number }) 
               target="_blank"
               rel="noreferrer noopener"
               data-tap
-              className="flex min-h-[36px] items-baseline gap-2 rounded-[var(--radius-sm)] px-2.5 py-1.5 hover:bg-[var(--bg-hover)] max-md:min-h-[44px]"
+              className="flex min-h-[36px] items-baseline gap-2 rounded-[var(--radius-sm)] px-2.5 py-1.5 hover:bg-[var(--bg-hover)] max-md:min-h-9 max-md:h-11"
               style={{ borderColor: "var(--color-border)" }}
               title={it.snippet || it.url}
             >

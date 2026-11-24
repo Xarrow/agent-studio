@@ -141,7 +141,7 @@ export function RouteRules({
         <div className="border-t px-4 py-3" style={{ borderColor: "var(--color-border)" }}>
           <div className="flex flex-wrap items-center gap-2">
             <input
-              className="input h-[32px] min-w-0 flex-1 max-md:h-[44px]"
+              className="input h-[32px] min-w-0 flex-1 max-md:h-9 max-md:h-11"
               placeholder="这些话交给它，逗号分隔（如：周报，复盘，会议纪要）"
               value={draft}
               {...addIme.props}
@@ -152,7 +152,7 @@ export function RouteRules({
             />
             <button
               type="button"
-              className="btn h-[32px] shrink-0 max-md:h-[44px]"
+              className="btn h-[32px] shrink-0 max-md:h-9 max-md:h-11"
               disabled={busy || draftParts.length === 0}
               onClick={() => void add()}
             >
@@ -198,7 +198,7 @@ export function RouteRules({
           <div className="mt-3 border-t pt-2.5" style={{ borderColor: "var(--color-border)" }}>
             <div className="flex flex-wrap items-center gap-2">
               <input
-                className="input h-[32px] min-w-0 flex-1 max-md:h-[44px]"
+                className="input h-[32px] min-w-0 flex-1 max-md:h-9 max-md:h-11"
                 placeholder="拿一句话试试：这句话会交给谁？"
                 value={probe}
                 {...probeIme.props}
@@ -209,7 +209,7 @@ export function RouteRules({
               />
               <button
                 type="button"
-                className="btn h-[32px] shrink-0 max-md:h-[44px]"
+                className="btn h-[32px] shrink-0 max-md:h-9 max-md:h-11"
                 disabled={!probe.trim()}
                 onClick={() => void preview()}
               >

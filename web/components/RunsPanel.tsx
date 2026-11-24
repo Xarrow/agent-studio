@@ -1042,7 +1042,7 @@ export function RunsPanel() {
               type="button"
               data-tap
               onClick={() => setTicketsOpen((v) => !v)}
-              className="flex h-[32px] items-center gap-1 whitespace-nowrap rounded-[var(--radius-sm)] border px-2 text-[length:var(--fs-sm)] max-md:h-[44px]"
+              className="flex h-[32px] items-center gap-1 whitespace-nowrap rounded-[var(--radius-sm)] border px-2 text-[length:var(--fs-sm)] max-md:h-9 max-md:h-11"
               style={{
                 borderColor: "var(--color-warn)",
                 color: "var(--color-warn)",
@@ -1112,7 +1112,7 @@ export function RunsPanel() {
                       <button
                         type="button"
                         data-tap
-                        className="ml-auto inline-flex h-[28px] items-center justify-center text-[length:var(--fs-xs)] underline decoration-dotted max-md:h-[44px] max-md:min-w-[44px] max-md:px-2"
+                        className="ml-auto inline-flex h-[28px] items-center justify-center text-[length:var(--fs-xs)] underline decoration-dotted max-md:h-9 max-md:h-11 max-md:min-w-[44px] max-md:px-2"
                         style={{ color: ticketArm === tk.id ? "var(--color-err)" : "var(--color-muted)" }}
                         onClick={() => void endTicket(tk)}
                       >
@@ -1132,7 +1132,7 @@ export function RunsPanel() {
               type="button"
               data-tap
               onClick={() => setAttentionOpen((v) => !v)}
-              className="flex h-[32px] items-center gap-1 rounded-[var(--radius-sm)] border px-2 text-[length:var(--fs-sm)] max-md:h-[44px]"
+              className="flex h-[32px] items-center gap-1 rounded-[var(--radius-sm)] border px-2 text-[length:var(--fs-sm)] max-md:h-9 max-md:h-11"
               style={{
                 borderColor: attention.counts.hitl > 0 ? "var(--color-err)" : "var(--color-warn)",
                 color: attention.counts.hitl > 0 ? "var(--color-err)" : "var(--color-warn)",
@@ -1193,7 +1193,7 @@ export function RunsPanel() {
                     <button
                       type="button"
                       data-tap
-                      className="inline-flex h-[28px] items-center underline decoration-dotted max-md:h-[44px] max-md:px-1"
+                      className="inline-flex h-[28px] items-center underline decoration-dotted max-md:h-9 max-md:h-11 max-md:px-1"
                       style={{ color: "var(--color-accent)" }}
                       onClick={() => void jumpToRun(it)}
                     >
@@ -1203,7 +1203,7 @@ export function RunsPanel() {
                     <button
                       type="button"
                       data-tap
-                      className="inline-flex h-[28px] items-center underline decoration-dotted max-md:h-[44px] max-md:px-1"
+                      className="inline-flex h-[28px] items-center underline decoration-dotted max-md:h-9 max-md:h-11 max-md:px-1"
                       style={{ color: "var(--color-accent)" }}
                       onClick={() => jumpToRun(it)}
                     >
@@ -1213,7 +1213,7 @@ export function RunsPanel() {
                     <button
                       type="button"
                       data-tap
-                      className="inline-flex h-[28px] items-center underline decoration-dotted max-md:h-[44px] max-md:px-1"
+                      className="inline-flex h-[28px] items-center underline decoration-dotted max-md:h-9 max-md:h-11 max-md:px-1"
                       style={{ color: "var(--color-accent)" }}
                       onClick={() => void retryOneFromAttention(it)}
                     >

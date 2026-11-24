@@ -225,7 +225,7 @@ export function OrchestrationSteps({
                     <button
                       type="button"
                       onClick={() => setOpenId(open ? null : st.run_id)}
-                      className="w-full text-left rounded-md px-2.5 py-2 bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-3)] transition-colors min-h-[44px] lg:min-h-0"
+                      className="w-full text-left rounded-md px-2.5 py-2 bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-3)] transition-colors min-h-9 max-md:h-11 lg:min-h-0"
                     >
                       <div className="flex items-center gap-2 text-[length:var(--fs-sm)]">
                         <span className="mono text-[var(--color-muted)] w-6 shrink-0">{idx}</span>

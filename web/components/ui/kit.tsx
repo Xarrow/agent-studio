@@ -579,4 +579,4 @@ export function Section({
 export const DLG_BACKDROP =
   "fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-[var(--color-overlay)] p-0 sm:items-center sm:p-4";
 export const DLG_CARD =
-  "card w-full max-h-[92dvh] overflow-y-auto rounded-b-none rounded-t-[14px] sm:my-auto sm:max-h-[88dvh] sm:rounded-[var(--radius-lg)]";
+  "card w-full max-h-[92dvh] overflow-y-auto rounded-b-none rounded-t-[var(--radius-xl)] sm:my-auto sm:max-h-[88dvh] sm:rounded-[var(--radius-lg)]";

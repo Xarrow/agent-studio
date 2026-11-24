@@ -56,7 +56,7 @@ export function MsgAction({
       onClick={onClick}
       /* 桌面「图标 + 文字」、手机纯图标 44px —— 与助手列表的动作条同一套口径；
          之前用户消息只有图标、助手回复是文字，同一个界面上两套写法（验收提到） */
-      className="flex h-[44px] items-center justify-center gap-1 rounded-md px-1.5 transition-colors hover:bg-[var(--color-surface-2)] max-md:w-[44px] max-md:px-0"
+      className="flex h-9 max-md:h-11 items-center justify-center gap-1 rounded-md px-1.5 transition-colors hover:bg-[var(--color-surface-2)] max-md:w-[44px] max-md:px-0"
       style={{ color: tone === "ok" ? "var(--color-ok)" : "var(--color-muted)" }}
     >
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

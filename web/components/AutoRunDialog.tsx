@@ -173,7 +173,7 @@ export function AutoRunDialog({
       onClick={onClose}
     >
       <div
-        className="df-card flex max-h-[92dvh] w-full max-w-[560px] flex-col overflow-hidden rounded-b-none rounded-t-[14px] border sm:my-auto sm:max-h-[88dvh] sm:rounded-[var(--radius-lg)]"
+        className="df-card flex max-h-[92dvh] w-full max-w-[560px] flex-col overflow-hidden rounded-b-none rounded-t-[var(--radius-xl)] border sm:my-auto sm:max-h-[88dvh] sm:rounded-[var(--radius-lg)]"
         style={{ background: "var(--color-surface)", borderColor: "var(--color-border)" }}
         onClick={(e) => e.stopPropagation()}
       >

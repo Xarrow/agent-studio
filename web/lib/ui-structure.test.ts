@@ -18,7 +18,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 const WEB = join(import.meta.dirname, "..");
@@ -824,4 +824,59 @@ test("能力页：有搜索（名称/说明/参数都能命中）", () => {
   assert.match(src, /搜索工具/, "能力页缺搜索框");
   assert.match(src, /input_schema/, "搜索应包含参数名（只搜名字找不到「传什么」）");
   assert.match(src, /query/, "缺少搜索状态");
+});
+
+/**
+ * 控件规格护栏（2026-11 全站一致性审计后固化）：
+ *   · 控件（按钮 / 输入框 / 下拉 / 分段项）= 36px 高、--radius-sm 圆角、--fs-base 字号
+ *   · 卡片 = --radius-lg；块 = --radius-md；chip = --radius-xs
+ *   · 一律不用 1px 边框分层，改底色差
+ *   · 手机 44px 只出现在 max-md: 前缀里（触屏），桌面一律 36
+ * 这几条是"有些大有些小"的根因，写成断言，防止以后又漂回去。
+ */
+test("控件规格：36px / radius-sm / 无边框 / 手机才 44", () => {
+  const css = read("app/globals.css");
+  // .btn：圆角令牌 + 无边框 + 底色分层
+  assert.match(css, /\.btn \{[\s\S]{0,400}?border-radius: var\(--radius-sm\);/, "按钮圆角走令牌");
+  assert.match(css, /\.btn \{[\s\S]{0,400}?border: 0;/, "按钮不再画 1px 边框");
+  assert.match(css, /\.btn \{[\s\S]{0,500}?background: var\(--color-surface-2\);/, "按钮靠底色立起来");
+  // .input：圆角令牌 + 无边框
+  assert.match(css, /\.input \{[\s\S]{0,300}?border: 0;/, "输入框不再画 1px 边框");
+  assert.match(css, /\.input \{[\s\S]{0,300}?border-radius: var\(--radius-sm\);/, "输入框圆角走令牌");
+  // .card：无边框
+  assert.match(css, /\.card \{[\s\S]{0,200}?border-radius: var\(--radius-lg\);/, "卡片圆角走令牌");
+  assert.doesNotMatch(css, /\.card \{[\s\S]{0,120}?border: 1px solid/, "卡片不画边框");
+});
+
+test("没有野生的圆角 / 固定 44 高度 / 字面字号（全站扫描）", () => {
+  const bad: string[] = [];
+  const walk = (dir: string): string[] => {
+    const out: string[] = [];
+    const stack = [join(WEB, dir)];
+    while (stack.length) {
+      const cur = stack.pop()!;
+      for (const e of readdirSync(cur, { withFileTypes: true })) {
+        const full = join(cur, e.name);
+        if (e.isDirectory()) stack.push(full);
+        else if (e.name.endsWith(".tsx")) out.push(full);
+      }
+    }
+    return out;
+  };
+  for (const dir of ["app", "components"]) {
+    for (const file of walk(dir)) {
+      const rel = file.slice(WEB.length + 1);
+      const src = readFileSync(file, "utf8");
+      // 圆角只认 6 / 8 / 10 / 12（含 var 令牌写法）；9 / 5 / 4 / 3 这些是历史上的野生值
+      for (const m of src.matchAll(/rounded-(?:t|b|l|r|tl|tr|bl|br)?-\[(\d+)px\]/g)) {
+        const v = Number(m[1]);
+        if (![0, 2, 6, 8, 10, 12, 16, 18].includes(v)) bad.push(`${rel} 圆角 ${v}px`);
+      }
+      // 固定 44：只能出现在 max-md: 前缀里
+      for (const m of src.matchAll(/(?<!max-md:)h-\[44px\]/g)) {
+        bad.push(`${rel} 写死 44px（桌面该 36）`);
+      }
+    }
+  }
+  assert.deepEqual(bad.slice(0, 6), [], `野生值：\n${bad.slice(0, 6).join("\n")}`);
 });

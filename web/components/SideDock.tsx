@@ -352,7 +352,7 @@ export function SideDock({
       data-variant={variant}
       className={
         isSheet
-          ? "fixed inset-x-0 z-40 flex flex-col overflow-hidden rounded-t-[18px]"
+          ? "fixed inset-x-0 z-40 flex flex-col overflow-hidden rounded-t-[var(--radius-xl)]"
           : "relative hidden shrink-0 flex-row lg:flex"
       }
       style={

@@ -3214,7 +3214,7 @@ export function ChatConsole({
               这种话应该在跑的时候由它自己讲，不是印在页面上。 */}
           {curKind === "worker" && (
             <div
-              className={`shrink-0 flex items-center gap-2 px-3 h-7 text-[length:var(--fs-sm)] max-lg:mt-[calc(44px+env(safe-area-inset-top))] max-lg:h-[44px] ${curKind === "worker" ? "max-lg:cursor-pointer" : ""}`}
+              className={`shrink-0 flex items-center gap-2 px-3 h-7 text-[length:var(--fs-sm)] max-lg:mt-[calc(44px+env(safe-area-inset-top))] max-lg:h-9 max-md:h-11 ${curKind === "worker" ? "max-lg:cursor-pointer" : ""}`}
               style={{
                 background: `color-mix(in srgb, ${agentColor(curAgentId)} 9%, var(--color-surface))`,
                 color: agentColor(curAgentId),
@@ -4323,7 +4323,7 @@ export function ChatConsole({
                         key={o.agent_id}
                         data-tap
                         type="button"
-                        className="btn h-[32px] px-3 text-[length:var(--fs-base)] max-md:h-[44px]"
+                        className="btn h-[32px] px-3 text-[length:var(--fs-base)] max-md:h-9 max-md:h-11"
                         onClick={() => void runAuto(routeAsk.text, o.agent_id)}
                       >
                         {o.name}
@@ -4332,7 +4332,7 @@ export function ChatConsole({
                     <button
                       data-tap
                       type="button"
-                      className="h-[32px] px-2 text-[length:var(--fs-base)] max-md:h-[44px]"
+                      className="h-[32px] px-2 text-[length:var(--fs-base)] max-md:h-9 max-md:h-11"
                       style={{ color: "var(--color-muted)" }}
                       onClick={() => {
                         setInput(routeAsk.text);
@@ -4434,7 +4434,7 @@ export function ChatConsole({
                 <textarea
                   ref={taRef}
                   rows={1}
-                  className="block w-full resize-none bg-transparent border-0 outline-none px-4 py-2.5 text-[length:var(--fs-md)] leading-[24px] min-h-[44px] sm:min-h-[56px] sm:py-3"
+                  className="block w-full resize-none bg-transparent border-0 outline-none px-4 py-2.5 text-[length:var(--fs-md)] leading-[24px] min-h-9 max-md:h-11 sm:min-h-[56px] sm:py-3"
                   style={{ maxHeight: 208 }}
                   placeholder={
                     paused
