@@ -682,6 +682,13 @@ class BrowserSession:
             "--remote-debugging-port=0",
             f"--window-size={VIEWPORT['width']},{VIEWPORT['height']}",
         ]
+        # 用户在环境配置里启用过的插件：--load-extension 只能在启动时给
+        try:
+            from . import browser_extensions as _bx
+
+            args.extend(_bx.launch_args())
+        except Exception:
+            logger.debug("读取浏览器扩展失败，按无扩展启动", exc_info=True)
         if self._proxy:
             args.append(f"--proxy-server={self._proxy}")
         try:
@@ -952,6 +959,15 @@ class BrowserSession:
 
         profile = Path(f"/tmp/agent-studio-browser/{self.key.replace(':', '-')}/ff-profile")
         profile.mkdir(parents=True, exist_ok=True)
+        # Firefox 只能靠 profile 里的 xpi 装扩展（没有 --load-extension）
+        try:
+            from . import browser_extensions as _bx
+
+            installed = _bx.prepare_firefox_profile(profile)
+            if installed:
+                logger.info("Firefox 已预置扩展：%s", "、".join(installed))
+        except Exception:
+            logger.debug("预置 Firefox 扩展失败", exc_info=True)
         args = [
             bin_path,
             "--headless",
@@ -1006,18 +1022,36 @@ class BrowserSession:
         self._frame_task = asyncio.create_task(self._bidi_frames())
 
     async def _bidi_frames(self) -> None:
-        """定时截图当"画面流"（BiDi 没有 screencast 事件）。"""
+        """定时截图当"画面流"（BiDi 没有 screencast 事件）。
+
+        为什么原来"卡"：0.9s 一张 ≈ 1.1fps，页面里滚一下要等半秒才动一下。
+        现在两处一起改：
+        · 间隔 0.9s → 0.45s（≈2.2fps，Firefox headless 截一张 1280 宽约 60–120ms，
+          还留得出余量）；
+        · 内容没变就**不抓**（用 URL+标题+滚动+焦点 的廉价指纹判断），
+          省掉静止页面上每秒两次白抓；静止时最多 3 秒补一帧保活，画面不会"冻住"。
+        想要真正跟手只有一个办法：用 Chromium（screencast 有变化才推 + 可走 WebRTC 视频轨）。
+        """
+        interval = 0.45
+        last_sig = ""
+        last_sent = 0.0
         while self._bidi is not None:
-            await asyncio.sleep(0.9)
+            await asyncio.sleep(interval)
             if self._bidi is None or not self._last_url.startswith(("http://", "https://")):
                 continue
             try:
+                sig = await self.page_signature()
+                now = asyncio.get_running_loop().time()
+                if sig and sig == last_sig and (now - last_sent) < 3.0:
+                    continue  # 页面没动：跳过这一张
                 shot = await self._bidi.send(
                     "browsingContext.captureScreenshot",
                     {"context": self._ctx, "origin": "viewport", "format": {"type": "image/jpeg", "quality": 0.55}},
                 )
                 data = str(shot.get("data") or "")
                 if data and len(data) <= FRAME_MAX_BYTES:
+                    last_sig = sig
+                    last_sent = now
                     self._last_frame = data
                     self._on_frame(self.run_id, data, self._last_url, self._last_title)
             except Exception:  # pragma: no cover
@@ -1519,6 +1553,29 @@ class BrowserSession:
         except Exception:  # pragma: no cover
             return {}
         return val if isinstance(val, dict) else {}
+
+    #: 页面上有没有"看起来像输入框"的元素：有就提示用户在对话里说要填什么，
+    #: 不用自己去点那个小框（手机上尤其难）。
+    _INPUT_PROBE_JS = (
+        "(() => {const els=[...document.querySelectorAll("
+        "'input:not([type=hidden]):not([type=submit]):not([type=button]),textarea,[contenteditable=true]')]"
+        ".filter(el=>{const r=el.getBoundingClientRect();if(r.width<12||r.height<8) return false;"
+        "const cs=getComputedStyle(el);return cs.visibility!=='hidden'&&cs.display!=='none'&&cs.opacity!=='0';});"
+        "if(!els.length) return '';const e=els[0];"
+        "const hint=e.getAttribute('placeholder')||e.getAttribute('aria-label')||e.getAttribute('name')||e.id||'';"
+        "return (String(e.tagName||'').toLowerCase()+':'+String(hint)).slice(0,60);})()"
+    )
+
+    async def input_probe(self) -> str:
+        """返回页面上第一个可见输入框的描述（没有就空串）。CDP / BiDi 都走同一个表达式。"""
+        try:
+            if self._bidi is not None:
+                return str(await self._eval(self._INPUT_PROBE_JS) or "")
+            if self._cdp is None:
+                return ""
+            return str(await self._js(self._INPUT_PROBE_JS) or "")
+        except Exception:  # pragma: no cover
+            return ""
 
     async def page_signature(self) -> str:
         """页面\"看起来变没变\"的廉价指纹（URL/标题/滚动位置/文本长度/焦点）。"""

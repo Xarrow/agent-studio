@@ -312,6 +312,11 @@ function ActionLine({ actions, control }: { actions: BrowserAction[]; control?: 
     control?.action_line ||
     last?.summary ||
     (control?.can_click ? "你可以直接操作画面" : "启动中…");
+  /** 页面上有输入框：别让用户在手机上去点那个小框，直接说"在搜索框输入 xx"更快。
+      只在他能操作的时候提示 —— 助手正在跑就别插嘴。 */
+  const inputHint = control?.can_click && control?.has_input
+    ? `这个页面有输入框（${control.has_input.startsWith("input:") ? control.has_input.slice(6) || "输入框" : control.has_input}）—— 直接在对话里说要填什么，我来填`
+    : "";
 
   return (
     <div className="min-w-0 px-2.5 py-1.5" style={{ background: "var(--color-surface-2)" }}>
@@ -861,6 +866,16 @@ export function BrowserStage({
         ? (last?.summary ?? lastStep?.summary ?? "准备中…")
         : (control?.action_line || last?.summary || lastStep?.summary || "准备中…");
     const takeLabel = control?.button || (live ? "接管" : "");
+    /** 当前驱动：卡的时候第一眼要知道跑的是哪个、靠什么推画面 */
+    const drv = control?.driver;
+    const driverLabel = drv
+      ? `${drv.label}${drv.version ? " " + drv.version : ""} · ${drv.proto} · ${drv.stream}`
+      : "";
+    /** 页面有输入框 → 提示"直接在对话里说要填什么"（手机上点小框太难） */
+    const inputHint =
+      control?.can_click && control?.has_input
+        ? `有输入框（${control.has_input.startsWith("input:") ? control.has_input.slice(6) || "输入框" : control.has_input}）—— 在对话里说要填什么即可`
+        : "";
     const takeAction: "take" | "release" =
       control?.button_action === "release" ? "release" : "take";
     return (
@@ -937,6 +952,18 @@ export function BrowserStage({
               >
                 {control?.badge || (live ? "助手操作中" : "浏览器")}
               </span>
+              {driverLabel ? (
+                <span
+                  className="shrink-0 rounded px-1.5 py-0.5 text-[length:var(--fs-xs)]"
+                  style={{
+                    background: "var(--color-surface-2)",
+                    color: drv?.smooth ? "var(--color-text-3)" : "var(--color-err)",
+                  }}
+                  title={drv?.smooth ? "Chromium screencast：页面有变化才推帧" : "Firefox BiDi 只能定时截图，天然比 Chromium 慢"}
+                >
+                  {driverLabel}
+                </span>
+              ) : null}
               {stepLabel ? (
                 <span className="shrink-0 text-[length:var(--fs-xs)]" style={{ color: "var(--color-muted)" }}>
                   {stepLabel}
@@ -946,6 +973,11 @@ export function BrowserStage({
             <span className="mt-0.5 block truncate text-[length:var(--fs-xs)]" style={{ color: "var(--color-muted)" }}>
               {line}
             </span>
+            {inputHint ? (
+              <span className="mt-0.5 block truncate text-[length:var(--fs-xs)]" style={{ color: "var(--color-accent)" }}>
+                {inputHint}
+              </span>
+            ) : null}
           </span>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0" style={{ color: "var(--color-muted)" }}>
             <path d="M9 18l6-6-6-6" />

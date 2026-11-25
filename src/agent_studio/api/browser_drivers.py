@@ -11,11 +11,12 @@ from typing import Any
 
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import browser_drivers as bd
+from .. import browser_extensions as bx
 from ..db import get_session
 
 router = APIRouter(prefix="/api/browser-drivers", tags=["browser-drivers"])
@@ -55,6 +56,69 @@ async def overview(session: AsyncSession = Depends(get_session)) -> dict[str, An
             for e in bd.ENGINES
         ],
     }
+
+
+# ── 浏览器插件（扩展）───────────────────────────────────────────────
+# 扩展只能在启动时给（--load-extension），所以每次增删改都要重启共享进程，
+# 否则用户会看到"装了但没生效"。重启是懒的：下一条消息自然会拉起新进程。
+
+
+class ExtToggleIn(BaseModel):
+    enabled: bool
+
+
+@router.get("/extensions")
+async def list_extensions() -> dict[str, Any]:
+    items = bx.list_extensions()
+    # 当前在用的浏览器类型：Chrome 系（CDP）还是 Firefox（BiDi）。
+    # 扩展开关按它判断"能不能用"，免得用户装了个 Chrome 专用插件却发现在 Firefox 里没动静。
+    act = bd.last_active()
+    cur = "firefox" if str(act.get("proto") or "cdp") == "bidi" else "chrome"
+    for it in items:
+        t = str(it.get("target") or "both")
+        it["usable"] = t in (cur, "both")
+        it["active_browser"] = cur
+    return {
+        "items": items,
+        "count": len(items),
+        "enabled": sum(1 for i in items if i.get("enabled")),
+        "browser": cur,
+        # 给界面一句话说清"什么时候生效"
+        "note": "改动会在下次启动浏览器时生效（正在跑的会话不受影响）",
+    }
+
+
+@router.post("/extensions", status_code=status.HTTP_201_CREATED)
+async def upload_extension(file: UploadFile = File(...)) -> dict[str, Any]:
+    """上传 .zip / .crx。装完顺手重启共享浏览器，下条消息就带上它。"""
+    data = await file.read()
+    if len(data) > 64 * 1024 * 1024:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "包太大（>64MB）")
+    try:
+        item = bx.install_from_bytes(file.filename or "extension.zip", data)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    await bx.restart_shared_browser()
+    return item
+
+
+@router.post("/extensions/{dir_name}/enabled")
+async def toggle_extension(dir_name: str, payload: ExtToggleIn) -> dict[str, Any]:
+    try:
+        item = bx.set_enabled(dir_name, payload.enabled)
+    except KeyError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"没有这个插件：{dir_name}") from exc
+    await bx.restart_shared_browser()
+    return item
+
+
+@router.delete("/extensions/{dir_name}")
+async def delete_extension(dir_name: str) -> dict[str, Any]:
+    ok = bx.remove(dir_name)
+    if not ok:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"没有这个插件：{dir_name}")
+    await bx.restart_shared_browser()
+    return {"ok": True, "removed": dir_name}
 
 
 @router.get("/versions")

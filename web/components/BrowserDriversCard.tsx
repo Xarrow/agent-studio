@@ -22,7 +22,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api } from "@/lib/api";
 import { Select } from "@/components/ui/select";
-import type { BrowserDriverEngine, BrowserDriverRow, BrowserDriverVerify } from "@/lib/api";
+import type { BrowserDriverEngine, BrowserDriverRow, BrowserDriverVerify, BrowserExtension } from "@/lib/api";
 import { useFeedback } from "@/components/ui/feedback";
 
 const PROTO_LABEL: Record<string, string> = { cdp: "CDP", bidi: "BiDi" };
@@ -43,6 +43,12 @@ export function BrowserDriversCard() {
   const [version, setVersion] = useState("");
   const [job, setJob] = useState<{ phase: string; percent: number; status: string } | null>(null);
   const [vLoading, setVLoading] = useState(false);
+  /** 插件（扩展）：启动时一起加载，改了要重启浏览器才生效 */
+  const [exts, setExts] = useState<BrowserExtension[]>([]);
+  /** 当前在用的浏览器类型：Chrome 系还是 Firefox（插件能不能用按它判断） */
+  const [extBrowser, setExtBrowser] = useState<"chrome" | "firefox">("chrome");
+  const [extBusy, setExtBusy] = useState(false);
+  const extFile = useRef<HTMLInputElement | null>(null);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(async () => {
@@ -51,6 +57,9 @@ export function BrowserDriversCard() {
       setActive(d.active);
       setRows(d.installed);
       setEngines(d.engines.filter((e) => e.managed));
+      const x = await api.browserExtensions();
+      setExts(x.items);
+      if (x.browser) setExtBrowser(x.browser);
     } catch (e) {
       fb.error("读取浏览器驱动失败", e instanceof Error ? e.message : String(e));
     } finally {
@@ -461,6 +470,131 @@ export function BrowserDriversCard() {
             />
           </div>
         )}
+      </div>
+
+      {/* ── 浏览器插件（扩展）─────────────────────────────────────────
+          扩展只能靠启动参数 --load-extension 带上，所以装/停之后要重启浏览器；
+          界面上说清"下次启动生效"，免得用户以为点了没反应。 */}
+      <div className="mt-6">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[length:var(--fs-md)] font-medium">浏览器插件</span>
+          <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
+            启用的插件会和浏览器一起启动；改动在下次启动时生效
+          </span>
+          <input
+            ref={extFile}
+            type="file"
+            accept=".zip,.crx"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = "";
+              if (!f) return;
+              setExtBusy(true);
+              api
+                .uploadBrowserExtension(f)
+                .then(async (item) => {
+                  fb.success(`已装插件「${item.name}」`, item.version ? `版本 ${item.version}` : undefined);
+                  setExts((await api.browserExtensions()).items);
+                })
+                .catch((err) => fb.error("插件装不上", err instanceof Error ? err.message : String(err)))
+                .finally(() => setExtBusy(false));
+            }}
+          />
+          <button
+            className="ml-auto rounded-[var(--radius-xs)] px-2.5 py-1 text-[length:var(--fs-base)]"
+            style={{ background: "var(--color-surface-2)", color: "var(--color-text)" }}
+            disabled={extBusy}
+            onClick={() => extFile.current?.click()}
+          >
+            {extBusy ? "处理中…" : "上传 .zip / .crx"}
+          </button>
+        </div>
+
+        <div className="mt-2 rounded-[var(--radius-md)]" style={{ background: "var(--color-surface-2)" }}>
+          {exts.length === 0 ? (
+            <div className="px-3 py-4 text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
+              还没有插件。上传 Chrome 扩展的 zip 或 crx（比如去广告、代理、截图类），之后每次启动都会带上。
+            </div>
+          ) : (
+            exts.map((x) => (
+              <div
+                key={x.dir}
+                className="flex flex-wrap items-center gap-2 px-3 py-2"
+                style={{ borderTop: "none" }}
+              >
+                <span className="text-[length:var(--fs-base)]">{x.name}</span>
+                {x.version && (
+                  <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
+                    v{x.version}
+                  </span>
+                )}
+                <span
+                  className="rounded-[var(--radius-xs)] px-1.5 py-0.5 text-[length:var(--fs-xs)]"
+                  style={{
+                    background: "var(--color-surface-3)",
+                    color: x.usable === false ? "var(--color-muted)" : "var(--color-text-2, var(--color-text-3))",
+                  }}
+                  title="按 manifest 判断：有 service_worker 的是 Chrome 系专用，有 gecko id 的是 Firefox 系"
+                >
+                  {x.target === "chrome" ? "Chrome" : x.target === "firefox" ? "Firefox" : "通用"}
+                </span>
+                {typeof x.size === "number" && (
+                  <span className="text-[length:var(--fs-xs)]" style={{ color: "var(--color-text-3)" }}>
+                    {Math.max(1, Math.round(x.size / 1024))}KB
+                  </span>
+                )}
+                {x.usable === false && (
+                  <span className="text-[length:var(--fs-xs)]" style={{ color: "var(--color-err)" }}>
+                    当前浏览器是 {extBrowser === "firefox" ? "Firefox" : "Chrome"}，这个插件用不了
+                  </span>
+                )}
+                <div className="ml-auto flex items-center gap-2">
+                  <button
+                    className="rounded-[var(--radius-xs)] px-2 py-1 text-[length:var(--fs-sm)]"
+                    style={{
+                      background: x.enabled ? "var(--color-accent-soft, var(--color-surface-3))" : "var(--color-surface-3)",
+                      color: x.enabled ? "var(--color-accent)" : "var(--color-muted)",
+                    }}
+                    disabled={extBusy || x.usable === false}
+                    onClick={async () => {
+                      setExtBusy(true);
+                      try {
+                        await api.toggleBrowserExtension(x.dir, !x.enabled);
+                        setExts((await api.browserExtensions()).items);
+                      } catch (err) {
+                        fb.error("切换失败", err instanceof Error ? err.message : String(err));
+                      } finally {
+                        setExtBusy(false);
+                      }
+                    }}
+                  >
+                    {x.enabled ? "已启用" : "已停用"}
+                  </button>
+                  <button
+                    className="text-[length:var(--fs-sm)]"
+                    style={{ color: "var(--color-err)" }}
+                    disabled={extBusy}
+                    onClick={async () => {
+                      setExtBusy(true);
+                      try {
+                        await api.deleteBrowserExtension(x.dir);
+                        setExts((await api.browserExtensions()).items);
+                        fb.success(`已移除「${x.name}」`);
+                      } catch (err) {
+                        fb.error("移除失败", err instanceof Error ? err.message : String(err));
+                      } finally {
+                        setExtBusy(false);
+                      }
+                    }}
+                  >
+                    移除
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
       </div>
     </div>
   );

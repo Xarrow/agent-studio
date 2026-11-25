@@ -86,6 +86,8 @@ class Control:
     round_ended: bool = False
     #: 现在有没有一轮真的在跑（交还后没人跑时，徽章不能说"操作中"）
     running: bool = False
+    #: 页面上有没有输入框（有就提示用户在对话里说"填什么"，比让他点小框省事）
+    has_input: str = ""
     #: 用户在这一段接管里做过什么（人话，交还时进助手的上下文）
     user_notes: list[str] = field(default_factory=list)
     #: 助手真实执行过的动作 (run_id, 人话) —— 交还摘要里要分清楚"谁做的"。
@@ -306,6 +308,28 @@ def _viewport() -> dict[str, int]:
     return {"width": int(VIEWPORT["width"]), "height": int(VIEWPORT["height"])}
 
 
+def _driver_info() -> dict[str, Any]:
+    """当前在用的浏览器驱动 + 画面推送方式。
+
+    用户原话：「浏览器需要提示用的驱动」—— 卡的时候第一件事就是知道跑的是哪个，
+    以及它靠什么推画面（Chromium 的 screencast 有变化才推；Firefox 是定时截图，天然更慢）。
+    """
+    try:
+        from . import browser_drivers as _bd
+
+        act = _bd.last_active() or {}
+    except Exception:  # pragma: no cover
+        act = {}
+    proto = str(act.get("proto") or "cdp").lower()
+    return {
+        "label": act.get("label") or ("Firefox" if proto == "bidi" else "Chromium"),
+        "version": act.get("version") or "",
+        "proto": "BiDi" if proto == "bidi" else "CDP",
+        "stream": "定时截图" if proto == "bidi" else "实时推帧",
+        "smooth": proto != "bidi",
+    }
+
+
 def public_state(session_id: str) -> dict[str, Any]:
     """给前端的完整状态：**所有文案都在这里定**，前端不做判断。"""
     c = get_for_session(session_id)
@@ -335,10 +359,12 @@ def public_state(session_id: str) -> dict[str, Any]:
             "round_ended": False,
             "running": False,
             "can_click": False,
+            "has_input": "",
             "run_id": "",
             "step_count": 0,
             "step_label": "",
             "viewport": _viewport(),
+            "driver": _driver_info(),
         }
     badge, button, action = _badge(c)
     phase, phase_text = _phase(c)
@@ -369,6 +395,8 @@ def public_state(session_id: str) -> dict[str, Any]:
         "round_ended": c.round_ended,
         "running": c.running,
         "can_click": c.status in (USER, WAITING, PAUSED),
+        # 页面上的输入框（空串=没有）：有的话前端会提示用户"直接在对话里说要填什么"
+        "has_input": c.has_input,
         "run_id": c.run_id,
         # 步数口径：**本轮**。所有形态（缩略条 / 右栏 / 浮层）和刷新前后都读它。
         # 0 步时不给标签：卡片上写「本轮 0 步」既没信息量，又容易被读成"口径坏了"。
@@ -378,6 +406,7 @@ def public_state(session_id: str) -> dict[str, Any]:
         # JPEG 兼容模式按 800 宽推）。前端把点击坐标换算成**页面坐标**必须有这个数，
         # 否则静态页面一降档，点击就整体偏掉（实测 640 的画面对 1280 的页面 → 偏 2 倍）。
         "viewport": _viewport(),
+        "driver": _driver_info(),
     }
 
 
@@ -655,6 +684,20 @@ async def apply_user_input(c: Control, sess: Any, payload: dict[str, Any]) -> st
     return str(detail.get("ok") or "")
 
 
+async def refresh_input_probe(c: Control, sess: Any) -> None:
+    """页面动过之后问一句"现在有没有输入框"，有就把提示带上界面。
+
+    用户口径：检测到输入框就提醒他能在对话页里说要填什么 —— 手机上点那个小框很难。
+    """
+    probe = getattr(sess, "input_probe", None)
+    if probe is None:
+        return
+    try:
+        c.has_input = str(await probe() or "")
+    except Exception:  # pragma: no cover
+        c.has_input = ""
+
+
 async def apply_user_input_detail(c: Control, sess: Any, payload: dict[str, Any]) -> dict[str, Any]:
     """同 ``apply_user_input``，但把「回执」一起交出来（WebRTC DataChannel 用）。
 
@@ -785,6 +828,8 @@ async def apply_user_input_detail(c: Control, sess: Any, payload: dict[str, Any]
         except Exception:  # pragma: no cover
             note += f"，页面跳到了 {after}"
     add_note(c, note)
+    # 页面变了之后重新问一次有没有输入框：有就在界面上提示"直接在对话里说要填什么"
+    await refresh_input_probe(c, sess)
     return {
         "ok": text,
         "note": note,

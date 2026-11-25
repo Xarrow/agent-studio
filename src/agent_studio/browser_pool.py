@@ -72,6 +72,13 @@ async def ensure(bin_path: str, width: int = 1280, height: int = 800) -> str:
             "--remote-debugging-port=0",
             f"--window-size={width},{height}",
         ]
+        # 启用的插件（扩展变更会 shutdown 共享进程，这里每次重建都会重新读）
+        try:
+            from . import browser_extensions as _bx
+
+            args.extend(_bx.launch_args())
+        except Exception:
+            logger.debug("读取浏览器扩展失败，按无扩展启动", exc_info=True)
         _proc = await asyncio.create_subprocess_exec(
             *args,
             stdout=asyncio.subprocess.PIPE,

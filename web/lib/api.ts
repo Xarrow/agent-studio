@@ -300,6 +300,22 @@ export type BrowserDriverRow = {
   verify?: BrowserDriverVerify | Record<string, never>;
 };
 
+/** 浏览器插件（扩展）：装的是解压后的目录，启动时 --load-extension 带上 */
+export type BrowserExtension = {
+  dir: string;
+  name: string;
+  version: string;
+  description?: string;
+  manifest_version?: number;
+  enabled: boolean;
+  size?: number;
+  installed_at?: number;
+  /** 这个扩展能跑在哪：chrome | firefox | both */
+  target?: "chrome" | "firefox" | "both" | string;
+  /** 与当前在用的浏览器是否匹配（后端按 proto 算好） */
+  usable?: boolean;
+};
+
 export type BrowserDriverEngine = {
   kind: string;
   label: string;
@@ -346,6 +362,10 @@ export type BrowserControlState = {
   /** 现在有没有一轮真的在跑（交还后没人跑时徽章是"助手待命"） */
   running: boolean;
   can_click: boolean;
+  /** 页面上的第一个可见输入框（空串=没有）。有的话提示用户直接在对话里说要填什么 */
+  has_input?: string;
+  /** 当前在用的浏览器驱动 + 画面推送方式（用户要求：页面上要提示用的驱动） */
+  driver?: { label: string; version: string; proto: string; stream: string; smooth: boolean };
   run_id: string;
   /** 本轮浏览器步数（唯一口径；缩略条/右栏/浮层/刷新前后都读它） */
   step_count?: number;
@@ -898,6 +918,25 @@ export const api = {
   /** 这个技能被哪些助手挂着 */
   skillAgents: (id: string) => request<{ id: string; name: string; enabled: boolean }[]>(`/api/skills/${id}/agents`),
   skill: (id: string) => request<Skill>(`/api/skills/${id}`),
+  /** 浏览器插件：列表 / 上传 / 启停 / 删除 */
+  browserExtensions: () =>
+    request<{
+      items: BrowserExtension[];
+      count: number;
+      enabled: number;
+      note: string;
+      browser?: "chrome" | "firefox";
+    }>("/api/browser-drivers/extensions"),
+  uploadBrowserExtension: (file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return request<BrowserExtension>("/api/browser-drivers/extensions", { method: "POST", body: fd });
+  },
+  toggleBrowserExtension: (dir: string, enabled: boolean) =>
+    post<BrowserExtension>(`/api/browser-drivers/extensions/${encodeURIComponent(dir)}/enabled`, { enabled }),
+  deleteBrowserExtension: (dir: string) =>
+    del<{ ok: boolean; removed: string }>(`/api/browser-drivers/extensions/${encodeURIComponent(dir)}`),
+
   /** 技能导出（打包成 zip）：不传 ids 就是全部；返回可直接塞进 <a href> 下载的地址 */
   skillExportUrl: (ids?: string[]) => {
     const q = ids && ids.length ? `?ids=${encodeURIComponent(ids.join(","))}` : "";

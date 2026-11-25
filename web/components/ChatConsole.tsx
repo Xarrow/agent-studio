@@ -4855,11 +4855,13 @@ export function ChatConsole({
           {/* 全屏看浏览器：桌面给到 94vw / 最大 1280（原来 760px，1440 的屏只占一半，
               画面里的小字根本看不清）；高度 72vh → 88vh。手机全宽 + 88vh。
               容器去 1px 边框，靠阴影与遮罩分层。 */}
+          {/* 真的铺满：用户连着问了三次"太小"，1280 宽 + 88vh 在 2K 屏上还是像个小窗。
+              桌面留 8px 呼吸边，手机满屏；画面本身按容器等比放大（BrowserStage 内部处理）。 */}
           <div
-            className="relative flex w-full flex-col overflow-hidden rounded-t-[var(--radius-xl)] md:w-[min(1280px,94vw)] md:rounded-[var(--radius-lg)]"
+            className="relative flex w-full flex-col overflow-hidden rounded-none md:m-2 md:h-[calc(100dvh-1rem)] md:w-[calc(100vw-1rem)] md:rounded-[var(--radius-lg)]"
             style={{
-              height: "min(88vh, 92dvh)",
-              maxHeight: "92dvh",
+              height: "100dvh",
+              maxHeight: "100dvh",
               background: "var(--color-surface)",
               boxShadow: "0 24px 60px rgba(15,23,42,0.28)",
             }}
