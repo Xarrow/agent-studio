@@ -96,7 +96,10 @@ async def choose_mode(session: AsyncSession) -> tuple[str, str]:
         return "native", "设置为 native"
     if want == "npx":
         if not env["npx"]:
-            return "npx", "设置为 npx，但本机没有 npx"
+            # 别在这里判死：npx 模式只影响"用谁的解析器"，而平台自己那套
+            # (parser + registry/archive/git) 在没有 Node 的机器上照样能装。
+            # 以前返回 "npx" 会让后面的步骤去找一个不存在的命令。
+            return "native", "设置为 npx，但本机没有 npx —— 已改用内置解析直接安装"
         return "npx", "设置为 npx"
     # auto
     if env["npx"] and pin:
