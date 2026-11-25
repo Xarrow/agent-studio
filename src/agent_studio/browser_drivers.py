@@ -243,6 +243,52 @@ def installed() -> list[dict[str, Any]]:
 _LAST_ACTIVE: dict[str, Any] = {}
 
 
+#: 驱动信息快照：给"助手自己起浏览器"的技能用（bash 工具不支持传 env）。
+#: 内容变化才重写，避免每次解析都落盘。
+_SNAP = ROOT.parent / "work" / "runtime" / "browser-env.sh"
+
+
+def env_snapshot_path() -> str:
+    return str(_SNAP)
+
+
+def write_env_snapshot(act: dict[str, Any]) -> str:
+    """把当前驱动写成 source-able 的 shell 快照 + json。
+
+    为什么：Bash 工具不能传环境变量，技能里要拿到"平台正在用的那个 Chrome"
+    只能读文件。路径由 System Prompt 的"运行环境事实"给出，模型不用找。
+    """
+    if not isinstance(act, dict) or not act.get("version"):
+        return ""
+    body = (
+        "# 平台当前浏览器驱动（自动生成，勿手改）\n"
+        f'export STUDIO_BROWSER_LABEL="{act.get("label") or ""}"\n'
+        f'export STUDIO_BROWSER_VERSION="{act.get("version") or ""}"\n'
+        f'export STUDIO_BROWSER_PROTO="{act.get("proto") or "cdp"}"\n'
+        f'export STUDIO_BROWSER_PATH="{act.get("path") or ""}"\n'
+        f'export STUDIO_BROWSER_BIN="{act.get("path") or ""}"\n'
+        f'export STUDIO_BROWSER_SOURCE="{act.get("source") or ""}"\n'
+        f'export STUDIO_BROWSER_STALE="{1 if act.get("stale") else 0}"\n'
+    )
+    try:
+        if _SNAP.exists() and _SNAP.read_text(encoding="utf-8") == body:
+            return str(_SNAP)
+        _SNAP.parent.mkdir(parents=True, exist_ok=True)
+        _SNAP.write_text(body, encoding="utf-8")
+        try:
+            import json as _json
+
+            (_SNAP.parent / "browser-env.json").write_text(
+                _json.dumps(act, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+        except Exception:  # pragma: no cover
+            pass
+    except Exception:  # pragma: no cover - 只读文件系统等情况不影响主流程
+        logger.debug("写浏览器驱动快照失败", exc_info=True)
+        return ""
+    return str(_SNAP)
+
+
 def last_active() -> dict[str, Any]:
     """当前生效驱动（进程内缓存，不查库）。没有任何解析过就返回空 dict。"""
     return dict(_LAST_ACTIVE)
@@ -252,6 +298,7 @@ def remember_active(drv: dict[str, Any]) -> dict[str, Any]:
     if isinstance(drv, dict) and drv.get("version"):
         _LAST_ACTIVE.clear()
         _LAST_ACTIVE.update(drv)
+        write_env_snapshot(drv)
     return drv
 
 

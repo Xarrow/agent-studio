@@ -923,6 +923,10 @@ def browser_env_fact(tools: list[Any] | None) -> str:
     if not act.get("version"):
         return ""
     src = "平台管理" if str(act.get("source") or "") == "managed" else "系统安装"
+    try:
+        snap = _bd.env_snapshot_path()
+    except Exception:  # pragma: no cover
+        snap = ""
     warn = ""
     if act.get("stale"):
         warn = (
@@ -935,7 +939,9 @@ def browser_env_fact(tools: list[Any] | None) -> str:
         f"（{str(act.get('proto') or 'cdp').upper()}，{src}）。"
         f"路径：{act.get('path') or ''}\n"
         "被问「用的什么浏览器/什么版本」时照这个答，**不要**去翻机器上的 "
-        "Playwright / 系统 Chromium 等其它副本（那些不是平台在用的）。"
+        "Playwright / 系统 Chromium 等其它副本（那些不是平台在用的）。\n"
+        f"要自己起浏览器时先 `source {snap}`，之后 $STUDIO_BROWSER_BIN / "
+        "$STUDIO_BROWSER_VERSION 就是上面这套（见技能 browser-cdp）。"
         f"{warn}"
     ).strip()
 

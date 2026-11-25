@@ -39,6 +39,64 @@ WORKER_NAME = "通用助手"
 #: Skill 是**程序性记忆**：某种任务类型的步骤+坑。清单常驻提示、正文按需加载，
 #: 所以写得具体一点不吃上下文。
 BUILTIN_SKILLS: dict[str, str] = {
+    # 浏览器驱动 + CDP：驱动版本从平台快照读，别去翻机器上的其它 Chromium。
+    "browser-cdp": """---
+name: browser-cdp
+description: 用平台配好的 Chrome/Chromium 通过 CDP 自己控制浏览器——需要脚本化、批量、精确控制生命周期时用；驱动路径与版本一律从平台快照读，不要猜。
+---
+
+# 用平台配好的 Chrome（CDP）
+
+## 1. 先取当前驱动
+
+System Prompt 的「运行环境事实」里有快照绝对路径（形如 `.../work/runtime/browser-env.sh`）。先加载它：
+
+```bash
+. <快照路径>          # bash/sh 通用；bash 里等价的 source 在 dash 下不存在
+echo "$STUDIO_BROWSER_VERSION"
+echo "$STUDIO_BROWSER_LABEL $STUDIO_BROWSER_VERSION（$STUDIO_BROWSER_PROTO）"
+echo "$STUDIO_BROWSER_BIN"
+```
+
+可用变量：`STUDIO_BROWSER_BIN`（可执行文件）、`STUDIO_BROWSER_VERSION`、`STUDIO_BROWSER_LABEL`、`STUDIO_BROWSER_PROTO`、`STUDIO_BROWSER_PATH`、`STUDIO_BROWSER_STALE`。
+
+被问"用的什么浏览器/版本"时，只答这里的值。**不要** `ls` 浏览器目录或读 Playwright 缓存去推断——机器上通常还躺着系统 Chromium 和 Playwright 自带的 chromium-*，版本各不相同。
+
+## 2. 先判断要不要自己起
+
+- **能用平台 browser 工具就用它**：进程已托管、画面可直播、会话结束自动回收。
+- 只有这几种才自己起：要写脚本跑批量、要精确控制生命周期、或要用 browser 工具没暴露的 CDP 能力。
+
+## 3. 最小可用流程
+
+```bash
+bash -c '. <快照路径>; exec "$STUDIO_BROWSER_BIN" --headless=new --no-sandbox \\
+  --disable-dev-shm-usage --remote-debugging-port=0 \\
+  --user-data-dir="$(mktemp -d /tmp/cdp-XXXXXX)" about:blank'
+# 下面这种写法也可以（确定是 bash 时）：
+PROF=$(mktemp -d /tmp/cdp-XXXXXX)
+"$STUDIO_BROWSER_BIN" --headless=new --no-sandbox --disable-dev-shm-usage \
+  --remote-debugging-port=0 --user-data-dir="$PROF" about:blank 2>/tmp/cdp.err &
+for i in $(seq 1 50); do grep -q 'DevTools listening' /tmp/cdp.err && break; sleep 0.2; done
+PORT=$(grep -o 'DevTools listening on ws://127.0.0.1:[0-9]*' /tmp/cdp.err | grep -o '[0-9]*$')
+
+curl -s "http://127.0.0.1:$PORT/json/version"                 # 版本以这里的 Browser 字段为准
+curl -s -X PUT "http://127.0.0.1:$PORT/json/new?about:blank"  # 开新页拿 webSocketDebuggerUrl
+```
+
+收尾：`kill %1; rm -rf "$PROF"`。
+
+## 4. 坑（都是踩过的）
+
+- **root 运行必须 `--no-sandbox`**，否则进程起来立刻退出，只有 stderr 一行报错。
+- **不要用 `/usr/bin/chromium` 或 `/root/.cache/ms-playwright/chromium-*`**：那是另一份，版本和平台在跑的不一样；按它们报版本会答错。
+- **别把 `--user-data-dir` 指到 `/tmp/agent-studio-browser/shared-profile`**：那是平台常驻进程的 profile，第二个进程会因 SingletonLock 直接失败。
+- **chrome-for-testing 的 UA 是 `HeadlessChrome/<ver>`**，`navigator.userAgentData.brands` 第一项是 `Chromium`：检测类网站会显示 "Chromium x.y"，这不代表版本不对。
+- `--remote-debugging-port=0` 让系统分配端口，真实端口只能从 stderr 的 `DevTools listening on ws://...` 抓，别写死 9222（多开会撞）。
+- 平台 Bash 工具的默认 shell 是 **sh（dash）**：`source` 会报 not found，用 `. <文件>` 或 `bash -c '...'`。
+- 起进程要留 PID：`"$STUDIO_BROWSER_BIN" ... & PID=$!`，结束时 `kill "$PID"`，别用 `kill %1`（跨 shell 会话可能没有作业表）。
+""",
+
     # ── DeepSeek 工具产品：一个能力一个技能 ──────────────────────────────
     # 为什么不合成一个大技能：模型是按"技能描述"决定要不要展开全文的。
     # 五件事塞进一份说明书，描述只能写得很泛，模型遇到"这个 PDF 里写了什么"
