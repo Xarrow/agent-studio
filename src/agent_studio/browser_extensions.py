@@ -85,6 +85,11 @@ def list_extensions() -> list[dict[str, Any]]:
         if not d.is_dir():
             changed = True
             continue
+        # 老条目（加 target 之前装的）现场补一次：不补就一律当"通用"，
+        # 会在 Firefox 里加载一个 Chrome 专用扩展 —— 装了没动静，最难查。
+        if not it.get("target"):
+            it["target"] = detect_target(_read_manifest(d))
+            changed = True
         alive.append(it)
     if changed:
         data["items"] = alive
