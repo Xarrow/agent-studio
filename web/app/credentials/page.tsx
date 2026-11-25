@@ -640,7 +640,10 @@ function NewCredentialDialog({
       setErr("先粘贴 API Key。");
       return;
     }
-    if (!verified) {
+    // 只有"能自动验证"的服务商才要求先验证通过。自定义端点（default_base_url 为空）
+    // 没法预先验证 —— 以前这里一刀切要求 verified，导致这类配置根本存不进去，
+    // 用户看到的就是"Anthropic 协议还是不支持"。
+    if (canVerify && !verified) {
       setErr("这个 Key 还没验证通过，先修好 Key（或改选服务商）再保存。");
       return;
     }
@@ -654,6 +657,10 @@ function NewCredentialDialog({
     }
     if (!model) {
       setErr("先选一个默认模型。");
+      return;
+    }
+    if (!meta?.default_base_url && !baseUrl.trim()) {
+      setErr("这个服务商没有默认地址：先填 Base URL。");
       return;
     }
     setBusy(true);
@@ -675,7 +682,8 @@ function NewCredentialDialog({
     }
   };
 
-  const canSave = Boolean(provider) && (!needsKey || apiKey.trim()) && verified && Boolean(model);
+  const canSave =
+    Boolean(provider) && (!needsKey || apiKey.trim()) && (!canVerify || verified) && Boolean(model);
   const saveHint = Boolean(provider) && !canVerify
     ? needsKey
       ? "这家没法自动验证：Key 会原样保存，保存后用一次对话确认能通"
@@ -795,9 +803,12 @@ function NewCredentialDialog({
                 )}
               </div>
 
-              <details className="text-[length:var(--fs-sm)]">
+              <details
+                className="text-[length:var(--fs-sm)]"
+                open={!meta?.default_base_url}
+              >
                 <summary className="cursor-pointer select-none py-1" style={{ color: "var(--color-text-3)" }}>
-                  端点（默认已填好，一般不用改）
+                  {meta?.default_base_url ? "端点（默认已填好，一般不用改）" : "端点（必填：这个服务商没有默认地址）"}
                 </summary>
                 <input
                   className="input mono mt-1.5"

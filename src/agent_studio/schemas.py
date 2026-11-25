@@ -790,6 +790,14 @@ class CredentialCreate(BaseModel):
     # 新增时就能指定默认模型（有些服务商没有 /models 清单，只能手填 ✓）
     default_model: str | None = None
 
+    @model_validator(mode="after")
+    def _need_base_url(self) -> "CredentialCreate":
+        """自定义协议端点必须给地址：缺了 SDK 会回落到官方域名，
+        用户以为在打自己的网关，实际把 key 发给了 openai.com / anthropic.com。"""
+        if str(self.provider or "").endswith("-compatible") and not (self.base_url or "").strip():
+            raise ValueError("这个服务商没有默认地址，必须填 Base URL")
+        return self
+
 
 class CredentialUpdate(BaseModel):
     """编辑已有凭据。**只有显式传了的字段才会改**（None = 不动）。"""

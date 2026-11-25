@@ -736,7 +736,7 @@ def _effective_base(meta: Any, override: str | None) -> str | None:
     base = (override or meta.default_base_url or "").rstrip("/")
     if not base:
         return None
-    if _is_anthropic_protocol(provider) and not base.endswith("/v1"):
+    if _is_anthropic_protocol(getattr(meta, "name", "") or "") and not base.endswith("/v1"):
         base = f"{base}/v1"
     return base
 
