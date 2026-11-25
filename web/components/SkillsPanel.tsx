@@ -391,14 +391,6 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
             <IconWand size={14} />
             {curating ? "整理中…" : "整理"}
           </button>
-          <button
-            className="btn"
-            title="登记一个技能仓库，之后能浏览、安装、批量检查更新"
-            onClick={() => setShowSources("sources")}
-          >
-            <IconLink size={14} />
-            仓库来源
-          </button>
           <button className="btn" title="检查已装技能的来源有没有新版本" onClick={() => setShowSources("updates")}>
             <IconRefresh size={14} />
             检查更新
@@ -1011,7 +1003,7 @@ function ImportDialog({
                         className="input mono flex-1"
                         value={repoRef}
                         onChange={(e) => setRepoRef(e.target.value)}
-                        placeholder="tt-a1i/archify"
+                        placeholder="npx skills add owner/repo ，或贴 npx --registry=… 包名@版本 add 技能名"
                         onKeyDown={(e) => {
                           // 组字中的 Enter 是输入法选字，不是「预览」
                           if (e.key === "Enter" && !isImeEvent(e)) {

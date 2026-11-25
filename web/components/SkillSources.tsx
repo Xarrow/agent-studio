@@ -207,7 +207,7 @@ export function SkillSourcesDialog({
       <div className={`${DLG_CARD} w-full max-w-3xl p-5 max-h-[86vh] overflow-auto`}>
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-[16px] font-medium">技能来源与更新</h2>
+            <h2 className="text-[16px] font-medium">技能更新</h2>
           </div>
           <button className="btn" onClick={onClose}>
             关闭
@@ -215,17 +215,11 @@ export function SkillSourcesDialog({
         </div>
 
         <div className="mb-3 flex flex-wrap items-center gap-2">
-          <Segmented
-            value={tab}
-            onChange={(v) => {
-              setTab(v as Tab);
-              if (v === "updates" && updates.length === 0) void checkAll(false);
-            }}
-            options={[
-              { key: "sources", label: `来源（${items.length}）` },
-              { key: "updates", label: "检查更新" },
-            ]}
-          />
+          {/* 来源登记这套不再摆在界面上：装技能只要在「新建 / 导入」里贴命令，
+              命令本身带着 host / registry / 版本，用户没有理由先登记一遍。 */}
+          <span className="text-[length:var(--fs-sm)]" style={{ color: "var(--color-muted)" }}>
+            按已装技能记录的来源逐个比对有没有新版本
+          </span>
           <button className="btn ml-auto" disabled={busy} onClick={() => void checkAll(true)}>
             <IconRefresh size={14} />
             检查更新

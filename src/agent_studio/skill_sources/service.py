@@ -239,7 +239,10 @@ async def install(
             else "repo"
         ),
         "source_id": ref.source_id,
-        "repo": ref.slug or ref.url or ref.raw,
+        # npm 来源：repo 记包名、registry 单独记（更新时按 registry 协议比对 dist-tags）
+        "repo": (ref.repo if ref.kind == "npm" else (ref.slug or ref.url or ref.raw)),
+        "registry": ref.url if ref.kind == "npm" else "",
+        "pkg": ref.repo if ref.kind == "npm" else "",
         "host": ref.host,
         "ref": ref.ref or "HEAD",
         "subpath": ref.subpath,
@@ -300,11 +303,28 @@ async def install(
 # --------------------------------------------------------------------------- #
 def _remote_of(skill: Skill) -> dict[str, Any] | None:
     src = skill.source or {}
-    if src.get("type") not in ("repo", "git", "github", "gitlab", "local"):
+    if src.get("type") not in ("repo", "git", "github", "gitlab", "local", "npm"):
         return None
     if src.get("type") == "local":
         return None
+    if src.get("type") == "npm" and not src.get("pkg"):
+        return None
     return src
+
+
+async def _npm_latest(registry: str, pkg: str) -> tuple[str, str]:
+    """registry 上该包的 latest 版本与 shasum（更新检查用，纯 HTTP 不依赖 npm）。"""
+    import httpx
+
+    reg = (registry or "https://registry.npmjs.org").rstrip("/")
+    url = f"{reg}/{pkg.replace('/', '%2F')}"
+    async with httpx.AsyncClient(timeout=20, follow_redirects=True, trust_env=False) as client:
+        r = await client.get(url, headers={"Accept": "application/vnd.npm.install-v1+json, application/json"})
+        r.raise_for_status()
+        meta = r.json()
+    latest = (meta.get("dist-tags") or {}).get("latest") or ""
+    dist = ((meta.get("versions") or {}).get(latest) or {}).get("dist") or {}
+    return latest, str(dist.get("shasum") or "")[:12]
 
 
 async def check_updates(session: AsyncSession, *, force: bool = False) -> list[dict[str, Any]]:
@@ -338,6 +358,32 @@ async def check_updates(session: AsyncSession, *, force: bool = False) -> list[d
             )
             continue
         try:
+            if src.get("type") == "npm":
+                # npm 来源：比对 registry 上 latest 的 shasum（装的时候记的就是它）
+                pkg = str(src.get("pkg") or "")
+                latest_ver, latest_sha = await _npm_latest(str(src.get("registry") or ""), pkg)
+                same = bool(latest_sha and src.get("commit") and latest_sha == src.get("commit"))
+                status = "ok"
+                has_update = bool(latest_ver and not same)
+                src["check"] = {
+                    "at": now,
+                    "has_update": has_update,
+                    "latest_commit": latest_sha,
+                    "status": status,
+                }
+                sk.source = dict(src)
+                out.append(
+                    {
+                        "id": sk.id,
+                        "name": sk.name,
+                        "status": status,
+                        "has_update": has_update,
+                        "latest_commit": latest_sha,
+                        "checked_at": now,
+                    }
+                )
+                continue
+
             ref = SourceRef(
                 kind="github" if (src.get("host") or "github.com") == "github.com" else "git",
                 host=src.get("host") or "github.com",
