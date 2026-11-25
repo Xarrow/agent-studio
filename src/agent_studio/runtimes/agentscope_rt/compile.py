@@ -25,6 +25,8 @@ PROVIDER_CREDENTIALS: dict[str, str] = {
     "deepseek": "DeepSeekCredential",
     "openai": "OpenAICredential",
     "anthropic": "AnthropicCredential",
+    "openai-compatible": "OpenAICredential",
+    "anthropic-compatible": "AnthropicCredential",
     "claude": "AnthropicCredential",
     "dashscope": "DashScopeCredential",
     "qwen": "DashScopeCredential",
@@ -114,6 +116,11 @@ def build_credential(spec: ModelSpec, api_key: str | None):
             raise ValueError(f"provider={spec.provider} 需要 api_key")
         if api_key:
             kwargs["api_key"] = api_key
+
+    # 自定义端点（*-compatible）必须给地址：缺了 SDK 会回落到官方域名，
+    # 用户以为在打自己的网关，实际把 key 发给了 openai.com / anthropic.com。
+    if str(spec.provider).endswith("-compatible") and not spec.base_url:
+        raise ValueError(f"provider={spec.provider} 必须填 Base URL（自定义端点的完整地址）")
 
     if spec.base_url:
         for key in ("base_url", "api_host", "host"):

@@ -112,6 +112,23 @@ PROVIDERS: dict[str, ProviderMeta] = {
         note="Agent Plan 类 key 需把 Base URL 改成 …/api/plan/v3",
         docs_url="https://www.volcengine.com/docs/82379",
     ),
+        # 任意「OpenAI 协议」的端点：自建 vLLM / one-api 中转 / 各种兼容网关。
+    # 用户口径：LLM 配置里不该只能选那几家，协议一致就该能接。
+    "openai-compatible": ProviderMeta(
+        name="openai-compatible",
+        display_name="OpenAI 协议（自定义端点）",
+        default_base_url=None,          # 必须自己填：/v1 结尾的完整地址
+        models=[],
+        note="任何 OpenAI 兼容端点（自建 vLLM、one-api/中转站、云厂商兼容模式）。Base URL 填到 /v1，模型名手动填写。",
+    ),
+    # 任意「Anthropic 协议」的端点：Claude 官方中转、Bedrock 网关、自建代理。
+    "anthropic-compatible": ProviderMeta(
+        name="anthropic-compatible",
+        display_name="Anthropic 协议（自定义端点）",
+        default_base_url=None,
+        models=[],
+        note="任何 Anthropic Messages 协议端点（Claude 中转、代理网关）。Base URL 填到域名根（不带 /v1），模型名手动填写。",
+    ),
     "ollama": ProviderMeta(
         name="ollama",
         display_name="Ollama（本地）",
