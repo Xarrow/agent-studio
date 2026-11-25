@@ -898,6 +898,48 @@ def build_mcp_client(server: dict[str, Any]) -> Any:
     )
 
 
+
+def browser_env_fact(tools: list[Any] | None) -> str:
+    """挂了这个助手挂在 browser 工具上时，把「当前驱动」写成一段提示。
+
+    为什么需要：机器上常有 Playwright 自带的 Chromium、系统 Chromium 三两份，
+    模型被问"用的什么浏览器版本"时去翻文件系统，翻到哪份答哪份 ——
+    现场是平台跑 158，它答 156.0.8078.4。平台知道真值，就别让它猜。
+
+    只做纯文本拼装（读进程内缓存），同步、可单测。
+    """
+    names = [
+        str(getattr(t, "name", "") or (t.get("name") if isinstance(t, dict) else "") or "")
+        for t in (tools or [])
+    ]
+    if not any(n.startswith("browser") for n in names):
+        return ""
+    try:
+        from ... import browser_drivers as _bd
+
+        act = _bd.last_active()
+    except Exception:  # pragma: no cover
+        return ""
+    if not act.get("version"):
+        return ""
+    src = "平台管理" if str(act.get("source") or "") == "managed" else "系统安装"
+    warn = ""
+    if act.get("stale"):
+        warn = (
+            "\n注意：设置里那个路径在这台机器上不存在，实际已回退系统 Chromium。"
+            f"（{act.get('stale_reason') or ''}）"
+        )
+    return (
+        "## 运行环境事实（平台给出，以此为准）\n"
+        f"浏览器驱动：{act.get('label') or 'Chrome'} {act.get('version')}"
+        f"（{str(act.get('proto') or 'cdp').upper()}，{src}）。"
+        f"路径：{act.get('path') or ''}\n"
+        "被问「用的什么浏览器/什么版本」时照这个答，**不要**去翻机器上的 "
+        "Playwright / 系统 Chromium 等其它副本（那些不是平台在用的）。"
+        f"{warn}"
+    ).strip()
+
+
 def render_denied_actions(items: list[dict[str, Any]] | None) -> str:
     """把「本会话被用户拒绝过的动作」渲染成 system prompt 里的一段。
 
@@ -1031,31 +1073,9 @@ def build_agent(
         # 浏览器驱动事实：机器上可能同时躺着 Playwright 自带的 Chromium（另一版本），
         # 模型被问版本时会去翻文件系统、答成那个（现场：平台在跑 158，它答 156.0.8078.4）。
         # 平台知道真值，就直接写进提示，别让它猜。
-        if any(str(_name_of(t)).startswith("browser") for t in raw_tools):
-            try:
-                from ... import browser_drivers as _bd
-
-                act = _bd.last_active()
-            except Exception:  # pragma: no cover
-                act = {}
-            if act.get("version"):
-                _src = "平台管理" if str(act.get("source") or "") == "managed" else "系统安装"
-                _warn = ""
-                if act.get("stale"):
-                    _warn = (
-                        "\n注意：设置里那个路径在这台机器上不存在，实际已回退系统 Chromium。"
-                        f"（{act.get('stale_reason') or ''}）"
-                    )
-                system_prompt = (
-                    f"{system_prompt.rstrip()}\n\n"
-                    "## 运行环境事实（平台给出，以此为准）\n"
-                    f"浏览器驱动：{act.get('label') or 'Chrome'} {act.get('version')}"
-                    f"（{str(act.get('proto') or 'cdp').upper()}，{_src}）。"
-                    f"路径：{act.get('path') or ''}\n"
-                    "被问「用的什么浏览器/什么版本」时照这个答，**不要**去翻机器上的 "
-                    "Playwright / 系统 Chromium 等其它副本（那些不是平台在用的）。"
-                    f"{_warn}"
-                ).strip()
+        _browser_fact = browser_env_fact(tools)
+        if _browser_fact:
+            system_prompt = f"{system_prompt.rstrip()}\n\n{_browser_fact}".strip()
 
         # 本会话用户**拒绝过**的文件动作 —— 这是平台事实，每轮都要给模型看。
         # 只靠下面那条「上一轮未完成」不够：它只讲最近一轮，而拒绝名单是整个会话的

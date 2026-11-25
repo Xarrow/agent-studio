@@ -59,8 +59,9 @@ async def lifespan(_app: FastAPI):
     # 不预热的话，服务刚起、还没人打开环境页时模型会去翻机器、把 Playwright 的 Chromium 当答案。
     try:
         from . import browser_drivers as _bd
+        from .db import SessionLocal as _WarmSession
 
-        async with SessionLocal() as _bs:
+        async with _WarmSession() as _bs:
             _drv = await _bd.warm_active(_bs)
         if _drv.get("version"):
             logger.info("浏览器驱动：%s %s（%s）", _drv.get("label"), _drv.get("version"), _drv.get("path"))
