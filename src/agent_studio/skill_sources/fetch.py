@@ -534,6 +534,105 @@ async def resolve_commit(
     return ""
 
 
+# --------------------------------------------------------------------------- #
+# npm registry（第三方包，含公司内网 registry）
+# --------------------------------------------------------------------------- #
+async def fetch_via_npm(ref: SourceRef, *, policy: NetPolicy, timeout: float = 60.0) -> Fetched:
+    """从 npm registry 取一个"技能包"并解到临时目录。
+
+    为什么不用 npx：部署机是**零 Node** 的（离线一体包只带 CPython），
+    真跑 npx 在东京那台上直接失败。registry 协议本身是纯 HTTP + tgz，
+    自己取不依赖任何运行时。
+
+    ``ref.url`` 可以是 ``--registry=`` 给的地址；不给我按顺序回落到
+    环境变量 STUDIO_NPM_REGISTRY、https://registry.npmjs.org。
+    """
+    import os
+    import tarfile
+    import tempfile
+
+    import httpx
+
+    registry = (ref.url or os.environ.get("STUDIO_NPM_REGISTRY") or "https://registry.npmjs.org").rstrip("/")
+    pkg = ref.repo
+    if not pkg:
+        raise FetchError("invalid_source", "npm 来源缺少包名")
+    # scoped 包：@scope/name → @scope%2Fname（registry 只对斜杠转义）
+    meta_url = f"{registry}/{pkg.replace('/', '%2F')}"
+    want = (ref.ref or "").strip()
+
+    headers = {"Accept": "application/vnd.npm.install-v1+json, application/json"}
+    fetch_headers = policy.headers_for(registry) if hasattr(policy, "headers_for") else {}
+    headers.update(fetch_headers or {})
+
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, trust_env=False) as client:
+        r = await client.get(meta_url, headers=headers)
+        if r.status_code == 404:
+            raise FetchError(
+                "npm_package_missing",
+                f"{registry} 上没有这个包：{pkg}",
+                "确认包名，或用 --registry= 指定内网 registry",
+            )
+        r.raise_for_status()
+        meta = r.json()
+        tags = meta.get("dist-tags") or {}
+        versions = meta.get("versions") or {}
+        version = want or tags.get("latest") or ""
+        if version in tags:  # @latest / @next / @beta
+            version = tags[version]
+        if not version:
+            raise FetchError("npm_version_missing", f"{pkg} 没有可用的版本")
+        if version not in versions:
+            raise FetchError(
+                "npm_version_missing",
+                f"{pkg}@{version} 不存在（可用：{', '.join(list(versions)[:5])}…）",
+            )
+        dist = versions[version].get("dist") or {}
+        tarball = str(dist.get("tarball") or "")
+        if not tarball:
+            raise FetchError("npm_tarball_missing", f"{pkg}@{version} 没有 tarball 地址")
+        t = await client.get(tarball, headers=headers)
+        t.raise_for_status()
+        data = t.content
+    if not data:
+        raise FetchError("npm_tarball_missing", f"{pkg}@{version} 下载为空")
+
+    tmp = Path(tempfile.mkdtemp(prefix="skill-npm-"))
+    root = tmp / "repo"
+    root.mkdir(parents=True, exist_ok=True)
+    try:
+        with tarfile.open(fileobj=io.BytesIO(data), mode="r:*") as tf:
+            for m in tf.getmembers():
+                if not m.isfile():
+                    continue
+                name = m.name.lstrip("./")
+                # npm 包的 tarball 顶层固定是 package/ —— 去掉它，让结构和仓库归档一致
+                if name.startswith("package/"):
+                    name = name[len("package/"):]
+                if not name or ".." in Path(name).parts:
+                    continue
+                out = (root / name).resolve()
+                if root.resolve() not in out.parents:
+                    continue
+                out.parent.mkdir(parents=True, exist_ok=True)
+                fp = tf.extractfile(m)
+                if fp is None:
+                    continue
+                with fp, out.open("wb") as dst:
+                    shutil.copyfileobj(fp, dst)
+    except tarfile.TarError as exc:
+        raise FetchError("npm_tarball_broken", f"包内容解不开：{exc}") from exc
+
+    shasum = str(dist.get("shasum") or "")[:12]
+    return Fetched(
+        root=root,
+        commit=shasum,
+        via="npm",
+        url_used=meta_url,
+        notes=[f"npm 包 {pkg}@{version}"],
+    )
+
+
 async def fetch(
     ref: SourceRef,
     *,
@@ -550,6 +649,8 @@ async def fetch(
         return await fetch_via_site(ref, policy=policy)
     if ref.kind == "file":
         return await fetch_via_file(ref, policy=policy)
+    if ref.kind == "npm":
+        return await fetch_via_npm(ref, policy=policy)
     plat = platform_for(ref.host, platforms)
     if prefer == "archive" and plat and plat.archive_template:
         return await fetch_via_archive(ref, policy=policy, platforms=platforms, token=token)

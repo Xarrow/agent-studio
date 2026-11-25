@@ -56,6 +56,48 @@ _REPO_HOSTS = {"github.com", "gitlab.com", "bitbucket.org", "gitee.com", "codebe
 _FILE_TAIL = re.compile(r"(?i)(skill\.md$|\.(zip|tar|tar\.gz|tgz|tar\.bz2|tar\.xz)$)")
 #: 用户常常直接粘整条命令：``npx skills add owner/repo`` / ``npx -y skills add https://…``。
 #: 解析前把命令壳剥掉，只留来源本身（否则空格会被当成非法字符）。
+#: ``npx [--registry=URL] <包名>[@版本] add <技能…>`` —— 第三方 npm registry 上的
+#: skills 包（公司内网常见：``npx --registry=http://npm.intra.x/x d-skills@latest add ddp``）。
+#: 与 ``npx skills add owner/repo`` 是两个东西：那个是 skills CLI，这个是普通 npm 包。
+_NPM_CMD = re.compile(
+    r"^\s*(?:npx|npm\s+exec(?::\s*)?|pnpm\s+dlx|yarn\s+dlx)\s+"
+    r"(?P<flags>(?:--?[\w.-]+(?:=(?:\"[^\"]*\"|'[^']*'|[^\s]+))?\s+)*)"
+    r"(?P<pkg>@?[\w.~/-]+?)(?:@(?P<ver>[\w.^~<>=-]+))?\s+"
+    r"(?:add|install|i)\s+(?P<skills>.+?)\s*$",
+    re.I,
+)
+_REGISTRY_FLAG = re.compile(r"--registry(?:=|\s+)(\S+)", re.I)
+
+
+def _parse_npm_command(s: str, raw: str) -> "SourceRef | None":
+    m = _NPM_CMD.match(s)
+    if not m:
+        return None
+    pkg = m.group("pkg")
+    # `skills` 这个包是 skills CLI 本身，交给原来的路径
+    if pkg in ("skills", "@skills/cli"):
+        return None
+    # 不额外要求 pkg 含 / 或 . ：公司内部的包名经常就是 `d-skills` 这种裸名字，
+    # 而正则已经要求后面跟 add/install + 至少一个名字，误判面很小。
+    flags = m.group("flags") or ""
+    reg = ""
+    rm = _REGISTRY_FLAG.search(flags)
+    if rm:
+        reg = rm.group(1).strip("\"'")
+    names = [x for x in re.split(r"[\s,]+", m.group("skills") or "") if x]
+    return SourceRef(
+        kind="npm",
+        repo=pkg,
+        ref=(m.group("ver") or "").strip() or None,
+        skill=names[0] if names else None,
+        url=reg,
+        raw=raw,
+        notes=(
+            f"npm 包 {pkg}" + (f" @{m.group('ver')}" if m.group("ver") else "")
+            + (f"（registry {reg}）" if reg else "")
+        ),
+    )
+
 _CLI_PREFIX = re.compile(
     r"^\s*(?:npx(?:\s+-{1,2}[\w.=-]+)*\s+skills|skills)\s+(?:add|install)\s+",
     re.IGNORECASE,
@@ -217,6 +259,9 @@ def parse_source(
     strict: bool = True,
 ) -> SourceRef:
     """解析来源。``sources`` 给了就支持 ``<来源名>:<技能>`` 的引用写法。"""
+    npm_ref = _parse_npm_command(raw or "", raw or "")
+    if npm_ref is not None:
+        return npm_ref
     s = _CLI_PREFIX.sub("", raw or "")
     s = _reject_bad(s)
     if s.lower().startswith("git+"):

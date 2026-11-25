@@ -200,6 +200,9 @@ async def install(
     ref, entries, meta = await load_skills(
         session, raw, ref_override=ref_override, subpath_override=subpath_override
     )
+    # npm 命令里的 `add ddp` 已经点名了要哪个：调用方没另给清单时以它为准
+    if not skills and not paths and getattr(ref, "skill", None):
+        skills = [ref.skill]
     chosen = pick(entries, skills=skills, paths=paths)
     used_mode = mode or (await choose_mode(session))[0]
 
@@ -223,7 +226,15 @@ async def install(
 
     source_meta = {
         # site/file 是"站点索引 / 直链"，不是仓库 —— 类型要如实记，更新判断才知道该怎么做
-        "type": "site" if ref.kind == "site" else ("file" if ref.kind == "file" else "repo"),
+        "type": (
+            "site"
+            if ref.kind == "site"
+            else "file"
+            if ref.kind == "file"
+            else "npm"
+            if ref.kind == "npm"
+            else "repo"
+        ),
         "source_id": ref.source_id,
         "repo": ref.slug or ref.url or ref.raw,
         "host": ref.host,
