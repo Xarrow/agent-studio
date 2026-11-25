@@ -8,9 +8,15 @@ from __future__ import annotations
 import asyncio
 
 
-def test_两个会话共用一个进程且上下文隔离():
+def test_两个会话共用一个进程且上下文隔离(tmp_path, monkeypatch):
     from agent_studio import browser_pool
     from agent_studio.browser_session import BrowserSession
+
+    # 隔离 profile 目录：生产里常驻的那个共享进程会占住 SingletonLock，
+    # 不隔离的话测试会起不来第二个进程 → 回落每会话模式 → 假失败。
+    monkeypatch.setattr(browser_pool, "ROOT", tmp_path / "shared-profile")
+    browser_pool._proc = None
+    browser_pool._ws_url = ""
 
     async def go():
         a = BrowserSession("runA", lambda *x: None, session_id="ses_pool_a")

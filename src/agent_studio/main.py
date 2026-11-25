@@ -55,6 +55,18 @@ async def lifespan(_app: FastAPI):
     # 保活巡检常驻启动：以前只在第一个 ensure 时才起，没开过浏览器的实例永远不会回收
     _bc.ensure_janitor()
 
+    # 当前浏览器驱动：进程内缓存一份，编译 System Prompt 时要用（同步上下文读不到库）。
+    # 不预热的话，服务刚起、还没人打开环境页时模型会去翻机器、把 Playwright 的 Chromium 当答案。
+    try:
+        from . import browser_drivers as _bd
+
+        async with SessionLocal() as _bs:
+            _drv = await _bd.warm_active(_bs)
+        if _drv.get("version"):
+            logger.info("浏览器驱动：%s %s（%s）", _drv.get("label"), _drv.get("version"), _drv.get("path"))
+    except Exception:  # pragma: no cover
+        logger.debug("浏览器驱动预热失败", exc_info=True)
+
     from . import procs as _procs
 
     _fixed = await _procs.reconcile()

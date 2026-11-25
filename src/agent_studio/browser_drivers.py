@@ -237,6 +237,37 @@ def installed() -> list[dict[str, Any]]:
     return rows
 
 
+#: 最近一次解析出的"当前生效驱动"。给编译期（同步上下文）用：
+#: 模型被问"用的什么浏览器"时会去翻机器，翻到 Playwright 自带的 Chromium 答错版本
+#: （现场：158 在跑，它答 156.0.8078.4）。权威答案放这里，拼进 system prompt。
+_LAST_ACTIVE: dict[str, Any] = {}
+
+
+def last_active() -> dict[str, Any]:
+    """当前生效驱动（进程内缓存，不查库）。没有任何解析过就返回空 dict。"""
+    return dict(_LAST_ACTIVE)
+
+
+def remember_active(drv: dict[str, Any]) -> dict[str, Any]:
+    if isinstance(drv, dict) and drv.get("version"):
+        _LAST_ACTIVE.clear()
+        _LAST_ACTIVE.update(drv)
+    return drv
+
+
+async def warm_active(session: Any) -> dict[str, Any]:
+    """服务启动时预热一次，保证第一次对话就有权威答案。"""
+    try:
+        return await get_active(session)
+    except Exception:  # pragma: no cover
+        logger.debug("预热浏览器驱动信息失败", exc_info=True)
+        return {}
+
+
+async def get_active(session: Any) -> dict[str, Any]:
+    return remember_active(await _get_active_impl(session))
+
+
 def _remap_path(path: str) -> str:
     """把"别的机器上的绝对路径"映射到本机可用的同版本路径。
 
@@ -261,7 +292,7 @@ def _remap_path(path: str) -> str:
     return ""
 
 
-async def get_active(session: Any) -> dict[str, Any]:
+async def _get_active_impl(session: Any) -> dict[str, Any]:
     """当前生效的驱动。没设过 = 系统 Chromium（平台一直以来的默认）。
 
     除了"设的是哪个"，还带上**它到底能不能跑**（``verify``）—— 用户遇到的真实场景是：
