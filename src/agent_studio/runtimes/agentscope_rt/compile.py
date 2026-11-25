@@ -123,9 +123,19 @@ def build_credential(spec: ModelSpec, api_key: str | None):
         raise ValueError(f"provider={spec.provider} 必须填 Base URL（自定义端点的完整地址）")
 
     if spec.base_url:
+        # Anthropic 官方 SDK 自己拼 /v1/messages：base_url 必须是**域名根**。
+        # 用户从别处抄来的地址常带 /v1（甚至 /v1/messages），原样传下去就变成
+        # /v1/v1/messages → 404，看着像"这个端点不支持"。这里统一去掉尾部的版本段。
+        _base = spec.base_url
+        if str(spec.provider).startswith("anthropic"):
+            _base = _base.rstrip("/")
+            if _base.endswith("/messages"):
+                _base = _base[: -len("/messages")]
+            if _base.endswith("/v1"):
+                _base = _base[: -len("/v1")]
         for key in ("base_url", "api_host", "host"):
             if key in fields:
-                kwargs[key] = spec.base_url
+                kwargs[key] = _base
                 break
 
     return cls(**kwargs)

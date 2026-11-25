@@ -64,3 +64,25 @@ def test_没填_base_url_时报错而不是偷偷打默认地址():
     with pytest.raises(Exception):
         # OpenAI SDK 没有 base_url 会用 api.openai.com —— 对自建端点等于把 key 发错地方
         build_model(_spec("openai-compatible", ""), "sk-x")
+
+
+def test_anthropic_的_base_url_去掉版本段():
+    """Anthropic SDK 自己拼 /v1/messages：base_url 必须是域名根。
+
+    用户从别处抄来的地址常带 /v1，原样传下去就是 /v1/v1/messages → 404，
+    看着像"这个端点不支持"。
+    """
+    for raw in (
+        "https://relay.example.com",
+        "https://relay.example.com/",
+        "https://relay.example.com/v1",
+        "https://relay.example.com/v1/messages",
+    ):
+        m = build_model(_spec("anthropic-compatible", raw), "sk-ant-x")
+        assert str(m.client.base_url).rstrip("/") == "https://relay.example.com", raw
+
+
+def test_openai_的_base_url_原样保留():
+    """OpenAI 兼容网关路径五花八门（/v1、/api/v3、/compatible-mode/v1），不许改。"""
+    m = build_model(_spec("openai-compatible", "https://gw.example.com/api/v3"), "sk-x")
+    assert "api/v3" in str(m.client.base_url)

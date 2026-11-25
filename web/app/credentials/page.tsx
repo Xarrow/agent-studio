@@ -814,7 +814,12 @@ function NewCredentialDialog({
                   className="input mono mt-1.5"
                   value={baseUrl}
                   onChange={(e) => setBaseUrl(e.target.value)}
-                  placeholder={meta?.default_base_url || ""}
+                  placeholder={
+                    meta?.default_base_url ||
+                    (String(provider || "").startsWith("anthropic")
+                      ? "https://你的网关地址（填域名根，不要带 /v1）"
+                      : "https://你的网关地址（一般带 /v1）")
+                  }
                   disabled={meta?.allows_base_url === false}
                 />
               </details>
