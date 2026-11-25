@@ -24,6 +24,7 @@ import {
   IconFolder,
   IconPlus,
   IconWand,
+  IconFileArchive,
   IconLink,
   IconPencil,
   IconPin,
@@ -402,6 +403,15 @@ export function SkillsPanel({ embedded = false }: { embedded?: boolean }) {
             <IconRefresh size={14} />
             检查更新
           </button>
+          <a
+            className="btn"
+            href={api.skillExportUrl()}
+            download
+            title="把全部技能打包成 zip（每个技能一个目录：SKILL.md + 附件 + 元数据）"
+          >
+            <IconFileArchive size={14} />
+            导出
+          </a>
           <button className="btn btn-primary" onClick={() => setShowImport(true)}>
             <IconPlus size={14} />
             新建 / 导入

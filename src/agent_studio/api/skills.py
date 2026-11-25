@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import io
+import json
 import shutil
 import subprocess
 import tarfile
@@ -175,6 +176,99 @@ def _shim_text() -> str:
 def _default_shim_dir() -> Path:
     """默认装到 ~/.local/bin —— 用户级、不需要 root、多数发行版默认在 PATH 里。"""
     return Path(os.path.expanduser("~/.local/bin"))
+
+
+def _zip_safe_dir(name: str, used: set[str]) -> str:
+    """包内目录名：保留中文，只清掉路径分隔符与显然危险的字符；重名加序号。"""
+    base = re.sub(r"[\\/:*?\"<>|\n\r\t]+", "-", (name or "skill").strip()) or "skill"
+    base = base.strip(". ")[:80] or "skill"
+    candidate, i = base, 2
+    while candidate in used:
+        candidate = f"{base}-{i}"
+        i += 1
+    used.add(candidate)
+    return candidate
+
+
+@router.get("/export")
+async def export_skills(
+    ids: str = "",
+    include_archived: int = 0,
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    """把技能打包成 zip 导出（导出包可以原样再导入）。
+
+    - 不传 ``ids`` → 导出全部（默认不含已归档）
+    - ``ids=a,b,c`` → 只导这几个
+    包内每个技能一个目录：``<名字>/SKILL.md`` + 附件（原相对路径）+ ``skill.json``（元数据）。
+    不用 tar：Windows 也能双击打开，发给别人不会被当二进制。
+    """
+    stmt = select(Skill)
+    if not include_archived:
+        stmt = stmt.where(Skill.state != "archived")
+    rows = list((await session.execute(stmt.order_by(Skill.name))).scalars())
+
+    want = [x.strip() for x in ids.split(",") if x.strip()]
+    if want:
+        by_id = {r.id: r for r in rows}
+        missing = [w for w in want if w not in by_id]
+        if missing:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"技能不存在：{', '.join(missing[:3])}")
+        rows = [by_id[w] for w in want]
+    if not rows:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "没有可导出的技能")
+
+    buf = io.BytesIO()
+    used: set[str] = set()
+    stamp = time.strftime("%Y%m%d")
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for r in rows:
+            base = _zip_safe_dir(r.name or r.slug or r.id, used)
+            src = r.source if isinstance(r.source, dict) else {}
+            meta = {
+                "format": "agent-studio-skills/1",
+                "id": r.id,
+                "name": r.name,
+                "slug": r.slug or "",
+                "ns": r.ns or "",
+                "description": r.description or "",
+                "state": r.state or "active",
+                "pinned": bool(r.pinned),
+                "source": {k: src.get(k) for k in ("type", "url", "ref", "sha") if src.get(k)},
+                "source_key": r.source_key or "",
+                "exported_at": int(time.time() * 1000),
+            }
+            zf.writestr(f"{base}/SKILL.md", r.content or "")
+            for rel, body in (r.files or {}).items():
+                rel = str(rel).lstrip("/")
+                if not rel or ".." in Path(rel).parts:
+                    continue
+                zf.writestr(f"{base}/{rel}", body if isinstance(body, str) else json.dumps(body, ensure_ascii=False))
+            zf.writestr(f"{base}/skill.json", json.dumps(meta, ensure_ascii=False, indent=2))
+        zf.writestr(
+            "README.txt",
+            "agent-studio 技能导出包\n\n"
+            "每个目录是一个技能：SKILL.md（正文）+ 附件 + skill.json（元数据）。\n"
+            "回到 Agent Studio「技能 → 导入」上传这个 zip 即可恢复；\n"
+            "也可以直接把某个目录放到 skills 目录里用。\n",
+        )
+
+    data = buf.getvalue()
+    fname = f"skills-{stamp}.zip" if not want else f"{_zip_safe_dir(rows[0].name or 'skill', set())}-{stamp}.zip"
+    # HTTP 头只能 latin-1：中文文件名放 filename*（RFC 5987），filename= 给 ASCII 兜底，
+    # 只写中文会让 starlette 在编码响应头时抛 UnicodeEncodeError（500）。
+    from urllib.parse import quote
+
+    ascii_name = f"skills-{stamp}.zip"
+    return Response(
+        content=data,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(fname)}",
+            "Content-Length": str(len(data)),
+            "X-Skill-Count": str(len(rows)),
+        },
+    )
 
 
 @router.get("/cli")

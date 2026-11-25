@@ -898,6 +898,11 @@ export const api = {
   /** 这个技能被哪些助手挂着 */
   skillAgents: (id: string) => request<{ id: string; name: string; enabled: boolean }[]>(`/api/skills/${id}/agents`),
   skill: (id: string) => request<Skill>(`/api/skills/${id}`),
+  /** 技能导出（打包成 zip）：不传 ids 就是全部；返回可直接塞进 <a href> 下载的地址 */
+  skillExportUrl: (ids?: string[]) => {
+    const q = ids && ids.length ? `?ids=${encodeURIComponent(ids.join(","))}` : "";
+    return withToken(`${apiBase()}/api/skills/export${q}`);
+  },
   deleteSkill: (id: string) => del(`/api/skills/${id}`),
   updateSkill: (id: string, body: { name?: string; description?: string; content?: string }) =>
     put<Skill>(`/api/skills/${id}`, body),
