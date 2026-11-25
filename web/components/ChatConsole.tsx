@@ -132,6 +132,12 @@ export function ChatConsole({
   const setAgentId = (id: string) => {
     setPickedAgent(id);
     setOwnAgentId(id);
+    /* 记住这个人：下次从侧栏点「对话」直接落在他身上，不用再看一遍选择页 */
+    try {
+      if (id) window.localStorage.setItem("exec.lastAgent", id);
+    } catch {
+      /* 隐私模式下 localStorage 会抛，忽略即可 */
+    }
   };
   /** 切换助手时想落到哪条会话（点树上的子节点用；不然会被"选最近一条"覆盖） */
   const pendingPick = useRef<string | null>(null);
@@ -1174,6 +1180,25 @@ export function ChatConsole({
       })
       .catch(() => null);
   }, []);
+
+  /* 一进对话页就落在某个具体助手上：优先上次用的那个，否则列表里第一个。
+     以前这里停在一个"选助手"的中间态，每次都要多点一下才能开始说话。 */
+  useEffect(() => {
+    if (loading || agents.length === 0 || agentId) return;
+    let last = "";
+    try {
+      last = window.localStorage.getItem("exec.lastAgent") || "";
+    } catch {
+      last = "";
+    }
+    const hit = last ? agents.find((a) => a.id === last) : undefined;
+    // Router（编排者）不直接对话：没有别的可选时才退到它
+    const fallback = agents.find((a) => (a as { role?: string }).role !== "orchestrator") ?? agents[0];
+    const target = hit ?? fallback;
+    if (target) setAgentId(target.id);
+    // setAgentId 是稳定引用（每次渲染重建也无妨），依赖只放真正会变的值
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, agents, agentId]);
 
   /* 深链进来的会话：先问一句它属于哪个助手，把助手选择器也切过去。
      不切的话页面顶部显示 A、内容是 B 的会话，一发送就被后端拒（会话与 Agent 不匹配）。 */
