@@ -1407,6 +1407,9 @@ async def _browser(
     # 卡片上的「本轮 N 步」也就在这一步之后立刻变（不用等整轮结束）。
     if (_note or _summary) and not str(_res).startswith("✗"):
         bc.add_agent_action(ctl, _note or _summary, run_id)
+    # 页面动过就问一句有没有输入框：有就在界面上提示"直接在对话里说要填什么"。
+    # 助手自己也能据此少点一次（它下一步往往就是去 type）。
+    await bc.refresh_input_probe(ctl, sess)
     bc.publish_state(ctl)
     return await _with_brief(_res)
 
