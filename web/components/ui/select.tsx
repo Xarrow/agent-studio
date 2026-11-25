@@ -53,7 +53,7 @@ export function Select({
 }) {
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement | null>(null);
-  const [anchor, setAnchor] = useState<{ x: number; y: number; w: number; up: boolean } | null>(
+  const [anchor, setAnchor] = useState<{ x: number; y: number; w: number; up: boolean; maxH: number } | null>(
     null,
   );
 
@@ -63,13 +63,21 @@ export function Select({
     const el = btnRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
-    const need = Math.min(320, Math.max(180, options.length * 44 + 16));
-    const up = r.bottom + need > window.innerHeight - 8;
+    // 可用空间先量出来再决定朝上还是朝下、能有多高。
+    // 以前固定按 320 算（need），视口矮或弹窗靠下时浮层会伸出视口 ——
+    // 用户看得到选项却点不到（elementFromPoint 落在视口外），表现就是「选不了」。
+    const gap = 4;
+    const need = Math.min(320, Math.max(120, options.length * 40 + 16));
+    const spaceBelow = window.innerHeight - r.bottom - 8;
+    const spaceAbove = r.top - 8;
+    const up = spaceBelow < Math.min(need, 260) && spaceAbove > spaceBelow;
+    const maxH = Math.max(96, Math.min(320, Math.min(need, up ? spaceAbove : spaceBelow) - gap));
     setAnchor({
-      x: Math.min(r.left, window.innerWidth - Math.max(r.width, 200) - 8),
-      y: up ? Math.max(8, r.top - need - 4) : r.bottom + 4,
+      x: Math.max(8, Math.min(r.left, window.innerWidth - Math.max(r.width, 200) - 8)),
+      y: up ? Math.max(8, r.top - maxH - gap) : Math.min(r.bottom + gap, window.innerHeight - maxH - 8),
       w: Math.max(r.width, 180),
       up,
+      maxH,
     });
   }, [options.length]);
 
@@ -84,12 +92,16 @@ export function Select({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
     };
-    const onScroll = () => setOpen(false);
+    // 滚动/resize 时重算位置而不是直接关：弹窗内滚一下就没了，用户会觉得"选不了"
+    const onScroll = () => place();
     document.addEventListener("mousedown", onDoc);
     window.addEventListener("keydown", onKey);
     window.addEventListener("resize", onScroll);
     window.addEventListener("scroll", onScroll, true);
+    // 打开后再量一次：点击时那一刻的 rect 可能还在动画/布局中
+    const raf = requestAnimationFrame(() => place());
     return () => {
+      cancelAnimationFrame(raf);
       document.removeEventListener("mousedown", onDoc);
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("resize", onScroll);
@@ -141,7 +153,7 @@ export function Select({
                 left: anchor.x,
                 top: anchor.y,
                 width: anchor.w,
-                maxHeight: 320,
+                maxHeight: anchor.maxH,
                 background: "var(--color-surface)",
                 boxShadow: "var(--shadow-2)",
               }}
