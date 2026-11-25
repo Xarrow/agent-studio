@@ -118,7 +118,9 @@ PROVIDERS: dict[str, ProviderMeta] = {
         name="openai-compatible",
         display_name="OpenAI 协议（自定义端点）",
         default_base_url=None,          # 必须自己填：/v1 结尾的完整地址
-        models=[],
+        # 候选清单只是"省手打"：任何 OpenAI 兼容网关都认这些名字与否取决于它自己，
+        # 前端允许自由输入（写自建模型名不会被打回）。
+        models=["gpt-4o", "gpt-4o-mini", "o3-mini", "deepseek-chat", "qwen-max"],
         note="任何 OpenAI 兼容端点（自建 vLLM、one-api/中转站、云厂商兼容模式）。Base URL 填到 /v1，模型名手动填写。",
     ),
     # 任意「Anthropic 协议」的端点：Claude 官方中转、Bedrock 网关、自建代理。
@@ -126,7 +128,12 @@ PROVIDERS: dict[str, ProviderMeta] = {
         name="anthropic-compatible",
         display_name="Anthropic 协议（自定义端点）",
         default_base_url=None,
-        models=[],
+        models=[
+            "claude-sonnet-4-5",
+            "claude-opus-4-1",
+            "claude-3-5-sonnet-latest",
+            "claude-3-5-haiku-latest",
+        ],
         note="任何 Anthropic Messages 协议端点（Claude 中转、代理网关）。Base URL 填到域名根（不带 /v1），模型名手动填写。",
     ),
     "ollama": ProviderMeta(

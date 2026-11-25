@@ -297,6 +297,17 @@ def _err_of(resp: "httpx.Response") -> str:
     return (resp.text or "").strip()[:220] or f"HTTP {resp.status_code}"
 
 
+def _is_anthropic_protocol(provider: str) -> bool:
+    """Anthropic 协议（含自定义端点 anthropic-compatible）。
+
+    以前只认 provider 名 == "anthropic"，于是 anthropic-compatible 用 Bearer 头
+    去打 /models —— 必然 401，有效的 Claude 中转 key 被判成"密钥无效"，
+    用户看到的就是"Anthropic 协议还是不支持"。
+    """
+    name = str(provider or "")
+    return name == "anthropic" or name.startswith("anthropic")
+
+
 async def _probe(
     provider: str, api_key: str, base_url: str | None, model_name: str | None
 ):
@@ -326,7 +337,7 @@ async def _probe(
     # Anthropic 的鉴权头与路径都和 OpenAI 兼容接口不同（``x-api-key`` + ``/v1/models``）：
     # 拿 Bearer 打过去必然 401，会让**有效的** Claude Key 被判成「密钥无效」——
     # 「粘贴即用」识别不出 Claude 就是这么来的（实测）。
-    if meta is not None and meta.name == "anthropic":
+    if _is_anthropic_protocol(provider):
         base = base if base.endswith("/v1") else f"{base}/v1"
         headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
     else:
@@ -382,15 +393,26 @@ async def _probe(
                 )
 
             try:
-                r2 = await client.post(
-                    f"{base}/chat/completions",
-                    headers={**headers, "Content-Type": "application/json"},
-                    json={
-                        "model": model,
-                        "messages": [{"role": "user", "content": "hi"}],
-                        "max_tokens": 1,
-                    },
-                )
+                if _is_anthropic_protocol(provider):
+                    r2 = await client.post(
+                        f"{base}/messages",
+                        headers={**headers, "Content-Type": "application/json"},
+                        json={
+                            "model": model,
+                            "messages": [{"role": "user", "content": "hi"}],
+                            "max_tokens": 1,
+                        },
+                    )
+                else:
+                    r2 = await client.post(
+                        f"{base}/chat/completions",
+                        headers={**headers, "Content-Type": "application/json"},
+                        json={
+                            "model": model,
+                            "messages": [{"role": "user", "content": "hi"}],
+                            "max_tokens": 1,
+                        },
+                    )
             except Exception as exc:  # noqa: BLE001
                 return False, [], f"调用失败：{type(exc).__name__}: {exc}", elapsed()
 
@@ -714,7 +736,7 @@ def _effective_base(meta: Any, override: str | None) -> str | None:
     base = (override or meta.default_base_url or "").rstrip("/")
     if not base:
         return None
-    if meta.name == "anthropic" and not base.endswith("/v1"):
+    if _is_anthropic_protocol(provider) and not base.endswith("/v1"):
         base = f"{base}/v1"
     return base
 
