@@ -30,6 +30,15 @@ import { PriceBook } from "@/components/PriceBook";
 import { Hint, HINTS } from "@/components/ui/hint";
 import { CredentialChatDialog } from "@/components/CredentialChatDialog";
 
+/** 自定义端点的常见预设：少填两次，也避免把 /anthropic 漏掉。
+ *  只用在 *-compatible 上（官方 provider 有自己的默认地址）。 */
+const ENDPOINT_PRESETS: { match: string; label: string; base: string; model: string }[] = [
+  { match: "anthropic", label: "DeepSeek · Anthropic 协议", base: "https://api.deepseek.com/anthropic", model: "deepseek-chat" },
+  { match: "anthropic", label: "Anthropic 官方", base: "https://api.anthropic.com", model: "claude-sonnet-4-5" },
+  { match: "openai", label: "DeepSeek · OpenAI 协议", base: "https://api.deepseek.com/v1", model: "deepseek-chat" },
+  { match: "openai", label: "火山方舟", base: "https://ark.cn-beijing.volces.com/api/v3", model: "deepseek-v4-flash" },
+];
+
 export default function CredentialsPage() {
   const fb = useFeedback();
   /** 骨架只在首屏出现；刷新原地更新，避免整页闪一下 */
@@ -822,6 +831,29 @@ function NewCredentialDialog({
                   }
                   disabled={meta?.allows_base_url === false}
                 />
+                {!meta?.default_base_url && (
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {ENDPOINT_PRESETS.filter((p) => String(provider || "").startsWith(p.match)).map((p) => (
+                      <button
+                        key={p.base}
+                        type="button"
+                        className="rounded-[var(--radius-xs)] px-2 py-1 text-[length:var(--fs-sm)]"
+                        style={{ background: "var(--color-surface-2)", color: "var(--color-text-2, var(--color-text))" }}
+                        onClick={() => {
+                          setBaseUrl(p.base);
+                          // 模型名：空着、或还停在候选清单里的默认值时一起换掉
+                          // （点了「DeepSeek · Anthropic 协议」却留着 claude-sonnet，
+                          //  验证必然报模型不存在）；用户手填过的名字不覆盖。
+                          const untouched = !model.trim() || (meta?.models || []).includes(model.trim());
+                          if (untouched) setModel(p.model);
+                        }}
+                        title={`${p.base} · 模型 ${p.model}`}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </details>
             </>
           )}
