@@ -426,10 +426,20 @@ async def _probe(
                     f"密钥无效（HTTP {r2.status_code}）：{_err_of(r2)}",
                     elapsed(),
                 )
+            detail = _err_of(r2)
+            hint = ""
+            low = detail.lower()
+            # 自定义端点上最常见的坑：模型名照抄了"候选清单"里的 claude-*，
+            # 而那个端点根本没有这个模型 —— 报错原文常是 model not found / 不支持的模型。
+            if r2.status_code in (400, 404, 422) and ("model" in low or "模型" in detail):
+                hint = (
+                    "。模型名要填这个端点真实的模型名："
+                    "例如 DeepSeek 的 Anthropic 端点是 deepseek-chat / deepseek-reasoner，不是 claude-*"
+                )
             return (
                 False,
                 [],
-                f"HTTP {r2.status_code}（模型 {model}）：{_err_of(r2)}",
+                f"HTTP {r2.status_code}（模型 {model}）：{detail}{hint}",
                 elapsed(),
             )
     except Exception as exc:  # noqa: BLE001
