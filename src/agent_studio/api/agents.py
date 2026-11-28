@@ -93,10 +93,50 @@ async def list_agents(session: AsyncSession = Depends(get_session)) -> list[Agen
     return [to_read(r) for r in rows if not ((r.definition or {}).get("disabled") is True)]
 
 
+async def _check_endpoint_consistency(session: Any, definition: Any) -> None:
+    """保存前的端点一致性校验：助手里写死的 Base URL 必须与凭据同主机。
+
+    现场：助手 provider=anthropic-compatible、模型名 deepseek-v4-flash，
+    凭据指向公司代理，助手 definition 里还留着 https://api.deepseek.com/v1。
+    运行期会按凭据走（正确），但这类配置从页面上看是"配好了却 401 说 key 无效"，
+    排查方向全被带偏。所以在写库这一步就拦下来，让人当场改对。
+
+    只在两边**都给了地址**时比较；凭据没配地址（用官方默认端点）不拦。
+    """
+    model = getattr(definition, "model", None)
+    if model is None:
+        return
+    ref = getattr(model, "credential_ref", None)
+    def_url = str(getattr(model, "base_url", "") or "")
+    if not ref or not def_url:
+        return
+    from ..db import SessionLocal  # noqa: F401 —— 不是同一个 session 时也要能查
+    from ..models import Secret
+
+    secret = await session.get(Secret, ref)
+    if secret is None:
+        return
+    cred_url = str(getattr(secret, "base_url", "") or "")
+    if not cred_url:
+        return
+    from ..runner.service import _host_of
+
+    if _host_of(cred_url) != _host_of(def_url):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"端点和凭据不是同一个服务商：助手里的 Base URL 是 {def_url}，"
+                f"而这条 LLM 配置指向 {cred_url}。同一把 key 只能打签发它的那家 —— "
+                "请把助手里的 Base URL 清空（留空就跟随凭据），或换成匹配的配置。"
+            ),
+        )
+
+
 @router.post("", response_model=AgentRead, status_code=status.HTTP_201_CREATED)
 async def create_agent(
     payload: AgentCreate, session: AsyncSession = Depends(get_session)
 ) -> AgentRead:
+    await _check_endpoint_consistency(session, payload.definition)
     # 重名校验：列表里两个同名助手无法区分（历史/日志里也只显示名字）。
     slug = payload.slug or slugify(payload.name)
     exists = (
@@ -189,6 +229,7 @@ async def update_agent(
         row.expose_note = payload.expose_note.strip()
 
     if payload.definition is not None:
+        await _check_endpoint_consistency(session, payload.definition)
         row.definition = payload.definition.model_dump(mode="json", exclude={"model": {"api_key"}})
         row.runtime = payload.definition.runtime
         if payload.bump_version:

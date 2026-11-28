@@ -622,13 +622,19 @@ async def resolve_credential(
 
 
 def _with_base_url(definition: AgentDefinition, base_url: str | None) -> AgentDefinition:
-    """把解析出的 base_url 补进定义（定义里已有则不覆盖）。
+    """把 ``resolve_credential`` 解析出的端点写进定义 —— **以解析结果为准**。
 
     补在定义上，是为了让**三条用到端点的路径**都拿到正确的值：
     模型编译、历史压缩、记忆提炼 —— 它们原来各自读
     ``definition.model.base_url``，值不对就一起错。
+
+    以前这里写的是"定义里已有则不覆盖"，于是 resolve 阶段明明判定"端点跟凭据走"、
+    返回了凭据的地址，到了编译阶段又被定义里的旧地址挡住 —— 现场就是
+    助手残留 ``https://api.deepseek.com/v1``、凭据却指向公司代理，
+    结果拿着代理的 key 去打 DeepSeek，401 报"你的 api key 无效"。
+    resolve_credential 已经做完冲突判断，这里只要照它的结果执行。
     """
-    if not base_url or definition.model.base_url:
+    if not base_url or definition.model.base_url == base_url:
         return definition
     return definition.model_copy(
         update={"model": definition.model.model_copy(update={"base_url": base_url})}

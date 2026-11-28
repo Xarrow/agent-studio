@@ -72,6 +72,19 @@ def _plain(obj: Any) -> Any:
     return str(obj)
 
 
+
+def _err_with_target(exc: BaseException, provider: str, model_name: str, base_url: str) -> str:
+    """错误文本后面补上「实际打的是哪个端点、哪个模型」。
+
+    401 的原文往往只有「your api key is invalid」—— 可 key 没错、是端点错了
+    （拿 A 家的 key 打了 B 家的地址），用户会一路去查 key。
+    把端点拼进错误里，一眼能分出「key 坏了」还是「端点配错了」。
+    """
+    head = f"{type(exc).__name__}: {exc}"
+    where = f"（provider={provider or '未指定'} model={model_name or '未指定'} base_url={base_url or '未配置'}）"
+    return head + where
+
+
 def _dump_json(payload: Any) -> str:
     try:
         text = json.dumps(payload, ensure_ascii=False, default=str)
@@ -159,7 +172,7 @@ class ModelCallRecorder(MiddlewareBase):
         except BaseException as exc:  # noqa: BLE001 —— 失败的调用同样要留证
             await self._save(
                 run_id, seq, provider, model_name, base_url, request_text, "", started, t0, 0, 0, 0,
-                error=f"{type(exc).__name__}: {exc}",
+                error=_err_with_target(exc, provider, model_name, base_url),
             )
             raise
 
@@ -214,7 +227,9 @@ class ModelCallRecorder(MiddlewareBase):
                 # 有终片用终片（完整、且带最终 usage）；没有（流被中断）就用增量累加
                 target = terminal if terminal is not None else (acc if acc is not None else last)
                 payload = _dump_json(_response_payload(target)) if target is not None else ""
-                err = f"{type(failed).__name__}: {failed}" if failed else None
+                err = (
+                    _err_with_target(failed, provider, model_name, base_url) if failed else None
+                )
                 usage = _usage_of(target) if target is not None else (0, 0, 0)
                 await self._save(run_id, seq, provider, model_name, base_url, request_text,
                                  payload, started, t0, *usage, error=err)
